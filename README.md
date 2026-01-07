@@ -121,7 +121,7 @@ memory-service.url=http://localhost:8080
 # (Dev Services will start the service in Docker if not configured)
 ```
 
-### 3. Use LangChain4j Integration
+### 3. Use LangChain4j ChatMemory Integration
 
 The extension provides a `ChatMemoryProvider` that automatically integrates with LangChain4j:
 
@@ -133,61 +133,93 @@ public interface MyAgent {
 }
 ```
 
-The `@MemoryId` parameter automatically uses the conversation ID to retrieve and store messages via the memory service. No additional code needed!
+The `@MemoryId` parameter automatically uses the conversation ID to retrieve and store messages via the memory service. 
 
-### 4. Use Conversation Recording (Alternative Approach)
+### 4. Conversation History Recording
 
-To provide conversation history to UI agents, use a `@ConversationAware` interceptor:
+To provide conversation history to UI agents, use a `HistoryRecordingAgent` that wraps your agent with the `@ConversationAware` interceptor:
 
 ```java
-@Path("/chat")
-public class ChatResource {
+@ApplicationScoped
+public class HistoryRecordingAgent {
+
+    private final Agent agent;
 
     @Inject
-    MyAgent agent;
+    public HistoryRecordingAgent(Agent agent) {
+        this.agent = agent;
+    }
 
-    @POST
-    @Path("/{conversationId}")
     @ConversationAware
     public Multi<String> chat(
-        @PathParam("conversationId") @ConversationId String conversationId,
-        @QueryParam("message") @UserMessage String userMessage
-    ) {
+            @ConversationId String conversationId, @UserMessage String userMessage) {
         return agent.chat(conversationId, userMessage);
     }
 }
 ```
 
-The interceptor automatically:
+The `@ConversationAware` interceptor automatically:
 - Stores the user message before calling your method
 - Stores the agent response after your method completes
 
+Use this wrapper in your REST endpoints instead of calling the agent directly.
+
+
 ### 5. Direct API Access
 
-You can also use the generated REST client directly:
+Agents can also use the generated REST client directly:
 
 ```java
 @Inject
 @RestClient
 ConversationsApi conversationsApi;
 
-public void createConversation(String userId) {
+public void createConversation() {
     CreateConversationRequest request = new CreateConversationRequest();
-    request.setUserId(userId);
+    request.setTitle("My Conversation");
     Conversation conversation = conversationsApi.createConversation(request);
 }
 ```
 
+**Note:** The API key is automatically configured by dev services. If `memory-service-client.api-key` is not explicitly set, the dev services will generate a random API key and configure it both in the started container (as `MEMORY_API_KEYS`) and in your application configuration (as `memory-service-client.api-key`). The `GlobalTokenPropagationFilter` automatically adds this API key to all REST client requests to the memory-service.
+
 ### 6. Frontend Integration
 
-The memory-service provides user-facing APIs that your frontend can use:
-
-- `GET /v1/user/conversations` - List user's conversations
-- `GET /v1/user/conversations/{id}/messages` - Get conversation messages
-- `POST /v1/user/conversations/{id}/fork` - Fork a conversation
-- `GET /v1/user/search` - Semantic search across conversations
-
 See the example agent's frontend (`agent/src/main/webui/`) for a complete React implementation.
+
+The React app calls `MemoryServiceProxyResource` (`agent/src/main/java/example/MemoryServiceProxyResource.java`) to view and manage historical conversation state, including listing conversations, retrieving messages, and forking conversations. For sending new messages to the agent and receiving streaming responses, the frontend uses `AgentWebSocket` (`agent/src/main/java/example/AgentWebSocket.java`).
+
+
+### 7. Agent Response Resumption
+
+When streaming agent responses (e.g., via WebSocket), clients may disconnect before receiving the complete response. The memory-service extension supports resuming interrupted responses by buffering streaming tokens in Redis.
+
+Enable response resumption by setting:
+
+```properties
+memory-service.response-resumer=redis
+```
+
+When enabled, the `@ConversationAware` interceptor automatically buffers streaming responses:
+
+- For streaming methods that return `Multi<String>`, the interceptor wraps the stream using `ConversationStreamAdapter.wrap()`, which:
+  - Forwards each token to the original caller
+  - Records each token to Redis using a `ResponseResumer` (with stream key `conversation:response:{conversationId}`)
+  - Tracks the cumulative byte offset as the resume position
+  - On completion, stores the full message and marks the conversation as completed
+
+- The `ResponseResumer` interface provides:
+  - `recorder(conversationId)`: Creates a recorder that buffers tokens as they stream
+  - `replay(conversationId, resumePosition)`: Replays cached tokens from a specific byte offset
+  - `check(conversationIds)`: Checks which conversations have responses currently in progress
+
+The example agent application provides two endpoints to support resumption:
+
+- **`ResumeResource`** (`/v1/conversations/resume-check`): A REST endpoint that accepts a list of conversation IDs and returns which ones have responses in progress. The frontend can use this to detect conversations that were interrupted.
+
+- **`ResumeWebSocket`** (`/customer-support-agent/{conversationId}/ws/{resumePosition}`): A WebSocket endpoint that replays cached tokens from a specific resume position. The frontend stores the last received byte offset in local storage and reconnects with it after a page reload or network interruption.
+
+When `memory-service.response-resumer=redis` is not set (or set to an unsupported value), the extension uses a no-op `ResponseResumer` that doesn't buffer responses, and resumption is unavailable.
 
 ## Additional Resources
 
