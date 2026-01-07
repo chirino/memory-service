@@ -1,0 +1,11 @@
+---
+name: "Memory Service Extension"
+description: "Provides memory service client and dev services"
+metadata:
+  keywords:
+  - "memory-service"
+  guide: "https://chirino.github.io/memory-service"
+  categories:
+  - "integration"
+  status: "preview"
+

@@ -1,0 +1,8 @@
+databaseChangeLog:
+  # Placeholder MongoDB changelog. Collections and indexes can be added here
+  # once we commit to a concrete MongoDB deployment and index strategy.
+  - changeSet:
+      id: mongo-1-noop
+      author: memory-service
+      changes: []
+

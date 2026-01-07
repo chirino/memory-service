@@ -1,0 +1,68 @@
+package io.github.chirino.memory.store;
+
+import io.github.chirino.memory.api.ConversationListMode;
+import io.github.chirino.memory.api.dto.ConversationDto;
+import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
+import io.github.chirino.memory.api.dto.ConversationMembershipDto;
+import io.github.chirino.memory.api.dto.ConversationSummaryDto;
+import io.github.chirino.memory.api.dto.CreateConversationRequest;
+import io.github.chirino.memory.api.dto.CreateSummaryRequest;
+import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
+import io.github.chirino.memory.api.dto.ForkFromMessageRequest;
+import io.github.chirino.memory.api.dto.MessageDto;
+import io.github.chirino.memory.api.dto.PagedMessages;
+import io.github.chirino.memory.api.dto.SearchMessagesRequest;
+import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.ShareConversationRequest;
+import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.model.MessageChannel;
+import java.util.List;
+
+public interface MemoryStore {
+
+    ConversationDto createConversation(String userId, CreateConversationRequest request);
+
+    List<ConversationSummaryDto> listConversations(
+            String userId, String query, String after, int limit, ConversationListMode mode);
+
+    ConversationDto getConversation(String userId, String conversationId);
+
+    void deleteConversation(String userId, String conversationId);
+
+    MessageDto appendUserMessage(
+            String userId, String conversationId, CreateUserMessageRequest request);
+
+    List<ConversationMembershipDto> listMemberships(String userId, String conversationId);
+
+    ConversationMembershipDto shareConversation(
+            String userId, String conversationId, ShareConversationRequest request);
+
+    ConversationMembershipDto updateMembership(
+            String userId,
+            String conversationId,
+            String memberUserId,
+            ShareConversationRequest request);
+
+    void deleteMembership(String userId, String conversationId, String memberUserId);
+
+    ConversationDto forkConversationAtMessage(
+            String userId, String conversationId, String messageId, ForkFromMessageRequest request);
+
+    List<ConversationForkSummaryDto> listForks(String userId, String conversationId);
+
+    void requestOwnershipTransfer(String userId, String conversationId, String newOwnerUserId);
+
+    PagedMessages getMessages(
+            String userId,
+            String conversationId,
+            String afterMessageId,
+            int limit,
+            MessageChannel channel);
+
+    List<MessageDto> appendAgentMessages(
+            String userId, String conversationId, List<CreateMessageRequest> messages);
+
+    MessageDto createSummary(String conversationId, CreateSummaryRequest request);
+
+    List<SearchResultDto> searchMessages(String userId, SearchMessagesRequest request);
+}

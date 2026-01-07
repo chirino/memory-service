@@ -1,0 +1,572 @@
+package io.github.chirino.memory.api;
+
+import io.github.chirino.memory.api.dto.ConversationDto;
+import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
+import io.github.chirino.memory.api.dto.ConversationMembershipDto;
+import io.github.chirino.memory.api.dto.ConversationSummaryDto;
+import io.github.chirino.memory.api.dto.MessageDto;
+import io.github.chirino.memory.api.dto.PagedMessages;
+import io.github.chirino.memory.client.model.Conversation;
+import io.github.chirino.memory.client.model.ConversationForkSummary;
+import io.github.chirino.memory.client.model.ConversationMembership;
+import io.github.chirino.memory.client.model.ConversationSummary;
+import io.github.chirino.memory.client.model.CreateConversationRequest;
+import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.client.model.CreateSummaryRequest;
+import io.github.chirino.memory.client.model.ErrorResponse;
+import io.github.chirino.memory.client.model.ForkFromMessageRequest;
+import io.github.chirino.memory.client.model.Message;
+import io.github.chirino.memory.client.model.ShareConversationRequest;
+import io.github.chirino.memory.config.MemoryStoreSelector;
+import io.github.chirino.memory.model.AccessLevel;
+import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.security.ApiKeyContext;
+import io.github.chirino.memory.store.AccessDeniedException;
+import io.github.chirino.memory.store.MemoryStore;
+import io.github.chirino.memory.store.ResourceNotFoundException;
+import io.quarkus.security.Authenticated;
+import io.quarkus.security.identity.SecurityIdentity;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PATCH;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.jboss.logging.Logger;
+
+@Path("/v1")
+@Authenticated
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class ConversationsResource {
+
+    private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+
+    private static final Logger LOG = Logger.getLogger(ConversationsResource.class);
+
+    @Inject MemoryStoreSelector storeSelector;
+
+    @Inject SecurityIdentity identity;
+
+    @Inject ApiKeyContext apiKeyContext;
+
+    private MemoryStore store() {
+        return storeSelector.getStore();
+    }
+
+    private String currentUserId() {
+        return identity.getPrincipal().getName();
+    }
+
+    @GET
+    @Path("/conversations")
+    public Response listConversations(
+            @QueryParam("mode") String mode,
+            @QueryParam("after") String after,
+            @QueryParam("limit") Integer limit,
+            @QueryParam("query") String query) {
+        int pageSize = limit != null ? limit : 20;
+        ConversationListMode listMode = ConversationListMode.fromQuery(mode);
+        List<ConversationSummaryDto> internal =
+                store().listConversations(currentUserId(), query, after, pageSize, listMode);
+        List<ConversationSummary> data =
+                internal.stream().map(this::toClientConversationSummary).toList();
+        Map<String, Object> response = new HashMap<>();
+        response.put("data", data);
+        response.put("nextCursor", null);
+        return Response.ok(response).build();
+    }
+
+    @POST
+    @Path("/conversations")
+    public Response createConversation(CreateConversationRequest request) {
+        io.github.chirino.memory.api.dto.CreateConversationRequest internal =
+                new io.github.chirino.memory.api.dto.CreateConversationRequest();
+        internal.setTitle(request.getTitle());
+        internal.setMetadata(request.getMetadata());
+
+        ConversationDto dto = store().createConversation(currentUserId(), internal);
+        Conversation result = toClientConversation(dto);
+        return Response.status(Response.Status.CREATED).entity(result).build();
+    }
+
+    @GET
+    @Path("/conversations/{conversationId}")
+    public Response getConversation(@PathParam("conversationId") String conversationId) {
+        try {
+            ConversationDto dto = store().getConversation(currentUserId(), conversationId);
+            Conversation result = toClientConversation(dto);
+            return Response.ok(result).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @DELETE
+    @Path("/conversations/{conversationId}")
+    public Response deleteConversation(@PathParam("conversationId") String conversationId) {
+        try {
+            store().deleteConversation(currentUserId(), conversationId);
+            return Response.noContent().build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @GET
+    @Path("/conversations/{conversationId}/messages")
+    public Response listMessages(
+            @PathParam("conversationId") String conversationId,
+            @QueryParam("after") String after,
+            @QueryParam("limit") Integer limit,
+            @QueryParam("channel") String channel) {
+        LOG.infof(
+                "Listing messages for conversationId=%s, user=%s, after=%s, limit=%s,"
+                        + " channel=%s",
+                conversationId, currentUserId(), after, limit, channel);
+        MessageChannel requestedChannel =
+                channel != null ? MessageChannel.fromString(channel) : null;
+        try {
+            int pageSize = limit != null ? limit : 50;
+            List<MessageDto> internal;
+            String nextCursor = null;
+            if (apiKeyContext != null && apiKeyContext.hasValidApiKey()) {
+                // Agents typically request memory channel; delegate to store
+                PagedMessages context =
+                        store().getMessages(
+                                        currentUserId(),
+                                        conversationId,
+                                        after,
+                                        pageSize,
+                                        requestedChannel);
+                internal = context.getMessages();
+                nextCursor = context.getNextCursor();
+            } else {
+                // Users only see history channel
+                PagedMessages context =
+                        store().getMessages(
+                                        currentUserId(),
+                                        conversationId,
+                                        after,
+                                        pageSize,
+                                        MessageChannel.HISTORY);
+                internal = context.getMessages();
+                nextCursor = context.getNextCursor();
+            }
+            List<Message> data = internal.stream().map(this::toClientMessage).toList();
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", data);
+            response.put("nextCursor", nextCursor);
+            return Response.ok(response).build();
+        } catch (ResourceNotFoundException e) {
+            LOG.infof(
+                    "Conversation not found when listing messages: conversationId=%s, user=%s",
+                    conversationId, currentUserId());
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            LOG.infof(
+                    "Access denied when listing messages: conversationId=%s, user=%s, reason=%s",
+                    conversationId, currentUserId(), e.getMessage());
+            return forbidden(e);
+        } catch (IllegalArgumentException e) {
+            // Invalid UUID format - treat as not found
+            LOG.infof(
+                    "Invalid conversation ID format when listing messages: conversationId=%s,"
+                            + " user=%s",
+                    conversationId, currentUserId());
+            return notFound(new ResourceNotFoundException("conversation", conversationId));
+        }
+    }
+
+    @POST
+    @Path("/conversations/{conversationId}/messages")
+    public Response appendMessage(
+            @PathParam("conversationId") String conversationId, CreateMessageRequest request) {
+        try {
+            Message result;
+            if (apiKeyContext != null && apiKeyContext.hasValidApiKey()) {
+                // Agents provide fully-typed content and channel/memoryEpoch directly
+                List<CreateMessageRequest> messages = List.of(request);
+                List<MessageDto> appended =
+                        store().appendAgentMessages(currentUserId(), conversationId, messages);
+                MessageDto dto =
+                        appended != null && !appended.isEmpty()
+                                ? appended.get(appended.size() - 1)
+                                : null;
+                result = dto != null ? toClientMessage(dto) : null;
+            } else {
+                // Users are no longer allowed to append messages via this endpoint.
+                // Only authenticated agents (identified via API keys) may append.
+                return forbidden(
+                        new AccessDeniedException(
+                                "User messages cannot be appended via this endpoint"));
+            }
+            return Response.status(Response.Status.CREATED).entity(result).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @GET
+    @Path("/conversations/{conversationId}/memberships")
+    public Response listMemberships(@PathParam("conversationId") String conversationId) {
+        try {
+            List<ConversationMembershipDto> internal =
+                    store().listMemberships(currentUserId(), conversationId);
+            List<ConversationMembership> data =
+                    internal.stream().map(this::toClientConversationMembership).toList();
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", data);
+            return Response.ok(response).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @POST
+    @Path("/conversations/{conversationId}/forks")
+    public Response shareConversation(
+            @PathParam("conversationId") String conversationId, ShareConversationRequest request) {
+        try {
+            io.github.chirino.memory.api.dto.ShareConversationRequest internal =
+                    new io.github.chirino.memory.api.dto.ShareConversationRequest();
+            internal.setUserId(request.getUserId());
+            if (request.getAccessLevel() != null) {
+                internal.setAccessLevel(AccessLevel.fromString(request.getAccessLevel().value()));
+            }
+
+            ConversationMembershipDto dto =
+                    store().shareConversation(currentUserId(), conversationId, internal);
+            ConversationMembership result = toClientConversationMembership(dto);
+            return Response.status(Response.Status.CREATED).entity(result).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @PATCH
+    @Path("/conversations/{conversationId}/memberships/{userId}")
+    public Response updateMembership(
+            @PathParam("conversationId") String conversationId,
+            @PathParam("userId") String userId,
+            ShareConversationRequest request) {
+        try {
+            io.github.chirino.memory.api.dto.ShareConversationRequest internal =
+                    new io.github.chirino.memory.api.dto.ShareConversationRequest();
+            internal.setUserId(request.getUserId());
+            if (request.getAccessLevel() != null) {
+                internal.setAccessLevel(AccessLevel.fromString(request.getAccessLevel().value()));
+            }
+
+            ConversationMembershipDto dto =
+                    store().updateMembership(currentUserId(), conversationId, userId, internal);
+            ConversationMembership result = toClientConversationMembership(dto);
+            return Response.ok(result).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @DELETE
+    @Path("/conversations/{conversationId}/memberships/{userId}")
+    public Response deleteMembership(
+            @PathParam("conversationId") String conversationId,
+            @PathParam("userId") String userId) {
+        try {
+            store().deleteMembership(currentUserId(), conversationId, userId);
+            return Response.noContent().build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @POST
+    @Path("/conversations/{conversationId}/messages/{messageId}/fork")
+    public Response forkConversation(
+            @PathParam("conversationId") String conversationId,
+            @PathParam("messageId") String messageId,
+            ForkFromMessageRequest request) {
+        try {
+            if (request == null) {
+                request = new ForkFromMessageRequest();
+            }
+            io.github.chirino.memory.api.dto.ForkFromMessageRequest internal =
+                    new io.github.chirino.memory.api.dto.ForkFromMessageRequest();
+            internal.setTitle(request.getTitle());
+
+            ConversationDto dto =
+                    store().forkConversationAtMessage(
+                                    currentUserId(), conversationId, messageId, internal);
+            Conversation result = toClientConversation(dto);
+            return Response.status(Response.Status.CREATED).entity(result).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @GET
+    @Path("/conversations/{conversationId}/forks")
+    public Response listForks(@PathParam("conversationId") String conversationId) {
+        try {
+            List<ConversationForkSummaryDto> internal =
+                    store().listForks(currentUserId(), conversationId);
+            List<ConversationForkSummary> data =
+                    internal.stream().map(this::toClientConversationForkSummary).toList();
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", data);
+            return Response.ok(response).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @POST
+    @Path("/conversations/{conversationId}/transfer-ownership")
+    public Response transferOwnership(
+            @PathParam("conversationId") String conversationId, Map<String, String> body) {
+        try {
+            String newOwnerUserId = body.get("newOwnerUserId");
+            store().requestOwnershipTransfer(currentUserId(), conversationId, newOwnerUserId);
+            return Response.status(Response.Status.ACCEPTED).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @POST
+    @Path("/conversations/{conversationId}/summaries")
+    public Response createSummary(
+            @PathParam("conversationId") String conversationId, CreateSummaryRequest request) {
+        if (apiKeyContext == null || !apiKeyContext.hasValidApiKey()) {
+            return forbidden(
+                    new AccessDeniedException("Agent API key is required to create summaries"));
+        }
+        if (request == null) {
+            ErrorResponse error = new ErrorResponse();
+            error.setError("Invalid request");
+            error.setCode("bad_request");
+            error.setDetails(Map.of("message", "Summary request body is required"));
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+        if (request.getSummary() == null || request.getSummary().isBlank()) {
+            ErrorResponse error = new ErrorResponse();
+            error.setError("Invalid request");
+            error.setCode("bad_request");
+            error.setDetails(Map.of("message", "Summary text is required"));
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+        if (request.getTitle() == null || request.getTitle().isBlank()) {
+            ErrorResponse error = new ErrorResponse();
+            error.setError("Invalid request");
+            error.setCode("bad_request");
+            error.setDetails(Map.of("message", "Title is required"));
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+        if (request.getUntilMessageId() == null || request.getUntilMessageId().isBlank()) {
+            ErrorResponse error = new ErrorResponse();
+            error.setError("Invalid request");
+            error.setCode("bad_request");
+            error.setDetails(Map.of("message", "untilMessageId is required"));
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+        if (request.getSummarizedAt() == null) {
+            ErrorResponse error = new ErrorResponse();
+            error.setError("Invalid request");
+            error.setCode("bad_request");
+            error.setDetails(Map.of("message", "summarizedAt is required"));
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+        String untilMessageId = request.getUntilMessageId();
+        LOG.infof(
+                "Creating summary for conversationId=%s, untilMessageId=%s",
+                conversationId, untilMessageId);
+        try {
+            io.github.chirino.memory.api.dto.CreateSummaryRequest internal =
+                    new io.github.chirino.memory.api.dto.CreateSummaryRequest();
+            internal.setTitle(request.getTitle());
+            internal.setSummary(request.getSummary());
+            internal.setUntilMessageId(request.getUntilMessageId());
+            internal.setSummarizedAt(request.getSummarizedAt().format(ISO_FORMATTER));
+
+            MessageDto dto = store().createSummary(conversationId, internal);
+            LOG.infof(
+                    "Successfully created summary for conversationId=%s, summaryId=%s",
+                    conversationId, dto.getId());
+            Message result = toClientMessage(dto);
+            return Response.status(Response.Status.CREATED).entity(result).build();
+        } catch (ResourceNotFoundException e) {
+            LOG.infof("Conversation not found: conversationId=%s", conversationId);
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            LOG.infof("Access denied for conversationId=%s", conversationId);
+            return forbidden(e);
+        }
+    }
+
+    private Response notFound(ResourceNotFoundException e) {
+        ErrorResponse error = new ErrorResponse();
+        error.setError("Not found");
+        error.setCode("not_found");
+        error.setDetails(Map.of("resource", e.getResource(), "id", e.getId()));
+        return Response.status(Response.Status.NOT_FOUND).entity(error).build();
+    }
+
+    private Response forbidden(AccessDeniedException e) {
+        LOG.infof("Access denied for user=%s: %s", currentUserId(), e.getMessage());
+        ErrorResponse error = new ErrorResponse();
+        error.setError("Forbidden");
+        error.setCode("forbidden");
+        error.setDetails(Map.of("message", e.getMessage()));
+        return Response.status(Response.Status.FORBIDDEN).entity(error).build();
+    }
+
+    private ConversationSummary toClientConversationSummary(ConversationSummaryDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        ConversationSummary result = new ConversationSummary();
+        result.setId(dto.getId());
+        result.setTitle(dto.getTitle());
+        result.setOwnerUserId(dto.getOwnerUserId());
+        result.setCreatedAt(parseDate(dto.getCreatedAt()));
+        result.setUpdatedAt(parseDate(dto.getUpdatedAt()));
+        result.setLastMessagePreview(dto.getLastMessagePreview());
+        if (dto.getAccessLevel() != null) {
+            result.setAccessLevel(
+                    ConversationSummary.AccessLevelEnum.fromString(
+                            dto.getAccessLevel().name().toLowerCase()));
+        }
+        return result;
+    }
+
+    private Conversation toClientConversation(ConversationDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        Conversation result = new Conversation();
+        result.setId(dto.getId());
+        result.setTitle(dto.getTitle());
+        result.setOwnerUserId(dto.getOwnerUserId());
+        result.setCreatedAt(parseDate(dto.getCreatedAt()));
+        result.setUpdatedAt(parseDate(dto.getUpdatedAt()));
+        result.setLastMessagePreview(dto.getLastMessagePreview());
+        if (dto.getAccessLevel() != null) {
+            result.setAccessLevel(
+                    Conversation.AccessLevelEnum.fromString(
+                            dto.getAccessLevel().name().toLowerCase()));
+        }
+        result.setConversationGroupId(dto.getConversationGroupId());
+        result.setForkedAtMessageId(dto.getForkedAtMessageId());
+        result.setForkedAtConversationId(dto.getForkedAtConversationId());
+        return result;
+    }
+
+    private ConversationMembership toClientConversationMembership(ConversationMembershipDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        ConversationMembership result = new ConversationMembership();
+        result.setConversationGroupId(dto.getConversationGroupId());
+        result.setUserId(dto.getUserId());
+        if (dto.getAccessLevel() != null) {
+            result.setAccessLevel(
+                    ConversationMembership.AccessLevelEnum.fromString(
+                            dto.getAccessLevel().name().toLowerCase()));
+        }
+        result.setCreatedAt(parseDate(dto.getCreatedAt()));
+        return result;
+    }
+
+    private ConversationForkSummary toClientConversationForkSummary(
+            ConversationForkSummaryDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        ConversationForkSummary result = new ConversationForkSummary();
+        result.setConversationId(dto.getConversationId());
+        result.setConversationGroupId(dto.getConversationGroupId());
+        result.setForkedAtMessageId(dto.getForkedAtMessageId());
+        result.setForkedAtConversationId(dto.getForkedAtConversationId());
+        result.setTitle(dto.getTitle());
+        result.setCreatedAt(parseDate(dto.getCreatedAt()));
+        return result;
+    }
+
+    private Message toClientMessage(MessageDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        Message result = new Message();
+        result.setId(dto.getId());
+        result.setConversationId(dto.getConversationId());
+        result.setUserId(dto.getUserId());
+        if (dto.getChannel() != null) {
+            result.setChannel(Message.ChannelEnum.fromString(dto.getChannel().toValue()));
+        }
+        result.setMemoryEpoch(dto.getMemoryEpoch());
+        if (dto.getContent() != null) {
+            result.setContent(dto.getContent());
+        }
+        result.setCreatedAt(parseDate(dto.getCreatedAt()));
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractTextFromContent(List<Object> content) {
+        if (content == null) {
+            return null;
+        }
+        for (Object block : content) {
+            if (block == null) {
+                continue;
+            }
+            if (block instanceof Map<?, ?> map) {
+                Object text = map.get("text");
+                if (text instanceof String s && !s.isBlank()) {
+                    return s;
+                }
+            } else if (block instanceof String s && !s.isBlank()) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    private OffsetDateTime parseDate(String value) {
+        if (value == null) {
+            return null;
+        }
+        return OffsetDateTime.parse(value, ISO_FORMATTER);
+    }
+}

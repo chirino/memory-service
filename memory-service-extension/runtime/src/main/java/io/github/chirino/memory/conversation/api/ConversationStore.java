@@ -1,0 +1,12 @@
+package io.github.chirino.memory.conversation.api;
+
+public interface ConversationStore {
+
+    void appendUserMessage(String conversationId, String content);
+
+    void appendAgentMessage(String conversationId, String content);
+
+    default void appendPartialAgentMessage(String conversationId, String delta) {}
+
+    default void markCompleted(String conversationId) {}
+}

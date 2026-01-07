@@ -1,0 +1,929 @@
+openapi: 3.1.0
+info:
+  title: Memory Service API
+  version: v1
+  description: |-
+    Memory Service for AI agents.
+
+    The service stores all messages exchanged between agents, users, and
+    other actors, supports replay and forking of conversations, and exposes
+    user-facing and agent-facing APIs. Conversation access is controlled by
+    per-user permissions (owner, manager, writer, reader).
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Conversations
+    description: APIs for listing, reading, writing, and sharing conversations (user and agent views).
+  - name: Search
+    description: Semantic and keyword search APIs.
+  - name: System
+    description: Health and metadata endpoints.
+paths:
+  /v1/health:
+    get:
+      tags: [System]
+      summary: Health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        default:
+          $ref: '#/components/responses/Error'
+
+  ############################################################
+  # User-facing conversation APIs
+  ############################################################
+
+  /v1/conversations:
+    get:
+      tags: [Conversations]
+      summary: List conversations visible to current user
+      description: |-
+        Lists all conversations the current user has access to (owner, manager, writer, or reader).
+      operationId: listConversations
+      parameters:
+        - name: mode
+          in: query
+          required: false
+          description: |-
+            Listing mode for conversations.
+            - `all`: include all conversations the user can access (roots and forks).
+            - `roots`: only include root conversations.
+            - `latest-fork`: include the most recently updated conversation per root tree.
+          schema:
+            type: string
+            enum: [all, roots, latest-fork]
+            default: all
+        - name: after
+          in: query
+          required: false
+          description: Cursor for pagination; returns items after this conversation id.
+          schema:
+            type: string
+            nullable: true
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of conversations to return.
+          schema:
+            type: integer
+            default: 20
+        - name: query
+          in: query
+          required: false
+          description: Optional text query for basic title/metadata search.
+          schema:
+            type: string
+            nullable: true
+      responses:
+        '200':
+          description: A list of conversations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConversationSummary'
+                  nextCursor:
+                    type: string
+                    nullable: true
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    post:
+      tags: [Conversations]
+      summary: Create a conversation
+      description: |-
+        Creates a new conversation owned by the current user.
+      operationId: createConversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationRequest'
+      responses:
+        '201':
+          description: The created conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}:
+    get:
+      tags: [Conversations]
+      summary: Get a conversation
+      description: Retrieve a conversation the user has access to.
+      operationId: getConversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          description: Conversation identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    delete:
+      tags: [Conversations]
+      summary: Delete a conversation
+      description: |-
+        Deletes a conversation. Only the owner (or manager, depending on policy) may delete.
+      operationId: deleteConversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Conversation deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/messages:
+    get:
+      tags: [Conversations]
+      summary: List conversation messages
+      description: |-
+        Returns messages in a conversation, ordered by creation time.
+
+        The `channel` parameter determines which logical channel of messages
+        is returned:
+
+        - `history` (default) returns the user-visible conversation between
+          users and the agent.
+        - `memory` returns agent memory messages which are typically not
+          shown directly to end users.
+      operationId: listConversationMessages
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: after
+          in: query
+          required: false
+          description: Cursor for pagination; returns messages after this message id.
+          schema:
+            type: string
+            nullable: true
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: channel
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/MessageChannel'
+            default: history
+          description: |-
+            Channel of messages to return. Defaults to `history` for the
+            user-visible conversation; `memory` returns agent memory messages.
+      responses:
+        '200':
+          description: A list of messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  nextCursor:
+                    type: string
+                    nullable: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    post:
+      tags: [Conversations]
+      summary: Append a message
+      description: |-
+        Appends a new message to the conversation.
+
+        This endpoint is used by both end-user clients and agents.
+        The service determines whether the caller is a user or an agent
+        based on authentication (for example, API keys or tokens) and
+        stores the message with the appropriate internal role and visibility.
+      operationId: appendConversationMessage
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMessageRequest'
+      responses:
+        '201':
+          description: The created message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/memberships:
+    get:
+      tags: [Conversations]
+      summary: List conversation memberships
+      description: |-
+        Lists all users that have access to the conversation and their access levels.
+      operationId: listConversationMemberships
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Memberships for the conversation.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConversationMembership'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/messages/{messageId}/fork:
+    post:
+      tags: [Conversations]
+      summary: Fork a conversation at a given user message
+      description: |-
+        Creates a new conversation that replays history up to just before the selected
+        user message and then diverges starting at that point.
+
+        The fork point must be an existing user-authored message; in the new forked
+        conversation that original message is not present and the next user message
+        is supplied by the caller in a follow-up request.
+      operationId: forkConversationAtMessage
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForkFromMessageRequest'
+      responses:
+        '201':
+          description: The newly created forked conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/forks:
+    get:
+      tags: [Conversations]
+      summary: List forks for a conversation
+      description: |-
+        Returns all forked conversations that share the same root conversation as the
+        given conversation. Each fork entry includes the message id at which it forked
+        and the timestamp when the forked conversation was created.
+
+        This is intended for UIs that want to fetch all fork points once per conversation
+        and then decide how to render branch navigation (e.g., which is the oldest fork).
+      operationId: listConversationForks
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Forked conversations related to this conversation's root.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConversationForkSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    post:
+      tags: [Conversations]
+      summary: Share conversation with another user
+      description: |-
+        Grants another user access to the conversation with the specified access level.
+      operationId: shareConversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareConversationRequest'
+      responses:
+        '201':
+          description: Created membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationMembership'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/memberships/{userId}:
+    patch:
+      tags: [Conversations]
+      summary: Update a member's access level
+      operationId: updateConversationMembership
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accessLevel:
+                  $ref: '#/components/schemas/AccessLevel'
+      responses:
+        '200':
+          description: Updated membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationMembership'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    delete:
+      tags: [UserConversations]
+      summary: Remove a member from the conversation
+      operationId: deleteConversationMembership
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Membership removed.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/transfer-ownership:
+    post:
+      tags: [Conversations]
+      summary: Request ownership transfer
+      description: |-
+        Initiates a transfer of conversation ownership to another user. The other
+        user must accept the transfer via a separate API or out-of-band process.
+      operationId: transferConversationOwnership
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newOwnerUserId
+              properties:
+                newOwnerUserId:
+                  type: string
+      responses:
+        '202':
+          description: Ownership transfer requested.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/summaries:
+    post:
+      tags: [Conversations]
+      summary: Store a summarization of previous messages
+      description: |-
+        Stores an internal summarization of previous messages in the conversation.
+        Summary messages are not visible in user-facing message lists.
+        Requires a valid agent API key.
+      operationId: createConversationSummary
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSummaryRequest'
+      responses:
+        '201':
+          description: The created summary message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  ############################################################
+  # Semantic search
+  ############################################################
+
+  /v1/user/search/messages:
+    post:
+      tags: [Search]
+      summary: Semantic search across user's conversations
+      description: |-
+        Performs semantic and/or keyword search across all conversations the user has access to.
+        Backed by an internal vector store (pgvector, Milvus, MongoDB, etc.).
+      operationId: searchMessages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchMessagesRequest'
+      responses:
+        '200':
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SearchResult'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    AccessLevel:
+      type: string
+      description: Access level of a user for a conversation.
+      enum:
+        - owner
+        - manager
+        - writer
+        - reader
+
+    ConversationSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+          nullable: true
+        ownerUserId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        lastMessagePreview:
+          type: string
+          nullable: true
+        accessLevel:
+          $ref: '#/components/schemas/AccessLevel'
+      example:
+        id: "conv_01HF8XH1XABCD1234EFGH5678"
+        title: "Brainstorming UI for memory service"
+        ownerUserId: "user_1234"
+        createdAt: "2025-01-10T14:32:05Z"
+        updatedAt: "2025-01-10T14:45:12Z"
+        lastMessagePreview: "Let’s try modeling forks as separate conversations…"
+        accessLevel: "owner"
+
+    Conversation:
+      allOf:
+        - $ref: '#/components/schemas/ConversationSummary'
+        - type: object
+          properties:
+            conversationGroupId:
+              type: string
+            forkedAtMessageId:
+              type: string
+              nullable: true
+            forkedAtConversationId:
+              type: string
+              nullable: true
+          example:
+            id: "conv_01HF8XH1XABCD1234EFGH5678"
+            title: "Brainstorming UI for memory service"
+            ownerUserId: "user_1234"
+            createdAt: "2025-01-10T14:32:05Z"
+            updatedAt: "2025-01-10T14:45:12Z"
+            lastMessagePreview: "Let’s try modeling forks as separate conversations…"
+            accessLevel: "owner"
+            conversationGroupId: "conv_01HF8XH1XABCD1234EFGH5678"
+            forkedAtMessageId: null
+            forkedAtConversationId: null
+
+    CreateConversationRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+      example:
+        title: "Chat with support bot"
+        metadata:
+          source: "web-chat"
+          projectId: "proj_7890"
+
+    ConversationMembership:
+      type: object
+      properties:
+        conversationGroupId:
+          type: string
+        userId:
+          type: string
+        accessLevel:
+          $ref: '#/components/schemas/AccessLevel'
+        createdAt:
+          type: string
+          format: date-time
+
+    ConversationForkSummary:
+      type: object
+      description: Summary of a forked conversation originating at a given message.
+      properties:
+        conversationId:
+          type: string
+        conversationGroupId:
+          type: string
+          description: Conversation group id shared by this branch.
+        forkedAtMessageId:
+          type: string
+          description: Message id at which this forked conversation diverged.
+        forkedAtConversationId:
+          type: string
+          nullable: true
+          description: Conversation id where the fork occurred.
+        title:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    ShareConversationRequest:
+      type: object
+      required:
+        - userId
+        - accessLevel
+      properties:
+        userId:
+          type: string
+        accessLevel:
+          $ref: '#/components/schemas/AccessLevel'
+        createdAt:
+          type: string
+          format: date-time
+
+    ForkFromMessageRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          nullable: true
+          description: Optional title for the new forked conversation.
+
+    MessageChannel:
+      type: string
+      description: Logical channel of the message within the conversation.
+      enum:
+        - history
+        - memory
+        - summary
+
+    Message:
+      type: object
+      required:
+        - id
+        - conversationId
+        - channel
+        - content
+        - createdAt
+      properties:
+        id:
+          type: string
+        conversationId:
+          type: string
+        userId:
+          type: string
+          nullable: true
+          description: |-
+            Human user this message is associated with.
+            For history messages authored by a user, this is the sender.
+            For agent messages, this is the user the agent is responding to.
+        channel:
+          $ref: '#/components/schemas/MessageChannel'
+        memoryEpoch:
+          type: integer
+          format: int64
+          nullable: true
+          description: |-
+            Logical memory epoch this message belongs to.
+            For history messages this is typically null. For memory messages,
+            the agent increments the epoch when starting a new memory version.
+        content:
+          type: array
+          description: |-
+            Opaque, agent-defined message content blocks.
+            Different agents may use different schemas; the memory-service
+            stores and returns them without interpretation.
+          items: {}
+        createdAt:
+          type: string
+          format: date-time
+      example:
+        id: "msg_01HF8XJQWXYZ9876ABCD5432"
+        conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
+        userId: "user_1234"
+        channel: "history"
+        memoryEpoch: null
+        content:
+          - type: "text"
+            text: "Here is a summary of what we discussed so far…"
+        createdAt: "2025-01-10T14:40:12Z"
+
+    CreateMessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        userId:
+          type: string
+          nullable: true
+          description: |-
+            Human user this message is associated with.
+            For history messages authored by a user, this is the sender.
+            For agent messages, this is the user the agent is responding to.
+        channel:
+          $ref: '#/components/schemas/MessageChannel'
+        memoryEpoch:
+          type: integer
+          format: int64
+          nullable: true
+          description: |-
+            For memory messages, the epoch the agent wants this message to
+            belong to. The agent increments this when starting a new epoch.
+        content:
+          type: array
+          items: {}
+      example:
+        senderId: "user_1234"
+        channel: "history"
+        content:
+          - type: "text"
+            text: "Based on your past chats, here are three possible approaches…"
+
+    CreateSummaryRequest:
+      type: object
+      required:
+        - title
+        - summary
+        - untilMessageId
+        - summarizedAt
+      properties:
+        title:
+          type: string
+          description: Conversation title to store/update.
+        summary:
+          type: string
+          description: Summary text.
+        untilMessageId:
+          type: string
+          description: Highest message id covered by the summary (inclusive).
+        summarizedAt:
+          type: string
+          format: date-time
+          description: Timestamp of the last message covered by the summary.
+      example:
+        title: "Conversation forking design"
+        summary: "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch."
+        untilMessageId: "msg_01HF8XJQWXYZ9876ABCD5431"
+        summarizedAt: "2024-05-01T12:34:56Z"
+
+    SearchMessagesRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Natural language query.
+        topK:
+          type: integer
+          default: 20
+        conversationIds:
+          type: array
+          items:
+            type: string
+          nullable: true
+        before:
+          type: string
+          nullable: true
+          description: Optional upper bound message id for temporal filtering.
+      example:
+        query: "summary of memory service design decisions"
+        topK: 5
+        conversationIds:
+          - "conv_01HF8XH1XABCD1234EFGH5678"
+          - "conv_01HF8XH1XABCD1234EFGH5679"
+        before: "msg_01HF8XJQWXYZ9876ABCD5431"
+
+    SearchResult:
+      type: object
+      properties:
+        message:
+          $ref: '#/components/schemas/Message'
+        score:
+          type: number
+          format: float
+        highlights:
+          type: string
+          nullable: true
+      example:
+        message:
+          id: "msg_01HF8XJQWXYZ9876ABCD5430"
+          conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
+          role: "user"
+          visibility: "user"
+          content:
+            - type: "text"
+              text: "Help me design a memory service for my agent."
+          metadata:
+            source: "search"
+          createdAt: "2025-01-10T14:32:05Z"
+        score: 0.93
+        highlights: "design a memory service for my agent"

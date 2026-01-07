@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.chirino.memory-service</groupId>
+    <artifactId>memory-service-parent</artifactId>
+    <version>999-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>memory-service-client</artifactId>
+  <packaging>jar</packaging>
+  <name>Memory Service - Client</name>
+
+  <dependencies>
+    <!-- OpenAPI client generation for Java -->
+    <dependency>
+      <groupId>io.quarkiverse.openapi.generator</groupId>
+      <artifactId>quarkus-openapi-generator</artifactId>
+      <version>2.13.0-lts</version>
+    </dependency>
+    <!-- OIDC integration for OpenAPI generator (required even when security generation is disabled) -->
+    <dependency>
+      <groupId>io.quarkiverse.openapi.generator</groupId>
+      <artifactId>quarkus-openapi-generator-oidc</artifactId>
+      <version>2.13.0-lts</version>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-oidc</artifactId>
+    </dependency>
+    <!-- REST client support required by the generated OpenAPI client -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest-client-jackson</artifactId>
+    </dependency>
+    <!-- Security / OIDC types used by shared client filters -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-security</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+        <version>3.1.8</version>
+        <executions>
+          <execution>
+            <id>make-index</id>
+            <goals>
+              <goal>jandex</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <!--
+                      The Llama Stack OpenAPI spec is extremely large and generates
+                      helper classes with very long names under
+                      org.openapi.quarkus.llamastack_openapi_yml.* which can exceed
+                      filesystem path limits on some platforms.
+
+                      We only need the Memory Service client types (under
+                      io.github.chirino.memory.client) for this module, so we
+                      explicitly exclude the generated Llama Stack classes from
+                      compilation.
+                    -->
+          <excludes>
+            <exclude>org/openapi/quarkus/llamastack_openapi_yml/**</exclude>
+          </excludes>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

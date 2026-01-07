@@ -1,0 +1,38 @@
+package io.github.chirino.memory.vector;
+
+import io.github.chirino.memory.api.dto.SearchMessagesRequest;
+import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.store.impl.MongoMemoryStore;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import java.util.List;
+
+/**
+ * Placeholder MongoDB-backed implementation.
+ *
+ * For now this delegates to MongoMemoryStore.searchMessages, which
+ * performs regex/keyword-based search. Once a vector-capable MongoDB
+ * deployment (e.g., Atlas Vector Search) and a message_embeddings
+ * collection are available, this class can be updated to perform true
+ * vector similarity search.
+ */
+@ApplicationScoped
+public class MongoVectorStore implements VectorStore {
+
+    @Inject MongoMemoryStore mongoMemoryStore;
+
+    @Override
+    public boolean isEnabled() {
+        return true;
+    }
+
+    @Override
+    public List<SearchResultDto> search(String userId, SearchMessagesRequest request) {
+        return mongoMemoryStore.searchMessages(userId, request);
+    }
+
+    @Override
+    public void upsertSummaryEmbedding(String conversationId, String messageId, float[] embedding) {
+        // no-op until Mongo vector support is implemented
+    }
+}

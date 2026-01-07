@@ -1,0 +1,37 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1-initial-schema
+      author: memory-service
+      changes:
+        - sqlFile:
+            path: db/schema.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 2-pgvector-schema
+      author: memory-service
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: 1
+            sql: SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN 1 ELSE 0 END
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              CREATE EXTENSION IF NOT EXISTS vector;
+              CREATE TABLE IF NOT EXISTS message_embeddings (
+                  message_id UUID PRIMARY KEY REFERENCES messages (id) ON DELETE CASCADE,
+                  conversation_id UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+                  embedding vector(256) NOT NULL,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+              CREATE INDEX IF NOT EXISTS idx_message_embeddings_conversation
+                  ON message_embeddings (conversation_id);
+              CREATE INDEX IF NOT EXISTS idx_message_embeddings_embedding
+                  ON message_embeddings
+                  USING ivfflat (embedding vector_cosine_ops)
+                  WITH (lists = 100);

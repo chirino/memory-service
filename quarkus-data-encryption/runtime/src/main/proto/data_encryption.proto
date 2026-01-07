@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package data.encryption;
+
+option java_multiple_files = true;
+option java_package = "memory.service.io.github.chirino.dataencryption";
+option java_outer_classname = "DataEncryption";
+
+message EncryptionEnvelope {
+  uint32 version = 1;
+  string provider_id = 2;
+  bytes payload = 3;
+}
