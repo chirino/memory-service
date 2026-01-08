@@ -237,3 +237,62 @@ service SearchService {
   rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
   rpc CreateSummary(CreateSummaryRequest) returns (Message);
 }
+
+service ResponseResumerService {
+  // Stream response tokens for a conversation
+  rpc StreamResponseTokens(stream StreamResponseTokenRequest) returns (StreamResponseTokenResponse);
+  
+  // Replay cached response tokens from a resume position
+  rpc ReplayResponseTokens(ReplayResponseTokensRequest) returns (stream ReplayResponseTokensResponse);
+  
+  // Check if response resumer is enabled
+  rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
+  
+  // Check if a conversation has a response in progress
+  rpc HasResponseInProgress(HasResponseInProgressRequest) returns (HasResponseInProgressResponse);
+  
+  // Check which conversations have responses in progress
+  rpc CheckConversations(CheckConversationsRequest) returns (CheckConversationsResponse);
+}
+
+message StreamResponseTokenRequest {
+  string conversation_id = 1;  // Only in first message
+  string token = 2;            // Token content
+  bool complete = 3;           // Set to true in final message
+}
+
+message StreamResponseTokenResponse {
+  bool success = 1;
+  string error_message = 2;    // Only set if success=false
+  int64 current_offset = 3;    // Current cumulative byte offset
+}
+
+message ReplayResponseTokensRequest {
+  string conversation_id = 1;
+  int64 resume_position = 2;    // Byte offset to resume from
+}
+
+message ReplayResponseTokensResponse {
+  string token = 1;
+  int64 offset = 2;            // Cumulative byte offset after this token
+}
+
+message IsEnabledResponse {
+  bool enabled = 1;
+}
+
+message HasResponseInProgressRequest {
+  string conversation_id = 1;
+}
+
+message HasResponseInProgressResponse {
+  bool in_progress = 1;
+}
+
+message CheckConversationsRequest {
+  repeated string conversation_ids = 1;
+}
+
+message CheckConversationsResponse {
+  repeated string conversation_ids = 1;  // Only IDs with responses in progress
+}

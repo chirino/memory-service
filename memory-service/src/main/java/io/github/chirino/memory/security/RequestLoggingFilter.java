@@ -22,14 +22,16 @@ public class RequestLoggingFilter implements ContainerRequestFilter {
     public void filter(ContainerRequestContext requestContext) throws IOException {
         String method = requestContext.getMethod();
         String path = requestContext.getUriInfo().getPath();
-        String authHeader = requestContext.getHeaderString("Authorization");
+
+        String principalName = "";
+        if (identity != null && !identity.isAnonymous()) {
+            principalName = identity.getPrincipal().getName();
+        }
+
+        String apiKey = requestContext.getHeaderString(ApiKeyRequestFilter.HEADER_NAME);
 
         LOG.infof(
-                "Incoming request: %s %s, Auth Header present: %b",
-                method, path, (authHeader != null && !authHeader.isEmpty()));
-
-        if (identity != null && !identity.isAnonymous()) {
-            LOG.infof("Authenticated user: %s", identity.getPrincipal().getName());
-        }
+                "Incoming request: %s %s => principal name: %s, has api key: %b",
+                method, path, principalName, apiKey != null);
     }
 }

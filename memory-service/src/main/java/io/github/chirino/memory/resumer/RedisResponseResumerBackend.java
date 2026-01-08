@@ -1,4 +1,4 @@
-package io.github.chirino.memory.conversation.runtime;
+package io.github.chirino.memory.resumer;
 
 import io.quarkus.redis.client.RedisClientName;
 import io.quarkus.redis.datasource.ReactiveRedisDataSource;
@@ -21,13 +21,14 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
-public class RedisResponseResumer implements ResponseResumer {
+public class RedisResponseResumerBackend implements ResponseResumerBackend {
 
-    private static final Logger LOG = Logger.getLogger(RedisResponseResumer.class);
+    private static final Logger LOG = Logger.getLogger(RedisResponseResumerBackend.class);
     private static final String STREAM_KEY_PREFIX = "conversation:response:";
     private static final String TOKEN_FIELD = "t";
 
@@ -39,7 +40,7 @@ public class RedisResponseResumer implements ResponseResumer {
     private volatile ReactiveKeyCommands<String> keys;
 
     @Inject
-    public RedisResponseResumer(
+    public RedisResponseResumerBackend(
             @ConfigProperty(name = "memory-service.response-resumer") Optional<String> resumerType,
             @ConfigProperty(name = "memory-service.response-resumer.redis.client")
                     Optional<String> clientName,
@@ -87,16 +88,20 @@ public class RedisResponseResumer implements ResponseResumer {
 
     @Override
     public ResponseRecorder recorder(String conversationId) {
+        String streamKey = streamKey(conversationId);
+        LOG.infof(
+                "[REDIS] Creating recorder for conversationId=%s, streamKey=%s, enabled=%s",
+                conversationId, streamKey, enabled());
         if (!enabled()) {
-            return ResponseResumer.noop().recorder(conversationId);
+            return new NoopResponseRecorder();
         }
-        return new RedisResponseRecorder(stream, keys, streamKey(conversationId));
+        return new RedisResponseRecorder(stream, keys, streamKey);
     }
 
     @Override
     public Multi<String> replay(String conversationId, long resumePosition) {
         if (!enabled()) {
-            return ResponseResumer.noop().replay(conversationId, resumePosition);
+            return Multi.createFrom().empty();
         }
 
         String streamKey = streamKey(conversationId);
@@ -107,10 +112,6 @@ public class RedisResponseResumer implements ResponseResumer {
                 .transformToMulti(
                         exists -> {
                             if (exists != Boolean.TRUE) {
-                                LOG.infof(
-                                        "Response stream not found for conversationId=%s,"
-                                                + " resumePosition=%d. Returning empty replay.",
-                                        conversationId, resumePosition);
                                 return Multi.createFrom().empty();
                             }
                             return Multi.createFrom()
@@ -128,6 +129,29 @@ public class RedisResponseResumer implements ResponseResumer {
                         });
     }
 
+    @Override
+    public List<String> check(List<String> conversationIds) {
+        if (conversationIds == null || conversationIds.isEmpty()) {
+            return List.of();
+        }
+
+        return conversationIds.stream()
+                .filter(
+                        conversationId -> {
+                            try {
+                                return hasResponseInProgress(conversationId);
+                            } catch (Exception e) {
+                                LOG.warnf(
+                                        e,
+                                        "Failed to check if conversation %s has response in"
+                                                + " progress",
+                                        conversationId);
+                                return false;
+                            }
+                        })
+                .collect(Collectors.toList());
+    }
+
     private static String streamKey(String conversationId) {
         return STREAM_KEY_PREFIX + conversationId;
     }
@@ -138,7 +162,7 @@ public class RedisResponseResumer implements ResponseResumer {
             return;
         }
 
-        String startId = (offset.get() + 1) + "-0";
+        String startId = offset.get() + "-0";
         stream.xread(Map.of(streamKey, startId), new XReadArgs().block(Duration.ofSeconds(1)))
                 .subscribe()
                 .with(
@@ -165,6 +189,11 @@ public class RedisResponseResumer implements ResponseResumer {
         private final AtomicLong offset = new AtomicLong(0);
         private final ConcurrentLinkedQueue<String> queue = new ConcurrentLinkedQueue<>();
         private final AtomicBoolean sending = new AtomicBoolean(false);
+        private final AtomicBoolean completed = new AtomicBoolean(false);
+        private final AtomicLong pendingOperations = new AtomicLong(0);
+        private final AtomicBoolean deleted = new AtomicBoolean(false);
+
+        private static final String COMPLETE_SENTINEL = "__COMPLETE__";
 
         RedisResponseRecorder(
                 ReactiveStreamCommands<String, String, String> stream,
@@ -192,64 +221,115 @@ public class RedisResponseResumer implements ResponseResumer {
         }
 
         private void sendNext() {
+            // If we're already completed and deleted, don't process any more tokens
+            if (completed.get() && deleted.get()) {
+                sending.set(false);
+                return;
+            }
+
             String token = queue.poll();
             if (token == null) {
                 sending.set(false);
                 // If a token arrived while we were flipping the flag, start another drain so
-                // nothing is stranded.
-                if (!queue.isEmpty()) {
+                // nothing is stranded. But only if we're not completed.
+                if (!queue.isEmpty() && !completed.get()) {
                     drain();
+                } else if (completed.get() && pendingOperations.get() == 0 && !deleted.get()) {
+                    // If we're completed and all operations are done, delete the stream
+                    deleteStream();
                 }
                 return;
             }
+
+            // Check if this is the completion sentinel
+            if (COMPLETE_SENTINEL == token) {
+                sending.set(false);
+                // Wait for all pending operations to complete before deleting
+                // Don't trigger another drain - we're done processing the queue
+                if (pendingOperations.get() == 0 && !deleted.get()) {
+                    deleteStream();
+                }
+                // Don't call onSendComplete() or drain() - we're done processing
+                return;
+            }
+
             long tokenSize = token.length();
             long start = offset.getAndAdd(tokenSize);
             String id = (start + 1) + "-0";
 
-            // LOG.infof(
-            //         "Adding token to redis stream for %s at offset=%d (id=%s, tokenSize=%d).",
-            //         streamKey, start, id, tokenSize);
-
+            pendingOperations.incrementAndGet();
             stream.xadd(streamKey, new XAddArgs().id(id), Map.of(TOKEN_FIELD, token))
                     .subscribe()
                     .with(
-                            ignored -> onSendComplete(),
-                            failure -> {
-                                LOG.warnf(
-                                        failure,
-                                        "Failed to add token to redis stream for %s at offset=%d"
-                                                + " (id=%s, tokenSize=%d). This usually means the"
-                                                + " local offset is behind the stream head after a"
-                                                + " restart.",
-                                        streamKey,
-                                        start,
-                                        id,
-                                        tokenSize);
+                            ignored -> {
+                                long remaining = pendingOperations.decrementAndGet();
                                 onSendComplete();
+                                // If completed and this was the last operation, delete the stream
+                                if (completed.get() && remaining == 0 && !deleted.get()) {
+                                    deleteStream();
+                                }
+                            },
+                            failure -> {
+                                long remaining = pendingOperations.decrementAndGet();
+                                onSendComplete();
+                                // If completed and this was the last operation, delete the stream
+                                if (completed.get() && remaining == 0 && !deleted.get()) {
+                                    deleteStream();
+                                }
                             });
         }
 
         private void onSendComplete() {
             sending.set(false);
-            drain();
+            // Only drain if we're not completed - once completed, we only process the sentinel
+            if (!completed.get()) {
+                drain();
+            } else if (pendingOperations.get() == 0 && !deleted.get()) {
+                // If we're completed and all operations are done, delete the stream
+                deleteStream();
+            }
         }
 
         @Override
         public void complete() {
+            completed.set(true);
+            // Queue the completion sentinel - it will be processed after all tokens are sent
+            queue.offer(COMPLETE_SENTINEL);
+            drain();
+        }
+
+        private void deleteStream() {
+            if (!deleted.compareAndSet(false, true)) {
+                return;
+            }
             if (keys == null) {
+                LOG.warnf("Keys is null, cannot delete stream for streamKey=%s", streamKey);
+                deleted.set(false); // Reset if we can't delete
                 return;
             }
             keys.del(streamKey)
                     .subscribe()
                     .with(
-                            ignored ->
-                                    LOG.debugf(
-                                            "Deleted redis stream %s after completion", streamKey),
-                            failure ->
-                                    LOG.warnf(
-                                            failure,
-                                            "Failed to delete redis stream %s after completion",
-                                            streamKey));
+                            ignored -> {},
+                            failure -> {
+                                LOG.warnf(
+                                        failure,
+                                        "Failed to delete redis stream %s after completion",
+                                        streamKey);
+                                deleted.set(false); // Reset on failure so we can retry if needed
+                            });
+        }
+    }
+
+    private static final class NoopResponseRecorder implements ResponseRecorder {
+        @Override
+        public void record(String token) {
+            // No-op
+        }
+
+        @Override
+        public void complete() {
+            // No-op
         }
     }
 }

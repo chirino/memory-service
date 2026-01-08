@@ -12,6 +12,14 @@
   <packaging>jar</packaging>
   <name>Memory Service Proto</name>
 
+  <dependencies>
+    <!-- Provide the Quarkus gRPC APIs so generated stubs compile -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-grpc</artifactId>
+    </dependency>
+  </dependencies>
+
   <build>
     <resources>
       <resource>
@@ -21,5 +29,27 @@
         </includes>
       </resource>
     </resources>
+    <plugins>
+      <plugin>
+        <groupId>io.quarkus</groupId>
+        <artifactId>quarkus-maven-plugin</artifactId>
+        <version>${quarkus.platform.version}</version>
+        <configuration>
+          <skip>true</skip>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default</id>
+            <phase>none</phase>
+          </execution>
+          <execution>
+            <id>generate-grpc-code</id>
+            <goals>
+              <goal>generate-code</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
   </build>
 </project>

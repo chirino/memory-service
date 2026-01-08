@@ -19,6 +19,12 @@
       <artifactId>memory-service-client</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- Proto definitions for gRPC -->
+    <dependency>
+      <groupId>io.github.chirino.memory-service</groupId>
+      <artifactId>memory-service-proto</artifactId>
+      <version>${project.version}</version>
+    </dependency>
 
     <!-- LangChain4j support -->
     <dependency>
@@ -35,9 +41,10 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-datasource</artifactId>
     </dependency>
+    <!-- gRPC client for calling the memory-service -->
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-devservices</artifactId>
+      <artifactId>quarkus-grpc</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -65,20 +72,6 @@
 
   <build>
     <plugins>
-      <plugin>
-        <groupId>${quarkus.platform.group-id}</groupId>
-        <artifactId>quarkus-maven-plugin</artifactId>
-        <version>${quarkus.platform.version}</version>
-        <configuration>
-          <skip>true</skip>
-        </configuration>
-        <executions>
-          <execution>
-            <id>default</id>
-            <phase>none</phase>
-          </execution>
-        </executions>
-      </plugin>
       <plugin>
         <groupId>io.quarkus</groupId>
         <artifactId>quarkus-extension-maven-plugin</artifactId>

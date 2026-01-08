@@ -24,6 +24,7 @@ import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.grpc.v1.AppendMessageRequest;
+import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
 import io.github.chirino.memory.grpc.v1.Conversation;
 import io.github.chirino.memory.grpc.v1.ConversationMembership;
 import io.github.chirino.memory.grpc.v1.ConversationMembershipsServiceGrpc;
@@ -33,6 +34,7 @@ import io.github.chirino.memory.grpc.v1.DeleteConversationRequest;
 import io.github.chirino.memory.grpc.v1.DeleteMembershipRequest;
 import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
+import io.github.chirino.memory.grpc.v1.HasResponseInProgressRequest;
 import io.github.chirino.memory.grpc.v1.HealthResponse;
 import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
@@ -43,10 +45,16 @@ import io.github.chirino.memory.grpc.v1.ListMembershipsResponse;
 import io.github.chirino.memory.grpc.v1.ListMessagesRequest;
 import io.github.chirino.memory.grpc.v1.ListMessagesResponse;
 import io.github.chirino.memory.grpc.v1.MessagesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.MutinyResponseResumerServiceGrpc;
+import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
+import io.github.chirino.memory.grpc.v1.ReplayResponseTokensResponse;
+import io.github.chirino.memory.grpc.v1.ResponseResumerServiceGrpc;
 import io.github.chirino.memory.grpc.v1.SearchMessagesRequest;
 import io.github.chirino.memory.grpc.v1.SearchMessagesResponse;
 import io.github.chirino.memory.grpc.v1.SearchServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ShareConversationRequest;
+import io.github.chirino.memory.grpc.v1.StreamResponseTokenRequest;
+import io.github.chirino.memory.grpc.v1.StreamResponseTokenResponse;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
 import io.github.chirino.memory.grpc.v1.TransferOwnershipRequest;
 import io.github.chirino.memory.grpc.v1.UpdateMembershipRequest;
@@ -81,8 +89,13 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
 
 @ScenarioScope
@@ -120,28 +133,22 @@ public class StepDefinitions {
     private Message lastGrpcMessage;
     private String lastGrpcServiceMethod;
     private String lastGrpcResponseText;
+    private CompletableFuture<StreamResponseTokenResponse> inProgressStreamResponse;
+    private CountDownLatch streamStartedLatch;
+    private AtomicInteger streamedTokenCount;
+    private String replayedTokens;
+    private boolean replayFinishedBeforeStreamComplete;
 
     @io.cucumber.java.Before(order = 0)
     public void setupGrpcChannel() {
         if (grpcChannel != null) {
             return;
         }
-        String target =
-                ConfigProvider.getConfig()
-                        .getOptionalValue("test.url", String.class)
-                        .orElse("http://localhost:8081");
-        URI uri;
-        try {
-            uri = new URI(target);
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException("Invalid test.url configuration: " + target, e);
-        }
-        String host = uri.getHost() != null ? uri.getHost() : "localhost";
-        int port =
-                uri.getPort() != -1
-                        ? uri.getPort()
-                        : ("https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80);
-        grpcChannel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
+        GrpcEndpoint endpoint = resolveGrpcEndpoint();
+        grpcChannel =
+                ManagedChannelBuilder.forAddress(endpoint.host(), endpoint.port())
+                        .usePlaintext()
+                        .build();
     }
 
     @io.cucumber.java.After
@@ -227,6 +234,220 @@ public class StepDefinitions {
         memoryStoreSelector
                 .getStore()
                 .appendAgentMessages(currentUserId, conversationId, List.of(request));
+    }
+
+    @io.cucumber.java.en.Given("I have streamed tokens {string} to the conversation")
+    public void iHaveStreamedTokensToTheConversation(String tokens) throws Exception {
+        // Stream tokens character by character to simulate token streaming
+        Metadata metadata = buildGrpcMetadata();
+        var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+        if (metadata != null) {
+            mutinyStub =
+                    mutinyStub.withInterceptors(
+                            MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+
+        // Create a stream of token requests
+        var tokenRequests = new java.util.ArrayList<StreamResponseTokenRequest>();
+        for (int i = 0; i < tokens.length(); i++) {
+            String token = String.valueOf(tokens.charAt(i));
+            var requestBuilder = StreamResponseTokenRequest.newBuilder();
+            if (i == 0) {
+                requestBuilder.setConversationId(conversationId);
+            }
+            requestBuilder.setToken(token);
+            requestBuilder.setComplete(i == tokens.length() - 1);
+            tokenRequests.add(requestBuilder.build());
+        }
+
+        // Create a Multi stream that will complete after all items are emitted
+        var requestStream = io.smallrye.mutiny.Multi.createFrom().iterable(tokenRequests);
+
+        // Await the response with a timeout to prevent hanging
+        try {
+            mutinyStub
+                    .streamResponseTokens(requestStream)
+                    .await()
+                    .atMost(java.time.Duration.ofSeconds(10));
+        } catch (Exception e) {
+            throw new AssertionError("Failed to stream response tokens: " + e.getMessage(), e);
+        }
+    }
+
+    @io.cucumber.java.en.Given(
+            "I start streaming tokens {string} to the conversation with {int}ms delay and keep the"
+                    + " stream open for {int}ms")
+    public void iStartStreamingTokensToTheConversationWithDelay(
+            String tokens, int delayMs, int holdOpenMs) throws Exception {
+        Metadata metadata = buildGrpcMetadata();
+        var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+        if (metadata != null) {
+            mutinyStub =
+                    mutinyStub.withInterceptors(
+                            MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+
+        streamStartedLatch = new CountDownLatch(1);
+        streamedTokenCount = new AtomicInteger(0);
+        inProgressStreamResponse = new CompletableFuture<>();
+
+        var requestStream =
+                io.smallrye.mutiny.Multi.createFrom()
+                        .<StreamResponseTokenRequest>emitter(
+                                emitter -> {
+                                    Thread thread =
+                                            new Thread(
+                                                    () -> {
+                                                        try {
+                                                            for (int i = 0;
+                                                                    i < tokens.length();
+                                                                    i++) {
+                                                                String token =
+                                                                        String.valueOf(
+                                                                                tokens.charAt(i));
+                                                                var requestBuilder =
+                                                                        StreamResponseTokenRequest
+                                                                                .newBuilder();
+                                                                if (i == 0) {
+                                                                    requestBuilder
+                                                                            .setConversationId(
+                                                                                    conversationId);
+                                                                }
+                                                                requestBuilder.setToken(token);
+                                                                requestBuilder.setComplete(false);
+                                                                emitter.emit(
+                                                                        requestBuilder.build());
+                                                                if (streamedTokenCount
+                                                                                .incrementAndGet()
+                                                                        == 1) {
+                                                                    streamStartedLatch.countDown();
+                                                                }
+                                                                if (delayMs > 0) {
+                                                                    Thread.sleep(delayMs);
+                                                                }
+                                                            }
+                                                            if (holdOpenMs > 0) {
+                                                                Thread.sleep(holdOpenMs);
+                                                            }
+                                                            emitter.emit(
+                                                                    StreamResponseTokenRequest
+                                                                            .newBuilder()
+                                                                            .setComplete(true)
+                                                                            .build());
+                                                            emitter.complete();
+                                                        } catch (InterruptedException e) {
+                                                            Thread.currentThread().interrupt();
+                                                            emitter.fail(e);
+                                                        } catch (Exception e) {
+                                                            emitter.fail(e);
+                                                        }
+                                                    },
+                                                    "response-resumer-stream");
+                                    thread.setDaemon(true);
+                                    thread.start();
+                                });
+
+        mutinyStub
+                .streamResponseTokens(requestStream)
+                .subscribe()
+                .with(
+                        inProgressStreamResponse::complete,
+                        inProgressStreamResponse::completeExceptionally);
+    }
+
+    @io.cucumber.java.en.Given("I wait for the response stream to send at least {int} tokens")
+    public void iWaitForTheResponseStreamToSendAtLeastTokens(int count)
+            throws InterruptedException {
+        if (streamStartedLatch == null || streamedTokenCount == null) {
+            throw new AssertionError("No response stream is in progress");
+        }
+        if (!streamStartedLatch.await(5, TimeUnit.SECONDS)) {
+            throw new AssertionError("Timed out waiting for response stream to start");
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (streamedTokenCount.get() < count && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        if (streamedTokenCount.get() < count) {
+            throw new AssertionError(
+                    "Timed out waiting for at least " + count + " streamed tokens");
+        }
+    }
+
+    @io.cucumber.java.en.When(
+            "I replay response tokens from position {long} in a second session and collect tokens"
+                    + " {string}")
+    public void iReplayResponseTokensFromPositionInSecondSessionAndCollectTokens(
+            long resumePosition, String expectedTokens) {
+        if (inProgressStreamResponse == null) {
+            throw new AssertionError("No in-progress response stream found");
+        }
+
+        Metadata metadata = buildGrpcMetadata();
+        var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+        if (metadata != null) {
+            mutinyStub =
+                    mutinyStub.withInterceptors(
+                            MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+
+        var request =
+                ReplayResponseTokensRequest.newBuilder()
+                        .setConversationId(conversationId)
+                        .setResumePosition(resumePosition)
+                        .build();
+
+        int expectedCount = expectedTokens.length();
+        List<ReplayResponseTokensResponse> responses;
+        try {
+            responses =
+                    mutinyStub
+                            .replayResponseTokens(request)
+                            .select()
+                            .first(expectedCount)
+                            .collect()
+                            .asList()
+                            .await()
+                            .atMost(java.time.Duration.ofSeconds(10));
+        } catch (Exception e) {
+            throw new AssertionError(
+                    "Failed while replaying response tokens: " + e.getMessage(), e);
+        }
+
+        StringBuilder received = new StringBuilder();
+        for (ReplayResponseTokensResponse response : responses) {
+            received.append(response.getToken());
+        }
+
+        replayedTokens = received.toString();
+        if (!expectedTokens.equals(replayedTokens)) {
+            throw new AssertionError(
+                    "Expected replayed tokens to be \""
+                            + expectedTokens
+                            + "\" but was \""
+                            + replayedTokens
+                            + "\"");
+        }
+        replayFinishedBeforeStreamComplete = !inProgressStreamResponse.isDone();
+    }
+
+    @io.cucumber.java.en.Then("the replay should finish before the stream completes")
+    public void theReplayShouldFinishBeforeTheStreamCompletes() {
+        if (!replayFinishedBeforeStreamComplete) {
+            throw new AssertionError("Replay finished after the stream completed");
+        }
+    }
+
+    @io.cucumber.java.en.Then("I wait for the response stream to complete")
+    public void iWaitForTheResponseStreamToComplete() {
+        if (inProgressStreamResponse == null) {
+            throw new AssertionError("No response stream is in progress");
+        }
+        try {
+            inProgressStreamResponse.get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new AssertionError("Timed out waiting for response stream completion", e);
+        }
     }
 
     @io.cucumber.java.en.Given("there is a conversation owned by {string}")
@@ -1076,6 +1297,39 @@ public class StepDefinitions {
         }
     }
 
+    @io.cucumber.java.en.Then("the gRPC response field {string} should be true")
+    public void theGrpcResponseFieldShouldBeTrue(String fieldPath) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Boolean value = jsonPath.get(fieldPath);
+        assertThat("gRPC response field " + fieldPath, value, is(true));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response field {string} should be false")
+    public void theGrpcResponseFieldShouldBeFalse(String fieldPath) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Boolean value = jsonPath.get(fieldPath);
+        assertThat("gRPC response field " + fieldPath, value, is(false));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response field {string} should be {int}")
+    public void theGrpcResponseFieldShouldBe(String fieldPath, Integer expectedValue) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Object value = jsonPath.get(fieldPath);
+        // Handle both String and Integer types (JSON path might return String)
+        Integer actualValue;
+        if (value instanceof String) {
+            actualValue = Integer.valueOf((String) value);
+        } else if (value instanceof Integer) {
+            actualValue = (Integer) value;
+        } else if (value instanceof Number) {
+            actualValue = ((Number) value).intValue();
+        } else {
+            throw new AssertionError(
+                    "Expected integer value for field " + fieldPath + " but got: " + value);
+        }
+        assertThat("gRPC response field " + fieldPath, actualValue, is(expectedValue));
+    }
+
     @io.cucumber.java.en.Then("the conversation title should be {string}")
     public void theConversationTitleShouldBe(String expectedTitle) {
         var dto = memoryStoreSelector.getStore().getConversation(currentUserId, conversationId);
@@ -1084,7 +1338,16 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("I set context variable {string} to {string}")
     public void iSetContextVariableTo(String name, String value) {
-        contextVariables.put(name, value);
+        // Resolve template variables in the value before storing
+        String resolvedValue = renderTemplate(value);
+        // Remove surrounding quotes if present (from JSON serialization)
+        if (resolvedValue != null
+                && resolvedValue.length() >= 2
+                && resolvedValue.startsWith("\"")
+                && resolvedValue.endsWith("\"")) {
+            resolvedValue = resolvedValue.substring(1, resolvedValue.length() - 1);
+        }
+        contextVariables.put(name, resolvedValue);
     }
 
     @io.cucumber.java.en.Given("I set context variable {string} to json:")
@@ -1393,6 +1656,7 @@ public class StepDefinitions {
             case "ConversationsService" -> callConversationsService(method, metadata, body);
             case "ConversationMembershipsService" ->
                     callConversationMembershipsService(method, metadata, body);
+            case "ResponseResumerService" -> callResponseResumerService(method, metadata, body);
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported gRPC service: " + service + " for method " + method);
@@ -1417,25 +1681,26 @@ public class StepDefinitions {
         if (metadata != null) {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
-        return switch (method) {
-            case "ListMessages" -> {
-                var requestBuilder = ListMessagesRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+        switch (method) {
+            case "ListMessages":
+                {
+                    var requestBuilder = ListMessagesRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.listMessages(requestBuilder.build());
                 }
-                yield stub.listMessages(requestBuilder.build());
-            }
-            case "AppendMessage" -> {
-                var requestBuilder = AppendMessageRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+            case "AppendMessage":
+                {
+                    var requestBuilder = AppendMessageRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.appendMessage(requestBuilder.build());
                 }
-                yield stub.appendMessage(requestBuilder.build());
-            }
-            default ->
-                    throw new IllegalArgumentException(
-                            "Unsupported MessagesService method: " + method);
-        };
+            default:
+                throw new IllegalArgumentException("Unsupported MessagesService method: " + method);
+        }
     }
 
     private Message callSearchService(String method, Metadata metadata, String body)
@@ -1444,25 +1709,26 @@ public class StepDefinitions {
         if (metadata != null) {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
-        return switch (method) {
-            case "CreateSummary" -> {
-                var requestBuilder = CreateSummaryRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+        switch (method) {
+            case "CreateSummary":
+                {
+                    var requestBuilder = CreateSummaryRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.createSummary(requestBuilder.build());
                 }
-                yield stub.createSummary(requestBuilder.build());
-            }
-            case "SearchMessages" -> {
-                var requestBuilder = SearchMessagesRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+            case "SearchMessages":
+                {
+                    var requestBuilder = SearchMessagesRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.searchMessages(requestBuilder.build());
                 }
-                yield stub.searchMessages(requestBuilder.build());
-            }
-            default ->
-                    throw new IllegalArgumentException(
-                            "Unsupported SearchService method: " + method);
-        };
+            default:
+                throw new IllegalArgumentException("Unsupported SearchService method: " + method);
+        }
     }
 
     private Message callConversationsService(String method, Metadata metadata, String body)
@@ -1471,76 +1737,83 @@ public class StepDefinitions {
         if (metadata != null) {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
-        return switch (method) {
-            case "ListConversations" -> {
-                var requestBuilder = ListConversationsRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
-                }
-                yield stub.listConversations(requestBuilder.build());
-            }
-            case "CreateConversation" -> {
-                var requestBuilder =
-                        io.github.chirino.memory.grpc.v1.CreateConversationRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
-                }
-                Message response = stub.createConversation(requestBuilder.build());
-                if (response instanceof Conversation) {
-                    Conversation conv = (Conversation) response;
-                    if (conv.getId() != null && !conv.getId().isEmpty()) {
-                        conversationId = conv.getId();
-                        contextVariables.put("conversationId", conversationId);
+        switch (method) {
+            case "ListConversations":
+                {
+                    var requestBuilder = ListConversationsRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
                     }
+                    return stub.listConversations(requestBuilder.build());
                 }
-                yield response;
-            }
-            case "GetConversation" -> {
-                var requestBuilder = GetConversationRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
-                }
-                yield stub.getConversation(requestBuilder.build());
-            }
-            case "DeleteConversation" -> {
-                var requestBuilder = DeleteConversationRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
-                }
-                yield stub.deleteConversation(requestBuilder.build());
-            }
-            case "ForkConversation" -> {
-                var requestBuilder = ForkConversationRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
-                }
-                Message response = stub.forkConversation(requestBuilder.build());
-                if (response instanceof Conversation) {
-                    Conversation conv = (Conversation) response;
-                    if (conv.getId() != null && !conv.getId().isEmpty()) {
-                        contextVariables.put("forkedConversationId", conv.getId());
+            case "CreateConversation":
+                {
+                    var requestBuilder =
+                            io.github.chirino.memory.grpc.v1.CreateConversationRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
                     }
+                    Message response = stub.createConversation(requestBuilder.build());
+                    if (response instanceof Conversation) {
+                        Conversation conv = (Conversation) response;
+                        if (conv.getId() != null && !conv.getId().isEmpty()) {
+                            conversationId = conv.getId();
+                            contextVariables.put("conversationId", conversationId);
+                        }
+                    }
+                    return response;
                 }
-                yield response;
-            }
-            case "ListForks" -> {
-                var requestBuilder = ListForksRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+            case "GetConversation":
+                {
+                    var requestBuilder = GetConversationRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.getConversation(requestBuilder.build());
                 }
-                yield stub.listForks(requestBuilder.build());
-            }
-            case "TransferOwnership" -> {
-                var requestBuilder = TransferOwnershipRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+            case "DeleteConversation":
+                {
+                    var requestBuilder = DeleteConversationRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.deleteConversation(requestBuilder.build());
                 }
-                yield stub.transferOwnership(requestBuilder.build());
-            }
-            default ->
-                    throw new IllegalArgumentException(
-                            "Unsupported ConversationsService method: " + method);
-        };
+            case "ForkConversation":
+                {
+                    var requestBuilder = ForkConversationRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    Message response = stub.forkConversation(requestBuilder.build());
+                    if (response instanceof Conversation) {
+                        Conversation conv = (Conversation) response;
+                        if (conv.getId() != null && !conv.getId().isEmpty()) {
+                            contextVariables.put("forkedConversationId", conv.getId());
+                        }
+                    }
+                    return response;
+                }
+            case "ListForks":
+                {
+                    var requestBuilder = ListForksRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.listForks(requestBuilder.build());
+                }
+            case "TransferOwnership":
+                {
+                    var requestBuilder = TransferOwnershipRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.transferOwnership(requestBuilder.build());
+                }
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported ConversationsService method: " + method);
+        }
     }
 
     private Message callConversationMembershipsService(
@@ -1549,40 +1822,147 @@ public class StepDefinitions {
         if (metadata != null) {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
-        return switch (method) {
-            case "ListMemberships" -> {
-                var requestBuilder = ListMembershipsRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+        switch (method) {
+            case "ListMemberships":
+                {
+                    var requestBuilder = ListMembershipsRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.listMemberships(requestBuilder.build());
                 }
-                yield stub.listMemberships(requestBuilder.build());
-            }
-            case "ShareConversation" -> {
-                var requestBuilder = ShareConversationRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+            case "ShareConversation":
+                {
+                    var requestBuilder = ShareConversationRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.shareConversation(requestBuilder.build());
                 }
-                yield stub.shareConversation(requestBuilder.build());
-            }
-            case "UpdateMembership" -> {
-                var requestBuilder = UpdateMembershipRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+            case "UpdateMembership":
+                {
+                    var requestBuilder = UpdateMembershipRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.updateMembership(requestBuilder.build());
                 }
-                yield stub.updateMembership(requestBuilder.build());
-            }
-            case "DeleteMembership" -> {
-                var requestBuilder = DeleteMembershipRequest.newBuilder();
-                if (body != null && !body.isBlank()) {
-                    TextFormat.merge(body, requestBuilder);
+            case "DeleteMembership":
+                {
+                    var requestBuilder = DeleteMembershipRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.deleteMembership(requestBuilder.build());
                 }
-                yield stub.deleteMembership(requestBuilder.build());
-            }
-            default ->
-                    throw new IllegalArgumentException(
-                            "Unsupported ConversationMembershipsService method: " + method);
-        };
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported ConversationMembershipsService method: " + method);
+        }
     }
+
+    private Message callResponseResumerService(String method, Metadata metadata, String body)
+            throws Exception {
+        var stub = ResponseResumerServiceGrpc.newBlockingStub(grpcChannel);
+        if (metadata != null) {
+            stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+        switch (method) {
+            case "IsEnabled":
+                {
+                    return stub.isEnabled(Empty.newBuilder().build());
+                }
+            case "HasResponseInProgress":
+                {
+                    var requestBuilder = HasResponseInProgressRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.hasResponseInProgress(requestBuilder.build());
+                }
+            case "CheckConversations":
+                {
+                    var requestBuilder = CheckConversationsRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.checkConversations(requestBuilder.build());
+                }
+            case "StreamResponseTokens":
+                {
+                    // Note: This is a client streaming call, but we'll handle a single request
+                    // for testing purposes. In production, this would be a stream of requests.
+                    var requestBuilder = StreamResponseTokenRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    // For blocking stub, we can only send one request at a time
+                    // The actual implementation expects a stream, but for testing we'll send one
+                    var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+                    if (metadata != null) {
+                        mutinyStub =
+                                mutinyStub.withInterceptors(
+                                        MetadataUtils.newAttachHeadersInterceptor(metadata));
+                    }
+                    var request = requestBuilder.build();
+                    var requestStream = io.smallrye.mutiny.Multi.createFrom().item(request);
+                    return mutinyStub.streamResponseTokens(requestStream).await().indefinitely();
+                }
+            case "ReplayResponseTokens":
+                {
+                    // Note: This is a server streaming call. For testing, we'll get the first
+                    // response.
+                    var requestBuilder = ReplayResponseTokensRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    // For blocking stub, we can iterate through the stream
+                    var request = requestBuilder.build();
+                    Iterator<ReplayResponseTokensResponse> responses =
+                            stub.replayResponseTokens(request);
+                    if (responses.hasNext()) {
+                        return responses.next();
+                    }
+                    // Return an empty response if no tokens
+                    return ReplayResponseTokensResponse.newBuilder().build();
+                }
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported ResponseResumerService method: " + method);
+        }
+    }
+
+    private GrpcEndpoint resolveGrpcEndpoint() {
+        Config config = ConfigProvider.getConfig();
+        if (config.getOptionalValue("quarkus.grpc.server.enabled", Boolean.class).orElse(false)) {
+            String host =
+                    config.getOptionalValue("quarkus.grpc.server.host", String.class)
+                            .orElse("localhost");
+            int port =
+                    config.getOptionalValue("quarkus.grpc.server.test-port", Integer.class)
+                            .orElse(
+                                    config.getOptionalValue(
+                                                    "quarkus.grpc.server.port", Integer.class)
+                                            .orElse(9000));
+            return new GrpcEndpoint(host, port);
+        }
+        String target =
+                config.getOptionalValue("test.url", String.class).orElse("http://localhost:8081");
+        URI uri;
+        try {
+            uri = new URI(target);
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("Invalid test.url configuration: " + target, e);
+        }
+        String host = uri.getHost() != null ? uri.getHost() : "localhost";
+        int port =
+                uri.getPort() != -1
+                        ? uri.getPort()
+                        : ("https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80);
+        return new GrpcEndpoint(host, port);
+    }
+
+    private record GrpcEndpoint(String host, int port) {}
 
     private void clearRelationalData() {
         if (messageRepository.isUnsatisfied()) {

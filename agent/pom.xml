@@ -26,6 +26,11 @@
       <artifactId>memory-service-extension</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>io.github.chirino.memory-service</groupId>
+      <artifactId>memory-service-proto</artifactId>
+      <version>${project.version}</version>
+    </dependency>
 
     <!-- LangChain4j for the agent -->
     <dependency>
@@ -38,6 +43,11 @@
       <artifactId>quarkus-arc</artifactId>
     </dependency>
 
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-grpc</artifactId>
+    </dependency>
+
     <!-- PostgreSQL (to trigger dev services for the memory-service container) -->
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -46,6 +56,11 @@
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-oidc</artifactId>
+    </dependency>
+    <!-- Redis (to trigger dev services for the memory-service container) -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-redis-client</artifactId>
     </dependency>
     <!-- Core Quarkus for agent app -->
     <dependency>

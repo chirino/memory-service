@@ -16,6 +16,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -53,8 +54,51 @@ public class DevServicesMemoryServiceProcessor {
                 .setUnremovable()
                 .addBeanClasses(
                         "io.github.chirino.memory.conversation.runtime.NoopResponseResumer",
-                        "io.github.chirino.memory.conversation.runtime.RedisResponseResumer")
+                        "io.github.chirino.memory.conversation.runtime.GrpcResponseResumer")
                 .build();
+    }
+
+    /**
+     * Produces a MemoryServiceDevServicesConfigBuildItem by extracting memory-service
+     * configuration from dev services results. This follows the pattern of
+     * KeycloakDevServicesConfigBuildItem and allows other extensions to consume
+     * the memory-service configuration.
+     */
+    @BuildStep(onlyIf = {IsDevServicesSupportedByLaunchMode.class, DevServicesConfig.Enabled.class})
+    MemoryServiceDevServicesConfigBuildItem produceMemoryServiceConfig(
+            List<DevServicesResultBuildItem> devServicesResults) {
+        Map<String, String> config = new HashMap<>();
+        if (devServicesResults != null) {
+            for (DevServicesResultBuildItem result : devServicesResults) {
+                Map<String, String> resultConfig = result.getConfig();
+                if (resultConfig != null) {
+                    // Look for memory-service related config
+                    String url = resultConfig.get("memory-service-client.url");
+                    if (url != null) {
+                        config.put("memory-service-client.url", url);
+                    }
+                    String apiKey = resultConfig.get("memory-service-client.api-key");
+                    if (apiKey != null) {
+                        config.put("memory-service-client.api-key", apiKey);
+                    }
+                    String grpcHost = resultConfig.get("quarkus.grpc.clients.responseresumer.host");
+                    if (grpcHost != null) {
+                        config.put("quarkus.grpc.clients.responseresumer.host", grpcHost);
+                    }
+                    String grpcPort = resultConfig.get("quarkus.grpc.clients.responseresumer.port");
+                    if (grpcPort != null) {
+                        config.put("quarkus.grpc.clients.responseresumer.port", grpcPort);
+                    }
+                    String grpcPlainText =
+                            resultConfig.get("quarkus.grpc.clients.responseresumer.plain-text");
+                    if (grpcPlainText != null) {
+                        config.put(
+                                "quarkus.grpc.clients.responseresumer.plain-text", grpcPlainText);
+                    }
+                }
+            }
+        }
+        return new MemoryServiceDevServicesConfigBuildItem(config);
     }
 
     @BuildStep(onlyIf = {IsDevServicesSupportedByLaunchMode.class, DevServicesConfig.Enabled.class})
@@ -112,14 +156,15 @@ public class DevServicesMemoryServiceProcessor {
         if (configuredApiKey == null || configuredApiKey.isBlank()) {
             effectiveApiKey = generateRandomApiKey();
             generatedApiKey = true;
-            LOG.info(
-                    "No memory-service-client.api-key configured; generated a random API key for"
-                            + " Dev Services.");
+            LOG.info("No memory-service-client.api-key configured; generated a random API key.");
         } else {
             effectiveApiKey = configuredApiKey;
             generatedApiKey = false;
             LOG.debug("Using configured memory-service-client.api-key for Dev Services.");
         }
+
+        // Read response resumer configuration if set
+        final String responseResumerConfig = getResponseResumerConfig();
 
         LOG.info("Starting memory-service dev service...");
 
@@ -127,6 +172,18 @@ public class DevServicesMemoryServiceProcessor {
         configProviders.put(
                 "memory-service-client.url",
                 (Function<Startable, String>) s -> getConnectionInfo(s));
+
+        // Configure gRPC client using host, port, and TLS settings (as per Quarkus gRPC client
+        // configuration)
+        configProviders.put(
+                "quarkus.grpc.clients.responseresumer.host",
+                (Function<Startable, String>) s -> parseHost(getConnectionInfo(s)));
+        configProviders.put(
+                "quarkus.grpc.clients.responseresumer.port",
+                (Function<Startable, String>) s -> parsePort(getConnectionInfo(s)));
+        configProviders.put(
+                "quarkus.grpc.clients.responseresumer.plain-text",
+                (Function<Startable, String>) s -> parsePlainText(getConnectionInfo(s)));
 
         if (generatedApiKey) {
             configProviders.put("memory-service-client.api-key", s -> effectiveApiKey);
@@ -140,9 +197,6 @@ public class DevServicesMemoryServiceProcessor {
                                 new Supplier<Startable>() {
                                     @Override
                                     public Startable get() {
-                                        LOG.infof(
-                                                "Starting memory-service container (image:"
-                                                        + " memory-service-service:latest)");
                                         GenericContainer<?> container =
                                                 new GenericContainer<>(
                                                                 DockerImageName.parse(
@@ -153,6 +207,30 @@ public class DevServicesMemoryServiceProcessor {
                                                         .withLabel(
                                                                 DEV_SERVICE_LABEL,
                                                                 "memory-service");
+
+                                        // Pass response resumer configuration if set
+                                        if (responseResumerConfig != null
+                                                && !responseResumerConfig.isBlank()) {
+                                            // Set as Quarkus config property via environment
+                                            // variable.
+                                            // Note: Quarkus converts env vars to config properties
+                                            // by replacing
+                                            // underscores with dots. Since the property name is
+                                            // "memory-service.response-resumer" (with hyphens), we
+                                            // need to set
+                                            // it in a way that Quarkus can map it correctly.
+                                            // We use the format where dots and hyphens become
+                                            // underscores.
+                                            // Quarkus will attempt to match this to config
+                                            // properties.
+                                            container.withEnv(
+                                                    "MEMORY_SERVICE_RESPONSE_RESUMER",
+                                                    responseResumerConfig);
+                                            LOG.debugf(
+                                                    "Configuring memory-service container with"
+                                                            + " response-resumer: %s",
+                                                    responseResumerConfig);
+                                        }
 
                                         // Wait for Quarkus to report that it is listening instead
                                         // of relying on
@@ -238,6 +316,48 @@ public class DevServicesMemoryServiceProcessor {
                                             }
                                         }
 
+                                        // Configure Redis hosts for the memory-service container
+                                        // only if response-resumer is set to "redis".
+                                        // First check if Redis hosts are already configured in the
+                                        // app config.
+                                        // If not, look for the Redis dev service container.
+                                        if ("redis".equalsIgnoreCase(responseResumerConfig)) {
+                                            String redisHosts = null;
+                                            try {
+                                                redisHosts =
+                                                        ConfigProvider.getConfig()
+                                                                .getOptionalValue(
+                                                                        "quarkus.redis.hosts",
+                                                                        String.class)
+                                                                .orElse(null);
+                                            } catch (IllegalStateException e) {
+                                                // Config not available, will try dev service
+                                            }
+
+                                            // If not configured, look for Redis dev service
+                                            if (redisHosts == null || redisHosts.isBlank()) {
+                                                redisHosts = findRedisDevServiceUrl();
+                                            }
+
+                                            if (redisHosts != null && !redisHosts.isBlank()) {
+                                                String containerRedisHosts =
+                                                        redisHosts.replace(
+                                                                "localhost",
+                                                                "host.docker.internal");
+                                                LOG.infof(
+                                                        "Configuring memory-service container with"
+                                                                + " QUARKUS_REDIS_HOSTS=%s",
+                                                        containerRedisHosts);
+                                                container.withEnv(
+                                                        "QUARKUS_REDIS_HOSTS", containerRedisHosts);
+                                            } else {
+                                                LOG.warn(
+                                                        "Redis config not available. Container will"
+                                                                + " start without Redis"
+                                                                + " configuration.");
+                                            }
+                                        }
+
                                         container.start();
 
                                         String url =
@@ -266,6 +386,19 @@ public class DevServicesMemoryServiceProcessor {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
+    private String getResponseResumerConfig() {
+        try {
+            return ConfigProvider.getConfig()
+                    .getOptionalValue("memory-service.response-resumer", String.class)
+                    .orElse(null);
+        } catch (IllegalStateException e) {
+            LOG.debug(
+                    "Unable to read memory-service.response-resumer from config, using default.",
+                    e);
+            return null;
+        }
+    }
+
     private String getConnectionInfo(Startable startable) {
         if (startable instanceof StartableContainer) {
             StartableContainer<?> sc = (StartableContainer<?>) startable;
@@ -276,5 +409,99 @@ public class DevServicesMemoryServiceProcessor {
                     + container.getMappedPort(MEMORY_SERVICE_PORT);
         }
         return startable.getConnectionInfo();
+    }
+
+    private String parseHost(String url) {
+        if (url == null || url.isBlank()) {
+            return "localhost";
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            return uri.getHost() != null ? uri.getHost() : "localhost";
+        } catch (Exception e) {
+            LOG.debugf("Failed to parse host from URL: %s", url, e);
+            return "localhost";
+        }
+    }
+
+    private String parsePort(String url) {
+        if (url == null || url.isBlank()) {
+            return String.valueOf(MEMORY_SERVICE_PORT);
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            int port = uri.getPort();
+            if (port == -1) {
+                // Default port based on scheme
+                port = "https".equals(uri.getScheme()) ? 443 : 80;
+            }
+            return String.valueOf(port);
+        } catch (Exception e) {
+            LOG.debugf("Failed to parse port from URL: %s", url, e);
+            return String.valueOf(MEMORY_SERVICE_PORT);
+        }
+    }
+
+    private String parsePlainText(String url) {
+        if (url == null || url.isBlank()) {
+            // Default to plain-text (HTTP) for dev services
+            return "true";
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            // If HTTPS, disable plain-text (enable TLS). If HTTP, enable plain-text.
+            return "https".equals(uri.getScheme()) ? "false" : "true";
+        } catch (Exception e) {
+            LOG.debugf("Failed to parse scheme from URL: %s", url, e);
+            // Default to plain-text (HTTP) if parsing fails
+            return "true";
+        }
+    }
+
+    /**
+     * Finds the Redis dev service container and returns its connection URL.
+     * Since dev services config isn't available via ConfigProvider during concurrent
+     * container startup, we directly query Docker for running Redis containers
+     * with the Quarkus dev service label.
+     *
+     * @return the Redis hosts URL, or null if not found
+     */
+    private String findRedisDevServiceUrl() {
+        // Poll for up to 30 seconds for the Redis container to be available
+        for (int i = 0; i < 60; i++) {
+            try {
+                var dockerClient = org.testcontainers.DockerClientFactory.instance().client();
+                var containers =
+                        dockerClient
+                                .listContainersCmd()
+                                .withLabelFilter(List.of("quarkus-dev-service-redis"))
+                                .withStatusFilter(List.of("running"))
+                                .exec();
+
+                if (!containers.isEmpty()) {
+                    var redisContainer = containers.get(0);
+                    var ports = redisContainer.getPorts();
+                    for (var port : ports) {
+                        if (port.getPrivatePort() == 6379 && port.getPublicPort() != null) {
+                            return "redis://localhost:" + port.getPublicPort();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debugf("Error querying Docker for Redis container: %s", e.getMessage());
+            }
+
+            if (i < 59) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+
+        LOG.warn("Redis dev service container not found after 30 seconds");
+        return null;
     }
 }

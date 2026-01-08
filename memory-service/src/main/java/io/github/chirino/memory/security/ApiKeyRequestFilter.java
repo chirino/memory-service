@@ -20,7 +20,7 @@ import org.jboss.logging.Logger;
 public class ApiKeyRequestFilter implements ContainerRequestFilter {
 
     private static final Logger LOG = Logger.getLogger(ApiKeyRequestFilter.class);
-    private static final String HEADER_NAME = "X-API-Key";
+    public static final String HEADER_NAME = "X-API-Key";
 
     @Context ResourceInfo resourceInfo;
 
@@ -42,9 +42,8 @@ public class ApiKeyRequestFilter implements ContainerRequestFilter {
                 hasValidKey = true;
                 apiKeyContext.setValid(true);
                 apiKeyContext.setApiKey(apiKeyHeader);
-                LOG.infof("Received valid API key");
             } else {
-                LOG.debug("Received invalid API key");
+                LOG.warnf("Received invalid API key");
             }
         }
 

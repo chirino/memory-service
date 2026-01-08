@@ -10,6 +10,13 @@
 * Implment conversation sharing / multi-user conversations
 * Switch to using gRPC as the protocol between the Agent and the memory-service
 * Manging the react state of conversation + conversation resumption is complex: provide a headless react component that does it for ui implementors.
+* Add multi-tennancy support
+* use a common prefix of MEMORY_SERVICE :
+```
+MEMORY_API_KEYS=lZTxt7_vpps_Ea2PoyP0-KsJ7V5yyxFbXVsiXbVIElA
+MEMORY_SERVICE_RESPONSE_RESUMER=redis
+MEMORY_VECTOR_TYPE=pgvector
+```
 
 # Need Dev Feedback for:
 
@@ -22,5 +29,4 @@
 
 # Bug List
 
-* delete the last converstaion -> errors on the agent
-* sending in a new chat message duplicates the message in the rendered view.
+*

@@ -1,12 +1,17 @@
 package example;
 
 import io.github.chirino.memory.conversation.runtime.ResponseResumer;
+import io.quarkus.oidc.AccessTokenCredential;
+import io.quarkus.security.credential.TokenCredential;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.websockets.next.CloseReason;
 import io.quarkus.websockets.next.OnOpen;
 import io.quarkus.websockets.next.PathParam;
 import io.quarkus.websockets.next.WebSocket;
 import io.quarkus.websockets.next.WebSocketConnection;
 import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.infrastructure.Infrastructure;
+import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 /**
@@ -20,6 +25,8 @@ public class ResumeWebSocket {
     private static final Logger LOG = Logger.getLogger(ResumeWebSocket.class);
 
     private final ResponseResumer resumer;
+
+    @Inject SecurityIdentity securityIdentity;
 
     public ResumeWebSocket(ResponseResumer resumer) {
         this.resumer = resumer;
@@ -35,7 +42,16 @@ public class ResumeWebSocket {
                 "Resume WebSocket opened for conversationId=%s resumePosition=%s",
                 conversationId, resumePosition);
 
-        return resumer.replay(conversationId, resumePosition)
+        String bearerToken = resolveBearerToken();
+        if (bearerToken != null) {
+            LOG.info("Captured bearer token for response resumer");
+        }
+
+        final long resumePositionLong = parseResumePosition(resumePosition);
+
+        return Multi.createFrom()
+                .deferred(() -> resumer.replay(conversationId, resumePositionLong, bearerToken))
+                .runSubscriptionOn(Infrastructure.getDefaultExecutor())
                 .onItem()
                 .transformToUniAndConcatenate(connection::sendText)
                 .onCompletion()
@@ -63,5 +79,29 @@ public class ResumeWebSocket {
                                         new CloseReason(
                                                 CloseReason.INTERNAL_SERVER_ERROR.getCode(),
                                                 "resume failed")));
+    }
+
+    private long parseResumePosition(String resumePosition) {
+        try {
+            return Long.parseLong(resumePosition);
+        } catch (NumberFormatException e) {
+            LOG.warnf(e, "Invalid resumePosition=%s, defaulting to 0", resumePosition);
+            return 0L;
+        }
+    }
+
+    private String resolveBearerToken() {
+        if (securityIdentity == null) {
+            return null;
+        }
+        AccessTokenCredential atc = securityIdentity.getCredential(AccessTokenCredential.class);
+        if (atc != null) {
+            return atc.getToken();
+        }
+        TokenCredential tc = securityIdentity.getCredential(TokenCredential.class);
+        if (tc != null) {
+            return tc.getToken();
+        }
+        return null;
     }
 }

@@ -125,6 +125,8 @@ It will support semantic search across all preivous converstations for a user by
 - `./mvnw verify -DskipITs=false`: include integration tests (Failsafe).
 - `./mvnw package -Dnative` (or `-Dquarkus.native.container-build=true`): build a native executable.
 
+**Tip**: When debugging build failures, use `tail -50` to get enough context from the build output. For example: `./mvnw test 2>&1 | tail -50` or `./mvnw compile 2>&1 | tail -50`.
+
 ### Production-like Local Deployment
 - Use `docker compose up -d` to start a more production-like stack.
 - The `service` service runs the memory-service backend image (`memory-service-service:latest`) and connects to:
@@ -179,6 +181,12 @@ When you change the OpenAPI contract (conversation endpoints, schemas, etc.), ke
 - Update any application code to use renamed paths, operations, or types (Java REST resources, LangChain4j integration, and React code using `agent/src/main/webui/src/client`).
 
 ## Notes for AI Assistants
+
+- **ALWAYS run a linter or compile after making changes to typesafe code**: After editing any typesafe code (Java, TypeScript, etc.), you MUST verify that your changes compile and pass linting checks:
+  - For Java code: Run `./mvnw compile` (or `./mvnw compile -pl <module>` for a specific module) to ensure the code compiles without errors.
+  - For TypeScript/JavaScript frontend code: Run `npm run lint` and/or `npm run build` from `agent/src/main/webui/` to check for linting errors and type errors.
+  - For OpenAPI spec changes: Follow the regeneration steps in the "OpenAPI Spec Changes" section and verify compilation.
+  - Do not skip this step; it catches type errors, syntax issues, and integration problems early.
 
 - Data encryption is provided by the `quarkus-data-encryption` extension under `quarkus-data-encryption/` (runtime + deployment) with optional providers (`dek`, `vault`) in submodules.
 - The `plain` provider is always available and acts as a no-op (identity) encrypt/decrypt. If `data.encryption.providers` is not set, `DataEncryptionService` defaults to using only `plain`.

@@ -23,7 +23,7 @@ REST endpoints are defined in the OpenAPI spec: `memory-service-client/src/main/
 The gRPC services must cover all operations in that spec (user APIs and agent APIs).
 
 ### Proto source of truth
-Proto files live under `memory-service-client/src/main/proto` next to the OpenAPI spec so both REST and gRPC contracts are owned by the same client module. The client module publishes those `.proto` files as resources only (no stub generation). The `memory-service` module generates server stubs by scanning the published proto dependency via `quarkus.generate-code.grpc.scan-for-proto`. The `memory-service-extension` module generates Quarkus gRPC client stubs from the same proto dependency. Keeping a single proto tree in `memory-service-client` avoids duplication and ensures every module consumes the same schema while each module generates the appropriate stubs for its needs.
+Proto files live under `memory-service-client/src/main/proto` next to the OpenAPI spec so both REST and gRPC contracts are owned by the same client module. The client module publishes those `.proto` files as resources only (no stub generation). The new `memory-service-proto` module runs the Quarkus gRPC generator once and packages the generated classes, which the `memory-service` server and `memory-service-extension` runtime now consume directly instead of regenerating them. Keeping a single proto tree in `memory-service-client` avoids duplication and ensures every module consumes the same schema while each module uses the shared generated stubs appropriate for its role.
 
 ## Design overview
 

@@ -21,12 +21,29 @@ public interface ResponseResumer {
         }
     }
 
+    default Multi<String> replay(String conversationId, long resumePosition, String bearerToken) {
+        return replay(conversationId, resumePosition);
+    }
+
     /**
      * Check which conversations from the provided list have responses in progress.
+     *
      * @param conversationIds list of conversation IDs to check
      * @return a list of conversation IDs that have responses in progress
      */
     default List<String> check(List<String> conversationIds) {
+        return check(conversationIds, null);
+    }
+
+    /**
+     * Check which conversations from the provided list have responses in progress,
+     * optionally propagating a bearer token to downstream resumer implementations.
+     *
+     * @param conversationIds list of conversation IDs to check
+     * @param bearerToken token to use for authentication when calling out (may be null)
+     * @return a list of conversation IDs that have responses in progress
+     */
+    default List<String> check(List<String> conversationIds, String bearerToken) {
         if (conversationIds == null || conversationIds.isEmpty()) {
             return List.of();
         }
