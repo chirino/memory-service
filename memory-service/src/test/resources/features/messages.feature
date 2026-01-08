@@ -26,6 +26,7 @@ Feature: Messages API
     When I list messages for the conversation
     Then the response status should be 200
     And the response should contain 2 messages
+    Then set "firstMessageId" to the json response field "data[0].id"
     And message at index 0 should have content "Hello from Alice"
     And message at index 1 should have content "How are you?"
     And the response body should be json:

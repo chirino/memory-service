@@ -11,11 +11,23 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.UnifiedDiffUtils;
 import com.github.difflib.patch.Patch;
+import com.google.protobuf.Empty;
+import com.google.protobuf.Message;
+import com.google.protobuf.TextFormat;
+import com.google.protobuf.util.JsonFormat;
 import com.jayway.jsonpath.InvalidPathException;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
+import io.github.chirino.memory.grpc.v1.AppendMessageRequest;
+import io.github.chirino.memory.grpc.v1.CreateSummaryRequest;
+import io.github.chirino.memory.grpc.v1.HealthResponse;
+import io.github.chirino.memory.grpc.v1.ListMessagesRequest;
+import io.github.chirino.memory.grpc.v1.ListMessagesResponse;
+import io.github.chirino.memory.grpc.v1.MessagesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.SearchServiceGrpc;
+import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationOwnershipTransferRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationRepository;
@@ -26,6 +38,12 @@ import io.github.chirino.memory.persistence.repo.ConversationRepository;
 import io.github.chirino.memory.persistence.repo.MessageRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
+import io.grpc.Metadata;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
+import io.grpc.stub.MetadataUtils;
 import io.quarkiverse.cucumber.ScenarioScope;
 import io.quarkus.test.keycloak.client.KeycloakTestClient;
 import io.restassured.path.json.JsonPath;
@@ -34,18 +52,26 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.core.MediaType;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.eclipse.microprofile.config.ConfigProvider;
 
 @ScenarioScope
 public class StepDefinitions {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([^}]+)}");
+    private static final Metadata.Key<String> AUTHORIZATION_METADATA =
+            Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER);
+    private static final Metadata.Key<String> API_KEY_METADATA =
+            Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER);
 
     @Inject MemoryStoreSelector memoryStoreSelector;
 
@@ -65,6 +91,44 @@ public class StepDefinitions {
     private String conversationId;
     private Response lastResponse;
     private final Map<String, Object> contextVariables = new HashMap<>();
+    private ManagedChannel grpcChannel;
+    private String lastGrpcResponseJson;
+    private JsonPath lastGrpcJsonPath;
+    private Throwable lastGrpcError;
+    private Message lastGrpcMessage;
+    private String lastGrpcServiceMethod;
+    private String lastGrpcResponseText;
+
+    @io.cucumber.java.Before(order = 0)
+    public void setupGrpcChannel() {
+        if (grpcChannel != null) {
+            return;
+        }
+        String target =
+                ConfigProvider.getConfig()
+                        .getOptionalValue("test.url", String.class)
+                        .orElse("http://localhost:8081");
+        URI uri;
+        try {
+            uri = new URI(target);
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("Invalid test.url configuration: " + target, e);
+        }
+        String host = uri.getHost() != null ? uri.getHost() : "localhost";
+        int port =
+                uri.getPort() != -1
+                        ? uri.getPort()
+                        : ("https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80);
+        grpcChannel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
+    }
+
+    @io.cucumber.java.After
+    public void tearDownGrpcChannel() {
+        if (grpcChannel != null) {
+            grpcChannel.shutdownNow();
+            grpcChannel = null;
+        }
+    }
 
     @io.cucumber.java.Before
     @Transactional
@@ -92,6 +156,7 @@ public class StepDefinitions {
         request.setTitle(title);
         this.conversationId =
                 memoryStoreSelector.getStore().createConversation(currentUserId, request).getId();
+        contextVariables.put("conversationId", conversationId);
     }
 
     @io.cucumber.java.en.Given("the conversation exists")
@@ -109,6 +174,7 @@ public class StepDefinitions {
         } catch (ResourceNotFoundException | AccessDeniedException ignored) {
             // Ignored; we only need to ensure the id is not already in use by the current user.
         }
+        contextVariables.put("conversationId", conversationId);
     }
 
     @io.cucumber.java.en.Given("the conversation has no messages")
@@ -146,6 +212,7 @@ public class StepDefinitions {
         request.setTitle("Owned by " + ownerId);
         this.conversationId =
                 memoryStoreSelector.getStore().createConversation(ownerId, request).getId();
+        contextVariables.put("conversationId", conversationId);
     }
 
     @io.cucumber.java.en.When("I list messages for the conversation")
@@ -281,6 +348,32 @@ public class StepDefinitions {
         this.lastResponse = requestSpec.when().post("/v1/user/search/messages");
     }
 
+    @io.cucumber.java.en.When("I send gRPC request {string} with body:")
+    public void iSendGrpcRequestWithBody(String serviceMethod, String body) {
+        if (grpcChannel == null) {
+            throw new IllegalStateException("gRPC channel is not initialized");
+        }
+        lastGrpcResponseJson = null;
+        lastGrpcJsonPath = null;
+        lastGrpcError = null;
+        try {
+            String renderedBody = renderTemplate(body);
+            Message response = callGrpcService(serviceMethod, renderedBody);
+            StringBuilder textBuilder = new StringBuilder();
+            TextFormat.printer().print(response, textBuilder);
+            lastGrpcResponseText = textBuilder.toString();
+            lastGrpcResponseJson =
+                    JsonFormat.printer().includingDefaultValueFields().print(response);
+            lastGrpcJsonPath = JsonPath.from(lastGrpcResponseJson);
+            lastGrpcMessage = response;
+            lastGrpcServiceMethod = serviceMethod;
+        } catch (StatusRuntimeException e) {
+            lastGrpcError = e;
+        } catch (Exception e) {
+            throw new AssertionError("Failed to invoke gRPC method " + serviceMethod, e);
+        }
+    }
+
     @io.cucumber.java.en.Then("the response status should be {int}")
     public void theResponseStatusShouldBe(int statusCode) {
         lastResponse.then().statusCode(statusCode);
@@ -343,6 +436,148 @@ public class StepDefinitions {
     @io.cucumber.java.en.Then("the response should contain error code {string}")
     public void theResponseShouldContainErrorCode(String errorCode) {
         lastResponse.then().body("code", is(errorCode));
+    }
+
+    @io.cucumber.java.en.Then("set {string} to the json response field {string}")
+    public void setContextVariableToJsonResponseField(String variableName, String path) {
+        if (lastResponse == null) {
+            throw new AssertionError("No HTTP response has been received");
+        }
+        JsonPath jsonPath = lastResponse.jsonPath();
+        Object value = jsonPath.get(path);
+        if (value == null) {
+            throw new AssertionError(
+                    "JSON response field '" + path + "' is null or does not exist");
+        }
+        contextVariables.put(variableName, value);
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response should contain {int} message")
+    public void theGrpcResponseShouldContainMessage(int count) {
+        assertGrpcMessageCount(count);
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response should contain {int} messages")
+    public void theGrpcResponseShouldContainMessages(int count) {
+        assertGrpcMessageCount(count);
+    }
+
+    @io.cucumber.java.en.Then("gRPC message at index {int} should have content {string}")
+    public void grpcMessageAtIndexShouldHaveContent(int index, String expectedContent) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        String actualContent = jsonPath.getString("data[" + index + "].content[0].text");
+        assertThat(actualContent, is(expectedContent));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response field {string} should be {string}")
+    public void theGrpcResponseFieldShouldBe(String path, String expected) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        String renderedExpected = renderTemplate(expected);
+        // Remove quotes if the rendered expected is a quoted string
+        if (renderedExpected.startsWith("\"") && renderedExpected.endsWith("\"")) {
+            renderedExpected = renderedExpected.substring(1, renderedExpected.length() - 1);
+        }
+        Object value = jsonPath.get(path);
+        if (value == null) {
+            throw new AssertionError(
+                    "gRPC response field '"
+                            + path
+                            + "' is null or does not exist. Available JSON: "
+                            + lastGrpcResponseJson);
+        }
+        String actual = String.valueOf(value);
+        assertThat(actual, is(renderedExpected));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response field {string} should not be null")
+    public void theGrpcResponseFieldShouldNotBeNull(String path) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Object value = jsonPath.get(path);
+        assertThat("gRPC response field '" + path + "' should not be null", value, notNullValue());
+    }
+
+    @io.cucumber.java.en.Then("set {string} to the gRPC response field {string}")
+    public void setContextVariableToGrpcResponseField(String variableName, String path) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Object value = jsonPath.get(path);
+        if (value == null) {
+            throw new AssertionError(
+                    "gRPC response field '" + path + "' is null or does not exist");
+        }
+        contextVariables.put(variableName, value);
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response text should contain:")
+    public void theGrpcResponseTextShouldContain(String expectedText) {
+        if (lastGrpcResponseText == null) {
+            throw new AssertionError("No gRPC response has been captured yet");
+        }
+        String rendered = renderTemplate(expectedText).trim();
+        String actual = lastGrpcResponseText.trim();
+        if (!actual.contains(rendered)) {
+            throw new AssertionError(
+                    "Expected gRPC response text to contain:\n"
+                            + rendered
+                            + "\nActual response text:\n"
+                            + actual);
+        }
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response text should match text proto:")
+    public void theGrpcResponseTextShouldMatchTextProto(String expectedText) {
+        if (lastGrpcResponseJson == null) {
+            throw new AssertionError("No gRPC response has been captured yet");
+        }
+        if (lastGrpcServiceMethod == null) {
+            throw new AssertionError("No gRPC method has been invoked yet");
+        }
+        Message.Builder expectedBuilder = createGrpcResponseBuilder(lastGrpcServiceMethod);
+        try {
+            String rendered = renderTemplate(expectedText).trim();
+            TextFormat.merge(rendered, expectedBuilder);
+        } catch (TextFormat.ParseException e) {
+            throw new AssertionError(
+                    "Failed to parse expected gRPC text proto: " + e.getMessage(), e);
+        }
+        Message expectedMessage = expectedBuilder.build();
+        try {
+            // Don't include default values for expected - only check fields explicitly set in text
+            // proto
+            JsonNode expectedNode =
+                    OBJECT_MAPPER.readTree(JsonFormat.printer().print(expectedMessage));
+            JsonNode actualNode = OBJECT_MAPPER.readTree(lastGrpcResponseJson);
+            assertJsonNodeContains(actualNode, expectedNode, "$");
+        } catch (com.fasterxml.jackson.core.JsonProcessingException
+                | com.google.protobuf.InvalidProtocolBufferException e) {
+            throw new AssertionError(
+                    "Failed to parse gRPC JSON representation: " + e.getMessage(), e);
+        }
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response should have status {string}")
+    public void theGrpcResponseShouldHaveStatus(String expectedStatus) {
+        if (lastGrpcError == null) {
+            throw new AssertionError(
+                    "Expected gRPC error with status " + expectedStatus + " but no error occurred");
+        }
+        if (!(lastGrpcError instanceof StatusRuntimeException)) {
+            throw new AssertionError(
+                    "Expected StatusRuntimeException but got: " + lastGrpcError.getClass());
+        }
+        StatusRuntimeException sre = (StatusRuntimeException) lastGrpcError;
+        Status.Code expectedCode = Status.Code.valueOf(expectedStatus);
+        assertThat("gRPC status code", sre.getStatus().getCode(), is(expectedCode));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response should not have an error")
+    public void theGrpcResponseShouldNotHaveAnError() {
+        if (lastGrpcError != null) {
+            throw new AssertionError(
+                    "Expected no gRPC error but got: " + lastGrpcError.getMessage(), lastGrpcError);
+        }
+        if (lastGrpcResponseJson == null) {
+            throw new AssertionError("No gRPC response has been captured yet");
+        }
     }
 
     @io.cucumber.java.en.Then("the conversation title should be {string}")
@@ -435,7 +670,7 @@ public class StepDefinitions {
             return template;
         }
 
-        JsonPath responseJson = lastResponse.jsonPath();
+        JsonPath responseJson = lastResponse != null ? lastResponse.jsonPath() : null;
         JsonPath contextJson = JsonPath.from(serializeContextVariables());
 
         Matcher matcher = PLACEHOLDER_PATTERN.matcher(template);
@@ -457,9 +692,11 @@ public class StepDefinitions {
             String expression, JsonPath responseJson, JsonPath contextJson) {
         try {
             if (expression.equals("response.body")) {
+                ensureHttpResponseAvailable(expression, responseJson);
                 return responseJson.get("$");
             }
             if (expression.startsWith("response.body.")) {
+                ensureHttpResponseAvailable(expression, responseJson);
                 String path = expression.substring("response.body.".length());
                 return responseJson.get(path);
             }
@@ -481,6 +718,15 @@ public class StepDefinitions {
                 "Unknown expression '"
                         + expression
                         + "'. Supported: response.body[.*], context[.*]");
+    }
+
+    private void ensureHttpResponseAvailable(String expression, JsonPath responseJson) {
+        if (responseJson == null) {
+            throw new AssertionError(
+                    "Cannot evaluate '"
+                            + expression
+                            + "' because no HTTP response is available in the current scenario");
+        }
     }
 
     private boolean isSurroundedByQuotes(String template, int start, int end) {
@@ -510,6 +756,173 @@ public class StepDefinitions {
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new AssertionError("Failed to serialize context variables: " + e.getMessage(), e);
         }
+    }
+
+    private void assertGrpcMessageCount(int count) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        assertThat(jsonPath.getList("messages"), hasSize(count));
+    }
+
+    private Message.Builder createGrpcResponseBuilder(String serviceMethod) {
+        return switch (serviceMethod) {
+            case "MessagesService/ListMessages" -> ListMessagesResponse.newBuilder();
+            case "MessagesService/AppendMessage" ->
+                    io.github.chirino.memory.grpc.v1.Message.newBuilder();
+            case "SearchService/CreateSummary" ->
+                    io.github.chirino.memory.grpc.v1.Message.newBuilder();
+            case "SystemService/GetHealth" -> HealthResponse.newBuilder();
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported gRPC method for text comparison: " + serviceMethod);
+        };
+    }
+
+    private void assertJsonNodeContains(JsonNode actual, JsonNode expected, String path) {
+        if (expected.isObject()) {
+            Iterator<String> fieldNames = expected.fieldNames();
+            while (fieldNames.hasNext()) {
+                String fieldName = fieldNames.next();
+                if (!actual.has(fieldName)) {
+                    throw new AssertionError(
+                            "Expected field '"
+                                    + path
+                                    + "."
+                                    + fieldName
+                                    + "' to be present in gRPC response");
+                }
+                assertJsonNodeContains(
+                        actual.get(fieldName), expected.get(fieldName), path + "." + fieldName);
+            }
+            return;
+        }
+        if (expected.isArray()) {
+            if (!actual.isArray()) {
+                throw new AssertionError(
+                        "Expected JSON array at '"
+                                + path
+                                + "' but actual was "
+                                + actual.getNodeType());
+            }
+            if (actual.size() < expected.size()) {
+                throw new AssertionError(
+                        "Expected at least "
+                                + expected.size()
+                                + " entries at '"
+                                + path
+                                + "' but got "
+                                + actual.size());
+            }
+            for (int i = 0; i < expected.size(); i++) {
+                assertJsonNodeContains(actual.get(i), expected.get(i), path + "[" + i + "]");
+            }
+            return;
+        }
+        if (!actual.equals(expected)) {
+            throw new AssertionError(
+                    "Expected value at '" + path + "' to be " + expected + " but was " + actual);
+        }
+    }
+
+    private JsonPath ensureGrpcJsonPath() {
+        if (lastGrpcJsonPath == null) {
+            throw new AssertionError("No gRPC response has been received");
+        }
+        return lastGrpcJsonPath;
+    }
+
+    private Metadata buildGrpcMetadata() {
+        Metadata metadata = new Metadata();
+        boolean hasEntries = false;
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            metadata.put(AUTHORIZATION_METADATA, "Bearer " + token);
+            hasEntries = true;
+        }
+        if (currentApiKey != null) {
+            metadata.put(API_KEY_METADATA, currentApiKey);
+            hasEntries = true;
+        }
+        return hasEntries ? metadata : null;
+    }
+
+    private Message callGrpcService(String serviceMethod, String body) throws Exception {
+        String[] parts = serviceMethod.split("/");
+        if (parts.length != 2) {
+            throw new IllegalArgumentException(
+                    "Expected gRPC target in the form Service/Method, got: " + serviceMethod);
+        }
+        String service = parts[0];
+        String method = parts[1];
+
+        Metadata metadata = buildGrpcMetadata();
+
+        return switch (service) {
+            case "SystemService" -> callSystemService(method, metadata, body);
+            case "MessagesService" -> callMessagesService(method, metadata, body);
+            case "SearchService" -> callSearchService(method, metadata, body);
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported gRPC service: " + service + " for method " + method);
+        };
+    }
+
+    private Message callSystemService(String method, Metadata metadata, String body)
+            throws Exception {
+        if (!"GetHealth".equals(method)) {
+            throw new IllegalArgumentException("Unsupported SystemService method: " + method);
+        }
+        var stub = SystemServiceGrpc.newBlockingStub(grpcChannel);
+        if (metadata != null) {
+            stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+        return stub.getHealth(Empty.newBuilder().build());
+    }
+
+    private Message callMessagesService(String method, Metadata metadata, String body)
+            throws Exception {
+        var stub = MessagesServiceGrpc.newBlockingStub(grpcChannel);
+        if (metadata != null) {
+            stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+        return switch (method) {
+            case "ListMessages" -> {
+                var requestBuilder = ListMessagesRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.listMessages(requestBuilder.build());
+            }
+            case "AppendMessage" -> {
+                var requestBuilder = AppendMessageRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.appendMessage(requestBuilder.build());
+            }
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported MessagesService method: " + method);
+        };
+    }
+
+    private Message callSearchService(String method, Metadata metadata, String body)
+            throws Exception {
+        var stub = SearchServiceGrpc.newBlockingStub(grpcChannel);
+        if (metadata != null) {
+            stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+        return switch (method) {
+            case "CreateSummary" -> {
+                var requestBuilder = CreateSummaryRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.createSummary(requestBuilder.build());
+            }
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported SearchService method: " + method);
+        };
     }
 
     private void clearRelationalData() {

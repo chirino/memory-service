@@ -1,6 +1,5 @@
 package io.github.chirino.memory.security;
 
-import io.smallrye.config.SmallRyeConfig;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -13,11 +12,6 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
 @Provider
@@ -28,43 +22,23 @@ public class ApiKeyRequestFilter implements ContainerRequestFilter {
     private static final Logger LOG = Logger.getLogger(ApiKeyRequestFilter.class);
     private static final String HEADER_NAME = "X-API-Key";
 
-    private final Set<String> validApiKeys;
-
     @Context ResourceInfo resourceInfo;
 
     @Inject ApiKeyContext apiKeyContext;
 
-    public ApiKeyRequestFilter() {
-        SmallRyeConfig config = (SmallRyeConfig) ConfigProvider.getConfig();
-        List<String> keys =
-                config.getOptionalValues("memory.api-keys", String.class)
-                        .orElse(Collections.emptyList());
-        Set<String> normalized = new HashSet<>();
-        for (String key : keys) {
-            if (key != null) {
-                String trimmed = key.trim();
-                if (!trimmed.isEmpty()) {
-                    normalized.add(trimmed);
-                }
-            }
-        }
-        this.validApiKeys = Collections.unmodifiableSet(normalized);
-        if (this.validApiKeys.isEmpty()) {
-            LOG.info(
-                    "No API keys configured (memory.api-keys); API key authentication is"
-                            + " effectively disabled.");
-        } else {
-            LOG.infof("Configured %d API key(s) for agent access.", this.validApiKeys.size());
-        }
-    }
+    @Inject ApiKeyManager apiKeyManager;
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
         String apiKeyHeader = requestContext.getHeaderString(HEADER_NAME);
         boolean hasValidKey = false;
 
-        if (apiKeyHeader != null && !apiKeyHeader.isEmpty()) {
-            if (validApiKeys.contains(apiKeyHeader)) {
+        apiKeyContext.setValid(false);
+        apiKeyContext.setApiKey(null);
+
+        if (apiKeyHeader != null && !apiKeyHeader.isBlank()) {
+            apiKeyHeader = apiKeyHeader.trim();
+            if (apiKeyManager.validate(apiKeyHeader)) {
                 hasValidKey = true;
                 apiKeyContext.setValid(true);
                 apiKeyContext.setApiKey(apiKeyHeader);

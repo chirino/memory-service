@@ -8,6 +8,7 @@
   <name>Memory Service - Parent</name>
 
   <modules>
+    <module>memory-service-proto</module>
     <module>memory-service-client</module>
     <module>quarkus-data-encryption</module>
     <module>memory-service</module>

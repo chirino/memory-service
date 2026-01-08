@@ -144,6 +144,15 @@ It will support semantic search across all preivous converstations for a user by
 ## Testing Guidelines
 - Frameworks: JUnit 5 (`quarkus-junit5`) and RestAssured for HTTP assertions.
 - Keep tests deterministic; prefer black-box HTTP tests against Quarkus test runtime.
+- **Prefer Cucumber-based tests for REST and gRPC API testing**: When testing memory-service REST and gRPC interfaces, favor Cucumber feature files (located in `memory-service/src/test/resources/features/`) over unit tests with mocks. Cucumber tests provide:
+  - Living documentation of API behavior
+  - End-to-end integration testing through the full API boundary
+  - Better readability for non-technical stakeholders
+  - Consistent test patterns across the codebase
+- Unit tests with mocks should be reserved for:
+  - Testing internal implementation details and business logic
+  - Testing infrastructure/configuration (e.g., Liquibase migrations, selector logic)
+  - Testing test framework behavior itself
 
 ## Commit & Pull Request Guidelines
 - Git history may not be available in this checkout; use clear, imperative commit subjects (or Conventional Commits like `feat:`, `fix:`, `docs:`).

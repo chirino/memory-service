@@ -133,7 +133,7 @@ public interface MyAgent {
 }
 ```
 
-The `@MemoryId` parameter automatically uses the conversation ID to retrieve and store messages via the memory service. 
+The `@MemoryId` parameter automatically uses the conversation ID to retrieve and store messages via the memory service.
 
 ### 4. Conversation History Recording
 

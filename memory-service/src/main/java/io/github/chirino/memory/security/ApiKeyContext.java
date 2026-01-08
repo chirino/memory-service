@@ -12,7 +12,7 @@ public class ApiKeyContext {
         return valid;
     }
 
-    void setValid(boolean valid) {
+    public void setValid(boolean valid) {
         this.valid = valid;
     }
 
@@ -20,7 +20,7 @@ public class ApiKeyContext {
         return apiKey;
     }
 
-    void setApiKey(String apiKey) {
+    public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
     }
 }

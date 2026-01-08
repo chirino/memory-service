@@ -20,6 +20,11 @@
       <artifactId>memory-service-client</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>io.github.chirino.memory-service</groupId>
+      <artifactId>memory-service-proto</artifactId>
+      <version>${project.version}</version>
+    </dependency>
     <!-- Data encryption extension -->
     <dependency>
       <groupId>io.github.chirino.memory-service</groupId>
@@ -34,6 +39,16 @@
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-arc</artifactId>
+    </dependency>
+
+    <!-- gRPC server support -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-grpc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-grpc-reflection</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
