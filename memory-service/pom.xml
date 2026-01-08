@@ -183,4 +183,44 @@
     </dependency>
   </dependencies>
 
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>extract-cucumber-failures-after-test</id>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <phase>test</phase>
+            <configuration>
+              <target>
+                <exec executable="bash" failonerror="false">
+                  <arg value="${project.basedir}/src/test/resources/extract-failures.sh"/>
+                </exec>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <id>extract-cucumber-failures-after-verify</id>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <phase>verify</phase>
+            <configuration>
+              <target>
+                <exec executable="bash" failonerror="false">
+                  <arg value="${project.basedir}/src/test/resources/extract-failures.sh"/>
+                </exec>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
 </project>

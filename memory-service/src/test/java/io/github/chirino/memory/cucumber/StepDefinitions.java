@@ -2,9 +2,12 @@ package io.github.chirino.memory.cucumber;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,13 +24,32 @@ import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.grpc.v1.AppendMessageRequest;
+import io.github.chirino.memory.grpc.v1.Conversation;
+import io.github.chirino.memory.grpc.v1.ConversationMembership;
+import io.github.chirino.memory.grpc.v1.ConversationMembershipsServiceGrpc;
+import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.CreateSummaryRequest;
+import io.github.chirino.memory.grpc.v1.DeleteConversationRequest;
+import io.github.chirino.memory.grpc.v1.DeleteMembershipRequest;
+import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
+import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.chirino.memory.grpc.v1.HealthResponse;
+import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
+import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
+import io.github.chirino.memory.grpc.v1.ListForksRequest;
+import io.github.chirino.memory.grpc.v1.ListForksResponse;
+import io.github.chirino.memory.grpc.v1.ListMembershipsRequest;
+import io.github.chirino.memory.grpc.v1.ListMembershipsResponse;
 import io.github.chirino.memory.grpc.v1.ListMessagesRequest;
 import io.github.chirino.memory.grpc.v1.ListMessagesResponse;
 import io.github.chirino.memory.grpc.v1.MessagesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.SearchMessagesRequest;
+import io.github.chirino.memory.grpc.v1.SearchMessagesResponse;
 import io.github.chirino.memory.grpc.v1.SearchServiceGrpc;
+import io.github.chirino.memory.grpc.v1.ShareConversationRequest;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
+import io.github.chirino.memory.grpc.v1.TransferOwnershipRequest;
+import io.github.chirino.memory.grpc.v1.UpdateMembershipRequest;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationOwnershipTransferRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationRepository;
@@ -157,6 +179,7 @@ public class StepDefinitions {
         this.conversationId =
                 memoryStoreSelector.getStore().createConversation(currentUserId, request).getId();
         contextVariables.put("conversationId", conversationId);
+        contextVariables.put("conversationOwner", currentUserId);
     }
 
     @io.cucumber.java.en.Given("the conversation exists")
@@ -213,6 +236,7 @@ public class StepDefinitions {
         this.conversationId =
                 memoryStoreSelector.getStore().createConversation(ownerId, request).getId();
         contextVariables.put("conversationId", conversationId);
+        contextVariables.put("conversationOwner", ownerId);
     }
 
     @io.cucumber.java.en.When("I list messages for the conversation")
@@ -334,6 +358,40 @@ public class StepDefinitions {
                 requestSpec.when().post("/v1/conversations/{id}/summaries", conversationId);
     }
 
+    @io.cucumber.java.en.When("I create a summary with request:")
+    public void iCreateASummaryWithRequest(String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        if (currentApiKey != null) {
+            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
+        }
+        this.lastResponse =
+                requestSpec.when().post("/v1/conversations/{id}/summaries", conversationId);
+    }
+
+    @io.cucumber.java.en.When("I search messages with request:")
+    public void iSearchMessagesWithRequest(String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        if (currentApiKey != null) {
+            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
+        }
+        this.lastResponse = requestSpec.when().post("/v1/user/search/messages");
+    }
+
+    @io.cucumber.java.en.Then("the search response should contain at least {int} results")
+    public void theSearchResponseShouldContainAtLeastResults(int minCount) {
+        lastResponse.then().body("data.size()", greaterThan(minCount - 1));
+    }
+
     @io.cucumber.java.en.When("I search messages for query {string}")
     public void iSearchMessagesForQuery(String query) {
         var requestSpec =
@@ -346,6 +404,429 @@ public class StepDefinitions {
             requestSpec = requestSpec.header("X-API-Key", currentApiKey);
         }
         this.lastResponse = requestSpec.when().post("/v1/user/search/messages");
+    }
+
+    @io.cucumber.java.en.When("I create a conversation with request:")
+    public void iCreateAConversationWithRequest(String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse = requestSpec.when().post("/v1/conversations");
+        if (lastResponse.getStatusCode() == 201) {
+            String id = lastResponse.jsonPath().getString("id");
+            if (id != null) {
+                this.conversationId = id;
+                contextVariables.put("conversationId", id);
+                if (currentUserId != null) {
+                    contextVariables.put("conversationOwner", currentUserId);
+                }
+            }
+        }
+    }
+
+    @io.cucumber.java.en.When("I list conversations")
+    public void iListConversations() {
+        iListConversationsWithParams(null, null, null);
+    }
+
+    @io.cucumber.java.en.When("I list conversations with limit {int}")
+    public void iListConversationsWithLimit(int limit) {
+        iListConversationsWithParams(null, limit, null);
+    }
+
+    @io.cucumber.java.en.When("I list conversations with limit {int} and after {string}")
+    public void iListConversationsWithLimitAndAfter(int limit, String after) {
+        iListConversationsWithParams(after, limit, null);
+    }
+
+    @io.cucumber.java.en.When("I list conversations with query {string}")
+    public void iListConversationsWithQuery(String query) {
+        iListConversationsWithParams(null, null, query);
+    }
+
+    private void iListConversationsWithParams(String after, Integer limit, String query) {
+        var requestSpec = given();
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        var request = requestSpec.when();
+        if (after != null) {
+            request = request.queryParam("after", after);
+        }
+        if (limit != null) {
+            request = request.queryParam("limit", limit);
+        }
+        if (query != null) {
+            request = request.queryParam("query", query);
+        }
+        this.lastResponse = request.get("/v1/conversations");
+    }
+
+    @io.cucumber.java.en.When("I get the conversation")
+    public void iGetTheConversation() {
+        iGetConversation(conversationId);
+    }
+
+    @io.cucumber.java.en.When("I get conversation {string}")
+    public void iGetConversation(String convId) {
+        String renderedConvId = renderTemplate(convId);
+        // Strip quotes if present (RestAssured path parameters shouldn't have quotes)
+        if (renderedConvId.startsWith("\"") && renderedConvId.endsWith("\"")) {
+            renderedConvId = renderedConvId.substring(1, renderedConvId.length() - 1);
+        }
+        var requestSpec = given();
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            if (token != null) {
+                requestSpec = requestSpec.auth().oauth2(token);
+            }
+        }
+        this.lastResponse = requestSpec.when().get("/v1/conversations/{id}", renderedConvId);
+    }
+
+    @io.cucumber.java.en.When("I get that conversation")
+    public void iGetThatConversation() {
+        iGetTheConversation();
+    }
+
+    @io.cucumber.java.en.When("I delete the conversation")
+    public void iDeleteTheConversation() {
+        iDeleteConversation(conversationId);
+    }
+
+    @io.cucumber.java.en.When("I delete conversation {string}")
+    public void iDeleteConversation(String convId) {
+        var requestSpec = given();
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse = requestSpec.when().delete("/v1/conversations/{id}", convId);
+    }
+
+    @io.cucumber.java.en.When("I delete that conversation")
+    public void iDeleteThatConversation() {
+        iDeleteTheConversation();
+    }
+
+    @io.cucumber.java.en.When("I transfer ownership of the conversation to {string} with request:")
+    public void iTransferOwnershipOfTheConversationToWithRequest(
+            String newOwner, String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse =
+                requestSpec
+                        .when()
+                        .post("/v1/conversations/{id}/transfer-ownership", conversationId);
+    }
+
+    @io.cucumber.java.en.When(
+            "I transfer ownership of conversation {string} to {string} with request:")
+    public void iTransferOwnershipOfConversationToWithRequest(
+            String convId, String newOwner, String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse =
+                requestSpec.when().post("/v1/conversations/{id}/transfer-ownership", convId);
+    }
+
+    @io.cucumber.java.en.When("I transfer ownership of that conversation to {string} with request:")
+    public void iTransferOwnershipOfThatConversationToWithRequest(
+            String newOwner, String requestBody) {
+        iTransferOwnershipOfTheConversationToWithRequest(newOwner, requestBody);
+    }
+
+    @io.cucumber.java.en.Then("the response should contain at least {int} conversations")
+    public void theResponseShouldContainAtLeastConversations(int minCount) {
+        lastResponse.then().body("data.size()", greaterThan(minCount - 1));
+    }
+
+    @io.cucumber.java.en.Then("the response should contain at least {int} conversation")
+    public void theResponseShouldContainAtLeastConversation(int minCount) {
+        theResponseShouldContainAtLeastConversations(minCount);
+    }
+
+    @io.cucumber.java.en.Then("the response should contain at least {int} memberships")
+    public void theResponseShouldContainAtLeastMemberships(int minCount) {
+        lastResponse.then().body("data.size()", greaterThan(minCount - 1));
+    }
+
+    @io.cucumber.java.en.Then("the response should contain {int} conversations")
+    public void theResponseShouldContainConversations(int count) {
+        lastResponse.then().body("data", hasSize(count));
+    }
+
+    @io.cucumber.java.en.Then("the response body should contain {string}")
+    public void theResponseBodyShouldContain(String text) {
+        String body = lastResponse.getBody().asString();
+        assertThat("Response body should contain: " + text, body, containsString(text));
+    }
+
+    @io.cucumber.java.en.When("I fork the conversation at message {string} with request:")
+    public void iForkTheConversationAtMessageWithRequest(String messageId, String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        String renderedMessageId = renderTemplate(messageId);
+        // Remove quotes if present (from template rendering)
+        if (renderedMessageId.startsWith("\"") && renderedMessageId.endsWith("\"")) {
+            renderedMessageId = renderedMessageId.substring(1, renderedMessageId.length() - 1);
+        }
+        this.lastResponse =
+                requestSpec
+                        .when()
+                        .post(
+                                "/v1/conversations/{id}/messages/{mid}/fork",
+                                conversationId,
+                                renderedMessageId);
+        if (lastResponse.getStatusCode() == 201) {
+            String id = lastResponse.jsonPath().getString("id");
+            if (id != null) {
+                contextVariables.put("forkedConversationId", id);
+            }
+        }
+    }
+
+    @io.cucumber.java.en.When("I fork conversation {string} at message {string} with request:")
+    public void iForkConversationAtMessageWithRequest(
+            String convId, String messageId, String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        String renderedMessageId = renderTemplate(messageId);
+        // Remove quotes if present (from template rendering)
+        if (renderedMessageId.startsWith("\"") && renderedMessageId.endsWith("\"")) {
+            renderedMessageId = renderedMessageId.substring(1, renderedMessageId.length() - 1);
+        }
+        this.lastResponse =
+                requestSpec
+                        .when()
+                        .post(
+                                "/v1/conversations/{id}/messages/{mid}/fork",
+                                convId,
+                                renderedMessageId);
+    }
+
+    @io.cucumber.java.en.When("I fork that conversation at message {string} with request:")
+    public void iForkThatConversationAtMessageWithRequest(String messageId, String requestBody) {
+        iForkTheConversationAtMessageWithRequest(messageId, requestBody);
+    }
+
+    @io.cucumber.java.en.When("I list forks for the conversation")
+    public void iListForksForTheConversation() {
+        iListForksForConversation(conversationId);
+    }
+
+    @io.cucumber.java.en.When("I list forks for conversation {string}")
+    public void iListForksForConversation(String convId) {
+        var requestSpec = given();
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse = requestSpec.when().get("/v1/conversations/{id}/forks", convId);
+    }
+
+    @io.cucumber.java.en.When("I list forks for that conversation")
+    public void iListForksForThatConversation() {
+        iListForksForTheConversation();
+    }
+
+    @io.cucumber.java.en.Then("the response should contain at least {int} forks")
+    public void theResponseShouldContainAtLeastForks(int minCount) {
+        lastResponse.then().body("data.size()", greaterThan(minCount - 1));
+    }
+
+    @io.cucumber.java.en.When("I share the conversation with user {string} with request:")
+    public void iShareTheConversationWithUserWithRequest(String userId, String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse = requestSpec.when().post("/v1/conversations/{id}/forks", conversationId);
+    }
+
+    @io.cucumber.java.en.When("I share conversation {string} with user {string} with request:")
+    public void iShareConversationWithUserWithRequest(
+            String convId, String userId, String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse = requestSpec.when().post("/v1/conversations/{id}/forks", convId);
+    }
+
+    @io.cucumber.java.en.When("I share that conversation with user {string} with request:")
+    public void iShareThatConversationWithUserWithRequest(String userId, String requestBody) {
+        iShareTheConversationWithUserWithRequest(userId, requestBody);
+    }
+
+    @io.cucumber.java.en.When("I list memberships for the conversation")
+    public void iListMembershipsForTheConversation() {
+        iListMembershipsForConversation(conversationId);
+    }
+
+    @io.cucumber.java.en.When("I list memberships for conversation {string}")
+    public void iListMembershipsForConversation(String convId) {
+        var requestSpec = given();
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            if (token == null) {
+                throw new AssertionError(
+                        "Failed to get access token for user: "
+                                + currentUserId
+                                + ". KeycloakTestClient may not be properly configured.");
+            }
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse = requestSpec.when().get("/v1/conversations/{id}/memberships", convId);
+    }
+
+    @io.cucumber.java.en.When("I list memberships for that conversation")
+    public void iListMembershipsForThatConversation() {
+        iListMembershipsForTheConversation();
+    }
+
+    @io.cucumber.java.en.When("I update membership for user {string} with request:")
+    public void iUpdateMembershipForUserWithRequest(String userId, String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            if (token == null) {
+                throw new AssertionError(
+                        "Failed to get access token for user: "
+                                + currentUserId
+                                + ". KeycloakTestClient may not be properly configured.");
+            }
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse =
+                requestSpec
+                        .when()
+                        .patch("/v1/conversations/{id}/memberships/{uid}", conversationId, userId);
+    }
+
+    @io.cucumber.java.en.When("I delete membership for user {string}")
+    public void iDeleteMembershipForUser(String userId) {
+        var requestSpec = given();
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            if (token == null) {
+                throw new AssertionError(
+                        "Failed to get access token for user: "
+                                + currentUserId
+                                + ". KeycloakTestClient may not be properly configured.");
+            }
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse =
+                requestSpec
+                        .when()
+                        .delete("/v1/conversations/{id}/memberships/{uid}", conversationId, userId);
+    }
+
+    @io.cucumber.java.en.Given(
+            "the conversation is shared with user {string} with access level {string}")
+    @Transactional
+    public void theConversationIsSharedWithUserWithAccessLevel(String userId, String accessLevel) {
+        // Use the owner of the conversation to share it, not the current user
+        // First try to get owner from context (set when conversation was created)
+        String ownerId = (String) contextVariables.get("conversationOwner");
+
+        // If not in context, get from repository (bypassing access checks)
+        if (ownerId == null) {
+            if (conversationRepository.isResolvable() && conversationRepository.get() != null) {
+                // PostgreSQL
+                var entity =
+                        conversationRepository
+                                .get()
+                                .findByIdOptional(java.util.UUID.fromString(conversationId))
+                                .orElseThrow(
+                                        () ->
+                                                new RuntimeException(
+                                                        "Conversation not found: "
+                                                                + conversationId));
+                ownerId = entity.getOwnerUserId();
+            } else if (mongoConversationRepository.isResolvable()
+                    && mongoConversationRepository.get() != null) {
+                // MongoDB
+                var entity = mongoConversationRepository.get().findById(conversationId);
+                if (entity == null) {
+                    throw new RuntimeException("Conversation not found: " + conversationId);
+                }
+                ownerId = entity.ownerUserId;
+            } else {
+                throw new RuntimeException(
+                        "Cannot determine conversation owner. conversationId: " + conversationId);
+            }
+        }
+
+        io.github.chirino.memory.api.dto.ShareConversationRequest request =
+                new io.github.chirino.memory.api.dto.ShareConversationRequest();
+        request.setUserId(userId);
+        request.setAccessLevel(
+                io.github.chirino.memory.model.AccessLevel.fromString(accessLevel.toLowerCase()));
+
+        // Use the owner to share the conversation (they have manager access)
+        memoryStoreSelector.getStore().shareConversation(ownerId, conversationId, request);
+    }
+
+    @io.cucumber.java.en.Then(
+            "the response should contain a membership for user {string} with access level {string}")
+    public void theResponseShouldContainAMembershipForUserWithAccessLevel(
+            String userId, String accessLevel) {
+        JsonPath jsonPath = lastResponse.jsonPath();
+        List<Map<String, Object>> memberships = jsonPath.getList("data");
+        boolean found =
+                memberships.stream()
+                        .anyMatch(
+                                m ->
+                                        userId.equals(m.get("userId"))
+                                                && accessLevel.equalsIgnoreCase(
+                                                        String.valueOf(m.get("accessLevel"))));
+        assertThat(
+                "Should contain membership for user "
+                        + userId
+                        + " with access level "
+                        + accessLevel,
+                found,
+                is(true));
+    }
+
+    @io.cucumber.java.en.Then("the response should not contain a membership for user {string}")
+    public void theResponseShouldNotContainAMembershipForUser(String userId) {
+        JsonPath jsonPath = lastResponse.jsonPath();
+        List<Map<String, Object>> memberships = jsonPath.getList("data");
+        boolean found = memberships.stream().anyMatch(m -> userId.equals(m.get("userId")));
+        assertThat("Should not contain membership for user " + userId, found, is(false));
+    }
+
+    @io.cucumber.java.en.Then("the response should contain {int} membership")
+    public void theResponseShouldContainMembership(int count) {
+        lastResponse.then().body("data", hasSize(count));
     }
 
     @io.cucumber.java.en.When("I send gRPC request {string} with body:")
@@ -377,6 +858,21 @@ public class StepDefinitions {
     @io.cucumber.java.en.Then("the response status should be {int}")
     public void theResponseStatusShouldBe(int statusCode) {
         lastResponse.then().statusCode(statusCode);
+    }
+
+    @io.cucumber.java.en.Then("the response body {string} should be {string}")
+    public void theResponseBodyFieldShouldBe(String path, String expected) {
+        String renderedExpected = renderTemplate(expected);
+        // Handle null values
+        if ("null".equals(renderedExpected)) {
+            lastResponse.then().body(path, nullValue());
+        } else {
+            // Remove quotes if the rendered expected is a quoted string
+            if (renderedExpected.startsWith("\"") && renderedExpected.endsWith("\"")) {
+                renderedExpected = renderedExpected.substring(1, renderedExpected.length() - 1);
+            }
+            lastResponse.then().body(path, is(renderedExpected));
+        }
     }
 
     @io.cucumber.java.en.Then("the response should contain an empty list of messages")
@@ -671,6 +1167,7 @@ public class StepDefinitions {
         }
 
         JsonPath responseJson = lastResponse != null ? lastResponse.jsonPath() : null;
+        JsonPath grpcJsonPath = lastGrpcJsonPath;
         JsonPath contextJson = JsonPath.from(serializeContextVariables());
 
         Matcher matcher = PLACEHOLDER_PATTERN.matcher(template);
@@ -679,7 +1176,7 @@ public class StepDefinitions {
         while (matcher.find()) {
             result.append(template, lastIndex, matcher.start());
             String expression = matcher.group(1).trim();
-            Object value = resolveExpression(expression, responseJson, contextJson);
+            Object value = resolveExpression(expression, responseJson, grpcJsonPath, contextJson);
             boolean inQuotes = isSurroundedByQuotes(template, matcher.start(), matcher.end());
             result.append(serializeReplacement(value, inQuotes));
             lastIndex = matcher.end();
@@ -689,16 +1186,34 @@ public class StepDefinitions {
     }
 
     private Object resolveExpression(
-            String expression, JsonPath responseJson, JsonPath contextJson) {
+            String expression, JsonPath responseJson, JsonPath grpcJsonPath, JsonPath contextJson) {
         try {
             if (expression.equals("response.body")) {
-                ensureHttpResponseAvailable(expression, responseJson);
-                return responseJson.get("$");
+                if (responseJson != null) {
+                    return responseJson.get("$");
+                }
+                if (grpcJsonPath != null) {
+                    return grpcJsonPath.get("$");
+                }
+                throw new AssertionError(
+                        "Cannot evaluate '"
+                                + expression
+                                + "' because no HTTP or gRPC response is available in the current"
+                                + " scenario");
             }
             if (expression.startsWith("response.body.")) {
-                ensureHttpResponseAvailable(expression, responseJson);
                 String path = expression.substring("response.body.".length());
-                return responseJson.get(path);
+                if (responseJson != null) {
+                    return responseJson.get(path);
+                }
+                if (grpcJsonPath != null) {
+                    return grpcJsonPath.get(path);
+                }
+                throw new AssertionError(
+                        "Cannot evaluate '"
+                                + expression
+                                + "' because no HTTP or gRPC response is available in the current"
+                                + " scenario");
             }
             if (expression.equals("context")) {
                 return contextVariables;
@@ -770,7 +1285,22 @@ public class StepDefinitions {
                     io.github.chirino.memory.grpc.v1.Message.newBuilder();
             case "SearchService/CreateSummary" ->
                     io.github.chirino.memory.grpc.v1.Message.newBuilder();
+            case "SearchService/SearchMessages" -> SearchMessagesResponse.newBuilder();
             case "SystemService/GetHealth" -> HealthResponse.newBuilder();
+            case "ConversationsService/ListConversations" -> ListConversationsResponse.newBuilder();
+            case "ConversationsService/CreateConversation" -> Conversation.newBuilder();
+            case "ConversationsService/GetConversation" -> Conversation.newBuilder();
+            case "ConversationsService/DeleteConversation" -> Empty.newBuilder();
+            case "ConversationsService/ForkConversation" -> Conversation.newBuilder();
+            case "ConversationsService/ListForks" -> ListForksResponse.newBuilder();
+            case "ConversationsService/TransferOwnership" -> Empty.newBuilder();
+            case "ConversationMembershipsService/ListMemberships" ->
+                    ListMembershipsResponse.newBuilder();
+            case "ConversationMembershipsService/ShareConversation" ->
+                    ConversationMembership.newBuilder();
+            case "ConversationMembershipsService/UpdateMembership" ->
+                    ConversationMembership.newBuilder();
+            case "ConversationMembershipsService/DeleteMembership" -> Empty.newBuilder();
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported gRPC method for text comparison: " + serviceMethod);
@@ -860,6 +1390,9 @@ public class StepDefinitions {
             case "SystemService" -> callSystemService(method, metadata, body);
             case "MessagesService" -> callMessagesService(method, metadata, body);
             case "SearchService" -> callSearchService(method, metadata, body);
+            case "ConversationsService" -> callConversationsService(method, metadata, body);
+            case "ConversationMembershipsService" ->
+                    callConversationMembershipsService(method, metadata, body);
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported gRPC service: " + service + " for method " + method);
@@ -919,9 +1452,135 @@ public class StepDefinitions {
                 }
                 yield stub.createSummary(requestBuilder.build());
             }
+            case "SearchMessages" -> {
+                var requestBuilder = SearchMessagesRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.searchMessages(requestBuilder.build());
+            }
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported SearchService method: " + method);
+        };
+    }
+
+    private Message callConversationsService(String method, Metadata metadata, String body)
+            throws Exception {
+        var stub = ConversationsServiceGrpc.newBlockingStub(grpcChannel);
+        if (metadata != null) {
+            stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+        return switch (method) {
+            case "ListConversations" -> {
+                var requestBuilder = ListConversationsRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.listConversations(requestBuilder.build());
+            }
+            case "CreateConversation" -> {
+                var requestBuilder =
+                        io.github.chirino.memory.grpc.v1.CreateConversationRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                Message response = stub.createConversation(requestBuilder.build());
+                if (response instanceof Conversation) {
+                    Conversation conv = (Conversation) response;
+                    if (conv.getId() != null && !conv.getId().isEmpty()) {
+                        conversationId = conv.getId();
+                        contextVariables.put("conversationId", conversationId);
+                    }
+                }
+                yield response;
+            }
+            case "GetConversation" -> {
+                var requestBuilder = GetConversationRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.getConversation(requestBuilder.build());
+            }
+            case "DeleteConversation" -> {
+                var requestBuilder = DeleteConversationRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.deleteConversation(requestBuilder.build());
+            }
+            case "ForkConversation" -> {
+                var requestBuilder = ForkConversationRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                Message response = stub.forkConversation(requestBuilder.build());
+                if (response instanceof Conversation) {
+                    Conversation conv = (Conversation) response;
+                    if (conv.getId() != null && !conv.getId().isEmpty()) {
+                        contextVariables.put("forkedConversationId", conv.getId());
+                    }
+                }
+                yield response;
+            }
+            case "ListForks" -> {
+                var requestBuilder = ListForksRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.listForks(requestBuilder.build());
+            }
+            case "TransferOwnership" -> {
+                var requestBuilder = TransferOwnershipRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.transferOwnership(requestBuilder.build());
+            }
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported ConversationsService method: " + method);
+        };
+    }
+
+    private Message callConversationMembershipsService(
+            String method, Metadata metadata, String body) throws Exception {
+        var stub = ConversationMembershipsServiceGrpc.newBlockingStub(grpcChannel);
+        if (metadata != null) {
+            stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+        return switch (method) {
+            case "ListMemberships" -> {
+                var requestBuilder = ListMembershipsRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.listMemberships(requestBuilder.build());
+            }
+            case "ShareConversation" -> {
+                var requestBuilder = ShareConversationRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.shareConversation(requestBuilder.build());
+            }
+            case "UpdateMembership" -> {
+                var requestBuilder = UpdateMembershipRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.updateMembership(requestBuilder.build());
+            }
+            case "DeleteMembership" -> {
+                var requestBuilder = DeleteMembershipRequest.newBuilder();
+                if (body != null && !body.isBlank()) {
+                    TextFormat.merge(body, requestBuilder);
+                }
+                yield stub.deleteMembership(requestBuilder.build());
+            }
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported ConversationMembershipsService method: " + method);
         };
     }
 

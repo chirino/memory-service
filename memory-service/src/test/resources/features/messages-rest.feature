@@ -1,6 +1,6 @@
-Feature: Messages API
+Feature: Messages REST API
   As a user or agent
-  I want to manage messages in conversations
+  I want to manage messages in conversations via REST API
   So that I can store and retrieve conversation history
 
   Background:
@@ -15,8 +15,8 @@ Feature: Messages API
     And the response body should be json:
     """
     {
-      "nextCursor" : null,
-      "data" : [ ]
+      "nextCursor": null,
+      "data": []
     }
     """
 
@@ -32,22 +32,25 @@ Feature: Messages API
     And the response body should be json:
     """
     {
-      "nextCursor" : null,
-      "data" : [ {
-        "id" : "${response.body.data[0].id}",
-        "conversationId" : "${response.body.data[0].conversationId}",
-        "userId" : "alice",
-        "channel" : "history",
-        "content" : ${response.body.data[0].content},
-        "createdAt" :  "${response.body.data[0].createdAt}"
-      }, {
-        "id" : "${response.body.data[1].id}",
-        "conversationId" : "${response.body.data[1].conversationId}",
-        "userId" : "alice",
-        "channel" : "history",
-        "content" : ${response.body.data[1].content},
-        "createdAt" :  "${response.body.data[1].createdAt}"
-      } ]
+      "nextCursor": null,
+      "data": [
+        {
+          "id": "${response.body.data[0].id}",
+          "conversationId": "${response.body.data[0].conversationId}",
+          "userId": "alice",
+          "channel": "history",
+          "content": ${response.body.data[0].content},
+          "createdAt": "${response.body.data[0].createdAt}"
+        },
+        {
+          "id": "${response.body.data[1].id}",
+          "conversationId": "${response.body.data[1].conversationId}",
+          "userId": "alice",
+          "channel": "history",
+          "content": ${response.body.data[1].content},
+          "createdAt": "${response.body.data[1].createdAt}"
+        }
+      ]
     }
     """
 
@@ -66,6 +69,21 @@ Feature: Messages API
     And the response should contain the created message
     And the message should have content "Agent response"
     And the message should have channel "MEMORY"
+    And the response body should be json:
+    """
+    {
+      "id": "${response.body.id}",
+      "conversationId": "${conversationId}",
+      "channel": "memory",
+      "content": [
+        {
+          "type": "text",
+          "text": "Agent response"
+        }
+      ],
+      "createdAt": "${response.body.createdAt}"
+    }
+    """
 
   Scenario: User cannot append messages via API
     Given I am authenticated as user "alice"
@@ -73,6 +91,16 @@ Feature: Messages API
     When I try to append a message with content "User message"
     Then the response status should be 403
     And the response should contain error code "forbidden"
+    And the response body should be json:
+    """
+    {
+      "code": "forbidden",
+      "error": "${response.body.error}",
+      "details": {
+        "message": "${response.body.details.message}"
+      }
+    }
+    """
 
   Scenario: Agent can list all messages including memory channel
     Given I am authenticated as agent with API key "test-agent-key"
@@ -81,7 +109,6 @@ Feature: Messages API
     When I list messages for the conversation
     Then the response status should be 200
     And the response should contain 2 messages
-
 
   Scenario: User can only see history channel messages
     Given I am authenticated as user "alice"

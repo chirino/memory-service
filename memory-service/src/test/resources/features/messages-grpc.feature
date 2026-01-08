@@ -1,21 +1,14 @@
-Feature: Text-based gRPC requests
+Feature: Messages gRPC API
   As a client of the memory service
-  I want to invoke gRPC using the proto text format
-  So that we can test the gRPC boundary from Cucumber
+  I want to manage messages via gRPC
+  So that I can store and retrieve conversation history using gRPC
 
   Background:
     Given I am authenticated as user "alice"
     And I have a conversation with title "Test Conversation"
     And the conversation has a message "Hello from Alice"
 
-  Scenario: Call SystemService.GetHealth via text proto
-    When I send gRPC request "SystemService/GetHealth" with body:
-    """
-    {}
-    """
-    Then the gRPC response field "status" should be "ok"
-
-  Scenario: List messages via text proto gRPC call
+  Scenario: List messages via gRPC
     When I send gRPC request "MessagesService/ListMessages" with body:
     """
     conversation_id: "${conversationId}"
@@ -24,7 +17,8 @@ Feature: Text-based gRPC requests
       page_size: 10
     }
     """
-    Then set "messageId" to the gRPC response field "messages[0].id"
+    Then the gRPC response should not have an error
+    And set "messageId" to the gRPC response field "messages[0].id"
     And the gRPC response text should match text proto:
     """
     messages {
@@ -34,7 +28,7 @@ Feature: Text-based gRPC requests
     }
     """
 
-  Scenario: List messages with API key and pagination via gRPC
+  Scenario: List messages with pagination via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has 5 messages
     When I send gRPC request "MessagesService/ListMessages" with body:
@@ -48,6 +42,38 @@ Feature: Text-based gRPC requests
     Then the gRPC response should not have an error
     And the gRPC response should contain 2 messages
     And the gRPC response field "pageInfo.nextPageToken" should not be null
+    And the gRPC response text should match text proto:
+    """
+    messages {
+      conversation_id: "${conversationId}"
+      channel: HISTORY
+    }
+    page_info {
+      next_page_token: "${response.body.pageInfo.nextPageToken}"
+    }
+    """
+
+  Scenario: List messages with channel filter via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a message "Memory message" in channel "MEMORY"
+    And the conversation has a message "History message" in channel "HISTORY"
+    When I send gRPC request "MessagesService/ListMessages" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: MEMORY
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 1 message
+    And the gRPC response text should match text proto:
+    """
+    messages {
+      conversation_id: "${conversationId}"
+      channel: MEMORY
+    }
+    """
 
   Scenario: Append message requires API key via gRPC
     Given I am authenticated as user "alice"
@@ -82,38 +108,34 @@ Feature: Text-based gRPC requests
     And the gRPC response field "id" should not be null
     And the gRPC response field "conversationId" should be "${conversationId}"
     And the gRPC response field "channel" should be "MEMORY"
-
-  Scenario: Create summary requires API key via gRPC
-    Given I am authenticated as user "alice"
-    And the conversation exists
-    And the conversation has a message "User message"
-    When I list messages for the conversation
-    And set "firstMessageId" to the json response field "data[0].id"
-    And I send gRPC request "SearchService/CreateSummary" with body:
+    And the gRPC response text should match text proto:
     """
+    id: "${response.body.id}"
     conversation_id: "${conversationId}"
-    title: "Test Summary"
-    summary: "This is a test summary"
-    until_message_id: "${firstMessageId}"
-    summarized_at: "2025-01-01T00:00:00Z"
+    user_id: "alice"
+    channel: MEMORY
+    content {
+      string_value: "Agent message via gRPC"
+    }
     """
-    Then the gRPC response should have status "PERMISSION_DENIED"
 
-  Scenario: Agent can create summary via gRPC
+  Scenario: Agent can append message with multiple content blocks via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists
-    And the conversation has a message "User message"
-    When I list messages for the conversation
-    And set "firstMessageId" to the json response field "data[0].id"
-    And I send gRPC request "SearchService/CreateSummary" with body:
+    When I send gRPC request "MessagesService/AppendMessage" with body:
     """
     conversation_id: "${conversationId}"
-    title: "Test Summary"
-    summary: "This is a test summary"
-    until_message_id: "${firstMessageId}"
-    summarized_at: "2025-01-01T00:00:00Z"
+    message {
+      user_id: "alice"
+      channel: HISTORY
+      content {
+        string_value: "First part"
+      }
+      content {
+        string_value: "Second part"
+      }
+    }
     """
     Then the gRPC response should not have an error
     And the gRPC response field "id" should not be null
-    And the gRPC response field "conversationId" should be "${conversationId}"
-    And the gRPC response field "channel" should be "SUMMARY"
+    And the gRPC response field "channel" should be "HISTORY"
