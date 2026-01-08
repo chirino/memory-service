@@ -446,11 +446,7 @@ public class MongoMemoryStore implements MemoryStore {
             MessageChannel channel) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
         if (conversation == null) {
-            PagedMessages empty = new PagedMessages();
-            empty.setConversationId(conversationId);
-            empty.setMessages(Collections.emptyList());
-            empty.setNextCursor(null);
-            return empty;
+            throw new ResourceNotFoundException("conversation", conversationId);
         }
         String groupId = conversation.conversationGroupId;
         ensureHasAccess(groupId, userId, AccessLevel.READER);
