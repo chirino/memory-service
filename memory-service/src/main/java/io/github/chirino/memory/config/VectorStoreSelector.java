@@ -11,7 +11,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @ApplicationScoped
 public class VectorStoreSelector {
 
-    @ConfigProperty(name = "memory.vector.type", defaultValue = "none")
+    @ConfigProperty(name = "memory-service.vector.type", defaultValue = "none")
     String vectorType;
 
     @Inject NoopVectorStore noopVectorStore;

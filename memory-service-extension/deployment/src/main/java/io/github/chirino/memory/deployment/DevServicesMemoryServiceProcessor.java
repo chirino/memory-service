@@ -136,7 +136,8 @@ public class DevServicesMemoryServiceProcessor {
         // Determine the API key to use. Prefer an explicitly configured
         // memory-service-client.api-key.
         // If not present, generate a random Base64-encoded key and expose it both to the container
-        // (as MEMORY_API_KEYS) and to the application config (as memory-service-client.api-key).
+        // (as MEMORY_SERVICE_API_KEYS) and to the application config (as
+        // memory-service-client.api-key).
         String configuredApiKey = null;
         try {
             configuredApiKey =
@@ -201,8 +202,12 @@ public class DevServicesMemoryServiceProcessor {
                                                 new GenericContainer<>(
                                                                 DockerImageName.parse(
                                                                         "memory-service-service:latest"))
-                                                        .withEnv("MEMORY_API_KEYS", effectiveApiKey)
-                                                        .withEnv("MEMORY_VECTOR_TYPE", "pgvector")
+                                                        .withEnv(
+                                                                "MEMORY_SERVICE_API_KEYS",
+                                                                effectiveApiKey)
+                                                        .withEnv(
+                                                                "MEMORY_SERVICE_VECTOR_TYPE",
+                                                                "pgvector")
                                                         .withExposedPorts(MEMORY_SERVICE_PORT)
                                                         .withLabel(
                                                                 DEV_SERVICE_LABEL,

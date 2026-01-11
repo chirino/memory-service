@@ -35,12 +35,12 @@ The memory-service supports multiple data store backends. Configure which one to
 
 ```properties
 # Data store type: postgres, mongo, mongodb (default: postgres)
-memory.datastore.type=postgres
+memory-service.datastore.type=postgres
 ```
 
 #### PostgreSQL Configuration
 
-When using PostgreSQL (`memory.datastore.type=postgres`):
+When using PostgreSQL (`memory-service.datastore.type=postgres`):
 
 ```properties
 # PostgreSQL datasource
@@ -59,7 +59,7 @@ hibernate.type.preferred_json_format=jsonb
 
 #### MongoDB Configuration
 
-When using MongoDB (`memory.datastore.type=mongo` or `memory.datastore.type=mongodb`):
+When using MongoDB (`memory-service.datastore.type=mongo` or `memory-service.datastore.type=mongodb`):
 
 ```properties
 # MongoDB connection
@@ -77,7 +77,7 @@ Configure caching for conversation data:
 
 ```properties
 # Cache type: none, redis, infinispan (default: none)
-memory.cache.type=none
+memory-service.cache.type=none
 ```
 
 **Note**: Currently only `none` (no-op cache) is implemented. Redis and Infinispan support is planned.
@@ -95,12 +95,12 @@ Configure semantic search vector storage:
 
 ```properties
 # Vector store type: none, pgvector, postgres, mongo, mongodb (default: none)
-memory.vector.type=none
+memory-service.vector.type=none
 ```
 
 #### PgVector Configuration
 
-When using PgVector (`memory.vector.type=pgvector` or `memory.vector.type=postgres`):
+When using PgVector (`memory-service.vector.type=pgvector` or `memory-service.vector.type=postgres`):
 
 - Requires PostgreSQL as the data store
 - Uses the same PostgreSQL connection as configured for the data store
@@ -108,7 +108,7 @@ When using PgVector (`memory.vector.type=pgvector` or `memory.vector.type=postgr
 
 #### MongoDB Vector Store
 
-When using MongoDB vector store (`memory.vector.type=mongo` or `memory.vector.type=mongodb`):
+When using MongoDB vector store (`memory-service.vector.type=mongo` or `memory-service.vector.type=mongodb`):
 
 - Requires MongoDB as the data store
 - Uses MongoDB's native vector search capabilities
@@ -160,12 +160,12 @@ For agent-to-service communication, API keys can be configured:
 
 ```properties
 # Comma-separated list of API keys for trusted agents
-memory.api-keys=agent-key-1,agent-key-2
+memory-service.api-keys=agent-key-1,agent-key-2
 ```
 
 When configured, agents can authenticate using the `X-API-Key` header. Endpoints annotated with `@RequireApiKey` will require this header.
 
-**Note**: If `memory.api-keys` is not set or empty, API key authentication is effectively disabled.
+**Note**: If `memory-service.api-keys` is not set or empty, API key authentication is effectively disabled.
 
 ### Data Encryption Configuration
 
@@ -233,21 +233,19 @@ export QUARKUS_HTTP_PORT=8081
 export QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://postgres:5432/memory_service
 
 # Override memory service configuration
-export MEMORY_DATASTORE_TYPE=postgres
-export MEMORY_CACHE_TYPE=none
-export MEMORY_VECTOR_TYPE=pgvector
+export MEMORY_SERVICE_DATASTORE_TYPE=postgres
+export MEMORY_SERVICE_CACHE_TYPE=none
+export MEMORY_SERVICE_VECTOR_TYPE=pgvector
+export MEMORY_SERVICE_API_KEYS=key1,key2
+
+# Override encryption
+export DATA_ENCRYPTION_PROVIDERS=dek
+export DATA_ENCRYPTION_DEK_KEY=base64-encoded-key
 
 # Override OIDC configuration
 export QUARKUS_OIDC_AUTH_SERVER_URL=http://keycloak:8080/realms/memory-service
 export QUARKUS_OIDC_CREDENTIALS_SECRET=your-secret
 export KEYCLOAK_CLIENT_SECRET=your-secret
-
-# Override API keys
-export MEMORY_API_KEYS=key1,key2
-
-# Override encryption
-export DATA_ENCRYPTION_PROVIDERS=dek
-export DATA_ENCRYPTION_DEK_KEY=base64-encoded-key
 ```
 
 ## Configuration Profiles
@@ -274,7 +272,7 @@ Quarkus supports configuration profiles using the `%profile.` prefix:
 ```properties
 %test.quarkus.datasource.devservices.enabled=true
 %test.quarkus.liquibase.migrate-at-start=true
-%test.memory.api-keys=test-agent-key
+%test.memory-service.api-keys=test-agent-key
 ```
 
 ## Running the Service
@@ -318,9 +316,9 @@ docker compose up service
 
 ```properties
 # Use PostgreSQL with Dev Services
-memory.datastore.type=postgres
-memory.cache.type=none
-memory.vector.type=none
+memory-service.datastore.type=postgres
+memory-service.cache.type=none
+memory-service.vector.type=none
 
 # Plain encryption (no-op)
 data.encryption.providers=plain
@@ -336,16 +334,16 @@ quarkus.oidc.credentials.secret=change-me
 
 ```properties
 # PostgreSQL
-memory.datastore.type=postgres
+memory-service.datastore.type=postgres
 quarkus.datasource.jdbc.url=jdbc:postgresql://postgres:5432/memory_service
 quarkus.datasource.username=memory
 quarkus.datasource.password=memory
 
 # PgVector for semantic search
-memory.vector.type=pgvector
+memory-service.vector.type=pgvector
 
 # Redis cache
-memory.cache.type=redis
+memory-service.cache.type=redis
 quarkus.redis.hosts=redis://redis:6379
 
 # DEK encryption
@@ -359,7 +357,7 @@ quarkus.oidc.client-id=memory-service-client
 quarkus.oidc.credentials.secret=${KEYCLOAK_CLIENT_SECRET}
 
 # API keys for agents
-memory.api-keys=${MEMORY_API_KEYS}
+memory-service.api-keys=${MEMORY_SERVICE_API_KEYS}
 ```
 
 ## See Also

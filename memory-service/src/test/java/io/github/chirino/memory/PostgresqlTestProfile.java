@@ -8,8 +8,8 @@ public class PostgresqlTestProfile implements QuarkusTestProfile {
     @Override
     public Map<String, String> getConfigOverrides() {
         return Map.of(
-                "memory.datastore.type", "postgres",
-                "memory.vector.type", "pgvector",
+                "memory-service.datastore.type", "postgres",
+                "memory-service.vector.type", "pgvector",
                 "quarkus.datasource.devservices.enabled", "true",
                 "quarkus.liquibase.migrate-at-start", "true",
                 "quarkus.datasource.devservices.image-name", "pgvector/pgvector:pg17");

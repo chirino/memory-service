@@ -10,7 +10,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @ApplicationScoped
 public class MemoryStoreSelector {
 
-    @ConfigProperty(name = "memory.datastore.type", defaultValue = "postgres")
+    @ConfigProperty(name = "memory-service.datastore.type", defaultValue = "postgres")
     String datastoreType;
 
     @Inject PostgresMemoryStore postgresMemoryStore;
@@ -26,6 +26,7 @@ public class MemoryStoreSelector {
         if ("mongo".equals(type) || "mongodb".equals(type)) {
             return mongoMemoryStore;
         }
-        throw new IllegalStateException("Unsupported memory.datastore.type: " + datastoreType);
+        throw new IllegalStateException(
+                "Unsupported memory-service.datastore.type: " + datastoreType);
     }
 }

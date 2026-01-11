@@ -13,7 +13,7 @@ import org.jboss.logging.Logger;
 public class ApiKeyManager {
 
     private static final Logger LOG = Logger.getLogger(ApiKeyManager.class);
-    private static final String PROPERTY_NAME = "memory.api-keys";
+    private static final String PROPERTY_NAME = "memory-service.api-keys";
 
     private final Set<String> validApiKeys;
 
@@ -34,7 +34,7 @@ public class ApiKeyManager {
         this.validApiKeys = Collections.unmodifiableSet(normalized);
         if (this.validApiKeys.isEmpty()) {
             LOG.info(
-                    "No API keys configured (memory.api-keys); API key authentication is"
+                    "No API keys configured (memory-service.api-keys); API key authentication is"
                             + " effectively disabled.");
         } else {
             LOG.infof("Configured %d API key(s) for agent access.", this.validApiKeys.size());

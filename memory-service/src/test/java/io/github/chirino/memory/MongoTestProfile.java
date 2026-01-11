@@ -8,8 +8,8 @@ public class MongoTestProfile implements QuarkusTestProfile {
     @Override
     public Map<String, String> getConfigOverrides() {
         return Map.of(
-                "memory.datastore.type", "mongo",
-                "memory.vector.type", "mongodb",
+                "memory-service.datastore.type", "mongo",
+                "memory-service.vector.type", "mongodb",
                 "quarkus.mongodb.devservices.enabled", "true",
                 "quarkus.liquibase-mongodb.migrate-at-start", "true",
                 "quarkus.liquibase-mongodb.change-log",

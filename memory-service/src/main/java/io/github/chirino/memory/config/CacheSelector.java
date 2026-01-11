@@ -9,7 +9,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @ApplicationScoped
 public class CacheSelector {
 
-    @ConfigProperty(name = "memory.cache.type", defaultValue = "none")
+    @ConfigProperty(name = "memory-service.cache.type", defaultValue = "none")
     String cacheType;
 
     @Inject NoopConversationCache noopConversationCache;
