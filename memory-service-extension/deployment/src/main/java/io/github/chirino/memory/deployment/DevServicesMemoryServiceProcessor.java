@@ -41,20 +41,7 @@ public class DevServicesMemoryServiceProcessor {
         return AdditionalBeanBuildItem.builder()
                 .setUnremovable()
                 .addBeanClasses(
-                        "io.github.chirino.memory.langchain4j.MemoryServiceChatMemoryProvider",
-                        "io.github.chirino.memory.langchain4j.RequestContextExecutor",
-                        "io.github.chirino.memory.history.runtime.DefaultConversationStore",
                         "io.github.chirino.memory.runtime.MemoryServiceClientStartupObserver")
-                .build();
-    }
-
-    @BuildStep
-    AdditionalBeanBuildItem registerResponseResumerBeans() {
-        return AdditionalBeanBuildItem.builder()
-                .setUnremovable()
-                .addBeanClasses(
-                        "io.github.chirino.memory.history.runtime.NoopResponseResumer",
-                        "io.github.chirino.memory.history.runtime.GrpcResponseResumer")
                 .build();
     }
 
