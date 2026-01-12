@@ -1,6 +1,6 @@
 package example;
 
-import io.github.chirino.memory.conversation.runtime.ResponseResumer;
+import io.github.chirino.memory.history.runtime.ResponseResumer;
 import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;

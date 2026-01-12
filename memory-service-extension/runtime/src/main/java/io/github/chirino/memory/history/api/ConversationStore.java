@@ -1,4 +1,4 @@
-package io.github.chirino.memory.conversation.api;
+package io.github.chirino.memory.history.api;
 
 public interface ConversationStore {
 

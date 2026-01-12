@@ -1,4 +1,4 @@
-package io.github.chirino.memory.conversation.model;
+package io.github.chirino.memory.history.model;
 
 public enum MessageRole {
     USER,

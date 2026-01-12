@@ -65,7 +65,7 @@ public class MemoryServiceProxyResource {
         return execute(
                 () -> conversationsApi.getConversation(conversationId),
                 OK,
-                "Error getting conversation %s",
+                "Error getting history %s",
                 conversationId);
     }
 
@@ -75,7 +75,7 @@ public class MemoryServiceProxyResource {
         return executeVoid(
                 () -> conversationsApi.deleteConversation(conversationId),
                 NO_CONTENT,
-                "Error deleting conversation %s",
+                "Error deleting history %s",
                 conversationId);
     }
 
@@ -92,7 +92,7 @@ public class MemoryServiceProxyResource {
                         conversationsApi.listConversationMessages(
                                 conversationId, after, limit, channel),
                 OK,
-                "Error listing messages for conversation %s",
+                "Error listing messages for history %s",
                 conversationId);
     }
 
@@ -114,7 +114,7 @@ public class MemoryServiceProxyResource {
                             conversationsApi.forkConversationAtMessage(
                                     conversationId, messageId, request),
                     OK,
-                    "Error forking conversation %s at message %s",
+                    "Error forking history %s at message %s",
                     conversationId,
                     messageId);
         } catch (Exception e) {
@@ -130,7 +130,7 @@ public class MemoryServiceProxyResource {
         return execute(
                 () -> conversationsApi.listConversationForks(conversationId),
                 OK,
-                "Error listing forks for conversation %s",
+                "Error listing forks for history %s",
                 conversationId);
     }
 
@@ -146,7 +146,7 @@ public class MemoryServiceProxyResource {
             return execute(
                     () -> conversationsApi.shareConversation(conversationId, request),
                     CREATED,
-                    "Error sharing conversation %s",
+                    "Error sharing history %s",
                     conversationId);
         } catch (Exception e) {
             LOG.errorf(e, "Error parsing share request body");
@@ -166,9 +166,9 @@ public class MemoryServiceProxyResource {
     //         return proxy(
     //                 () -> conversationsApi.createConversation(request),
     //                 CREATED,
-    //                 "Error creating conversation");
+    //                 "Error creating history");
     //     } catch (Exception e) {
-    //         LOG.errorf(e, "Error parsing create conversation request body");
+    //         LOG.errorf(e, "Error parsing create history request body");
     //         return handleException(e);
     //     }
     // }
@@ -184,7 +184,7 @@ public class MemoryServiceProxyResource {
     //         return proxy(
     //                 () -> conversationsApi.appendConversationMessage(conversationId, request),
     //                 CREATED,
-    //                 "Error appending message to conversation %s",
+    //                 "Error appending message to history %s",
     //                 conversationId);
     //     } catch (Exception e) {
     //         LOG.errorf(e, "Error parsing append message request body");
@@ -199,7 +199,7 @@ public class MemoryServiceProxyResource {
     //     return proxy(
     //             () -> conversationsApi.listConversationMemberships(conversationId),
     //             OK,
-    //             "Error listing memberships for conversation %s",
+    //             "Error listing memberships for history %s",
     //             conversationId);
     // }
     // @PATCH
@@ -218,7 +218,7 @@ public class MemoryServiceProxyResource {
     //                         conversationsApi.updateConversationMembership(
     //                                 conversationId, userId, request),
     //                 OK,
-    //                 "Error updating membership for conversation %s, user %s",
+    //                 "Error updating membership for history %s, user %s",
     //                 conversationId,
     //                 userId);
     //     } catch (Exception e) {
@@ -238,7 +238,7 @@ public class MemoryServiceProxyResource {
     //                 () -> conversationsApi.transferConversationOwnership(conversationId,
     // request),
     //                 Response.Status.ACCEPTED,
-    //                 "Error transferring ownership of conversation %s",
+    //                 "Error transferring ownership of history %s",
     //                 conversationId);
     //     } catch (Exception e) {
     //         LOG.errorf(e, "Error parsing transfer ownership request body");
@@ -257,7 +257,7 @@ public class MemoryServiceProxyResource {
     //         return proxy(
     //                 () -> conversationsApi.createConversationSummary(conversationId, request),
     //                 CREATED,
-    //                 "Error creating summary for conversation %s",
+    //                 "Error creating summary for history %s",
     //                 conversationId);
     //     } catch (Exception e) {
     //         LOG.errorf(e, "Error parsing create summary request body");

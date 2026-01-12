@@ -42,7 +42,7 @@ OpenAPI-based Java client library that contains:
 Quarkus extension that simplifies integration by providing:
 - **Dev Services** - Automatically starts the memory-service in Docker during development
 - **LangChain4j Integration** - `MemoryServiceChatMemoryProvider` and `MemoryServiceChatMemory` for seamless LangChain4j integration
-- **Conversation Recording** - `@ConversationAware` interceptor for automatic message persistence
+- **Conversation Recording** - `@RecordConversation` interceptor for automatic message persistence
 - Automatic client configuration and URL wiring
 
 ### `agent`
@@ -137,7 +137,7 @@ The `@MemoryId` parameter automatically uses the conversation ID to retrieve and
 
 ### 4. Conversation History Recording
 
-To provide conversation history to UI agents, use a `HistoryRecordingAgent` that wraps your agent with the `@ConversationAware` interceptor:
+To provide conversation history to UI agents, use a `HistoryRecordingAgent` that wraps your agent with the `@RecordConversation` interceptor:
 
 ```java
 @ApplicationScoped
@@ -150,7 +150,7 @@ public class HistoryRecordingAgent {
         this.agent = agent;
     }
 
-    @ConversationAware
+    @RecordConversation
     public Multi<String> chat(
             @ConversationId String conversationId, @UserMessage String userMessage) {
         return agent.chat(conversationId, userMessage);
@@ -158,7 +158,7 @@ public class HistoryRecordingAgent {
 }
 ```
 
-The `@ConversationAware` interceptor automatically:
+The `@RecordConversation` interceptor automatically:
 - Stores the user message before calling your method
 - Stores the agent response after your method completes
 
@@ -200,7 +200,7 @@ Enable response resumption by setting:
 memory-service.response-resumer=redis
 ```
 
-When enabled, the `@ConversationAware` interceptor automatically buffers streaming responses:
+When enabled, the `@RecordConversation` interceptor automatically buffers streaming responses:
 
 - For streaming methods that return `Multi<String>`, the interceptor wraps the stream using `ConversationStreamAdapter.wrap()`, which:
   - Forwards each token to the original caller

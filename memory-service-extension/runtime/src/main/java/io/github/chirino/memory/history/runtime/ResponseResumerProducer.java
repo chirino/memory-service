@@ -1,4 +1,4 @@
-package io.github.chirino.memory.conversation.runtime;
+package io.github.chirino.memory.history.runtime;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Any;

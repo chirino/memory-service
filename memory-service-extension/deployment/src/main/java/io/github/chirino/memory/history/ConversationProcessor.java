@@ -1,4 +1,4 @@
-package io.github.chirino.memory.conversation;
+package io.github.chirino.memory.history;
 
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.deployment.annotations.BuildProducer;
@@ -10,9 +10,9 @@ public class ConversationProcessor {
     void registerBeans(BuildProducer<AdditionalBeanBuildItem> beans) {
         beans.produce(
                 AdditionalBeanBuildItem.unremovableOf(
-                        "io.github.chirino.memory.conversation.runtime.ConversationInterceptor"));
+                        "io.github.chirino.memory.history.runtime.ConversationInterceptor"));
         beans.produce(
                 AdditionalBeanBuildItem.unremovableOf(
-                        "io.github.chirino.memory.conversation.runtime.DefaultConversationStore"));
+                        "io.github.chirino.memory.history.runtime.DefaultConversationStore"));
     }
 }

@@ -1,4 +1,4 @@
-package io.github.chirino.memory.conversation.runtime;
+package io.github.chirino.memory.history.runtime;
 
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
@@ -128,10 +128,7 @@ public class GrpcResponseResumer implements ResponseResumer {
                     stub(null).hasResponseInProgress(request).await().indefinitely();
             return response.getInProgress();
         } catch (Exception e) {
-            LOG.warnf(
-                    e,
-                    "Failed to check if conversation %s has response in progress",
-                    conversationId);
+            LOG.warnf(e, "Failed to check if history %s has response in progress", conversationId);
             return false;
         }
     }

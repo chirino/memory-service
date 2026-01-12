@@ -14,9 +14,9 @@ This document focuses on the conversation recording feature.
 The extension can automatically persist **user** and **agent** messages to the
 Memory Service without any boilerplate in your endpoints.
 
-Key pieces (package `io.github.chirino.memory.conversation`):
+Key pieces (package `io.github.chirino.memory.history`):
 
-- `@ConversationAware` – interceptor binding for methods you want recorded
+- `@RecordConversation` – interceptor binding for methods you want recorded
 - `@ConversationId` – parameter annotation for the conversation id
 - `@UserMessage` – parameter annotation for the user’s input text
 - `ConversationStore` – SPI for persisting messages
@@ -28,7 +28,7 @@ responses and streaming via Mutiny `Multi<String>`.
 
 ## How it works
 
-When a method annotated with `@ConversationAware` is invoked:
+When a method annotated with `@RecordConversation` is invoked:
 
 1. `ConversationInterceptor` scans parameters for:
    - `@ConversationId String conversationId`
@@ -69,7 +69,7 @@ token stream after reconnecting:
 
 The extension ships with an `@ApplicationScoped` default implementation:
 
-- Class: `io.github.chirino.memory.conversation.runtime.DefaultConversationStore`
+- Class: `io.github.chirino.memory.history.runtime.DefaultConversationStore`
 - Depends on the generated REST client:
   - `io.github.chirino.memory.client.api.ConversationsApi` (injected with `@RestClient`)
 
@@ -154,15 +154,15 @@ In dev and tests, the `DevServicesMemoryServiceProcessor` starts a
 `memory-service-service:latest` container and wires the URLs and API keys
 automatically, so you typically don’t need extra config.
 
-## Using @ConversationAware in your code
+## Using @RecordConversation in your code
 
-To enable recording for a service method, annotate it with `@ConversationAware`
+To enable recording for a service method, annotate it with `@RecordConversation`
 and mark parameters appropriately:
 
 ```java
-import io.github.chirino.memory.conversation.annotations.ConversationAware;
-import io.github.chirino.memory.conversation.annotations.ConversationId;
-import io.github.chirino.memory.conversation.annotations.UserMessage;
+import io.github.chirino.memory.history.annotations.RecordConversation;
+import io.github.chirino.memory.history.annotations.ConversationId;
+import io.github.chirino.memory.history.annotations.UserMessage;
 import io.smallrye.mutiny.Multi;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -170,7 +170,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class ChatService {
 
-    @ConversationAware
+    @RecordConversation
     public Multi<String> chat(
             @ConversationId String conversationId,
             @UserMessage String message) {

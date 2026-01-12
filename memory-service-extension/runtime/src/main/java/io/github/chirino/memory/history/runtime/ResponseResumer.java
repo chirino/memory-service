@@ -1,4 +1,4 @@
-package io.github.chirino.memory.conversation.runtime;
+package io.github.chirino.memory.history.runtime;
 
 import io.smallrye.mutiny.Multi;
 import java.util.List;
@@ -28,8 +28,8 @@ public interface ResponseResumer {
     /**
      * Check which conversations from the provided list have responses in progress.
      *
-     * @param conversationIds list of conversation IDs to check
-     * @return a list of conversation IDs that have responses in progress
+     * @param conversationIds list of history IDs to check
+     * @return a list of history IDs that have responses in progress
      */
     default List<String> check(List<String> conversationIds) {
         return check(conversationIds, null);
@@ -39,9 +39,9 @@ public interface ResponseResumer {
      * Check which conversations from the provided list have responses in progress,
      * optionally propagating a bearer token to downstream resumer implementations.
      *
-     * @param conversationIds list of conversation IDs to check
+     * @param conversationIds list of history IDs to check
      * @param bearerToken token to use for authentication when calling out (may be null)
-     * @return a list of conversation IDs that have responses in progress
+     * @return a list of history IDs that have responses in progress
      */
     default List<String> check(List<String> conversationIds, String bearerToken) {
         if (conversationIds == null || conversationIds.isEmpty()) {
@@ -56,7 +56,7 @@ public interface ResponseResumer {
                             } catch (Exception e) {
                                 LOG.warnf(
                                         e,
-                                        "Failed to check if conversation %s has response in"
+                                        "Failed to check if history %s has response in"
                                                 + " progress",
                                         conversationId);
                                 return false;
@@ -68,8 +68,8 @@ public interface ResponseResumer {
     boolean enabled();
 
     /**
-     * Check if a conversation has a response currently in progress.
-     * @param conversationId the conversation ID to check
+     * Check if a history has a response currently in progress.
+     * @param conversationId the history ID to check
      * @return true if a response is in progress, false otherwise
      */
     boolean hasResponseInProgress(String conversationId);

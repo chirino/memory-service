@@ -1,3 +1,3 @@
-package io.github.chirino.memory.conversation.runtime;
+package io.github.chirino.memory.history.runtime;
 
 public record ConversationInvocation(String conversationId, String userMessage) {}

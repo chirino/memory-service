@@ -1,6 +1,6 @@
-package io.github.chirino.memory.conversation.runtime;
+package io.github.chirino.memory.history.runtime;
 
-import io.github.chirino.memory.conversation.api.ConversationStore;
+import io.github.chirino.memory.history.api.ConversationStore;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 

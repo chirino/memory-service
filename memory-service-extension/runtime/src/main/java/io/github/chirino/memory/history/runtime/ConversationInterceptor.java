@@ -1,9 +1,9 @@
-package io.github.chirino.memory.conversation.runtime;
+package io.github.chirino.memory.history.runtime;
 
-import io.github.chirino.memory.conversation.annotations.ConversationAware;
-import io.github.chirino.memory.conversation.annotations.ConversationId;
-import io.github.chirino.memory.conversation.annotations.UserMessage;
-import io.github.chirino.memory.conversation.api.ConversationStore;
+import io.github.chirino.memory.history.annotations.ConversationId;
+import io.github.chirino.memory.history.annotations.RecordConversation;
+import io.github.chirino.memory.history.annotations.UserMessage;
+import io.github.chirino.memory.history.api.ConversationStore;
 import io.smallrye.mutiny.Multi;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.inject.Instance;
@@ -14,7 +14,7 @@ import jakarta.interceptor.InvocationContext;
 import java.lang.annotation.Annotation;
 import org.jboss.logging.Logger;
 
-@ConversationAware
+@RecordConversation
 @Interceptor
 @Priority(Interceptor.Priority.APPLICATION)
 public class ConversationInterceptor {

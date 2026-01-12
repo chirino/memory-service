@@ -1,4 +1,4 @@
-package io.github.chirino.memory.conversation.runtime;
+package io.github.chirino.memory.history.runtime;
 
 import io.quarkus.arc.DefaultBean;
 import io.smallrye.mutiny.Multi;

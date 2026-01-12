@@ -16,7 +16,7 @@
 
 * How much should we trust the agent: Should the agent just tell use the user id or do we distrust it and get it from a bearer token?
 * All the class/method names in the client/quarkus-extension could use a ponder
-* Review/Harden the @ConversationAware impl.
+* Review/Harden the @RecordConversation impl.
 * Is the current Summary feature useful?
 * Ponder how best to kick off/manage async summerization / search indexing
 * Figure out how muli-modal content should be handled.

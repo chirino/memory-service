@@ -30,7 +30,7 @@ public class MemoryServiceChatMemoryProvider implements ChatMemoryProvider {
 
         // this is here so that we have a way of not storing the messages for a chat interaction,
         // for example if you usigng the LLM as summarize service, and not really part of a
-        // conversation.
+        // history.
         if ("".equals(memoryId)) {
             return MessageWindowChatMemory.builder().maxMessages(10).build();
         }

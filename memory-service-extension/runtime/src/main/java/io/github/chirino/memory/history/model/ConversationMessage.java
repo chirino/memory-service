@@ -1,3 +1,3 @@
-package io.github.chirino.memory.conversation.model;
+package io.github.chirino.memory.history.model;
 
 public record ConversationMessage(MessageRole role, String content, long timestamp) {}

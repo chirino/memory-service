@@ -1,8 +1,8 @@
-package io.github.chirino.memory.conversation.runtime;
+package io.github.chirino.memory.history.runtime;
 
 import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
-import io.github.chirino.memory.conversation.api.ConversationStore;
+import io.github.chirino.memory.history.api.ConversationStore;
 import io.github.chirino.memory.langchain4j.RequestContextExecutor;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.SecurityIdentityAssociation;
@@ -41,7 +41,7 @@ public class DefaultConversationStore implements ConversationStore {
                     block.put("role", "USER");
                     request.setContent(List.of(block));
                     conversationsApi.appendConversationMessage(conversationId, request);
-                    LOG.infof("Added user message to conversation %s", conversationId);
+                    LOG.infof("Added user message to history %s", conversationId);
                 });
     }
 
@@ -61,7 +61,7 @@ public class DefaultConversationStore implements ConversationStore {
                     block.put("role", "AI");
                     request.setContent(List.of(block));
                     conversationsApi.appendConversationMessage(conversationId, request);
-                    LOG.infof("Added agent message to conversation %s", conversationId);
+                    LOG.infof("Added agent message to history %s", conversationId);
                 });
     }
 
