@@ -4,8 +4,10 @@ import io.github.chirino.memory.model.MessageChannel;
 import io.github.chirino.memory.persistence.entity.MessageEntity;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.persistence.NoResultException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -62,6 +64,57 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
                                 + params.size()
                                 + " order by m.createdAt, m.id";
                 return find(query, params.toArray()).page(0, limit).list();
+            }
+        }
+
+        String query = baseQuery + " order by m.createdAt, m.id";
+        return find(query, params.toArray()).page(0, limit).list();
+    }
+
+    public Long findLatestMemoryEpoch(UUID conversationId) {
+        try {
+            return getEntityManager()
+                    .createQuery(
+                            "select max(m.memoryEpoch) from MessageEntity m where m.conversation.id"
+                                    + " = :cid and m.channel = :channel",
+                            Long.class)
+                    .setParameter("cid", conversationId)
+                    .setParameter("channel", MessageChannel.MEMORY)
+                    .getSingleResult();
+        } catch (NoResultException e) {
+            return null;
+        }
+    }
+
+    public List<MessageEntity> listMemoryMessagesByEpoch(UUID conversationId, Long epoch) {
+        return listMemoryMessagesByEpoch(conversationId, null, Integer.MAX_VALUE, epoch);
+    }
+
+    public List<MessageEntity> listMemoryMessagesByEpoch(
+            UUID conversationId, String afterMessageId, int limit, Long epoch) {
+        String baseQuery = "from MessageEntity m where m.conversation.id = ?1 and m.channel = ?2";
+        List<Object> params = new ArrayList<>();
+        params.add(conversationId);
+        params.add(MessageChannel.MEMORY);
+
+        if (epoch == null) {
+            baseQuery += " and m.memoryEpoch is null";
+        } else {
+            baseQuery += " and m.memoryEpoch = ?" + (params.size() + 1);
+            params.add(epoch);
+        }
+
+        if (afterMessageId != null) {
+            UUID afterId = UUID.fromString(afterMessageId);
+            MessageEntity afterMessage = findById(afterId);
+            if (afterMessage != null
+                    && afterMessage.getConversation() != null
+                    && conversationId.equals(afterMessage.getConversation().getId())
+                    && afterMessage.getCreatedAt() != null
+                    && afterMessage.getChannel() == MessageChannel.MEMORY
+                    && Objects.equals(afterMessage.getMemoryEpoch(), epoch)) {
+                params.add(afterMessage.getCreatedAt());
+                baseQuery += " and m.createdAt > ?" + params.size();
             }
         }
 

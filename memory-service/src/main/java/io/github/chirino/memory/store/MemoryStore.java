@@ -14,6 +14,7 @@ import io.github.chirino.memory.api.dto.PagedMessages;
 import io.github.chirino.memory.api.dto.SearchMessagesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
+import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.model.MessageChannel;
 import java.util.List;
@@ -57,9 +58,13 @@ public interface MemoryStore {
             String conversationId,
             String afterMessageId,
             int limit,
-            MessageChannel channel);
+            MessageChannel channel,
+            MemoryEpochFilter epochFilter);
 
     List<MessageDto> appendAgentMessages(
+            String userId, String conversationId, List<CreateMessageRequest> messages);
+
+    SyncResult syncAgentMessages(
             String userId, String conversationId, List<CreateMessageRequest> messages);
 
     MessageDto createSummary(String conversationId, CreateSummaryRequest request);

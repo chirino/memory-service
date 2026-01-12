@@ -103,7 +103,7 @@ public class SummerizationResource {
         while (true) {
             ListConversationMessages200Response response =
                     conversationsApi.listConversationMessages(
-                            conversationId, cursor, PAGE_SIZE, MessageChannel.HISTORY);
+                            conversationId, cursor, PAGE_SIZE, MessageChannel.HISTORY, null);
             List<Message> data = response != null ? response.getData() : null;
             if (data != null && !data.isEmpty()) {
                 all.addAll(data);

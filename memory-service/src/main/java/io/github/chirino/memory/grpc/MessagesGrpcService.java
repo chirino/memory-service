@@ -1,6 +1,7 @@
 package io.github.chirino.memory.grpc;
 
 import io.github.chirino.memory.api.dto.PagedMessages;
+import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.grpc.v1.AppendMessageRequest;
 import io.github.chirino.memory.grpc.v1.ListMessagesRequest;
@@ -8,10 +9,14 @@ import io.github.chirino.memory.grpc.v1.ListMessagesResponse;
 import io.github.chirino.memory.grpc.v1.Message;
 import io.github.chirino.memory.grpc.v1.MessagesService;
 import io.github.chirino.memory.grpc.v1.PageInfo;
+import io.github.chirino.memory.grpc.v1.SyncMessagesRequest;
+import io.github.chirino.memory.grpc.v1.SyncMessagesResponse;
+import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.grpc.Status;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -34,6 +39,16 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                     GrpcDtoMapper.fromProtoChannel(request.getChannel());
                             io.github.chirino.memory.model.MessageChannel channel =
                                     toEffectiveChannel(requestedChannel);
+                            MemoryEpochFilter epochFilter = null;
+                            if (channel == io.github.chirino.memory.model.MessageChannel.MEMORY) {
+                                try {
+                                    epochFilter = MemoryEpochFilter.parse(request.getEpochFilter());
+                                } catch (IllegalArgumentException e) {
+                                    throw Status.INVALID_ARGUMENT
+                                            .withDescription(e.getMessage())
+                                            .asRuntimeException();
+                                }
+                            }
                             String token =
                                     normalizeToken(
                                             request.hasPage()
@@ -49,7 +64,8 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                                     request.getConversationId(),
                                                     token,
                                                     pageSize,
-                                                    channel);
+                                                    channel,
+                                                    epochFilter);
                             ListMessagesResponse.Builder builder =
                                     ListMessagesResponse.newBuilder();
                             if (paged != null) {
@@ -119,6 +135,66 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                 .transform(GrpcStatusMapper::map);
     }
 
+    @Override
+    public Uni<SyncMessagesResponse> syncMessages(SyncMessagesRequest request) {
+        return Uni.createFrom()
+                .item(
+                        () -> {
+                            if (!hasValidApiKey()) {
+                                throw Status.PERMISSION_DENIED
+                                        .withDescription(
+                                                "Agent API key is required to sync memory messages")
+                                        .asRuntimeException();
+                            }
+                            if (request.getConversationId() == null
+                                    || request.getConversationId().isBlank()) {
+                                throw Status.INVALID_ARGUMENT
+                                        .withDescription("conversationId is required")
+                                        .asRuntimeException();
+                            }
+                            if (request.getMessagesCount() == 0) {
+                                throw Status.INVALID_ARGUMENT
+                                        .withDescription("at least one message is required")
+                                        .asRuntimeException();
+                            }
+                            List<CreateMessageRequest> internal =
+                                    new ArrayList<>(request.getMessagesCount());
+                            for (io.github.chirino.memory.grpc.v1.CreateMessageRequest message :
+                                    request.getMessagesList()) {
+                                if (message == null
+                                        || message.getChannel()
+                                                != io.github.chirino.memory.grpc.v1.MessageChannel
+                                                        .MEMORY) {
+                                    throw Status.INVALID_ARGUMENT
+                                            .withDescription(
+                                                    "all sync messages must target the memory"
+                                                            + " channel")
+                                            .asRuntimeException();
+                                }
+                                internal.add(toClientCreateMessage(message));
+                            }
+                            SyncResult result =
+                                    store().syncAgentMessages(
+                                                    currentUserId(),
+                                                    request.getConversationId(),
+                                                    internal);
+                            SyncMessagesResponse.Builder builder =
+                                    SyncMessagesResponse.newBuilder()
+                                            .setNoOp(result.isNoOp())
+                                            .setEpochIncremented(result.isEpochIncremented());
+                            if (result.getMemoryEpoch() != null) {
+                                builder.setMemoryEpoch(result.getMemoryEpoch());
+                            }
+                            builder.addAllMessages(
+                                    result.getMessages().stream()
+                                            .map(GrpcDtoMapper::toProto)
+                                            .collect(Collectors.toList()));
+                            return builder.build();
+                        })
+                .onFailure()
+                .transform(GrpcStatusMapper::map);
+    }
+
     private io.github.chirino.memory.model.MessageChannel toEffectiveChannel(
             io.github.chirino.memory.model.MessageChannel requested) {
         io.github.chirino.memory.model.MessageChannel safeChannel =
@@ -129,6 +205,19 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
             return io.github.chirino.memory.model.MessageChannel.HISTORY;
         }
         return safeChannel;
+    }
+
+    private CreateMessageRequest toClientCreateMessage(
+            io.github.chirino.memory.grpc.v1.CreateMessageRequest request) {
+        CreateMessageRequest internal = new CreateMessageRequest();
+        String userId = request.getUserId();
+        internal.setUserId(userId == null || userId.isBlank() ? null : userId);
+        io.github.chirino.memory.model.MessageChannel requestChannel =
+                GrpcDtoMapper.fromProtoChannel(request.getChannel());
+        internal.setChannel(GrpcDtoMapper.toCreateMessageChannel(requestChannel));
+        internal.setMemoryEpoch(request.getMemoryEpoch());
+        internal.setContent(GrpcDtoMapper.fromValues(request.getContentList()));
+        return internal;
     }
 
     private static String normalizeToken(String token) {

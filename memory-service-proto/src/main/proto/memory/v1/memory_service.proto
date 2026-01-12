@@ -127,6 +127,18 @@ message CreateMessageRequest {
   repeated google.protobuf.Value content = 4;
 }
 
+message SyncMessagesRequest {
+  string conversation_id = 1;
+  repeated CreateMessageRequest messages = 2;
+}
+
+message SyncMessagesResponse {
+  optional int64 memory_epoch = 1;
+  bool no_op = 2;
+  bool epoch_incremented = 3;
+  repeated Message messages = 4;
+}
+
 message AppendMessageRequest {
   string conversation_id = 1;
   CreateMessageRequest message = 2;
@@ -135,7 +147,8 @@ message AppendMessageRequest {
 message ListMessagesRequest {
   string conversation_id = 1;
   MessageChannel channel = 2;
-  PageRequest page = 3;
+  string epoch_filter = 3;
+  PageRequest page = 4;
 }
 
 message ListMessagesResponse {
@@ -231,6 +244,7 @@ service ConversationMembershipsService {
 service MessagesService {
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
   rpc AppendMessage(AppendMessageRequest) returns (Message);
+  rpc SyncMessages(SyncMessagesRequest) returns (SyncMessagesResponse);
 }
 
 service SearchService {

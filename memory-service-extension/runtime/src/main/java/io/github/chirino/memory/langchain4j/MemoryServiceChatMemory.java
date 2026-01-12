@@ -67,7 +67,7 @@ public class MemoryServiceChatMemory implements ChatMemory {
                     request.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
 
                     String json = CODEC.messageToJson(chatMessage);
-                    LOG.infof("Encoding content block: [%s]", json);
+                    // LOG.infof("Encoding content block: [%s]", json);
                     request.setContent(List.of(new RawValue(json)));
 
                     conversationsApi.appendConversationMessage(conversationId, request);
@@ -82,7 +82,7 @@ public class MemoryServiceChatMemory implements ChatMemory {
                     try {
                         context =
                                 conversationsApi.listConversationMessages(
-                                        conversationId, null, 50, MessageChannel.MEMORY);
+                                        conversationId, null, 50, MessageChannel.MEMORY, null);
                     } catch (WebApplicationException e) {
                         int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
                         if (status == 404) {

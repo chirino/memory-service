@@ -6,6 +6,7 @@ import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.MessageDto;
 import io.github.chirino.memory.api.dto.PagedMessages;
+import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.Conversation;
 import io.github.chirino.memory.client.model.ConversationForkSummary;
 import io.github.chirino.memory.client.model.ConversationMembership;
@@ -17,11 +18,13 @@ import io.github.chirino.memory.client.model.ErrorResponse;
 import io.github.chirino.memory.client.model.ForkFromMessageRequest;
 import io.github.chirino.memory.client.model.Message;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
+import io.github.chirino.memory.client.model.SyncMessagesRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.MessageChannel;
 import io.github.chirino.memory.security.ApiKeyContext;
 import io.github.chirino.memory.store.AccessDeniedException;
+import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.github.chirino.memory.store.MemoryStore;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.quarkus.security.Authenticated;
@@ -134,7 +137,8 @@ public class ConversationsResource {
             @PathParam("conversationId") String conversationId,
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit,
-            @QueryParam("channel") String channel) {
+            @QueryParam("channel") String channel,
+            @QueryParam("epoch") String epoch) {
         LOG.infof(
                 "Listing messages for conversationId=%s, user=%s, after=%s, limit=%s,"
                         + " channel=%s",
@@ -145,29 +149,28 @@ public class ConversationsResource {
             int pageSize = limit != null ? limit : 50;
             List<MessageDto> internal;
             String nextCursor = null;
-            if (apiKeyContext != null && apiKeyContext.hasValidApiKey()) {
-                // Agents typically request memory channel; delegate to store
-                PagedMessages context =
-                        store().getMessages(
-                                        currentUserId(),
-                                        conversationId,
-                                        after,
-                                        pageSize,
-                                        requestedChannel);
-                internal = context.getMessages();
-                nextCursor = context.getNextCursor();
-            } else {
-                // Users only see history channel
-                PagedMessages context =
-                        store().getMessages(
-                                        currentUserId(),
-                                        conversationId,
-                                        after,
-                                        pageSize,
-                                        MessageChannel.HISTORY);
-                internal = context.getMessages();
-                nextCursor = context.getNextCursor();
+            boolean hasApiKey = apiKeyContext != null && apiKeyContext.hasValidApiKey();
+            MemoryEpochFilter epochFilter = null;
+            MessageChannel effectiveChannel = requestedChannel;
+            if (!hasApiKey) {
+                effectiveChannel = MessageChannel.HISTORY;
+            } else if (effectiveChannel == MessageChannel.MEMORY) {
+                try {
+                    epochFilter = MemoryEpochFilter.parse(epoch);
+                } catch (IllegalArgumentException e) {
+                    return badRequest(e.getMessage());
+                }
             }
+            PagedMessages context =
+                    store().getMessages(
+                                    currentUserId(),
+                                    conversationId,
+                                    after,
+                                    pageSize,
+                                    effectiveChannel,
+                                    epochFilter);
+            internal = context.getMessages();
+            nextCursor = context.getNextCursor();
             List<Message> data = internal.stream().map(this::toClientMessage).toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
@@ -217,6 +220,42 @@ public class ConversationsResource {
                                 "User messages cannot be appended via this endpoint"));
             }
             return Response.status(Response.Status.CREATED).entity(result).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @POST
+    @Path("/conversations/{conversationId}/memory/messages/sync")
+    public Response syncMemoryMessages(
+            @PathParam("conversationId") String conversationId, SyncMessagesRequest request) {
+        if (apiKeyContext == null || !apiKeyContext.hasValidApiKey()) {
+            return forbidden(
+                    new AccessDeniedException("Agent API key is required to sync memory messages"));
+        }
+        if (request == null || request.getMessages() == null || request.getMessages().isEmpty()) {
+            return badRequest("messages are required");
+        }
+        for (CreateMessageRequest message : request.getMessages()) {
+            if (message == null
+                    || message.getChannel() == null
+                    || message.getChannel() != CreateMessageRequest.ChannelEnum.MEMORY) {
+                return badRequest("all sync messages must target the memory channel");
+            }
+        }
+        try {
+            SyncResult result =
+                    store().syncAgentMessages(
+                                    currentUserId(), conversationId, request.getMessages());
+            Map<String, Object> response = new HashMap<>();
+            response.put("memoryEpoch", result.getMemoryEpoch());
+            response.put("noOp", result.isNoOp());
+            response.put("epochIncremented", result.isEpochIncremented());
+            List<Message> data = result.getMessages().stream().map(this::toClientMessage).toList();
+            response.put("messages", data);
+            return Response.ok(response).build();
         } catch (ResourceNotFoundException e) {
             return notFound(e);
         } catch (AccessDeniedException e) {
@@ -449,6 +488,14 @@ public class ConversationsResource {
         error.setCode("forbidden");
         error.setDetails(Map.of("message", e.getMessage()));
         return Response.status(Response.Status.FORBIDDEN).entity(error).build();
+    }
+
+    private Response badRequest(String message) {
+        ErrorResponse error = new ErrorResponse();
+        error.setError("Bad request");
+        error.setCode("bad_request");
+        error.setDetails(Map.of("message", message));
+        return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
     }
 
     private ConversationSummary toClientConversationSummary(ConversationSummaryDto dto) {

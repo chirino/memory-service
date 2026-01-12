@@ -218,6 +218,17 @@ paths:
           description: |-
             Channel of messages to return. Defaults to `history` for the
             user-visible conversation; `memory` returns agent memory messages.
+        - name: epoch
+          in: query
+          required: false
+          schema:
+            type: string
+            nullable: true
+            default: latest
+          description: |-
+            Optional epoch filter when listing the `memory` channel. Valid values
+            are `latest`, `all`, or a numeric epoch identifier. Defaults to
+            `latest` when not provided.
       responses:
         '200':
           description: A list of messages.
@@ -269,6 +280,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Message'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/memory/messages/sync:
+    post:
+      tags: [Conversations]
+      summary: Synchronize the agent memory epoch
+      description: |-
+        Synchronizes the in-memory context for the conversation. The service fails
+        when any message is not targeting the `memory` channel, then compares the
+        provided list to the messages already stored in the latest memory epoch.
+        If there is no difference it is a no-op, if the list merely appends more
+        messages they are added to the current epoch, otherwise a new epoch is
+        created and all provided messages are stored under the new epoch. Requires
+        a valid agent API key.
+      operationId: syncConversationMemory
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncMessagesRequest'
+      responses:
+        '200':
+          description: Result of the sync operation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncMessagesResponse'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -846,6 +896,66 @@ components:
         content:
           - type: "text"
             text: "Based on your past chats, here are three possible approaches…"
+
+    SyncMessagesRequest:
+      type: object
+      required:
+        - messages
+      properties:
+        messages:
+          type: array
+          description: |-
+            The desired memory epoch contents. Each entry must include the
+            `memory` channel and should match the ordering that the agent expects to
+            see replayed; only the agent may call this endpoint.
+          items:
+            $ref: '#/components/schemas/CreateMessageRequest'
+      example:
+        messages:
+          - userId: "user_1234"
+            channel: "memory"
+            content:
+              - type: "text"
+                text: "The user asked about memory sync."
+          - userId: "user_1234"
+            channel: "memory"
+            content:
+              - type: "text"
+                text: "I learned that child steps matter."
+
+    SyncMessagesResponse:
+      type: object
+      properties:
+        memoryEpoch:
+          type: integer
+          format: int64
+          nullable: true
+          description: The epoch number that now reflects the stored memory state.
+        noOp:
+          type: boolean
+          description: True when the request resulted in no stored changes.
+        epochIncremented:
+          type: boolean
+          description: True when the provided list diverged and a new epoch was started.
+        messages:
+          type: array
+          description: List of messages that were appended during this sync.
+          items:
+            $ref: '#/components/schemas/Message'
+      example:
+        memoryEpoch: 5
+        noOp: false
+        epochIncremented: true
+        messages:
+          - id: "msg_01HF8XJQWXYZ9876ABCD5432"
+            conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
+            userId: "agent_memory"
+            channel: "memory"
+            memoryEpoch: 5
+            content:
+              - type: "text"
+                text: "Updated memory after re-sync."
+            createdAt: "2025-01-10T14:40:12Z"
 
     CreateSummaryRequest:
       type: object

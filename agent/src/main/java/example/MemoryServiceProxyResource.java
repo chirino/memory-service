@@ -86,11 +86,12 @@ public class MemoryServiceProxyResource {
             @PathParam("conversationId") String conversationId,
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit,
-            @QueryParam("channel") MessageChannel channel) {
+            @QueryParam("channel") MessageChannel channel,
+            @QueryParam("epoch") String epoch) {
         return execute(
                 () ->
                         conversationsApi.listConversationMessages(
-                                conversationId, after, limit, channel),
+                                conversationId, after, limit, channel, epoch),
                 OK,
                 "Error listing messages for history %s",
                 conversationId);

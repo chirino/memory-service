@@ -110,6 +110,100 @@ Feature: Messages REST API
     Then the response status should be 200
     And the response should contain 2 messages
 
+  Scenario: Agent can filter memory messages by epoch
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a memory message "First epoch message" with epoch 1
+    And the conversation has a memory message "Second epoch message" with epoch 2
+    When I list memory messages for the conversation with epoch "1"
+    Then the response status should be 200
+    And the response should contain 1 message
+    And message at index 0 should have content "First epoch message"
+
+  Scenario: Sync memory messages is no-op when there are no changes
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a memory message "Stable epoch message" with epoch 1
+    When I sync memory messages with request:
+    """
+    {
+      "messages": [
+        {
+          "channel": "MEMORY",
+          "content": [
+            {
+              "type": "text",
+              "text": "Stable epoch message"
+            }
+          ]
+        }
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "memoryEpoch" should be "1"
+    And the response body field "noOp" should be "true"
+    And the response body field "epochIncremented" should be "false"
+    And the sync response should contain 0 messages
+
+  Scenario: Sync memory messages appends new entries within the current epoch
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a memory message "Epoch delta message" with epoch 1
+    When I sync memory messages with request:
+    """
+    {
+      "messages": [
+        {
+          "channel": "MEMORY",
+          "content": [
+            {
+              "type": "text",
+              "text": "Epoch delta message"
+            }
+          ]
+        },
+        {
+          "channel": "MEMORY",
+          "content": [
+            {
+              "type": "text",
+              "text": "Appended via sync"
+            }
+          ]
+        }
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "memoryEpoch" should be "1"
+    And the response body field "noOp" should be "false"
+    And the response body field "epochIncremented" should be "false"
+    And the response body field "messages[0].content[0].text" should be "Appended via sync"
+    And the sync response should contain 1 messages
+
+  Scenario: Sync memory messages creates a new epoch when history diverges
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a memory message "Original epoch message" with epoch 1
+    When I sync memory messages with request:
+    """
+    {
+      "messages": [
+        {
+          "channel": "MEMORY",
+          "content": [
+            {
+              "type": "text",
+              "text": "New epoch message"
+            }
+          ]
+        }
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "memoryEpoch" should be "2"
+    And the response body field "noOp" should be "false"
+    And the response body field "epochIncremented" should be "true"
+    And the sync response should contain 1 messages
+
   Scenario: User can only see history channel messages
     Given I am authenticated as user "alice"
     And the conversation has a message "User message"

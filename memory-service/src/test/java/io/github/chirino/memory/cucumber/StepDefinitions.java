@@ -55,6 +55,7 @@ import io.github.chirino.memory.grpc.v1.SearchServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ShareConversationRequest;
 import io.github.chirino.memory.grpc.v1.StreamResponseTokenRequest;
 import io.github.chirino.memory.grpc.v1.StreamResponseTokenResponse;
+import io.github.chirino.memory.grpc.v1.SyncMessagesRequest;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
 import io.github.chirino.memory.grpc.v1.TransferOwnershipRequest;
 import io.github.chirino.memory.grpc.v1.UpdateMembershipRequest;
@@ -231,6 +232,17 @@ public class StepDefinitions {
         CreateMessageRequest request = new CreateMessageRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
         request.setChannel(CreateMessageRequest.ChannelEnum.fromString(channel.toLowerCase()));
+        memoryStoreSelector
+                .getStore()
+                .appendAgentMessages(currentUserId, conversationId, List.of(request));
+    }
+
+    @io.cucumber.java.en.Given("the conversation has a memory message {string} with epoch {int}")
+    public void theConversationHasAMemoryMessageWithEpoch(String content, int epoch) {
+        CreateMessageRequest request = new CreateMessageRequest();
+        request.setContent(List.of(Map.of("type", "text", "text", content)));
+        request.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
+        request.setMemoryEpoch((long) epoch);
         memoryStoreSelector
                 .getStore()
                 .appendAgentMessages(currentUserId, conversationId, List.of(request));
@@ -462,17 +474,22 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I list messages for the conversation")
     public void iListMessagesForTheConversation() {
-        iListMessagesForTheConversationWithParams(null, null, null);
+        iListMessagesForTheConversationWithParams(null, null, null, null);
     }
 
     @io.cucumber.java.en.When("I list messages with limit {int}")
     public void iListMessagesWithLimit(int limit) {
-        iListMessagesForTheConversationWithParams(null, limit, null);
+        iListMessagesForTheConversationWithParams(null, limit, null, null);
     }
 
     @io.cucumber.java.en.When("I list messages for the conversation with channel {string}")
     public void iListMessagesForTheConversationWithChannel(String channel) {
-        iListMessagesForTheConversationWithParams(null, null, channel);
+        iListMessagesForTheConversationWithParams(null, null, channel, null);
+    }
+
+    @io.cucumber.java.en.When("I list memory messages for the conversation with epoch {string}")
+    public void iListMemoryMessagesForTheConversationWithEpoch(String epoch) {
+        iListMessagesForTheConversationWithParams(null, null, "MEMORY", epoch);
     }
 
     @io.cucumber.java.en.When("I list messages for conversation {string}")
@@ -487,7 +504,7 @@ public class StepDefinitions {
     }
 
     private void iListMessagesForTheConversationWithParams(
-            String after, Integer limit, String channel) {
+            String after, Integer limit, String channel, String epoch) {
         var requestSpec = given();
         // Add Authorization header using KeycloakTestClient to get a real token
         // Agents need both OIDC auth AND API key
@@ -507,6 +524,9 @@ public class StepDefinitions {
         }
         if (channel != null) {
             request = request.queryParam("channel", channel);
+        }
+        if (epoch != null) {
+            request = request.queryParam("epoch", epoch);
         }
         this.lastResponse = request.get("/v1/conversations/{id}/messages", conversationId);
     }
@@ -549,6 +569,41 @@ public class StepDefinitions {
         }
         this.lastResponse =
                 requestSpec.when().post("/v1/conversations/{id}/messages", conversationId);
+    }
+
+    @io.cucumber.java.en.When("I sync memory messages with request:")
+    public void iSyncMemoryMessagesWithRequest(String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        // Add Authorization header using KeycloakTestClient
+        // Agents need both OIDC auth AND API key
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        if (currentApiKey != null) {
+            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
+        }
+        this.lastResponse =
+                requestSpec
+                        .when()
+                        .post("/v1/conversations/{id}/memory/messages/sync", conversationId);
+    }
+
+    @io.cucumber.java.en.Then("the sync response should contain {int} messages")
+    public void theSyncResponseShouldContainMessages(int count) {
+        if (lastResponse == null) {
+            throw new AssertionError("No response has been received");
+        }
+        JsonPath jsonPath = lastResponse.jsonPath();
+        List<Object> messages = jsonPath.getList("messages");
+        if (messages == null) {
+            throw new AssertionError(
+                    "Response does not contain 'messages' field. Response body: "
+                            + lastResponse.getBody().asString());
+        }
+        assertThat(
+                "Sync response should contain " + count + " messages", messages.size(), is(count));
     }
 
     @io.cucumber.java.en.When(
@@ -1092,7 +1147,37 @@ public class StepDefinitions {
             if (renderedExpected.startsWith("\"") && renderedExpected.endsWith("\"")) {
                 renderedExpected = renderedExpected.substring(1, renderedExpected.length() - 1);
             }
-            lastResponse.then().body(path, is(renderedExpected));
+            // Handle boolean values - convert "true"/"false" strings to boolean for comparison
+            if ("true".equalsIgnoreCase(renderedExpected)
+                    || "false".equalsIgnoreCase(renderedExpected)) {
+                boolean expectedBool = Boolean.parseBoolean(renderedExpected);
+                lastResponse.then().body(path, is(expectedBool));
+            } else {
+                // Try to parse as number for numeric comparisons
+                try {
+                    if (renderedExpected.matches("-?\\d+")) {
+                        // It's an integer - use number matcher that accepts both int and long
+                        long expectedLong = Long.parseLong(renderedExpected);
+                        // Use a matcher that accepts both Integer and Long
+                        lastResponse
+                                .then()
+                                .body(
+                                        path,
+                                        org.hamcrest.Matchers.anyOf(
+                                                is((int) expectedLong), is(expectedLong)));
+                    } else if (renderedExpected.matches("-?\\d+\\.\\d+")) {
+                        // It's a floating point number
+                        double expectedDouble = Double.parseDouble(renderedExpected);
+                        lastResponse.then().body(path, is(expectedDouble));
+                    } else {
+                        // It's a string
+                        lastResponse.then().body(path, is(renderedExpected));
+                    }
+                } catch (NumberFormatException e) {
+                    // Not a number, treat as string
+                    lastResponse.then().body(path, is(renderedExpected));
+                }
+            }
         }
     }
 
@@ -1109,6 +1194,12 @@ public class StepDefinitions {
     @io.cucumber.java.en.Then("the response should contain {int} message")
     public void theResponseShouldContainMessage(int count) {
         lastResponse.then().body("data", hasSize(count));
+    }
+
+    @io.cucumber.java.en.Then("the response body field {string} should be {string}")
+    public void theResponseBodyFieldShouldBe2(String path, String expected) {
+        // Alias for "the response body {string} should be {string}" to match test feature file
+        theResponseBodyFieldShouldBe(path, expected);
     }
 
     @io.cucumber.java.en.Then("the search response should contain {int} results")
@@ -1697,6 +1788,14 @@ public class StepDefinitions {
                         TextFormat.merge(body, requestBuilder);
                     }
                     return stub.appendMessage(requestBuilder.build());
+                }
+            case "SyncMessages":
+                {
+                    var requestBuilder = SyncMessagesRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.syncMessages(requestBuilder.build());
                 }
             default:
                 throw new IllegalArgumentException("Unsupported MessagesService method: " + method);

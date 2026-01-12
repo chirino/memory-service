@@ -15,6 +15,7 @@ import io.github.chirino.memory.api.dto.PagedMessages;
 import io.github.chirino.memory.api.dto.SearchMessagesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
+import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
@@ -30,6 +31,7 @@ import io.github.chirino.memory.persistence.repo.ConversationOwnershipTransferRe
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
 import io.github.chirino.memory.persistence.repo.MessageRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
+import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.github.chirino.memory.store.MemoryStore;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
@@ -468,7 +470,8 @@ public class PostgresMemoryStore implements MemoryStore {
             String conversationId,
             String afterMessageId,
             int limit,
-            MessageChannel channel) {
+            MessageChannel channel,
+            MemoryEpochFilter epochFilter) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
         if (conversation == null) {
@@ -480,8 +483,12 @@ public class PostgresMemoryStore implements MemoryStore {
         }
         UUID groupId = conversation.getConversationGroup().getId();
         ensureHasAccess(groupId, userId, AccessLevel.READER);
-        List<MessageEntity> messages =
-                messageRepository.listByChannel(cid, afterMessageId, limit, channel);
+        List<MessageEntity> messages;
+        if (channel == MessageChannel.MEMORY) {
+            messages = fetchMemoryMessages(cid, afterMessageId, limit, epochFilter);
+        } else {
+            messages = messageRepository.listByChannel(cid, afterMessageId, limit, channel);
+        }
         PagedMessages page = new PagedMessages();
         page.setConversationId(conversationId);
         List<MessageDto> dtos = messages.stream().map(this::toMessageDto).toList();
@@ -490,6 +497,29 @@ public class PostgresMemoryStore implements MemoryStore {
                 dtos.size() == limit && !dtos.isEmpty() ? dtos.get(dtos.size() - 1).getId() : null;
         page.setNextCursor(nextCursor);
         return page;
+    }
+
+    private List<MessageEntity> fetchMemoryMessages(
+            UUID conversationId, String afterMessageId, int limit, MemoryEpochFilter epochFilter) {
+        MemoryEpochFilter filter = epochFilter != null ? epochFilter : MemoryEpochFilter.latest();
+        return switch (filter.getMode()) {
+            case ALL ->
+                    messageRepository.listByChannel(
+                            conversationId, afterMessageId, limit, MessageChannel.MEMORY);
+            case LATEST -> {
+                Long latestEpoch = messageRepository.findLatestMemoryEpoch(conversationId);
+                // If no messages with epochs exist, list all memory messages
+                if (latestEpoch == null) {
+                    yield messageRepository.listByChannel(
+                            conversationId, afterMessageId, limit, MessageChannel.MEMORY);
+                }
+                yield messageRepository.listMemoryMessagesByEpoch(
+                        conversationId, afterMessageId, limit, latestEpoch);
+            }
+            case EPOCH ->
+                    messageRepository.listMemoryMessagesByEpoch(
+                            conversationId, afterMessageId, limit, filter.getEpoch());
+        };
     }
 
     @Override
@@ -556,6 +586,80 @@ public class PostgresMemoryStore implements MemoryStore {
                     "updatedAt = ?1 where id = ?2", latestHistoryTimestamp, conversation.getId());
         }
         return created;
+    }
+
+    @Override
+    @Transactional
+    public SyncResult syncAgentMessages(
+            String userId, String conversationId, List<CreateMessageRequest> messages) {
+        validateSyncMessages(messages);
+        UUID cid = UUID.fromString(conversationId);
+        Long latestEpoch = messageRepository.findLatestMemoryEpoch(cid);
+        List<MessageDto> latestEpochMessages =
+                latestEpoch != null
+                        ? messageRepository.listMemoryMessagesByEpoch(cid, latestEpoch).stream()
+                                .map(this::toMessageDto)
+                                .collect(Collectors.toList())
+                        : Collections.emptyList();
+
+        List<MemorySyncHelper.MessageContent> existing =
+                MemorySyncHelper.fromDtos(latestEpochMessages);
+        List<MemorySyncHelper.MessageContent> incoming = MemorySyncHelper.fromRequests(messages);
+
+        SyncResult result = new SyncResult();
+        result.setMessages(Collections.emptyList());
+        result.setMemoryEpoch(latestEpoch);
+
+        // If no existing messages and incoming is empty, that's a no-op (shouldn't happen due to
+        // validation)
+        if (existing.isEmpty() && incoming.isEmpty()) {
+            result.setNoOp(true);
+            return result;
+        }
+
+        // If existing messages match incoming exactly, it's a no-op
+        if (!existing.isEmpty() && existing.equals(incoming)) {
+            result.setNoOp(true);
+            return result;
+        }
+
+        // If incoming is a prefix extension of existing (only adding more messages), append to
+        // current epoch
+        if (!existing.isEmpty()
+                && incoming.size() > existing.size()
+                && MemorySyncHelper.isPrefix(existing, incoming)) {
+            List<CreateMessageRequest> delta =
+                    MemorySyncHelper.withEpoch(
+                            messages.subList(existing.size(), messages.size()), latestEpoch);
+            List<MessageDto> appended = appendAgentMessages(userId, conversationId, delta);
+            result.setMessages(appended);
+            result.setEpochIncremented(false);
+            result.setNoOp(false);
+            return result;
+        }
+
+        // Otherwise, create a new epoch with all incoming messages
+        Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
+        List<CreateMessageRequest> toAppend = MemorySyncHelper.withEpoch(messages, nextEpoch);
+        List<MessageDto> appended = appendAgentMessages(userId, conversationId, toAppend);
+        result.setMemoryEpoch(nextEpoch);
+        result.setMessages(appended);
+        result.setEpochIncremented(true);
+        result.setNoOp(false);
+        return result;
+    }
+
+    private void validateSyncMessages(List<CreateMessageRequest> messages) {
+        if (messages == null || messages.isEmpty()) {
+            throw new IllegalArgumentException("messages are required");
+        }
+        for (CreateMessageRequest message : messages) {
+            if (message == null
+                    || message.getChannel() == null
+                    || message.getChannel() != CreateMessageRequest.ChannelEnum.MEMORY) {
+                throw new IllegalArgumentException("all sync messages must target memory channel");
+            }
+        }
     }
 
     @Override

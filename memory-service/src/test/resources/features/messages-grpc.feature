@@ -75,6 +75,75 @@ Feature: Messages gRPC API
     }
     """
 
+  Scenario: Agent can filter memory messages by epoch via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a memory message "Epoch One" with epoch 1
+    And the conversation has a memory message "Epoch Two" with epoch 2
+    When I send gRPC request "MessagesService/ListMessages" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: MEMORY
+    epoch_filter: "1"
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 1 message
+    And the gRPC response field "messages[0].content[0].text" should be "Epoch One"
+
+  Scenario: Sync memory messages via gRPC is no-op when there are no changes
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a memory message "Stable gRPC epoch" with epoch 1
+    When I send gRPC request "MessagesService/SyncMessages" with body:
+    """
+    conversation_id: "${conversationId}"
+    messages {
+      channel: MEMORY
+      content {
+        struct_value {
+          fields {
+            key: "type"
+            value {
+              string_value: "text"
+            }
+          }
+          fields {
+            key: "text"
+            value {
+              string_value: "Stable gRPC epoch"
+            }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "memoryEpoch" should be "1"
+    And the gRPC response field "noOp" should be true
+    And the gRPC response field "epochIncremented" should be false
+    And the gRPC response should contain 0 messages
+
+  Scenario: Sync memory messages via gRPC creates a new epoch when history diverges
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a memory message "Original epoch message" with epoch 1
+    When I send gRPC request "MessagesService/SyncMessages" with body:
+    """
+    conversation_id: "${conversationId}"
+    messages {
+      channel: MEMORY
+      content {
+        string_value: "Updated epoch message"
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "memoryEpoch" should be "2"
+    And the gRPC response field "noOp" should be false
+    And the gRPC response field "epochIncremented" should be true
+    And the gRPC response should contain 1 message
+    And the gRPC response field "messages[0].content[0]" should be "Updated epoch message"
+
   Scenario: Append message requires API key via gRPC
     Given I am authenticated as user "alice"
     And the conversation exists
