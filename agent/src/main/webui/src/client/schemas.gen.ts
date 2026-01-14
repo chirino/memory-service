@@ -297,6 +297,94 @@ belong to. The agent increments this when starting a new epoch.`,
   },
 } as const;
 
+export const $SyncMessagesRequest = {
+  type: "object",
+  required: ["messages"],
+  properties: {
+    messages: {
+      type: "array",
+      description: `The desired memory epoch contents. Each entry must include the
+\`memory\` channel and should match the ordering that the agent expects to
+see replayed; only the agent may call this endpoint.`,
+      items: {
+        $ref: "#/components/schemas/CreateMessageRequest",
+      },
+    },
+  },
+  example: {
+    messages: [
+      {
+        userId: "user_1234",
+        channel: "memory",
+        content: [
+          {
+            type: "text",
+            text: "The user asked about memory sync.",
+          },
+        ],
+      },
+      {
+        userId: "user_1234",
+        channel: "memory",
+        content: [
+          {
+            type: "text",
+            text: "I learned that child steps matter.",
+          },
+        ],
+      },
+    ],
+  },
+} as const;
+
+export const $SyncMessagesResponse = {
+  type: "object",
+  properties: {
+    memoryEpoch: {
+      type: "integer",
+      format: "int64",
+      nullable: true,
+      description: "The epoch number that now reflects the stored memory state.",
+    },
+    noOp: {
+      type: "boolean",
+      description: "True when the request resulted in no stored changes.",
+    },
+    epochIncremented: {
+      type: "boolean",
+      description: "True when the provided list diverged and a new epoch was started.",
+    },
+    messages: {
+      type: "array",
+      description: "List of messages that were appended during this sync.",
+      items: {
+        $ref: "#/components/schemas/Message",
+      },
+    },
+  },
+  example: {
+    memoryEpoch: 5,
+    noOp: false,
+    epochIncremented: true,
+    messages: [
+      {
+        id: "msg_01HF8XJQWXYZ9876ABCD5432",
+        conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
+        userId: "agent_memory",
+        channel: "memory",
+        memoryEpoch: 5,
+        content: [
+          {
+            type: "text",
+            text: "Updated memory after re-sync.",
+          },
+        ],
+        createdAt: "2025-01-10T14:40:12Z",
+      },
+    ],
+  },
+} as const;
+
 export const $CreateSummaryRequest = {
   type: "object",
   required: ["title", "summary", "untilMessageId", "summarizedAt"],

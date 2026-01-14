@@ -12,14 +12,14 @@ public class ResponseResumerSelector {
 
     @Inject NoopResponseResumerBackend noopResponseResumerBackend;
 
-    @Inject RedisResponseResumerBackend redisResponseResumerBackend;
+    @Inject TempFileResumerBackend tempFileResumerBackend;
 
     public ResponseResumerBackend getBackend() {
         String type = resumerType == null ? "none" : resumerType.trim().toLowerCase();
         switch (type) {
             case "redis":
-                if (redisResponseResumerBackend.enabled()) {
-                    return redisResponseResumerBackend;
+                if (tempFileResumerBackend.enabled()) {
+                    return tempFileResumerBackend;
                 }
                 // Fall through to noop if Redis is not available
                 break;

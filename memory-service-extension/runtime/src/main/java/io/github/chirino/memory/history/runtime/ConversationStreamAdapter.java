@@ -2,7 +2,11 @@ package io.github.chirino.memory.history.runtime;
 
 import io.github.chirino.memory.history.api.ConversationStore;
 import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.infrastructure.Infrastructure;
+import io.smallrye.mutiny.subscription.Cancellable;
 import io.smallrye.mutiny.subscription.MultiEmitter;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class ConversationStreamAdapter {
 
@@ -19,29 +23,107 @@ public final class ConversationStreamAdapter {
                         ? ResponseResumer.noop().recorder(conversationId)
                         : resumer.recorder(conversationId);
         StringBuilder buffer = new StringBuilder();
+        Multi<ResponseCancelSignal> cancelStream = recorder.cancelStream();
+        Multi<String> safeUpstream = upstream.emitOn(Infrastructure.getDefaultExecutor());
 
         return Multi.createFrom()
                 .emitter(
                         emitter ->
-                                upstream.subscribe()
-                                        .with(
-                                                token ->
-                                                        handleToken(
-                                                                conversationId,
-                                                                store,
-                                                                recorder,
-                                                                buffer,
-                                                                emitter,
-                                                                token),
-                                                failure ->
-                                                        finishFailure(recorder, emitter, failure),
-                                                () ->
-                                                        finishSuccess(
-                                                                conversationId,
-                                                                store,
-                                                                buffer,
-                                                                recorder,
-                                                                emitter)));
+                                attachStreams(
+                                        conversationId,
+                                        safeUpstream,
+                                        cancelStream,
+                                        store,
+                                        recorder,
+                                        buffer,
+                                        emitter));
+    }
+
+    private static void attachStreams(
+            String conversationId,
+            Multi<String> upstream,
+            Multi<ResponseCancelSignal> cancelStream,
+            ConversationStore store,
+            ResponseResumer.ResponseRecorder recorder,
+            StringBuilder buffer,
+            MultiEmitter<? super String> emitter) {
+        AtomicBoolean canceled = new AtomicBoolean(false);
+        AtomicBoolean completed = new AtomicBoolean(false);
+        AtomicReference<Cancellable> upstreamSubscription = new AtomicReference<>();
+        AtomicReference<Cancellable> cancelSubscription = new AtomicReference<>();
+
+        Runnable cancelWatcherStop =
+                () -> {
+                    Cancellable cancelHandle = cancelSubscription.get();
+                    if (cancelHandle != null) {
+                        cancelHandle.cancel();
+                    }
+                };
+
+        Runnable completeCancel =
+                () -> {
+                    if (!completed.compareAndSet(false, true)) {
+                        return;
+                    }
+                    recorder.complete();
+                    cancelWatcherStop.run();
+                    if (!emitter.isCancelled()) {
+                        emitter.complete();
+                    }
+                };
+
+        Cancellable cancelWatcher =
+                cancelStream
+                        .subscribe()
+                        .with(
+                                signal -> {
+                                    if (!canceled.compareAndSet(false, true)) {
+                                        return;
+                                    }
+                                    Cancellable upstreamHandle = upstreamSubscription.get();
+                                    if (upstreamHandle != null) {
+                                        upstreamHandle.cancel();
+                                    }
+                                    completeCancel.run();
+                                },
+                                failure -> {
+                                    // Ignore cancel stream failures and keep the upstream running.
+                                });
+        cancelSubscription.set(cancelWatcher);
+
+        Cancellable upstreamHandle =
+                upstream.subscribe()
+                        .with(
+                                token -> {
+                                    if (canceled.get()) {
+                                        return;
+                                    }
+                                    handleToken(
+                                            conversationId,
+                                            store,
+                                            recorder,
+                                            buffer,
+                                            emitter,
+                                            token);
+                                },
+                                failure -> {
+                                    if (canceled.get()) {
+                                        completeCancel.run();
+                                    } else {
+                                        finishFailure(recorder, emitter, failure);
+                                        cancelWatcherStop.run();
+                                    }
+                                },
+                                () -> {
+                                    if (canceled.get()) {
+                                        completeCancel.run();
+                                    } else {
+                                        finishSuccess(
+                                                conversationId, store, buffer, recorder, emitter);
+                                        cancelWatcherStop.run();
+                                    }
+                                });
+        upstreamSubscription.set(upstreamHandle);
     }
 
     private static void handleToken(

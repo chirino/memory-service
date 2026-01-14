@@ -36,15 +36,11 @@ public class NoopResponseResumerBackend implements ResponseResumerBackend {
         return Collections.emptyList();
     }
 
-    private static final class NoopResponseRecorder implements ResponseRecorder {
-        @Override
-        public void record(String token) {
-            // No-op
-        }
+    @Override
+    public void requestCancel(String conversationId) {}
 
-        @Override
-        public void complete() {
-            // No-op
-        }
+    @Override
+    public Multi<CancelSignal> cancelStream(String conversationId) {
+        return Multi.createFrom().empty();
     }
 }

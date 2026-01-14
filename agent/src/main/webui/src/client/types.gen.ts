@@ -123,6 +123,34 @@ export type CreateMessageRequest = {
   content: Array<unknown>;
 };
 
+export type SyncMessagesRequest = {
+  /**
+   * The desired memory epoch contents. Each entry must include the
+   * `memory` channel and should match the ordering that the agent expects to
+   * see replayed; only the agent may call this endpoint.
+   */
+  messages: Array<CreateMessageRequest>;
+};
+
+export type SyncMessagesResponse = {
+  /**
+   * The epoch number that now reflects the stored memory state.
+   */
+  memoryEpoch?: number | null;
+  /**
+   * True when the request resulted in no stored changes.
+   */
+  noOp?: boolean;
+  /**
+   * True when the provided list diverged and a new epoch was started.
+   */
+  epochIncremented?: boolean;
+  /**
+   * List of messages that were appended during this sync.
+   */
+  messages?: Array<Message>;
+};
+
 export type CreateSummaryRequest = {
   /**
    * Conversation title to store/update.
@@ -270,6 +298,12 @@ export type $OpenApiTs = {
          */
         channel?: MessageChannel;
         conversationId: string;
+        /**
+         * Optional epoch filter when listing the `memory` channel. Valid values
+         * are `latest`, `all`, or a numeric epoch identifier. Defaults to
+         * `latest` when not provided.
+         */
+        epoch?: string | null;
         limit?: number;
       };
       res: {
@@ -297,6 +331,24 @@ export type $OpenApiTs = {
          * The created message.
          */
         201: Message;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
+  };
+  "/v1/conversations/{conversationId}/memory/messages/sync": {
+    post: {
+      req: {
+        conversationId: string;
+        requestBody: SyncMessagesRequest;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
         /**
          * Resource not found
          */
@@ -465,6 +517,27 @@ export type $OpenApiTs = {
          * Resource not found
          */
         404: ErrorResponse;
+      };
+    };
+  };
+  "/v1/conversations/{conversationId}/cancel-response": {
+    post: {
+      req: {
+        conversationId: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+        /**
+         * Error response
+         */
+        409: ErrorResponse;
       };
     };
   };

@@ -69,6 +69,7 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [forking, setForking] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [editingMessage, setEditingMessage] = useState<{ id: string; conversationId: string } | null>(null);
   const [editingText, setEditingText] = useState("");
   const [openForkMenuMessageKey, setOpenForkMenuMessageKey] = useState<string | null>(null);
@@ -431,7 +432,7 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
     setSending(true);
     const startFn = startEventStreamRef.current;
     if (startFn) {
-      startFn(conversationId, trimmed, 0, true, "fork send");
+      startFn(conversationId, trimmed, 0, true);
     } else {
       streamingConversationRef.current = null;
       setSending(false);
@@ -450,8 +451,9 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
   }, []);
 
   const startEventStream = useCallback(
-    (targetConversationId: string, text: string, resumePosition = 0, resetResume = false, _reason = "stream start") => {
+    (targetConversationId: string, text: string, resumePosition = 0, resetResume = false) => {
       streamingConversationRef.current = targetConversationId;
+      setSending(true);
 
       const appendAssistantChunk = (chunk: string) => {
         if (!chunk.length) {
@@ -599,6 +601,7 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });
       void queryClient.invalidateQueries({ queryKey: ["conversation-forks", editingMessage.conversationId] });
     } catch (error) {
+      void error;
     } finally {
       setForking(false);
     }
@@ -657,6 +660,7 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
           const label = selectForkLabel(messages, userIndex);
           return { id: fork.conversationId!, label };
         } catch (error) {
+          void error;
           return null;
         }
       }),
@@ -726,8 +730,27 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
     // Start new stream from position 0 with user's message
     // setSending(false) will be called in onCleanEnd or onReplayFailed
     // resetResume=true means don't try to resume, start fresh
-    startEventStream(conversationId, trimmed, 0, true, "user send");
+    startEventStream(conversationId, trimmed, 0, true);
   };
+
+  const handleCancelResponse = useCallback(async () => {
+    if (!conversationId || !sending) {
+      return;
+    }
+    setCanceling(true);
+    try {
+      await ConversationsService.cancelConversationResponse({ conversationId });
+    } catch (error) {
+      void error;
+    } finally {
+      setCanceling(false);
+    }
+    streamingConversationRef.current = null;
+    webSocketStream.close();
+    setSending(false);
+    void queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
+    void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
+  }, [conversationId, sending, queryClient, webSocketStream]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -736,18 +759,12 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
     }
   };
 
-  const isBusy = sending || forking;
+  const isBusy = sending || forking || canceling;
 
   // Auto-resume logic: always attempt to resume when switching to a conversation
   // We don't wait for messages to load - the resume WebSocket will handle cases where
   // there's nothing to resume (it will just close cleanly)
   useEffect(() => {
-    // Clear the resume flag when conversationId changes to allow resume on switch
-    // The useLayoutEffect should handle this, but we also clear here as a safety measure
-    if (conversationId && hasResumedRef.current[conversationId]) {
-      delete hasResumedRef.current[conversationId];
-    }
-
     if (!conversationId) {
       return;
     }
@@ -992,13 +1009,24 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
             className="w-full resize-none rounded-md border px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
           />
           <div className="flex justify-end gap-2">
-            <Button
-              size="sm"
-              onClick={handleSendMessage}
-              disabled={isBusy || !input.trim() || !conversationId || Boolean(editingMessage)}
-            >
-              Send
-            </Button>
+            {sending ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCancelResponse}
+                disabled={canceling || !conversationId}
+              >
+                Stop
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={handleSendMessage}
+                disabled={isBusy || !input.trim() || !conversationId || Boolean(editingMessage)}
+              >
+                Send
+              </Button>
+            )}
           </div>
         </div>
       </div>

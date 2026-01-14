@@ -32,4 +32,9 @@ public class NoopResponseResumer implements ResponseResumer {
     public boolean hasResponseInProgress(String conversationId) {
         return false;
     }
+
+    @Override
+    public void requestCancel(String conversationId) {
+        // No-op
+    }
 }

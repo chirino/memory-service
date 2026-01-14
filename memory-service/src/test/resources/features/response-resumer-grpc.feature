@@ -68,7 +68,7 @@ Feature: Response Resumer gRPC API
     """
     conversation_id: "${conversationId}"
     token: "Hello"
-    complete: false
+    complete: true
     """
     Then the gRPC response should not have an error
     And the gRPC response field "success" should be true
@@ -85,6 +85,17 @@ Feature: Response Resumer gRPC API
     And I wait for the response stream to send at least 2 tokens
     When I replay response tokens from position 0 in a second session and collect tokens "Hello World"
     Then the replay should finish before the stream completes
+    And I wait for the response stream to complete
+
+  Scenario: Cancel an in-progress response stream
+    Given I start streaming tokens "Hello cancel" to the conversation with 50ms delay and keep the stream open until canceled
+    And I wait for the response stream to send at least 2 tokens
+    When I send gRPC request "ResponseResumerService/CancelResponse" with body:
+    """
+    conversation_id: "${conversationId}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "accepted" should be true
     And I wait for the response stream to complete
 
   Scenario: Stream response tokens without conversation_id

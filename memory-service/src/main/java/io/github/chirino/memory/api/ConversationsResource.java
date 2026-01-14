@@ -22,6 +22,10 @@ import io.github.chirino.memory.client.model.SyncMessagesRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.resumer.AdvertisedAddress;
+import io.github.chirino.memory.resumer.ResponseResumerBackend;
+import io.github.chirino.memory.resumer.ResponseResumerRedirectException;
+import io.github.chirino.memory.resumer.ResponseResumerSelector;
 import io.github.chirino.memory.security.ApiKeyContext;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
@@ -29,6 +33,8 @@ import io.github.chirino.memory.store.MemoryStore;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
+import io.vertx.core.net.SocketAddress;
+import io.vertx.ext.web.RoutingContext;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -39,13 +45,25 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.core.UriInfo;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 @Path("/v1")
@@ -58,11 +76,24 @@ public class ConversationsResource {
 
     private static final Logger LOG = Logger.getLogger(ConversationsResource.class);
 
+    private static final int MAX_REDIRECTS = 3;
+
     @Inject MemoryStoreSelector storeSelector;
 
     @Inject SecurityIdentity identity;
 
     @Inject ApiKeyContext apiKeyContext;
+
+    @Inject ResponseResumerSelector resumerSelector;
+
+    @Context HttpHeaders httpHeaders;
+
+    @Context UriInfo uriInfo;
+
+    @Context RoutingContext routingContext;
+
+    @ConfigProperty(name = "memory-service.grpc-advertised-address")
+    Optional<String> advertisedAddress;
 
     private MemoryStore store() {
         return storeSelector.getStore();
@@ -473,6 +504,38 @@ public class ConversationsResource {
         }
     }
 
+    @POST
+    @Path("/conversations/{conversationId}/cancel-response")
+    public Response cancelResponse(@PathParam("conversationId") String conversationId) {
+        ResponseResumerBackend backend = resumerSelector.getBackend();
+        if (!backend.enabled()) {
+            return conflict("Response resumer is not enabled");
+        }
+
+        try {
+            ConversationDto conversation = store().getConversation(currentUserId(), conversationId);
+            if (!hasWriterAccess(conversation)) {
+                throw new AccessDeniedException("User does not have WRITER access to conversation");
+            }
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+
+        try {
+            backend.requestCancel(conversationId, resolveAdvertisedAddress());
+        } catch (ResponseResumerRedirectException redirect) {
+            LOG.infof(
+                    "Redirecting cancel-response for conversationId=%s from %s to %s",
+                    conversationId, resolveAdvertisedAddress(), redirect.target());
+            URI target = buildRedirectLocation(conversationId, redirect.target());
+            return forwardCancel(conversationId, target);
+        }
+        waitForResponseCompletion(conversationId, backend, Duration.ofSeconds(30));
+        return Response.ok().build();
+    }
+
     private Response notFound(ResourceNotFoundException e) {
         ErrorResponse error = new ErrorResponse();
         error.setError("Not found");
@@ -490,12 +553,165 @@ public class ConversationsResource {
         return Response.status(Response.Status.FORBIDDEN).entity(error).build();
     }
 
+    private Response conflict(String message) {
+        ErrorResponse error = new ErrorResponse();
+        error.setError("Conflict");
+        error.setCode("conflict");
+        error.setDetails(Map.of("message", message));
+        return Response.status(Response.Status.CONFLICT).entity(error).build();
+    }
+
     private Response badRequest(String message) {
         ErrorResponse error = new ErrorResponse();
         error.setError("Bad request");
         error.setCode("bad_request");
         error.setDetails(Map.of("message", message));
         return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+    }
+
+    private boolean hasWriterAccess(ConversationDto conversation) {
+        AccessLevel level = conversation.getAccessLevel();
+        return level == AccessLevel.WRITER
+                || level == AccessLevel.MANAGER
+                || level == AccessLevel.OWNER;
+    }
+
+    private void waitForResponseCompletion(
+            String conversationId, ResponseResumerBackend backend, Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (!backend.hasResponseInProgress(conversationId)) {
+                return;
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    private AdvertisedAddress resolveAdvertisedAddress() {
+        Optional<AdvertisedAddress> configured =
+                advertisedAddress.flatMap(AdvertisedAddress::parse);
+        if (configured.isPresent()) {
+            return configured.get();
+        }
+
+        if (routingContext != null) {
+            SocketAddress localAddress = routingContext.request().localAddress();
+            if (localAddress != null) {
+                String host = localAddress.host();
+                int port = localAddress.port();
+                if (host != null
+                        && !host.isBlank()
+                        && !"0.0.0.0".equals(host)
+                        && !"::".equals(host)) {
+                    Optional<AdvertisedAddress> fromLocal =
+                            AdvertisedAddress.fromHostAndPort(host, Integer.toString(port));
+                    if (fromLocal.isPresent()) {
+                        return fromLocal.get();
+                    }
+                }
+            }
+        }
+
+        if (uriInfo != null && uriInfo.getBaseUri() != null) {
+            String host = uriInfo.getBaseUri().getHost();
+            int port = uriInfo.getBaseUri().getPort();
+            if (port <= 0) {
+                port = uriInfo.getBaseUri().getScheme().equalsIgnoreCase("https") ? 443 : 80;
+            }
+            if (host != null && !host.isBlank()) {
+                Optional<AdvertisedAddress> fromBase =
+                        AdvertisedAddress.fromHostAndPort(host, Integer.toString(port));
+                if (fromBase.isPresent()) {
+                    return fromBase.get();
+                }
+            }
+        }
+
+        return new AdvertisedAddress("localhost", 0);
+    }
+
+    private String headerValue(String name) {
+        if (httpHeaders == null) {
+            return null;
+        }
+        String value = httpHeaders.getHeaderString(name);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        int comma = value.indexOf(',');
+        if (comma > 0) {
+            value = value.substring(0, comma);
+        }
+        return value.trim();
+    }
+
+    private java.net.URI buildRedirectLocation(String conversationId, AdvertisedAddress target) {
+        if (target == null) {
+            return uriInfo.getRequestUri();
+        }
+        UriBuilder builder = UriBuilder.fromUri(uriInfo.getBaseUri());
+        builder.host(target.host());
+        if (target.port() > 0) {
+            builder.port(target.port());
+        }
+        builder.path("v1/conversations/{conversationId}/cancel-response");
+        return builder.build(conversationId);
+    }
+
+    private Response forwardCancel(String conversationId, URI target) {
+        URI current = target;
+        for (int i = 0; i < MAX_REDIRECTS; i++) {
+            HttpResponse<String> response = sendForwardedCancel(current);
+            int status = response.statusCode();
+            if (status == Response.Status.TEMPORARY_REDIRECT.getStatusCode()
+                    || status == Response.Status.PERMANENT_REDIRECT.getStatusCode()) {
+                String location = response.headers().firstValue("Location").orElse(null);
+                if (location == null || location.isBlank()) {
+                    return Response.status(status).build();
+                }
+                current = URI.create(location);
+                continue;
+            }
+            Response.ResponseBuilder builder = Response.status(status);
+            String body = response.body();
+            if (body != null && !body.isBlank()) {
+                builder.entity(body);
+            }
+            return builder.build();
+        }
+        LOG.warnf(
+                "Cancel-response redirect loop for conversationId=%s at %s",
+                conversationId, current);
+        return Response.status(Response.Status.BAD_GATEWAY)
+                .entity("Failed to cancel response due to redirect loop")
+                .build();
+    }
+
+    private HttpResponse<String> sendForwardedCancel(URI target) {
+        try {
+            HttpRequest.Builder builder =
+                    HttpRequest.newBuilder(target).POST(HttpRequest.BodyPublishers.noBody());
+            String authHeader = headerValue(HttpHeaders.AUTHORIZATION);
+            if (authHeader != null) {
+                builder.header(HttpHeaders.AUTHORIZATION, authHeader);
+            }
+            String cookieHeader = headerValue(HttpHeaders.COOKIE);
+            if (cookieHeader != null) {
+                builder.header(HttpHeaders.COOKIE, cookieHeader);
+            }
+            return HttpClient.newHttpClient()
+                    .send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new RuntimeException("Failed to forward cancel response", e);
+        }
     }
 
     private ConversationSummary toClientConversationSummary(ConversationSummaryDto dto) {

@@ -87,35 +87,35 @@ export function ChatSidebar({
             return (
               <div key={conversation.id} className="group relative flex">
                 <div className="flex-1">
-                <button
-                  type="button"
-                  onClick={() => onSelectConversation(conversation)}
-                  className={`w-full rounded-md px-3 py-2 pr-12 text-left text-xs ${
-                    isSelected ? "bg-accent" : "hover:bg-accent/60"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {conversation.title || "Untitled conversation"}
-                      </span>
-                    </div>
-                    {/* {conversation.accessLevel && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectConversation(conversation)}
+                    className={`w-full rounded-md px-3 py-2 pr-12 text-left text-xs ${
+                      isSelected ? "bg-accent" : "hover:bg-accent/60"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {conversation.title || "Untitled conversation"}
+                        </span>
+                      </div>
+                      {/* {conversation.accessLevel && (
                       <span className="ml-2 text-[10px] uppercase text-muted-foreground">
                         {conversation.accessLevel}
                       </span>
                     )} */}
-                  </div>
-                  <div className="mt-0.5 text-[10px] text-muted-foreground">
-                    Updated {formatDateTime(conversation.updatedAt || conversation.createdAt)}
-                  </div>
-                </button>
-                <ConversationHoverMenu
-                  onSummarize={() => onSummarizeConversation?.(conversation)}
-                  onDelete={() => onDeleteConversation?.(conversation)}
-                />
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">
+                      Updated {formatDateTime(conversation.updatedAt || conversation.createdAt)}
+                    </div>
+                  </button>
+                  <ConversationHoverMenu
+                    onSummarize={() => onSummarizeConversation?.(conversation)}
+                    onDelete={() => onDeleteConversation?.(conversation)}
+                  />
                 </div>
-                {isResumable && <Loader2 className="h-6 w-6 z-10 flex-shrink-0 animate-spin text-muted-foreground" />}
+                {isResumable && <Loader2 className="z-10 h-6 w-6 flex-shrink-0 animate-spin text-muted-foreground" />}
               </div>
             );
           })}

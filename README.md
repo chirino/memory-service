@@ -204,7 +204,7 @@ When enabled, the `@RecordConversation` interceptor automatically buffers stream
 
 - For streaming methods that return `Multi<String>`, the interceptor wraps the stream using `ConversationStreamAdapter.wrap()`, which:
   - Forwards each token to the original caller
-  - Records each token to Redis using a `ResponseResumer` (with stream key `conversation:response:{conversationId}`)
+  - Records each token to a per-node temp file and registers the owner in Redis (key: `response:{conversationId}`)
   - Tracks the cumulative byte offset as the resume position
   - On completion, stores the full message and marks the conversation as completed
 
@@ -220,6 +220,8 @@ The example agent application provides two endpoints to support resumption:
 - **`ResumeWebSocket`** (`/customer-support-agent/{conversationId}/ws/{resumePosition}`): A WebSocket endpoint that replays cached tokens from a specific resume position. The frontend stores the last received byte offset in local storage and reconnects with it after a page reload or network interruption.
 
 When `memory-service.response-resumer=redis` is not set (or set to an unsupported value), the extension uses a no-op `ResponseResumer` that doesn't buffer responses, and resumption is unavailable.
+
+Response resumption relies on a per-node advertised address for redirects. Configure `memory-service.grpc-advertised-address=host:port` in clustered deployments. Temp file behavior can be tuned with `memory-service.response-resumer.temp-dir` and `memory-service.response-resumer.temp-file-retention`.
 
 ## Additional Resources
 

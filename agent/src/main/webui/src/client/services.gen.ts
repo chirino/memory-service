@@ -148,6 +148,9 @@ export class ConversationsService {
    * @param data.limit
    * @param data.channel Channel of messages to return. Defaults to `history` for the
    * user-visible conversation; `memory` returns agent memory messages.
+   * @param data.epoch Optional epoch filter when listing the `memory` channel. Valid values
+   * are `latest`, `all`, or a numeric epoch identifier. Defaults to
+   * `latest` when not provided.
    * @returns unknown A list of messages.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -168,6 +171,7 @@ export class ConversationsService {
         after: data.after,
         limit: data.limit,
         channel: data.channel,
+        epoch: data.epoch,
       },
       errors: {
         404: "Resource not found",
@@ -199,6 +203,42 @@ export class ConversationsService {
     return __request(OpenAPI, {
       method: "POST",
       url: "/v1/conversations/{conversationId}/messages",
+      path: {
+        conversationId: data.conversationId,
+      },
+      body: data.requestBody,
+      mediaType: "application/json",
+      errors: {
+        404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * Synchronize the agent memory epoch
+   * Synchronizes the in-memory context for the conversation. The service fails
+   * when any message is not targeting the `memory` channel, then compares the
+   * provided list to the messages already stored in the latest memory epoch.
+   * If there is no difference it is a no-op, if the list merely appends more
+   * messages they are added to the current epoch, otherwise a new epoch is
+   * created and all provided messages are stored under the new epoch. Requires
+   * a valid agent API key.
+   * @param data The data for the request.
+   * @param data.conversationId
+   * @param data.requestBody
+   * @returns SyncMessagesResponse Result of the sync operation.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static syncConversationMemory(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/memory/messages/sync"]["post"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/conversations/{conversationId}/memory/messages/sync"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/memory/messages/sync"]["post"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/v1/conversations/{conversationId}/memory/messages/sync",
       path: {
         conversationId: data.conversationId,
       },
@@ -426,6 +466,35 @@ export class ConversationsService {
       mediaType: "application/json",
       errors: {
         404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * Cancel an in-progress response
+   * Requests cancellation of an in-progress response stream for the conversation.
+   * Requires WRITER access and an authenticated user session.
+   * @param data The data for the request.
+   * @param data.conversationId
+   * @returns unknown Cancel request accepted.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static cancelConversationResponse(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/v1/conversations/{conversationId}/cancel-response",
+      path: {
+        conversationId: data.conversationId,
+      },
+      errors: {
+        404: "Resource not found",
+        409: "Error response",
       },
     });
   }

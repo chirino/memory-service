@@ -24,6 +24,7 @@ import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.grpc.v1.AppendMessageRequest;
+import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
 import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
 import io.github.chirino.memory.grpc.v1.Conversation;
 import io.github.chirino.memory.grpc.v1.ConversationMembership;
@@ -93,7 +94,9 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.eclipse.microprofile.config.Config;
@@ -279,6 +282,8 @@ public class StepDefinitions {
         try {
             mutinyStub
                     .streamResponseTokens(requestStream)
+                    .collect()
+                    .last()
                     .await()
                     .atMost(java.time.Duration.ofSeconds(10));
         } catch (Exception e) {
@@ -365,6 +370,122 @@ public class StepDefinitions {
                 .with(
                         inProgressStreamResponse::complete,
                         inProgressStreamResponse::completeExceptionally);
+    }
+
+    @io.cucumber.java.en.Given(
+            "I start streaming tokens {string} to the conversation with {int}ms delay and keep the"
+                    + " stream open until canceled")
+    public void iStartStreamingTokensToTheConversationUntilCanceled(String tokens, int delayMs)
+            throws Exception {
+        Metadata metadata = buildGrpcMetadata();
+        var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+        if (metadata != null) {
+            mutinyStub =
+                    mutinyStub.withInterceptors(
+                            MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+
+        streamStartedLatch = new CountDownLatch(1);
+        streamedTokenCount = new AtomicInteger(0);
+        inProgressStreamResponse = new CompletableFuture<>();
+
+        AtomicBoolean canceled = new AtomicBoolean(false);
+        AtomicBoolean completed = new AtomicBoolean(false);
+        AtomicReference<
+                        io.smallrye.mutiny.subscription.MultiEmitter<
+                                ? super StreamResponseTokenRequest>>
+                emitterRef = new AtomicReference<>();
+        AtomicReference<StreamResponseTokenResponse> lastResponse = new AtomicReference<>();
+
+        var requestStream =
+                io.smallrye.mutiny.Multi.createFrom()
+                        .<StreamResponseTokenRequest>emitter(
+                                emitter -> {
+                                    emitterRef.set(emitter);
+                                    Thread thread =
+                                            new Thread(
+                                                    () -> {
+                                                        try {
+                                                            for (int i = 0;
+                                                                    i < tokens.length();
+                                                                    i++) {
+                                                                if (canceled.get()) {
+                                                                    break;
+                                                                }
+                                                                String token =
+                                                                        String.valueOf(
+                                                                                tokens.charAt(i));
+                                                                var requestBuilder =
+                                                                        StreamResponseTokenRequest
+                                                                                .newBuilder();
+                                                                if (i == 0) {
+                                                                    requestBuilder
+                                                                            .setConversationId(
+                                                                                    conversationId);
+                                                                }
+                                                                requestBuilder.setToken(token);
+                                                                requestBuilder.setComplete(false);
+                                                                emitter.emit(
+                                                                        requestBuilder.build());
+                                                                if (streamedTokenCount
+                                                                                .incrementAndGet()
+                                                                        == 1) {
+                                                                    streamStartedLatch.countDown();
+                                                                }
+                                                                if (delayMs > 0) {
+                                                                    Thread.sleep(delayMs);
+                                                                }
+                                                            }
+                                                            while (!canceled.get()) {
+                                                                Thread.sleep(10);
+                                                            }
+                                                            if (completed.compareAndSet(
+                                                                    false, true)) {
+                                                                emitter.emit(
+                                                                        StreamResponseTokenRequest
+                                                                                .newBuilder()
+                                                                                .setComplete(true)
+                                                                                .build());
+                                                                emitter.complete();
+                                                            }
+                                                        } catch (InterruptedException e) {
+                                                            Thread.currentThread().interrupt();
+                                                            emitter.fail(e);
+                                                        } catch (Exception e) {
+                                                            emitter.fail(e);
+                                                        }
+                                                    },
+                                                    "response-resumer-stream");
+                                    thread.setDaemon(true);
+                                    thread.start();
+                                });
+
+        mutinyStub
+                .streamResponseTokens(requestStream)
+                .subscribe()
+                .with(
+                        response -> {
+                            lastResponse.set(response);
+                            if (response.getCancelRequested()) {
+                                canceled.set(true);
+                                var emitter = emitterRef.get();
+                                if (emitter != null && completed.compareAndSet(false, true)) {
+                                    emitter.emit(
+                                            StreamResponseTokenRequest.newBuilder()
+                                                    .setComplete(true)
+                                                    .build());
+                                    emitter.complete();
+                                }
+                            }
+                        },
+                        inProgressStreamResponse::completeExceptionally,
+                        () -> {
+                            StreamResponseTokenResponse response = lastResponse.get();
+                            if (response == null) {
+                                response = StreamResponseTokenResponse.newBuilder().build();
+                            }
+                            inProgressStreamResponse.complete(response);
+                        });
     }
 
     @io.cucumber.java.en.Given("I wait for the response stream to send at least {int} tokens")
@@ -1987,6 +2108,14 @@ public class StepDefinitions {
                     }
                     return stub.checkConversations(requestBuilder.build());
                 }
+            case "CancelResponse":
+                {
+                    var requestBuilder = CancelResponseRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.cancelResponse(requestBuilder.build());
+                }
             case "StreamResponseTokens":
                 {
                     // Note: This is a client streaming call, but we'll handle a single request
@@ -2005,7 +2134,34 @@ public class StepDefinitions {
                     }
                     var request = requestBuilder.build();
                     var requestStream = io.smallrye.mutiny.Multi.createFrom().item(request);
-                    return mutinyStub.streamResponseTokens(requestStream).await().indefinitely();
+                    CompletableFuture<StreamResponseTokenResponse> responseFuture =
+                            new CompletableFuture<>();
+                    mutinyStub
+                            .streamResponseTokens(requestStream)
+                            .subscribe()
+                            .with(
+                                    response -> {
+                                        if (!responseFuture.isDone()) {
+                                            responseFuture.complete(response);
+                                        }
+                                    },
+                                    responseFuture::completeExceptionally,
+                                    () -> {
+                                        if (!responseFuture.isDone()) {
+                                            responseFuture.complete(
+                                                    StreamResponseTokenResponse.newBuilder()
+                                                            .build());
+                                        }
+                                    });
+                    try {
+                        return responseFuture.get(10, TimeUnit.SECONDS);
+                    } catch (Exception e) {
+                        Throwable cause = e.getCause();
+                        if (cause instanceof StatusRuntimeException statusException) {
+                            throw statusException;
+                        }
+                        throw e;
+                    }
                 }
             case "ReplayResponseTokens":
                 {

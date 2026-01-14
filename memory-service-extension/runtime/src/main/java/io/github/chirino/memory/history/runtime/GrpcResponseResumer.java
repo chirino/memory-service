@@ -1,6 +1,8 @@
 package io.github.chirino.memory.history.runtime;
 
 import com.google.protobuf.Empty;
+import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
+import io.github.chirino.memory.grpc.v1.CancelResponseResponse;
 import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
 import io.github.chirino.memory.grpc.v1.CheckConversationsResponse;
 import io.github.chirino.memory.grpc.v1.HasResponseInProgressRequest;
@@ -10,9 +12,11 @@ import io.github.chirino.memory.grpc.v1.MutinyResponseResumerServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensResponse;
 import io.github.chirino.memory.grpc.v1.StreamResponseTokenRequest;
-import io.github.chirino.memory.grpc.v1.StreamResponseTokenResponse;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
 import io.grpc.Metadata;
 import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.MetadataUtils;
 import io.quarkus.grpc.GrpcClient;
 import io.quarkus.oidc.AccessTokenCredential;
@@ -38,6 +42,10 @@ public class GrpcResponseResumer implements ResponseResumer {
             Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> API_KEY_HEADER =
             Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER);
+    private static final Metadata.Key<String> REDIRECT_HOST_HEADER =
+            Metadata.Key.of("x-resumer-redirect-host", Metadata.ASCII_STRING_MARSHALLER);
+    private static final Metadata.Key<String> REDIRECT_PORT_HEADER =
+            Metadata.Key.of("x-resumer-redirect-port", Metadata.ASCII_STRING_MARSHALLER);
 
     @Inject Instance<SecurityIdentityAssociation> securityIdentityAssociationInstance;
 
@@ -67,10 +75,7 @@ public class GrpcResponseResumer implements ResponseResumer {
                         .setResumePosition(resumePosition)
                         .build();
 
-        return stub(null)
-                .replayResponseTokens(request)
-                .onItem()
-                .transform(ReplayResponseTokensResponse::getToken)
+        return replayWithRedirect(request, null, 1)
                 .onFailure()
                 .invoke(
                         failure ->
@@ -90,10 +95,7 @@ public class GrpcResponseResumer implements ResponseResumer {
                         .setResumePosition(resumePosition)
                         .build();
 
-        return stub(bearerToken)
-                .replayResponseTokens(request)
-                .onItem()
-                .transform(ReplayResponseTokensResponse::getToken)
+        return replayWithRedirect(request, bearerToken, 1)
                 .onFailure()
                 .invoke(
                         failure ->
@@ -130,6 +132,26 @@ public class GrpcResponseResumer implements ResponseResumer {
         } catch (Exception e) {
             LOG.warnf(e, "Failed to check if history %s has response in progress", conversationId);
             return false;
+        }
+    }
+
+    @Override
+    public void requestCancel(String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return;
+        }
+        try {
+            CancelResponseRequest request =
+                    CancelResponseRequest.newBuilder().setConversationId(conversationId).build();
+            CancelResponseResponse response =
+                    cancelWithRedirect(request, null, 1).await().indefinitely();
+            if (!response.getAccepted()) {
+                LOG.warnf(
+                        "Cancel response request was not accepted for conversationId=%s",
+                        conversationId);
+            }
+        } catch (Exception e) {
+            LOG.warnf(e, "Failed to request cancel for conversationId=%s", conversationId);
         }
     }
 
@@ -184,7 +206,6 @@ public class GrpcResponseResumer implements ResponseResumer {
         if (keys == null || keys.isEmpty()) {
             return resumerService;
         }
-        LOG.infof("Attaching gRPC metadata headers for response resumer: %s", keys);
         return resumerService.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
     }
 
@@ -192,40 +213,130 @@ public class GrpcResponseResumer implements ResponseResumer {
         Metadata metadata = new Metadata();
         if (bearerToken != null && metadata.get(AUTHORIZATION_HEADER) == null) {
             metadata.put(AUTHORIZATION_HEADER, "Bearer " + bearerToken);
-            LOG.infof(
-                    "Propagating provided bearer token to gRPC response resumer (token length=%d)",
-                    bearerToken.length());
             return metadata;
         }
 
         SecurityIdentity identity = getSecurityIdentity();
         if (identity == null) {
-            LOG.info(
-                    "No SecurityIdentity available for response resumer; only API key (if"
-                            + " configured) will be sent");
         } else {
-            String userName =
-                    identity.getPrincipal() != null ? identity.getPrincipal().getName() : "unknown";
-            LOG.infof("Resolved SecurityIdentity for response resumer: %s", userName);
             if (metadata.get(AUTHORIZATION_HEADER) == null) {
                 String token = resolveToken(identity);
                 if (token != null) {
                     metadata.put(AUTHORIZATION_HEADER, "Bearer " + token);
-                    LOG.info("Propagating Authorization token to gRPC response resumer");
-                } else {
-                    LOG.info(
-                            "SecurityIdentity resolved but no AccessToken or TokenCredential"
-                                    + " present; request will rely on API key");
                 }
             }
         }
 
         if (configuredApiKey != null && metadata.get(API_KEY_HEADER) == null) {
             metadata.put(API_KEY_HEADER, configuredApiKey);
-            LOG.info("Propagating X-API-Key to gRPC response resumer");
         }
 
         return metadata;
+    }
+
+    private Multi<String> replayWithRedirect(
+            ReplayResponseTokensRequest request, String bearerToken, int redirectsRemaining) {
+        return replayWithRedirect(request, bearerToken, redirectsRemaining, null);
+    }
+
+    private Multi<String> replayWithRedirect(
+            ReplayResponseTokensRequest request,
+            String bearerToken,
+            int redirectsRemaining,
+            RedirectClient redirectClient) {
+        MutinyResponseResumerServiceGrpc.MutinyResponseResumerServiceStub client =
+                redirectClient == null ? stub(bearerToken) : redirectClient.stub();
+        Multi<String> tokens =
+                client.replayResponseTokens(request)
+                        .onItem()
+                        .transform(ReplayResponseTokensResponse::getToken);
+        if (redirectClient != null) {
+            tokens = tokens.onTermination().invoke(redirectClient::close);
+        }
+        return tokens.onFailure()
+                .recoverWithMulti(
+                        failure -> {
+                            RedirectTarget redirect = resolveRedirect(failure);
+                            if (redirect == null || redirectsRemaining <= 0) {
+                                return Multi.createFrom().failure(failure);
+                            }
+                            RedirectClient nextClient = redirectClient(redirect, bearerToken);
+                            if (nextClient == null) {
+                                return Multi.createFrom().failure(failure);
+                            }
+                            return replayWithRedirect(
+                                    request, bearerToken, redirectsRemaining - 1, nextClient);
+                        });
+    }
+
+    private io.smallrye.mutiny.Uni<CancelResponseResponse> cancelWithRedirect(
+            CancelResponseRequest request, String bearerToken, int redirectsRemaining) {
+        return stub(bearerToken)
+                .cancelResponse(request)
+                .onFailure()
+                .recoverWithUni(
+                        failure -> {
+                            RedirectTarget redirect = resolveRedirect(failure);
+                            if (redirect == null || redirectsRemaining <= 0) {
+                                return io.smallrye.mutiny.Uni.createFrom().failure(failure);
+                            }
+                            RedirectClient client = redirectClient(redirect, bearerToken);
+                            if (client == null) {
+                                return io.smallrye.mutiny.Uni.createFrom().failure(failure);
+                            }
+                            return client.stub()
+                                    .cancelResponse(request)
+                                    .onTermination()
+                                    .invoke(client::close);
+                        });
+    }
+
+    private RedirectTarget resolveRedirect(Throwable failure) {
+        if (failure instanceof StatusRuntimeException statusException) {
+            Metadata trailers = statusException.getTrailers();
+            if (trailers == null) {
+                return null;
+            }
+            String host = trailers.get(REDIRECT_HOST_HEADER);
+            String portValue = trailers.get(REDIRECT_PORT_HEADER);
+            if (host == null || portValue == null) {
+                return null;
+            }
+            try {
+                int port = Integer.parseInt(portValue);
+                if (port <= 0) {
+                    return null;
+                }
+                return new RedirectTarget(host, port);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private RedirectClient redirectClient(RedirectTarget target, String bearerToken) {
+        ManagedChannel channel =
+                ManagedChannelBuilder.forAddress(target.host(), target.port())
+                        .usePlaintext()
+                        .build();
+        MutinyResponseResumerServiceGrpc.MutinyResponseResumerServiceStub client =
+                MutinyResponseResumerServiceGrpc.newMutinyStub(channel);
+        Metadata metadata = buildMetadata(bearerToken);
+        if (metadata.keys() != null && !metadata.keys().isEmpty()) {
+            client = client.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+        return new RedirectClient(client, channel);
+    }
+
+    private record RedirectTarget(String host, int port) {}
+
+    private record RedirectClient(
+            MutinyResponseResumerServiceGrpc.MutinyResponseResumerServiceStub stub,
+            ManagedChannel channel) {
+        void close() {
+            channel.shutdown();
+        }
     }
 
     private SecurityIdentity getSecurityIdentity() {
@@ -254,8 +365,10 @@ public class GrpcResponseResumer implements ResponseResumer {
         private final String conversationId;
         private final List<StreamResponseTokenRequest> pendingRequests = new ArrayList<>();
         private MultiEmitter<? super StreamResponseTokenRequest> emitter;
+        private MultiEmitter<? super ResponseCancelSignal> cancelEmitter;
         private boolean firstMessage = true;
         private boolean completed = false;
+        private boolean cancelEmitted = false;
 
         GrpcResponseRecorder(
                 MutinyResponseResumerServiceGrpc.MutinyResponseResumerServiceStub resumerService,
@@ -302,6 +415,23 @@ public class GrpcResponseResumer implements ResponseResumer {
             }
         }
 
+        @Override
+        public Multi<ResponseCancelSignal> cancelStream() {
+            return Multi.createFrom()
+                    .emitter(
+                            emitter -> {
+                                synchronized (GrpcResponseRecorder.this) {
+                                    cancelEmitter = emitter;
+                                    if (cancelEmitted) {
+                                        emitter.emit(ResponseCancelSignal.CANCEL);
+                                        emitter.complete();
+                                    } else if (completed) {
+                                        emitter.complete();
+                                    }
+                                }
+                            });
+        }
+
         private synchronized void startStream() {
             Multi<StreamResponseTokenRequest> requestStream =
                     Multi.createFrom()
@@ -326,12 +456,15 @@ public class GrpcResponseResumer implements ResponseResumer {
                     .streamResponseTokens(requestStream)
                     .subscribe()
                     .with(
-                            (StreamResponseTokenResponse response) -> {
+                            response -> {
                                 if (!response.getSuccess()) {
                                     LOG.warnf(
                                             "Failed to stream response tokens for"
                                                     + " conversationId=%s: %s",
                                             conversationId, response.getErrorMessage());
+                                }
+                                if (response.getCancelRequested()) {
+                                    emitCancel();
                                 }
                             },
                             failure ->
@@ -339,7 +472,25 @@ public class GrpcResponseResumer implements ResponseResumer {
                                             failure,
                                             "Failed to stream response tokens for"
                                                     + " conversationId=%s",
-                                            conversationId));
+                                            conversationId),
+                            this::completeCancelStream);
+        }
+
+        private synchronized void emitCancel() {
+            if (cancelEmitted) {
+                return;
+            }
+            cancelEmitted = true;
+            if (cancelEmitter != null) {
+                cancelEmitter.emit(ResponseCancelSignal.CANCEL);
+                cancelEmitter.complete();
+            }
+        }
+
+        private synchronized void completeCancelStream() {
+            if (cancelEmitter != null) {
+                cancelEmitter.complete();
+            }
         }
 
         private void emit(StreamResponseTokenRequest request) {

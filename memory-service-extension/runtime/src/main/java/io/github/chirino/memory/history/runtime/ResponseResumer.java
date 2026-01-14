@@ -74,6 +74,8 @@ public interface ResponseResumer {
      */
     boolean hasResponseInProgress(String conversationId);
 
+    void requestCancel(String conversationId);
+
     static ResponseResumer noop() {
         return NoopResponseResumer.INSTANCE;
     }
@@ -85,5 +87,12 @@ public interface ResponseResumer {
          * Optional hook invoked when the response stream completes. Default is no-op.
          */
         default void complete() {}
+
+        /**
+         * Optional stream of cancel signals for this response recording.
+         */
+        default Multi<ResponseCancelSignal> cancelStream() {
+            return Multi.createFrom().empty();
+        }
     }
 }

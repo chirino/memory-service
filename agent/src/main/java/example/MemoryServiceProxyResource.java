@@ -155,6 +155,16 @@ public class MemoryServiceProxyResource {
         }
     }
 
+    @POST
+    @Path("/{conversationId}/cancel-response")
+    public Response cancelResponse(@PathParam("conversationId") String conversationId) {
+        return executeVoid(
+                () -> conversationsApi.cancelConversationResponse(conversationId),
+                OK,
+                "Error cancelling response for history %s",
+                conversationId);
+    }
+
     //
     // don't expose these operations to the frontend.
     // @POST
