@@ -48,11 +48,10 @@ public class RedisResponseResumerLocatorStore implements ResponseResumerLocatorS
                         ? redisSources.select(RedisClientName.Literal.of(clientName))
                         : redisSources;
         if (selected.isUnsatisfied()) {
-            LOG.warnf(
+            throw new IllegalStateException(
                     "Response resumer is enabled (memory-service.response-resumer=redis) but Redis"
-                            + " client '%s' is not available. Disabling response resumption.",
-                    clientName == null ? "<default>" : clientName);
-            return;
+                            + " client '%s' is not available."
+                                    .formatted(clientName == null ? "<default>" : clientName));
         }
 
         ReactiveRedisDataSource dataSource = selected.get();

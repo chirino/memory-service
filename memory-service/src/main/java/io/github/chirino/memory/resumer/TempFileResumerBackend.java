@@ -84,7 +84,7 @@ public class TempFileResumerBackend implements ResponseResumerBackend {
 
     @Override
     public boolean enabled() {
-        return true;
+        return locatorStore.available();
     }
 
     @Override

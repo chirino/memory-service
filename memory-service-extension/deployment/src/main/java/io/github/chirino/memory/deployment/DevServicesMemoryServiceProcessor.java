@@ -350,6 +350,46 @@ public class DevServicesMemoryServiceProcessor {
                                             }
                                         }
 
+                                        // Configure Infinispan server list for the
+                                        // memory-service container only if response-resumer is
+                                        // set to "infinispan".
+                                        if ("infinispan".equalsIgnoreCase(responseResumerConfig)) {
+                                            String serverList = null;
+                                            try {
+                                                serverList =
+                                                        ConfigProvider.getConfig()
+                                                                .getOptionalValue(
+                                                                        "quarkus.infinispan-client.server-list",
+                                                                        String.class)
+                                                                .orElse(null);
+                                            } catch (IllegalStateException e) {
+                                                // Config not available, will try dev service
+                                            }
+
+                                            if (serverList == null || serverList.isBlank()) {
+                                                serverList = findInfinispanDevServiceUrl();
+                                            }
+
+                                            if (serverList != null && !serverList.isBlank()) {
+                                                String containerServerList =
+                                                        serverList.replace(
+                                                                "localhost",
+                                                                "host.docker.internal");
+                                                LOG.infof(
+                                                        "Configuring memory-service container with"
+                                                            + " QUARKUS_INFINISPAN_CLIENT_SERVER_LIST=%s",
+                                                        containerServerList);
+                                                container.withEnv(
+                                                        "QUARKUS_INFINISPAN_CLIENT_SERVER_LIST",
+                                                        containerServerList);
+                                            } else {
+                                                LOG.warn(
+                                                        "Infinispan config not available. Container"
+                                                                + " will start without Infinispan"
+                                                                + " configuration.");
+                                            }
+                                        }
+
                                         container.start();
 
                                         String url =
@@ -494,6 +534,49 @@ public class DevServicesMemoryServiceProcessor {
         }
 
         LOG.warn("Redis dev service container not found after 30 seconds");
+        return null;
+    }
+
+    /**
+     * Finds the Infinispan dev service container and returns its server list.
+     *
+     * @return the Infinispan server list, or null if not found
+     */
+    private String findInfinispanDevServiceUrl() {
+        for (int i = 0; i < 60; i++) {
+            try {
+                var dockerClient = org.testcontainers.DockerClientFactory.instance().client();
+                var containers =
+                        dockerClient
+                                .listContainersCmd()
+                                .withLabelFilter(List.of("quarkus-dev-service-infinispan"))
+                                .withStatusFilter(List.of("running"))
+                                .exec();
+
+                if (!containers.isEmpty()) {
+                    var infinispanContainer = containers.get(0);
+                    var ports = infinispanContainer.getPorts();
+                    for (var port : ports) {
+                        if (port.getPrivatePort() == 11222 && port.getPublicPort() != null) {
+                            return "localhost:" + port.getPublicPort();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debugf("Error querying Docker for Infinispan container: %s", e.getMessage());
+            }
+
+            if (i < 59) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+
+        LOG.warn("Infinispan dev service container not found after 30 seconds");
         return null;
     }
 }

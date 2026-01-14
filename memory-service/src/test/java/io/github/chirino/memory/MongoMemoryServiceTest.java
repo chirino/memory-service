@@ -15,7 +15,7 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
-@TestProfile(MongoTestProfile.class)
+@TestProfile(MongoRedisTestProfile.class)
 class MongoMemoryServiceTest extends AbstractMemoryServiceTest {
 
     @Inject MongoClient mongoClient;

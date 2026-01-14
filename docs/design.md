@@ -169,6 +169,14 @@ The agent-facing API is tuned to what an AI agent needs for building prompts and
   - If vector store is enabled, embeddings are generated and stored, and `vectorized_at` is updated on the conversation.
   - See [Summarization Design](summarization-design.md) for detailed implementation.
 
+### Response Resumer (Streaming Replay)
+
+For streaming agent responses, the service can record tokens and allow replay
+after reconnects. The response-resumer locator store is pluggable via
+`memory-service.response-resumer` with supported backends `redis`, `infinispan`,
+or `none` to disable resumption. See the response resumer docs in `README.md`
+for configuration examples.
+
 ### Semantic Search
 
 - `POST /v1/user/search/messages`

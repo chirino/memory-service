@@ -8,7 +8,7 @@ import java.util.Optional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @ApplicationScoped
-public class RedisTempFileResumerBackendProducer {
+public class ResponseResumerBackendProducer {
     private static final Duration RESPONSE_TTL = Duration.ofSeconds(10);
     private static final Duration RESPONSE_REFRESH = Duration.ofSeconds(5);
 
@@ -26,7 +26,8 @@ public class RedisTempFileResumerBackendProducer {
     @Produces
     @ApplicationScoped
     TempFileResumerBackend produceTempFileResumerBackend(
-            RedisResponseResumerLocatorStore locatorStore) {
+            ResponseResumerLocatorStoreSelector locatorStoreSelector) {
+        ResponseResumerLocatorStore locatorStore = locatorStoreSelector.select();
         TempFileResumerBackend backend =
                 new TempFileResumerBackend(
                         locatorStore,
@@ -35,7 +36,9 @@ public class RedisTempFileResumerBackendProducer {
                         tempDir,
                         tempFileRetention,
                         advertisedAddress);
-        backend.start();
+        if (locatorStore.available()) {
+            backend.start();
+        }
         return backend;
     }
 

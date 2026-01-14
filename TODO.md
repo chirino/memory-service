@@ -3,15 +3,14 @@
 * Switch to the to the langchain4j MemoryChatStore once https://github.com/langchain4j/langchain4j/pull/4416 is released.
 * Improve the langchain4j memory interface.
 
-* add infinispan implementation
-* provide a way to cancel a completion.
 * Figure out how muli-modal content should be handled.
 
 * Support mutliple agents participating in one conversation.
-* Implment conversation sharing / multi-user conversations (some backend is there, need front end using to demo)
+* Implement conversation sharing / multi-user conversations (some backend is there, need front end using to demo)
 
 * Manging the react state of conversation + conversation resumption is complex: provide a headless react component that does it for ui implementors.
 * Review cache control headers
+* the api proxy allows getting memory chanells by the client.
 
 # Need Dev Feedback for:
 

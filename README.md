@@ -191,12 +191,20 @@ The React app calls `MemoryServiceProxyResource` (`agent/src/main/java/example/M
 
 ### 7. Agent Response Resumption
 
-When streaming agent responses (e.g., via WebSocket), clients may disconnect before receiving the complete response. The memory-service extension supports resuming interrupted responses by buffering streaming tokens in Redis.
+When streaming agent responses (e.g., via WebSocket), clients may disconnect before receiving the complete response. The memory-service extension supports resuming interrupted responses by buffering streaming tokens in a cache backend (Redis or Infinispan).
 
 Enable response resumption by setting:
 
 ```properties
 memory-service.response-resumer=redis
+```
+
+Or use Infinispan:
+
+```properties
+memory-service.response-resumer=infinispan
+quarkus.infinispan-client.server-list=localhost:11222
+quarkus.infinispan-client.cache.response-resumer.configuration=<distributed-cache><encoding media-type="application/x-protostream"/></distributed-cache>
 ```
 
 When enabled, the `@RecordConversation` interceptor automatically buffers streaming responses:
@@ -218,7 +226,7 @@ The example agent application provides two endpoints to support resumption:
 
 - **`ResumeWebSocket`** (`/customer-support-agent/{conversationId}/ws/{resumePosition}`): A WebSocket endpoint that replays cached tokens from a specific resume position. The frontend stores the last received byte offset in local storage and reconnects with it after a page reload or network interruption.
 
-When `memory-service.response-resumer=redis` is not set (or set to an unsupported value), the extension uses a no-op `ResponseResumer` that doesn't buffer responses, and resumption is unavailable.
+When `memory-service.response-resumer=none` is set, the extension uses a no-op `ResponseResumer` that doesn't buffer responses, and resumption is unavailable.
 
 Response resumption relies on a per-node advertised address for redirects. Configure `memory-service.grpc-advertised-address=host:port` in clustered deployments. Temp file behavior can be tuned with `memory-service.response-resumer.temp-dir` and `memory-service.response-resumer.temp-file-retention`.
 
