@@ -11,6 +11,10 @@ public interface ResponseResumer {
 
     ResponseRecorder recorder(String conversationId);
 
+    default ResponseRecorder recorder(String conversationId, String bearerToken) {
+        return recorder(conversationId);
+    }
+
     Multi<String> replay(String conversationId, long resumePosition);
 
     default Multi<String> replay(String conversationId, String resumePosition) {
@@ -52,7 +56,7 @@ public interface ResponseResumer {
                 .filter(
                         conversationId -> {
                             try {
-                                return hasResponseInProgress(conversationId);
+                                return hasResponseInProgress(conversationId, bearerToken);
                             } catch (Exception e) {
                                 LOG.warnf(
                                         e,
@@ -74,7 +78,28 @@ public interface ResponseResumer {
      */
     boolean hasResponseInProgress(String conversationId);
 
+    /**
+     * Check if a history has a response currently in progress, with an optional bearer token.
+     *
+     * @param conversationId the history ID to check
+     * @param bearerToken token to use for authentication when calling out (may be null)
+     * @return true if a response is in progress, false otherwise
+     */
+    default boolean hasResponseInProgress(String conversationId, String bearerToken) {
+        return hasResponseInProgress(conversationId);
+    }
+
     void requestCancel(String conversationId);
+
+    /**
+     * Request cancel of a response, optionally propagating a bearer token.
+     *
+     * @param conversationId the history ID to cancel
+     * @param bearerToken token to use for authentication when calling out (may be null)
+     */
+    default void requestCancel(String conversationId, String bearerToken) {
+        requestCancel(conversationId);
+    }
 
     static ResponseResumer noop() {
         return NoopResponseResumer.INSTANCE;

@@ -20,7 +20,7 @@ Key pieces (package `io.github.chirino.memory.history`):
 - `@ConversationId` – parameter annotation for the conversation id
 - `@UserMessage` – parameter annotation for the user’s input text
 - `ConversationStore` – SPI for persisting messages
-- `DefaultConversationStore` – implementation backed by `ConversationsApi`
+- `DefaultConversationStore` – implementation backed by `ConversationsApiBuilder`
 - `ConversationInterceptor` – interceptor that wires it all together
 
 The interceptor is transport‑agnostic and works with both synchronous
@@ -71,7 +71,7 @@ The extension ships with an `@ApplicationScoped` default implementation:
 
 - Class: `io.github.chirino.memory.history.runtime.DefaultConversationStore`
 - Depends on the generated REST client:
-  - `io.github.chirino.memory.client.api.ConversationsApi` (injected with `@RestClient`)
+  - `io.github.chirino.memory.history.runtime.ConversationsApiBuilder` (builds clients per call)
 
 Behavior:
 
@@ -146,8 +146,7 @@ memory-service-client.api-key=${MEMORY_SERVICE_API_KEY}
 want to override the default):
 
 ```properties
-quarkus.rest-client."io.github.chirino.memory.client.api.ConversationsApi".url=${MEMORY_SERVICE_URL}
-quarkus.rest-client."io.github.chirino.memory.client.api.ConversationsApi".scope=javax.inject.Singleton
+memory-service-client.url=${MEMORY_SERVICE_URL}
 ```
 
 In dev and tests, the `DevServicesMemoryServiceProcessor` starts a

@@ -5,14 +5,15 @@ import com.fasterxml.jackson.databind.util.RawValue;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.JacksonChatMessageJsonCodec;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
-import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.client.model.ListConversationMessages200Response;
 import io.github.chirino.memory.client.model.Message;
 import io.github.chirino.memory.client.model.MessageChannel;
 import io.github.chirino.memory.client.model.SyncMessagesRequest;
+import io.github.chirino.memory.history.runtime.ConversationsApiBuilder;
+import io.quarkus.oidc.AccessTokenCredential;
+import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
-import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -22,7 +23,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
 /**
@@ -38,25 +38,21 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     private static final JacksonChatMessageJsonCodec CODEC = new JacksonChatMessageJsonCodec();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private final ConversationsApi conversationsApi;
+    private final ConversationsApiBuilder conversationsApiBuilder;
     private final RequestContextExecutor requestContextExecutor;
     private final Instance<SecurityIdentity> securityIdentityInstance;
-    private final Instance<SecurityIdentityAssociation> securityIdentityAssociationInstance;
 
     @Inject
     public MemoryServiceChatMemoryStore(
-            @RestClient ConversationsApi conversationsApi,
+            ConversationsApiBuilder conversationsApiBuilder,
             RequestContextExecutor requestContextExecutor,
-            Instance<SecurityIdentity> securityIdentityInstance,
-            Instance<SecurityIdentityAssociation> securityIdentityAssociationInstance) {
-        this.conversationsApi = Objects.requireNonNull(conversationsApi, "conversationsApi");
+            Instance<SecurityIdentity> securityIdentityInstance) {
+        this.conversationsApiBuilder =
+                Objects.requireNonNull(conversationsApiBuilder, "conversationsApiBuilder");
         this.requestContextExecutor =
                 Objects.requireNonNull(requestContextExecutor, "requestContextExecutor");
         this.securityIdentityInstance =
                 Objects.requireNonNull(securityIdentityInstance, "securityIdentityInstance");
-        this.securityIdentityAssociationInstance =
-                Objects.requireNonNull(
-                        securityIdentityAssociationInstance, "securityIdentityAssociationInstance");
     }
 
     @Override
@@ -67,8 +63,13 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                     ListConversationMessages200Response context;
                     try {
                         context =
-                                conversationsApi.listConversationMessages(
-                                        memoryId.toString(), null, 50, MessageChannel.MEMORY, null);
+                                conversationsApi()
+                                        .listConversationMessages(
+                                                memoryId.toString(),
+                                                null,
+                                                50,
+                                                MessageChannel.MEMORY,
+                                                null);
                     } catch (WebApplicationException e) {
                         int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
                         if (status == 404) {
@@ -150,7 +151,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                         return;
                     }
                     syncRequest.setMessages(syncMessages);
-                    conversationsApi.syncConversationMemory(memoryId.toString(), syncRequest);
+                    conversationsApi().syncConversationMemory(memoryId.toString(), syncRequest);
                 });
     }
 
@@ -180,47 +181,40 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     private void runWithRequestContext(Runnable action) {
         requestContextExecutor.run(
                 () -> {
-                    propagateIdentity();
-                    try {
-                        action.run();
-                    } finally {
-                        clearIdentity();
-                    }
+                    action.run();
                 });
     }
 
     private <T> T callWithRequestContext(java.util.function.Supplier<T> supplier) {
-        return requestContextExecutor.call(
-                () -> {
-                    propagateIdentity();
-                    try {
-                        return supplier.get();
-                    } finally {
-                        clearIdentity();
-                    }
-                });
+        return requestContextExecutor.call(supplier);
     }
 
-    private void propagateIdentity() {
-        SecurityIdentity identity = resolveSecurityIdentity();
-        SecurityIdentityAssociation association = resolveSecurityIdentityAssociation();
-        if (identity != null && association != null) {
-            association.setIdentity(identity);
+    private io.github.chirino.memory.client.api.ConversationsApi conversationsApi() {
+        String bearerToken = resolveBearerToken();
+        if (bearerToken != null) {
+            return conversationsApiBuilder.withBearerAuth(bearerToken).build();
         }
+        return conversationsApiBuilder.build();
     }
 
-    private void clearIdentity() {
-        // Do not clear identity here; the association is managed by Quarkus.
+    private String resolveBearerToken() {
+        SecurityIdentity identity = resolveSecurityIdentity();
+        if (identity == null) {
+            return null;
+        }
+        AccessTokenCredential atc = identity.getCredential(AccessTokenCredential.class);
+        if (atc != null) {
+            return atc.getToken();
+        }
+        TokenCredential tc = identity.getCredential(TokenCredential.class);
+        if (tc != null) {
+            return tc.getToken();
+        }
+        return null;
     }
 
     private SecurityIdentity resolveSecurityIdentity() {
         return securityIdentityInstance.isResolvable() ? securityIdentityInstance.get() : null;
-    }
-
-    private SecurityIdentityAssociation resolveSecurityIdentityAssociation() {
-        return securityIdentityAssociationInstance.isResolvable()
-                ? securityIdentityAssociationInstance.get()
-                : null;
     }
 
     private List<ChatMessage> decodeContentBlock(

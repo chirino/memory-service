@@ -171,17 +171,16 @@ Agents can also use the generated REST client directly:
 
 ```java
 @Inject
-@RestClient
-ConversationsApi conversationsApi;
+ConversationsApiBuilder conversationsApiBuilder;
 
 public void createConversation() {
     CreateConversationRequest request = new CreateConversationRequest();
     request.setTitle("My Conversation");
-    Conversation conversation = conversationsApi.createConversation(request);
+    Conversation conversation = conversationsApiBuilder.build().createConversation(request);
 }
 ```
 
-**Note:** The API key is automatically configured by dev services. If `memory-service-client.api-key` is not explicitly set, the dev services will generate a random API key and configure it both in the started container (as `MEMORY_SERVICE_API_KEYS`) and in your application configuration (as `memory-service-client.api-key`). The `GlobalTokenPropagationFilter` automatically adds this API key to all REST client requests to the memory-service.
+**Note:** The API key is automatically configured by dev services. If `memory-service-client.api-key` is not explicitly set, the dev services will generate a random API key and configure it both in the started container (as `MEMORY_SERVICE_API_KEYS`) and in your application configuration (as `memory-service-client.api-key`). The `ConversationsApiBuilder` uses that configuration when building clients.
 
 ### 6. Frontend Integration
 

@@ -1,13 +1,13 @@
 package example;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.CreateSummaryRequest;
 import io.github.chirino.memory.client.model.ListConversationMessages200Response;
 import io.github.chirino.memory.client.model.Message;
 import io.github.chirino.memory.client.model.MessageChannel;
+import io.quarkus.oidc.AccessTokenCredential;
+import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
-import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.POST;
@@ -22,7 +22,6 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
 /**
@@ -38,15 +37,13 @@ public class SummerizationResource {
     private static final Logger LOG = Logger.getLogger(SummerizationResource.class);
     private static final int PAGE_SIZE = 200;
 
-    @Inject @RestClient ConversationsApi conversationsApi;
+    @Inject ConversationsApiBuilder conversationsApiBuilder;
 
     @Inject RedactionAssistant redactionAssistant;
 
     @Inject ObjectMapper objectMapper;
 
     @Inject SecurityIdentity securityIdentity;
-
-    @Inject SecurityIdentityAssociation securityIdentityAssociation;
 
     @ConfigProperty(name = "agent.summarization.title-max-chars", defaultValue = "20000")
     int titleMaxChars;
@@ -60,7 +57,6 @@ public class SummerizationResource {
     public Response summerize(@PathParam("conversationId") String conversationId) {
         try {
 
-            propagateSecurityIdentity();
             List<Message> historyMessages = fetchHistoryMessages(conversationId);
             if (historyMessages.isEmpty()) {
                 return Response.noContent().build();
@@ -89,7 +85,7 @@ public class SummerizationResource {
             request.setSummary(redactedTranscript);
             request.setUntilMessageId(last.getId());
             request.setSummarizedAt(summarizedAt);
-            conversationsApi.createConversationSummary(conversationId, request);
+            conversationsApi().createConversationSummary(conversationId, request);
             return Response.status(Response.Status.CREATED).build();
         } catch (Exception e) {
             LOG.errorf(e, "Failed to summarize conversationId=%s", conversationId);
@@ -102,8 +98,13 @@ public class SummerizationResource {
         String cursor = null;
         while (true) {
             ListConversationMessages200Response response =
-                    conversationsApi.listConversationMessages(
-                            conversationId, cursor, PAGE_SIZE, MessageChannel.HISTORY, null);
+                    conversationsApi()
+                            .listConversationMessages(
+                                    conversationId,
+                                    cursor,
+                                    PAGE_SIZE,
+                                    MessageChannel.HISTORY,
+                                    null);
             List<Message> data = response != null ? response.getData() : null;
             if (data != null && !data.isEmpty()) {
                 all.addAll(data);
@@ -287,13 +288,26 @@ public class SummerizationResource {
 
     private record RedactionPayload(String title, Map<String, String> redact) {}
 
-    /**
-     * Ensures the SecurityIdentity is propagated to the REST client context
-     * so that GlobalTokenPropagationFilter can access it.
-     */
-    private void propagateSecurityIdentity() {
-        if (securityIdentity != null && securityIdentityAssociation != null) {
-            securityIdentityAssociation.setIdentity(securityIdentity);
+    private io.github.chirino.memory.client.api.ConversationsApi conversationsApi() {
+        String bearerToken = resolveBearerToken();
+        if (bearerToken != null) {
+            return conversationsApiBuilder.withBearerAuth(bearerToken).build();
         }
+        return conversationsApiBuilder.build();
+    }
+
+    private String resolveBearerToken() {
+        if (securityIdentity == null) {
+            return null;
+        }
+        AccessTokenCredential atc = securityIdentity.getCredential(AccessTokenCredential.class);
+        if (atc != null) {
+            return atc.getToken();
+        }
+        TokenCredential tc = securityIdentity.getCredential(TokenCredential.class);
+        if (tc != null) {
+            return tc.getToken();
+        }
+        return null;
     }
 }

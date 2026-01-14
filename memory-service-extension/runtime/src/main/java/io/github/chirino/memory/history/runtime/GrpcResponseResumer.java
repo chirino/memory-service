@@ -68,6 +68,11 @@ public class GrpcResponseResumer implements ResponseResumer {
     }
 
     @Override
+    public ResponseRecorder recorder(String conversationId, String bearerToken) {
+        return new GrpcResponseRecorder(stub(bearerToken), conversationId);
+    }
+
+    @Override
     public Multi<String> replay(String conversationId, long resumePosition) {
         ReplayResponseTokensRequest request =
                 ReplayResponseTokensRequest.newBuilder()
@@ -121,13 +126,18 @@ public class GrpcResponseResumer implements ResponseResumer {
 
     @Override
     public boolean hasResponseInProgress(String conversationId) {
+        return hasResponseInProgress(conversationId, null);
+    }
+
+    @Override
+    public boolean hasResponseInProgress(String conversationId, String bearerToken) {
         try {
             HasResponseInProgressRequest request =
                     HasResponseInProgressRequest.newBuilder()
                             .setConversationId(conversationId)
                             .build();
             HasResponseInProgressResponse response =
-                    stub(null).hasResponseInProgress(request).await().indefinitely();
+                    stub(bearerToken).hasResponseInProgress(request).await().indefinitely();
             return response.getInProgress();
         } catch (Exception e) {
             LOG.warnf(e, "Failed to check if history %s has response in progress", conversationId);
@@ -137,6 +147,11 @@ public class GrpcResponseResumer implements ResponseResumer {
 
     @Override
     public void requestCancel(String conversationId) {
+        requestCancel(conversationId, null);
+    }
+
+    @Override
+    public void requestCancel(String conversationId, String bearerToken) {
         if (conversationId == null || conversationId.isBlank()) {
             return;
         }
@@ -144,7 +159,7 @@ public class GrpcResponseResumer implements ResponseResumer {
             CancelResponseRequest request =
                     CancelResponseRequest.newBuilder().setConversationId(conversationId).build();
             CancelResponseResponse response =
-                    cancelWithRedirect(request, null, 1).await().indefinitely();
+                    cancelWithRedirect(request, bearerToken, 1).await().indefinitely();
             if (!response.getAccepted()) {
                 LOG.warnf(
                         "Cancel response request was not accepted for conversationId=%s",
@@ -211,8 +226,10 @@ public class GrpcResponseResumer implements ResponseResumer {
 
     private Metadata buildMetadata(String bearerToken) {
         Metadata metadata = new Metadata();
+        boolean usedBearerToken = false;
         if (bearerToken != null && metadata.get(AUTHORIZATION_HEADER) == null) {
             metadata.put(AUTHORIZATION_HEADER, "Bearer " + bearerToken);
+            usedBearerToken = true;
             return metadata;
         }
 
@@ -223,10 +240,16 @@ public class GrpcResponseResumer implements ResponseResumer {
                 String token = resolveToken(identity);
                 if (token != null) {
                     metadata.put(AUTHORIZATION_HEADER, "Bearer " + token);
+                    usedBearerToken = true;
                 }
             }
         }
 
+        if (LOG.isInfoEnabled()) {
+            boolean hasApiKey = configuredApiKey != null && !configuredApiKey.isBlank();
+            LOG.infof(
+                    "gRPC resumer metadata: bearerToken=%b apiKey=%b", usedBearerToken, hasApiKey);
+        }
         if (configuredApiKey != null && metadata.get(API_KEY_HEADER) == null) {
             metadata.put(API_KEY_HEADER, configuredApiKey);
         }

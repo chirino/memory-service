@@ -19,6 +19,11 @@ public class NoopResponseResumer implements ResponseResumer {
     }
 
     @Override
+    public ResponseRecorder recorder(String conversationId, String bearerToken) {
+        return token -> {};
+    }
+
+    @Override
     public Multi<String> replay(String conversationId, long resumePosition) {
         return Multi.createFrom().empty();
     }

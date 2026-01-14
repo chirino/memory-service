@@ -3,13 +3,11 @@ package io.github.chirino.memory.langchain4j;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
-import io.github.chirino.memory.client.api.ConversationsApi;
+import io.github.chirino.memory.history.runtime.ConversationsApiBuilder;
 import io.quarkus.security.identity.SecurityIdentity;
-import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
 @Singleton
@@ -17,13 +15,11 @@ public class MemoryServiceChatMemoryProvider implements ChatMemoryProvider {
 
     private static final Logger LOG = Logger.getLogger(MemoryServiceChatMemoryProvider.class);
 
-    @Inject @RestClient ConversationsApi conversationsApi;
+    @Inject ConversationsApiBuilder conversationsApiBuilder;
 
     @Inject RequestContextExecutor requestContextExecutor;
 
     @Inject Instance<SecurityIdentity> securityIdentityInstance;
-
-    @Inject Instance<SecurityIdentityAssociation> securityIdentityAssociationInstance;
 
     @Override
     public ChatMemory get(Object memoryId) {
@@ -37,15 +33,10 @@ public class MemoryServiceChatMemoryProvider implements ChatMemoryProvider {
 
         SecurityIdentity securityIdentity =
                 securityIdentityInstance.isResolvable() ? securityIdentityInstance.get() : null;
-        SecurityIdentityAssociation securityIdentityAssociation =
-                securityIdentityAssociationInstance.isResolvable()
-                        ? securityIdentityAssociationInstance.get()
-                        : null;
         return new MemoryServiceChatMemory(
-                conversationsApi,
+                conversationsApiBuilder,
                 memoryId.toString(),
                 requestContextExecutor,
-                securityIdentity,
-                securityIdentityAssociation);
+                securityIdentity);
     }
 }

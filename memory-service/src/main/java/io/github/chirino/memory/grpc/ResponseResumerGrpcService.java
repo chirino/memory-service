@@ -587,7 +587,6 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
         return new AdvertisedAddress(host, port);
     }
 
-
     private String resolveLocalHost() {
         try {
             return java.net.InetAddress.getLocalHost().getHostName();

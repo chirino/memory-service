@@ -25,7 +25,7 @@ RUN ./mvnw -B -q -pl memory-service -am quarkus:go-offline
 COPY . .
 
 # Build the service application
-RUN ./mvnw -B -q -pl memory-service -am clean package -DskipTests -Dquarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/memory_service
+RUN ./mvnw -T 1C -B -q -pl memory-service -am clean package -DskipTests -Dquarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/memory_service
 
 # Runtime stage
 FROM registry.access.redhat.com/ubi9/openjdk-21:1.23

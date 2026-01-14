@@ -5,12 +5,12 @@ import static jakarta.ws.rs.core.Response.Status.NO_CONTENT;
 import static jakarta.ws.rs.core.Response.Status.OK;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.ForkFromMessageRequest;
 import io.github.chirino.memory.client.model.MessageChannel;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
+import io.quarkus.oidc.AccessTokenCredential;
+import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
-import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -25,7 +25,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.util.Map;
 import java.util.function.Supplier;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
 /**
@@ -39,11 +38,9 @@ public class MemoryServiceProxyResource {
     private static final Logger LOG = Logger.getLogger(MemoryServiceProxyResource.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    @Inject @RestClient ConversationsApi conversationsApi;
+    @Inject ConversationsApiBuilder conversationsApiBuilder;
 
     @Inject SecurityIdentity securityIdentity;
-
-    @Inject SecurityIdentityAssociation securityIdentityAssociation;
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
@@ -53,7 +50,7 @@ public class MemoryServiceProxyResource {
             @QueryParam("limit") Integer limit,
             @QueryParam("query") String query) {
         return execute(
-                () -> conversationsApi.listConversations(mode, after, limit, query),
+                () -> conversationsApi().listConversations(mode, after, limit, query),
                 OK,
                 "Error listing conversations");
     }
@@ -63,7 +60,7 @@ public class MemoryServiceProxyResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response getConversation(@PathParam("conversationId") String conversationId) {
         return execute(
-                () -> conversationsApi.getConversation(conversationId),
+                () -> conversationsApi().getConversation(conversationId),
                 OK,
                 "Error getting history %s",
                 conversationId);
@@ -73,7 +70,7 @@ public class MemoryServiceProxyResource {
     @Path("/{conversationId}")
     public Response deleteConversation(@PathParam("conversationId") String conversationId) {
         return executeVoid(
-                () -> conversationsApi.deleteConversation(conversationId),
+                () -> conversationsApi().deleteConversation(conversationId),
                 NO_CONTENT,
                 "Error deleting history %s",
                 conversationId);
@@ -90,8 +87,9 @@ public class MemoryServiceProxyResource {
             @QueryParam("epoch") String epoch) {
         return execute(
                 () ->
-                        conversationsApi.listConversationMessages(
-                                conversationId, after, limit, channel, epoch),
+                        conversationsApi()
+                                .listConversationMessages(
+                                        conversationId, after, limit, channel, epoch),
                 OK,
                 "Error listing messages for history %s",
                 conversationId);
@@ -112,8 +110,8 @@ public class MemoryServiceProxyResource {
                             : OBJECT_MAPPER.readValue(body, ForkFromMessageRequest.class);
             return execute(
                     () ->
-                            conversationsApi.forkConversationAtMessage(
-                                    conversationId, messageId, request),
+                            conversationsApi()
+                                    .forkConversationAtMessage(conversationId, messageId, request),
                     OK,
                     "Error forking history %s at message %s",
                     conversationId,
@@ -129,7 +127,7 @@ public class MemoryServiceProxyResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversationForks(@PathParam("conversationId") String conversationId) {
         return execute(
-                () -> conversationsApi.listConversationForks(conversationId),
+                () -> conversationsApi().listConversationForks(conversationId),
                 OK,
                 "Error listing forks for history %s",
                 conversationId);
@@ -145,7 +143,7 @@ public class MemoryServiceProxyResource {
             ShareConversationRequest request =
                     OBJECT_MAPPER.readValue(body, ShareConversationRequest.class);
             return execute(
-                    () -> conversationsApi.shareConversation(conversationId, request),
+                    () -> conversationsApi().shareConversation(conversationId, request),
                     CREATED,
                     "Error sharing history %s",
                     conversationId);
@@ -159,7 +157,7 @@ public class MemoryServiceProxyResource {
     @Path("/{conversationId}/cancel-response")
     public Response cancelResponse(@PathParam("conversationId") String conversationId) {
         return executeVoid(
-                () -> conversationsApi.cancelConversationResponse(conversationId),
+                () -> conversationsApi().cancelConversationResponse(conversationId),
                 OK,
                 "Error cancelling response for history %s",
                 conversationId);
@@ -289,7 +287,6 @@ public class MemoryServiceProxyResource {
     private <T> Response execute(
             Supplier<T> apiCall, Response.Status status, String errorMsg, Object... args) {
         try {
-            propagateSecurityIdentity();
             T result = apiCall.get();
             Response.ResponseBuilder builder = Response.status(status);
             if (result != null) {
@@ -314,7 +311,6 @@ public class MemoryServiceProxyResource {
     private Response executeVoid(
             Runnable apiCall, Response.Status status, String errorMsg, Object... args) {
         try {
-            propagateSecurityIdentity();
             apiCall.run();
             return Response.status(status).build();
         } catch (Exception e) {
@@ -323,14 +319,27 @@ public class MemoryServiceProxyResource {
         }
     }
 
-    /**
-     * Ensures the SecurityIdentity is propagated to the REST client context
-     * so that GlobalTokenPropagationFilter can access it.
-     */
-    private void propagateSecurityIdentity() {
-        if (securityIdentity != null && securityIdentityAssociation != null) {
-            securityIdentityAssociation.setIdentity(securityIdentity);
+    private io.github.chirino.memory.client.api.ConversationsApi conversationsApi() {
+        String bearerToken = resolveBearerToken();
+        if (bearerToken != null) {
+            return conversationsApiBuilder.withBearerAuth(bearerToken).build();
         }
+        return conversationsApiBuilder.build();
+    }
+
+    private String resolveBearerToken() {
+        if (securityIdentity == null) {
+            return null;
+        }
+        AccessTokenCredential atc = securityIdentity.getCredential(AccessTokenCredential.class);
+        if (atc != null) {
+            return atc.getToken();
+        }
+        TokenCredential tc = securityIdentity.getCredential(TokenCredential.class);
+        if (tc != null) {
+            return tc.getToken();
+        }
+        return null;
     }
 
     private Response handleException(Exception e) {
