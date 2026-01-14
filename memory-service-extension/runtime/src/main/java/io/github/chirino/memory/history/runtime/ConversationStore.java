@@ -1,7 +1,6 @@
 package io.github.chirino.memory.history.runtime;
 
 import io.github.chirino.memory.client.model.CreateMessageRequest;
-import io.github.chirino.memory.history.api.ConversationStore;
 import io.quarkus.arc.Arc;
 import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.security.credential.TokenCredential;
@@ -14,15 +13,14 @@ import java.util.Map;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
-public class DefaultConversationStore implements ConversationStore {
+public class ConversationStore {
 
-    private static final Logger LOG = Logger.getLogger(DefaultConversationStore.class);
+    private static final Logger LOG = Logger.getLogger(ConversationStore.class);
 
     @Inject ConversationsApiBuilder conversationsApiBuilder;
 
     @Inject SecurityIdentity securityIdentity;
 
-    @Override
     public void appendUserMessage(String conversationId, String content) {
         CreateMessageRequest request = new CreateMessageRequest();
         request.setChannel(CreateMessageRequest.ChannelEnum.HISTORY);
@@ -39,7 +37,6 @@ public class DefaultConversationStore implements ConversationStore {
         LOG.infof("Added user message to history %s", conversationId);
     }
 
-    @Override
     public void appendAgentMessage(String conversationId, String content, String bearerToken) {
         // For now, agent messages use the same append endpoint; the backend
         // determines the role (user vs agent) from authentication context.
@@ -58,6 +55,14 @@ public class DefaultConversationStore implements ConversationStore {
         conversationsApi(effectiveToken).appendConversationMessage(conversationId, request);
         LOG.infof("Added agent message to history %s", conversationId);
     }
+
+    public void appendAgentMessage(String conversationId, String content) {
+        appendAgentMessage(conversationId, content, null);
+    }
+
+    public void appendPartialAgentMessage(String conversationId, String delta) {}
+
+    public void markCompleted(String conversationId) {}
 
     private io.github.chirino.memory.client.api.ConversationsApi conversationsApi(
             String bearerToken) {

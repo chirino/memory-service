@@ -19,8 +19,7 @@ Key pieces (package `io.github.chirino.memory.history`):
 - `@RecordConversation` – interceptor binding for methods you want recorded
 - `@ConversationId` – parameter annotation for the conversation id
 - `@UserMessage` – parameter annotation for the user’s input text
-- `ConversationStore` – SPI for persisting messages
-- `DefaultConversationStore` – implementation backed by `ConversationsApiBuilder`
+- `ConversationStore` – implementation backed by `ConversationsApiBuilder`
 - `ConversationInterceptor` – interceptor that wires it all together
 
 The interceptor is transport‑agnostic and works with both synchronous
@@ -65,11 +64,11 @@ token stream after reconnecting:
   reconnects with it so long-running responses can continue after a page
   reload or network hiccup.
 
-## Default ConversationStore behavior
+## ConversationStore behavior
 
 The extension ships with an `@ApplicationScoped` default implementation:
 
-- Class: `io.github.chirino.memory.history.runtime.DefaultConversationStore`
+- Class: `io.github.chirino.memory.history.api.ConversationStore`
 - Depends on the generated REST client:
   - `io.github.chirino.memory.history.runtime.ConversationsApiBuilder` (builds clients per call)
 
@@ -84,9 +83,8 @@ Behavior:
     conversation history. The Memory Service backend distinguishes “user vs
     agent” based on authentication context.
 
-`appendPartialAgentMessage` and `markCompleted` use the default no‑op
-implementation in `ConversationStore` for now. You can override this by
-providing your own `ConversationStore` implementation.
+`appendPartialAgentMessage` and `markCompleted` are no‑ops for now. You can
+override this by providing your own `ConversationStore` implementation.
 
 ## Dev Services for memory-service
 
@@ -124,7 +122,7 @@ quarkus.devservices.enabled=false
 
 ## Configuring the REST client
 
-The `DefaultConversationStore` relies on the existing `memory-service-client`
+The `ConversationStore` relies on the existing `memory-service-client`
 Quarkus REST client. In most setups this is already configured as part of the
 project’s parent POM and `application.properties`.
 
@@ -212,8 +210,8 @@ visibility, or store partial tokens), provide your own CDI bean:
 
 ```java
 @ApplicationScoped
-public class CustomConversationStore implements ConversationStore {
-    // implement appendUserMessage / appendAgentMessage / appendPartialAgentMessage / markCompleted
+public class CustomConversationStore extends ConversationStore {
+    // override appendUserMessage / appendAgentMessage / appendPartialAgentMessage / markCompleted
 }
 ```
 
