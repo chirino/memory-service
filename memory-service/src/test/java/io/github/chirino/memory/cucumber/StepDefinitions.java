@@ -307,6 +307,7 @@ public class StepDefinitions {
         streamStartedLatch = new CountDownLatch(1);
         streamedTokenCount = new AtomicInteger(0);
         inProgressStreamResponse = new CompletableFuture<>();
+        AtomicReference<StreamResponseTokenResponse> lastResponse = new AtomicReference<>();
 
         var requestStream =
                 io.smallrye.mutiny.Multi.createFrom()
@@ -368,8 +369,15 @@ public class StepDefinitions {
                 .streamResponseTokens(requestStream)
                 .subscribe()
                 .with(
-                        inProgressStreamResponse::complete,
-                        inProgressStreamResponse::completeExceptionally);
+                        lastResponse::set,
+                        inProgressStreamResponse::completeExceptionally,
+                        () -> {
+                            StreamResponseTokenResponse response = lastResponse.get();
+                            if (response == null) {
+                                response = StreamResponseTokenResponse.newBuilder().build();
+                            }
+                            inProgressStreamResponse.complete(response);
+                        });
     }
 
     @io.cucumber.java.en.Given(
