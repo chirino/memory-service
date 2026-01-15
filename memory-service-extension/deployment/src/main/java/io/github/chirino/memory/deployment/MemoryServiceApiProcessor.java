@@ -11,6 +11,7 @@ public class MemoryServiceApiProcessor {
                 .setUnremovable()
                 .addBeanClasses(
                         "io.github.chirino.memory.runtime.MemoryServiceApiBuilder",
+                        "io.github.chirino.memory.runtime.MemoryServiceProxy",
                         "io.github.chirino.memory.runtime.MemoryServiceApiStartupObserver")
                 .build();
     }
