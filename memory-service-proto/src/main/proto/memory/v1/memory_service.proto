@@ -264,10 +264,7 @@ service ResponseResumerService {
   
   // Check if response resumer is enabled
   rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
-  
-  // Check if a conversation has a response in progress
-  rpc HasResponseInProgress(HasResponseInProgressRequest) returns (HasResponseInProgressResponse);
-  
+
   // Check which conversations have responses in progress
   rpc CheckConversations(CheckConversationsRequest) returns (CheckConversationsResponse);
 }
@@ -305,14 +302,6 @@ message CancelResponseResponse {
 
 message IsEnabledResponse {
   bool enabled = 1;
-}
-
-message HasResponseInProgressRequest {
-  string conversation_id = 1;
-}
-
-message HasResponseInProgressResponse {
-  bool in_progress = 1;
 }
 
 message CheckConversationsRequest {

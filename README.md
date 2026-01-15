@@ -235,7 +235,7 @@ When enabled, the `@RecordConversation` interceptor automatically buffers stream
 - The `ResponseResumer` interface provides:
   - `recorder(conversationId)`: Creates a recorder that buffers tokens as they stream
   - `replay(conversationId, resumePosition)`: Replays cached tokens from a specific byte offset
-  - `check(conversationIds)`: Checks which conversations have responses currently in progress
+  - `check(conversationIds, bearerToken)`: Checks which conversations have responses currently in progress
 
 The example agent application provides two endpoints to support resumption:
 

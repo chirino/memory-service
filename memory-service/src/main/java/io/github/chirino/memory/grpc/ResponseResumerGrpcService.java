@@ -6,8 +6,6 @@ import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
 import io.github.chirino.memory.grpc.v1.CancelResponseResponse;
 import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
 import io.github.chirino.memory.grpc.v1.CheckConversationsResponse;
-import io.github.chirino.memory.grpc.v1.HasResponseInProgressRequest;
-import io.github.chirino.memory.grpc.v1.HasResponseInProgressResponse;
 import io.github.chirino.memory.grpc.v1.IsEnabledResponse;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensResponse;
@@ -436,48 +434,6 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
         ResponseResumerBackend backend = resumerSelector.getBackend();
         return Uni.createFrom()
                 .item(IsEnabledResponse.newBuilder().setEnabled(backend.enabled()).build());
-    }
-
-    @Override
-    public Uni<HasResponseInProgressResponse> hasResponseInProgress(
-            HasResponseInProgressRequest request) {
-        ResponseResumerBackend backend = resumerSelector.getBackend();
-        if (!backend.enabled()) {
-            LOG.infof("Response resumer is not enabled");
-            return Uni.createFrom()
-                    .item(HasResponseInProgressResponse.newBuilder().setInProgress(false).build());
-        }
-
-        String conversationId = request.getConversationId();
-        if (conversationId == null || conversationId.isBlank()) {
-            return Uni.createFrom()
-                    .failure(
-                            Status.INVALID_ARGUMENT
-                                    .withDescription("conversation_id is required")
-                                    .asRuntimeException());
-        }
-
-        // Check access - requires READER access or valid API key
-        try {
-            ensureConversationAccess(conversationId, AccessLevel.READER);
-        } catch (AccessDeniedException e) {
-            return Uni.createFrom()
-                    .failure(
-                            Status.PERMISSION_DENIED
-                                    .withDescription(
-                                            "User does not have READER access to conversation")
-                                    .asRuntimeException());
-        } catch (ResourceNotFoundException e) {
-            return Uni.createFrom()
-                    .failure(
-                            Status.NOT_FOUND
-                                    .withDescription("Conversation not found")
-                                    .asRuntimeException());
-        }
-
-        boolean inProgress = backend.hasResponseInProgress(conversationId);
-        return Uni.createFrom()
-                .item(HasResponseInProgressResponse.newBuilder().setInProgress(inProgress).build());
     }
 
     @Override

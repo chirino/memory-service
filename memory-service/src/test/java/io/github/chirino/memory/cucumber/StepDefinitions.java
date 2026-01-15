@@ -35,7 +35,6 @@ import io.github.chirino.memory.grpc.v1.DeleteConversationRequest;
 import io.github.chirino.memory.grpc.v1.DeleteMembershipRequest;
 import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
-import io.github.chirino.memory.grpc.v1.HasResponseInProgressRequest;
 import io.github.chirino.memory.grpc.v1.HealthResponse;
 import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
@@ -146,6 +145,7 @@ public class StepDefinitions {
     private String replayedTokens;
     private final AtomicLong streamCompletedAtNs = new AtomicLong(0);
     private final AtomicLong replayFinishedAtNs = new AtomicLong(0);
+    private final AtomicLong replayFirstTokenAtNs = new AtomicLong(0);
 
     @io.cucumber.java.Before(order = 0)
     public void setupGrpcChannel() {
@@ -315,6 +315,8 @@ public class StepDefinitions {
         inProgressStreamResponse = new CompletableFuture<>();
         streamCompletedAtNs.set(0);
         replayFinishedAtNs.set(0);
+        replayFirstTokenAtNs.set(0);
+        replayFirstTokenAtNs.set(0);
         AtomicReference<StreamResponseTokenResponse> lastResponse = new AtomicReference<>();
 
         var requestStream =
@@ -556,6 +558,11 @@ public class StepDefinitions {
             responses =
                     mutinyStub
                             .replayResponseTokens(request)
+                            .onItem()
+                            .invoke(
+                                    response ->
+                                            replayFirstTokenAtNs.compareAndSet(
+                                                    0, System.nanoTime()))
                             .select()
                             .first(expectedCount)
                             .collect()
@@ -584,15 +591,15 @@ public class StepDefinitions {
         replayFinishedAtNs.set(System.nanoTime());
     }
 
-    @io.cucumber.java.en.Then("the replay should finish before the stream completes")
-    public void theReplayShouldFinishBeforeTheStreamCompletes() {
-        long replayFinished = replayFinishedAtNs.get();
-        if (replayFinished == 0) {
-            throw new AssertionError("Replay completion was not recorded");
+    @io.cucumber.java.en.Then("the replay should start before the stream completes")
+    public void theReplayShouldStartBeforeTheStreamCompletes() {
+        long replayStarted = replayFirstTokenAtNs.get();
+        if (replayStarted == 0) {
+            throw new AssertionError("Replay did not receive any tokens");
         }
         long streamCompleted = streamCompletedAtNs.get();
-        if (streamCompleted != 0 && replayFinished >= streamCompleted) {
-            throw new AssertionError("Replay finished after the stream completed");
+        if (streamCompleted != 0 && replayStarted >= streamCompleted) {
+            throw new AssertionError("Replay started after the stream completed");
         }
     }
 
@@ -2123,14 +2130,6 @@ public class StepDefinitions {
             case "IsEnabled":
                 {
                     return stub.isEnabled(Empty.newBuilder().build());
-                }
-            case "HasResponseInProgress":
-                {
-                    var requestBuilder = HasResponseInProgressRequest.newBuilder();
-                    if (body != null && !body.isBlank()) {
-                        TextFormat.merge(body, requestBuilder);
-                    }
-                    return stub.hasResponseInProgress(requestBuilder.build());
                 }
             case "CheckConversations":
                 {

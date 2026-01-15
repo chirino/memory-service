@@ -5,8 +5,6 @@ import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
 import io.github.chirino.memory.grpc.v1.CancelResponseResponse;
 import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
 import io.github.chirino.memory.grpc.v1.CheckConversationsResponse;
-import io.github.chirino.memory.grpc.v1.HasResponseInProgressRequest;
-import io.github.chirino.memory.grpc.v1.HasResponseInProgressResponse;
 import io.github.chirino.memory.grpc.v1.IsEnabledResponse;
 import io.github.chirino.memory.grpc.v1.MutinyResponseResumerServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
@@ -125,32 +123,6 @@ public class GrpcResponseResumer implements ResponseResumer {
     }
 
     @Override
-    public boolean hasResponseInProgress(String conversationId) {
-        return hasResponseInProgress(conversationId, null);
-    }
-
-    @Override
-    public boolean hasResponseInProgress(String conversationId, String bearerToken) {
-        try {
-            HasResponseInProgressRequest request =
-                    HasResponseInProgressRequest.newBuilder()
-                            .setConversationId(conversationId)
-                            .build();
-            HasResponseInProgressResponse response =
-                    stub(bearerToken).hasResponseInProgress(request).await().indefinitely();
-            return response.getInProgress();
-        } catch (Exception e) {
-            LOG.warnf(e, "Failed to check if history %s has response in progress", conversationId);
-            return false;
-        }
-    }
-
-    @Override
-    public void requestCancel(String conversationId) {
-        requestCancel(conversationId, null);
-    }
-
-    @Override
     public void requestCancel(String conversationId, String bearerToken) {
         if (conversationId == null || conversationId.isBlank()) {
             return;
@@ -168,11 +140,6 @@ public class GrpcResponseResumer implements ResponseResumer {
         } catch (Exception e) {
             LOG.warnf(e, "Failed to request cancel for conversationId=%s", conversationId);
         }
-    }
-
-    @Override
-    public List<String> check(List<String> conversationIds) {
-        return check(conversationIds, null);
     }
 
     @Override

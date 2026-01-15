@@ -3,6 +3,7 @@ package io.github.chirino.memory.history.runtime;
 import io.quarkus.arc.DefaultBean;
 import io.smallrye.mutiny.Multi;
 import jakarta.enterprise.context.ApplicationScoped;
+import java.util.List;
 
 /**
  * Fallback {@link ResponseResumer} used when no other implementation is available.
@@ -34,12 +35,17 @@ public class NoopResponseResumer implements ResponseResumer {
     }
 
     @Override
-    public boolean hasResponseInProgress(String conversationId) {
-        return false;
+    public List<String> check(List<String> conversationIds, String bearerToken) {
+        return List.of();
     }
 
     @Override
     public void requestCancel(String conversationId) {
+        // No-op
+    }
+
+    @Override
+    public void requestCancel(String conversationId, String bearerToken) {
         // No-op
     }
 }

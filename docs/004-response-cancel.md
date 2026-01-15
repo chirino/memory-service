@@ -70,7 +70,7 @@ Add RPCs to `ResponseResumerService`:
 - **CancelResponse**:
   - User must have WRITER access to the conversation.
   - Agent API keys are not allowed for cancellation (user session only).
-- **HasResponseInProgress**:
+- **CheckConversations**:
   - READER access or valid agent API key.
 
 ## Agent Integration

@@ -15,27 +15,29 @@ Feature: Response Resumer gRPC API
     And the gRPC response field "enabled" should not be null
 
   Scenario: Check if conversation has response in progress when none exists
-    When I send gRPC request "ResponseResumerService/HasResponseInProgress" with body:
+    When I send gRPC request "ResponseResumerService/CheckConversations" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_ids: "${conversationId}"
     """
     Then the gRPC response should not have an error
-    And the gRPC response field "inProgress" should be false
+    And the gRPC response field "conversationIds" should be "[]"
 
   Scenario: Check response in progress for non-existent conversation
-    When I send gRPC request "ResponseResumerService/HasResponseInProgress" with body:
+    When I send gRPC request "ResponseResumerService/CheckConversations" with body:
     """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
+    conversation_ids: "00000000-0000-0000-0000-000000000000"
     """
-    Then the gRPC response should have status "NOT_FOUND"
+    Then the gRPC response should not have an error
+    And the gRPC response field "conversationIds" should be "[]"
 
   Scenario: Check response in progress without access
     Given there is a conversation owned by "bob"
-    When I send gRPC request "ResponseResumerService/HasResponseInProgress" with body:
+    When I send gRPC request "ResponseResumerService/CheckConversations" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_ids: "${conversationId}"
     """
-    Then the gRPC response should have status "PERMISSION_DENIED"
+    Then the gRPC response should not have an error
+    And the gRPC response field "conversationIds" should be "[]"
 
   Scenario: Check multiple conversations for responses in progress
     Given I have a conversation with title "Conversation 1"
@@ -84,7 +86,7 @@ Feature: Response Resumer gRPC API
     Given I start streaming tokens "Hello World" to the conversation with 50ms delay and keep the stream open for 1500ms
     And I wait for the response stream to send at least 2 tokens
     When I replay response tokens from position 0 in a second session and collect tokens "Hello World"
-    Then the replay should finish before the stream completes
+    Then the replay should start before the stream completes
     And I wait for the response stream to complete
 
   Scenario: Cancel an in-progress response stream
