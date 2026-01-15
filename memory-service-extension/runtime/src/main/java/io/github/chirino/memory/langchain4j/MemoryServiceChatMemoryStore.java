@@ -40,18 +40,14 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final MemoryServiceApiBuilder conversationsApiBuilder;
-    private final RequestContextExecutor requestContextExecutor;
     private final Instance<SecurityIdentity> securityIdentityInstance;
 
     @Inject
     public MemoryServiceChatMemoryStore(
             MemoryServiceApiBuilder conversationsApiBuilder,
-            RequestContextExecutor requestContextExecutor,
             Instance<SecurityIdentity> securityIdentityInstance) {
         this.conversationsApiBuilder =
                 Objects.requireNonNull(conversationsApiBuilder, "conversationsApiBuilder");
-        this.requestContextExecutor =
-                Objects.requireNonNull(requestContextExecutor, "requestContextExecutor");
         this.securityIdentityInstance =
                 Objects.requireNonNull(securityIdentityInstance, "securityIdentityInstance");
     }
@@ -59,60 +55,51 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
         Objects.requireNonNull(memoryId, "memoryId");
-        return callWithRequestContext(
-                () -> {
-                    ListConversationMessages200Response context;
-                    try {
-                        context =
-                                conversationsApi()
-                                        .listConversationMessages(
-                                                memoryId.toString(),
-                                                null,
-                                                50,
-                                                MessageChannel.MEMORY,
-                                                null);
-                    } catch (WebApplicationException e) {
-                        int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
-                        if (status == 404) {
-                            LOG.infof(
-                                    "Treating status %d for conversationId=%s as empty memory",
-                                    status, memoryId);
-                            return new ArrayList<>();
-                        }
-                        throw e;
-                    }
+        ListConversationMessages200Response context;
+        try {
+            context =
+                    conversationsApi()
+                            .listConversationMessages(
+                                    memoryId.toString(), null, 50, MessageChannel.MEMORY, null);
+        } catch (WebApplicationException e) {
+            int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
+            if (status == 404) {
+                LOG.infof(
+                        "Treating status %d for conversationId=%s as empty memory",
+                        status, memoryId);
+                return new ArrayList<>();
+            }
+            throw e;
+        }
 
-                    List<ChatMessage> result = new ArrayList<>();
-                    if (context == null || context.getData() == null) {
-                        return result;
-                    }
+        List<ChatMessage> result = new ArrayList<>();
+        if (context == null || context.getData() == null) {
+            return result;
+        }
 
-                    for (Message message : context.getData()) {
-                        if (message.getContent() == null) {
-                            continue;
-                        }
-                        for (Object block : message.getContent()) {
-                            if (block == null) {
-                                continue;
-                            }
-                            List<ChatMessage> decoded =
-                                    decodeContentBlock(block, memoryId.toString(), message.getId());
-                            if (decoded != null && !decoded.isEmpty()) {
-                                result.addAll(decoded);
-                            }
-                        }
-                    }
+        for (Message message : context.getData()) {
+            if (message.getContent() == null) {
+                continue;
+            }
+            for (Object block : message.getContent()) {
+                if (block == null) {
+                    continue;
+                }
+                List<ChatMessage> decoded =
+                        decodeContentBlock(block, memoryId.toString(), message.getId());
+                if (decoded != null && !decoded.isEmpty()) {
+                    result.addAll(decoded);
+                }
+            }
+        }
 
-                    LOG.infof(
-                            "getMessages(%s)=>\n%s\nat: %s",
-                            memoryId,
-                            result.stream()
-                                    .map(ChatMessage::toString)
-                                    .collect(Collectors.joining("\n")),
-                            stackTrace());
+        LOG.infof(
+                "getMessages(%s)=>\n%s\nat: %s",
+                memoryId,
+                result.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")),
+                stackTrace());
 
-                    return result;
-                });
+        return result;
     }
 
     private String stackTrace() {
@@ -135,25 +122,20 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                 messages.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")),
                 stackTrace());
 
-        runWithRequestContext(
-                () -> {
-                    SyncMessagesRequest syncRequest = new SyncMessagesRequest();
-                    List<CreateMessageRequest> syncMessages = new ArrayList<>();
-                    for (ChatMessage chatMessage : messages) {
-                        if (chatMessage == null) {
-                            continue;
-                        }
-                        syncMessages.add(toCreateMessageRequest(chatMessage));
-                    }
-                    if (syncMessages.isEmpty()) {
-                        LOG.infof(
-                                "Skipping sync for empty memory update on conversationId=%s",
-                                memoryId);
-                        return;
-                    }
-                    syncRequest.setMessages(syncMessages);
-                    conversationsApi().syncConversationMemory(memoryId.toString(), syncRequest);
-                });
+        SyncMessagesRequest syncRequest = new SyncMessagesRequest();
+        List<CreateMessageRequest> syncMessages = new ArrayList<>();
+        for (ChatMessage chatMessage : messages) {
+            if (chatMessage == null) {
+                continue;
+            }
+            syncMessages.add(toCreateMessageRequest(chatMessage));
+        }
+        if (syncMessages.isEmpty()) {
+            LOG.infof("Skipping sync for empty memory update on conversationId=%s", memoryId);
+            return;
+        }
+        syncRequest.setMessages(syncMessages);
+        conversationsApi().syncConversationMemory(memoryId.toString(), syncRequest);
     }
 
     @Override
@@ -177,17 +159,6 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         // LOG.infof("Encoding content block: [%s]", json);
         request.setContent(List.of(new RawValue(json)));
         return request;
-    }
-
-    private void runWithRequestContext(Runnable action) {
-        requestContextExecutor.run(
-                () -> {
-                    action.run();
-                });
-    }
-
-    private <T> T callWithRequestContext(java.util.function.Supplier<T> supplier) {
-        return requestContextExecutor.call(supplier);
     }
 
     private ConversationsApi conversationsApi() {

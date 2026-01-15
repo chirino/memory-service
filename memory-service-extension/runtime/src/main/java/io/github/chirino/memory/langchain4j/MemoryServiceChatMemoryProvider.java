@@ -17,8 +17,6 @@ public class MemoryServiceChatMemoryProvider implements ChatMemoryProvider {
 
     @Inject MemoryServiceApiBuilder conversationsApiBuilder;
 
-    @Inject RequestContextExecutor requestContextExecutor;
-
     @Inject Instance<SecurityIdentity> securityIdentityInstance;
 
     @Override
@@ -34,9 +32,6 @@ public class MemoryServiceChatMemoryProvider implements ChatMemoryProvider {
         SecurityIdentity securityIdentity =
                 securityIdentityInstance.isResolvable() ? securityIdentityInstance.get() : null;
         return new MemoryServiceChatMemory(
-                conversationsApiBuilder,
-                memoryId.toString(),
-                requestContextExecutor,
-                securityIdentity);
+                conversationsApiBuilder, memoryId.toString(), securityIdentity);
     }
 }

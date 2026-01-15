@@ -13,8 +13,7 @@ public class ChatMemoryProcessor {
                         // We can replace MemoryServiceChatMemoryProvider once langchain4j picks up:
                         // https://github.com/langchain4j/langchain4j/pull/4416
                         // "io.github.chirino.memory.langchain4j.MemoryServiceChatMemoryStore",
-                        "io.github.chirino.memory.langchain4j.MemoryServiceChatMemoryProvider",
-                        "io.github.chirino.memory.langchain4j.RequestContextExecutor")
+                        "io.github.chirino.memory.langchain4j.MemoryServiceChatMemoryProvider")
                 .build();
     }
 }

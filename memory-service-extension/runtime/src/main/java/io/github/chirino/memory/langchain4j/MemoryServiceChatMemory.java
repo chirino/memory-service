@@ -35,19 +35,15 @@ public class MemoryServiceChatMemory implements ChatMemory {
 
     private final MemoryServiceApiBuilder conversationsApiBuilder;
     private final String conversationId;
-    private final RequestContextExecutor requestContextExecutor;
     private final SecurityIdentity securityIdentity;
 
     public MemoryServiceChatMemory(
             MemoryServiceApiBuilder conversationsApiBuilder,
             String conversationId,
-            RequestContextExecutor requestContextExecutor,
             SecurityIdentity securityIdentity) {
         this.conversationsApiBuilder =
                 Objects.requireNonNull(conversationsApiBuilder, "conversationsApiBuilder");
         this.conversationId = Objects.requireNonNull(conversationId, "conversationId");
-        this.requestContextExecutor =
-                Objects.requireNonNull(requestContextExecutor, "requestContextExecutor");
         this.securityIdentity = securityIdentity; // Can be null if not authenticated
     }
 
@@ -58,86 +54,65 @@ public class MemoryServiceChatMemory implements ChatMemory {
 
     @Override
     public void add(ChatMessage chatMessage) {
-        runWithRequestContext(
-                () -> {
-                    CreateMessageRequest request = new CreateMessageRequest();
-                    if (securityIdentity != null && securityIdentity.getPrincipal() != null) {
-                        request.setUserId(securityIdentity.getPrincipal().getName());
-                    }
-                    request.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
+        CreateMessageRequest request = new CreateMessageRequest();
+        if (securityIdentity != null && securityIdentity.getPrincipal() != null) {
+            request.setUserId(securityIdentity.getPrincipal().getName());
+        }
+        request.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
 
-                    String json = CODEC.messageToJson(chatMessage);
-                    // LOG.infof("Encoding content block: [%s]", json);
-                    request.setContent(List.of(new RawValue(json)));
+        String json = CODEC.messageToJson(chatMessage);
+        // LOG.infof("Encoding content block: [%s]", json);
+        request.setContent(List.of(new RawValue(json)));
 
-                    conversationsApi().appendConversationMessage(conversationId, request);
-                });
+        conversationsApi().appendConversationMessage(conversationId, request);
     }
 
     @Override
     public List<ChatMessage> messages() {
-        return callWithRequestContext(
-                () -> {
-                    ListConversationMessages200Response context;
-                    try {
-                        context =
-                                conversationsApi()
-                                        .listConversationMessages(
-                                                conversationId,
-                                                null,
-                                                50,
-                                                MessageChannel.MEMORY,
-                                                null);
-                    } catch (WebApplicationException e) {
-                        int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
-                        if (status == 404) {
-                            LOG.infof(
-                                    "Treating status %d for conversationId=%s as empty memory",
-                                    status, conversationId);
-                            return new ArrayList<>();
-                        }
-                        throw e;
-                    }
+        ListConversationMessages200Response context;
+        try {
+            context =
+                    conversationsApi()
+                            .listConversationMessages(
+                                    conversationId, null, 50, MessageChannel.MEMORY, null);
+        } catch (WebApplicationException e) {
+            int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
+            if (status == 404) {
+                LOG.infof(
+                        "Treating status %d for conversationId=%s as empty memory",
+                        status, conversationId);
+                return new ArrayList<>();
+            }
+            throw e;
+        }
 
-                    List<ChatMessage> result = new ArrayList<>();
-                    if (context == null || context.getData() == null) {
-                        return result;
-                    }
+        List<ChatMessage> result = new ArrayList<>();
+        if (context == null || context.getData() == null) {
+            return result;
+        }
 
-                    for (Message message : context.getData()) {
-                        if (message.getContent() == null) {
-                            continue;
-                        }
+        for (Message message : context.getData()) {
+            if (message.getContent() == null) {
+                continue;
+            }
 
-                        LOG.infof("Message was on channel: %s", message.getChannel());
+            LOG.infof("Message was on channel: %s", message.getChannel());
 
-                        for (Object block : message.getContent()) {
-                            if (block == null) {
-                                continue;
-                            }
-                            var decoded = decodeContentBlock(block, message.getId());
-                            result.addAll(decoded);
-                        }
-                    }
+            for (Object block : message.getContent()) {
+                if (block == null) {
+                    continue;
+                }
+                var decoded = decodeContentBlock(block, message.getId());
+                result.addAll(decoded);
+            }
+        }
 
-                    return result;
-                });
+        return result;
     }
 
     @Override
     public void clear() {
         // Not yet implemented against the Memory Service API.
-    }
-
-    private void runWithRequestContext(Runnable action) {
-        requestContextExecutor.run(
-                () -> {
-                    action.run();
-                });
-    }
-
-    private <T> T callWithRequestContext(java.util.function.Supplier<T> supplier) {
-        return requestContextExecutor.call(supplier);
     }
 
     private ConversationsApi conversationsApi() {

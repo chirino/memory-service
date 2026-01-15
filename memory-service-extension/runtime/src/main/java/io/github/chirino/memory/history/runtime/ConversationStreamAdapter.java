@@ -1,6 +1,5 @@
 package io.github.chirino.memory.history.runtime;
 
-import io.github.chirino.memory.langchain4j.RequestContextExecutor;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import io.smallrye.mutiny.Multi;
@@ -21,7 +20,6 @@ public final class ConversationStreamAdapter {
             ResponseResumer resumer,
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
-            RequestContextExecutor requestContextExecutor,
             String bearerToken) {
 
         ResponseResumer.ResponseRecorder recorder =
@@ -46,7 +44,6 @@ public final class ConversationStreamAdapter {
                                         emitter,
                                         identity,
                                         identityAssociation,
-                                        requestContextExecutor,
                                         bearerToken));
     }
 
@@ -60,7 +57,6 @@ public final class ConversationStreamAdapter {
             MultiEmitter<? super String> emitter,
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
-            RequestContextExecutor requestContextExecutor,
             String bearerToken) {
         AtomicBoolean canceled = new AtomicBoolean(false);
         AtomicBoolean completed = new AtomicBoolean(false);
@@ -80,13 +76,16 @@ public final class ConversationStreamAdapter {
                     if (!completed.compareAndSet(false, true)) {
                         return;
                     }
-                    runWithIdentity(
-                            identity,
-                            identityAssociation,
-                            requestContextExecutor,
-                            () ->
-                                    finishCancel(
-                                            conversationId, store, buffer, recorder, bearerToken));
+                    ((Runnable)
+                                    () ->
+                                            finishCancel(
+                                                    conversationId,
+                                                    store,
+                                                    buffer,
+                                                    recorder,
+                                                    bearerToken))
+                            .run();
+
                     cancelWatcherStop.run();
                     if (!emitter.isCancelled()) {
                         emitter.complete();
@@ -139,18 +138,17 @@ public final class ConversationStreamAdapter {
                                     if (canceled.get()) {
                                         completeCancel.run();
                                     } else {
-                                        runWithIdentity(
-                                                identity,
-                                                identityAssociation,
-                                                requestContextExecutor,
-                                                () ->
-                                                        finishSuccess(
-                                                                conversationId,
-                                                                store,
-                                                                buffer,
-                                                                recorder,
-                                                                emitter,
-                                                                bearerToken));
+                                        ((Runnable)
+                                                        () ->
+                                                                finishSuccess(
+                                                                        conversationId,
+                                                                        store,
+                                                                        buffer,
+                                                                        recorder,
+                                                                        emitter,
+                                                                        bearerToken))
+                                                .run();
+
                                         cancelWatcherStop.run();
                                     }
                                 });
@@ -228,31 +226,5 @@ public final class ConversationStreamAdapter {
             // stream.
         }
         recorder.complete();
-    }
-
-    private static void runWithIdentity(
-            SecurityIdentity identity,
-            SecurityIdentityAssociation identityAssociation,
-            RequestContextExecutor requestContextExecutor,
-            Runnable action) {
-        if (identity == null || identityAssociation == null) {
-            action.run();
-            return;
-        }
-        Runnable withIdentity =
-                () -> {
-                    SecurityIdentity previous = identityAssociation.getIdentity();
-                    try {
-                        identityAssociation.setIdentity(identity);
-                        action.run();
-                    } finally {
-                        identityAssociation.setIdentity(previous);
-                    }
-                };
-        if (requestContextExecutor != null) {
-            requestContextExecutor.run(withIdentity);
-        } else {
-            withIdentity.run();
-        }
     }
 }

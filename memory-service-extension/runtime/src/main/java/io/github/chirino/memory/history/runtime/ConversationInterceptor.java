@@ -3,7 +3,6 @@ package io.github.chirino.memory.history.runtime;
 import io.github.chirino.memory.history.annotations.ConversationId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
-import io.github.chirino.memory.langchain4j.RequestContextExecutor;
 import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -29,7 +28,6 @@ public class ConversationInterceptor {
     @Inject ResponseResumer resumer;
     @Inject SecurityIdentity identity;
     @Inject SecurityIdentityAssociation identityAssociation;
-    @Inject RequestContextExecutor requestContextExecutor;
 
     @AroundInvoke
     public Object around(InvocationContext ctx) throws Exception {
@@ -64,7 +62,6 @@ public class ConversationInterceptor {
                     resumer,
                     resolvedIdentity,
                     identityAssociation,
-                    requestContextExecutor,
                     bearerToken);
         }
 
