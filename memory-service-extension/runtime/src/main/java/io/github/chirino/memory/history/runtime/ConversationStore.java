@@ -12,12 +12,9 @@ import jakarta.inject.Inject;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class ConversationStore {
-
-    private static final Logger LOG = Logger.getLogger(ConversationStore.class);
 
     @Inject MemoryServiceApiBuilder conversationsApiBuilder;
 
@@ -36,7 +33,6 @@ public class ConversationStore {
         request.setContent(List.of(block));
         conversationsApi(resolveBearerTokenFromIdentity())
                 .appendConversationMessage(conversationId, request);
-        LOG.infof("Added user message to history %s", conversationId);
     }
 
     public void appendAgentMessage(String conversationId, String content, String bearerToken) {
@@ -55,11 +51,6 @@ public class ConversationStore {
         String effectiveToken =
                 bearerToken != null ? bearerToken : resolveBearerTokenFromIdentity();
         conversationsApi(effectiveToken).appendConversationMessage(conversationId, request);
-        LOG.infof("Added agent message to history %s", conversationId);
-    }
-
-    public void appendAgentMessage(String conversationId, String content) {
-        appendAgentMessage(conversationId, content, null);
     }
 
     public void appendPartialAgentMessage(String conversationId, String delta) {}

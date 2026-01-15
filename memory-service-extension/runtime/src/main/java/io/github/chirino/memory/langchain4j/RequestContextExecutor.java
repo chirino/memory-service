@@ -1,7 +1,6 @@
 package io.github.chirino.memory.langchain4j;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.context.control.ActivateRequestContext;
 import java.util.function.Supplier;
 
 /**
@@ -12,12 +11,12 @@ import java.util.function.Supplier;
 @ApplicationScoped
 public class RequestContextExecutor {
 
-    @ActivateRequestContext
+    //    @ActivateRequestContext
     public void run(Runnable runnable) {
         runnable.run();
     }
 
-    @ActivateRequestContext
+    //    @ActivateRequestContext
     public <T> T call(Supplier<T> supplier) {
         return supplier.get();
     }

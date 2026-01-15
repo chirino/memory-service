@@ -10,6 +10,8 @@
 * Manging the React state of conversation + conversation resumption is complex: provide a headless React component that does it for ui implementors.
 * Review cache control headers
 * the api proxy allows getting memory channels by the client.
+* validate CreateMessageRequest.userId matches the bearer token principle.
+* test grpc resume redirects
 
 # Need Dev Feedback for:
 
