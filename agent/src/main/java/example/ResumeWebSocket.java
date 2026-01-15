@@ -47,10 +47,8 @@ public class ResumeWebSocket {
             LOG.info("Captured bearer token for response resumer");
         }
 
-        final long resumePositionLong = parseResumePosition(resumePosition);
-
         return Multi.createFrom()
-                .deferred(() -> resumer.replay(conversationId, resumePositionLong, bearerToken))
+                .deferred(() -> resumer.replay(conversationId, resumePosition, bearerToken))
                 .runSubscriptionOn(Infrastructure.getDefaultExecutor())
                 .onItem()
                 .transformToUniAndConcatenate(connection::sendText)
@@ -79,14 +77,5 @@ public class ResumeWebSocket {
                                         new CloseReason(
                                                 CloseReason.INTERNAL_SERVER_ERROR.getCode(),
                                                 "resume failed")));
-    }
-
-    private long parseResumePosition(String resumePosition) {
-        try {
-            return Long.parseLong(resumePosition);
-        } catch (NumberFormatException e) {
-            LOG.warnf(e, "Invalid resumePosition=%s, defaulting to 0", resumePosition);
-            return 0L;
-        }
     }
 }

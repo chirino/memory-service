@@ -15,6 +15,7 @@
 * test/find the message size limits of the app.
 * validate all api fields
 * protect against huge api requests.
+* rename memory-service-client to memory-service-rest
 
 # Need Dev Feedback for:
 

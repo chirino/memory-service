@@ -25,7 +25,7 @@ public class NoopResponseResumer implements ResponseResumer {
     }
 
     @Override
-    public Multi<String> replay(String conversationId, long resumePosition) {
+    public Multi<String> replay(String conversationId, long resumePosition, String token) {
         return Multi.createFrom().empty();
     }
 
@@ -37,11 +37,6 @@ public class NoopResponseResumer implements ResponseResumer {
     @Override
     public List<String> check(List<String> conversationIds, String bearerToken) {
         return List.of();
-    }
-
-    @Override
-    public void requestCancel(String conversationId) {
-        // No-op
     }
 
     @Override

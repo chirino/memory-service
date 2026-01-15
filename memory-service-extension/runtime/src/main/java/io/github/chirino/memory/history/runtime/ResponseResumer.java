@@ -11,19 +11,15 @@ public interface ResponseResumer {
         return recorder(conversationId);
     }
 
-    Multi<String> replay(String conversationId, long resumePosition);
-
-    default Multi<String> replay(String conversationId, String resumePosition) {
+    default Multi<String> replay(String conversationId, String resumePosition, String bearerToken) {
         try {
-            return replay(conversationId, Long.parseLong(resumePosition));
+            return replay(conversationId, Long.parseLong(resumePosition), bearerToken);
         } catch (NumberFormatException e) {
             return Multi.createFrom().empty();
         }
     }
 
-    default Multi<String> replay(String conversationId, long resumePosition, String bearerToken) {
-        return replay(conversationId, resumePosition);
-    }
+    Multi<String> replay(String conversationId, long resumePosition, String bearerToken);
 
     /**
      * Check which conversations from the provided list have responses in progress,
@@ -36,15 +32,6 @@ public interface ResponseResumer {
     List<String> check(List<String> conversationIds, String bearerToken);
 
     boolean enabled();
-
-    /**
-     * Request cancel of a response, optionally propagating a bearer token.
-     *
-     * @param conversationId the history ID to cancel
-     */
-    default void requestCancel(String conversationId) {
-        requestCancel(conversationId, null);
-    }
 
     /**
      * Request cancel of a response, optionally propagating a bearer token.

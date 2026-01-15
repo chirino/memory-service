@@ -71,26 +71,6 @@ public class GrpcResponseResumer implements ResponseResumer {
     }
 
     @Override
-    public Multi<String> replay(String conversationId, long resumePosition) {
-        ReplayResponseTokensRequest request =
-                ReplayResponseTokensRequest.newBuilder()
-                        .setConversationId(conversationId)
-                        .setResumePosition(resumePosition)
-                        .build();
-
-        return replayWithRedirect(request, null, 1)
-                .onFailure()
-                .invoke(
-                        failure ->
-                                LOG.warnf(
-                                        failure,
-                                        "Failed to replay response tokens for conversationId=%s"
-                                                + " from resumePosition=%d",
-                                        conversationId,
-                                        resumePosition));
-    }
-
-    @Override
     public Multi<String> replay(String conversationId, long resumePosition, String bearerToken) {
         ReplayResponseTokensRequest request =
                 ReplayResponseTokensRequest.newBuilder()
