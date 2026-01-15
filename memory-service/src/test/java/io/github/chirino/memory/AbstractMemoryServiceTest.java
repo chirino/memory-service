@@ -145,7 +145,7 @@ abstract class AbstractMemoryServiceTest {
 
         memoryStoreSelector
                 .getStore()
-                .appendAgentMessages("alice", conversationId, List.of(a1, a2));
+                .appendAgentMessages("alice", conversationId, List.of(a1, a2), "test-agent");
 
         // Agent view of messages should include all messages
         given().header("X-API-Key", "test-agent-key")

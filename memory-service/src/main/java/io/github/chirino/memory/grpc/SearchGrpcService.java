@@ -82,6 +82,13 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                             if (validation != null) {
                                 throw validation;
                             }
+                            String clientId = currentClientId();
+                            if (clientId == null || clientId.isBlank()) {
+                                throw Status.PERMISSION_DENIED
+                                        .withDescription(
+                                                "Client id is required to create summaries")
+                                        .asRuntimeException();
+                            }
                             io.github.chirino.memory.api.dto.CreateSummaryRequest internal =
                                     new io.github.chirino.memory.api.dto.CreateSummaryRequest();
                             internal.setTitle(request.getTitle());
@@ -89,7 +96,10 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                             internal.setUntilMessageId(request.getUntilMessageId());
                             internal.setSummarizedAt(request.getSummarizedAt());
                             io.github.chirino.memory.api.dto.MessageDto dto =
-                                    store().createSummary(request.getConversationId(), internal);
+                                    store().createSummary(
+                                                    request.getConversationId(),
+                                                    internal,
+                                                    clientId);
                             return GrpcDtoMapper.toProto(dto);
                         })
                 .onFailure()

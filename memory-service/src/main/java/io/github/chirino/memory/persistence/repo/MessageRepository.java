@@ -40,7 +40,11 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
     }
 
     public List<MessageEntity> listByChannel(
-            UUID conversationId, String afterMessageId, int limit, MessageChannel channel) {
+            UUID conversationId,
+            String afterMessageId,
+            int limit,
+            MessageChannel channel,
+            String clientId) {
         String baseQuery = "from MessageEntity m where m.conversation.id = ?1";
         List<Object> params = new ArrayList<>();
         params.add(conversationId);
@@ -48,6 +52,10 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
         if (channel != null) {
             baseQuery += " and m.channel = ?" + (params.size() + 1);
             params.add(channel);
+        }
+        if (channel == MessageChannel.MEMORY) {
+            baseQuery += " and m.clientId = ?" + (params.size() + 1);
+            params.add(clientId);
         }
 
         if (afterMessageId != null) {
@@ -71,31 +79,36 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
         return find(query, params.toArray()).page(0, limit).list();
     }
 
-    public Long findLatestMemoryEpoch(UUID conversationId) {
+    public Long findLatestMemoryEpoch(UUID conversationId, String clientId) {
         try {
             return getEntityManager()
                     .createQuery(
                             "select max(m.memoryEpoch) from MessageEntity m where m.conversation.id"
-                                    + " = :cid and m.channel = :channel",
+                                    + " = :cid and m.channel = :channel and m.clientId = :clientId",
                             Long.class)
                     .setParameter("cid", conversationId)
                     .setParameter("channel", MessageChannel.MEMORY)
+                    .setParameter("clientId", clientId)
                     .getSingleResult();
         } catch (NoResultException e) {
             return null;
         }
     }
 
-    public List<MessageEntity> listMemoryMessagesByEpoch(UUID conversationId, Long epoch) {
-        return listMemoryMessagesByEpoch(conversationId, null, Integer.MAX_VALUE, epoch);
+    public List<MessageEntity> listMemoryMessagesByEpoch(
+            UUID conversationId, Long epoch, String clientId) {
+        return listMemoryMessagesByEpoch(conversationId, null, Integer.MAX_VALUE, epoch, clientId);
     }
 
     public List<MessageEntity> listMemoryMessagesByEpoch(
-            UUID conversationId, String afterMessageId, int limit, Long epoch) {
-        String baseQuery = "from MessageEntity m where m.conversation.id = ?1 and m.channel = ?2";
+            UUID conversationId, String afterMessageId, int limit, Long epoch, String clientId) {
+        String baseQuery =
+                "from MessageEntity m where m.conversation.id = ?1 and m.channel = ?2 and"
+                        + " m.clientId = ?3";
         List<Object> params = new ArrayList<>();
         params.add(conversationId);
         params.add(MessageChannel.MEMORY);
+        params.add(clientId);
 
         if (epoch == null) {
             baseQuery += " and m.memoryEpoch is null";

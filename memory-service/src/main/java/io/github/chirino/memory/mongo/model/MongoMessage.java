@@ -15,6 +15,7 @@ public class MongoMessage {
     public String conversationId;
     public String conversationGroupId;
     public String userId;
+    public String clientId;
     public MessageChannel channel;
     public Long memoryEpoch;
     public byte[] content;

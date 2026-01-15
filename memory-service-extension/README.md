@@ -97,7 +97,7 @@ Behavior (from `DevServicesMemoryServiceProcessor`):
 
 - Starts a `memory-service-service:latest` container on a random port.
 - Reuses the dev PostgreSQL and Keycloak containers started by your app.
-- Exposes a random API key to the container via `MEMORY_SERVICE_API_KEYS`.
+- Exposes a random API key to the container via `MEMORY_SERVICE_API_KEYS_AGENT`.
 - Publishes configuration back to your app:
   - `memory-service-client.url` – base URL of the dev Memory Service
   - `memory-service-client.api-key` – generated API key (if you didn’t set one)

@@ -159,13 +159,14 @@ quarkus.http.auth.permission.authenticated.policy=authenticated
 For agent-to-service communication, API keys can be configured:
 
 ```properties
-# Comma-separated list of API keys for trusted agents
-memory-service.api-keys=agent-key-1,agent-key-2
+# API keys grouped by client id
+memory-service.api-keys.agent-a=agent-key-1,agent-key-2
+memory-service.api-keys.agent-b=agent-key-3
 ```
 
 When configured, agents can authenticate using the `X-API-Key` header. Endpoints annotated with `@RequireApiKey` will require this header.
 
-**Note**: If `memory-service.api-keys` is not set or empty, API key authentication is effectively disabled.
+**Note**: If `memory-service.api-keys.<client-id>` is not set or empty, API key authentication is effectively disabled.
 
 ### Data Encryption Configuration
 
@@ -236,7 +237,7 @@ export QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://postgres:5432/memory_servic
 export MEMORY_SERVICE_DATASTORE_TYPE=postgres
 export MEMORY_SERVICE_CACHE_TYPE=none
 export MEMORY_SERVICE_VECTOR_TYPE=pgvector
-export MEMORY_SERVICE_API_KEYS=key1,key2
+export MEMORY_SERVICE_API_KEYS_AGENT=key1,key2
 
 # Override encryption
 export DATA_ENCRYPTION_PROVIDERS=dek
@@ -272,7 +273,7 @@ Quarkus supports configuration profiles using the `%profile.` prefix:
 ```properties
 %test.quarkus.datasource.devservices.enabled=true
 %test.quarkus.liquibase.migrate-at-start=true
-%test.memory-service.api-keys=test-agent-key
+%test.memory-service.api-keys.test-agent=test-agent-key
 ```
 
 ## Running the Service
@@ -357,7 +358,7 @@ quarkus.oidc.client-id=memory-service-client
 quarkus.oidc.credentials.secret=${KEYCLOAK_CLIENT_SECRET}
 
 # API keys for agents
-memory-service.api-keys=${MEMORY_SERVICE_API_KEYS}
+memory-service.api-keys.agent=${MEMORY_SERVICE_API_KEYS_AGENT}
 ```
 
 ## See Also

@@ -135,7 +135,24 @@ public interface MyAgent {
 
 The `@MemoryId` parameter automatically uses the conversation ID to retrieve and store messages via the memory service.
 
-### 4. Conversation History Recording
+### 4. Multi-Agent Memory Support
+
+The memory service supports multiple agents participating in the same conversation. Each
+agent maintains its own `memory` channel stream, and memory reads/writes are scoped to the
+calling agent’s client id, which is derived from the presented API key. This prevents one
+agent from seeing or overwriting another agent’s memory while still sharing the same
+conversation history.
+
+Configure per-agent API keys using the `memory-service.api-keys.<client-id>` mapping:
+
+```properties
+memory-service.api-keys.agent-a=agent-a-key-1,agent-a-key-2
+memory-service.api-keys.agent-b=agent-b-key-1
+```
+
+Agents authenticate by sending the API key in the `X-API-Key` HTTP header.
+
+### 5. Conversation History Recording
 
 To provide conversation history to UI agents, use a `HistoryRecordingAgent` that wraps your agent with the `@RecordConversation` interceptor:
 
@@ -165,7 +182,7 @@ The `@RecordConversation` interceptor automatically:
 Use this wrapper in your REST endpoints instead of calling the agent directly.
 
 
-### 5. Direct API Access
+### 6. Direct API Access
 
 Agents can also use the generated REST client directly:
 
@@ -180,18 +197,18 @@ public void createConversation() {
 }
 ```
 
-**Note:** The API key is automatically configured by dev services. If `memory-service-client.api-key` is not explicitly set, the dev services will generate a random API key and configure it both in the started container (as `MEMORY_SERVICE_API_KEYS`) and in your application configuration (as `memory-service-client.api-key`). The `ConversationsApiBuilder` uses that configuration when building clients.
+**Note:** The API key is automatically configured by dev services. If `memory-service-client.api-key` is not explicitly set, the dev services will generate a random API key and configure it both in the started container (as `MEMORY_SERVICE_API_KEYS_AGENT`) and in your application configuration (as `memory-service-client.api-key`). The `ConversationsApiBuilder` uses that configuration when building clients.
 
-### 6. Frontend Integration
+### 7. Frontend Integration
 
 See the example agent's frontend (`agent/src/main/webui/`) for a complete React implementation.
 
 The React app calls `MemoryServiceProxyResource` (`agent/src/main/java/example/MemoryServiceProxyResource.java`) to view and manage historical conversation state, including listing conversations, retrieving messages, and forking conversations. For sending new messages to the agent and receiving streaming responses, the frontend uses `AgentWebSocket` (`agent/src/main/java/example/AgentWebSocket.java`).
 
 
-### 7. Agent Response Resumption
+### 8. Agent Response Resumption
 
-When streaming agent responses (e.g., via WebSocket), clients may disconnect before receiving the complete response. The memory-service extension supports resuming interrupted responses by buffering streaming tokens in a cache backend (Redis or Infinispan).
+When streaming agent responses (e.g., via WebSocket), clients may disconnect before receiving the complete response. The memory-service extension supports resuming interrupted responses by buffering streaming tokens and tracking where that buffer is locaed in a cache backend (Redis or Infinispan).
 
 Enable response resumption by setting:
 

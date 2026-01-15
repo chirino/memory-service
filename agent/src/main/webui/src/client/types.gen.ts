@@ -294,14 +294,16 @@ export type $OpenApiTs = {
         after?: string | null;
         /**
          * Channel of messages to return. Defaults to `history` for the
-         * user-visible conversation; `memory` returns agent memory messages.
+         * user-visible conversation; `memory` returns agent memory messages
+         * scoped to the calling client id.
          */
         channel?: MessageChannel;
         conversationId: string;
         /**
          * Optional epoch filter when listing the `memory` channel. Valid values
          * are `latest`, `all`, or a numeric epoch identifier. Defaults to
-         * `latest` when not provided.
+         * `latest` when not provided. The epoch selection is scoped to the
+         * calling client id.
          */
         epoch?: string | null;
         limit?: number;

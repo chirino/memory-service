@@ -186,6 +186,10 @@ public class ConversationsResource {
             if (!hasApiKey) {
                 effectiveChannel = MessageChannel.HISTORY;
             } else if (effectiveChannel == MessageChannel.MEMORY) {
+                if (apiKeyContext.getClientId() == null || apiKeyContext.getClientId().isBlank()) {
+                    return forbidden(
+                            new AccessDeniedException("Client id is required for memory access"));
+                }
                 try {
                     epochFilter = MemoryEpochFilter.parse(epoch);
                 } catch (IllegalArgumentException e) {
@@ -199,7 +203,8 @@ public class ConversationsResource {
                                     after,
                                     pageSize,
                                     effectiveChannel,
-                                    epochFilter);
+                                    epochFilter,
+                                    hasApiKey ? apiKeyContext.getClientId() : null);
             internal = context.getMessages();
             nextCursor = context.getNextCursor();
             List<Message> data = internal.stream().map(this::toClientMessage).toList();
@@ -234,10 +239,16 @@ public class ConversationsResource {
         try {
             Message result;
             if (apiKeyContext != null && apiKeyContext.hasValidApiKey()) {
+                String clientId = apiKeyContext.getClientId();
+                if (clientId == null || clientId.isBlank()) {
+                    return forbidden(
+                            new AccessDeniedException("Client id is required for agent messages"));
+                }
                 // Agents provide fully-typed content and channel/memoryEpoch directly
                 List<CreateMessageRequest> messages = List.of(request);
                 List<MessageDto> appended =
-                        store().appendAgentMessages(currentUserId(), conversationId, messages);
+                        store().appendAgentMessages(
+                                        currentUserId(), conversationId, messages, clientId);
                 MessageDto dto =
                         appended != null && !appended.isEmpty()
                                 ? appended.get(appended.size() - 1)
@@ -266,6 +277,11 @@ public class ConversationsResource {
             return forbidden(
                     new AccessDeniedException("Agent API key is required to sync memory messages"));
         }
+        String clientId = apiKeyContext.getClientId();
+        if (clientId == null || clientId.isBlank()) {
+            return forbidden(
+                    new AccessDeniedException("Client id is required to sync memory messages"));
+        }
         if (request == null || request.getMessages() == null || request.getMessages().isEmpty()) {
             return badRequest("messages are required");
         }
@@ -279,7 +295,10 @@ public class ConversationsResource {
         try {
             SyncResult result =
                     store().syncAgentMessages(
-                                    currentUserId(), conversationId, request.getMessages());
+                                    currentUserId(),
+                                    conversationId,
+                                    request.getMessages(),
+                                    clientId);
             Map<String, Object> response = new HashMap<>();
             response.put("memoryEpoch", result.getMemoryEpoch());
             response.put("noOp", result.isNoOp());
@@ -442,6 +461,11 @@ public class ConversationsResource {
             return forbidden(
                     new AccessDeniedException("Agent API key is required to create summaries"));
         }
+        String clientId = apiKeyContext.getClientId();
+        if (clientId == null || clientId.isBlank()) {
+            return forbidden(
+                    new AccessDeniedException("Client id is required to create summaries"));
+        }
         if (request == null) {
             ErrorResponse error = new ErrorResponse();
             error.setError("Invalid request");
@@ -489,7 +513,7 @@ public class ConversationsResource {
             internal.setUntilMessageId(request.getUntilMessageId());
             internal.setSummarizedAt(request.getSummarizedAt().format(ISO_FORMATTER));
 
-            MessageDto dto = store().createSummary(conversationId, internal);
+            MessageDto dto = store().createSummary(conversationId, internal, clientId);
             LOG.infof(
                     "Successfully created summary for conversationId=%s, summaryId=%s",
                     conversationId, dto.getId());

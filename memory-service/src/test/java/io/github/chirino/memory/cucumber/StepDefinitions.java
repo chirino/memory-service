@@ -68,6 +68,7 @@ import io.github.chirino.memory.persistence.repo.ConversationMembershipRepositor
 import io.github.chirino.memory.persistence.repo.ConversationOwnershipTransferRepository;
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
 import io.github.chirino.memory.persistence.repo.MessageRepository;
+import io.github.chirino.memory.security.ApiKeyManager;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.grpc.ManagedChannel;
@@ -96,6 +97,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -113,6 +115,7 @@ public class StepDefinitions {
             Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER);
 
     @Inject MemoryStoreSelector memoryStoreSelector;
+    @Inject ApiKeyManager apiKeyManager;
 
     @Inject Instance<ConversationRepository> conversationRepository;
     @Inject Instance<MessageRepository> messageRepository;
@@ -141,7 +144,8 @@ public class StepDefinitions {
     private CountDownLatch streamStartedLatch;
     private AtomicInteger streamedTokenCount;
     private String replayedTokens;
-    private boolean replayFinishedBeforeStreamComplete;
+    private final AtomicLong streamCompletedAtNs = new AtomicLong(0);
+    private final AtomicLong replayFinishedAtNs = new AtomicLong(0);
 
     @io.cucumber.java.Before(order = 0)
     public void setupGrpcChannel() {
@@ -237,7 +241,8 @@ public class StepDefinitions {
         request.setChannel(CreateMessageRequest.ChannelEnum.fromString(channel.toLowerCase()));
         memoryStoreSelector
                 .getStore()
-                .appendAgentMessages(currentUserId, conversationId, List.of(request));
+                .appendAgentMessages(
+                        currentUserId, conversationId, List.of(request), resolveClientId());
     }
 
     @io.cucumber.java.en.Given("the conversation has a memory message {string} with epoch {int}")
@@ -248,7 +253,8 @@ public class StepDefinitions {
         request.setMemoryEpoch((long) epoch);
         memoryStoreSelector
                 .getStore()
-                .appendAgentMessages(currentUserId, conversationId, List.of(request));
+                .appendAgentMessages(
+                        currentUserId, conversationId, List.of(request), resolveClientId());
     }
 
     @io.cucumber.java.en.Given("I have streamed tokens {string} to the conversation")
@@ -307,6 +313,8 @@ public class StepDefinitions {
         streamStartedLatch = new CountDownLatch(1);
         streamedTokenCount = new AtomicInteger(0);
         inProgressStreamResponse = new CompletableFuture<>();
+        streamCompletedAtNs.set(0);
+        replayFinishedAtNs.set(0);
         AtomicReference<StreamResponseTokenResponse> lastResponse = new AtomicReference<>();
 
         var requestStream =
@@ -376,6 +384,7 @@ public class StepDefinitions {
                             if (response == null) {
                                 response = StreamResponseTokenResponse.newBuilder().build();
                             }
+                            streamCompletedAtNs.compareAndSet(0, System.nanoTime());
                             inProgressStreamResponse.complete(response);
                         });
     }
@@ -396,6 +405,8 @@ public class StepDefinitions {
         streamStartedLatch = new CountDownLatch(1);
         streamedTokenCount = new AtomicInteger(0);
         inProgressStreamResponse = new CompletableFuture<>();
+        streamCompletedAtNs.set(0);
+        replayFinishedAtNs.set(0);
 
         AtomicBoolean canceled = new AtomicBoolean(false);
         AtomicBoolean completed = new AtomicBoolean(false);
@@ -492,6 +503,7 @@ public class StepDefinitions {
                             if (response == null) {
                                 response = StreamResponseTokenResponse.newBuilder().build();
                             }
+                            streamCompletedAtNs.compareAndSet(0, System.nanoTime());
                             inProgressStreamResponse.complete(response);
                         });
     }
@@ -569,12 +581,17 @@ public class StepDefinitions {
                             + replayedTokens
                             + "\"");
         }
-        replayFinishedBeforeStreamComplete = !inProgressStreamResponse.isDone();
+        replayFinishedAtNs.set(System.nanoTime());
     }
 
     @io.cucumber.java.en.Then("the replay should finish before the stream completes")
     public void theReplayShouldFinishBeforeTheStreamCompletes() {
-        if (!replayFinishedBeforeStreamComplete) {
+        long replayFinished = replayFinishedAtNs.get();
+        if (replayFinished == 0) {
+            throw new AssertionError("Replay completion was not recorded");
+        }
+        long streamCompleted = streamCompletedAtNs.get();
+        if (streamCompleted != 0 && replayFinished >= streamCompleted) {
             throw new AssertionError("Replay finished after the stream completed");
         }
     }
@@ -1856,6 +1873,13 @@ public class StepDefinitions {
             hasEntries = true;
         }
         return hasEntries ? metadata : null;
+    }
+
+    private String resolveClientId() {
+        if (currentApiKey == null || currentApiKey.isBlank() || apiKeyManager == null) {
+            return null;
+        }
+        return apiKeyManager.resolveClientId(currentApiKey).orElse(null);
     }
 
     private Message callGrpcService(String serviceMethod, String body) throws Exception {

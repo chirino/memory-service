@@ -41,6 +41,12 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                     toEffectiveChannel(requestedChannel);
                             MemoryEpochFilter epochFilter = null;
                             if (channel == io.github.chirino.memory.model.MessageChannel.MEMORY) {
+                                if (currentClientId() == null || currentClientId().isBlank()) {
+                                    throw Status.PERMISSION_DENIED
+                                            .withDescription(
+                                                    "Client id is required for memory access")
+                                            .asRuntimeException();
+                                }
                                 try {
                                     epochFilter = MemoryEpochFilter.parse(request.getEpochFilter());
                                 } catch (IllegalArgumentException e) {
@@ -65,7 +71,8 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                                     token,
                                                     pageSize,
                                                     channel,
-                                                    epochFilter);
+                                                    epochFilter,
+                                                    currentClientId());
                             ListMessagesResponse.Builder builder =
                                     ListMessagesResponse.newBuilder();
                             if (paged != null) {
@@ -107,6 +114,12 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                         .withDescription("message payload is required")
                                         .asRuntimeException();
                             }
+                            String clientId = currentClientId();
+                            if (clientId == null || clientId.isBlank()) {
+                                throw Status.PERMISSION_DENIED
+                                        .withDescription("Client id is required for agent messages")
+                                        .asRuntimeException();
+                            }
                             CreateMessageRequest internal = new CreateMessageRequest();
                             internal.setUserId(request.getMessage().getUserId());
                             io.github.chirino.memory.model.MessageChannel requestChannel =
@@ -122,7 +135,8 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                     store().appendAgentMessages(
                                                     currentUserId(),
                                                     request.getConversationId(),
-                                                    List.of(internal));
+                                                    List.of(internal),
+                                                    clientId);
                             io.github.chirino.memory.api.dto.MessageDto latest =
                                     appended != null && !appended.isEmpty()
                                             ? appended.get(appended.size() - 1)
@@ -157,6 +171,13 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                         .withDescription("at least one message is required")
                                         .asRuntimeException();
                             }
+                            String clientId = currentClientId();
+                            if (clientId == null || clientId.isBlank()) {
+                                throw Status.PERMISSION_DENIED
+                                        .withDescription(
+                                                "Client id is required to sync memory messages")
+                                        .asRuntimeException();
+                            }
                             List<CreateMessageRequest> internal =
                                     new ArrayList<>(request.getMessagesCount());
                             for (io.github.chirino.memory.grpc.v1.CreateMessageRequest message :
@@ -177,7 +198,8 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                     store().syncAgentMessages(
                                                     currentUserId(),
                                                     request.getConversationId(),
-                                                    internal);
+                                                    internal,
+                                                    clientId);
                             SyncMessagesResponse.Builder builder =
                                     SyncMessagesResponse.newBuilder()
                                             .setNoOp(result.isNoOp())

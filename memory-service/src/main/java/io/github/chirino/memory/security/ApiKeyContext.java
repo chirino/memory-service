@@ -7,6 +7,7 @@ public class ApiKeyContext {
 
     private boolean valid;
     private String apiKey;
+    private String clientId;
 
     public boolean hasValidApiKey() {
         return valid;
@@ -22,5 +23,13 @@ public class ApiKeyContext {
 
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
+    }
+
+    public String getClientId() {
+        return clientId;
+    }
+
+    public void setClientId(String clientId) {
+        this.clientId = clientId;
     }
 }

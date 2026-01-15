@@ -66,7 +66,21 @@ public class InfinispanResponseResumerLocatorStore implements ResponseResumerLoc
 
     @Override
     public boolean available() {
-        return cache != null;
+        if (cache == null) {
+            return false;
+        }
+        try {
+            withRetry(
+                    "available",
+                    () -> {
+                        cache.size();
+                        return Boolean.TRUE;
+                    });
+            return true;
+        } catch (RuntimeException e) {
+            LOG.debugf(e, "Infinispan response resumer cache is not available yet");
+            return false;
+        }
     }
 
     @Override

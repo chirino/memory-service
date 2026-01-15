@@ -25,4 +25,8 @@ public abstract class AbstractGrpcService {
     protected boolean hasValidApiKey() {
         return apiKeyContext != null && apiKeyContext.hasValidApiKey();
     }
+
+    protected String currentClientId() {
+        return hasValidApiKey() ? apiKeyContext.getClientId() : null;
+    }
 }

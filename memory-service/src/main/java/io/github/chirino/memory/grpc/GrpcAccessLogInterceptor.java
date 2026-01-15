@@ -37,10 +37,14 @@ public class GrpcAccessLogInterceptor implements ServerInterceptor {
                         ? identity.getPrincipal().getName()
                         : "anonymous";
         boolean hasApiKey = apiKeyContext != null && apiKeyContext.hasValidApiKey();
+        String clientId =
+                apiKeyContext != null && apiKeyContext.hasValidApiKey()
+                        ? apiKeyContext.getClientId()
+                        : null;
 
         LOG.infof(
-                "gRPC start %s from %s => principal name: %s, has api key: %s",
-                method, remoteValue, principalName, hasApiKey);
+                "gRPC start %s from %s => principal name: %s, has api key: %s, client id: %s",
+                method, remoteValue, principalName, hasApiKey, clientId);
 
         ForwardingServerCall.SimpleForwardingServerCall<ReqT, RespT> wrappedCall =
                 new ForwardingServerCall.SimpleForwardingServerCall<>(call) {

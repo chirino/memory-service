@@ -446,7 +446,8 @@ public class MongoMemoryStore implements MemoryStore {
             String afterMessageId,
             int limit,
             MessageChannel channel,
-            MemoryEpochFilter epochFilter) {
+            MemoryEpochFilter epochFilter,
+            String clientId) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
         if (conversation == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
@@ -455,10 +456,13 @@ public class MongoMemoryStore implements MemoryStore {
         ensureHasAccess(groupId, userId, AccessLevel.READER);
         List<MongoMessage> messages;
         if (channel == MessageChannel.MEMORY) {
-            messages = fetchMemoryMessages(conversationId, afterMessageId, limit, epochFilter);
+            messages =
+                    fetchMemoryMessages(
+                            conversationId, afterMessageId, limit, epochFilter, clientId);
         } else {
             messages =
-                    messageRepository.listByChannel(conversationId, afterMessageId, limit, channel);
+                    messageRepository.listByChannel(
+                            conversationId, afterMessageId, limit, channel, clientId);
         }
         PagedMessages page = new PagedMessages();
         page.setConversationId(conversationId);
@@ -474,32 +478,40 @@ public class MongoMemoryStore implements MemoryStore {
             String conversationId,
             String afterMessageId,
             int limit,
-            MemoryEpochFilter epochFilter) {
+            MemoryEpochFilter epochFilter,
+            String clientId) {
+        if (clientId == null || clientId.isBlank()) {
+            return Collections.emptyList();
+        }
         MemoryEpochFilter filter = epochFilter != null ? epochFilter : MemoryEpochFilter.latest();
         return switch (filter.getMode()) {
             case ALL ->
                     messageRepository.listByChannel(
-                            conversationId, afterMessageId, limit, MessageChannel.MEMORY);
+                            conversationId, afterMessageId, limit, MessageChannel.MEMORY, clientId);
             case LATEST -> {
-                Long latestEpoch = messageRepository.findLatestMemoryEpoch(conversationId);
+                Long latestEpoch =
+                        messageRepository.findLatestMemoryEpoch(conversationId, clientId);
                 // If no messages with epochs exist, list all memory messages
                 if (latestEpoch == null) {
                     yield messageRepository.listByChannel(
-                            conversationId, afterMessageId, limit, MessageChannel.MEMORY);
+                            conversationId, afterMessageId, limit, MessageChannel.MEMORY, clientId);
                 }
                 yield messageRepository.listMemoryMessagesByEpoch(
-                        conversationId, afterMessageId, limit, latestEpoch);
+                        conversationId, afterMessageId, limit, latestEpoch, clientId);
             }
             case EPOCH ->
                     messageRepository.listMemoryMessagesByEpoch(
-                            conversationId, afterMessageId, limit, filter.getEpoch());
+                            conversationId, afterMessageId, limit, filter.getEpoch(), clientId);
         };
     }
 
     @Override
     @Transactional
     public List<MessageDto> appendAgentMessages(
-            String userId, String conversationId, List<CreateMessageRequest> messages) {
+            String userId,
+            String conversationId,
+            List<CreateMessageRequest> messages,
+            String clientId) {
         MongoConversation c = conversationRepository.findById(conversationId);
 
         // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
@@ -534,6 +546,7 @@ public class MongoMemoryStore implements MemoryStore {
             m.id = UUID.randomUUID().toString();
             m.conversationId = conversationId;
             m.userId = req.getUserId();
+            m.clientId = clientId;
             m.channel =
                     req.getChannel() != null
                             ? MessageChannel.fromString(req.getChannel().value())
@@ -560,13 +573,16 @@ public class MongoMemoryStore implements MemoryStore {
     @Override
     @Transactional
     public SyncResult syncAgentMessages(
-            String userId, String conversationId, List<CreateMessageRequest> messages) {
+            String userId,
+            String conversationId,
+            List<CreateMessageRequest> messages,
+            String clientId) {
         validateSyncMessages(messages);
-        Long latestEpoch = messageRepository.findLatestMemoryEpoch(conversationId);
+        Long latestEpoch = messageRepository.findLatestMemoryEpoch(conversationId, clientId);
         List<MessageDto> latestEpochMessages =
                 latestEpoch != null
                         ? messageRepository
-                                .listMemoryMessagesByEpoch(conversationId, latestEpoch)
+                                .listMemoryMessagesByEpoch(conversationId, latestEpoch, clientId)
                                 .stream()
                                 .map(this::toMessageDto)
                                 .collect(Collectors.toList())
@@ -601,7 +617,8 @@ public class MongoMemoryStore implements MemoryStore {
             List<CreateMessageRequest> delta =
                     MemorySyncHelper.withEpoch(
                             messages.subList(existing.size(), messages.size()), latestEpoch);
-            List<MessageDto> appended = appendAgentMessages(userId, conversationId, delta);
+            List<MessageDto> appended =
+                    appendAgentMessages(userId, conversationId, delta, clientId);
             result.setMessages(appended);
             result.setEpochIncremented(false);
             result.setNoOp(false);
@@ -611,7 +628,7 @@ public class MongoMemoryStore implements MemoryStore {
         // Otherwise, create a new epoch with all incoming messages
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
         List<CreateMessageRequest> toAppend = MemorySyncHelper.withEpoch(messages, nextEpoch);
-        List<MessageDto> appended = appendAgentMessages(userId, conversationId, toAppend);
+        List<MessageDto> appended = appendAgentMessages(userId, conversationId, toAppend, clientId);
         result.setMemoryEpoch(nextEpoch);
         result.setMessages(appended);
         result.setEpochIncremented(true);
@@ -634,7 +651,8 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public MessageDto createSummary(String conversationId, CreateSummaryRequest request) {
+    public MessageDto createSummary(
+            String conversationId, CreateSummaryRequest request, String clientId) {
         MongoConversation c = conversationRepository.findById(conversationId);
         if (c == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
@@ -643,6 +661,7 @@ public class MongoMemoryStore implements MemoryStore {
         summary.id = UUID.randomUUID().toString();
         summary.conversationId = conversationId;
         summary.userId = null;
+        summary.clientId = clientId;
         summary.channel = MessageChannel.SUMMARY;
         summary.memoryEpoch = null;
         summary.decodedContent = buildSummaryContent(request);

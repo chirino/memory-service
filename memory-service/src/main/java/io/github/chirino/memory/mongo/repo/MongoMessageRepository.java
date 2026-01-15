@@ -44,7 +44,11 @@ public class MongoMessageRepository implements PanacheMongoRepositoryBase<MongoM
     }
 
     public List<MongoMessage> listByChannel(
-            String conversationId, String afterMessageId, int limit, MessageChannel channel) {
+            String conversationId,
+            String afterMessageId,
+            int limit,
+            MessageChannel channel,
+            String clientId) {
         Sort sort = Sort.by("createdAt").and("id");
         if (afterMessageId != null) {
             Optional<MongoMessage> afterOptional = findByIdOptional(afterMessageId);
@@ -55,6 +59,18 @@ public class MongoMessageRepository implements PanacheMongoRepositoryBase<MongoM
                         // If the cursor is from a different channel, ignore it and fall through
                     } else {
                         if (channel != null) {
+                            if (channel == MessageChannel.MEMORY) {
+                                return find(
+                                                "conversationId = ?1 and channel = ?2 and clientId"
+                                                        + " = ?3 and createdAt > ?4",
+                                                sort,
+                                                conversationId,
+                                                channel,
+                                                clientId,
+                                                after.createdAt)
+                                        .page(0, limit)
+                                        .list();
+                            }
                             return find(
                                             "conversationId = ?1 and channel = ?2 and createdAt >"
                                                     + " ?3",
@@ -78,6 +94,16 @@ public class MongoMessageRepository implements PanacheMongoRepositoryBase<MongoM
         }
 
         if (channel != null) {
+            if (channel == MessageChannel.MEMORY) {
+                return find(
+                                "conversationId = ?1 and channel = ?2 and clientId = ?3",
+                                sort,
+                                conversationId,
+                                channel,
+                                clientId)
+                        .page(0, limit)
+                        .list();
+            }
             return find("conversationId = ?1 and channel = ?2", sort, conversationId, channel)
                     .page(0, limit)
                     .list();
@@ -85,30 +111,34 @@ public class MongoMessageRepository implements PanacheMongoRepositoryBase<MongoM
         return find("conversationId = ?1", sort, conversationId).page(0, limit).list();
     }
 
-    public Long findLatestMemoryEpoch(String conversationId) {
+    public Long findLatestMemoryEpoch(String conversationId, String clientId) {
         Sort sort = Sort.by("memoryEpoch").descending();
         MongoMessage latest =
                 find(
-                                "conversationId = ?1 and channel = ?2 and memoryEpoch != null",
+                                "conversationId = ?1 and channel = ?2 and clientId = ?3 and"
+                                        + " memoryEpoch != null",
                                 sort,
                                 conversationId,
-                                MessageChannel.MEMORY)
+                                MessageChannel.MEMORY,
+                                clientId)
                         .page(0, 1)
                         .firstResult();
         return latest != null ? latest.memoryEpoch : null;
     }
 
-    public List<MongoMessage> listMemoryMessagesByEpoch(String conversationId, Long epoch) {
-        return listMemoryMessagesByEpoch(conversationId, null, Integer.MAX_VALUE, epoch);
+    public List<MongoMessage> listMemoryMessagesByEpoch(
+            String conversationId, Long epoch, String clientId) {
+        return listMemoryMessagesByEpoch(conversationId, null, Integer.MAX_VALUE, epoch, clientId);
     }
 
     public List<MongoMessage> listMemoryMessagesByEpoch(
-            String conversationId, String afterMessageId, int limit, Long epoch) {
+            String conversationId, String afterMessageId, int limit, Long epoch, String clientId) {
         Sort sort = Sort.by("createdAt").and("id");
         List<Object> params = new ArrayList<>();
         params.add(conversationId);
         params.add(MessageChannel.MEMORY);
-        String query = "conversationId = ?1 and channel = ?2";
+        params.add(clientId);
+        String query = "conversationId = ?1 and channel = ?2 and clientId = ?3";
         if (epoch == null) {
             query += " and memoryEpoch = null";
         } else {

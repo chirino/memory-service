@@ -59,15 +59,22 @@ public interface MemoryStore {
             String afterMessageId,
             int limit,
             MessageChannel channel,
-            MemoryEpochFilter epochFilter);
+            MemoryEpochFilter epochFilter,
+            String clientId);
 
     List<MessageDto> appendAgentMessages(
-            String userId, String conversationId, List<CreateMessageRequest> messages);
+            String userId,
+            String conversationId,
+            List<CreateMessageRequest> messages,
+            String clientId);
 
     SyncResult syncAgentMessages(
-            String userId, String conversationId, List<CreateMessageRequest> messages);
+            String userId,
+            String conversationId,
+            List<CreateMessageRequest> messages,
+            String clientId);
 
-    MessageDto createSummary(String conversationId, CreateSummaryRequest request);
+    MessageDto createSummary(String conversationId, CreateSummaryRequest request, String clientId);
 
     List<SearchResultDto> searchMessages(String userId, SearchMessagesRequest request);
 }

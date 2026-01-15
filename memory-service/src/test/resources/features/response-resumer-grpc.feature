@@ -81,7 +81,7 @@ Feature: Response Resumer gRPC API
     # in a single gRPC stream, which is the correct way to use the API
 
   Scenario: Replay response tokens while stream is in progress
-    Given I start streaming tokens "Hello World" to the conversation with 50ms delay and keep the stream open for 500ms
+    Given I start streaming tokens "Hello World" to the conversation with 50ms delay and keep the stream open for 1500ms
     And I wait for the response stream to send at least 2 tokens
     When I replay response tokens from position 0 in a second session and collect tokens "Hello World"
     Then the replay should finish before the stream completes

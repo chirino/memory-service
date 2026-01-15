@@ -35,16 +35,20 @@ public class ApiKeyRequestFilter implements ContainerRequestFilter {
 
         apiKeyContext.setValid(false);
         apiKeyContext.setApiKey(null);
+        apiKeyContext.setClientId(null);
 
         if (apiKeyHeader != null && !apiKeyHeader.isBlank()) {
-            apiKeyHeader = apiKeyHeader.trim();
-            if (apiKeyManager.validate(apiKeyHeader)) {
-                hasValidKey = true;
-                apiKeyContext.setValid(true);
-                apiKeyContext.setApiKey(apiKeyHeader);
-            } else {
-                LOG.warnf("Received invalid API key");
-            }
+            String apiKeyValue = apiKeyHeader.trim();
+            apiKeyManager
+                    .resolveClientId(apiKeyValue)
+                    .ifPresentOrElse(
+                            clientId -> {
+                                apiKeyContext.setValid(true);
+                                apiKeyContext.setApiKey(apiKeyValue);
+                                apiKeyContext.setClientId(clientId);
+                            },
+                            () -> LOG.warnf("Received invalid API key"));
+            hasValidKey = apiKeyContext.hasValidApiKey();
         }
 
         boolean required = isApiKeyRequired();

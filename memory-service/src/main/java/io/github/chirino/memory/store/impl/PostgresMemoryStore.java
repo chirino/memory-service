@@ -471,7 +471,8 @@ public class PostgresMemoryStore implements MemoryStore {
             String afterMessageId,
             int limit,
             MessageChannel channel,
-            MemoryEpochFilter epochFilter) {
+            MemoryEpochFilter epochFilter,
+            String clientId) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
         if (conversation == null) {
@@ -485,9 +486,10 @@ public class PostgresMemoryStore implements MemoryStore {
         ensureHasAccess(groupId, userId, AccessLevel.READER);
         List<MessageEntity> messages;
         if (channel == MessageChannel.MEMORY) {
-            messages = fetchMemoryMessages(cid, afterMessageId, limit, epochFilter);
+            messages = fetchMemoryMessages(cid, afterMessageId, limit, epochFilter, clientId);
         } else {
-            messages = messageRepository.listByChannel(cid, afterMessageId, limit, channel);
+            messages =
+                    messageRepository.listByChannel(cid, afterMessageId, limit, channel, clientId);
         }
         PagedMessages page = new PagedMessages();
         page.setConversationId(conversationId);
@@ -500,32 +502,43 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     private List<MessageEntity> fetchMemoryMessages(
-            UUID conversationId, String afterMessageId, int limit, MemoryEpochFilter epochFilter) {
+            UUID conversationId,
+            String afterMessageId,
+            int limit,
+            MemoryEpochFilter epochFilter,
+            String clientId) {
+        if (clientId == null || clientId.isBlank()) {
+            return Collections.emptyList();
+        }
         MemoryEpochFilter filter = epochFilter != null ? epochFilter : MemoryEpochFilter.latest();
         return switch (filter.getMode()) {
             case ALL ->
                     messageRepository.listByChannel(
-                            conversationId, afterMessageId, limit, MessageChannel.MEMORY);
+                            conversationId, afterMessageId, limit, MessageChannel.MEMORY, clientId);
             case LATEST -> {
-                Long latestEpoch = messageRepository.findLatestMemoryEpoch(conversationId);
+                Long latestEpoch =
+                        messageRepository.findLatestMemoryEpoch(conversationId, clientId);
                 // If no messages with epochs exist, list all memory messages
                 if (latestEpoch == null) {
                     yield messageRepository.listByChannel(
-                            conversationId, afterMessageId, limit, MessageChannel.MEMORY);
+                            conversationId, afterMessageId, limit, MessageChannel.MEMORY, clientId);
                 }
                 yield messageRepository.listMemoryMessagesByEpoch(
-                        conversationId, afterMessageId, limit, latestEpoch);
+                        conversationId, afterMessageId, limit, latestEpoch, clientId);
             }
             case EPOCH ->
                     messageRepository.listMemoryMessagesByEpoch(
-                            conversationId, afterMessageId, limit, filter.getEpoch());
+                            conversationId, afterMessageId, limit, filter.getEpoch(), clientId);
         };
     }
 
     @Override
     @Transactional
     public List<MessageDto> appendAgentMessages(
-            String userId, String conversationId, List<CreateMessageRequest> messages) {
+            String userId,
+            String conversationId,
+            List<CreateMessageRequest> messages,
+            String clientId) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
 
@@ -563,6 +576,7 @@ public class PostgresMemoryStore implements MemoryStore {
             MessageEntity entity = new MessageEntity();
             entity.setConversation(conversation);
             entity.setUserId(req.getUserId());
+            entity.setClientId(clientId);
             if (req.getChannel() != null) {
                 entity.setChannel(
                         io.github.chirino.memory.model.MessageChannel.fromString(
@@ -591,13 +605,18 @@ public class PostgresMemoryStore implements MemoryStore {
     @Override
     @Transactional
     public SyncResult syncAgentMessages(
-            String userId, String conversationId, List<CreateMessageRequest> messages) {
+            String userId,
+            String conversationId,
+            List<CreateMessageRequest> messages,
+            String clientId) {
         validateSyncMessages(messages);
         UUID cid = UUID.fromString(conversationId);
-        Long latestEpoch = messageRepository.findLatestMemoryEpoch(cid);
+        Long latestEpoch = messageRepository.findLatestMemoryEpoch(cid, clientId);
         List<MessageDto> latestEpochMessages =
                 latestEpoch != null
-                        ? messageRepository.listMemoryMessagesByEpoch(cid, latestEpoch).stream()
+                        ? messageRepository
+                                .listMemoryMessagesByEpoch(cid, latestEpoch, clientId)
+                                .stream()
                                 .map(this::toMessageDto)
                                 .collect(Collectors.toList())
                         : Collections.emptyList();
@@ -631,7 +650,8 @@ public class PostgresMemoryStore implements MemoryStore {
             List<CreateMessageRequest> delta =
                     MemorySyncHelper.withEpoch(
                             messages.subList(existing.size(), messages.size()), latestEpoch);
-            List<MessageDto> appended = appendAgentMessages(userId, conversationId, delta);
+            List<MessageDto> appended =
+                    appendAgentMessages(userId, conversationId, delta, clientId);
             result.setMessages(appended);
             result.setEpochIncremented(false);
             result.setNoOp(false);
@@ -641,7 +661,7 @@ public class PostgresMemoryStore implements MemoryStore {
         // Otherwise, create a new epoch with all incoming messages
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
         List<CreateMessageRequest> toAppend = MemorySyncHelper.withEpoch(messages, nextEpoch);
-        List<MessageDto> appended = appendAgentMessages(userId, conversationId, toAppend);
+        List<MessageDto> appended = appendAgentMessages(userId, conversationId, toAppend, clientId);
         result.setMemoryEpoch(nextEpoch);
         result.setMessages(appended);
         result.setEpochIncremented(true);
@@ -664,7 +684,8 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public MessageDto createSummary(String conversationId, CreateSummaryRequest request) {
+    public MessageDto createSummary(
+            String conversationId, CreateSummaryRequest request, String clientId) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation =
                 conversationRepository
@@ -677,6 +698,7 @@ public class PostgresMemoryStore implements MemoryStore {
         MessageEntity summaryMessage = new MessageEntity();
         summaryMessage.setConversation(conversation);
         summaryMessage.setUserId(null);
+        summaryMessage.setClientId(clientId);
         summaryMessage.setChannel(io.github.chirino.memory.model.MessageChannel.SUMMARY);
         summaryMessage.setMemoryEpoch(null);
         summaryMessage.setContent(encryptContentFromSummary(request));

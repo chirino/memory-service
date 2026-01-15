@@ -28,21 +28,26 @@ public class GrpcApiKeyInterceptor implements ServerInterceptor {
             ServerCall<ReqT, RespT> call, Metadata headers, ServerCallHandler<ReqT, RespT> next) {
         apiKeyContext.setValid(false);
         apiKeyContext.setApiKey(null);
+        apiKeyContext.setClientId(null);
 
         String apiKey = headers.get(API_KEY_HEADER);
         if (apiKey != null && !apiKey.isBlank()) {
-            apiKey = apiKey.trim();
-            if (apiKeyManager.validate(apiKey)) {
-                apiKeyContext.setValid(true);
-                apiKeyContext.setApiKey(apiKey);
-                LOG.infof(
-                        "Received valid API key for gRPC call %s",
-                        call.getMethodDescriptor().getFullMethodName());
-            } else {
-                LOG.debugf(
-                        "Received invalid API key for gRPC call %s",
-                        call.getMethodDescriptor().getFullMethodName());
-            }
+            String apiKeyValue = apiKey.trim();
+            apiKeyManager
+                    .resolveClientId(apiKeyValue)
+                    .ifPresentOrElse(
+                            clientId -> {
+                                apiKeyContext.setValid(true);
+                                apiKeyContext.setApiKey(apiKeyValue);
+                                apiKeyContext.setClientId(clientId);
+                                LOG.infof(
+                                        "Received valid API key for gRPC call %s",
+                                        call.getMethodDescriptor().getFullMethodName());
+                            },
+                            () ->
+                                    LOG.debugf(
+                                            "Received invalid API key for gRPC call %s",
+                                            call.getMethodDescriptor().getFullMethodName()));
         }
 
         return next.startCall(call, headers);

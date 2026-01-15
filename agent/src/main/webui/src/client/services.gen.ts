@@ -141,16 +141,19 @@ export class ConversationsService {
    * - `history` (default) returns the user-visible conversation between
    * users and the agent.
    * - `memory` returns agent memory messages which are typically not
-   * shown directly to end users.
+   * shown directly to end users. Memory messages are scoped to the
+   * calling client id derived from the API key.
    * @param data The data for the request.
    * @param data.conversationId
    * @param data.after Cursor for pagination; returns messages after this message id.
    * @param data.limit
    * @param data.channel Channel of messages to return. Defaults to `history` for the
-   * user-visible conversation; `memory` returns agent memory messages.
+   * user-visible conversation; `memory` returns agent memory messages
+   * scoped to the calling client id.
    * @param data.epoch Optional epoch filter when listing the `memory` channel. Valid values
    * are `latest`, `all`, or a numeric epoch identifier. Defaults to
-   * `latest` when not provided.
+   * `latest` when not provided. The epoch selection is scoped to the
+   * calling client id.
    * @returns unknown A list of messages.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -221,8 +224,9 @@ export class ConversationsService {
    * provided list to the messages already stored in the latest memory epoch.
    * If there is no difference it is a no-op, if the list merely appends more
    * messages they are added to the current epoch, otherwise a new epoch is
-   * created and all provided messages are stored under the new epoch. Requires
-   * a valid agent API key.
+   * created and all provided messages are stored under the new epoch. Memory
+   * sync is scoped to the calling client id (from the API key). Requires a
+   * valid agent API key.
    * @param data The data for the request.
    * @param data.conversationId
    * @param data.requestBody

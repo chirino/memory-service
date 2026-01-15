@@ -32,6 +32,9 @@ public class MessageEntity {
     @Column(name = "user_id")
     private String userId;
 
+    @Column(name = "client_id")
+    private String clientId;
+
     @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
     @Column(name = "channel", nullable = false)
     private MessageChannel channel;
@@ -76,6 +79,14 @@ public class MessageEntity {
 
     public void setUserId(String userId) {
         this.userId = userId;
+    }
+
+    public String getClientId() {
+        return clientId;
+    }
+
+    public void setClientId(String clientId) {
+        this.clientId = clientId;
     }
 
     public MessageChannel getChannel() {
