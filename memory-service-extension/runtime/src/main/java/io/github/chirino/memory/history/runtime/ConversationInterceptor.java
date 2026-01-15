@@ -1,10 +1,10 @@
 package io.github.chirino.memory.history.runtime;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
+
 import io.github.chirino.memory.history.annotations.ConversationId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
-import io.quarkus.oidc.AccessTokenCredential;
-import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import io.smallrye.mutiny.Multi;
@@ -52,7 +52,7 @@ public class ConversationInterceptor {
 
         if (result instanceof Multi<?> multi) {
             SecurityIdentity resolvedIdentity = resolveIdentity();
-            String bearerToken = resolveBearerToken(resolvedIdentity);
+            String bearerToken = bearerToken(resolvedIdentity);
             @SuppressWarnings("unchecked")
             Multi<String> stringMulti = (Multi<String>) multi;
             return ConversationStreamAdapter.wrap(
@@ -65,7 +65,7 @@ public class ConversationInterceptor {
                     bearerToken);
         }
 
-        String bearerToken = resolveBearerToken(resolveIdentity());
+        String bearerToken = bearerToken(resolveIdentity());
         store.appendAgentMessage(invocation.conversationId(), String.valueOf(result), bearerToken);
         store.markCompleted(invocation.conversationId());
 
@@ -90,25 +90,6 @@ public class ConversationInterceptor {
             LOG.info("Resolved identity from injected identity: <none>");
         }
         return identity;
-    }
-
-    private String resolveBearerToken(SecurityIdentity resolvedIdentity) {
-        if (resolvedIdentity == null) {
-            LOG.info("Resolved bearer token: <none> (no identity)");
-            return null;
-        }
-        AccessTokenCredential atc = resolvedIdentity.getCredential(AccessTokenCredential.class);
-        if (atc != null) {
-            LOG.info("Resolved bearer token from AccessTokenCredential");
-            return atc.getToken();
-        }
-        TokenCredential tc = resolvedIdentity.getCredential(TokenCredential.class);
-        if (tc != null) {
-            LOG.info("Resolved bearer token from TokenCredential");
-            return tc.getToken();
-        }
-        LOG.info("Resolved bearer token: <none> (no credential)");
-        return null;
     }
 
     private ConversationInvocation resolveInvocation(InvocationContext ctx) {

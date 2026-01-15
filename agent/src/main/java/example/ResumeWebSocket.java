@@ -1,8 +1,8 @@
 package example;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
+
 import io.github.chirino.memory.history.runtime.ResponseResumer;
-import io.quarkus.oidc.AccessTokenCredential;
-import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.websockets.next.CloseReason;
 import io.quarkus.websockets.next.OnOpen;
@@ -42,7 +42,7 @@ public class ResumeWebSocket {
                 "Resume WebSocket opened for conversationId=%s resumePosition=%s",
                 conversationId, resumePosition);
 
-        String bearerToken = resolveBearerToken();
+        String bearerToken = bearerToken(securityIdentity);
         if (bearerToken != null) {
             LOG.info("Captured bearer token for response resumer");
         }
@@ -88,20 +88,5 @@ public class ResumeWebSocket {
             LOG.warnf(e, "Invalid resumePosition=%s, defaulting to 0", resumePosition);
             return 0L;
         }
-    }
-
-    private String resolveBearerToken() {
-        if (securityIdentity == null) {
-            return null;
-        }
-        AccessTokenCredential atc = securityIdentity.getCredential(AccessTokenCredential.class);
-        if (atc != null) {
-            return atc.getToken();
-        }
-        TokenCredential tc = securityIdentity.getCredential(TokenCredential.class);
-        if (tc != null) {
-            return tc.getToken();
-        }
-        return null;
     }
 }

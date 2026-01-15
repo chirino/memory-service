@@ -1,5 +1,8 @@
 package io.github.chirino.memory.langchain4j;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
+import static io.github.chirino.memory.security.SecurityHelper.principalName;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.util.RawValue;
 import dev.langchain4j.data.message.ChatMessage;
@@ -11,8 +14,6 @@ import io.github.chirino.memory.client.model.ListConversationMessages200Response
 import io.github.chirino.memory.client.model.Message;
 import io.github.chirino.memory.client.model.MessageChannel;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
-import io.quarkus.oidc.AccessTokenCredential;
-import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.ws.rs.WebApplicationException;
 import java.util.ArrayList;
@@ -55,8 +56,9 @@ public class MemoryServiceChatMemory implements ChatMemory {
     @Override
     public void add(ChatMessage chatMessage) {
         CreateMessageRequest request = new CreateMessageRequest();
-        if (securityIdentity != null && securityIdentity.getPrincipal() != null) {
-            request.setUserId(securityIdentity.getPrincipal().getName());
+        String userId = principalName(securityIdentity);
+        if (userId != null) {
+            request.setUserId(userId);
         }
         request.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
 
@@ -116,23 +118,8 @@ public class MemoryServiceChatMemory implements ChatMemory {
     }
 
     private ConversationsApi conversationsApi() {
-        String bearerToken = resolveBearerToken();
+        String bearerToken = bearerToken(securityIdentity);
         return conversationsApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
-    }
-
-    private String resolveBearerToken() {
-        if (securityIdentity == null) {
-            return null;
-        }
-        AccessTokenCredential atc = securityIdentity.getCredential(AccessTokenCredential.class);
-        if (atc != null) {
-            return atc.getToken();
-        }
-        TokenCredential tc = securityIdentity.getCredential(TokenCredential.class);
-        if (tc != null) {
-            return tc.getToken();
-        }
-        return null;
     }
 
     /**

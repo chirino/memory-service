@@ -1,5 +1,7 @@
 package example;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.CreateSummaryRequest;
@@ -7,8 +9,6 @@ import io.github.chirino.memory.client.model.ListConversationMessages200Response
 import io.github.chirino.memory.client.model.Message;
 import io.github.chirino.memory.client.model.MessageChannel;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
-import io.quarkus.oidc.AccessTokenCredential;
-import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -28,7 +28,7 @@ import org.jboss.logging.Logger;
 
 /**
  * Summerizes and Redacts a conversation.
- *
+ * <p>
  * This will update the conversation title and redact the conversation transcript so it can be vectorized
  * stored safely in the vector store.
  */
@@ -226,7 +226,7 @@ public class SummerizationResource {
                     continue;
                 }
                 String text = extractText(List.of(block));
-                if (text == null || text.isBlank()) {
+                if (text.isBlank()) {
                     continue;
                 }
 
@@ -248,14 +248,17 @@ public class SummerizationResource {
             }
             if (role != null) {
                 String normalized = role.trim().toLowerCase();
-                if (normalized.equals("user") || normalized.equals("human")) {
-                    return "User:\n\n";
-                }
-                if (normalized.equals("assistant") || normalized.equals("ai")) {
-                    return "AI:\n\n";
-                }
-                if (normalized.equals("system")) {
-                    return "System:\n\n";
+                switch (normalized) {
+                    case "user", "human" -> {
+                        return "User:\n\n";
+                    }
+                    case "assistant", "ai" -> {
+                        return "AI:\n\n";
+                    }
+                    case "system" -> {
+                        return "System:\n\n";
+                    }
+                    default -> {}
                 }
             }
         }
@@ -273,16 +276,15 @@ public class SummerizationResource {
         }
         StringBuilder builder = new StringBuilder();
         for (Object block : content) {
-            if (block == null) {
-                continue;
-            }
-            if (block instanceof Map<?, ?> map) {
-                Object text = map.get("text");
-                if (text instanceof String s && !s.isBlank()) {
-                    builder.append(s).append(' ');
+            switch (block) {
+                case Map<?, ?> map -> {
+                    Object text = map.get("text");
+                    if (text instanceof String s && !s.isBlank()) {
+                        builder.append(s).append(' ');
+                    }
                 }
-            } else if (block instanceof String s && !s.isBlank()) {
-                builder.append(s).append(' ');
+                case String s when !s.isBlank() -> builder.append(s).append(' ');
+                case null, default -> {}
             }
         }
         return builder.toString().trim();
@@ -291,22 +293,7 @@ public class SummerizationResource {
     private record RedactionPayload(String title, Map<String, String> redact) {}
 
     private ConversationsApi conversationsApi() {
-        String bearerToken = resolveBearerToken();
+        String bearerToken = bearerToken(securityIdentity);
         return memoryServiceApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
-    }
-
-    private String resolveBearerToken() {
-        if (securityIdentity == null) {
-            return null;
-        }
-        AccessTokenCredential atc = securityIdentity.getCredential(AccessTokenCredential.class);
-        if (atc != null) {
-            return atc.getToken();
-        }
-        TokenCredential tc = securityIdentity.getCredential(TokenCredential.class);
-        if (tc != null) {
-            return tc.getToken();
-        }
-        return null;
     }
 }

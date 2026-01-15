@@ -1,8 +1,8 @@
 package example;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
+
 import io.github.chirino.memory.history.runtime.ResponseResumer;
-import io.quarkus.oidc.AccessTokenCredential;
-import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -25,37 +25,12 @@ public class ResumeResource {
 
     @Inject ResponseResumer responseResumer;
 
-    @Inject SecurityIdentity identity;
+    @Inject SecurityIdentity securityIdentity;
 
     @POST
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public List<String> check(List<String> conversationIds) {
-        String principal =
-                identity != null && identity.getPrincipal() != null
-                        ? identity.getPrincipal().getName()
-                        : "unknown";
-        int count = conversationIds == null ? 0 : conversationIds.size();
-        LOG.infof("Resume check requested by %s for %d conversation(s)", principal, count);
-        String bearerToken = resolveBearerToken();
-        if (bearerToken != null) {
-            LOG.debug("Propagating bearer token to response resumer");
-        }
-        return responseResumer.check(conversationIds, bearerToken);
-    }
-
-    private String resolveBearerToken() {
-        if (identity == null) {
-            return null;
-        }
-        AccessTokenCredential atc = identity.getCredential(AccessTokenCredential.class);
-        if (atc != null) {
-            return atc.getToken();
-        }
-        TokenCredential tc = identity.getCredential(TokenCredential.class);
-        if (tc != null) {
-            return tc.getToken();
-        }
-        return null;
+        return responseResumer.check(conversationIds, bearerToken(securityIdentity));
     }
 }

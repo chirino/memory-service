@@ -1,5 +1,6 @@
 package example;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 import static jakarta.ws.rs.core.Response.Status.CREATED;
 import static jakarta.ws.rs.core.Response.Status.NO_CONTENT;
 import static jakarta.ws.rs.core.Response.Status.OK;
@@ -10,8 +11,6 @@ import io.github.chirino.memory.client.model.ForkFromMessageRequest;
 import io.github.chirino.memory.client.model.MessageChannel;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
-import io.quarkus.oidc.AccessTokenCredential;
-import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -322,23 +321,8 @@ public class MemoryServiceProxyResource {
     }
 
     private ConversationsApi conversationsApi() {
-        String bearerToken = resolveBearerToken();
+        String bearerToken = bearerToken(securityIdentity);
         return memoryServiceApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
-    }
-
-    private String resolveBearerToken() {
-        if (securityIdentity == null) {
-            return null;
-        }
-        AccessTokenCredential atc = securityIdentity.getCredential(AccessTokenCredential.class);
-        if (atc != null) {
-            return atc.getToken();
-        }
-        TokenCredential tc = securityIdentity.getCredential(TokenCredential.class);
-        if (tc != null) {
-            return tc.getToken();
-        }
-        return null;
     }
 
     private Response handleException(Exception e) {

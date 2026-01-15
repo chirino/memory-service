@@ -12,6 +12,9 @@
 * the api proxy allows getting memory channels by the client.
 * validate CreateMessageRequest.userId matches the bearer token principle.
 * test grpc resume redirects
+* test/find the message size limits of the app.
+* validate all api fields
+* protect against huge api requests.
 
 # Need Dev Feedback for:
 

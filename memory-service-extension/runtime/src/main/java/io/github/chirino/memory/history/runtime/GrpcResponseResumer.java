@@ -1,5 +1,7 @@
 package io.github.chirino.memory.history.runtime;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
+
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
 import io.github.chirino.memory.grpc.v1.CancelResponseResponse;
@@ -17,8 +19,6 @@ import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.MetadataUtils;
 import io.quarkus.grpc.GrpcClient;
-import io.quarkus.oidc.AccessTokenCredential;
-import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import io.smallrye.mutiny.Multi;
@@ -204,7 +204,7 @@ public class GrpcResponseResumer implements ResponseResumer {
         if (identity == null) {
         } else {
             if (metadata.get(AUTHORIZATION_HEADER) == null) {
-                String token = resolveToken(identity);
+                String token = bearerToken(identity);
                 if (token != null) {
                     metadata.put(AUTHORIZATION_HEADER, "Bearer " + token);
                     usedBearerToken = true;
@@ -333,18 +333,6 @@ public class GrpcResponseResumer implements ResponseResumer {
         if (securityIdentityAssociationInstance != null
                 && securityIdentityAssociationInstance.isResolvable()) {
             return securityIdentityAssociationInstance.get().getIdentity();
-        }
-        return null;
-    }
-
-    private String resolveToken(SecurityIdentity identity) {
-        AccessTokenCredential atc = identity.getCredential(AccessTokenCredential.class);
-        if (atc != null) {
-            return atc.getToken();
-        }
-        TokenCredential tc = identity.getCredential(TokenCredential.class);
-        if (tc != null) {
-            return tc.getToken();
         }
         return null;
     }

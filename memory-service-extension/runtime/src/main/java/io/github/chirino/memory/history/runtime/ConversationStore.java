@@ -1,11 +1,12 @@
 package io.github.chirino.memory.history.runtime;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
+import static io.github.chirino.memory.security.SecurityHelper.principalName;
+
 import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.arc.Arc;
-import io.quarkus.oidc.AccessTokenCredential;
-import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -31,7 +32,7 @@ public class ConversationStore {
         block.put("text", content);
         block.put("role", "USER");
         request.setContent(List.of(block));
-        conversationsApi(resolveBearerTokenFromIdentity())
+        conversationsApi(bearerToken(securityIdentity))
                 .appendConversationMessage(conversationId, request);
     }
 
@@ -48,8 +49,8 @@ public class ConversationStore {
         block.put("text", content);
         block.put("role", "AI");
         request.setContent(List.of(block));
-        String effectiveToken =
-                bearerToken != null ? bearerToken : resolveBearerTokenFromIdentity();
+        String effectiveToken;
+        effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
         conversationsApi(effectiveToken).appendConversationMessage(conversationId, request);
     }
 
@@ -65,30 +66,6 @@ public class ConversationStore {
         if (!Arc.container().requestContext().isActive()) {
             return null;
         }
-        if (securityIdentity == null) {
-            return null;
-        }
-        if (securityIdentity.getPrincipal() == null) {
-            return null;
-        }
-        return securityIdentity.getPrincipal().getName();
-    }
-
-    private String resolveBearerTokenFromIdentity() {
-        if (!Arc.container().requestContext().isActive()) {
-            return null;
-        }
-        if (securityIdentity == null) {
-            return null;
-        }
-        AccessTokenCredential atc = securityIdentity.getCredential(AccessTokenCredential.class);
-        if (atc != null) {
-            return atc.getToken();
-        }
-        TokenCredential tc = securityIdentity.getCredential(TokenCredential.class);
-        if (tc != null) {
-            return tc.getToken();
-        }
-        return null;
+        return principalName(securityIdentity);
     }
 }
