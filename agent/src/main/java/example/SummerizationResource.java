@@ -1,10 +1,12 @@
 package example;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.CreateSummaryRequest;
 import io.github.chirino.memory.client.model.ListConversationMessages200Response;
 import io.github.chirino.memory.client.model.Message;
 import io.github.chirino.memory.client.model.MessageChannel;
+import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -37,7 +39,7 @@ public class SummerizationResource {
     private static final Logger LOG = Logger.getLogger(SummerizationResource.class);
     private static final int PAGE_SIZE = 200;
 
-    @Inject ConversationsApiBuilder conversationsApiBuilder;
+    @Inject MemoryServiceApiBuilder memoryServiceApiBuilder;
 
     @Inject RedactionAssistant redactionAssistant;
 
@@ -288,12 +290,9 @@ public class SummerizationResource {
 
     private record RedactionPayload(String title, Map<String, String> redact) {}
 
-    private io.github.chirino.memory.client.api.ConversationsApi conversationsApi() {
+    private ConversationsApi conversationsApi() {
         String bearerToken = resolveBearerToken();
-        if (bearerToken != null) {
-            return conversationsApiBuilder.withBearerAuth(bearerToken).build();
-        }
-        return conversationsApiBuilder.build();
+        return memoryServiceApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
     }
 
     private String resolveBearerToken() {

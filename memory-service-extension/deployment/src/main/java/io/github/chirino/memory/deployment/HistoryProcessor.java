@@ -10,7 +10,6 @@ public class HistoryProcessor {
         return AdditionalBeanBuildItem.builder()
                 .setUnremovable()
                 .addBeanClasses(
-                        "io.github.chirino.memory.history.runtime.ConversationsApiBuilder",
                         "io.github.chirino.memory.history.runtime.ConversationStore",
                         "io.github.chirino.memory.history.runtime.ConversationInterceptor",
                         "io.github.chirino.memory.history.runtime.NoopResponseResumer",

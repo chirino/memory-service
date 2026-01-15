@@ -1,6 +1,5 @@
 package io.github.chirino.memory.deployment;
 
-import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.datasource.deployment.spi.DevServicesDatasourceResultBuildItem;
 import io.quarkus.deployment.IsDevServicesSupportedByLaunchMode;
 import io.quarkus.deployment.annotations.BuildProducer;
@@ -27,23 +26,14 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
-public class DevServicesMemoryServiceProcessor {
+public class MemoryServiceDevServicesProcessor {
 
-    private static final Logger LOG = Logger.getLogger(DevServicesMemoryServiceProcessor.class);
+    private static final Logger LOG = Logger.getLogger(MemoryServiceDevServicesProcessor.class);
     private static final String FEATURE = "memory-service";
     private static final int MEMORY_SERVICE_PORT = 8080;
     private static final String DEV_SERVICE_LABEL = "quarkus-dev-service-memory-service";
     private static final int API_KEY_BYTES = 32;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-
-    @BuildStep
-    AdditionalBeanBuildItem registerBeans() {
-        return AdditionalBeanBuildItem.builder()
-                .setUnremovable()
-                .addBeanClasses(
-                        "io.github.chirino.memory.runtime.MemoryServiceClientStartupObserver")
-                .build();
-    }
 
     /**
      * Produces a MemoryServiceDevServicesConfigBuildItem by extracting memory-service

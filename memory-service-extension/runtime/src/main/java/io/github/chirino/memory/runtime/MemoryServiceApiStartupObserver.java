@@ -11,9 +11,9 @@ import org.jboss.logging.Logger;
  * This ensures the log happens after dev services have configured the URL.
  */
 @ApplicationScoped
-public class MemoryServiceClientStartupObserver {
+public class MemoryServiceApiStartupObserver {
 
-    private static final Logger LOG = Logger.getLogger(MemoryServiceClientStartupObserver.class);
+    private static final Logger LOG = Logger.getLogger(MemoryServiceApiStartupObserver.class);
 
     void onStart(@Observes StartupEvent ev) {
         var config = ConfigProvider.getConfig();

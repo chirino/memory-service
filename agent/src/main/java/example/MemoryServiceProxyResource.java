@@ -5,9 +5,11 @@ import static jakarta.ws.rs.core.Response.Status.NO_CONTENT;
 import static jakarta.ws.rs.core.Response.Status.OK;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.ForkFromMessageRequest;
 import io.github.chirino.memory.client.model.MessageChannel;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
+import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -38,7 +40,7 @@ public class MemoryServiceProxyResource {
     private static final Logger LOG = Logger.getLogger(MemoryServiceProxyResource.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    @Inject ConversationsApiBuilder conversationsApiBuilder;
+    @Inject MemoryServiceApiBuilder memoryServiceApiBuilder;
 
     @Inject SecurityIdentity securityIdentity;
 
@@ -319,12 +321,9 @@ public class MemoryServiceProxyResource {
         }
     }
 
-    private io.github.chirino.memory.client.api.ConversationsApi conversationsApi() {
+    private ConversationsApi conversationsApi() {
         String bearerToken = resolveBearerToken();
-        if (bearerToken != null) {
-            return conversationsApiBuilder.withBearerAuth(bearerToken).build();
-        }
-        return conversationsApiBuilder.build();
+        return memoryServiceApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
     }
 
     private String resolveBearerToken() {

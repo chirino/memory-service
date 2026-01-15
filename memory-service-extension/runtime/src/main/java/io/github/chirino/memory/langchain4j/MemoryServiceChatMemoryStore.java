@@ -5,12 +5,13 @@ import com.fasterxml.jackson.databind.util.RawValue;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.JacksonChatMessageJsonCodec;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
+import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.client.model.ListConversationMessages200Response;
 import io.github.chirino.memory.client.model.Message;
 import io.github.chirino.memory.client.model.MessageChannel;
 import io.github.chirino.memory.client.model.SyncMessagesRequest;
-import io.github.chirino.memory.history.runtime.ConversationsApiBuilder;
+import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -38,13 +39,13 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     private static final JacksonChatMessageJsonCodec CODEC = new JacksonChatMessageJsonCodec();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private final ConversationsApiBuilder conversationsApiBuilder;
+    private final MemoryServiceApiBuilder conversationsApiBuilder;
     private final RequestContextExecutor requestContextExecutor;
     private final Instance<SecurityIdentity> securityIdentityInstance;
 
     @Inject
     public MemoryServiceChatMemoryStore(
-            ConversationsApiBuilder conversationsApiBuilder,
+            MemoryServiceApiBuilder conversationsApiBuilder,
             RequestContextExecutor requestContextExecutor,
             Instance<SecurityIdentity> securityIdentityInstance) {
         this.conversationsApiBuilder =
@@ -189,12 +190,9 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         return requestContextExecutor.call(supplier);
     }
 
-    private io.github.chirino.memory.client.api.ConversationsApi conversationsApi() {
+    private ConversationsApi conversationsApi() {
         String bearerToken = resolveBearerToken();
-        if (bearerToken != null) {
-            return conversationsApiBuilder.withBearerAuth(bearerToken).build();
-        }
-        return conversationsApiBuilder.build();
+        return conversationsApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
     }
 
     private String resolveBearerToken() {

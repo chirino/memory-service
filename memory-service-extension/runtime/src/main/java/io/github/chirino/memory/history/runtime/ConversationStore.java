@@ -1,6 +1,8 @@
 package io.github.chirino.memory.history.runtime;
 
+import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.arc.Arc;
 import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.security.credential.TokenCredential;
@@ -17,7 +19,7 @@ public class ConversationStore {
 
     private static final Logger LOG = Logger.getLogger(ConversationStore.class);
 
-    @Inject ConversationsApiBuilder conversationsApiBuilder;
+    @Inject MemoryServiceApiBuilder conversationsApiBuilder;
 
     @Inject SecurityIdentity securityIdentity;
 
@@ -64,12 +66,8 @@ public class ConversationStore {
 
     public void markCompleted(String conversationId) {}
 
-    private io.github.chirino.memory.client.api.ConversationsApi conversationsApi(
-            String bearerToken) {
-        if (bearerToken != null) {
-            return conversationsApiBuilder.withBearerAuth(bearerToken).build();
-        }
-        return conversationsApiBuilder.build();
+    private ConversationsApi conversationsApi(String bearerToken) {
+        return conversationsApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
     }
 
     private String resolveUserId() {

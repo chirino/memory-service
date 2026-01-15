@@ -1,6 +1,5 @@
-package io.github.chirino.memory.history.runtime;
+package io.github.chirino.memory.runtime;
 
-import io.github.chirino.memory.client.api.ConversationsApi;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.client.ClientRequestFilter;
@@ -10,48 +9,48 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.RestClientBuilder;
 
 @ApplicationScoped
-public class ConversationsApiBuilder {
+public class MemoryServiceApiBuilder {
 
     private final String baseUrl;
     private final String apiKey;
     private final String bearerToken;
 
     @Inject
-    public ConversationsApiBuilder(
+    public MemoryServiceApiBuilder(
             @ConfigProperty(name = "memory-service-client.url") Optional<String> clientUrl,
             @ConfigProperty(name = "memory-service.url") Optional<String> legacyUrl,
             @ConfigProperty(name = "memory-service-client.api-key") Optional<String> apiKey) {
         this(resolveBaseUrl(clientUrl, legacyUrl), apiKey.orElse(null), null);
     }
 
-    private ConversationsApiBuilder(String baseUrl, String apiKey, String bearerToken) {
+    private MemoryServiceApiBuilder(String baseUrl, String apiKey, String bearerToken) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.bearerToken = bearerToken;
     }
 
-    public ConversationsApiBuilder withBearerAuth(String token) {
+    public MemoryServiceApiBuilder withBearerAuth(String token) {
         if (token == null || token.isBlank()) {
             token = null;
         }
-        return new ConversationsApiBuilder(baseUrl, apiKey, token);
+        return new MemoryServiceApiBuilder(baseUrl, apiKey, token);
     }
 
-    public ConversationsApiBuilder withApiKey(String apiKey) {
+    public MemoryServiceApiBuilder withApiKey(String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
             apiKey = null;
         }
-        return new ConversationsApiBuilder(baseUrl, apiKey, bearerToken);
+        return new MemoryServiceApiBuilder(baseUrl, apiKey, bearerToken);
     }
 
-    public ConversationsApiBuilder withBaseUrl(String baseUrl) {
+    public MemoryServiceApiBuilder withBaseUrl(String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
             baseUrl = resolveBaseUrl(Optional.empty(), Optional.empty());
         }
-        return new ConversationsApiBuilder(baseUrl, apiKey, bearerToken);
+        return new MemoryServiceApiBuilder(baseUrl, apiKey, bearerToken);
     }
 
-    public ConversationsApi build() {
+    public <T> T build(Class<T> clazz) {
         RestClientBuilder builder = RestClientBuilder.newBuilder().baseUri(URI.create(baseUrl));
         if (apiKey != null && !apiKey.isBlank()) {
             builder.register(
@@ -64,7 +63,7 @@ public class ConversationsApiBuilder {
                                     ctx.getHeaders()
                                             .putSingle("Authorization", "Bearer " + bearerToken));
         }
-        return builder.build(ConversationsApi.class);
+        return builder.build(clazz);
     }
 
     private static String resolveBaseUrl(Optional<String> clientUrl, Optional<String> legacyUrl) {
