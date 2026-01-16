@@ -15,6 +15,7 @@
 * validate all api fields
 * protect against huge api requests.
 * rename memory-service-client to memory-service-rest
+* Add a Spring AI support lib and example agent.
 
 # Need Dev Feedback for:
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -81,6 +82,7 @@ type ChatMessageRowProps = {
   onForkSelect: (conversationId: string) => void;
   openForkMenuMessageId: string | null;
   setOpenForkMenuMessageId: (id: string | null) => void;
+  messageRef?: React.Ref<HTMLDivElement>;
 };
 
 function ChatMessageRow({
@@ -109,6 +111,7 @@ function ChatMessageRow({
   onForkSelect,
   openForkMenuMessageId,
   setOpenForkMenuMessageId,
+  messageRef,
 }: ChatMessageRowProps) {
   const isUser = message.author === "user";
   const hasForks = forkOptionsCount > 1;
@@ -198,9 +201,10 @@ function ChatMessageRow({
     <div key={message.id}>
       <ConversationsUI.MessageRow
         message={message}
+        messageRef={messageRef}
         overlay={
           isUser && message.displayState === "stable" ? (
-            <div className="absolute -top-2 right-0 flex translate-y-[-50%] opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="absolute bottom-0 right-3 z-10 flex translate-y-[50%] opacity-0 transition-opacity group-hover:opacity-100">
               <button
                 type="button"
                 onClick={() => onEditStart(message)}
@@ -218,27 +222,7 @@ function ChatMessageRow({
           <button
             type="button"
             className="pointer-events-auto text-xs font-medium text-muted-foreground hover:text-foreground"
-            onPointerDown={() => {
-              console.info(
-                "[ChatPanel] fork trigger pointerdown",
-                "messageId=",
-                message.id,
-                "forkPointConversationId=",
-                forkPoint?.conversationId ?? "null",
-                "forkPointPreviousMessageId=",
-                forkPoint?.previousMessageId ?? "null",
-              );
-            }}
             onClick={() => {
-              console.info(
-                "[ChatPanel] fork trigger click",
-                "messageId=",
-                message.id,
-                "forkPointConversationId=",
-                forkPoint?.conversationId ?? "null",
-                "forkPointPreviousMessageId=",
-                forkPoint?.previousMessageId ?? "null",
-              );
               setActiveForkMenuMessageId(message.id);
               if (openForkMenuMessageId === message.id) {
                 setOpenForkMenuMessageId(null);
@@ -352,6 +336,14 @@ function ChatPanelContent({
   const [forkLabels, setForkLabels] = useState<Record<string, string>>({});
   const [activeForkMenuMessageId, setActiveForkMenuMessageId] = useState<string | null>(null);
   const [openForkMenuMessageId, setOpenForkMenuMessageId] = useState<string | null>(null);
+  
+  // Scroll management refs
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const isNearBottomRef = useRef(true);
+  const shouldAutoScrollRef = useRef(true);
+  const lastMessageCountRef = useRef(0);
+  const isInitialLoadRef = useRef(true);
 
   const formatForkTimestamp = (value?: string | null) => {
     if (!value) {
@@ -602,6 +594,162 @@ function ChatPanelContent({
   const forkLoading = forksQuery.isLoading || forksQuery.isFetching;
   const isForkMenuOpen = Boolean(openForkMenuMessageId && forkPoint);
 
+  // Check if user is near bottom of viewport (within 100px)
+  const checkNearBottom = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return false;
+    }
+    const threshold = 100;
+    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    return distanceFromBottom <= threshold;
+  }, []);
+
+  // Scroll to bottom of viewport
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    
+    // Try to scroll to the last message element if available
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      const lastMessageElement = messageRefs.current.get(lastMessage.id);
+      if (lastMessageElement) {
+        lastMessageElement.scrollIntoView({ behavior, block: "end" });
+        return;
+      }
+    }
+    
+    // Fallback to scrolling to bottom of viewport
+    viewport.scrollTo({
+      top: viewport.scrollHeight,
+      behavior,
+    });
+  }, [messages]);
+
+  // Handle scroll events to track if user is near bottom
+  const handleScroll = useCallback(() => {
+    isNearBottomRef.current = checkNearBottom();
+    // If user manually scrolls away from bottom, disable auto-scroll
+    if (!isNearBottomRef.current) {
+      shouldAutoScrollRef.current = false;
+    }
+  }, [checkNearBottom]);
+
+  // Scroll to bottom on initial load
+  useLayoutEffect(() => {
+    if (!isResolvedConversation || !conversationId) {
+      return;
+    }
+    if (messages.length > 0 && isInitialLoadRef.current) {
+      isInitialLoadRef.current = false;
+      console.info("[ChatPanel] initial-scroll", {
+        conversationId,
+        messagesLength: messages.length,
+        lastMessageId: messages[messages.length - 1]?.id ?? null,
+      });
+      // Use multiple delays to ensure DOM is fully rendered and messages are laid out
+      const attemptScroll = () => {
+        const viewport = viewportRef.current;
+        const lastMessage = messages[messages.length - 1];
+        const lastMessageElement = messageRefs.current.get(lastMessage?.id);
+        
+        if (viewport) {
+          // If we have the last message element, use it; otherwise use scrollHeight
+          if (lastMessageElement) {
+            lastMessageElement.scrollIntoView({ behavior: "instant", block: "end" });
+            shouldAutoScrollRef.current = true;
+            isNearBottomRef.current = true;
+          } else if (viewport.scrollHeight > viewport.clientHeight) {
+            viewport.scrollTo({ top: viewport.scrollHeight, behavior: "instant" });
+            shouldAutoScrollRef.current = true;
+            isNearBottomRef.current = true;
+          }
+        }
+      };
+      
+      // Try multiple times with increasing delays to catch different render phases
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          attemptScroll();
+          // Also try after a short delay in case messages are still rendering
+          setTimeout(attemptScroll, 50);
+          setTimeout(attemptScroll, 200);
+        });
+      });
+    }
+  }, [conversationId, isResolvedConversation, messages.length, messages]);
+
+  useEffect(() => {
+    isInitialLoadRef.current = true;
+    shouldAutoScrollRef.current = true;
+    isNearBottomRef.current = true;
+    lastMessageCountRef.current = 0;
+  }, [conversationId]);
+
+  // Auto-scroll when new messages arrive or content streams, if near bottom
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || messages.length === 0) {
+      return;
+    }
+
+    const messageCountChanged = messages.length !== lastMessageCountRef.current;
+    const wasEmpty = lastMessageCountRef.current === 0;
+    const hasStreamingMessage = messages.some((msg) => msg.displayState === "streaming");
+    
+    // Update near-bottom status
+    isNearBottomRef.current = checkNearBottom();
+    
+    // If this is the first time messages appear (initial load), force scroll to bottom
+    if (wasEmpty && isInitialLoadRef.current && viewport.scrollHeight > viewport.clientHeight) {
+      isInitialLoadRef.current = false;
+      requestAnimationFrame(() => {
+        scrollToBottom("instant");
+        shouldAutoScrollRef.current = true;
+        isNearBottomRef.current = true;
+      });
+      lastMessageCountRef.current = messages.length;
+      return;
+    }
+    
+    // If user scrolled away, don't auto-scroll unless they scroll back near bottom
+    if (!shouldAutoScrollRef.current && !isNearBottomRef.current) {
+      lastMessageCountRef.current = messages.length;
+      return;
+    }
+
+    // Re-enable auto-scroll if user scrolls back near bottom
+    if (isNearBottomRef.current) {
+      shouldAutoScrollRef.current = true;
+    }
+
+    // Auto-scroll if near bottom and (messages changed or streaming)
+    if ((messageCountChanged || hasStreamingMessage) && shouldAutoScrollRef.current) {
+      requestAnimationFrame(() => {
+        // Double-check we're still near bottom before scrolling
+        if (checkNearBottom()) {
+          scrollToBottom("smooth");
+        }
+      });
+    }
+
+    lastMessageCountRef.current = messages.length;
+  }, [messages, checkNearBottom, scrollToBottom]);
+
+  // Attach scroll listener
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      viewport.removeEventListener("scroll", handleScroll);
+    };
+  }, [handleScroll]);
 
   const handleForkSelect = useCallback(
     (selectedConversationId: string) => {
@@ -676,51 +824,148 @@ function ChatPanelContent({
         </p>
       </div>
 
-      <ConversationsUI.Viewport>
+      <ConversationsUI.Viewport ref={viewportRef} className="relative pt-0">
         <ConversationsUI.Messages>
-          {(items) =>
-            items.length === 0 ? (
-              <ConversationsUI.EmptyState />
-            ) : (
-              items.map((message) => {
-                const isEditing =
-                  message.displayState === "stable" &&
-                  editingMessage?.id === message.id &&
-                  editingMessage?.conversationId === message.conversationId;
-                const messageForkOptions = forkOptionsByMessageId.get(message.id) ?? [];
-                return (
-                  <ChatMessageRow
-                    key={message.id}
-                    message={message}
-                    isEditing={isEditing}
-                    editingText={editingText}
-                    onEditingTextChange={setEditingText}
-                    onEditStart={handleEditStart}
-                    onEditCancel={handleEditCancel}
-                    onForkSend={handleForkSend}
-                    composerDisabled={composerDisabled}
-                    conversationId={conversationId}
-                    forkOptionsCount={messageForkOptions.length}
-                    forkLabels={forkLabels}
-                    setForkLabels={setForkLabels}
-                    activeForkMenuMessageId={activeForkMenuMessageId}
-                    setActiveForkMenuMessageId={setActiveForkMenuMessageId}
-                    userMessageIndexById={userMessageIndexById}
-                    selectForkLabel={selectForkLabel}
-                    formatForkLabel={formatForkLabel}
-                    formatForkTimestamp={formatForkTimestamp}
-                    forkPoint={openForkMenuMessageId === message.id ? forkPoint : null}
-                    forkOptions={openForkMenuMessageId === message.id ? forkOptions : []}
-                    forkLoading={openForkMenuMessageId === message.id ? forkLoading : false}
-                    isForkMenuOpen={openForkMenuMessageId === message.id && isForkMenuOpen}
-                    onForkSelect={handleForkSelect}
-                    openForkMenuMessageId={openForkMenuMessageId}
-                    setOpenForkMenuMessageId={setOpenForkMenuMessageId}
-                  />
-                );
-              })
-            )
-          }
+          {(items) => {
+            if (items.length === 0) {
+              return <ConversationsUI.EmptyState />;
+            }
+
+            const turns = items.reduce<
+              {
+                key: string;
+                user: RenderableConversationMessage | null;
+                assistants: RenderableConversationMessage[];
+              }[]
+            >((acc, message, index) => {
+              if (message.author === "user") {
+                acc.push({
+                  key: `turn-${message.id ?? index}`,
+                  user: message,
+                  assistants: [],
+                });
+              } else {
+                const lastTurn = acc[acc.length - 1];
+                if (lastTurn) {
+                  lastTurn.assistants.push(message);
+                } else {
+                  acc.push({
+                    key: `turn-${message.id ?? index}`,
+                    user: null,
+                    assistants: [message],
+                  });
+                }
+              }
+              return acc;
+            }, []);
+
+            return turns.map((turn) => (
+              <section key={turn.key} className="relative flex flex-col gap-3">
+                {turn.user ? (
+                  <div className="sticky top-0 z-20 pb-3 isolation-auto">
+                    <div className="relative">
+                      {/* todo: use a flex layout so the first div grows vertically and the second div can remain a fixed height. */}
+                      <div className="pointer-events-none absolute left-1/2 top-0 z-0 w-screen -translate-x-1/2">
+                        <div className="h-8 bg-background" />
+                        <div className="h-16 bg-gradient-to-b from-background via-background/85 to-background/0" />
+                      </div>
+                      <div className="relative z-10">
+                        <div className="pt-2">
+                        <ChatMessageRow
+                          key={turn.user.id}
+                          message={turn.user}
+                          isEditing={
+                            turn.user.displayState === "stable" &&
+                            editingMessage?.id === turn.user.id &&
+                            editingMessage?.conversationId === turn.user.conversationId
+                          }
+                          editingText={editingText}
+                          onEditingTextChange={setEditingText}
+                          onEditStart={handleEditStart}
+                          onEditCancel={handleEditCancel}
+                          onForkSend={handleForkSend}
+                          composerDisabled={composerDisabled}
+                          conversationId={conversationId}
+                          forkOptionsCount={(forkOptionsByMessageId.get(turn.user.id) ?? []).length}
+                          forkLabels={forkLabels}
+                          setForkLabels={setForkLabels}
+                          activeForkMenuMessageId={activeForkMenuMessageId}
+                          setActiveForkMenuMessageId={setActiveForkMenuMessageId}
+                          userMessageIndexById={userMessageIndexById}
+                          selectForkLabel={selectForkLabel}
+                          formatForkLabel={formatForkLabel}
+                          formatForkTimestamp={formatForkTimestamp}
+                          forkPoint={openForkMenuMessageId === turn.user.id ? forkPoint : null}
+                          forkOptions={openForkMenuMessageId === turn.user.id ? forkOptions : []}
+                          forkLoading={openForkMenuMessageId === turn.user.id ? forkLoading : false}
+                          isForkMenuOpen={openForkMenuMessageId === turn.user.id && isForkMenuOpen}
+                          onForkSelect={handleForkSelect}
+                          openForkMenuMessageId={openForkMenuMessageId}
+                          setOpenForkMenuMessageId={setOpenForkMenuMessageId}
+                          messageRef={(el) => {
+                            if (el) {
+                              messageRefs.current.set(turn.user!.id, el);
+                            } else {
+                              messageRefs.current.delete(turn.user!.id);
+                            }
+                          }}
+                        />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                {turn.assistants.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    {turn.assistants.map((message) => {
+                      const isEditing =
+                        message.displayState === "stable" &&
+                        editingMessage?.id === message.id &&
+                        editingMessage?.conversationId === message.conversationId;
+                      const messageForkOptions = forkOptionsByMessageId.get(message.id) ?? [];
+                      return (
+                        <ChatMessageRow
+                          key={message.id}
+                          message={message}
+                          isEditing={isEditing}
+                          editingText={editingText}
+                          onEditingTextChange={setEditingText}
+                          onEditStart={handleEditStart}
+                          onEditCancel={handleEditCancel}
+                          onForkSend={handleForkSend}
+                          composerDisabled={composerDisabled}
+                          conversationId={conversationId}
+                          forkOptionsCount={messageForkOptions.length}
+                          forkLabels={forkLabels}
+                          setForkLabels={setForkLabels}
+                          activeForkMenuMessageId={activeForkMenuMessageId}
+                          setActiveForkMenuMessageId={setActiveForkMenuMessageId}
+                          userMessageIndexById={userMessageIndexById}
+                          selectForkLabel={selectForkLabel}
+                          formatForkLabel={formatForkLabel}
+                          formatForkTimestamp={formatForkTimestamp}
+                          forkPoint={openForkMenuMessageId === message.id ? forkPoint : null}
+                          forkOptions={openForkMenuMessageId === message.id ? forkOptions : []}
+                          forkLoading={openForkMenuMessageId === message.id ? forkLoading : false}
+                          isForkMenuOpen={openForkMenuMessageId === message.id && isForkMenuOpen}
+                          onForkSelect={handleForkSelect}
+                          openForkMenuMessageId={openForkMenuMessageId}
+                          setOpenForkMenuMessageId={setOpenForkMenuMessageId}
+                          messageRef={(el) => {
+                            if (el) {
+                              messageRefs.current.set(message.id, el);
+                            } else {
+                              messageRefs.current.delete(message.id);
+                            }
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </section>
+            ));
+          }}
         </ConversationsUI.Messages>
       </ConversationsUI.Viewport>
 

@@ -71,6 +71,7 @@ type ConversationsUIMessageRowProps = {
   children?: React.ReactNode;
   className?: string;
   overlay?: React.ReactNode;
+  messageRef?: React.Ref<HTMLDivElement>;
 };
 
 /**
@@ -78,7 +79,7 @@ type ConversationsUIMessageRowProps = {
  * Renders user/assistant messages with appropriate alignment and colors.
  * Does not include fork/edit UI - those should be added by consumers via the overlay prop.
  */
-function ConversationsUIMessageRow({ message, children, className, overlay }: ConversationsUIMessageRowProps) {
+function ConversationsUIMessageRow({ message, children, className, overlay, messageRef }: ConversationsUIMessageRowProps) {
   const isUser = message.author === "user";
   const messageStateClass =
     message.displayState === "pending"
@@ -89,7 +90,7 @@ function ConversationsUIMessageRow({ message, children, className, overlay }: Co
 
   return (
     <Conversation.Message message={message} asChild>
-      <div className={`flex ${isUser ? "justify-end" : "justify-start"} ${className ?? ""}`}>
+      <div ref={messageRef} className={`flex ${isUser ? "justify-end" : "justify-start"} ${className ?? ""}`}>
         <div className={`relative flex max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
           <div
             className={`group relative rounded-lg px-3 py-2 text-sm ${messageStateClass} ${
