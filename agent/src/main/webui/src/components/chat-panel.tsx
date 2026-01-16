@@ -64,7 +64,12 @@ function buildForkPointKey(conversationId: string | null | undefined, previousMe
   return `${conversationId}:${previousMessageId ?? START_ANCHOR}`;
 }
 
-export function ChatPanel({ conversationId, onSelectConversationId, knownConversationIds }: ChatPanelProps) {
+export function ChatPanel({
+  conversationId,
+  onSelectConversationId,
+  knownConversationIds,
+  resumableConversationIds,
+}: ChatPanelProps) {
   const [streamingUpdates, setStreamingUpdates] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -769,6 +774,10 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
       return;
     }
 
+    if (!isResolvedConversation) {
+      return;
+    }
+
     if (streamingConversationRef.current === conversationId) {
       return;
     }
@@ -805,7 +814,9 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
       delete hasResumedRef.current[conversationId];
       return;
     }
-    startFn(conversationId, "", 0, false, "auto resume");
+    if (resumableConversationIds?.has(conversationId)) {
+      startFn(conversationId, "", 0, false, "auto resume");
+    }
 
     // Note: This effect syncs with external system (WebSocket) by starting the stream
     // State updates happen via callbacks from the WebSocket, not directly in the effect
@@ -815,7 +826,7 @@ export function ChatPanel({ conversationId, onSelectConversationId, knownConvers
     // the effect re-running when startEventStream is recreated
     // The hasResumedRef is cleared by useLayoutEffect when conversationId changes, allowing
     // resume when switching back to a conversation
-  }, [conversationId, sending, forking]);
+  }, [conversationId, sending, forking, isResolvedConversation, resumableConversationIds]);
 
   return (
     <main className="flex flex-1 flex-col bg-muted/20">
