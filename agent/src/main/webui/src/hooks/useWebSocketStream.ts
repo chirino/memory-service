@@ -18,7 +18,7 @@ export function useWebSocketStream(): StreamClient {
 
   const start = useCallback(
     (params: StreamStartParams) => {
-      const { sessionId, text, resumePosition, resetResume, onChunk, onReplayFailed, onCleanEnd } = params;
+      const { sessionId, text, resumePosition, resetResume, onChunk, onReplayFailed, onCleanEnd, onError } = params;
       close();
 
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -38,7 +38,15 @@ export function useWebSocketStream(): StreamClient {
         url = `${protocol}://${window.location.host}/customer-support-agent/${encodeURIComponent(sessionId)}/ws`;
       }
 
-      const socket = new WebSocket(url);
+      let socket: WebSocket;
+      try {
+        socket = new WebSocket(url);
+      } catch (error) {
+        // WebSocket constructor can throw (e.g., invalid URL)
+        onError?.(error);
+        return;
+      }
+
       socketRef.current = socket;
       closedByClientRef.current = false;
       let receivedAny = false;
@@ -49,13 +57,24 @@ export function useWebSocketStream(): StreamClient {
           // No need to send anything
         } else if (text) {
           // Normal chat: send user message
-          socket.send(text);
+          try {
+            socket.send(text);
+          } catch (error) {
+            // send() can throw if socket is not in OPEN state
+            onError?.(error);
+          }
         }
       };
 
       socket.onmessage = (event: MessageEvent) => {
         receivedAny = true;
         onChunk(String(event.data ?? ""));
+      };
+
+      const handleSocketError = (event: Event) => {
+        // WebSocket error event - call onError callback
+        const error = event instanceof ErrorEvent ? event.error : new Error("WebSocket error");
+        onError?.(error);
       };
 
       const handleSocketClosure = (event?: CloseEvent | Event) => {
@@ -71,14 +90,23 @@ export function useWebSocketStream(): StreamClient {
           onReplayFailed();
           return;
         }
-        const cleanClose = event instanceof CloseEvent ? event.wasClean || event.code === 1000 : false;
+        const closeEvent = event instanceof CloseEvent ? event : null;
+        const cleanClose = closeEvent ? closeEvent.wasClean || closeEvent.code === 1000 : false;
         if (cleanClose) {
           onCleanEnd();
-        } else {
+        } else if (closeEvent) {
+          // Unclean close - treat as error if we have onError callback
+          // Otherwise fall through to onCleanEnd for backwards compatibility
+          if (onError) {
+            const error = new Error(`WebSocket closed unexpectedly: code ${closeEvent.code}, reason: ${closeEvent.reason || "unknown"}`);
+            onError(error);
+          } else {
+            onCleanEnd();
+          }
         }
       };
 
-      socket.onerror = handleSocketClosure;
+      socket.onerror = handleSocketError;
       socket.onclose = handleSocketClosure;
     },
     [close],

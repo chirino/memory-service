@@ -2,20 +2,20 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Conversation,
+  type ConversationController,
+  type ConversationMessage,
+  type RenderableConversationMessage,
+  useConversationInput,
+  useConversationMessages,
+  useConversationStreaming,
+} from "@/components/conversation";
 import { Streamdown } from "streamdown";
-import type { ApiError, Conversation, ConversationForkSummary, Message } from "@/client";
+import type { ApiError, Conversation as ApiConversation, ConversationForkSummary, Message } from "@/client";
 import { ConversationsService } from "@/client";
 import { useWebSocketStream } from "@/hooks/useWebSocketStream";
 import type { StreamStartParams } from "@/hooks/useStreamTypes";
-
-type ChatMessage = {
-  id: string;
-  author: "user" | "assistant";
-  content: string;
-  raw?: Message;
-};
-
-const START_ANCHOR = "__start__";
 
 type ListUserMessagesResponse = {
   data?: Message[];
@@ -26,12 +26,278 @@ type ListConversationForksResponse = {
   data?: ConversationForkSummary[];
 };
 
+type ForkPoint = {
+  conversationId: string;
+  previousMessageId: string | null;
+};
+
+type ForkOption = {
+  conversationId: string;
+  forkedAtConversationId?: string | null;
+  forkedAtMessageId?: string | null;
+  createdAt?: string | null;
+  label?: string;
+};
+
 type ChatPanelProps = {
   conversationId: string | null;
   onSelectConversationId?: (conversationId: string) => void;
   resumableConversationIds?: Set<string>;
   knownConversationIds?: Set<string>;
 };
+
+type PendingFork = {
+  conversationId: string;
+  message: string;
+};
+
+type ConversationMeta = {
+  forkedAtConversationId: string | null;
+  forkedAtMessageId: string | null;
+};
+
+type ChatMessageRowProps = {
+  message: RenderableConversationMessage;
+  isEditing: boolean;
+  editingText: string;
+  onEditingTextChange: (value: string) => void;
+  onEditStart: (message: ConversationMessage) => void;
+  onEditCancel: () => void;
+  onForkSend: () => void;
+  composerDisabled: boolean;
+  conversationId: string | null;
+  forkOptionsCount: number;
+  forkLabels: Record<string, string>;
+  setForkLabels: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  activeForkMenuMessageId: string | null;
+  setActiveForkMenuMessageId: (id: string | null) => void;
+  userMessageIndexById: Map<string, number>;
+  selectForkLabel: (messages: Message[], userIndex?: number) => string;
+  formatForkLabel: (text: string) => string;
+  formatForkTimestamp: (value?: string | null) => string;
+  forkPoint: ForkPoint | null;
+  forkOptions: ForkOption[];
+  forkLoading: boolean;
+  isForkMenuOpen: boolean;
+  onForkSelect: (conversationId: string) => void;
+  openForkMenuMessageId: string | null;
+  setOpenForkMenuMessageId: (id: string | null) => void;
+};
+
+function ChatMessageRow({
+  message,
+  isEditing,
+  editingText,
+  onEditingTextChange,
+  onEditStart,
+  onEditCancel,
+  onForkSend,
+  composerDisabled,
+  conversationId,
+  forkOptionsCount,
+  forkLabels,
+  setForkLabels,
+  activeForkMenuMessageId,
+  setActiveForkMenuMessageId,
+  userMessageIndexById,
+  selectForkLabel,
+  formatForkLabel,
+  formatForkTimestamp,
+  forkPoint,
+  forkOptions,
+  forkLoading,
+  isForkMenuOpen,
+  onForkSelect,
+  openForkMenuMessageId,
+  setOpenForkMenuMessageId,
+}: ChatMessageRowProps) {
+  const isUser = message.author === "user";
+  const hasForks = forkOptionsCount > 1;
+
+  useEffect(() => {
+    if (!isForkMenuOpen || !forkPoint) {
+      return;
+    }
+    const missing = forkOptions.filter((entry) => entry.conversationId && !forkLabels[entry.conversationId]);
+    if (!missing.length) {
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      missing.map(async (fork) => {
+        try {
+          const response = (await ConversationsService.listConversationMessages({
+            conversationId: fork.conversationId,
+            limit: 200,
+            channel: "history",
+          })) as unknown as ListUserMessagesResponse;
+          const messages = Array.isArray(response.data) ? response.data : [];
+          const messageId = activeForkMenuMessageId ?? message.id;
+          const userIndex = messageId && userMessageIndexById.has(messageId) ? userMessageIndexById.get(messageId) : undefined;
+          const label = selectForkLabel(messages, userIndex);
+          return { id: fork.conversationId, label };
+        } catch (error) {
+          void error;
+          return null;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) {
+        return;
+      }
+      setForkLabels((prev) => {
+        const next = { ...prev };
+        results.forEach((result) => {
+          if (result) {
+            next[result.id] = result.label;
+          }
+        });
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeForkMenuMessageId,
+    forkLabels,
+    forkPoint,
+    isForkMenuOpen,
+    message.id,
+    forkOptions,
+    selectForkLabel,
+    setForkLabels,
+    userMessageIndexById,
+  ]);
+
+  const messageStateClass =
+    message.displayState === "pending"
+      ? "opacity-70"
+      : message.displayState === "streaming"
+        ? "opacity-90"
+        : "";
+
+  return (
+    <Conversation.Message key={message.id} message={message} asChild>
+      <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+        <div className={`relative flex max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
+          {isEditing ? (
+            <div className="w-full rounded-lg border bg-background px-3 py-2 text-sm shadow-sm">
+              <textarea
+                value={editingText}
+                onChange={(event) => onEditingTextChange(event.target.value)}
+                rows={3}
+                className="w-full resize-none rounded-md border px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={onEditCancel} disabled={composerDisabled}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={onForkSend} disabled={composerDisabled || !editingText.trim()}>
+                  Send
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div
+              className={`group relative rounded-lg px-3 py-2 text-sm ${messageStateClass} ${
+                isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+              }`}
+            >
+              <Streamdown isAnimating={message.displayState === "streaming"}>{message.content}</Streamdown>
+              {isUser && message.displayState === "stable" ? (
+                <div className="absolute -top-2 right-0 flex translate-y-[-50%] opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => onEditStart(message)}
+                    disabled={composerDisabled}
+                    className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground shadow-sm disabled:opacity-50"
+                  >
+                    Edit
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
+          {hasForks && !isEditing ? (
+            <div className="relative w-full text-right">
+              <button
+                type="button"
+                className="pointer-events-auto text-xs font-medium text-muted-foreground hover:text-foreground"
+                onPointerDown={() => {
+                  console.info(
+                    "[ChatPanel] fork trigger pointerdown",
+                    "messageId=",
+                    message.id,
+                    "forkPointConversationId=",
+                    forkPoint?.conversationId ?? "null",
+                    "forkPointPreviousMessageId=",
+                    forkPoint?.previousMessageId ?? "null",
+                  );
+                }}
+                onClick={() => {
+                  console.info(
+                    "[ChatPanel] fork trigger click",
+                    "messageId=",
+                    message.id,
+                    "forkPointConversationId=",
+                    forkPoint?.conversationId ?? "null",
+                    "forkPointPreviousMessageId=",
+                    forkPoint?.previousMessageId ?? "null",
+                  );
+                  setActiveForkMenuMessageId(message.id);
+                  if (openForkMenuMessageId === message.id) {
+                    setOpenForkMenuMessageId(null);
+                    setActiveForkMenuMessageId(null);
+                  } else {
+                    setOpenForkMenuMessageId(message.id);
+                  }
+                }}
+              >
+                Forks ({forkOptionsCount})
+              </button>
+              {isForkMenuOpen && forkPoint ? (
+                <div className="absolute right-0 z-10 mt-2 w-64 rounded-md border bg-background p-2 text-xs shadow-sm">
+                  {forkLoading ? (
+                    <div className="px-2 py-2 text-sm text-muted-foreground">Loading...</div>
+                  ) : forkOptions.length === 0 ? null : (
+                    forkOptions.map((fork) => {
+                      const isActive = fork.conversationId === conversationId;
+                      const fallbackLabel = isActive ? message.content : "Loading fork message...";
+                      const label = forkLabels[fork.conversationId] ?? fallbackLabel;
+                      return (
+                        <button
+                          key={fork.conversationId}
+                          type="button"
+                          onClick={() => onForkSelect(fork.conversationId)}
+                          className={`flex w-full items-center justify-between rounded-md px-2 py-2 text-left transition-colors ${
+                            isActive ? "bg-muted text-foreground" : "hover:bg-muted/60"
+                          }`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">{formatForkLabel(label)}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatForkTimestamp(fork.createdAt)}
+                            </span>
+                          </div>
+                          {isActive ? (
+                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                              Active
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </Conversation.Message>
+  );
+}
 
 function messageText(msg: Message): string {
   const blocks = msg.content ?? [];
@@ -57,11 +323,445 @@ function messageAuthor(msg: Message): "user" | "assistant" {
   return msg.userId ? "user" : "assistant";
 }
 
-function buildForkPointKey(conversationId: string | null | undefined, previousMessageId: string | null): string | null {
-  if (!conversationId) {
+type ChatPanelContentProps = {
+  conversationId: string | null;
+  isResolvedConversation: boolean;
+  resumableConversationIds?: Set<string>;
+  pendingForkRef: React.MutableRefObject<PendingFork | null>;
+  hasResumedRef: React.MutableRefObject<Record<string, boolean>>;
+  onSelectConversationId?: (conversationId: string) => void;
+  queryClient: ReturnType<typeof useQueryClient>;
+  userMessageIndexById: Map<string, number>;
+  canceling: boolean;
+};
+
+function ChatPanelContent({
+  conversationId,
+  isResolvedConversation,
+  resumableConversationIds,
+  pendingForkRef,
+  hasResumedRef,
+  onSelectConversationId,
+  queryClient,
+  userMessageIndexById,
+  canceling,
+  forksQuery,
+  conversationMetaById,
+}: ChatPanelContentProps & {
+  forksQuery: ReturnType<typeof useQuery<ConversationForkSummary[], ApiError, ConversationForkSummary[]>>;
+  conversationMetaById: Map<string, ConversationMeta>;
+}) {
+  const { messages } = useConversationMessages();
+  const { resumeStream, cancelStream, isBusy } = useConversationStreaming();
+  const { value, submit } = useConversationInput();
+  const [forking, setForking] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<{ id: string; conversationId: string } | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [forkLabels, setForkLabels] = useState<Record<string, string>>({});
+  const [activeForkMenuMessageId, setActiveForkMenuMessageId] = useState<string | null>(null);
+  const [openForkMenuMessageId, setOpenForkMenuMessageId] = useState<string | null>(null);
+
+  const formatForkTimestamp = (value?: string | null) => {
+    if (!value) {
+      return "Unknown time";
+    }
+    const timestamp = new Date(value);
+    if (Number.isNaN(timestamp.getTime())) {
+      return "Unknown time";
+    }
+    return timestamp.toLocaleString();
+  };
+
+  const selectForkLabel = (messages: Message[], userIndex?: number) => {
+    if (!messages.length) {
+      return "Forked message";
+    }
+    const userMessages = messages.filter((msg) => messageAuthor(msg) === "user");
+    if (!userMessages.length) {
+      return "Forked message";
+    }
+    const candidate =
+      userIndex !== undefined && userIndex >= 0 && userIndex < userMessages.length
+        ? userMessages[userIndex]
+        : userMessages[userMessages.length - 1];
+    return messageText(candidate);
+  };
+
+  const formatForkLabel = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return "Forked message";
+    }
+    return trimmed.length <= 60 ? trimmed : `${trimmed.slice(0, 57)}...`;
+  };
+
+  const lastAssistantMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.author === "assistant") {
+        return messages[i]?.id ?? null;
+      }
+    }
     return null;
-  }
-  return `${conversationId}:${previousMessageId ?? START_ANCHOR}`;
+  }, [messages]);
+
+  // Get the current conversationId from the conversation context to check if state is synced
+  const { conversationId: stateConversationId } = useConversationMessages();
+  
+  useEffect(() => {
+    if (!conversationId) {
+      return;
+    }
+    if (!isResolvedConversation) {
+      return;
+    }
+    // Wait for state to sync with prop before resuming
+    if (stateConversationId !== conversationId) {
+      return;
+    }
+    if (pendingForkRef.current?.conversationId === conversationId) {
+      return;
+    }
+    if (isBusy || forking) {
+      return;
+    }
+    if (hasResumedRef.current[conversationId]) {
+      return;
+    }
+    
+    if (resumableConversationIds?.has(conversationId)) {
+      // Mark as resumed before starting to prevent duplicate attempts
+      hasResumedRef.current[conversationId] = true;
+      // When resuming, replace the last assistant message to avoid duplicates.
+      // State is now synced, so we can use the default (state.conversationId)
+      resumeStream({ replaceMessageId: lastAssistantMessageId });
+    }
+  }, [
+    conversationId,
+    stateConversationId,
+    forking,
+    hasResumedRef,
+    isBusy,
+    isResolvedConversation,
+    lastAssistantMessageId,
+    pendingForkRef,
+    resumableConversationIds,
+    resumeStream,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingForkRef.current;
+    if (!conversationId || !pending || pending.conversationId !== conversationId) {
+      return;
+    }
+    // Wait for state to sync with prop before submitting to ensure correct conversation ID
+    if (stateConversationId !== conversationId) {
+      return;
+    }
+    if (isBusy || forking) {
+      return;
+    }
+    const trimmed = pending.message.trim();
+    pendingForkRef.current = null;
+    if (!trimmed) {
+      return;
+    }
+    submit(trimmed);
+  }, [conversationId, stateConversationId, forking, isBusy, pendingForkRef, submit]);
+
+  useEffect(() => {
+    setEditingMessage(null);
+    setEditingText("");
+    setForkLabels({});
+    setActiveForkMenuMessageId(null);
+    setOpenForkMenuMessageId(null);
+  }, [conversationId]);
+
+  // Compute fork point and options for the currently open fork menu
+  const openForkMenuMessage = useMemo(() => {
+    if (!openForkMenuMessageId) {
+      return null;
+    }
+    return messages.find((msg) => msg.id === openForkMenuMessageId) ?? null;
+  }, [messages, openForkMenuMessageId]);
+
+  const forkPoint = useMemo<ForkPoint | null>(() => {
+    if (!openForkMenuMessage) {
+      return null;
+    }
+    // If this is the first message of a forked conversation, use the fork origin
+    if (openForkMenuMessage.previousMessageId === null && openForkMenuMessage.forkedFrom?.conversationId) {
+      return {
+        conversationId: openForkMenuMessage.forkedFrom.conversationId,
+        previousMessageId: openForkMenuMessage.forkedFrom.messageId ?? null,
+      };
+    }
+    return {
+      conversationId: openForkMenuMessage.conversationId,
+      previousMessageId: openForkMenuMessage.previousMessageId,
+    };
+  }, [openForkMenuMessage]);
+
+  const forkPointKey = useCallback((conversationKey: string | null | undefined, previousMessageId: string | null) => {
+    if (!conversationKey) {
+      return null;
+    }
+    return `${conversationKey}:${previousMessageId ?? "__start__"}`;
+  }, []);
+
+  const forksByPointKey = useMemo(() => {
+    const grouped = new Map<string, ConversationForkSummary[]>();
+    (forksQuery.data ?? []).forEach((fork) => {
+      if (!fork.forkedAtConversationId || !fork.conversationId) {
+        return;
+      }
+      const key = forkPointKey(fork.forkedAtConversationId, fork.forkedAtMessageId ?? null);
+      if (!key) {
+        return;
+      }
+      const list = grouped.get(key) ?? [];
+      list.push(fork);
+      grouped.set(key, list);
+    });
+    return grouped;
+  }, [forkPointKey, forksQuery.data]);
+
+  const currentMeta = conversationId ? conversationMetaById.get(conversationId) : null;
+  const currentForkPointKey = useMemo(() => {
+    if (!currentMeta?.forkedAtConversationId) {
+      return null;
+    }
+    return forkPointKey(currentMeta.forkedAtConversationId, currentMeta.forkedAtMessageId ?? null);
+  }, [currentMeta, forkPointKey]);
+
+  const getForkOptionsForPoint = useCallback(
+    (forkKey: string | null) => {
+      if (!forkKey) {
+        return [];
+      }
+      const forksAtPoint = forksByPointKey.get(forkKey) ?? [];
+      const showParentEntry = Boolean(currentForkPointKey && forkKey === currentForkPointKey);
+
+      const options: ForkOption[] = forksAtPoint.map((fork) => ({
+        conversationId: fork.conversationId ?? "",
+        forkedAtConversationId: fork.forkedAtConversationId ?? null,
+        forkedAtMessageId: fork.forkedAtMessageId ?? null,
+        createdAt: fork.createdAt ?? null,
+        label: fork.title ?? undefined,
+      }));
+
+      if (showParentEntry && currentMeta?.forkedAtConversationId) {
+        options.push({
+          conversationId: currentMeta.forkedAtConversationId,
+          forkedAtConversationId: null,
+          forkedAtMessageId: currentMeta.forkedAtMessageId ?? null,
+        });
+      }
+
+      if (conversationId && (forksAtPoint.length > 0 || showParentEntry)) {
+        options.push({
+          conversationId,
+          forkedAtConversationId: currentMeta?.forkedAtConversationId ?? null,
+          forkedAtMessageId: currentMeta?.forkedAtMessageId ?? null,
+        });
+      }
+
+      const seen = new Set<string>();
+      return options.filter((opt) => {
+        if (!opt.conversationId || seen.has(opt.conversationId)) {
+          return false;
+        }
+        seen.add(opt.conversationId);
+        return true;
+      });
+    },
+    [conversationId, currentForkPointKey, currentMeta, forksByPointKey],
+  );
+
+  const forkOptions = useMemo<ForkOption[]>(() => {
+    if (!forkPoint) {
+      return [];
+    }
+    const key = forkPointKey(forkPoint.conversationId, forkPoint.previousMessageId ?? null);
+    return getForkOptionsForPoint(key);
+  }, [
+    forkPoint,
+    forkPointKey,
+    getForkOptionsForPoint,
+  ]);
+
+  const forkOptionsByMessageId = useMemo(() => {
+    const map = new Map<string, ForkOption[]>();
+    messages.forEach((message) => {
+      const messageConversationId = message.conversationId;
+      const messageMeta = messageConversationId ? conversationMetaById.get(messageConversationId) : null;
+      const messagePreviousId = message.previousMessageId ?? null;
+      const pointConversationId =
+        messagePreviousId === null && messageMeta?.forkedAtConversationId
+          ? messageMeta.forkedAtConversationId
+          : messageConversationId;
+      const pointPreviousId =
+        messagePreviousId === null && messageMeta?.forkedAtConversationId ? (messageMeta.forkedAtMessageId ?? null) : messagePreviousId;
+      const forkKey = forkPointKey(pointConversationId, pointPreviousId);
+      map.set(message.id, getForkOptionsForPoint(forkKey));
+    });
+    return map;
+  }, [conversationMetaById, forkPointKey, getForkOptionsForPoint, messages]);
+
+  const forkLoading = forksQuery.isLoading || forksQuery.isFetching;
+  const isForkMenuOpen = Boolean(openForkMenuMessageId && forkPoint);
+
+
+  const handleForkSelect = useCallback(
+    (selectedConversationId: string) => {
+      onSelectConversationId?.(selectedConversationId);
+      setOpenForkMenuMessageId(null);
+      setActiveForkMenuMessageId(null);
+    },
+    [onSelectConversationId],
+  );
+
+  const handleEditStart = useCallback(
+    (message: ConversationMessage) => {
+      if (!message.id || !message.conversationId) {
+        return;
+      }
+      setEditingMessage({ id: message.id, conversationId: message.conversationId });
+      setEditingText(message.content);
+      setActiveForkMenuMessageId(null);
+      setOpenForkMenuMessageId(null);
+    },
+    [],
+  );
+
+  const handleEditCancel = useCallback(() => {
+    setEditingMessage(null);
+    setEditingText("");
+  }, []);
+
+  const handleForkSend = useCallback(async () => {
+    const trimmed = editingText.trim();
+    if (!trimmed || !editingMessage) {
+      return;
+    }
+
+    setForking(true);
+    try {
+      const response = (await ConversationsService.forkConversationAtMessage({
+        conversationId: editingMessage.conversationId,
+        messageId: editingMessage.id,
+        requestBody: {},
+      })) as ApiConversation;
+
+      if (!response?.id) {
+        return;
+      }
+
+      pendingForkRef.current = {
+        conversationId: response.id,
+        message: trimmed,
+      };
+      setEditingMessage(null);
+      setEditingText("");
+      setActiveForkMenuMessageId(null);
+      onSelectConversationId?.(response.id);
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      void queryClient.invalidateQueries({ queryKey: ["conversation-forks", editingMessage.conversationId] });
+    } catch (error) {
+      void error;
+    } finally {
+      setForking(false);
+    }
+  }, [editingMessage, editingText, onSelectConversationId, pendingForkRef, queryClient]);
+
+  const composerDisabled = isBusy || forking || canceling;
+
+  return (
+    <main className="flex flex-1 flex-col bg-muted/20">
+      <div className="border-b px-6 py-4">
+        <h2 className="text-lg font-semibold">Chat with your agent</h2>
+        <p className="text-xs text-muted-foreground">
+          Start a new chat or select a conversation from the left to continue.
+        </p>
+      </div>
+
+      <Conversation.Viewport className="flex-1 overflow-y-auto px-6 py-4">
+        <Conversation.Messages>
+          {(items) =>
+            items.length === 0 ? (
+              <Card className="mx-auto max-w-xl border-dashed">
+                <CardHeader>
+                  <CardTitle className="text-base">No messages yet</CardTitle>
+                  <CardDescription>Type a message below to start chatting with your agent.</CardDescription>
+                </CardHeader>
+              </Card>
+            ) : (
+              <div className="mx-auto flex max-w-2xl flex-col gap-3">
+                {items.map((message) => {
+                  const isEditing =
+                    message.displayState === "stable" &&
+                    editingMessage?.id === message.id &&
+                    editingMessage?.conversationId === message.conversationId;
+                  const messageForkOptions = forkOptionsByMessageId.get(message.id) ?? [];
+                  return (
+                    <ChatMessageRow
+                      key={message.id}
+                      message={message}
+                      isEditing={isEditing}
+                      editingText={editingText}
+                      onEditingTextChange={setEditingText}
+                      onEditStart={handleEditStart}
+                      onEditCancel={handleEditCancel}
+                      onForkSend={handleForkSend}
+                      composerDisabled={composerDisabled}
+                      conversationId={conversationId}
+                      forkOptionsCount={messageForkOptions.length}
+                      forkLabels={forkLabels}
+                      setForkLabels={setForkLabels}
+                      activeForkMenuMessageId={activeForkMenuMessageId}
+                      setActiveForkMenuMessageId={setActiveForkMenuMessageId}
+                      userMessageIndexById={userMessageIndexById}
+                      selectForkLabel={selectForkLabel}
+                      formatForkLabel={formatForkLabel}
+                      formatForkTimestamp={formatForkTimestamp}
+                      forkPoint={openForkMenuMessageId === message.id ? forkPoint : null}
+                      forkOptions={openForkMenuMessageId === message.id ? forkOptions : []}
+                      forkLoading={openForkMenuMessageId === message.id ? forkLoading : false}
+                      isForkMenuOpen={openForkMenuMessageId === message.id && isForkMenuOpen}
+                      onForkSelect={handleForkSelect}
+                      openForkMenuMessageId={openForkMenuMessageId}
+                      setOpenForkMenuMessageId={setOpenForkMenuMessageId}
+                    />
+                  );
+                })}
+              </div>
+            )
+          }
+        </Conversation.Messages>
+      </Conversation.Viewport>
+
+      <div className="border-t bg-background px-6 py-3">
+        <div className="mx-auto flex max-w-2xl flex-col gap-2">
+          <Conversation.Input
+            placeholder="Type your message…"
+            rows={3}
+            disabled={!conversationId || composerDisabled || Boolean(editingMessage)}
+            className="w-full resize-none rounded-md border px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+          />
+          <div className="flex justify-end gap-2">
+            {isBusy ? (
+              <Button size="sm" variant="outline" onClick={cancelStream} disabled={canceling || !conversationId}>
+                Stop
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => submit()} disabled={composerDisabled || !value.trim() || !conversationId}>
+                Send
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </main>
+  );
 }
 
 export function ChatPanel({
@@ -70,55 +770,59 @@ export function ChatPanel({
   knownConversationIds,
   resumableConversationIds,
 }: ChatPanelProps) {
-  const [streamingUpdates, setStreamingUpdates] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [forking, setForking] = useState(false);
+  const [assistantIdOverrides, setAssistantIdOverrides] = useState<Record<string, string>>({});
+  const assistantIdOverridesRef = useRef<Record<string, string>>({});
   const [canceling, setCanceling] = useState(false);
-  const [editingMessage, setEditingMessage] = useState<{ id: string; conversationId: string } | null>(null);
-  const [editingText, setEditingText] = useState("");
-  const [openForkMenuMessageKey, setOpenForkMenuMessageKey] = useState<string | null>(null);
-  const [openForkMenuMessageId, setOpenForkMenuMessageId] = useState<string | null>(null);
-  const [forkLabels, setForkLabels] = useState<Record<string, string>>({});
+  // Track pending IDs per conversation to prevent desync across concurrent streams
+  // The queue stores pairs: [assistantId, userId] for each stream start
+  const pendingIdQueueRef = useRef<Map<string, string[]>>(new Map());
+  const pendingAssistantIdsRef = useRef<Map<string, string[]>>(new Map());
+  const lastAssistantIdRef = useRef<Map<string, string | null>>(new Map());
+  // Temporary storage for IDs generated before we know the conversation
+  // These will be moved to per-conversation queues when startStream/resumeStream is called
+  const tempIdQueueRef = useRef<string[]>([]);
   const firstChunkEmittedRef = useRef<Record<string, boolean>>({});
   const hasResumedRef = useRef<Record<string, boolean>>({});
-  const streamingConversationRef = useRef<string | null>(null);
-  const pendingSendRef = useRef<{
-    id: string;
-    conversationId: string;
-    content: string;
-    afterId: string | null;
-  } | null>(null);
-  const startEventStreamRef = useRef<
-    | ((
-        targetConversationId: string,
-        text: string,
-        resumePosition?: number,
-        resetResume?: boolean,
-        reason?: string,
-      ) => void)
-    | null
-  >(null);
-  const pendingForkRef = useRef<{ conversationId: string; message: string } | null>(null);
+  const pendingForkRef = useRef<PendingFork | null>(null);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    assistantIdOverridesRef.current = assistantIdOverrides;
+  }, [assistantIdOverrides]);
   const webSocketStream = useWebSocketStream();
   const queryClient = useQueryClient();
 
-  // Reset hasResumedRef when conversationId changes to ensure we can resume when switching back
-  // Use useLayoutEffect to clear synchronously before other effects run
+  // Reset resume tracking and pending IDs when switching conversations
   const previousConversationIdRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (previousConversationIdRef.current !== conversationId) {
-      // Conversation changed - clear the resume flag for the previous conversation
-      if (previousConversationIdRef.current) {
-        delete hasResumedRef.current[previousConversationIdRef.current];
+      const previousId = previousConversationIdRef.current;
+      if (previousId) {
+        delete hasResumedRef.current[previousId];
+        pendingAssistantIdsRef.current.delete(previousId);
+        // Clear per-conversation pending ID queue when switching away
+        pendingIdQueueRef.current.delete(previousId);
       }
       previousConversationIdRef.current = conversationId;
-      // Also clear for the new conversation to ensure we can resume
       if (conversationId) {
+        // Reset resume flag when switching TO a conversation to allow resume on switch back
         delete hasResumedRef.current[conversationId];
       }
+      webSocketStream.close();
     }
-  }, [conversationId]);
+  }, [conversationId, webSocketStream]);
+  
+  // Reset hasResumed flag when resumableConversationIds changes to allow retry
+  // This handles the case where the resume check query completes after the effect first runs
+  useEffect(() => {
+    // Effect intentionally empty - the auto-resume effect will re-run when resumableConversationIds changes
+  }, [conversationId, resumableConversationIds]);
+
+  useEffect(() => {
+    return () => {
+      webSocketStream.close();
+    };
+  }, [webSocketStream]);
 
   const isResolvedConversation = Boolean(conversationId && knownConversationIds?.has(conversationId));
   const forksQuery = useQuery<ConversationForkSummary[], ApiError, ConversationForkSummary[]>({
@@ -133,13 +837,13 @@ export function ChatPanel({
     },
   });
 
-  const conversationQuery = useQuery<Conversation, ApiError, Conversation>({
+  const conversationQuery = useQuery<ApiConversation, ApiError, ApiConversation>({
     queryKey: ["conversation", conversationId],
     enabled: isResolvedConversation,
-    queryFn: async (): Promise<Conversation> => {
+    queryFn: async (): Promise<ApiConversation> => {
       const convo = (await ConversationsService.getConversation({
         conversationId: conversationId!,
-      })) as Conversation;
+      })) as ApiConversation;
       return convo;
     },
   });
@@ -235,44 +939,8 @@ export function ChatPanel({
     },
   });
 
-  const baseMessages = useMemo<ChatMessage[]>(() => {
-    const messages = messagesQuery.data ?? [];
-    return messages
-      .filter((msg) => !!msg.id)
-      .map((msg) => ({
-        id: msg.id!,
-        author: messageAuthor(msg),
-        content: messageText(msg),
-        raw: msg,
-      }));
-  }, [messagesQuery.data]);
-
-  useEffect(() => {
-    if (!conversationId) {
-      return;
-    }
-    const messages = messagesQuery.data ?? [];
-    if (messages.length === 0) {
-      return;
-    }
-    const pending = pendingSendRef.current;
-    if (!pending || pending.conversationId !== conversationId) {
-      return;
-    }
-    const anchorIndex = pending.afterId ? messages.findIndex((msg) => msg.id === pending.afterId) : -1;
-    const candidates = anchorIndex >= 0 ? messages.slice(anchorIndex + 1) : messages;
-    const match = candidates.find(
-      (msg) => messageAuthor(msg) === "user" && messageText(msg).trim() === pending.content,
-    );
-    if (!match) {
-      return;
-    }
-    setStreamingUpdates((prev) => prev.filter((msg) => msg.id !== pending.id));
-    pendingSendRef.current = null;
-  }, [conversationId, messagesQuery.data]);
-
   const conversationMetaById = useMemo(() => {
-    const map = new Map<string, { forkedAtConversationId: string | null; forkedAtMessageId: string | null }>();
+    const map = new Map<string, ConversationMeta>();
     for (const fork of forksQuery.data ?? []) {
       if (!fork.conversationId) {
         continue;
@@ -291,65 +959,97 @@ export function ChatPanel({
     return map;
   }, [conversationId, conversationQuery.data, forksQuery.data]);
 
-  const conversationMessagesByConversation = useMemo(() => {
-    const map = new Map<string, ChatMessage[]>();
-    for (const message of baseMessages) {
-      const conversationKey = message.raw?.conversationId;
-      if (!conversationKey) {
-        continue;
-      }
-      const list = map.get(conversationKey) ?? [];
-      list.push(message);
-      map.set(conversationKey, list);
+  useEffect(() => {
+    const messages = messagesQuery.data ?? [];
+    if (!messages.length) {
+      return;
     }
-    return map;
-  }, [baseMessages]);
-
-  const previousMessageId = useCallback(
-    (conversationKey: string, messageId: string) => {
-      const list = conversationMessagesByConversation.get(conversationKey);
-      if (!list) {
-        return null;
+    const lastAssistantByConversation = new Map<string, string>();
+    messages.forEach((msg) => {
+      if (!msg.id || !msg.conversationId) {
+        return;
       }
-      const index = list.findIndex((message) => message.id === messageId);
-      if (index <= 0) {
-        return null;
+      if (messageAuthor(msg) !== "assistant") {
+        return;
       }
-      return list[index - 1]?.id ?? null;
-    },
-    [conversationMessagesByConversation],
-  );
-
-  const forksByPointKey = useMemo(() => {
-    const grouped: Record<string, ConversationForkSummary[]> = {};
-    for (const fork of forksQuery.data ?? []) {
-      if (!fork.forkedAtConversationId || !fork.conversationId) {
-        continue;
+      lastAssistantByConversation.set(msg.conversationId, msg.id);
+    });
+    let updates: Record<string, string> | null = null;
+    lastAssistantByConversation.forEach((assistantId, conversationKey) => {
+      // Compute the resolved ID (after applying any existing overrides)
+      // Use ref to get current value without adding to dependencies
+      const resolved = assistantIdOverridesRef.current[assistantId] ?? assistantId;
+      const previous = lastAssistantIdRef.current.get(conversationKey) ?? null;
+      // Compare previous to resolved ID to avoid re-processing the same message
+      if (previous && previous === resolved) {
+        return;
       }
-      const key = buildForkPointKey(fork.forkedAtConversationId, fork.forkedAtMessageId ?? null);
-      if (!key) {
-        continue;
+      const pendingIds = pendingAssistantIdsRef.current.get(conversationKey);
+      const pendingId = pendingIds?.shift();
+      if (!pendingId) {
+        // No pending ID available, just track the resolved backend ID
+        lastAssistantIdRef.current.set(conversationKey, resolved);
+        return;
       }
-      grouped[key] = grouped[key] ?? [];
-      grouped[key].push(fork);
+      // Align backend assistant IDs with optimistic IDs to prevent duplicates.
+      updates = updates ?? {};
+      updates[assistantId] = pendingId;
+      // Store the resolved ID (pendingId) for next comparison
+      lastAssistantIdRef.current.set(conversationKey, pendingId);
+    });
+    if (updates) {
+      setAssistantIdOverrides((prev) => ({ ...prev, ...updates }));
     }
-    return grouped;
-  }, [conversationId, conversationMessagesByConversation, forksQuery.data]);
+  }, [messagesQuery.data]);
 
-  const forkedAtMessageId = conversationQuery.data?.forkedAtMessageId ?? null;
-  const forkedAtConversationId = conversationQuery.data?.forkedAtConversationId ?? null;
+  const conversationMessages = useMemo<ConversationMessage[]>(() => {
+    const messages = messagesQuery.data ?? [];
+    const firstIndexByConversation = new Map<string, number>();
+    const mapped: ConversationMessage[] = [];
+
+    messages.forEach((msg) => {
+      if (!msg.id || !msg.conversationId) {
+        return;
+      }
+      const author = messageAuthor(msg);
+      const resolvedId = author === "assistant" ? assistantIdOverrides[msg.id] ?? msg.id : msg.id;
+      if (!firstIndexByConversation.has(msg.conversationId)) {
+        firstIndexByConversation.set(msg.conversationId, mapped.length);
+      }
+      mapped.push({
+        id: resolvedId,
+        conversationId: msg.conversationId,
+        author,
+        content: messageText(msg),
+        createdAt: msg.createdAt,
+      });
+    });
+
+    return mapped.map((msg, index) => {
+      const firstIndex = firstIndexByConversation.get(msg.conversationId);
+      if (firstIndex !== index) {
+        return msg;
+      }
+      const meta = conversationMetaById.get(msg.conversationId);
+      if (!meta?.forkedAtConversationId) {
+        return msg;
+      }
+      return {
+        ...msg,
+        forkedFrom: {
+          conversationId: meta.forkedAtConversationId,
+          messageId: meta.forkedAtMessageId ?? null,
+        },
+      };
+    });
+  }, [assistantIdOverrides, conversationMetaById, messagesQuery.data]);
+
   const conversationGroupId = conversationQuery.data?.conversationGroupId ?? null;
-  const currentForkPointKey = useMemo(() => {
-    if (!forkedAtConversationId) {
-      return null;
-    }
-    const key = buildForkPointKey(forkedAtConversationId, forkedAtMessageId ?? null);
-    return key;
-  }, [conversationId, forkedAtConversationId, forkedAtMessageId]);
+
   const userMessageIndexById = useMemo(() => {
     const indexById = new Map<string, number>();
     let index = 0;
-    baseMessages.forEach((message) => {
+    conversationMessages.forEach((message) => {
       if (message.author !== "user") {
         return;
       }
@@ -357,142 +1057,25 @@ export function ChatPanel({
       index += 1;
     });
     return indexById;
-  }, [baseMessages]);
-
-  const getForksAtPoint = useCallback(
-    (conversationKey: string, previousId: string | null) => {
-      const key = buildForkPointKey(conversationKey, previousId);
-      if (!key) {
-        return { key: null, forks: [] as ConversationForkSummary[] };
-      }
-      return { key, forks: forksByPointKey[key] ?? [] };
-    },
-    [forksByPointKey],
-  );
-
-  // Forks are grouped by the previous history message in the parent conversation.
-
-  // Merge base messages from query with streaming updates.
-  // Only replace the last assistant message when streaming starts with an assistant chunk
-  // (resume replay). For new sends, keep history and append the new user + assistant stream.
-  const displayedMessages = useMemo(() => {
-    if (streamingUpdates.length === 0) {
-      return baseMessages;
-    }
-
-    // If the last base message is from assistant and we have streaming updates,
-    // replace it (streaming is replaying/updating it)
-    if (baseMessages.length > 0) {
-      const lastBase = baseMessages[baseMessages.length - 1];
-      if (lastBase.author === "assistant" && streamingUpdates[0]?.author === "assistant") {
-        return [...baseMessages.slice(0, -1), ...streamingUpdates];
-      }
-    }
-
-    // Otherwise, append streaming updates
-    return [...baseMessages, ...streamingUpdates];
-  }, [baseMessages, streamingUpdates]);
-
-  useEffect(() => {
-    setStreamingUpdates([]);
-    setInput("");
-    setSending(false);
-    setForking(false);
-    setEditingMessage(null);
-    setEditingText("");
-    setOpenForkMenuMessageKey(null);
-    firstChunkEmittedRef.current = {};
-    streamingConversationRef.current = null;
-    pendingSendRef.current = null;
-    webSocketStream.close();
-
-    if (!conversationId) {
-      return;
-    }
-
-    const pendingFork = pendingForkRef.current;
-    if (!pendingFork || pendingFork.conversationId !== conversationId) {
-      return;
-    }
-
-    const trimmed = pendingFork.message.trim();
-    pendingForkRef.current = null;
-    if (!trimmed) {
-      return;
-    }
-    const pendingUserId = `user-${Date.now()}`;
-    pendingSendRef.current = {
-      id: pendingUserId,
-      conversationId,
-      content: trimmed,
-      afterId: null,
-    };
-    setStreamingUpdates([
-      {
-        id: pendingUserId,
-        author: "user",
-        content: trimmed,
-      },
-    ]);
-    setSending(true);
-    const startFn = startEventStreamRef.current;
-    if (startFn) {
-      startFn(conversationId, trimmed, 0, true);
-    } else {
-      streamingConversationRef.current = null;
-      setSending(false);
-    }
-  }, [conversationId, webSocketStream]);
-
-  // Cleanup: close WebSocket when component unmounts
-  // This ensures the connection is closed if user navigates away or component is removed
-  useEffect(() => {
-    return () => {
-      streamingConversationRef.current = null;
-      webSocketStream.close();
-    };
-    // webSocketStream is stable (memoized), so we only need cleanup on unmount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [conversationMessages]);
 
   const startEventStream = useCallback(
-    (targetConversationId: string, text: string, resumePosition = 0, resetResume = false) => {
-      streamingConversationRef.current = targetConversationId;
-      setSending(true);
-
+    (targetConversationId: string, text: string, resumePosition: number, resetResume: boolean, callbacks: {
+      onChunk?: (chunk: string) => void;
+      onComplete?: () => void;
+      onError?: (error: unknown) => void;
+    }) => {
       const appendAssistantChunk = (chunk: string) => {
         if (!chunk.length) {
           return;
         }
-        setStreamingUpdates((prev) => {
-          // If we have a streaming assistant message, append to it
-          if (prev.length > 0 && prev[prev.length - 1].author === "assistant") {
-            const last = prev[prev.length - 1];
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...last,
-                content: last.content + chunk,
-              },
-            ];
-          }
-          // No existing streaming assistant message, add new one
-          return [
-            ...prev,
-            {
-              id: `assistant-${Date.now()}`,
-              author: "assistant",
-              content: chunk,
-            },
-          ];
-        });
+        callbacks.onChunk?.(chunk);
         if (!firstChunkEmittedRef.current[targetConversationId]) {
           firstChunkEmittedRef.current[targetConversationId] = true;
           void queryClient.invalidateQueries({ queryKey: ["conversations"] });
           void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
         }
       };
-
       const params: StreamStartParams = {
         sessionId: targetConversationId,
         text,
@@ -500,547 +1083,149 @@ export function ChatPanel({
         resetResume,
         onChunk: appendAssistantChunk,
         onReplayFailed: () => {
-          // If replay fails, just refetch messages to get the current state
-          streamingConversationRef.current = null;
-          setSending(false);
-          void queryClient.invalidateQueries({ queryKey: ["messages", targetConversationId] });
+          callbacks.onComplete?.();
+          void queryClient.invalidateQueries({ queryKey: ["conversation-path-messages", targetConversationId] });
+          void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
         },
         onCleanEnd: () => {
-          // Stream ended cleanly, refetch messages and invalidate resume check
-          streamingConversationRef.current = null;
-          setSending(false);
-          void queryClient.invalidateQueries({ queryKey: ["messages", targetConversationId] });
+          callbacks.onComplete?.();
+          void queryClient.invalidateQueries({ queryKey: ["conversation-path-messages", targetConversationId] });
+          void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
+        },
+        onError: (error: unknown) => {
+          callbacks.onError?.(error);
+          void queryClient.invalidateQueries({ queryKey: ["conversation-path-messages", targetConversationId] });
           void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
         },
       };
 
       webSocketStream.close();
-      webSocketStream.start(params);
-    },
-    [webSocketStream, queryClient],
-  );
-
-  // Store the latest startEventStream in a ref so the effect can use it without depending on it
-  startEventStreamRef.current = startEventStream;
-
-  const formatForkTimestamp = (value?: string | null) => {
-    if (!value) {
-      return "Unknown time";
-    }
-    const timestamp = new Date(value);
-    if (Number.isNaN(timestamp.getTime())) {
-      return "Unknown time";
-    }
-    return timestamp.toLocaleString();
-  };
-
-  const selectForkLabel = (messages: Message[], userIndex?: number) => {
-    if (!messages.length) {
-      return "Forked message";
-    }
-    const userMessages = messages.filter((msg) => messageAuthor(msg) === "user");
-    if (!userMessages.length) {
-      return "Forked message";
-    }
-    const candidate =
-      userIndex !== undefined && userIndex >= 0 && userIndex < userMessages.length
-        ? userMessages[userIndex]
-        : userMessages[userMessages.length - 1];
-    return messageText(candidate);
-  };
-
-  const formatForkLabel = (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) {
-      return "Forked message";
-    }
-    return trimmed.length <= 60 ? trimmed : `${trimmed.slice(0, 57)}...`;
-  };
-
-  const handleEditStart = useCallback(
-    (message: ChatMessage) => {
-      const targetConversationId = message.raw?.conversationId ?? conversationId;
-      if (!message.id || !targetConversationId) {
-        return;
+      // Wrap in try/catch to handle synchronous errors from webSocketStream.start()
+      try {
+        webSocketStream.start(params);
+      } catch (error) {
+        callbacks.onError?.(error);
       }
-      setEditingMessage({ id: message.id, conversationId: targetConversationId });
-      setEditingText(message.content);
-      setOpenForkMenuMessageKey(null);
-      setOpenForkMenuMessageId(null);
     },
-    [conversationId],
+    [queryClient, webSocketStream],
   );
 
-  const handleEditCancel = useCallback(() => {
-    setEditingMessage(null);
-    setEditingText("");
+  const idFactory = useCallback(() => {
+    const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `msg-${Date.now()}`;
+    // IDs are generated before we know which conversation they're for
+    // Store in temp queue, will be moved to per-conversation queue in startStream/resumeStream
+    tempIdQueueRef.current.push(id);
+    return id;
   }, []);
 
-  const handleForkSend = useCallback(async () => {
-    const trimmed = editingText.trim();
-    if (!trimmed || !editingMessage) {
-      return;
-    }
-
-    setForking(true);
-    try {
-      const response = (await ConversationsService.forkConversationAtMessage({
-        conversationId: editingMessage.conversationId,
-        messageId: editingMessage.id,
-        requestBody: {},
-      })) as Conversation;
-
-      if (!response?.id) {
-        return;
-      }
-
-      pendingForkRef.current = {
-        conversationId: response.id,
-        message: trimmed,
-      };
-      setEditingMessage(null);
-      setEditingText("");
-      setOpenForkMenuMessageKey(null);
-      setOpenForkMenuMessageId(null);
-      onSelectConversationId?.(response.id);
-      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      void queryClient.invalidateQueries({ queryKey: ["conversation-forks", editingMessage.conversationId] });
-    } catch (error) {
-      void error;
-    } finally {
-      setForking(false);
-    }
-  }, [editingMessage, editingText, onSelectConversationId, queryClient]);
-
-  const handleForkSelect = useCallback(
-    (forkConversationId: string) => {
-      if (!forkConversationId) {
-        return;
-      }
-      setOpenForkMenuMessageKey(null);
-      setOpenForkMenuMessageId(null);
-      onSelectConversationId?.(forkConversationId);
-    },
-    [onSelectConversationId],
-  );
-
-  useEffect(() => {
-    if (!openForkMenuMessageKey) {
-      return;
-    }
-    const forks = forksByPointKey[openForkMenuMessageKey] ?? [];
-    const parentEntryNeeded = Boolean(currentForkPointKey && openForkMenuMessageKey === currentForkPointKey);
-    const forksWithParent =
-      parentEntryNeeded && forkedAtConversationId
-        ? [
-            ...forks,
-            {
-              conversationId: forkedAtConversationId,
-              forkedAtMessageId: forkedAtMessageId ?? undefined,
-              forkedAtConversationId: undefined,
-              conversationGroupId: conversationGroupId ?? undefined,
-              createdAt: undefined,
-              title: undefined,
-            },
-          ]
-        : forks;
-    const missing = forksWithParent.filter((fork) => fork.conversationId && !forkLabels[fork.conversationId]);
-    if (!missing.length) {
-      return;
-    }
-    let cancelled = false;
-    void Promise.all(
-      missing.map(async (fork) => {
+  const controller = useMemo<ConversationController>(
+    () => ({
+      idFactory,
+      startStream: async (targetConversationId, text, callbacks) => {
+        // IDs were generated before this call, so they're in temp queue
+        // Move the first 2 IDs (assistant, user) from temp queue to this conversation's queue
+        // This ensures per-conversation tracking. We use FIFO since ids are generated in order.
+        const tempQueue = tempIdQueueRef.current;
+        if (tempQueue.length >= 2) {
+          // Take the first 2 IDs (FIFO: assistant, then user)
+          const assistantId = tempQueue.shift()!;
+          const userId = tempQueue.shift()!;
+          
+          // Add to conversation queue
+          const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
+          conversationQueue.push(assistantId, userId);
+          pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
+        }
+        
+        // Get IDs from per-conversation queue
+        const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
+        const pendingAssistantId = conversationQueue.shift();
+        conversationQueue.shift(); // user message ID (consumed but not used)
+        if (conversationQueue.length === 0) {
+          pendingIdQueueRef.current.delete(targetConversationId);
+        } else {
+          pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
+        }
+        
+        if (pendingAssistantId) {
+          const queue = pendingAssistantIdsRef.current.get(targetConversationId) ?? [];
+          queue.push(pendingAssistantId);
+          pendingAssistantIdsRef.current.set(targetConversationId, queue);
+        }
+        startEventStream(targetConversationId, text, 0, true, callbacks);
+      },
+      resumeStream: async (targetConversationId, callbacks) => {
+        if (!callbacks.replaceMessageId) {
+          // IDs may have been generated before this call
+          // Move the first ID from temp queue to this conversation's queue if present (FIFO)
+          const tempQueue = tempIdQueueRef.current;
+          if (tempQueue.length >= 1) {
+            const assistantId = tempQueue.shift()!;
+            const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
+            conversationQueue.push(assistantId);
+            pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
+          }
+          
+          // Get ID from per-conversation queue
+          const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
+          const pendingAssistantId = conversationQueue.shift();
+          if (conversationQueue.length === 0) {
+            pendingIdQueueRef.current.delete(targetConversationId);
+          } else {
+            pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
+          }
+          
+          if (pendingAssistantId) {
+            const queue = pendingAssistantIdsRef.current.get(targetConversationId) ?? [];
+            queue.push(pendingAssistantId);
+            pendingAssistantIdsRef.current.set(targetConversationId, queue);
+          }
+        }
+        startEventStream(targetConversationId, "", 0, false, callbacks);
+      },
+      cancelStream: async (targetConversationId) => {
+        if (!targetConversationId) {
+          return;
+        }
+        setCanceling(true);
         try {
-          const response = (await ConversationsService.listConversationMessages({
-            conversationId: fork.conversationId!,
-            limit: 200,
-            channel: "history",
-          })) as unknown as ListUserMessagesResponse;
-          const messages = Array.isArray(response.data) ? response.data : [];
-          const userIndex =
-            openForkMenuMessageId && userMessageIndexById.has(openForkMenuMessageId)
-              ? userMessageIndexById.get(openForkMenuMessageId)
-              : undefined;
-          const label = selectForkLabel(messages, userIndex);
-          return { id: fork.conversationId!, label };
+          await ConversationsService.cancelConversationResponse({ conversationId: targetConversationId });
         } catch (error) {
           void error;
-          return null;
+        } finally {
+          setCanceling(false);
         }
-      }),
-    ).then((results) => {
-      if (cancelled) {
-        return;
-      }
-      setForkLabels((prev) => {
-        const next = { ...prev };
-        results.forEach((result) => {
-          if (result) {
-            next[result.id] = result.label;
-          }
-        });
-        return next;
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    currentForkPointKey,
-    forkLabels,
-    forkedAtConversationId,
-    forkedAtMessageId,
-    forksByPointKey,
-    openForkMenuMessageId,
-    openForkMenuMessageKey,
-    conversationGroupId,
-    userMessageIndexById,
-  ]);
-
-  const handleSendMessage = () => {
-    const trimmed = input.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    if (forking || editingMessage) {
-      return;
-    }
-
-    if (!conversationId) {
-      return;
-    }
-
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
-      author: "user",
-      content: trimmed,
-    };
-    const lastBaseId = baseMessages.length > 0 ? baseMessages[baseMessages.length - 1].id : null;
-    pendingSendRef.current = {
-      id: userMessage.id,
-      conversationId,
-      content: trimmed,
-      afterId: lastBaseId ?? null,
-    };
-
-    // Add user message to streaming updates (will be merged with base messages)
-    setStreamingUpdates((prev) => [...prev, userMessage]);
-    setOpenForkMenuMessageKey(null);
-    setOpenForkMenuMessageId(null);
-    setInput("");
-    setSending(true);
-
-    // Start new stream from position 0 with user's message
-    // setSending(false) will be called in onCleanEnd or onReplayFailed
-    // resetResume=true means don't try to resume, start fresh
-    startEventStream(conversationId, trimmed, 0, true);
-  };
-
-  const handleCancelResponse = useCallback(async () => {
-    if (!conversationId || !sending) {
-      return;
-    }
-    setCanceling(true);
-    try {
-      await ConversationsService.cancelConversationResponse({ conversationId });
-    } catch (error) {
-      void error;
-    } finally {
-      setCanceling(false);
-    }
-    streamingConversationRef.current = null;
-    webSocketStream.close();
-    setSending(false);
-    void queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
-    void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
-  }, [conversationId, sending, queryClient, webSocketStream]);
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      handleSendMessage();
-    }
-  };
-
-  const isBusy = sending || forking || canceling;
-
-  // Auto-resume logic: always attempt to resume when switching to a conversation
-  // We don't wait for messages to load - the resume WebSocket will handle cases where
-  // there's nothing to resume (it will just close cleanly)
-  useEffect(() => {
-    if (!conversationId) {
-      return;
-    }
-
-    if (!isResolvedConversation) {
-      return;
-    }
-
-    if (streamingConversationRef.current === conversationId) {
-      return;
-    }
-
-    if (pendingForkRef.current?.conversationId === conversationId) {
-      return;
-    }
-
-    // Don't auto-resume if we're currently sending/streaming a message
-    // This prevents race conditions where resume-check gets invalidated during an active stream
-    if (sending || forking) {
-      return;
-    }
-
-    // Use a local flag to prevent multiple resume attempts in the same effect run
-    // The ref is cleared above when conversationId changes, so this check prevents
-    // the effect from attempting resume multiple times if it runs multiple times
-    // for the same conversationId in the same mount
-    if (hasResumedRef.current[conversationId]) {
-      return;
-    }
-
-    // Always attempt resume when switching to a conversation
-    // Don't wait for messages to load - if there's nothing to resume, the WebSocket will close cleanly
-    // Set the flag immediately to prevent duplicate attempts
-    hasResumedRef.current[conversationId] = true;
-    // Start stream from position 0 with empty text to replay the last message
-    // The stream will update the last assistant message via the onChunk callback
-    // No need to filter it out - the stream will replace/update it as chunks arrive
-    // resetResume=false means we want to resume from position 0, not reset
-    const startFn = startEventStreamRef.current;
-    if (!startFn) {
-      // Reset the flag if we can't start
-      delete hasResumedRef.current[conversationId];
-      return;
-    }
-    if (resumableConversationIds?.has(conversationId)) {
-      startFn(conversationId, "", 0, false, "auto resume");
-    }
-
-    // Note: This effect syncs with external system (WebSocket) by starting the stream
-    // State updates happen via callbacks from the WebSocket, not directly in the effect
-    // We attempt resume immediately when conversationId changes, regardless of message loading state
-    // The resume WebSocket will handle the case where there's nothing to resume gracefully
-    // We use startEventStreamRef instead of startEventStream in dependencies to avoid
-    // the effect re-running when startEventStream is recreated
-    // The hasResumedRef is cleared by useLayoutEffect when conversationId changes, allowing
-    // resume when switching back to a conversation
-  }, [conversationId, sending, forking, isResolvedConversation, resumableConversationIds]);
+        webSocketStream.close();
+        void queryClient.invalidateQueries({ queryKey: ["conversation-path-messages", targetConversationId] });
+        void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
+      },
+      selectConversation: async (id) => {
+        onSelectConversationId?.(id);
+      },
+    }),
+    [idFactory, onSelectConversationId, queryClient, startEventStream, webSocketStream],
+  );
 
   return (
-    <main className="flex flex-1 flex-col bg-muted/20">
-      <div className="border-b px-6 py-4">
-        <h2 className="text-lg font-semibold">Chat with your agent</h2>
-        <p className="text-xs text-muted-foreground">
-          Start a new chat or select a conversation from the left to continue.
-        </p>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        {displayedMessages.length === 0 ? (
-          <Card className="mx-auto max-w-xl border-dashed">
-            <CardHeader>
-              <CardTitle className="text-base">No messages yet</CardTitle>
-              <CardDescription>Type a message below to start chatting with your agent.</CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          <div className="mx-auto flex max-w-2xl flex-col gap-3">
-            {displayedMessages.map((message, index) => {
-              const isLastMessage = index === displayedMessages.length - 1;
-              const isStreaming = sending && isLastMessage && message.author === "assistant";
-              const isUser = message.author === "user";
-              const isEditing =
-                editingMessage?.id === message.id && editingMessage?.conversationId === message.raw?.conversationId;
-              const messageConversationId = message.raw?.conversationId ?? null;
-              const messageId = message.raw?.id ?? null;
-              const previousId =
-                messageConversationId && messageId ? previousMessageId(messageConversationId, messageId) : null;
-              const meta = messageConversationId ? conversationMetaById.get(messageConversationId) : null;
-              const pointConversationId =
-                previousId === null && meta?.forkedAtConversationId
-                  ? meta.forkedAtConversationId
-                  : messageConversationId;
-              const pointPreviousId =
-                previousId === null && meta?.forkedAtConversationId ? (meta.forkedAtMessageId ?? null) : previousId;
-              const { key: forkKey, forks: forkOptions } =
-                pointConversationId && messageId
-                  ? getForksAtPoint(pointConversationId, pointPreviousId)
-                  : { key: null, forks: [] };
-              const showParentEntry = Boolean(forkKey && currentForkPointKey && forkKey === currentForkPointKey);
-              const shouldShowForkMenu = Boolean(forkKey && (forkOptions.length > 0 || showParentEntry));
-              const forkOptionsWithParent = (() => {
-                if (!shouldShowForkMenu) {
-                  return [];
-                }
-                const entries = [...forkOptions];
-                if (showParentEntry && forkedAtConversationId) {
-                  entries.push({
-                    conversationId: forkedAtConversationId,
-                    forkedAtConversationId: undefined,
-                    forkedAtMessageId: forkedAtMessageId ?? undefined,
-                    conversationGroupId: conversationGroupId ?? undefined,
-                    createdAt: undefined,
-                    title: undefined,
-                  });
-                }
-                if (conversationId) {
-                  entries.push({
-                    conversationId,
-                    forkedAtConversationId: forkedAtConversationId ?? null,
-                    forkedAtMessageId: forkedAtMessageId ?? undefined,
-                    conversationGroupId: conversationGroupId ?? undefined,
-                    createdAt: undefined,
-                    title: undefined,
-                  });
-                }
-                const seen = new Set<string>();
-                return entries.filter((entry) => {
-                  if (!entry.conversationId || seen.has(entry.conversationId)) {
-                    return false;
-                  }
-                  seen.add(entry.conversationId);
-                  return true;
-                });
-              })();
-              const isForkMenuOpen = forkKey !== null && openForkMenuMessageKey === forkKey;
-              return (
-                <div key={message.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-                  <div className={`relative flex max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
-                    {isEditing ? (
-                      <div className="w-full rounded-lg border bg-background px-3 py-2 text-sm shadow-sm">
-                        <textarea
-                          value={editingText}
-                          onChange={(event) => setEditingText(event.target.value)}
-                          rows={3}
-                          className="w-full resize-none rounded-md border px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        />
-                        <div className="mt-2 flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={handleEditCancel} disabled={isBusy}>
-                            Cancel
-                          </Button>
-                          <Button size="sm" onClick={handleForkSend} disabled={isBusy || !editingText.trim()}>
-                            Send
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        className={`group relative rounded-lg px-3 py-2 text-sm ${
-                          isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
-                        }`}
-                      >
-                        <Streamdown isAnimating={isStreaming}>{message.content}</Streamdown>
-                        {isUser && message.raw?.id ? (
-                          <div className="absolute -top-2 right-0 flex translate-y-[-50%] opacity-0 transition-opacity group-hover:opacity-100">
-                            <button
-                              type="button"
-                              onClick={() => handleEditStart(message)}
-                              disabled={isBusy}
-                              className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground shadow-sm disabled:opacity-50"
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-                    {shouldShowForkMenu && forkOptionsWithParent.length > 0 && !isEditing ? (
-                      <div className="relative w-full text-right">
-                        <button
-                          type="button"
-                          className="text-xs font-medium text-muted-foreground hover:text-foreground"
-                          onClick={() => {
-                            if (!forkKey) {
-                              return;
-                            }
-                            setOpenForkMenuMessageKey((prev) => {
-                              if (prev === forkKey) {
-                                setOpenForkMenuMessageId(null);
-                                return null;
-                              }
-                              setOpenForkMenuMessageId(message.id);
-                              return forkKey;
-                            });
-                          }}
-                        >
-                          Forks ({forkOptionsWithParent.length})
-                        </button>
-                        {isForkMenuOpen ? (
-                          <div className="absolute right-0 z-10 mt-2 w-64 rounded-md border bg-background p-2 text-xs shadow-sm">
-                            {forkOptionsWithParent.map((fork) => {
-                              const isActive = fork.conversationId === conversationId;
-                              const fallbackLabel = isActive ? message.content : "Loading fork message...";
-                              const label = forkLabels[fork.conversationId ?? ""] ?? fallbackLabel;
-                              return (
-                                <button
-                                  key={fork.conversationId}
-                                  type="button"
-                                  onClick={() => handleForkSelect(fork.conversationId!)}
-                                  className={`flex w-full items-center justify-between rounded-md px-2 py-2 text-left transition-colors ${
-                                    isActive ? "bg-muted text-foreground" : "hover:bg-muted/60"
-                                  }`}
-                                >
-                                  <div className="flex flex-col">
-                                    <span className="text-sm font-medium">{formatForkLabel(label)}</span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {formatForkTimestamp(fork.createdAt)}
-                                    </span>
-                                  </div>
-                                  {isActive ? (
-                                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                                      Active
-                                    </span>
-                                  ) : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="border-t bg-background px-6 py-3">
-        <div className="mx-auto flex max-w-2xl flex-col gap-2">
-          <textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type your message…"
-            rows={3}
-            disabled={!conversationId || isBusy || Boolean(editingMessage)}
-            className="w-full resize-none rounded-md border px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
-          />
-          <div className="flex justify-end gap-2">
-            {sending ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleCancelResponse}
-                disabled={canceling || !conversationId}
-              >
-                Stop
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                onClick={handleSendMessage}
-                disabled={isBusy || !input.trim() || !conversationId || Boolean(editingMessage)}
-              >
-                Send
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    </main>
+    <Conversation.Root
+      controller={controller}
+      conversationId={conversationId}
+      conversationGroupId={conversationGroupId}
+      messages={conversationMessages}
+    >
+      <ChatPanelContent
+        conversationId={conversationId}
+        isResolvedConversation={isResolvedConversation}
+        resumableConversationIds={resumableConversationIds}
+        pendingForkRef={pendingForkRef}
+        hasResumedRef={hasResumedRef}
+        onSelectConversationId={onSelectConversationId}
+        queryClient={queryClient}
+        userMessageIndexById={userMessageIndexById}
+        canceling={canceling}
+        forksQuery={forksQuery}
+        conversationMetaById={conversationMetaById}
+      />
+    </Conversation.Root>
   );
 }

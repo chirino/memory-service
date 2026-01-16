@@ -6,6 +6,7 @@ export type StreamStartParams = {
   onChunk: (chunk: string) => void;
   onReplayFailed: () => void;
   onCleanEnd: () => void;
+  onError?: (error: unknown) => void;
 };
 
 export interface StreamClient {
