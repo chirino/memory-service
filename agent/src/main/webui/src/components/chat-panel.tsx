@@ -865,7 +865,7 @@ function ChatPanelContent({
                   <div className="sticky top-0 z-20 pb-3 isolation-auto">
                     <div className="relative">
                       {/* todo: use a flex layout so the first div grows vertically and the second div can remain a fixed height. */}
-                      <div className="pointer-events-none absolute left-1/2 top-0 z-0 w-screen -translate-x-1/2">
+                      <div className="pointer-events-none absolute left-0 top-0 z-0 w-full">
                         <div className="h-8 bg-background" />
                         <div className="h-16 bg-gradient-to-b from-background via-background/85 to-background/0" />
                       </div>

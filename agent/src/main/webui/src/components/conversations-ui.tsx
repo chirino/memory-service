@@ -27,7 +27,7 @@ const ConversationsUIViewport = forwardRef<HTMLDivElement, ConversationsUIViewpo
     return (
       <Conversation.Viewport
         ref={ref}
-        className={`flex-1 overflow-y-auto px-6 py-4 ${className ?? ""}`}
+        className={`flex-1 overflow-y-auto overflow-x-auto px-6 py-4 ${className ?? ""}`}
         {...props}
       />
     );
