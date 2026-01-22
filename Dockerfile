@@ -10,6 +10,7 @@ COPY pom.xml .
 COPY memory-service/pom.xml memory-service/
 COPY memory-service-client/pom.xml memory-service-client/
 COPY memory-service-proto/pom.xml memory-service-proto/
+COPY memory-service-contracts/pom.xml memory-service-contracts/
 COPY agent/pom.xml agent/
 COPY memory-service-extension/pom.xml memory-service-extension/
 COPY memory-service-extension/runtime/pom.xml memory-service-extension/runtime/
