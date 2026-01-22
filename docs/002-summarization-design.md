@@ -43,7 +43,7 @@
 ## Detailed Plan
 
 ### 1) OpenAPI Contract Updates
-- Update `memory-service-client/src/main/openapi/openapi.yml`:
+- Update `memory-service-contracts/src/main/resources/openapi.yml`:
   - Extend `CreateSummaryRequest` with:
     - `title` (string) for conversation title.
     - `summary` (string), replacing `content`.
@@ -112,7 +112,7 @@
 
 ### 8) Client Regeneration
 - Regenerate Java client:
-  - `./mvnw -pl memory-service-client clean compile`.
+  - `./mvnw -pl quarkus/memory-service-rest-quarkus clean compile`.
 - Regenerate frontend client:
   - `cd agent-webui && npm install && npm run generate`.
 - Update any agent/frontend code using the summary API.

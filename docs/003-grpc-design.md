@@ -19,11 +19,11 @@
 - Authentication/authorization for gRPC uses Quarkus Security; for shared HTTP port with REST, set `quarkus.grpc.server.use-separate-server=false`.
 
 ## Current REST scope to mirror
-REST endpoints are defined in the OpenAPI spec: `memory-service-client/src/main/openapi/openapi.yml`.
+REST endpoints are defined in the OpenAPI spec: `memory-service-contracts/src/main/resources/openapi.yml`.
 The gRPC services must cover all operations in that spec (user APIs and agent APIs).
 
 ### Proto source of truth
-Proto files live under `memory-service-client/src/main/proto` next to the OpenAPI spec so both REST and gRPC contracts are owned by the same client module. The client module publishes those `.proto` files as resources only (no stub generation). The new `memory-service-proto` module runs the Quarkus gRPC generator once and packages the generated classes, which the `memory-service` server and `memory-service-extension` runtime now consume directly instead of regenerating them. Keeping a single proto tree in `memory-service-client` avoids duplication and ensures every module consumes the same schema while each module uses the shared generated stubs appropriate for its role.
+Proto files live under `memory-service-contracts/src/main/proto` next to the OpenAPI spec so both REST and gRPC contracts are owned by the shared contracts module. The contracts module publishes those `.proto` files as resources only (no stub generation). The `memory-service-proto-quarkus` module runs the Quarkus gRPC generator once and packages the generated classes, which the `memory-service` server and `memory-service-extension` runtime now consume directly instead of regenerating them. Keeping a single proto tree in `memory-service-contracts` avoids duplication and ensures every module consumes the same schema while each module uses the shared generated stubs appropriate for its role.
 
 ## Design overview
 
@@ -88,8 +88,8 @@ Most endpoints are unary. If any endpoint returns large message lists, consider 
 
 ### Phase 1: Foundation
 1. Add Quarkus gRPC server dependencies to `memory-service` module.
-2. Add proto sources to `memory-service-client/src/main/proto/memory/v1/*.proto` to mirror OpenAPI.
-3. Configure `memory-service-client` to publish proto files as resources (no stub generation).
+2. Add proto sources to `memory-service-contracts/src/main/proto/memory/v1/*.proto` to mirror OpenAPI.
+3. Configure `memory-service-contracts` to publish proto files as resources (no stub generation).
 4. Configure gRPC server stub generation in `memory-service` by scanning the proto dependency via `quarkus.generate-code.grpc.scan-for-proto`.
 5. Configure gRPC server in `memory-service/src/main/resources/application.properties`.
 6. Implement gRPC services using Mutiny API and `@GrpcService`.
@@ -102,9 +102,9 @@ Most endpoints are unary. If any endpoint returns large message lists, consider 
 
 ### Phase 3: Client and tooling
 1. Add Quarkus gRPC client dependencies to `memory-service-extension` module.
-2. Configure gRPC client stub generation in `memory-service-extension` by scanning the proto dependency from `memory-service-client`.
-3. Ensure `memory-service-client` publishes proto files as resources alongside REST (OpenAPI) definitions.
-4. Add example usage in `agent` (gRPC client optional; REST remains default).
+2. Configure gRPC client stub generation in `memory-service-extension` by scanning the proto dependency from `memory-service-contracts`.
+3. Ensure `memory-service-contracts` publishes proto files as resources alongside REST (OpenAPI) definitions.
+4. Add example usage in `examples/agent-quarkus` (gRPC client optional; REST remains default).
 5. Document gRPC CLI usage for smoke testing.
 
 ### Phase 4: Operational hardening
@@ -123,7 +123,7 @@ Most endpoints are unary. If any endpoint returns large message lists, consider 
 ## Client module and DTO reuse
 
 ### Client module shape
-The `memory-service-client` module publishes proto definitions as resources alongside REST (OpenAPI) definitions. The `memory-service-extension` module generates Quarkus gRPC client stubs from these proto files, providing a clean separation where the client module owns the contract definitions while the extension module provides the generated client implementation. This keeps the client module lightweight (proto files only) while allowing the extension to manage gRPC client dependencies and generation.
+The `memory-service-contracts` module publishes proto definitions as resources alongside REST (OpenAPI) definitions. The `memory-service-extension` module generates Quarkus gRPC client stubs from these proto files, providing a clean separation where the client module owns the contract definitions while the extension module provides the generated client implementation. This keeps the client module lightweight (proto files only) while allowing the extension to manage gRPC client dependencies and generation.
 
 ### Can we reuse REST DTOs for gRPC?
 Short answer: not directly. REST DTOs are Java classes generated from OpenAPI, while gRPC messages are `protoc`-generated classes with different types and builders. They are not wire-compatible or type-compatible.
@@ -179,7 +179,7 @@ quarkus.grpc.server.use-separate-server=false
 ```
 
 ## Deliverables
-- Proto files under `memory-service-client/src/main/proto/memory/v1/` (published as resources only).
+- Proto files under `memory-service-contracts/src/main/proto/memory/v1/` (published as resources only).
 - gRPC server stub generation configured in `memory-service` module.
 - gRPC service implementations in `memory-service/src/main/java/io/github/chirino/memory/grpc/`.
 - gRPC client stub generation configured in `memory-service-extension` module.

@@ -4,20 +4,31 @@
 
   <parent>
     <groupId>io.github.chirino.memory-service</groupId>
-    <artifactId>memory-service-parent</artifactId>
+    <artifactId>memory-service-quarkus-parent</artifactId>
     <version>999-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>quarkus-data-encryption-parent</artifactId>
+  <artifactId>memory-service-extension-parent</artifactId>
   <packaging>pom</packaging>
-  <name>Quarkus Data Encryption - Parent</name>
+  <name>Memory Service - Extension - Parent</name>
 
   <modules>
-    <module>deployment</module>
     <module>runtime</module>
-    <module>quarkus-data-encryption-dek</module>
-    <module>quarkus-data-encryption-vault</module>
+    <module>deployment</module>
   </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>${quarkus.platform.group-id}</groupId>
+        <artifactId>${quarkus.platform.artifact-id}</artifactId>
+        <version>${quarkus.platform.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <build>
     <pluginManagement>
@@ -36,4 +47,5 @@
       </plugins>
     </pluginManagement>
   </build>
+
 </project>

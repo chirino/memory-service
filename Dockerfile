@@ -7,20 +7,23 @@ COPY mvnw .
 COPY .mvn .mvn
 
 COPY pom.xml .
-COPY memory-service/pom.xml memory-service/
-COPY memory-service-client/pom.xml memory-service-client/
-COPY memory-service-proto/pom.xml memory-service-proto/
 COPY memory-service-contracts/pom.xml memory-service-contracts/
-COPY agent/pom.xml agent/
-COPY memory-service-extension/pom.xml memory-service-extension/
-COPY memory-service-extension/runtime/pom.xml memory-service-extension/runtime/
-COPY memory-service-extension/deployment/pom.xml memory-service-extension/deployment/
-COPY quarkus-data-encryption/pom.xml quarkus-data-encryption/
-COPY quarkus-data-encryption/runtime/pom.xml quarkus-data-encryption/runtime/
-COPY quarkus-data-encryption/deployment/pom.xml quarkus-data-encryption/deployment/
-COPY quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml quarkus-data-encryption/quarkus-data-encryption-dek/
-COPY quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml quarkus-data-encryption/quarkus-data-encryption-vault/
-RUN ./mvnw -B -q -pl memory-service -am quarkus:go-offline
+COPY memory-service/pom.xml memory-service/
+COPY quarkus/pom.xml quarkus/
+COPY quarkus/memory-service-rest-quarkus/pom.xml quarkus/memory-service-rest-quarkus/
+COPY quarkus/memory-service-proto-quarkus/pom.xml quarkus/memory-service-proto-quarkus/
+COPY quarkus/memory-service-extension/pom.xml quarkus/memory-service-extension/
+COPY quarkus/memory-service-extension/runtime/pom.xml quarkus/memory-service-extension/runtime/
+COPY quarkus/memory-service-extension/deployment/pom.xml quarkus/memory-service-extension/deployment/
+COPY quarkus/quarkus-data-encryption/pom.xml quarkus/quarkus-data-encryption/
+COPY quarkus/quarkus-data-encryption/runtime/pom.xml quarkus/quarkus-data-encryption/runtime/
+COPY quarkus/quarkus-data-encryption/deployment/pom.xml quarkus/quarkus-data-encryption/deployment/
+COPY quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/
+COPY quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/
+COPY spring/pom.xml spring/
+COPY spring/memory-service-proto-spring/pom.xml spring/memory-service-proto-spring/
+COPY examples/pom.xml examples/
+COPY examples/agent-quarkus/pom.xml examples/agent-quarkus/
 
 # Copy all the sources
 COPY . .

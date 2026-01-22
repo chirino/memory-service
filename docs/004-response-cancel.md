@@ -101,8 +101,8 @@ Add RPCs to `ResponseResumerService`:
 
 ## Detailed Implementation Plan
 1) **Contract updates**
-   - Add REST endpoints to `memory-service-client/src/main/openapi/openapi.yml`.
-   - Add proto messages and RPCs to `memory-service-proto/src/main/proto/.../memory_service.proto`.
+   - Add REST endpoints to `memory-service-contracts/src/main/resources/openapi.yml`.
+   - Add proto messages and RPCs to `memory-service-contracts/src/main/proto/.../memory_service.proto`.
    - Regenerate clients (Java + TS) as required.
 
 2) **Server DTOs and resource endpoints**

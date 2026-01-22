@@ -6,6 +6,7 @@
     <groupId>io.github.chirino.memory-service</groupId>
     <artifactId>memory-service-parent</artifactId>
     <version>999-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>memory-service</artifactId>
@@ -13,16 +14,16 @@
   <name>Memory Service</name>
 
   <dependencies>
+    <dependency>
+      <groupId>io.github.chirino.memory-service</groupId>
+      <artifactId>memory-service-proto-quarkus</artifactId>
+      <version>${project.version}</version>
+    </dependency>
 
     <!-- Depend on shared API module for generated client / DTOs -->
     <dependency>
       <groupId>io.github.chirino.memory-service</groupId>
-      <artifactId>memory-service-client</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.github.chirino.memory-service</groupId>
-      <artifactId>memory-service-proto</artifactId>
+      <artifactId>memory-service-rest-quarkus</artifactId>
       <version>${project.version}</version>
     </dependency>
     <!-- Data encryption extension -->

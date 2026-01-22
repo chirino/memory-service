@@ -49,56 +49,51 @@ It will support semantic search across all preivous converstations for a user by
 
 ## Project Structure & Module Organization
 - Root:
-  - `pom.xml`: parent POM, Quarkus plugin/config, module aggregation.
+  - `pom.xml`: parent POM, shared build config.
   - Modules:
-    - `memory-service-client`: OpenAPI spec and generated Java client library.
-    - `memory-service`: core memory-service HTTP API (backend).
-    - `memory-service-extension`: Quarkus extension providing dev services and client integration.
-    - `agent`: LangChain4j-based agent app and SPA frontend.
+    - `memory-service-contracts`: OpenAPI + proto sources of truth (no generated code).
+    - `quarkus`: parent aggregator for Quarkus-facing modules.
+    - `spring`: parent aggregator for upcoming Spring artifacts (currently empty skeleton).
+    - `examples`: parent for shared examples (SPA lives here; the Quarkus agent is built via the `quarkus` aggregator).
 
-- `memory-service-client/`:
-  - `memory-service-client/src/main/openapi/openapi.yml`: OpenAPI spec (source of truth).
-  - `memory-service-client/src/main/java/`: shared client filters, helpers, and generated client package root (`io.github.chirino.memory.client`).
+- `quarkus/`:
+  - `memory-service-rest-quarkus/`: Generated Quarkus REST client and helpers (consumes the shared contract).
+    - Spec path (source of truth): `memory-service-contracts/src/main/resources/openapi.yml`.
+  - `memory-service-proto-quarkus/`: generated gRPC stubs targeting Quarkus.
+  - `memory-service/`: core memory-service HTTP + gRPC implementation.
+  - `memory-service-extension/`: Quarkus extension (runtime + deployment) that wires dev services and client config.
+  - `quarkus-data-encryption/`: data-encryption extension family (`runtime`, `deployment`, `quarkus-data-encryption-dek`, `quarkus-data-encryption-vault`).
+  - `../examples/agent-quarkus`: LangChain4j-based agent app (included in the `quarkus` reactor).
 
-- `memory-service/`:
-  - `memory-service/src/main/java/io/github/chirino/memory/`: main service code (REST resources, persistence, vector store, security, etc.).
-  - `memory-service/src/main/resources/`: service runtime configuration (e.g., `application.properties`).
-  - `memory-service/src/test/java/`: backend tests (JUnit 5 + RestAssured).
-  - `memory-service/src/test/resources/`: test configuration.
+- `examples/`:
+  - `agent-quarkus/`: Quarkus agent example (depends on the REST client + extension).
+    - Sources: `examples/agent-quarkus/src/main/java/example/` etc.
+- `examples/agent-webui/`: frontend SPA (React + Vite + TypeScript + Tailwind CSS) shared by agents.
 
-- `memory-service-extension/`:
-  - `memory-service-extension/runtime/`: runtime module providing the extension metadata and dependencies.
-  - `memory-service-extension/deployment/`: deployment module containing build-time processors for dev services.
-  - Purpose: Quarkus extension that automatically starts the memory-service in a Docker container during development and testing, and configures the client URLs automatically.
-
-- `agent/`:
-  - `agent/src/main/java/example/`: example consumer of this memory service, built with LangChain4j (agent endpoints, SSE streaming, auth helper).
-  - `agent/src/main/resources/`: agent runtime configuration (including Quinoa settings).
-- `agent-webui/`: frontend SPA (React + Vite + TypeScript + Tailwind CSS).
-  - `agent/src/test/java/`: agent-side tests (including SSE + Keycloak Dev Services).
-  - `agent/src/test/resources/`: agent test configuration.
+- `spring/`:
+  - `spring/pom.xml`: placeholder aggregator for Spring REST/proto/starter modules to be added in later steps.
 
 ### Frontend (Web UI)
-- Location: `agent-webui/`.
+- Location: `examples/agent-webui/`.
 - Framework/tooling: React 19, React DOM 19, Vite, TypeScript, Tailwind CSS, Radix UI primitives, Lucide icons.
-- `npm install` (or `pnpm`/`yarn` as preferred) should be run from `agent-webui/` before frontend dev/build tasks.
-- Frontend scripts (from `agent-webui/package.json`):
+- `npm install` (or `pnpm`/`yarn` as preferred) should be run from `examples/agent-webui/` before frontend dev/build tasks.
+- Frontend scripts (from `examples/agent-webui/package.json`):
   - `npm run dev`: run Vite dev server.
   - `npm run build`: type-check and build the frontend bundle.
   - `npm run lint`: run ESLint.
   - `npm run preview`: preview the built frontend.
 - Authentication:
-- The SPA talks to the backend REST APIs (for example, `/v1/user/conversations`) via the agent app, using the generated OpenAPI client under `agent-webui/src/client/` (or equivalent client code).
+- The SPA talks to the backend REST APIs (for example, `/v1/user/conversations`) via the agent app, using the generated OpenAPI client under `examples/agent-webui/src/client/` (or equivalent client code).
   - User-facing endpoints are protected by Quarkus OIDC. When a call fails due to lack of auth (401 or a dev OIDC redirect/CORS failure), the landing page shows a “Sign in” prompt instead of data.
   - The “Sign in” button performs a full page navigation to the backend login helper endpoint (currently `/auth/login`), which is annotated with `@Authenticated`. In web-app mode, this triggers the OIDC login redirect to Keycloak (Dev Services or docker-compose Keycloak) and, after successful login, sends the user back to the SPA, where requests now carry the authenticated session.
   - The OpenAPI client is configured to send credentials (`WITH_CREDENTIALS=true`) so session cookies from the OIDC login are included on subsequent API calls.
 
 - UI components:
-- When adding or extending UI, prefer using base components from https://ui.shadcn.com/ and follow the existing patterns under `agent-webui/src/components/ui/` (for example, `button`, `card`) instead of hand-rolling new primitives.
+- When adding or extending UI, prefer using base components from https://ui.shadcn.com/ and follow the existing patterns under `examples/agent-webui/src/components/ui/` (for example, `button`, `card`) instead of hand-rolling new primitives.
   - New UI primitives should generally be introduced by adapting shadcn/ui components into this local `ui` library, then composed from there.
 
 ### Example consumer (LangChain4j)
-- Location: `agent/src/main/java/example/`.
+- Location: `examples/agent-quarkus/src/main/java/example/`.
 - Purpose: simulate a downstream agent/chat application that consumes the memory service.
   - `Agent` (`example/Agent.java`) is a LangChain4j AI service that exposes a `chat(@MemoryId String memoryId, String userMessage)` API.
   - `AgentWebSocket` (`example/AgentWebSocket.java`) exposes a WebSocket endpoint for streaming agent responses.
@@ -114,7 +109,7 @@ It will support semantic search across all preivous converstations for a user by
 
 ## Build, Test, and Development Commands
 - `./mvnw quarkus:dev -pl memory-service`: run the memory-service backend in dev mode with live reload (Dev UI at `http://localhost:8080/q/dev/`).
-- `./mvnw quarkus:dev -pl agent`: run the agent app + SPA in dev mode (typically on `http://localhost:8081`).
+- `./mvnw quarkus:dev -pl examples/agent-quarkus`: run the agent app + SPA in dev mode (typically on `http://localhost:8081`).
   - In these modes, Quarkus Dev Services will spin up development dependencies automatically (e.g., databases, caches) as configured.
   - The `memory-service-extension` automatically starts the memory-service in a Docker container and configures `MEMORY_SERVICE_URL`, `memory-service.url`, and `quarkus.rest-client.openapi_yml.url` to point to the running container.
   - The dev service will only start if Docker is available and the URLs are not explicitly configured via environment variables or system properties.
@@ -173,18 +168,18 @@ It will support semantic search across all preivous converstations for a user by
 
 When you change the OpenAPI contract (conversation endpoints, schemas, etc.), keep Java and frontend clients in sync:
 
-- Update the spec under `memory-service-client/src/main/openapi/openapi.yml` (this is the source of truth for generation).
+- Update the spec under `memory-service-contracts/src/main/resources/openapi.yml` (this is the source of truth for generation).
 - Regenerate the Java client and ensure it compiles (from the project root):
-  - `./mvnw -pl memory-service-client clean compile`
+  - `./mvnw -pl quarkus/memory-service-rest-quarkus clean compile`
 - Regenerate the frontend TypeScript client:
-- From `agent-webui/`, run `npm install` (once) and then `npm run generate`.
-- Update any application code to use renamed paths, operations, or types (Java REST resources, LangChain4j integration, and React code using `agent-webui/src/client`).
+- From `examples/agent-webui/`, run `npm install` (once) and then `npm run generate`.
+- Update any application code to use renamed paths, operations, or types (Java REST resources, LangChain4j integration, and React code using `examples/agent-webui/src/client`).
 
 ## Notes for AI Assistants
 
 - **ALWAYS run a linter or compile after making changes to typesafe code**: After editing any typesafe code (Java, TypeScript, etc.), you MUST verify that your changes compile and pass linting checks:
   - For Java code: Run `./mvnw compile` (or `./mvnw compile -pl <module>` for a specific module) to ensure the code compiles without errors.
-- For TypeScript/JavaScript frontend code: Run `npm run lint` and/or `npm run build` from `agent-webui/` to check for linting errors and type errors.
+- For TypeScript/JavaScript frontend code: Run `npm run lint` and/or `npm run build` from `examples/agent-webui/` to check for linting errors and type errors.
   - For OpenAPI spec changes: Follow the regeneration steps in the "OpenAPI Spec Changes" section and verify compilation.
   - Do not skip this step; it catches type errors, syntax issues, and integration problems early.
 

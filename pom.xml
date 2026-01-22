@@ -8,13 +8,10 @@
   <name>Memory Service - Parent</name>
 
   <modules>
-    <module>memory-service-contracts</module>
-    <module>memory-service-proto</module>
-    <module>memory-service-client</module>
-    <module>quarkus-data-encryption</module>
     <module>memory-service</module>
-    <module>memory-service-extension</module>
-    <module>agent</module>
+    <module>memory-service-contracts</module>
+    <module>quarkus</module>
+    <module>examples</module>
   </modules>
 
   <properties>

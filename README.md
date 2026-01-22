@@ -22,38 +22,14 @@ This is a proof of concept (POC) currently under development.
 
 This is a multi-module Maven project built on Quarkus (Java 21). The modules are:
 
-### `memory-service`
-The core HTTP API backend service that provides REST endpoints for:
-
-- **Conversation Management**: List, create, get, and delete conversations
-- **Message Operations**: List and append messages to conversations
-- **Conversation Forking**: Fork conversations at any message and list conversation forks
-- **Access Control & Sharing**: Manage conversation memberships, share conversations, transfer ownership
-- **Summarization/Search**: For semantic search across all conversations the user has access to
-- **Health & Monitoring**: Health check endpoint
-
-### `memory-service-client`
-OpenAPI-based Java client library that contains:
-- OpenAPI specification (`openapi.yml`) - the source of truth for the API contract
-- Generated Java REST client for integrating with the memory service
-- Shared client filters and helpers
-
-### `memory-service-extension`
-Quarkus extension that simplifies integration by providing:
-- **Dev Services** - Automatically starts the memory-service in Docker during development
-- **LangChain4j Integration** - `MemoryServiceChatMemoryProvider` and `MemoryServiceChatMemory` for seamless LangChain4j integration
-- **Conversation Recording** - `@RecordConversation` interceptor for automatic message persistence
-- Automatic client configuration and URL wiring
-
-### `agent`
-Example agent application demonstrating how to use the memory service:
-- LangChain4j-based AI agent (`CustomerSupportAgent`)
-- React + TypeScript frontend SPA for chatting with the agent
-- WebSocket and SSE streaming support
-- OIDC authentication integration
-
-### `quarkus-data-encryption`
-Internal encryption extension for encrypting sensitive data at rest, with providers for plain (no-op), DEK, and Vault.
+- `memory-service`: Core HTTP and gRPC service implementation.
+- `memory-service-contracts`: OpenAPI + proto sources of truth (no generated code).
+- `quarkus/memory-service-rest-quarkus`: OpenAPI-based Java REST client and helpers (config keys remain `memory-service-client.*`).
+- `quarkus/memory-service-proto-quarkus`: Quarkus gRPC stubs generated from the shared proto.
+- `quarkus/memory-service-extension`: Quarkus extension providing dev services, client wiring, and LangChain4j helpers.
+- `quarkus/quarkus-data-encryption/*`: Encryption extension family (runtime/deployment/DEK/Vault).
+- `examples/agent-quarkus`: LangChain4j-based agent example that serves the SPA.
+- `examples/agent-webui`: React/Vite SPA shared by agents.
 
 ## Building and Running the Example Agent
 
@@ -197,13 +173,13 @@ public void createConversation() {
 }
 ```
 
-**Note:** The API key is automatically configured by dev services. If `memory-service-client.api-key` is not explicitly set, the dev services will generate a random API key and configure it both in the started container (as `MEMORY_SERVICE_API_KEYS_AGENT`) and in your application configuration (as `memory-service-client.api-key`). The `ConversationsApiBuilder` uses that configuration when building clients.
+**Note:** The API key is automatically configured by dev services. If `memory-service-client.api-key` is not explicitly set, the dev services will generate a random API key and configure it both in the started container (as `MEMORY_SERVICE_API_KEYS_AGENT`) and in your application configuration (as `memory-service-client.api-key`). The `ConversationsApiBuilder` uses that configuration when building clients. (The configuration prefix remains `memory-service-client.*` even though the module is now `memory-service-rest-quarkus`.)
 
 ### 7. Frontend Integration
 
-See the example agent's frontend (`agent-webui/`) for a complete React implementation.
+See the example agent's frontend (`examples/agent-webui/`) for a complete React implementation.
 
-The React app calls `MemoryServiceProxyResource` (`agent/src/main/java/example/MemoryServiceProxyResource.java`) to view and manage historical conversation state, including listing conversations, retrieving messages, and forking conversations. For sending new messages to the agent and receiving streaming responses, the frontend uses `AgentWebSocket` (`agent/src/main/java/example/AgentWebSocket.java`).
+The React app calls `MemoryServiceProxyResource` (`examples/agent-quarkus/src/main/java/example/MemoryServiceProxyResource.java`) to view and manage historical conversation state, including listing conversations, retrieving messages, and forking conversations. For sending new messages to the agent and receiving streaming responses, the frontend uses `AgentWebSocket` (`examples/agent-quarkus/src/main/java/example/AgentWebSocket.java`).
 
 
 ### 8. Agent Response Resumption
@@ -250,5 +226,6 @@ Response resumption relies on a per-node advertised address for redirects. Confi
 ## Additional Resources
 
 - See `memory-service/README.md` for memory-service specific documentation
-- See `memory-service-extension/README.md` for extension specific documentation
-- OpenAPI spec: `memory-service-client/src/main/openapi/openapi.yml`
+- See `quarkus/memory-service-extension/README.md` for quarkus extension specific documentation
+- OpenAPI spec: `memory-service-contracts/src/main/resources/openapi.yml`
+- Protobuf spec: `memory-service-contracts/src/main/resources/memory/v1/memory_service.proto`

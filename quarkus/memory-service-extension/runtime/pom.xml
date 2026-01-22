@@ -12,17 +12,17 @@
   <name>Memory Service - Extension - Runtime</name>
 
   <dependencies>
+    <!-- Proto definitions for gRPC -->
+    <dependency>
+      <groupId>io.github.chirino.memory-service</groupId>
+      <artifactId>memory-service-proto-quarkus</artifactId>
+      <version>${project.version}</version>
+    </dependency>
 
     <!-- Shared API client for the memory-service -->
     <dependency>
       <groupId>io.github.chirino.memory-service</groupId>
-      <artifactId>memory-service-client</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <!-- Proto definitions for gRPC -->
-    <dependency>
-      <groupId>io.github.chirino.memory-service</groupId>
-      <artifactId>memory-service-proto</artifactId>
+      <artifactId>memory-service-rest-quarkus</artifactId>
       <version>${project.version}</version>
     </dependency>
 

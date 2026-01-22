@@ -365,5 +365,5 @@ memory-service.api-keys.agent=${MEMORY_SERVICE_API_KEYS_AGENT}
 
 - [Main README](../README.md) - Project overview and usage
 - [AGENTS.md](../AGENTS.md) - Detailed project guidelines
-- [OpenAPI Specification](../memory-service-client/src/main/openapi/openapi.yml) - API contract
+- [OpenAPI Specification](../../memory-service-contracts/src/main/resources/openapi.yml) - API contract
 - [quarkus-data-encryption README](../quarkus-data-encryption/README.md) - Encryption extension documentation

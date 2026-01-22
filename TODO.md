@@ -14,7 +14,7 @@
 * test/find the message size limits of the app.
 * validate all api fields
 * protect against huge api requests.
-* rename memory-service-client to memory-service-rest
+* DONE: rename memory-service-client to memory-service-rest-quarkus and reorganize modules under quarkus/examples parents.
 * Add a Spring AI support lib and example agent.
 
 # Need Dev Feedback for:
