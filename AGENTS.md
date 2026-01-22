@@ -74,27 +74,27 @@ It will support semantic search across all preivous converstations for a user by
 - `agent/`:
   - `agent/src/main/java/example/`: example consumer of this memory service, built with LangChain4j (agent endpoints, SSE streaming, auth helper).
   - `agent/src/main/resources/`: agent runtime configuration (including Quinoa settings).
-  - `agent/src/main/webui/`: frontend SPA (React + Vite + TypeScript + Tailwind CSS).
+- `agent-webui/`: frontend SPA (React + Vite + TypeScript + Tailwind CSS).
   - `agent/src/test/java/`: agent-side tests (including SSE + Keycloak Dev Services).
   - `agent/src/test/resources/`: agent test configuration.
 
 ### Frontend (Web UI)
-- Location: `agent/src/main/webui/`.
+- Location: `agent-webui/`.
 - Framework/tooling: React 19, React DOM 19, Vite, TypeScript, Tailwind CSS, Radix UI primitives, Lucide icons.
-- `npm install` (or `pnpm`/`yarn` as preferred) should be run from `agent/src/main/webui/` before frontend dev/build tasks.
-- Frontend scripts (from `agent/src/main/webui/package.json`):
+- `npm install` (or `pnpm`/`yarn` as preferred) should be run from `agent-webui/` before frontend dev/build tasks.
+- Frontend scripts (from `agent-webui/package.json`):
   - `npm run dev`: run Vite dev server.
   - `npm run build`: type-check and build the frontend bundle.
   - `npm run lint`: run ESLint.
   - `npm run preview`: preview the built frontend.
 - Authentication:
-  - The SPA talks to the backend REST APIs (for example, `/v1/user/conversations`) via the agent app, using the generated OpenAPI client under `agent/src/main/webui/src/client/` (or equivalent client code).
+- The SPA talks to the backend REST APIs (for example, `/v1/user/conversations`) via the agent app, using the generated OpenAPI client under `agent-webui/src/client/` (or equivalent client code).
   - User-facing endpoints are protected by Quarkus OIDC. When a call fails due to lack of auth (401 or a dev OIDC redirect/CORS failure), the landing page shows a “Sign in” prompt instead of data.
   - The “Sign in” button performs a full page navigation to the backend login helper endpoint (currently `/auth/login`), which is annotated with `@Authenticated`. In web-app mode, this triggers the OIDC login redirect to Keycloak (Dev Services or docker-compose Keycloak) and, after successful login, sends the user back to the SPA, where requests now carry the authenticated session.
   - The OpenAPI client is configured to send credentials (`WITH_CREDENTIALS=true`) so session cookies from the OIDC login are included on subsequent API calls.
 
 - UI components:
-  - When adding or extending UI, prefer using base components from https://ui.shadcn.com/ and follow the existing patterns under `agent/src/main/webui/src/components/ui/` (for example, `button`, `card`) instead of hand-rolling new primitives.
+- When adding or extending UI, prefer using base components from https://ui.shadcn.com/ and follow the existing patterns under `agent-webui/src/components/ui/` (for example, `button`, `card`) instead of hand-rolling new primitives.
   - New UI primitives should generally be introduced by adapting shadcn/ui components into this local `ui` library, then composed from there.
 
 ### Example consumer (LangChain4j)
@@ -177,14 +177,14 @@ When you change the OpenAPI contract (conversation endpoints, schemas, etc.), ke
 - Regenerate the Java client and ensure it compiles (from the project root):
   - `./mvnw -pl memory-service-client clean compile`
 - Regenerate the frontend TypeScript client:
-  - From `agent/src/main/webui/`, run `npm install` (once) and then `npm run generate`.
-- Update any application code to use renamed paths, operations, or types (Java REST resources, LangChain4j integration, and React code using `agent/src/main/webui/src/client`).
+- From `agent-webui/`, run `npm install` (once) and then `npm run generate`.
+- Update any application code to use renamed paths, operations, or types (Java REST resources, LangChain4j integration, and React code using `agent-webui/src/client`).
 
 ## Notes for AI Assistants
 
 - **ALWAYS run a linter or compile after making changes to typesafe code**: After editing any typesafe code (Java, TypeScript, etc.), you MUST verify that your changes compile and pass linting checks:
   - For Java code: Run `./mvnw compile` (or `./mvnw compile -pl <module>` for a specific module) to ensure the code compiles without errors.
-  - For TypeScript/JavaScript frontend code: Run `npm run lint` and/or `npm run build` from `agent/src/main/webui/` to check for linting errors and type errors.
+- For TypeScript/JavaScript frontend code: Run `npm run lint` and/or `npm run build` from `agent-webui/` to check for linting errors and type errors.
   - For OpenAPI spec changes: Follow the regeneration steps in the "OpenAPI Spec Changes" section and verify compilation.
   - Do not skip this step; it catches type errors, syntax issues, and integration problems early.
 

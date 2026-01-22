@@ -135,7 +135,6 @@ type ConversationsUIComposerProps = {
   disabled?: boolean;
   cancelDisabled?: boolean;
   onCancel?: () => void;
-  cancelLabel?: string;
   sendLabel?: string;
   stopLabel?: string;
   className?: string;
@@ -151,14 +150,13 @@ function ConversationsUIComposer({
   disabled = false,
   cancelDisabled = false,
   onCancel,
-  cancelLabel = "Stop",
   sendLabel = "Send",
   stopLabel = "Stop",
   className,
   inputClassName,
 }: ConversationsUIComposerProps) {
   const { value, submit } = useConversationInput();
-  const { streaming, cancelStream, isBusy, conversationId } = useConversationStreaming();
+  const { cancelStream, isBusy, conversationId } = useConversationStreaming();
 
   const handleCancel = () => {
     if (isBusy) {

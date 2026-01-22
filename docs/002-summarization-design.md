@@ -114,7 +114,7 @@
 - Regenerate Java client:
   - `./mvnw -pl memory-service-client clean compile`.
 - Regenerate frontend client:
-  - `cd agent/src/main/webui && npm install && npm run generate`.
+  - `cd agent-webui && npm install && npm run generate`.
 - Update any agent/frontend code using the summary API.
 
 ### 9) Tests

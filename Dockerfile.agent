@@ -1,11 +1,11 @@
 FROM docker.io/library/node:22-alpine AS frontend-builder
 
 WORKDIR /build
-COPY agent/src/main/webui/package.json .
-COPY agent/src/main/webui/package-lock.json .
+COPY agent-webui/package.json .
+COPY agent-webui/package-lock.json .
 RUN npm install
 
-COPY agent/src/main/webui .
+COPY agent-webui .
 RUN npm run build
 
 FROM maven:3.9.9-eclipse-temurin-21 AS build

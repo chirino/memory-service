@@ -201,7 +201,7 @@ public void createConversation() {
 
 ### 7. Frontend Integration
 
-See the example agent's frontend (`agent/src/main/webui/`) for a complete React implementation.
+See the example agent's frontend (`agent-webui/`) for a complete React implementation.
 
 The React app calls `MemoryServiceProxyResource` (`agent/src/main/java/example/MemoryServiceProxyResource.java`) to view and manage historical conversation state, including listing conversations, retrieving messages, and forking conversations. For sending new messages to the agent and receiving streaming responses, the frontend uses `AgentWebSocket` (`agent/src/main/java/example/AgentWebSocket.java`).
 

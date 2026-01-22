@@ -972,7 +972,6 @@ function ChatPanelContent({
       <ConversationsUI.Composer
         disabled={!conversationId || composerDisabled || Boolean(editingMessage)}
         cancelDisabled={canceling}
-        cancelLabel="Stop"
         sendLabel="Send"
         stopLabel="Stop"
       />
