@@ -675,14 +675,30 @@ export function useConversationMessages() {
     // This only applies to user-authored pending messages; assistant messages use ID-based matching since
     // resume operations can replace messages by ID.
     if (streaming.userMessage) {
-      const hasUserEcho = dedupedBase.some(
+      const normalizedPending = streaming.userMessage.content.trim();
+      // If the backend already echoed this user message and the stream is finished,
+      // avoid rendering the optimistic copy to prevent post-response duplicates.
+      const hasEchoInBase = dedupedBase.some(
         (msg) =>
           msg.author === "user" &&
           msg.conversationId === streaming.userMessage?.conversationId &&
-          msg.content.trim() === streaming.userMessage?.content.trim(),
+          msg.content.trim() === normalizedPending,
       );
-      
-      if (!hasUserEcho) {
+      const isActiveStream = streaming.phase === "sending" || streaming.phase === "streaming";
+      if (hasEchoInBase && !isActiveStream) {
+        return items;
+      }
+      // Only treat it as an echo if the immediately preceding message is the same user text.
+      // This still suppresses back-to-back duplicates from the backend echo, but allows a user
+      // to send the same message again after an assistant turn.
+      const lastMessage = items[items.length - 1];
+      const isBackToBackDuplicate =
+        lastMessage &&
+        lastMessage.author === "user" &&
+        lastMessage.conversationId === streaming.userMessage.conversationId &&
+        lastMessage.content.trim() === normalizedPending;
+
+      if (!isBackToBackDuplicate) {
         const previous =
           streaming.userMessage.previousMessageId === undefined
             ? (lastByConversation.get(streaming.userMessage.conversationId) ?? null)
