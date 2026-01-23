@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.chirino.memory-service</groupId>
+    <artifactId>memory-service-parent</artifactId>
+    <version>999-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>agent-webui</artifactId>
+  <packaging>jar</packaging>
+  <name>Memory Service - Agent Web UI</name>
+
+  <properties>
+    <frontend-maven-plugin.version>2.0.0</frontend-maven-plugin.version>
+    <node.version>v22.19.0</node.version>
+    <npm.version>11.8.0</npm.version>
+    <maven-jar-plugin.version>3.5.0</maven-jar-plugin.version>
+    <frontend.node.bin>${project.build.directory}/frontend/node/node</frontend.node.bin>
+    <frontend.npm.cli>${project.build.directory}/frontend/node/node_modules/npm/bin/npm-cli.js</frontend.npm.cli>
+    <frontend.dist.file>${project.basedir}/dist/index.html</frontend.dist.file>
+    <frontend.build.script><![CDATA[
+const {spawnSync} = require('child_process');
+const fs = require('fs');
+const targetFile = '${frontend.dist.file}';
+if (process.env.FRONTEND_DIST_UPTODATE === 'true') process.exit(0);
+const result = spawnSync(process.execPath, ['${frontend.npm.cli}', 'run', 'build'], {stdio: 'inherit'});
+if (result.error) throw result.error;
+if (result.status === 0) {
+  try {
+    fs.utimesSync(targetFile, new Date(), new Date());
+  } catch (e) {
+    // ignore missing file
+  }
+}
+process.exit(result.status);
+    ]]></frontend.build.script>
+  </properties>
+
+  <build>
+    <resources>
+      <resource>
+        <targetPath>static</targetPath>
+        <filtering>false</filtering>
+        <directory>${project.basedir}/dist</directory>
+      </resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <groupId>com.github.eirslett</groupId>
+        <artifactId>frontend-maven-plugin</artifactId>
+        <version>${frontend-maven-plugin.version}</version>
+        <configuration>
+          <workingDirectory>${project.basedir}</workingDirectory>
+          <installDirectory>${project.build.directory}/frontend</installDirectory>
+          <nodeVersion>${node.version}</nodeVersion>
+          <npmVersion>${npm.version}</npmVersion>
+        </configuration>
+        <executions>
+          <execution>
+            <id>install-node-and-npm</id>
+            <goals>
+              <goal>install-node-and-npm</goal>
+            </goals>
+            <phase>generate-resources</phase>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.2.0</version>
+        <executions>
+          <execution>
+            <id>npm-install</id>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <phase>generate-resources</phase>
+            <configuration>
+              <target>
+                <exec dir="${project.basedir}" executable="${frontend.node.bin}">
+                  <arg value="${frontend.npm.cli}"/>
+                  <arg value="install"/>
+                </exec>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-build</id>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <phase>generate-resources</phase>
+            <configuration>
+              <target>
+                <uptodate property="frontend.dist.uptodate" targetfile="${project.basedir}/dist/index.html">
+                  <srcfiles dir="${project.basedir}">
+                    <include name="**/*"/>
+                    <exclude name="dist/**"/>
+                    <exclude name="target/**"/>
+                    <exclude name="node_modules/**"/>
+                  </srcfiles>
+                </uptodate>
+                <exec dir="${project.basedir}" executable="${frontend.node.bin}">
+                  <env key="FRONTEND_DIST_UPTODATE" value="${frontend.dist.uptodate}"/>
+                  <arg value="-e"/>
+                  <arg value="${frontend.build.script}"/>
+                </exec>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>${maven-jar-plugin.version}</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -40,6 +40,11 @@
   <dependencies>
     <dependency>
       <groupId>io.github.chirino.memory-service</groupId>
+      <artifactId>agent-webui</artifactId>
+      <version>${project.parent.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.chirino.memory-service</groupId>
       <artifactId>memory-service-spring-boot-starter</artifactId>
       <version>${project.version}</version>
     </dependency>

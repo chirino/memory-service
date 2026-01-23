@@ -14,8 +14,8 @@ public class ChatController {
 
     private final ChatClient chatClient;
 
-    public ChatController(ChatClient.Builder chatClientBuilder) {
-        this.chatClient = chatClientBuilder.defaultSystem("You are a helpful assistant.").build();
+    public ChatController(ChatClient chatClient) {
+        this.chatClient = chatClient;
     }
 
     @PostMapping

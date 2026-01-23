@@ -176,6 +176,7 @@
         <activeByDefault>true</activeByDefault>
       </activation>
       <modules>
+        <module>common/agent-webui</module>
         <module>memory-service</module>
         <module>memory-service-contracts</module>
         <module>quarkus</module>

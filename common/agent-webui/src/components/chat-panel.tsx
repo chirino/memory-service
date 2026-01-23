@@ -14,7 +14,9 @@ import {
 import { ConversationsUI } from "@/components/conversations-ui";
 import type { ApiError, Conversation as ApiConversation, ConversationForkSummary, Message } from "@/client";
 import { ConversationsService } from "@/client";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useWebSocketStream } from "@/hooks/useWebSocketStream";
+import { useSseStream } from "@/hooks/useSseStream";
 import type { StreamStartParams } from "@/hooks/useStreamTypes";
 
 type ListUserMessagesResponse = {
@@ -55,6 +57,8 @@ type ConversationMeta = {
   forkedAtConversationId: string | null;
   forkedAtMessageId: string | null;
 };
+
+type StreamMode = "websocket" | "sse";
 
 type ChatMessageRowProps = {
   message: RenderableConversationMessage;
@@ -309,6 +313,8 @@ type ChatPanelContentProps = {
   queryClient: ReturnType<typeof useQueryClient>;
   userMessageIndexById: Map<string, number>;
   canceling: boolean;
+  streamMode: StreamMode;
+  setStreamMode: React.Dispatch<React.SetStateAction<StreamMode>>;
 };
 
 function ChatPanelContent({
@@ -321,6 +327,8 @@ function ChatPanelContent({
   queryClient,
   userMessageIndexById,
   canceling,
+  streamMode,
+  setStreamMode,
   forksQuery,
   conversationMetaById,
 }: ChatPanelContentProps & {
@@ -822,6 +830,22 @@ function ChatPanelContent({
         <p className="text-xs text-muted-foreground">
           Start a new chat or select a conversation from the left to continue.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-foreground/70">Stream via</span>
+            <ToggleGroup
+              type="single"
+              value={streamMode}
+              onValueChange={(value) => setStreamMode(value as StreamMode)}
+              variant="outline"
+            >
+              <ToggleGroupItem value="websocket" aria-label="Use WebSocket stream">
+                WebSocket
+              </ToggleGroupItem>
+              <ToggleGroupItem value="sse" aria-label="Use SSE stream">
+                SSE
+              </ToggleGroupItem>
+            </ToggleGroup>
+        </div>
       </div>
 
       <ConversationsUI.Viewport ref={viewportRef} className="relative pt-0">
@@ -988,6 +1012,7 @@ export function ChatPanel({
   const [assistantIdOverrides, setAssistantIdOverrides] = useState<Record<string, string>>({});
   const assistantIdOverridesRef = useRef<Record<string, string>>({});
   const [canceling, setCanceling] = useState(false);
+  const [streamMode, setStreamMode] = useState<StreamMode>("sse");
   // Track pending IDs per conversation to prevent desync across concurrent streams
   // The queue stores pairs: [assistantId, userId] for each stream start
   const pendingIdQueueRef = useRef<Map<string, string[]>>(new Map());
@@ -1000,6 +1025,7 @@ export function ChatPanel({
   const hasResumedRef = useRef<Record<string, boolean>>({});
   const pendingForkRef = useRef<PendingFork | null>(null);
   
+  const sseStream = useSseStream();
   // Keep ref in sync with state
   useEffect(() => {
     assistantIdOverridesRef.current = assistantIdOverrides;
@@ -1024,8 +1050,9 @@ export function ChatPanel({
         delete hasResumedRef.current[conversationId];
       }
       webSocketStream.close();
+      sseStream.close();
     }
-  }, [conversationId, webSocketStream]);
+  }, [conversationId, webSocketStream, sseStream]);
   
   // Reset hasResumed flag when resumableConversationIds changes to allow retry
   // This handles the case where the resume check query completes after the effect first runs
@@ -1036,8 +1063,9 @@ export function ChatPanel({
   useEffect(() => {
     return () => {
       webSocketStream.close();
+      sseStream.close();
     };
-  }, [webSocketStream]);
+  }, [webSocketStream, sseStream]);
 
   const isResolvedConversation = Boolean(conversationId && knownConversationIds?.has(conversationId));
   const forksQuery = useQuery<ConversationForkSummary[], ApiError, ConversationForkSummary[]>({
@@ -1314,6 +1342,21 @@ export function ChatPanel({
         },
       };
 
+      const isResume = !text && resumePosition === 0 && !resetResume;
+      const useSse = streamMode === "sse" && !isResume;
+
+      if (useSse) {
+        sseStream.close();
+        webSocketStream.close();
+        try {
+          sseStream.start(params);
+        } catch (error) {
+          callbacks.onError?.(error);
+        }
+        return;
+      }
+
+      sseStream.close();
       webSocketStream.close();
       // Wrap in try/catch to handle synchronous errors from webSocketStream.start()
       try {
@@ -1322,7 +1365,7 @@ export function ChatPanel({
         callbacks.onError?.(error);
       }
     },
-    [queryClient, webSocketStream],
+    [queryClient, sseStream, streamMode, webSocketStream],
   );
 
   const idFactory = useCallback(() => {
@@ -1440,6 +1483,8 @@ export function ChatPanel({
         canceling={canceling}
         forksQuery={forksQuery}
         conversationMetaById={conversationMetaById}
+        streamMode={streamMode}
+        setStreamMode={setStreamMode}
       />
     </Conversation.Root>
   );
