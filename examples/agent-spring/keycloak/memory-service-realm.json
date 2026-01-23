@@ -6,12 +6,16 @@
     {
       "username": "bob",
       "enabled": true,
+      "firstName": "Bob",
+      "lastName": "Builder",
+      "email": "bob@example.com",
       "emailVerified": true,
       "credentials": [
         { "type": "password", "value": "bob", "temporary": false }
       ],
       "realmRoles": ["user"],
-      "groups": []
+      "groups": [],
+      "requiredActions": []
     }
   ],
   "roles": {

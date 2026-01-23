@@ -1,9 +1,11 @@
 package example.agent;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -19,6 +21,12 @@ public class ChatController {
     @PostMapping
     public ChatResponse chat(@RequestBody ChatRequest request) {
         String reply = chatClient.prompt().user(request.message()).call().content();
+        return new ChatResponse(reply);
+    }
+
+    @GetMapping
+    public ChatResponse chat(@RequestParam("m") String message) {
+        String reply = chatClient.prompt().user(message).call().content();
         return new ChatResponse(reply);
     }
 
