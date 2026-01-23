@@ -15,6 +15,7 @@
 
   <modules>
     <module>agent-quarkus</module>
+    <module>agent-spring</module>
   </modules>
 
 </project>

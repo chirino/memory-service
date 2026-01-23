@@ -63,7 +63,6 @@
    - ✅ Create `memory-service-contracts` (OpenAPI + proto only, no generated code).
    - ✅ Reorganize modules under `quarkus/` and `spring/` parents, rename `memory-service-client` -> `memory-service-rest-quarkus`, move `quarkus-data-encryption` under `quarkus/`, and relocate examples under `examples/`.
    - ✅ Rebuild and run validation tests (initial compile run) to confirm the refactor is stable before adding any new Spring modules.
-   - ✅ Add proto family modules (`*-quarkus`, `*-spring`) while keeping proto source central.
 2) **Spring REST client**
    - Add generator config and support code; verify compile and publishable POM.
 3) **Spring proto client**

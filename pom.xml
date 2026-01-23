@@ -11,6 +11,7 @@
     <module>memory-service</module>
     <module>memory-service-contracts</module>
     <module>quarkus</module>
+    <module>spring</module>
     <module>examples</module>
   </modules>
 

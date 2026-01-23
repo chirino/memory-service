@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.chirino.memory-service</groupId>
+    <artifactId>memory-service-parent</artifactId>
+    <version>999-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>memory-service-spring-parent</artifactId>
+  <packaging>pom</packaging>
+  <name>Memory Service - Spring - Parent</name>
+
+  <modules>
+    <module>memory-service-rest-spring</module>
+    <module>memory-service-proto-spring</module>
+    <module>memory-service-spring-boot-autoconfigure</module>
+    <module>memory-service-spring-boot-starter</module>
+  </modules>
+
+  <properties>
+    <spring.boot.version>3.4.2</spring.boot.version>
+    <openapi.generator.version>7.8.0</openapi.generator.version>
+    <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
+    <grpc.version>1.67.1</grpc.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-bom</artifactId>
+        <version>${grpc.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring.boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>
