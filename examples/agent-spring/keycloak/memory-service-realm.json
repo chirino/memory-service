@@ -1,0 +1,46 @@
+{
+  "realm": "memory-service",
+  "enabled": true,
+  "displayName": "Memory Service",
+  "users": [
+    {
+      "username": "bob",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "bob", "temporary": false }
+      ],
+      "realmRoles": ["user"],
+      "groups": []
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "user", "description": "Standard user" }
+    ],
+    "client": {}
+  },
+  "clients": [
+    {
+      "clientId": "memory-service-client",
+      "name": "Memory Service",
+      "description": "Confidential client for memory-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "clientAuthenticatorType": "client-secret",
+      "secret": "change-me",
+      "redirectUris": [
+        "http://localhost:8080/*",
+        "http://localhost:8081/*",
+        "http://localhost:8082/*"
+      ],
+      "webOrigins": ["*"],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "publicClient": false,
+      "authorizationServicesEnabled": false
+    }
+  ]
+}
