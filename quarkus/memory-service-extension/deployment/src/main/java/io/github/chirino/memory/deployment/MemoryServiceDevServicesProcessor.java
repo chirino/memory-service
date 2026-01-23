@@ -178,7 +178,7 @@ public class MemoryServiceDevServicesProcessor {
                                         GenericContainer<?> container =
                                                 new GenericContainer<>(
                                                                 DockerImageName.parse(
-                                                                        "memory-service-service:latest"))
+                                                                        "ghcr.io/chirino/memory-service:latest"))
                                                         .withEnv(
                                                                 "MEMORY_SERVICE_API_KEYS_AGENT",
                                                                 effectiveApiKey)

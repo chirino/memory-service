@@ -11,7 +11,7 @@
 
   <artifactId>memory-service-proto-spring</artifactId>
   <packaging>jar</packaging>
-  <name>Memory Service Proto (Spring)</name>
+  <name>Memory Service - Spring - Proto</name>
 
   <properties>
     <contracts.dir>${project.build.directory}/generated-resources/contracts</contracts.dir>

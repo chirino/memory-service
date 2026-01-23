@@ -11,7 +11,7 @@
 
   <artifactId>quarkus-data-encryption-parent</artifactId>
   <packaging>pom</packaging>
-  <name>Quarkus Data Encryption - Parent</name>
+  <name>Memory Service - Quarkus - Data Encryption - Parent</name>
 
   <modules>
     <module>deployment</module>

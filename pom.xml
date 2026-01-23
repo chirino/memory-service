@@ -7,14 +7,6 @@
   <packaging>pom</packaging>
   <name>Memory Service - Parent</name>
 
-  <modules>
-    <module>memory-service</module>
-    <module>memory-service-contracts</module>
-    <module>quarkus</module>
-    <module>spring</module>
-    <module>examples</module>
-  </modules>
-
   <properties>
     <compiler-plugin.version>3.14.1</compiler-plugin.version>
     <maven.compiler.release>21</maven.compiler.release>
@@ -178,6 +170,34 @@
   </build>
 
   <profiles>
+    <profile>
+      <id>all-modules</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <modules>
+        <module>memory-service</module>
+        <module>memory-service-contracts</module>
+        <module>quarkus</module>
+        <module>spring</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>memory-service-only</id>
+      <activation>
+        <property>
+          <name>memory.service.only</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <modules>
+        <module>memory-service-contracts</module>
+        <module>quarkus/memory-service-rest-quarkus</module>
+        <module>quarkus/memory-service-proto-quarkus</module>
+        <module>quarkus/quarkus-data-encryption</module>
+        <module>memory-service</module>
+      </modules>
+    </profile>
     <profile>
       <id>native</id>
       <activation>

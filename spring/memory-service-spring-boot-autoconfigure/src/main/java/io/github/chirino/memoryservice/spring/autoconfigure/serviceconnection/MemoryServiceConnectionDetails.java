@@ -19,4 +19,13 @@ public interface MemoryServiceConnectionDetails extends ConnectionDetails {
     default String getBaseUrl() {
         return getBaseUri().toString();
     }
+
+    /**
+     * Optional API key that trusted agents should use when calling the
+     * memory-service. When multiple keys are configured, the first one should
+     * be exposed here.
+     */
+    default String getApiKey() {
+        return null;
+    }
 }

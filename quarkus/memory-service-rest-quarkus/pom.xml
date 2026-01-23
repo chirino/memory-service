@@ -11,7 +11,7 @@
 
   <artifactId>memory-service-rest-quarkus</artifactId>
   <packaging>jar</packaging>
-  <name>Memory Service - REST Client (Quarkus)</name>
+  <name>Memory Service - Quarkus - REST Client</name>
 
   <properties>
     <contracts.dir>${project.build.directory}/generated-resources/contracts</contracts.dir>

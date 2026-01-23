@@ -9,7 +9,7 @@
   </parent>
 
   <artifactId>memory-service-extension</artifactId>
-  <name>Memory Service - Extension - Runtime</name>
+  <name>Memory Service - Quarkus - Extension - Runtime</name>
 
   <dependencies>
     <!-- Proto definitions for gRPC -->

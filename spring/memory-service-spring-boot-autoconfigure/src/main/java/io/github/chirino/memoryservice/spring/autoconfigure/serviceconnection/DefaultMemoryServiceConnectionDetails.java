@@ -6,7 +6,7 @@ import java.util.Objects;
 /**
  * Simple immutable connection details implementation.
  */
-public record DefaultMemoryServiceConnectionDetails(URI baseUri)
+public record DefaultMemoryServiceConnectionDetails(URI baseUri, String apiKey)
         implements MemoryServiceConnectionDetails {
 
     public DefaultMemoryServiceConnectionDetails {
@@ -16,5 +16,10 @@ public record DefaultMemoryServiceConnectionDetails(URI baseUri)
     @Override
     public URI getBaseUri() {
         return baseUri;
+    }
+
+    @Override
+    public String getApiKey() {
+        return apiKey;
     }
 }

@@ -19,6 +19,13 @@ public class MemoryServiceClientProperties {
     private String bearerToken;
 
     /**
+     * Optional API key used by trusted agents. When absent, the service
+     * connection (Docker Compose or Testcontainers) can supply the first
+     * configured key from the running memory-service container.
+     */
+    private String apiKey;
+
+    /**
      * Optional client registration id to pull bearer tokens from Spring Security's
      * OAuth2AuthorizedClientManager.
      */
@@ -38,6 +45,14 @@ public class MemoryServiceClientProperties {
 
     public void setBearerToken(String bearerToken) {
         this.bearerToken = bearerToken;
+    }
+
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public void setApiKey(String apiKey) {
+        this.apiKey = apiKey;
     }
 
     public String getOidcClientRegistrationId() {

@@ -17,7 +17,9 @@ class SecurityConfig {
                                         .permitAll()
                                         .anyRequest()
                                         .authenticated())
-                .oauth2Login(oauth2 -> oauth2.defaultSuccessUrl("/", true))
+                // Use saved request so users return to the URL they originally requested after
+                // login.
+                .oauth2Login(oauth2 -> oauth2.defaultSuccessUrl("/", false))
                 .logout(logout -> logout.logoutSuccessUrl("/"));
 
         return http.build();

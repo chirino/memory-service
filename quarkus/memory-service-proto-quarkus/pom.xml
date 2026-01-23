@@ -11,7 +11,7 @@
 
   <artifactId>memory-service-proto-quarkus</artifactId>
   <packaging>jar</packaging>
-  <name>Memory Service Proto (Quarkus)</name>
+  <name>Memory Service - Quarkus - Proto</name>
 
   <properties>
     <contracts.dir>${project.build.directory}/generated-resources/contracts</contracts.dir>

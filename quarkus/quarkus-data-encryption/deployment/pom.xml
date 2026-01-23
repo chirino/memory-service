@@ -9,7 +9,7 @@
   </parent>
 
   <artifactId>quarkus-data-encryption-deployment</artifactId>
-  <name>Quarkus Data Encryption - Deployment</name>
+  <name>Memory Service - Quarkus - Data Encryption - Deployment</name>
 
   <properties>
     <quarkus.generate-code.skip>true</quarkus.generate-code.skip>

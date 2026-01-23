@@ -10,6 +10,13 @@ public class MemoryServiceClientProperties {
 
     private String baseUrl = "http://localhost:8080";
     private String apiKey;
+
+    /**
+     * Optional static bearer token used when no user token is available. Most calls
+     * should still forward the authenticated user's token from the incoming request.
+     */
+    private String bearerToken;
+
     private String oidcClientRegistration;
     private Duration timeout = Duration.ofSeconds(30);
     private boolean logRequests = false;
@@ -38,6 +45,14 @@ public class MemoryServiceClientProperties {
 
     public void setOidcClientRegistration(String oidcClientRegistration) {
         this.oidcClientRegistration = oidcClientRegistration;
+    }
+
+    public String getBearerToken() {
+        return bearerToken;
+    }
+
+    public void setBearerToken(String bearerToken) {
+        this.bearerToken = bearerToken;
     }
 
     public Duration getTimeout() {

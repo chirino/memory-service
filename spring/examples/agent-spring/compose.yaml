@@ -9,7 +9,7 @@ services:
       - "55432:5432"
     volumes:
       # Init script mount (read-only); data lives on tmpfs below so it disappears with the container
-      - ../../docker/postgres-init-keycloak.sql:/docker-entrypoint-initdb.d/postgres-init-keycloak.sql:ro
+      - ../../../common/keycloak/postgres-init-keycloak.sql:/docker-entrypoint-initdb.d/postgres-init-keycloak.sql:ro
     tmpfs:
       # Ephemeral Postgres data dir; removed automatically when the container is deleted
       - /var/lib/postgresql/data
@@ -46,7 +46,7 @@ services:
       KC_DB_PASSWORD: keycloak
       KC_HTTP_RELATIVE_PATH: /
     volumes:
-      - ./keycloak/memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
+      - ../../../common/keycloak/memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,11 +54,15 @@ services:
       - "8081:8080"
 
   memory-service:
-    image: memory-service-service:latest
+    image: ghcr.io/chirino/memory-service:latest
     build:
       context: ../../
       dockerfile: Dockerfile
+    labels:
+      org.springframework.boot.service-connection: memory-service
     environment:
+      # Trusted agent API keys (first value is surfaced to the Spring app via the service connection)
+      MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
       QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/memory_service
       QUARKUS_DATASOURCE_USERNAME: postgres
       QUARKUS_DATASOURCE_PASSWORD: postgres

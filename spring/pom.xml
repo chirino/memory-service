@@ -18,6 +18,7 @@
     <module>memory-service-proto-spring</module>
     <module>memory-service-spring-boot-autoconfigure</module>
     <module>memory-service-spring-boot-starter</module>
+    <module>examples</module>
   </modules>
 
   <properties>

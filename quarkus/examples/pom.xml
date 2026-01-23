@@ -4,20 +4,17 @@
 
   <parent>
     <groupId>io.github.chirino.memory-service</groupId>
-    <artifactId>memory-service-parent</artifactId>
+    <artifactId>memory-service-quarkus-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>memory-service-quarkus-parent</artifactId>
+  <artifactId>memory-service-quarkus-examples-parent</artifactId>
   <packaging>pom</packaging>
-  <name>Memory Service - Quarkus - Parent</name>
+  <name>Memory Service - Quarkus - Examples - Parent</name>
 
   <modules>
-    <module>memory-service-rest-quarkus</module>
-    <module>memory-service-proto-quarkus</module>
-    <module>memory-service-extension</module>
-    <module>quarkus-data-encryption</module>
-    <module>examples</module>
+    <module>agent-quarkus</module>
   </modules>
+
 </project>

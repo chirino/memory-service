@@ -124,7 +124,7 @@ It will support semantic search across all preivous converstations for a user by
 
 ### Production-like Local Deployment
 - Use `docker compose up -d` to start a more production-like stack.
-- The `service` service runs the memory-service backend image (`memory-service-service:latest`) and connects to:
+- The `service` service runs the memory-service backend image (`ghcr.io/chirino/memory-service:latest`) and connects to:
   - `postgres` (PostgreSQL) for the main datastore and Keycloak DB.
   - `redis` for caching.
   - `mongodb` for MongoDB-based storage/vector store.
@@ -189,7 +189,7 @@ When you change the OpenAPI contract (conversation endpoints, schemas, etc.), ke
 - The memory-service’s default dev configuration already uses the plain provider (`memory-service/src/main/resources/application.properties`):
   - `data.encryption.providers=plain`
   - `data.encryption.provider.plain.type=plain`
-- The `memory-service-extension` dev service (`memory-service-extension/deployment/src/main/java/io/github/chirino/memory/deployment/DevServicesMemoryServiceProcessor.java`) starts a `memory-service-service:latest` container when running the `agent` module in dev mode:
+- The `memory-service-extension` dev service (`memory-service-extension/deployment/src/main/java/io/github/chirino/memory/deployment/DevServicesMemoryServiceProcessor.java`) starts a `ghcr.io/chirino/memory-service:latest` container when running the `agent` module in dev mode:
   - It is skipped if `MEMORY_SERVICE_URL` or `memory-service.url` are set.
   - It rewrites JDBC and OIDC URLs from `localhost` to `host.docker.internal` so the container can reach Dev Services (Postgres, Keycloak) started by the agent.
   - It wires `MEMORY_SERVICE_URL`, `memory-service.url`, and `quarkus.rest-client.memory-service-client.url` for the agent to talk to the dev-service container.

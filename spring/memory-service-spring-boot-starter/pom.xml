@@ -11,7 +11,7 @@
 
   <artifactId>memory-service-spring-boot-starter</artifactId>
   <packaging>jar</packaging>
-  <name>Memory Service - Spring Boot Starter</name>
+  <name>Memory Service - Spring - Boot - Starter</name>
 
   <dependencies>
     <dependency>

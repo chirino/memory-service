@@ -11,7 +11,7 @@
 
   <artifactId>memory-service-spring-boot-autoconfigure</artifactId>
   <packaging>jar</packaging>
-  <name>Memory Service - Spring Boot Autoconfigure</name>
+  <name>Memory Service - Spring - Boot - Autoconfigure</name>
 
   <dependencies>
     <dependency>

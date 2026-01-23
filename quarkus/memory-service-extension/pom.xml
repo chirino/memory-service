@@ -11,7 +11,7 @@
 
   <artifactId>memory-service-extension-parent</artifactId>
   <packaging>pom</packaging>
-  <name>Memory Service - Extension - Parent</name>
+  <name>Memory Service - Quarkus - Extension - Parent</name>
 
   <modules>
     <module>runtime</module>

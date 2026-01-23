@@ -9,7 +9,7 @@
   </parent>
 
   <artifactId>quarkus-data-encryption</artifactId>
-  <name>Quarkus Data Encryption - Runtime</name>
+  <name>Memory Service - Quarkus - Data Encryption - Runtime</name>
 
   <dependencies>
     <dependency>

@@ -305,7 +305,7 @@ Or use Docker:
 
 ```bash
 # Build the Docker image
-docker build -t memory-service-service:latest .
+docker build -t ghcr.io/chirino/memory-service:latest .
 
 # Run with docker-compose
 docker compose up service

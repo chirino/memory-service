@@ -95,7 +95,7 @@ development and tests using Quarkus Dev Services.
 
 Behavior (from `DevServicesMemoryServiceProcessor`):
 
-- Starts a `memory-service-service:latest` container on a random port.
+- Starts a `ghcr.io/chirino/memory-service:latest` container on a random port.
 - Reuses the dev PostgreSQL and Keycloak containers started by your app.
 - Exposes a random API key to the container via `MEMORY_SERVICE_API_KEYS_AGENT`.
 - Publishes configuration back to your app:
@@ -150,7 +150,7 @@ memory-service-client.url=${MEMORY_SERVICE_URL}
 ```
 
 In dev and tests, the `DevServicesMemoryServiceProcessor` starts a
-`memory-service-service:latest` container and wires the URLs and API keys
+`ghcr.io/chirino/memory-service:latest` container and wires the URLs and API keys
 automatically, so you typically don’t need extra config.
 
 ## Using @RecordConversation in your code

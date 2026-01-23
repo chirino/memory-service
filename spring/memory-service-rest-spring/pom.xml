@@ -11,7 +11,7 @@
 
   <artifactId>memory-service-rest-spring</artifactId>
   <packaging>jar</packaging>
-  <name>Memory Service - REST Client (Spring)</name>
+  <name>Memory Service - Spring - REST Client</name>
 
   <properties>
     <contracts.dir>${project.build.directory}/generated-resources/contracts</contracts.dir>

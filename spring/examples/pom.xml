@@ -4,17 +4,16 @@
 
   <parent>
     <groupId>io.github.chirino.memory-service</groupId>
-    <artifactId>memory-service-parent</artifactId>
+    <artifactId>memory-service-spring-parent</artifactId>
     <version>999-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>memory-service-examples-parent</artifactId>
+  <artifactId>memory-service-spring-examples-parent</artifactId>
   <packaging>pom</packaging>
-  <name>Memory Service - Examples - Parent</name>
+  <name>Memory Service - Spring - Examples - Parent</name>
 
   <modules>
-    <module>agent-quarkus</module>
     <module>agent-spring</module>
   </modules>
 

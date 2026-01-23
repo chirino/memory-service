@@ -9,7 +9,7 @@
   </parent>
 
   <artifactId>quarkus-data-encryption-vault</artifactId>
-  <name>Quarkus Data Encryption - Vault Provider</name>
+  <name>Memory Service - Quarkus - Data Encryption - Vault Provider</name>
 
   <dependencies>
     <dependency>

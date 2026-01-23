@@ -9,7 +9,7 @@
   </parent>
 
   <artifactId>quarkus-data-encryption-dek</artifactId>
-  <name>Quarkus Data Encryption - Local DEK Provider</name>
+  <name>Memory Service - Quarkus - Data Encryption - Local DEK Provider</name>
 
   <dependencies>
     <dependency>

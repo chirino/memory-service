@@ -10,6 +10,8 @@ import io.github.chirino.memoryservice.client.invoker.auth.HttpBearerAuth;
 import io.github.chirino.memoryservice.spring.autoconfigure.serviceconnection.MemoryServiceConnectionDetails;
 import java.net.URI;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -24,6 +26,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 @EnableConfigurationProperties(MemoryServiceClientProperties.class)
 public class MemoryServiceAutoConfiguration {
 
+    private static final Logger logger =
+            LoggerFactory.getLogger(MemoryServiceAutoConfiguration.class);
+
     @Bean
     @ConditionalOnMissingBean
     public ApiClient memoryServiceApiClient(
@@ -35,8 +40,20 @@ public class MemoryServiceAutoConfiguration {
                 webClientBuilderProvider.getIfAvailable(ApiClient::buildWebClientBuilder);
         ApiClient apiClient = (builder != null) ? new ApiClient(builder.build()) : new ApiClient();
 
+        MemoryServiceConnectionDetails connectionDetails =
+                connectionDetailsProvider.getIfAvailable();
+        if (connectionDetails != null) {
+            logger.info(
+                    "MemoryService connection details detected: baseUri={}, apiKeyPresent={}",
+                    connectionDetails.getBaseUri(),
+                    StringUtils.hasText(connectionDetails.getApiKey()));
+        } else {
+            logger.info(
+                    "MemoryService connection details not provided; falling back to properties");
+        }
+
         URI baseUri =
-                Optional.ofNullable(connectionDetailsProvider.getIfAvailable())
+                Optional.ofNullable(connectionDetails)
                         .map(MemoryServiceConnectionDetails::getBaseUri)
                         .orElseGet(
                                 () ->
@@ -45,8 +62,27 @@ public class MemoryServiceAutoConfiguration {
                                                         () -> URI.create(apiClient.getBasePath())));
 
         apiClient.setBasePath(baseUri.toString());
+        configureApiKey(properties, connectionDetails, apiClient);
         configureBearer(properties, apiClient);
         return apiClient;
+    }
+
+    private void configureApiKey(
+            MemoryServiceClientProperties properties,
+            MemoryServiceConnectionDetails connectionDetails,
+            ApiClient apiClient) {
+        String apiKey =
+                StringUtils.hasText(properties.getApiKey())
+                        ? properties.getApiKey()
+                        : Optional.ofNullable(connectionDetails)
+                                .map(MemoryServiceConnectionDetails::getApiKey)
+                                .filter(StringUtils::hasText)
+                                .orElse(null);
+
+        if (!StringUtils.hasText(apiKey)) {
+            return;
+        }
+        apiClient.addDefaultHeader("X-API-Key", apiKey);
     }
 
     private void configureBearer(MemoryServiceClientProperties properties, ApiClient apiClient) {

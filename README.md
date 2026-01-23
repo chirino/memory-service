@@ -48,7 +48,7 @@ This is a multi-module Maven project built on Quarkus (Java 21). The modules are
 
 2. **Build the Docker image:**
    ```bash
-   docker build -t memory-service-service:latest .
+   docker build -t ghcr.io/chirino/memory-service:latest .
    ```
 
 3. **Run the example agent:**

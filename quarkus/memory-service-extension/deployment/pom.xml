@@ -9,7 +9,7 @@
   </parent>
 
   <artifactId>memory-service-extension-deployment</artifactId>
-  <name>Memory Service - Extension - Deployment</name>
+  <name>Memory Service - Quarkus - Extension - Deployment</name>
 
   <properties>
     <quarkus.generate-code.skip>true</quarkus.generate-code.skip>

@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.lang.Nullable;
 import org.springframework.security.oauth2.client.ReactiveOAuth2AuthorizedClientManager;
@@ -33,7 +34,7 @@ public final class MemoryServiceClients {
         }
 
         if (properties.isLogRequests()) {
-            builder.filter(logRequests());
+            builder.filter(logRequests(properties));
         }
 
         if (authorizedClientManager != null
@@ -45,6 +46,14 @@ public final class MemoryServiceClients {
                 headers -> {
                     if (StringUtils.hasText(properties.getApiKey())) {
                         headers.set("X-API-Key", Objects.requireNonNull(properties.getApiKey()));
+                        LOGGER.info(
+                                "memory-service client will send X-API-Key header (length={})",
+                                properties.getApiKey().length());
+                    } else {
+                        LOGGER.warn(
+                                "memory-service client API key not set; requests may be"
+                                        + " unauthorized. baseUrl={}",
+                                properties.getBaseUrl());
                     }
                     for (Map.Entry<String, String> entry :
                             properties.getDefaultHeaders().entrySet()) {
@@ -56,6 +65,9 @@ public final class MemoryServiceClients {
         apiClient.setBasePath(properties.getBaseUrl());
         if (StringUtils.hasText(properties.getApiKey())) {
             apiClient.addDefaultHeader("X-API-Key", properties.getApiKey());
+        }
+        if (StringUtils.hasText(properties.getBearerToken())) {
+            apiClient.setBearerToken(properties.getBearerToken());
         }
         properties
                 .getDefaultHeaders()
@@ -72,9 +84,22 @@ public final class MemoryServiceClients {
         return httpClient;
     }
 
-    private static ExchangeFilterFunction logRequests() {
+    private static ExchangeFilterFunction logRequests(MemoryServiceClientProperties properties) {
         return (request, next) -> {
-            LOGGER.debug("memory-service client {} {}", request.method(), request.url());
+            String url = request.url().toString();
+            if (StringUtils.hasText(properties.getBaseUrl())
+                    && !url.startsWith(properties.getBaseUrl())) {
+                return next.exchange(request);
+            }
+            boolean hasAuthorization = request.headers().containsKey(HttpHeaders.AUTHORIZATION);
+            boolean hasApiKey = request.headers().containsKey("X-API-Key");
+            LOGGER.info(
+                    "memory-service client request: {} {}, sent Authorization header: {}, sent"
+                            + " X-API-Key header: {}",
+                    request.method(),
+                    url,
+                    hasAuthorization,
+                    hasApiKey);
             return next.exchange(request);
         };
     }
