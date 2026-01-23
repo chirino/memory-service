@@ -46,18 +46,7 @@ public class MemoryServiceDockerComposeConnectionDetailsFactory
         }
         URI baseUri = URI.create("http://" + service.host() + ":" + httpPort);
 
-        LOG.info(
-                "MemoryService Docker Compose connection detected for service '{}': envKeys={}",
-                service.name(),
-                service.env());
         String apiKey = firstApiKey(service.env());
-        LOG.info(
-                "MemoryService Docker Compose connection detected for service '{}': baseUri={},"
-                        + " apiKeyPresent={}, envKeys={}",
-                service.name(),
-                baseUri,
-                StringUtils.hasText(apiKey),
-                service.env().keySet());
         return new DefaultMemoryServiceConnectionDetails(baseUri, apiKey);
     }
 

@@ -56,14 +56,7 @@ public class MemoryServiceContainerConnectionDetailsFactory
         public String getApiKey() {
             GenericContainer<?> container = getContainer();
             Map<String, String> env = container.getEnvMap();
-            String apiKey = firstApiKey(env);
-            LOG.info(
-                    "MemoryService Testcontainers env detected: apiKeyPresent={}, envKeys={},"
-                            + " MEMORY_SERVICE_API_KEYS_AGENT={}",
-                    StringUtils.hasText(apiKey),
-                    env.keySet(),
-                    env.get("MEMORY_SERVICE_API_KEYS_AGENT"));
-            return apiKey;
+            return firstApiKey(env);
         }
     }
 
