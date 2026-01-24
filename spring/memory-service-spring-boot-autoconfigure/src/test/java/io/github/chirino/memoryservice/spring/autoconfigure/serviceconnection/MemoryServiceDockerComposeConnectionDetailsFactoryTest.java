@@ -1,8 +1,10 @@
 package io.github.chirino.memoryservice.spring.autoconfigure.serviceconnection;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import java.lang.reflect.Constructor;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.docker.compose.core.ConnectionPorts;
@@ -13,14 +15,14 @@ import org.springframework.boot.docker.compose.service.connection.DockerComposeC
 class MemoryServiceDockerComposeConnectionDetailsFactoryTest {
 
     @Test
-    void exposesFirstApiKeyFromEnv() throws Exception {
+    void exposesFirstApiKeyFromEnv() {
         RunningService service =
                 new StubRunningService(
                         Map.of("MEMORY_SERVICE_API_KEYS_AGENT", "first-key,second-key"), 18080);
-        Constructor<DockerComposeConnectionSource> constructor =
-                DockerComposeConnectionSource.class.getDeclaredConstructor(RunningService.class);
-        constructor.setAccessible(true);
-        DockerComposeConnectionSource source = constructor.newInstance(service);
+
+        // Use Mockito to mock DockerComposeConnectionSource since its constructor is not public
+        DockerComposeConnectionSource source = mock(DockerComposeConnectionSource.class);
+        when(source.getRunningService()).thenReturn(service);
 
         MemoryServiceDockerComposeConnectionDetailsFactory factory =
                 new MemoryServiceDockerComposeConnectionDetailsFactory();
@@ -85,13 +87,13 @@ class MemoryServiceDockerComposeConnectionDetailsFactoryTest {
         }
 
         @Override
-        public java.util.List<Integer> getAll() {
-            return java.util.List.of(mappedPort);
+        public List<Integer> getAll() {
+            return List.of(mappedPort);
         }
 
         @Override
-        public java.util.List<Integer> getAll(String name) {
-            return java.util.List.of(mappedPort);
+        public List<Integer> getAll(String name) {
+            return List.of(mappedPort);
         }
     }
 }

@@ -49,4 +49,28 @@
     </dependencies>
 
   </dependencyManagement>
+
+  <build>
+    <plugins>
+      <!-- Override parent failsafe config to remove Quarkus-specific JBoss LogManager -->
+      <plugin>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables combine.self="override">
+            <native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
+            <maven.home>${maven.home}</maven.home>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <!-- Override parent surefire config to remove Quarkus-specific JBoss LogManager -->
+      <plugin>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables combine.self="override">
+            <maven.home>${maven.home}</maven.home>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>
