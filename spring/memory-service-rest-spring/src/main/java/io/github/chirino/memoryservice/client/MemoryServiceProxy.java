@@ -156,7 +156,17 @@ public class MemoryServiceProxy {
             if (upstream == null) {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
             }
-            HttpHeaders headers = upstream.getHeaders();
+            HttpHeaders headers = new HttpHeaders();
+            upstream.getHeaders()
+                    .forEach(
+                            (name, values) -> {
+                                // Don't forward Content-Length or Transfer-Encoding since we're
+                                // re-serializing the body
+                                if (!name.equalsIgnoreCase(HttpHeaders.CONTENT_LENGTH)
+                                        && !name.equalsIgnoreCase(HttpHeaders.TRANSFER_ENCODING)) {
+                                    headers.addAll(name, values);
+                                }
+                            });
             return ResponseEntity.status(upstream.getStatusCode())
                     .headers(headers)
                     .body(upstream.getBody());

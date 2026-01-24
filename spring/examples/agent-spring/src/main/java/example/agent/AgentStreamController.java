@@ -1,14 +1,20 @@
 package example.agent;
 
+import io.github.chirino.memoryservice.history.ResponseResumer;
+import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.io.IOException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,14 +29,20 @@ import reactor.core.publisher.Flux;
 @RequestMapping("/customer-support-agent")
 class AgentStreamController {
 
-    private static final Logger LOG = LoggerFactory.getLogger(AgentStreamController.class);
-
     private final ChatClient chatClient;
     private final ChatMemory chatMemory;
+    private final ResponseResumer responseResumer;
+    private final OAuth2AuthorizedClientService authorizedClientService;
 
-    AgentStreamController(ChatClient chatClient, ChatMemory chatMemory) {
+    AgentStreamController(
+            ChatClient chatClient,
+            ChatMemory chatMemory,
+            ResponseResumer responseResumer,
+            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
         this.chatClient = chatClient;
         this.chatMemory = chatMemory;
+        this.responseResumer = responseResumer;
+        this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
     }
 
     @PostMapping(
@@ -47,40 +59,62 @@ class AgentStreamController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message is required");
         }
 
-        LOG.info("Received SSE request for conversationId={}", conversationId);
-
         SseEmitter emitter = new SseEmitter(0L);
-        ChatClient requestClient =
+
+        // conversationHistoryStreamAdvisor is already registered as a default advisor
+        // in AgentChatConfiguration, so we only need to set the conversation ID parameter
+        ChatClient.ChatClientRequestSpec requestSpec =
                 chatClient
-                        .mutate()
-                        .defaultAdvisors(
-                                MessageChatMemoryAdvisor.builder(chatMemory)
-                                        .conversationId(conversationId)
-                                        .build())
-                        .build();
+                        .prompt()
+                        .advisors(
+                                advisor ->
+                                        advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
+                        .user(request.getMessage());
 
         Flux<String> responseFlux =
-                requestClient.prompt().user(request.getMessage()).stream().content();
+                requestSpec.stream().chatClientResponse().map(this::extractContent);
 
         Disposable subscription =
                 responseFlux.subscribe(
                         chunk -> safeSendChunk(conversationId, emitter, new TokenFrame(chunk)),
-                        failure -> {
-                            LOG.warn("Chat failed for conversationId={}", conversationId, failure);
-                            emitter.completeWithError(failure);
-                        },
-                        () -> {
-                            LOG.info(
-                                    "Chat stream completed for conversationId={}, closing"
-                                            + " connection",
-                                    conversationId);
-                            emitter.complete();
-                        });
+                        emitter::completeWithError,
+                        emitter::complete);
 
         emitter.onCompletion(subscription::dispose);
         emitter.onTimeout(
                 () -> {
-                    LOG.info("Chat stream timed out for conversationId={}", conversationId);
+                    subscription.dispose();
+                    emitter.complete();
+                });
+
+        return emitter;
+    }
+
+    @GetMapping(
+            path = "/{conversationId}/resume/{resumePosition}",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter resume(
+            @PathVariable String conversationId, @PathVariable long resumePosition) {
+        if (!StringUtils.hasText(conversationId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Conversation ID is required");
+        }
+
+        SseEmitter emitter = new SseEmitter(0L);
+        String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
+        Disposable subscription =
+                responseResumer
+                        .replay(conversationId, resumePosition, bearerToken)
+                        .subscribe(
+                                chunk ->
+                                        safeSendChunk(
+                                                conversationId, emitter, new TokenFrame(chunk)),
+                                emitter::completeWithError,
+                                emitter::complete);
+
+        emitter.onCompletion(subscription::dispose);
+        emitter.onTimeout(
+                () -> {
                     subscription.dispose();
                     emitter.complete();
                 });
@@ -92,10 +126,6 @@ class AgentStreamController {
         try {
             emitter.send(SseEmitter.event().name("token").data(frame));
         } catch (IOException failure) {
-            LOG.warn(
-                    "Failed to send SSE chunk for conversationId={}, closing emitter",
-                    conversationId,
-                    failure);
             emitter.completeWithError(failure);
         }
     }
@@ -130,5 +160,27 @@ class AgentStreamController {
         public void setMessage(String message) {
             this.message = message;
         }
+    }
+
+    private String extractContent(ChatClientResponse response) {
+        ChatResponse payload = response.chatResponse();
+        if (payload == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (Generation generation : payload.getResults()) {
+            Object output = generation.getOutput();
+            if (output instanceof AssistantMessage assistant) {
+                String text = assistant.getText();
+                if (StringUtils.hasText(text)) {
+                    builder.append(text);
+                }
+                continue;
+            }
+            if (output != null) {
+                builder.append(output.toString());
+            }
+        }
+        return builder.toString();
     }
 }

@@ -46,14 +46,6 @@ public final class MemoryServiceClients {
                 headers -> {
                     if (StringUtils.hasText(properties.getApiKey())) {
                         headers.set("X-API-Key", Objects.requireNonNull(properties.getApiKey()));
-                        LOGGER.info(
-                                "memory-service client will send X-API-Key header (length={})",
-                                properties.getApiKey().length());
-                    } else {
-                        LOGGER.warn(
-                                "memory-service client API key not set; requests may be"
-                                        + " unauthorized. baseUrl={}",
-                                properties.getBaseUrl());
                     }
                     for (Map.Entry<String, String> entry :
                             properties.getDefaultHeaders().entrySet()) {
