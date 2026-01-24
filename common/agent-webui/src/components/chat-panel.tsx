@@ -838,11 +838,11 @@ function ChatPanelContent({
               onValueChange={(value) => setStreamMode(value as StreamMode)}
               variant="outline"
             >
+              <ToggleGroupItem value="sse" aria-label="Use SSE stream">
+                Server Sent Events
+              </ToggleGroupItem>
               <ToggleGroupItem value="websocket" aria-label="Use WebSocket stream">
                 WebSocket
-              </ToggleGroupItem>
-              <ToggleGroupItem value="sse" aria-label="Use SSE stream">
-                SSE
               </ToggleGroupItem>
             </ToggleGroup>
         </div>
@@ -1342,8 +1342,7 @@ export function ChatPanel({
         },
       };
 
-      const isResume = !text && resumePosition === 0 && !resetResume;
-      const useSse = streamMode === "sse" && !isResume;
+      const useSse = streamMode === "sse";
 
       if (useSse) {
         sseStream.close();

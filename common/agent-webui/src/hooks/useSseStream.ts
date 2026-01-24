@@ -28,7 +28,11 @@ export function useSseStream(): StreamClient {
       }
 
       const trimmedMessage = params.text?.trim();
-      if (!trimmedMessage) {
+      // Determine if this is a resume operation
+      // Resume: text is empty, resumePosition is 0, and resetResume is false
+      const isResume = !trimmedMessage && params.resumePosition === 0 && !params.resetResume;
+
+      if (!isResume && !trimmedMessage) {
         params.onError?.(new Error("SSE stream requires a message"));
         return;
       }
@@ -39,10 +43,24 @@ export function useSseStream(): StreamClient {
       closedByClientRef.current = false;
 
       const run = async () => {
+        let receivedAnyChunks = false;
+
         try {
-          const response = await fetch(
-            `/customer-support-agent/${encodeURIComponent(params.sessionId)}/sse`,
-            {
+          let url: string;
+          let fetchOptions: RequestInit;
+
+          if (isResume) {
+            // Resume SSE: GET /customer-support-agent/{conversationId}/resume/{resumePosition}
+            url = `/customer-support-agent/${encodeURIComponent(params.sessionId)}/resume/${params.resumePosition}`;
+            fetchOptions = {
+              method: "GET",
+              headers: { Accept: "text/event-stream" },
+              signal: controller.signal,
+            };
+          } else {
+            // Normal chat SSE: POST /customer-support-agent/{conversationId}/sse
+            url = `/customer-support-agent/${encodeURIComponent(params.sessionId)}/sse`;
+            fetchOptions = {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -50,8 +68,10 @@ export function useSseStream(): StreamClient {
               },
               body: JSON.stringify({ message: trimmedMessage }),
               signal: controller.signal,
-            },
-          );
+            };
+          }
+
+          const response = await fetch(url, fetchOptions);
 
           if (!response.ok) {
             throw new Error(`SSE request failed: ${response.status} ${response.statusText}`);
@@ -77,16 +97,19 @@ export function useSseStream(): StreamClient {
               try {
                 const parsed = JSON.parse(payload);
                 if (typeof parsed === "string") {
+                  receivedAnyChunks = true;
                   params.onChunk(parsed);
                   return;
                 }
                 if (parsed && typeof parsed.token === "string") {
+                  receivedAnyChunks = true;
                   params.onChunk(parsed.token);
                   return;
                 }
               } catch {
                 // fall through to handle raw payload
               }
+              receivedAnyChunks = true;
               params.onChunk(payload);
               return;
             }
@@ -108,6 +131,12 @@ export function useSseStream(): StreamClient {
 
           if (buffer.trim()) {
             processEvent(buffer);
+          }
+
+          // If this was a resume and we received no chunks, call onReplayFailed
+          if (isResume && !receivedAnyChunks) {
+            params.onReplayFailed();
+            return;
           }
 
           params.onCleanEnd();

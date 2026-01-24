@@ -65,12 +65,6 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
             return chain.nextStream(request);
         }
 
-        LOG.info(
-                "adviseStream: conversationId={} bearerTokenPresent={} thread={}",
-                conversationId,
-                StringUtils.hasText(bearerToken),
-                Thread.currentThread().getName());
-
         Scheduler scheduler = Schedulers.boundedElastic();
 
         return Mono.just(request)
@@ -150,9 +144,14 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
                                                 if (canceled.get()) {
                                                     return;
                                                 }
+                                                // Always record the chunk even if downstream
+                                                // disconnected
                                                 recordChunk(
                                                         conversationId, buffer, recorder, response);
-                                                sink.next(response);
+                                                // Only emit to downstream if still connected
+                                                if (!sink.isCancelled()) {
+                                                    sink.next(response);
+                                                }
                                             },
                                             failure -> {
                                                 cancelRef.get().dispose();
@@ -175,18 +174,17 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
 
                     sink.onCancel(
                             () -> {
-                                cancelUpstream(upstreamRef.get());
+                                // Don't cancel upstream when downstream (browser) disconnects.
+                                // The upstream LLM stream should continue to completion so we
+                                // record the full response. Only explicit cancellation via
+                                // ResponseCancelSignal should terminate the upstream.
+                                // We only need to dispose the cancel stream subscription here.
                                 Disposable cancelHandle = cancelRef.get();
                                 if (cancelHandle != null && !cancelHandle.isDisposed()) {
                                     cancelHandle.dispose();
                                 }
-                                finalizeConversation(
-                                        conversationId,
-                                        buffer,
-                                        recorder,
-                                        bearerToken,
-                                        sink,
-                                        finalized);
+                                // Don't finalize here - let the upstream completion handler
+                                // finalize after the full response is recorded.
                             });
                 });
     }

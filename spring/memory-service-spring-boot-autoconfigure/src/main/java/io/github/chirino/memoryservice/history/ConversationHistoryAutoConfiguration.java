@@ -2,9 +2,13 @@ package io.github.chirino.memoryservice.history;
 
 import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
 import io.github.chirino.memoryservice.grpc.MemoryServiceGrpcClients;
+import io.github.chirino.memoryservice.spring.autoconfigure.MemoryServiceAutoConfiguration;
 import io.grpc.ManagedChannel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.advisor.api.StreamAdvisor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -16,7 +20,11 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnClass(StreamAdvisor.class)
+@AutoConfigureAfter(MemoryServiceAutoConfiguration.class)
 public class ConversationHistoryAutoConfiguration {
+
+    private static final Logger LOG =
+            LoggerFactory.getLogger(ConversationHistoryAutoConfiguration.class);
 
     @Bean
     public ConversationsApiFactory conversationsApiFactory(
@@ -51,7 +59,7 @@ public class ConversationHistoryAutoConfiguration {
             MemoryServiceGrpcClients.MemoryServiceStubs stubs,
             ManagedChannel channel,
             ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
-        return new SpringGrpcResponseResumer(
+        return new GrpcResponseResumer(
                 stubs, channel, clientProperties, authorizedClientServiceProvider.getIfAvailable());
     }
 

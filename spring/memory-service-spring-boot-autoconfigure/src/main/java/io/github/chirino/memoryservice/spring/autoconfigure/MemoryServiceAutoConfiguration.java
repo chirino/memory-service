@@ -7,13 +7,17 @@ import io.github.chirino.memoryservice.client.api.UserConversationsApi;
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
 import io.github.chirino.memoryservice.client.invoker.auth.Authentication;
 import io.github.chirino.memoryservice.client.invoker.auth.HttpBearerAuth;
+import io.github.chirino.memoryservice.grpc.MemoryServiceGrpcClients;
+import io.github.chirino.memoryservice.grpc.MemoryServiceGrpcProperties;
 import io.github.chirino.memoryservice.spring.autoconfigure.serviceconnection.MemoryServiceConnectionDetails;
+import io.grpc.ManagedChannel;
 import java.net.URI;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -23,7 +27,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 @AutoConfiguration
 @ConditionalOnClass(ApiClient.class)
-@EnableConfigurationProperties(MemoryServiceClientProperties.class)
+@EnableConfigurationProperties({
+    MemoryServiceClientProperties.class,
+    MemoryServiceGrpcProperties.class
+})
 public class MemoryServiceAutoConfiguration {
 
     private static final Logger logger =
@@ -117,5 +124,90 @@ public class MemoryServiceAutoConfiguration {
     @ConditionalOnMissingBean
     public SystemApi systemApi(ApiClient apiClient) {
         return new SystemApi(apiClient);
+    }
+
+    // ----- gRPC Client Auto-Configuration -----
+
+    /**
+     * Resolves the effective base URI from connection details or properties.
+     * This is used by both the REST client and gRPC client configuration.
+     */
+    private URI resolveBaseUri(
+            MemoryServiceConnectionDetails connectionDetails,
+            MemoryServiceClientProperties properties) {
+        if (connectionDetails != null && connectionDetails.getBaseUri() != null) {
+            return connectionDetails.getBaseUri();
+        }
+        if (properties.getBaseUrl() != null) {
+            return properties.getBaseUrl();
+        }
+        return null;
+    }
+
+    @Bean(destroyMethod = "shutdownNow")
+    @ConditionalOnClass(ManagedChannel.class)
+    @ConditionalOnMissingBean
+    public ManagedChannel memoryServiceChannel(
+            MemoryServiceGrpcProperties grpcProperties,
+            MemoryServiceClientProperties clientProperties,
+            ObjectProvider<MemoryServiceConnectionDetails> connectionDetailsProvider) {
+
+        MemoryServiceConnectionDetails connectionDetails =
+                connectionDetailsProvider.getIfAvailable();
+
+        // If gRPC is explicitly configured, use those settings
+        if (grpcProperties.isEnabled()) {
+            logger.info(
+                    "Creating gRPC ManagedChannel (explicit config): target={}, plaintext={}",
+                    grpcProperties.getTarget(),
+                    grpcProperties.isPlaintext());
+            return MemoryServiceGrpcClients.channelBuilder(grpcProperties).build();
+        }
+
+        // Otherwise, try to auto-derive from REST client baseUrl or connection details
+        URI baseUri = resolveBaseUri(connectionDetails, clientProperties);
+        if (baseUri == null) {
+            logger.info(
+                    "gRPC channel not created: no explicit gRPC config and no baseUrl available");
+            return null;
+        }
+
+        try {
+            String host = baseUri.getHost();
+            if (host == null) {
+                host = "localhost";
+            }
+            int port = baseUri.getPort();
+            if (port == -1) {
+                port = "https".equals(baseUri.getScheme()) ? 443 : 80;
+            }
+            boolean plaintext = !"https".equals(baseUri.getScheme());
+
+            String target = host + ":" + port;
+            logger.info(
+                    "Auto-configuring gRPC from baseUri={}: target={}, plaintext={}",
+                    baseUri,
+                    target,
+                    plaintext);
+
+            grpcProperties.setTarget(target);
+            grpcProperties.setPlaintext(plaintext);
+            return MemoryServiceGrpcClients.channelBuilder(grpcProperties).build();
+        } catch (Exception e) {
+            logger.warn(
+                    "Failed to derive gRPC settings from baseUri={}: {}", baseUri, e.getMessage());
+            return null;
+        }
+    }
+
+    @Bean(destroyMethod = "close")
+    @ConditionalOnBean(ManagedChannel.class)
+    @ConditionalOnMissingBean(MemoryServiceGrpcClients.MemoryServiceStubs.class)
+    public MemoryServiceGrpcClients.MemoryServiceStubs memoryServiceStubs(ManagedChannel channel) {
+        if (channel == null) {
+            return null;
+        }
+        logger.info("Creating MemoryServiceStubs for gRPC channel");
+        return MemoryServiceGrpcClients.stubs(channel);
     }
 }

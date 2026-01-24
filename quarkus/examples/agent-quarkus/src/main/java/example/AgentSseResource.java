@@ -1,11 +1,17 @@
 package example;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
+
+import io.github.chirino.memory.history.runtime.ResponseResumer;
 import io.quarkus.logging.Log;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Multi;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -17,6 +23,9 @@ import jakarta.ws.rs.core.MediaType;
 public class AgentSseResource {
 
     private final HistoryRecordingAgent agent;
+
+    @Inject ResponseResumer resumer;
+    @Inject SecurityIdentity securityIdentity;
 
     public AgentSseResource(HistoryRecordingAgent agent) {
         this.agent = agent;
@@ -47,6 +56,34 @@ public class AgentSseResource {
                                         failure,
                                         "Chat failed for conversationId=%s",
                                         conversationId));
+    }
+
+    @GET
+    @Path("/{conversationId}/resume/{resumePosition}")
+    @Blocking
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    public Multi<TokenFrame> resume(
+            @PathParam("conversationId") String conversationId,
+            @PathParam("resumePosition") String resumePosition) {
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new BadRequestException("Conversation ID is required");
+        }
+
+        Log.infof(
+                "SSE resume request for conversationId=%s resumePosition=%s",
+                conversationId, resumePosition);
+
+        String bearerToken = bearerToken(securityIdentity);
+        return resumer.replay(conversationId, resumePosition, bearerToken)
+                .map(TokenFrame::new)
+                .onFailure()
+                .invoke(
+                        failure ->
+                                Log.warnf(
+                                        failure,
+                                        "Resume failed for conversationId=%s resumePosition=%s",
+                                        conversationId,
+                                        resumePosition));
     }
 
     public static final class TokenFrame {

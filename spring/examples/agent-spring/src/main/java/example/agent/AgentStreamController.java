@@ -98,14 +98,14 @@ class AgentStreamController {
         Disposable subscription =
                 responseFlux.subscribe(
                         chunk -> safeSendChunk(conversationId, emitter, new TokenFrame(chunk)),
-                        emitter::completeWithError,
-                        emitter::complete);
+                        failure -> safeCompleteWithError(emitter, failure),
+                        () -> safeComplete(emitter));
 
         emitter.onCompletion(subscription::dispose);
         emitter.onTimeout(
                 () -> {
                     subscription.dispose();
-                    emitter.complete();
+                    safeComplete(emitter);
                 });
 
         return emitter;
@@ -130,14 +130,14 @@ class AgentStreamController {
                                 chunk ->
                                         safeSendChunk(
                                                 conversationId, emitter, new TokenFrame(chunk)),
-                                emitter::completeWithError,
-                                emitter::complete);
+                                failure -> safeCompleteWithError(emitter, failure),
+                                () -> safeComplete(emitter));
 
         emitter.onCompletion(subscription::dispose);
         emitter.onTimeout(
                 () -> {
                     subscription.dispose();
-                    emitter.complete();
+                    safeComplete(emitter);
                 });
 
         return emitter;
@@ -146,8 +146,25 @@ class AgentStreamController {
     private void safeSendChunk(String conversationId, SseEmitter emitter, TokenFrame frame) {
         try {
             emitter.send(SseEmitter.event().name("token").data(frame));
-        } catch (IOException failure) {
+        } catch (IOException | IllegalStateException ignored) {
+            // Client disconnected or emitter already completed.
+            // Silently ignore - the upstream will continue recording the full response.
+        }
+    }
+
+    private void safeComplete(SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (IllegalStateException ignored) {
+            // Emitter already completed - ignore
+        }
+    }
+
+    private void safeCompleteWithError(SseEmitter emitter, Throwable failure) {
+        try {
             emitter.completeWithError(failure);
+        } catch (IllegalStateException ignored) {
+            // Emitter already completed - ignore
         }
     }
 

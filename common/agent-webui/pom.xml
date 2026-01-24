@@ -131,11 +131,11 @@ process.exit(result.status);
                 <echo message="[DEBUG] Newer source files:"/>
                 <echo message="${newer.files.output}"/>
                 <echo message="[DEBUG] ==========================================="/>
-                <exec dir="${project.basedir}" executable="${frontend.node.bin}">
+                <exec dir="${project.basedir}" executable="${frontend.node.bin}" failonerror="true">
                   <arg value="${frontend.npm.cli}"/>
                   <arg value="install"/>
                 </exec>
-                <exec dir="${project.basedir}" executable="${frontend.node.bin}">
+                <exec dir="${project.basedir}" executable="${frontend.node.bin}" failonerror="true">
                   <env key="FRONTEND_DIST_UPTODATE" value="${frontend.dist.uptodate}"/>
                   <arg value="-e"/>
                   <arg value="${frontend.build.script}"/>

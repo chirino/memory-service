@@ -31,9 +31,9 @@ import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
-public class SpringGrpcResponseResumer implements ResponseResumer {
+public class GrpcResponseResumer implements ResponseResumer {
 
-    private static final Logger LOG = LoggerFactory.getLogger(SpringGrpcResponseResumer.class);
+    private static final Logger LOG = LoggerFactory.getLogger(GrpcResponseResumer.class);
     private static final Metadata.Key<String> AUTHORIZATION_HEADER =
             Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> API_KEY_HEADER =
@@ -44,7 +44,7 @@ public class SpringGrpcResponseResumer implements ResponseResumer {
     private final MemoryServiceClientProperties clientProperties;
     private final OAuth2AuthorizedClientService authorizedClientService;
 
-    public SpringGrpcResponseResumer(
+    public GrpcResponseResumer(
             MemoryServiceGrpcClients.MemoryServiceStubs stubs,
             ManagedChannel channel,
             MemoryServiceClientProperties clientProperties,
@@ -68,6 +68,7 @@ public class SpringGrpcResponseResumer implements ResponseResumer {
     @Override
     public Flux<String> replay(
             String conversationId, long resumePosition, @Nullable String bearerToken) {
+        final long[] tokenCount = {0};
         return Flux.<String>create(
                         sink -> {
                             ReplayResponseTokensRequest request =
@@ -82,6 +83,7 @@ public class SpringGrpcResponseResumer implements ResponseResumer {
                                                 @Override
                                                 public void onNext(
                                                         ReplayResponseTokensResponse response) {
+                                                    tokenCount[0]++;
                                                     sink.next(response.getToken());
                                                 }
 
@@ -108,6 +110,7 @@ public class SpringGrpcResponseResumer implements ResponseResumer {
     @Override
     public List<String> check(List<String> conversationIds, @Nullable String bearerToken) {
         if (conversationIds == null || conversationIds.isEmpty()) {
+            LOG.warn("Check called with empty conversationIds, returning empty list");
             return List.of();
         }
         try {
@@ -117,14 +120,12 @@ public class SpringGrpcResponseResumer implements ResponseResumer {
                             .build();
             CheckConversationsResponse response =
                     blockingStub(bearerToken).checkConversations(request);
-            return new ArrayList<>(response.getConversationIdsList());
+            List<String> resumable = new ArrayList<>(response.getConversationIdsList());
+            return resumable;
         } catch (StatusRuntimeException e) {
             Status status = e.getStatus();
             if (status.getCode() == Status.Code.UNIMPLEMENTED
                     || status.getCode() == Status.Code.NOT_FOUND) {
-                LOG.info(
-                        "gRPC check not supported, returning empty list: {}",
-                        status.getDescription());
                 return List.of();
             }
             LOG.warn("Failed to check conversations", e);
@@ -149,6 +150,7 @@ public class SpringGrpcResponseResumer implements ResponseResumer {
     @Override
     public void requestCancel(String conversationId, @Nullable String bearerToken) {
         if (!StringUtils.hasText(conversationId)) {
+            LOG.warn("Cancel request skipped: no conversationId provided");
             return;
         }
         CancelResponseRequest request =
@@ -227,6 +229,10 @@ public class SpringGrpcResponseResumer implements ResponseResumer {
 
                                 @Override
                                 public void onError(Throwable t) {
+                                    LOG.warn(
+                                            "Response stream error for conversationId={}",
+                                            conversationId,
+                                            t);
                                     cancelSink.tryEmitError(t);
                                 }
 
