@@ -39,14 +39,9 @@ public class ConversationHistoryAutoConfiguration {
     }
 
     @Bean
-    public ConversationHistoryStreamAdvisor conversationHistoryStreamAdvisor(
-            ConversationStore conversationStore,
-            ResponseResumer responseResumer,
-            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
-        return new ConversationHistoryStreamAdvisor(
-                conversationStore,
-                responseResumer,
-                authorizedClientServiceProvider.getIfAvailable());
+    public ConversationHistoryStreamAdvisorBuilder conversationHistoryStreamAdvisorBuilder(
+            ConversationStore conversationStore, ResponseResumer responseResumer) {
+        return new ConversationHistoryStreamAdvisorBuilder(conversationStore, responseResumer);
     }
 
     @Bean

@@ -1,11 +1,15 @@
 package example.agent;
 
+import io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisorBuilder;
 import io.github.chirino.memoryservice.history.ResponseResumer;
+import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryBuilder;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.io.IOException;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -29,19 +33,22 @@ import reactor.core.publisher.Flux;
 @RequestMapping("/customer-support-agent")
 class AgentStreamController {
 
-    private final ChatClient chatClient;
-    private final ChatMemory chatMemory;
+    private final ChatClient.Builder chatClientBuilder;
+    private final MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder;
     private final ResponseResumer responseResumer;
+    private final ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder;
     private final OAuth2AuthorizedClientService authorizedClientService;
 
     AgentStreamController(
-            ChatClient chatClient,
-            ChatMemory chatMemory,
+            ChatClient.Builder chatClientBuilder,
+            MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder,
             ResponseResumer responseResumer,
+            ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder,
             ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
-        this.chatClient = chatClient;
-        this.chatMemory = chatMemory;
+        this.chatClientBuilder = chatClientBuilder;
+        this.repositoryBuilder = repositoryBuilder;
         this.responseResumer = responseResumer;
+        this.historyAdvisorBuilder = historyAdvisorBuilder;
         this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
     }
 
@@ -59,10 +66,23 @@ class AgentStreamController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message is required");
         }
 
-        SseEmitter emitter = new SseEmitter(0L);
+        // Capture bearer token on the HTTP request thread before any reactive processing.
+        // This token is passed to both the history advisor and the memory repository
+        // since SecurityContext is not available on worker threads.
+        String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
+        var historyAdvisor = historyAdvisorBuilder.build(bearerToken);
+        var repository = repositoryBuilder.build(bearerToken);
+        var chatMemory = MessageWindowChatMemory.builder().chatMemoryRepository(repository).build();
 
-        // conversationHistoryStreamAdvisor is already registered as a default advisor
-        // in AgentChatConfiguration, so we only need to set the conversation ID parameter
+        var chatClient =
+                chatClientBuilder
+                        .clone()
+                        .defaultSystem("You are a helpful assistant.")
+                        .defaultAdvisors(
+                                historyAdvisor,
+                                MessageChatMemoryAdvisor.builder(chatMemory).build())
+                        .build();
+
         ChatClient.ChatClientRequestSpec requestSpec =
                 chatClient
                         .prompt()
@@ -74,6 +94,7 @@ class AgentStreamController {
         Flux<String> responseFlux =
                 requestSpec.stream().chatClientResponse().map(this::extractContent);
 
+        SseEmitter emitter = new SseEmitter(0L);
         Disposable subscription =
                 responseFlux.subscribe(
                         chunk -> safeSendChunk(conversationId, emitter, new TokenFrame(chunk)),

@@ -1,2 +1,3 @@
 io.github.chirino.memoryservice.spring.autoconfigure.MemoryServiceAutoConfiguration
 io.github.chirino.memoryservice.history.ConversationHistoryAutoConfiguration
+io.github.chirino.memoryservice.memory.ChatMemoryAutoConfiguration

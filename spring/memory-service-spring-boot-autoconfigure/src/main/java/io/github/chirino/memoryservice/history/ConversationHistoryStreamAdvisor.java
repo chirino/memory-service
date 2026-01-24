@@ -1,7 +1,6 @@
 package io.github.chirino.memoryservice.history;
 
 import io.github.chirino.memoryservice.history.ResponseResumer.ResponseRecorder;
-import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
@@ -19,7 +18,6 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.core.Ordered;
 import org.springframework.lang.Nullable;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.util.StringUtils;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -28,6 +26,14 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
+/**
+ * Stream advisor that records conversation history to the memory-service.
+ *
+ * <p>This advisor should be created per-request using {@link
+ * ConversationHistoryStreamAdvisorBuilder} with a bearer token captured on the HTTP request thread.
+ * This ensures the token is available throughout the advisor's lifecycle, even when processing
+ * moves to worker threads where the SecurityContext is not available.
+ */
 public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvisor {
 
     private static final Logger LOG =
@@ -35,15 +41,15 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
 
     private final ConversationStore conversationStore;
     private final ResponseResumer responseResumer;
-    private final OAuth2AuthorizedClientService authorizedClientService;
+    private final String bearerToken;
 
     public ConversationHistoryStreamAdvisor(
             ConversationStore conversationStore,
             ResponseResumer responseResumer,
-            @Nullable OAuth2AuthorizedClientService authorizedClientService) {
+            @Nullable String bearerToken) {
         this.conversationStore = conversationStore;
         this.responseResumer = responseResumer;
-        this.authorizedClientService = authorizedClientService;
+        this.bearerToken = bearerToken;
     }
 
     @Override
@@ -59,9 +65,6 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
             return chain.nextStream(request);
         }
 
-        // Capture bearer token on the original servlet thread before switching to scheduler
-        // SecurityContextHolder is thread-local and won't be available on boundedElastic threads
-        String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
         LOG.info(
                 "adviseStream: conversationId={} bearerTokenPresent={} thread={}",
                 conversationId,

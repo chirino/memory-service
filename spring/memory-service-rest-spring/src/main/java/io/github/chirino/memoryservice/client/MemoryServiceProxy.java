@@ -139,11 +139,6 @@ public class MemoryServiceProxy {
         } else if (StringUtils.hasText(properties.getBearerToken())) {
             apiClient.setBearerToken(properties.getBearerToken());
         }
-        LOG.info(
-                "Creating ConversationsApi with baseUrl={}, apiKeyPresent={}, bearerPresent={}",
-                apiClient.getBasePath(),
-                StringUtils.hasText(apiKey),
-                StringUtils.hasText(bearer) || StringUtils.hasText(properties.getBearerToken()));
         return new ConversationsApi(apiClient);
     }
 
