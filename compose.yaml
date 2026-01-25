@@ -98,13 +98,9 @@ services:
       context: .
       dockerfile: ./quarkus/examples/agent-quarkus/Dockerfile
     environment:
-      # Unified config key for REST client
+      # Unified config - gRPC client settings are auto-derived from this URL
       MEMORY_SERVICE_CLIENT_URL: http://memory-service:8080
       MEMORY_SERVICE_CLIENT_API_KEY: agent-api-key-1
-      # gRPC client config (must be set explicitly as env vars are not available at build time)
-      QUARKUS_GRPC_CLIENTS_RESPONSERESUMER_HOST: memory-service
-      QUARKUS_GRPC_CLIENTS_RESPONSERESUMER_PORT: 8080
-      QUARKUS_GRPC_CLIENTS_RESPONSERESUMER_PLAIN_TEXT: true
       QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080/realms/memory-service
       QUARKUS_OIDC_TOKEN_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
       KEYCLOAK_CLIENT_SECRET: change-me
