@@ -15,12 +15,14 @@
 * validate all api fields
 * protect against huge api requests.
 * DONE: rename memory-service-client to memory-service-rest-quarkus and reorganize modules under quarkus/examples parents.
-* Add a Spring AI support lib and example agent.
+* Document the spring support
+* generate project static site to promote and document usage.
+* Simplify the resume api.
 
 # Need Dev Feedback for:
 
 * How much should we trust the agent: Should the agent just tell use the user id or do we distrust it and get it from a bearer token?
-* All the class/method names in the client/quarkus-extension could use a ponder
+* All the class/method names of all the public apis should be reviewed.
 * Review/Harden the @RecordConversation impl.
 * Do we need multi-tenancy support?  What would it look like?
 * Ponder how best to kick off/manage async summerization / search indexing
@@ -28,4 +30,4 @@
 
 # Bug List
 
-*
+* bug: make sure we record partial response in history if connection to LLM fails

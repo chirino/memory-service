@@ -27,7 +27,7 @@ const ConversationsUIViewport = forwardRef<HTMLDivElement, ConversationsUIViewpo
     return (
       <Conversation.Viewport
         ref={ref}
-        className={`flex-1 overflow-y-auto overflow-x-auto px-6 py-4 ${className ?? ""}`}
+        className={`flex-1 overflow-x-auto overflow-y-auto px-6 py-4 ${className ?? ""}`}
         {...props}
       />
     );
@@ -47,17 +47,9 @@ const ConversationsUIMessages = forwardRef<HTMLDivElement, ConversationsUIMessag
       <Conversation.Messages ref={ref} {...props}>
         {(items) => {
           if (typeof children === "function") {
-            return (
-              <div className={`mx-auto flex max-w-2xl flex-col gap-3 ${className ?? ""}`}>
-                {children(items)}
-              </div>
-            );
+            return <div className={`mx-auto flex max-w-2xl flex-col gap-3 ${className ?? ""}`}>{children(items)}</div>;
           }
-          return (
-            <div className={`mx-auto flex max-w-2xl flex-col gap-3 ${className ?? ""}`}>
-              {children}
-            </div>
-          );
+          return <div className={`mx-auto flex max-w-2xl flex-col gap-3 ${className ?? ""}`}>{children}</div>;
         }}
       </Conversation.Messages>
     );
@@ -79,14 +71,16 @@ type ConversationsUIMessageRowProps = {
  * Renders user/assistant messages with appropriate alignment and colors.
  * Does not include fork/edit UI - those should be added by consumers via the overlay prop.
  */
-function ConversationsUIMessageRow({ message, children, className, overlay, messageRef }: ConversationsUIMessageRowProps) {
+function ConversationsUIMessageRow({
+  message,
+  children,
+  className,
+  overlay,
+  messageRef,
+}: ConversationsUIMessageRowProps) {
   const isUser = message.author === "user";
   const messageStateClass =
-    message.displayState === "pending"
-      ? "opacity-70"
-      : message.displayState === "streaming"
-        ? "opacity-90"
-        : "";
+    message.displayState === "pending" ? "opacity-70" : message.displayState === "streaming" ? "opacity-90" : "";
 
   return (
     <Conversation.Message message={message} asChild>

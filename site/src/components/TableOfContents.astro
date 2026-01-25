@@ -1,0 +1,78 @@
+---
+interface Props {
+  headings: { depth: number; slug: string; text: string }[];
+}
+
+const { headings } = Astro.props;
+
+// Filter to h2 and h3 only
+const toc = headings.filter(h => h.depth >= 2 && h.depth <= 3);
+---
+
+{toc.length > 0 && (
+  <nav class="toc" aria-label="Table of contents">
+    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
+      On this page
+    </h2>
+    <ul class="space-y-2 text-sm">
+      {toc.map(heading => (
+        <li class:list={[heading.depth === 3 && 'ml-3']}>
+          <a
+            href={`#${heading.slug}`}
+            class="block text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400
+                   transition-colors leading-snug"
+            data-toc-link
+            data-heading={heading.slug}
+          >
+            {heading.text}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+)}
+
+<script>
+  // Highlight active heading in TOC based on scroll position
+  const tocLinks = document.querySelectorAll('[data-toc-link]');
+  const headings = Array.from(tocLinks).map(link => {
+    const slug = link.getAttribute('data-heading');
+    return document.getElementById(slug || '');
+  }).filter(Boolean) as HTMLElement[];
+
+  function updateActiveHeading() {
+    const scrollY = window.scrollY;
+    let activeIndex = 0;
+
+    headings.forEach((heading, index) => {
+      if (heading.offsetTop - 100 <= scrollY) {
+        activeIndex = index;
+      }
+    });
+
+    tocLinks.forEach((link, index) => {
+      if (index === activeIndex) {
+        link.classList.add('text-primary-600', 'dark:text-primary-400', 'font-medium');
+        link.classList.remove('text-gray-600', 'dark:text-gray-400');
+      } else {
+        link.classList.remove('text-primary-600', 'dark:text-primary-400', 'font-medium');
+        link.classList.add('text-gray-600', 'dark:text-gray-400');
+      }
+    });
+  }
+
+  // Throttle scroll handler
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (!ticking) {
+      window.requestAnimationFrame(() => {
+        updateActiveHeading();
+        ticking = false;
+      });
+      ticking = true;
+    }
+  });
+
+  // Initial update
+  updateActiveHeading();
+</script>

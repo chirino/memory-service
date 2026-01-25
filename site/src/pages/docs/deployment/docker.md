@@ -1,0 +1,233 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Docker Deployment
+description: Deploy Memory Service using Docker.
+---
+
+Memory Service is distributed as a Docker image, making it easy to deploy in any container environment.
+
+## Quick Start
+
+Pull and run the latest image:
+
+```bash
+docker run -d \
+  --name memory-service \
+  -p 8080:8080 \
+  -p 9000:9000 \
+  -e QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://host.docker.internal:5432/memoryservice \
+  -e QUARKUS_DATASOURCE_USERNAME=postgres \
+  -e QUARKUS_DATASOURCE_PASSWORD=postgres \
+  ghcr.io/chirino/memory-service:latest
+```
+
+## Docker Compose
+
+For a complete local setup with all dependencies:
+
+```yaml
+version: '3.8'
+
+services:
+  memory-service:
+    image: ghcr.io/chirino/memory-service:latest
+    ports:
+      - "8080:8080"   # REST API
+      - "9000:9000"   # gRPC API
+    environment:
+      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://postgres:5432/memoryservice
+      - QUARKUS_DATASOURCE_USERNAME=postgres
+      - QUARKUS_DATASOURCE_PASSWORD=postgres
+      - QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION=update
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=memoryservice
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+```
+
+Save as `docker-compose.yml` and run:
+
+```bash
+docker compose up -d
+```
+
+## Environment Variables
+
+### Database Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `QUARKUS_DATASOURCE_DB_KIND` | Database type | `postgresql` |
+| `QUARKUS_DATASOURCE_JDBC_URL` | JDBC connection URL | - |
+| `QUARKUS_DATASOURCE_USERNAME` | Database username | - |
+| `QUARKUS_DATASOURCE_PASSWORD` | Database password | - |
+
+### Vector Store Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MEMORY_SERVICE_VECTOR_STORE_TYPE` | Vector store type | `pgvector` |
+| `MEMORY_SERVICE_EMBEDDING_MODEL` | Embedding model | - |
+| `MEMORY_SERVICE_EMBEDDING_API_KEY` | API key for embeddings | - |
+
+### Authentication
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `QUARKUS_OIDC_AUTH_SERVER_URL` | OIDC provider URL | - |
+| `QUARKUS_OIDC_CLIENT_ID` | OIDC client ID | - |
+| `QUARKUS_OIDC_CREDENTIALS_SECRET` | OIDC client secret | - |
+
+## Health Checks
+
+The container exposes health endpoints:
+
+```bash
+# Liveness
+curl http://localhost:8080/q/health/live
+
+# Readiness
+curl http://localhost:8080/q/health/ready
+```
+
+Configure in Docker Compose:
+
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:8080/q/health/live"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+```
+
+## Resource Limits
+
+Set appropriate resource limits:
+
+```yaml
+services:
+  memory-service:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+```
+
+## Production Configuration
+
+For production deployments:
+
+```yaml
+services:
+  memory-service:
+    image: ghcr.io/chirino/memory-service:1.0.0  # Pin to specific version
+    restart: unless-stopped
+    environment:
+      # Use secrets instead of plain text
+      - QUARKUS_DATASOURCE_PASSWORD_FILE=/run/secrets/db_password
+      # Enable TLS
+      - QUARKUS_HTTP_SSL_CERTIFICATE_FILES=/certs/server.crt
+      - QUARKUS_HTTP_SSL_CERTIFICATE_KEY_FILES=/certs/server.key
+      # Production logging
+      - QUARKUS_LOG_LEVEL=INFO
+    secrets:
+      - db_password
+    volumes:
+      - ./certs:/certs:ro
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+```
+
+## Multi-Container Setup
+
+With separate embedding service:
+
+```yaml
+services:
+  memory-service:
+    image: ghcr.io/chirino/memory-service:latest
+    environment:
+      - MEMORY_SERVICE_EMBEDDING_URL=http://embedding-service:8000
+    depends_on:
+      - embedding-service
+      - postgres
+
+  embedding-service:
+    image: your-embedding-service:latest
+    environment:
+      - MODEL=text-embedding-ada-002
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    # ... configuration
+```
+
+## Logging
+
+View container logs:
+
+```bash
+docker logs -f memory-service
+```
+
+Configure log level:
+
+```yaml
+environment:
+  - QUARKUS_LOG_LEVEL=DEBUG
+  - QUARKUS_LOG_CATEGORY__IO_GITHUB_CHIRINO__LEVEL=DEBUG
+```
+
+## Networking
+
+For inter-container communication:
+
+```yaml
+networks:
+  memory-network:
+    driver: bridge
+
+services:
+  memory-service:
+    networks:
+      - memory-network
+
+  postgres:
+    networks:
+      - memory-network
+
+  my-agent:
+    networks:
+      - memory-network
+    environment:
+      - MEMORY_SERVICE_URL=http://memory-service:8080
+```
+
+## Next Steps
+
+- Learn about [Kubernetes Deployment](/docs/deployment/kubernetes/)
+- Configure [Database Setup](/docs/deployment/databases/)

@@ -1,0 +1,92 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+// Load versions data
+interface Version {
+  version: string;
+  path: string;
+  date?: string;
+  current?: boolean;
+}
+
+let versions: Version[] = [];
+
+try {
+  const versionsModule = await import('../../data/versions.json').catch(() => null);
+  if (versionsModule?.default) {
+    versions = versionsModule.default;
+  }
+} catch {
+  // Fallback when versions.json doesn't exist
+}
+
+// Determine current version from base path
+const basePath = import.meta.env.BASE_URL;
+const isVersionedBuild = basePath.includes('/docs/v');
+const currentVersion = isVersionedBuild
+  ? basePath.match(/\/docs\/(v[\d.]+)\//)?.[1] || 'latest'
+  : 'latest';
+
+// If no versions loaded, show at minimum the current version
+if (versions.length === 0) {
+  versions = [
+    { version: 'latest', path: '/memory-service/', current: true, date: 'Current development' }
+  ];
+}
+
+// Mark current version
+versions = versions.map(v => ({
+  ...v,
+  current: v.version === currentVersion || (v.version === 'latest' && currentVersion === 'latest'),
+}));
+---
+
+<DocsLayout title="Documentation Versions" description="Browse all available versions of Memory Service documentation.">
+  <p class="text-lg text-gray-600 dark:text-gray-400 mb-8">
+    Memory Service maintains documentation for each release. Select a version below to view its documentation.
+  </p>
+
+  <div class="space-y-4">
+    {versions.map(v => (
+      <a
+        href={v.path + 'docs/'}
+        class:list={[
+          'card p-4 flex items-center justify-between hover:border-primary-500 transition-colors not-prose',
+          v.current && 'border-primary-500 bg-primary-50 dark:bg-primary-950/20',
+        ]}
+      >
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-gray-900 dark:text-white">
+              {v.version === 'latest' ? 'Latest (main branch)' : v.version}
+            </span>
+            {v.current && (
+              <span class="text-xs bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 px-2 py-0.5 rounded-full">
+                Current
+              </span>
+            )}
+          </div>
+          {v.date && (
+            <span class="text-sm text-gray-500 dark:text-gray-400">{v.date}</span>
+          )}
+        </div>
+        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+      </a>
+    ))}
+  </div>
+
+  <div class="mt-12 p-6 bg-gray-50 dark:bg-surface-900 rounded-lg border border-gray-200 dark:border-gray-800">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Version Scheme</h2>
+    <p class="text-gray-600 dark:text-gray-400">
+      Memory Service follows <a href="https://semver.org" class="text-primary-600 dark:text-primary-400 hover:underline" target="_blank" rel="noopener noreferrer">Semantic Versioning</a>.
+      Each release is tagged as <code class="bg-gray-200 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm">vX.Y.Z</code> where:
+    </p>
+    <ul class="mt-3 space-y-1 text-gray-600 dark:text-gray-400 list-disc list-inside">
+      <li><strong>X</strong> (major) - Breaking changes</li>
+      <li><strong>Y</strong> (minor) - New features, backwards compatible</li>
+      <li><strong>Z</strong> (patch) - Bug fixes, backwards compatible</li>
+    </ul>
+  </div>
+</DocsLayout>

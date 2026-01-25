@@ -191,7 +191,7 @@ for configuration examples.
       - `message`: a `Message` object.
       - `score`: numeric relevance score.
       - optional `highlights` string.
-  - Backed by a pluggable vector store (pgvector, Milvus, MongoDB, etc.).
+  - Backed by a pluggable vector store (pgvector, MongoDB, etc.).
 
 ### Viewing Forks in UIs
 

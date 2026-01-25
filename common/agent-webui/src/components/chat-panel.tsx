@@ -139,7 +139,8 @@ function ChatMessageRow({
           })) as unknown as ListUserMessagesResponse;
           const messages = Array.isArray(response.data) ? response.data : [];
           const messageId = activeForkMenuMessageId ?? message.id;
-          const userIndex = messageId && userMessageIndexById.has(messageId) ? userMessageIndexById.get(messageId) : undefined;
+          const userIndex =
+            messageId && userMessageIndexById.has(messageId) ? userMessageIndexById.get(messageId) : undefined;
           const label = selectForkLabel(messages, userIndex);
           return { id: fork.conversationId, label };
         } catch (error) {
@@ -258,9 +259,7 @@ function ChatMessageRow({
                     >
                       <div className="flex flex-col">
                         <span className="text-sm font-medium">{formatForkLabel(label)}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatForkTimestamp(fork.createdAt)}
-                        </span>
+                        <span className="text-xs text-muted-foreground">{formatForkTimestamp(fork.createdAt)}</span>
                       </div>
                       {isActive ? (
                         <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
@@ -344,7 +343,7 @@ function ChatPanelContent({
   const [forkLabels, setForkLabels] = useState<Record<string, string>>({});
   const [activeForkMenuMessageId, setActiveForkMenuMessageId] = useState<string | null>(null);
   const [openForkMenuMessageId, setOpenForkMenuMessageId] = useState<string | null>(null);
-  
+
   // Scroll management refs
   const viewportRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -398,7 +397,7 @@ function ChatPanelContent({
 
   // Get the current conversationId from the conversation context to check if state is synced
   const { conversationId: stateConversationId } = useConversationMessages();
-  
+
   useEffect(() => {
     if (!conversationId) {
       return;
@@ -419,7 +418,7 @@ function ChatPanelContent({
     if (hasResumedRef.current[conversationId]) {
       return;
     }
-    
+
     if (resumableConversationIds?.has(conversationId)) {
       // Mark as resumed before starting to prevent duplicate attempts
       hasResumedRef.current[conversationId] = true;
@@ -575,11 +574,7 @@ function ChatPanelContent({
     }
     const key = forkPointKey(forkPoint.conversationId, forkPoint.previousMessageId ?? null);
     return getForkOptionsForPoint(key);
-  }, [
-    forkPoint,
-    forkPointKey,
-    getForkOptionsForPoint,
-  ]);
+  }, [forkPoint, forkPointKey, getForkOptionsForPoint]);
 
   const forkOptionsByMessageId = useMemo(() => {
     const map = new Map<string, ForkOption[]>();
@@ -592,7 +587,9 @@ function ChatPanelContent({
           ? messageMeta.forkedAtConversationId
           : messageConversationId;
       const pointPreviousId =
-        messagePreviousId === null && messageMeta?.forkedAtConversationId ? (messageMeta.forkedAtMessageId ?? null) : messagePreviousId;
+        messagePreviousId === null && messageMeta?.forkedAtConversationId
+          ? (messageMeta.forkedAtMessageId ?? null)
+          : messagePreviousId;
       const forkKey = forkPointKey(pointConversationId, pointPreviousId);
       map.set(message.id, getForkOptionsForPoint(forkKey));
     });
@@ -614,28 +611,31 @@ function ChatPanelContent({
   }, []);
 
   // Scroll to bottom of viewport
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    const viewport = viewportRef.current;
-    if (!viewport) {
-      return;
-    }
-    
-    // Try to scroll to the last message element if available
-    if (messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      const lastMessageElement = messageRefs.current.get(lastMessage.id);
-      if (lastMessageElement) {
-        lastMessageElement.scrollIntoView({ behavior, block: "end" });
+  const scrollToBottom = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      const viewport = viewportRef.current;
+      if (!viewport) {
         return;
       }
-    }
-    
-    // Fallback to scrolling to bottom of viewport
-    viewport.scrollTo({
-      top: viewport.scrollHeight,
-      behavior,
-    });
-  }, [messages]);
+
+      // Try to scroll to the last message element if available
+      if (messages.length > 0) {
+        const lastMessage = messages[messages.length - 1];
+        const lastMessageElement = messageRefs.current.get(lastMessage.id);
+        if (lastMessageElement) {
+          lastMessageElement.scrollIntoView({ behavior, block: "end" });
+          return;
+        }
+      }
+
+      // Fallback to scrolling to bottom of viewport
+      viewport.scrollTo({
+        top: viewport.scrollHeight,
+        behavior,
+      });
+    },
+    [messages],
+  );
 
   // Handle scroll events to track if user is near bottom
   const handleScroll = useCallback(() => {
@@ -663,7 +663,7 @@ function ChatPanelContent({
         const viewport = viewportRef.current;
         const lastMessage = messages[messages.length - 1];
         const lastMessageElement = messageRefs.current.get(lastMessage?.id);
-        
+
         if (viewport) {
           // If we have the last message element, use it; otherwise use scrollHeight
           if (lastMessageElement) {
@@ -677,7 +677,7 @@ function ChatPanelContent({
           }
         }
       };
-      
+
       // Try multiple times with increasing delays to catch different render phases
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -707,10 +707,10 @@ function ChatPanelContent({
     const messageCountChanged = messages.length !== lastMessageCountRef.current;
     const wasEmpty = lastMessageCountRef.current === 0;
     const hasStreamingMessage = messages.some((msg) => msg.displayState === "streaming");
-    
+
     // Update near-bottom status
     isNearBottomRef.current = checkNearBottom();
-    
+
     // If this is the first time messages appear (initial load), force scroll to bottom
     if (wasEmpty && isInitialLoadRef.current && viewport.scrollHeight > viewport.clientHeight) {
       isInitialLoadRef.current = false;
@@ -722,7 +722,7 @@ function ChatPanelContent({
       lastMessageCountRef.current = messages.length;
       return;
     }
-    
+
     // If user scrolled away, don't auto-scroll unless they scroll back near bottom
     if (!shouldAutoScrollRef.current && !isNearBottomRef.current) {
       lastMessageCountRef.current = messages.length;
@@ -768,18 +768,15 @@ function ChatPanelContent({
     [onSelectConversationId],
   );
 
-  const handleEditStart = useCallback(
-    (message: ConversationMessage) => {
-      if (!message.id || !message.conversationId) {
-        return;
-      }
-      setEditingMessage({ id: message.id, conversationId: message.conversationId });
-      setEditingText(message.content);
-      setActiveForkMenuMessageId(null);
-      setOpenForkMenuMessageId(null);
-    },
-    [],
-  );
+  const handleEditStart = useCallback((message: ConversationMessage) => {
+    if (!message.id || !message.conversationId) {
+      return;
+    }
+    setEditingMessage({ id: message.id, conversationId: message.conversationId });
+    setEditingText(message.content);
+    setActiveForkMenuMessageId(null);
+    setOpenForkMenuMessageId(null);
+  }, []);
 
   const handleEditCancel = useCallback(() => {
     setEditingMessage(null);
@@ -832,19 +829,19 @@ function ChatPanelContent({
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold text-foreground/70">Stream via</span>
-            <ToggleGroup
-              type="single"
-              value={streamMode}
-              onValueChange={(value) => setStreamMode(value as StreamMode)}
-              variant="outline"
-            >
-              <ToggleGroupItem value="sse" aria-label="Use SSE stream">
-                Server Sent Events
-              </ToggleGroupItem>
-              <ToggleGroupItem value="websocket" aria-label="Use WebSocket stream">
-                WebSocket
-              </ToggleGroupItem>
-            </ToggleGroup>
+          <ToggleGroup
+            type="single"
+            value={streamMode}
+            onValueChange={(value) => setStreamMode(value as StreamMode)}
+            variant="outline"
+          >
+            <ToggleGroupItem value="sse" aria-label="Use SSE stream">
+              Server Sent Events
+            </ToggleGroupItem>
+            <ToggleGroupItem value="websocket" aria-label="Use WebSocket stream">
+              WebSocket
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
       </div>
 
@@ -886,7 +883,7 @@ function ChatPanelContent({
             return turns.map((turn) => (
               <section key={turn.key} className="relative flex flex-col gap-3">
                 {turn.user ? (
-                  <div className="sticky top-0 z-20 pb-3 isolation-auto">
+                  <div className="sticky top-0 isolation-auto z-20 pb-3">
                     <div className="relative">
                       {/* todo: use a flex layout so the first div grows vertically and the second div can remain a fixed height. */}
                       <div className="pointer-events-none absolute left-0 top-0 z-0 w-full">
@@ -895,45 +892,45 @@ function ChatPanelContent({
                       </div>
                       <div className="relative z-10">
                         <div className="pt-2">
-                        <ChatMessageRow
-                          key={turn.user.id}
-                          message={turn.user}
-                          isEditing={
-                            turn.user.displayState === "stable" &&
-                            editingMessage?.id === turn.user.id &&
-                            editingMessage?.conversationId === turn.user.conversationId
-                          }
-                          editingText={editingText}
-                          onEditingTextChange={setEditingText}
-                          onEditStart={handleEditStart}
-                          onEditCancel={handleEditCancel}
-                          onForkSend={handleForkSend}
-                          composerDisabled={composerDisabled}
-                          conversationId={conversationId}
-                          forkOptionsCount={(forkOptionsByMessageId.get(turn.user.id) ?? []).length}
-                          forkLabels={forkLabels}
-                          setForkLabels={setForkLabels}
-                          activeForkMenuMessageId={activeForkMenuMessageId}
-                          setActiveForkMenuMessageId={setActiveForkMenuMessageId}
-                          userMessageIndexById={userMessageIndexById}
-                          selectForkLabel={selectForkLabel}
-                          formatForkLabel={formatForkLabel}
-                          formatForkTimestamp={formatForkTimestamp}
-                          forkPoint={openForkMenuMessageId === turn.user.id ? forkPoint : null}
-                          forkOptions={openForkMenuMessageId === turn.user.id ? forkOptions : []}
-                          forkLoading={openForkMenuMessageId === turn.user.id ? forkLoading : false}
-                          isForkMenuOpen={openForkMenuMessageId === turn.user.id && isForkMenuOpen}
-                          onForkSelect={handleForkSelect}
-                          openForkMenuMessageId={openForkMenuMessageId}
-                          setOpenForkMenuMessageId={setOpenForkMenuMessageId}
-                          messageRef={(el) => {
-                            if (el) {
-                              messageRefs.current.set(turn.user!.id, el);
-                            } else {
-                              messageRefs.current.delete(turn.user!.id);
+                          <ChatMessageRow
+                            key={turn.user.id}
+                            message={turn.user}
+                            isEditing={
+                              turn.user.displayState === "stable" &&
+                              editingMessage?.id === turn.user.id &&
+                              editingMessage?.conversationId === turn.user.conversationId
                             }
-                          }}
-                        />
+                            editingText={editingText}
+                            onEditingTextChange={setEditingText}
+                            onEditStart={handleEditStart}
+                            onEditCancel={handleEditCancel}
+                            onForkSend={handleForkSend}
+                            composerDisabled={composerDisabled}
+                            conversationId={conversationId}
+                            forkOptionsCount={(forkOptionsByMessageId.get(turn.user.id) ?? []).length}
+                            forkLabels={forkLabels}
+                            setForkLabels={setForkLabels}
+                            activeForkMenuMessageId={activeForkMenuMessageId}
+                            setActiveForkMenuMessageId={setActiveForkMenuMessageId}
+                            userMessageIndexById={userMessageIndexById}
+                            selectForkLabel={selectForkLabel}
+                            formatForkLabel={formatForkLabel}
+                            formatForkTimestamp={formatForkTimestamp}
+                            forkPoint={openForkMenuMessageId === turn.user.id ? forkPoint : null}
+                            forkOptions={openForkMenuMessageId === turn.user.id ? forkOptions : []}
+                            forkLoading={openForkMenuMessageId === turn.user.id ? forkLoading : false}
+                            isForkMenuOpen={openForkMenuMessageId === turn.user.id && isForkMenuOpen}
+                            onForkSelect={handleForkSelect}
+                            openForkMenuMessageId={openForkMenuMessageId}
+                            setOpenForkMenuMessageId={setOpenForkMenuMessageId}
+                            messageRef={(el) => {
+                              if (el) {
+                                messageRefs.current.set(turn.user!.id, el);
+                              } else {
+                                messageRefs.current.delete(turn.user!.id);
+                              }
+                            }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -1024,7 +1021,7 @@ export function ChatPanel({
   const firstChunkEmittedRef = useRef<Record<string, boolean>>({});
   const hasResumedRef = useRef<Record<string, boolean>>({});
   const pendingForkRef = useRef<PendingFork | null>(null);
-  
+
   const sseStream = useSseStream();
   // Keep ref in sync with state
   useEffect(() => {
@@ -1053,7 +1050,7 @@ export function ChatPanel({
       sseStream.close();
     }
   }, [conversationId, webSocketStream, sseStream]);
-  
+
   // Reset hasResumed flag when resumableConversationIds changes to allow retry
   // This handles the case where the resume check query completes after the effect first runs
   useEffect(() => {
@@ -1255,7 +1252,7 @@ export function ChatPanel({
         return;
       }
       const author = messageAuthor(msg);
-      const resolvedId = author === "assistant" ? assistantIdOverrides[msg.id] ?? msg.id : msg.id;
+      const resolvedId = author === "assistant" ? (assistantIdOverrides[msg.id] ?? msg.id) : msg.id;
       if (!firstIndexByConversation.has(msg.conversationId)) {
         firstIndexByConversation.set(msg.conversationId, mapped.length);
       }
@@ -1303,11 +1300,17 @@ export function ChatPanel({
   }, [conversationMessages]);
 
   const startEventStream = useCallback(
-    (targetConversationId: string, text: string, resumePosition: number, resetResume: boolean, callbacks: {
-      onChunk?: (chunk: string) => void;
-      onComplete?: () => void;
-      onError?: (error: unknown) => void;
-    }) => {
+    (
+      targetConversationId: string,
+      text: string,
+      resumePosition: number,
+      resetResume: boolean,
+      callbacks: {
+        onChunk?: (chunk: string) => void;
+        onComplete?: () => void;
+        onError?: (error: unknown) => void;
+      },
+    ) => {
       const appendAssistantChunk = (chunk: string) => {
         if (!chunk.length) {
           return;
@@ -1387,13 +1390,13 @@ export function ChatPanel({
           // Take the first 2 IDs (FIFO: assistant, then user)
           const assistantId = tempQueue.shift()!;
           const userId = tempQueue.shift()!;
-          
+
           // Add to conversation queue
           const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
           conversationQueue.push(assistantId, userId);
           pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
         }
-        
+
         // Get IDs from per-conversation queue
         const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
         const pendingAssistantId = conversationQueue.shift();
@@ -1403,7 +1406,7 @@ export function ChatPanel({
         } else {
           pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
         }
-        
+
         if (pendingAssistantId) {
           const queue = pendingAssistantIdsRef.current.get(targetConversationId) ?? [];
           queue.push(pendingAssistantId);
@@ -1422,7 +1425,7 @@ export function ChatPanel({
             conversationQueue.push(assistantId);
             pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
           }
-          
+
           // Get ID from per-conversation queue
           const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
           const pendingAssistantId = conversationQueue.shift();
@@ -1431,7 +1434,7 @@ export function ChatPanel({
           } else {
             pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
           }
-          
+
           if (pendingAssistantId) {
             const queue = pendingAssistantIdsRef.current.get(targetConversationId) ?? [];
             queue.push(pendingAssistantId);

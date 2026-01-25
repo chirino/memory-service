@@ -538,7 +538,7 @@ export class SearchService {
   /**
    * Semantic search across user's conversations
    * Performs semantic and/or keyword search across all conversations the user has access to.
-   * Backed by an internal vector store (pgvector, Milvus, MongoDB, etc.).
+   * Backed by an internal vector store (pgvector, MongoDB, etc.).
    * @param data The data for the request.
    * @param data.requestBody
    * @returns unknown Search results.

@@ -98,7 +98,9 @@ export function useWebSocketStream(): StreamClient {
           // Unclean close - treat as error if we have onError callback
           // Otherwise fall through to onCleanEnd for backwards compatibility
           if (onError) {
-            const error = new Error(`WebSocket closed unexpectedly: code ${closeEvent.code}, reason: ${closeEvent.reason || "unknown"}`);
+            const error = new Error(
+              `WebSocket closed unexpectedly: code ${closeEvent.code}, reason: ${closeEvent.reason || "unknown"}`,
+            );
             onError(error);
           } else {
             onCleanEnd();

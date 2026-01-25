@@ -11,8 +11,8 @@ Memory Service is a backend service designed to solve the memory problem for AI 
 - **Conversation forking** - Fork a conversation at any message to explore alternative paths
 - **Semantic search** - Search across all conversations using vector similarity
 - **Access control** - User-based ownership and sharing with fine-grained permissions
-- **Multi-database support** - Works with PostgreSQL, MongoDB, and Cassandra
-- **Vector store integration** - Supports pgvector, Milvus, and MongoDB for semantic search
+- **Multi-database support** - Works with PostgreSQL and MongoDB
+- **Vector store integration** - Supports pgvector and MongoDB for semantic search
 
 ## Project Status
 

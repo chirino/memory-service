@@ -642,7 +642,7 @@ paths:
       summary: Semantic search across user's conversations
       description: |-
         Performs semantic and/or keyword search across all conversations the user has access to.
-        Backed by an internal vector store (pgvector, Milvus, MongoDB, etc.).
+        Backed by an internal vector store (pgvector, MongoDB, etc.).
       operationId: searchMessages
       requestBody:
         required: true

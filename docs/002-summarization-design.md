@@ -31,7 +31,7 @@
 - Security model for background summarization must be enforced server-side using API key checks.
 - Summaries are not user-visible in message lists (MEMORY channel behavior).
 - Keep data encryption and content handling consistent with existing message storage.
-- Maintain compatibility with existing datastores (PostgreSQL, MongoDB, Cassandra) and caches (Redis, Infinispan).
+- Maintain compatibility with existing datastores (PostgreSQL, MongoDB) and caches (Redis, Infinispan).
 
 ## Assumptions
 - Agent service triggers summarization and can access conversation HISTORY messages.
@@ -59,7 +59,7 @@
 - JPA entity:
   - Add `vectorizedAt` field to `ConversationEntity`.
   - Ensure it is mapped to `vectorized_at`.
-- If Mongo or Cassandra schemas require equivalent fields, update their models and storage logic.
+- If MongoDB schemas require equivalent fields, update their models and storage logic.
 
 ### 3) API Resource Changes (Memory Service)
 - Update `ConversationsResource` to:

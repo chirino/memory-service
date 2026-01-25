@@ -1,0 +1,123 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import DocsSidebar from '../components/DocsSidebar.astro';
+import VersionSelector from '../components/VersionSelector.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  headings?: { depth: number; slug: string; text: string }[];
+}
+
+const { title, description = 'Memory Service Documentation', headings = [] } = Astro.props;
+const siteTitle = 'Memory Service';
+const fullTitle = `${title} | ${siteTitle} Docs`;
+---
+
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+    <title>{fullTitle}</title>
+  </head>
+  <body class="min-h-screen flex flex-col bg-white dark:bg-surface-950">
+    <Header />
+
+    <div class="flex-1 flex">
+      <!-- Mobile sidebar toggle -->
+      <button
+        id="sidebar-toggle"
+        class="lg:hidden fixed bottom-4 left-4 z-50 p-3 bg-primary-600 text-white rounded-full shadow-lg"
+        aria-label="Toggle sidebar"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      <!-- Sidebar overlay for mobile -->
+      <div
+        id="sidebar-overlay"
+        class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden"
+        aria-hidden="true"
+      ></div>
+
+      <!-- Sidebar -->
+      <aside
+        id="sidebar"
+        class="fixed lg:sticky top-16 left-0 z-40 w-72 h-[calc(100vh-4rem)]
+               bg-white dark:bg-surface-900 border-r border-gray-200 dark:border-gray-800
+               overflow-y-auto transform -translate-x-full lg:translate-x-0 transition-transform"
+      >
+        <div class="p-4">
+          <VersionSelector />
+        </div>
+        <DocsSidebar />
+      </aside>
+
+      <!-- Main content -->
+      <div class="flex-1 min-w-0">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <article class="prose prose-gray dark:prose-invert max-w-none
+                         prose-headings:scroll-mt-20
+                         prose-a:text-primary-600 dark:prose-a:text-primary-400
+                         prose-code:text-primary-600 dark:prose-code:text-primary-400
+                         prose-pre:bg-gray-900 prose-pre:border-0">
+            <h1 class="text-3xl font-bold mb-8">{title}</h1>
+            <slot />
+          </article>
+        </div>
+      </div>
+
+      <!-- Table of Contents (right sidebar, desktop only) -->
+      {headings.length > 0 && (
+        <aside class="hidden xl:block w-64 flex-shrink-0">
+          <div class="sticky top-20 py-8 pr-4">
+            <TableOfContents headings={headings} />
+          </div>
+        </aside>
+      )}
+    </div>
+
+    <Footer />
+
+    <script>
+      // Mobile sidebar toggle
+      const toggle = document.getElementById('sidebar-toggle');
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+
+      function closeSidebar() {
+        sidebar?.classList.add('-translate-x-full');
+        overlay?.classList.add('hidden');
+      }
+
+      function openSidebar() {
+        sidebar?.classList.remove('-translate-x-full');
+        overlay?.classList.remove('hidden');
+      }
+
+      toggle?.addEventListener('click', () => {
+        if (sidebar?.classList.contains('-translate-x-full')) {
+          openSidebar();
+        } else {
+          closeSidebar();
+        }
+      });
+
+      overlay?.addEventListener('click', closeSidebar);
+
+      // Close sidebar on navigation (for SPAs)
+      document.querySelectorAll('#sidebar a').forEach(link => {
+        link.addEventListener('click', closeSidebar);
+      });
+    </script>
+  </body>
+</html>

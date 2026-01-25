@@ -1,0 +1,64 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Documentation
+description: Memory Service documentation - learn how to integrate persistent memory into your AI agents.
+---
+
+import { Code } from 'astro:components';
+
+Welcome to the Memory Service documentation. This guide will help you integrate persistent memory into your AI agents.
+
+## What is Memory Service?
+
+Memory Service is a backend service designed to solve the persistent memory problems for AI agents systems. It stores all messages exchanged between agents, users, and LLMs in a structured, queryable format.
+
+### Key Capabilities
+
+- **Persistent conversation storage** - All messages are stored with full context and metadata
+- **Resumable response streams** - Long lived response streams can survive client reconnects or user device swtiching
+- **Conversation replay/audit** - Reconstruct converstation history and agent memory state as it was at any point in time
+- **Conversation forking** - Fork a conversation at any message to explore alternative paths
+- **Access control** - User-based ownership and sharing with fine-grained permissions
+- **Multi-database support** - Works with PostgreSQL and MongoDB
+- **Semantic Search** - Search across all conversations using vector similarity
+- **Encrypted** - All database data is encrypted for enhanced security
+
+## Architecture Overview
+
+Memory Service is packaged as container image and provides both REST and gRPC APIs. It's designed to be:
+
+- **Backend Service** - Designed to be used as an internal service used by your AI agent systems
+- **Lightweight** - Minimal overhead for your agent infrastructure
+- **Flexible** - Works with your existing database and vector stores
+- **Secure** - Provides access control and fine-grained permissions
+- **Stateless** - No state is stored in the service itself, making it easy to scale horizontally
+
+## Quick Navigation
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 not-prose mt-6">
+  <a href="getting-started/" class="card p-4 hover:border-primary-500 transition-colors">
+    <h3 class="font-semibold text-gray-900 dark:text-white">Getting Started</h3>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Set up Memory Service in your project</p>
+  </a>
+  <a href="configuration/" class="card p-4 hover:border-primary-500 transition-colors">
+    <h3 class="font-semibold text-gray-900 dark:text-white">Configuration</h3>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Configure databases, vector stores, and more</p>
+  </a>
+  <a href="concepts/conversations/" class="card p-4 hover:border-primary-500 transition-colors">
+    <h3 class="font-semibold text-gray-900 dark:text-white">Core Concepts</h3>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Understand conversations, messages, and forking</p>
+  </a>
+  <a href="integrations/quarkus/" class="card p-4 hover:border-primary-500 transition-colors">
+    <h3 class="font-semibold text-gray-900 dark:text-white">Integrations</h3>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Quarkus extension, LangChain4j, and APIs</p>
+  </a>
+</div>
+
+## Project Status
+
+Memory Service is currently a proof of concept under active development. APIs may change as we refine the design based on real-world usage.
+
+## Getting Help
+
+- **GitHub Issues** - Report bugs or request features on [GitHub](https://github.com/chirino/memory-service/issues)
+{/* - **Discussions** - Ask questions in [GitHub Discussions](https://github.com/chirino/memory-service/discussions) */}

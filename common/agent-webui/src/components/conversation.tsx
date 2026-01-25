@@ -61,11 +61,7 @@ export type ConversationMessage = {
 export type ConversationStreamPhase = "idle" | "sending" | "streaming" | "completed" | "canceled" | "error";
 
 export type ConversationController = {
-  startStream: (
-    conversationId: string,
-    text: string,
-    callbacks: StreamCallbacks,
-  ) => void | Promise<void>;
+  startStream: (conversationId: string, text: string, callbacks: StreamCallbacks) => void | Promise<void>;
   resumeStream: (
     conversationId: string,
     callbacks: StreamCallbacks & { replaceMessageId?: string | null },
@@ -203,7 +199,7 @@ function conversationReducer(state: ConversationState, action: ConversationActio
       // This prevents resetting an active stream when only the groupId is updated
       const conversationIdChanged = state.conversationId !== action.conversationId;
       const shouldResetStream = conversationIdChanged && state.streaming.streamId;
-      
+
       return {
         ...state,
         conversationId: action.conversationId,
@@ -311,11 +307,9 @@ function conversationReducer(state: ConversationState, action: ConversationActio
   }
 }
 
-function useConversationProviderValue(
-  props: ConversationRootProps,
-): ConversationContextValue {
+function useConversationProviderValue(props: ConversationRootProps): ConversationContextValue {
   const { controller, conversationId, conversationGroupId, messages = [], initialInputValue = "" } = props;
-  
+
   // Track whether component has mounted to skip prop-sync effects on initial render.
   // The reducer already receives initial props, so we only need to sync on updates.
   // This pattern is deterministic: the empty-deps effect runs once after first render,
@@ -324,7 +318,7 @@ function useConversationProviderValue(
   useEffect(() => {
     hasMountedRef.current = true;
   }, []);
-  
+
   const [state, dispatch] = useReducer(conversationReducer, {
     conversationId,
     conversationGroupId,
@@ -335,7 +329,7 @@ function useConversationProviderValue(
 
   // Track current stream ID in a ref to pass to callbacks
   const currentStreamIdRef = useRef<string | null>(null);
-  
+
   // Ref for conversation ID to guard async operations against conversation switches
   const conversationIdRef = useRef(state.conversationId);
   useLayoutEffect(() => {
@@ -355,35 +349,39 @@ function useConversationProviderValue(
     if (!hasMountedRef.current) return;
     dispatch({ type: "SET_MESSAGES", messages });
   }, [messages]);
-  
+
   // Clear current stream reference when streaming ends
   useEffect(() => {
-    if (state.streaming.phase === "completed" || state.streaming.phase === "canceled" || state.streaming.phase === "error") {
+    if (
+      state.streaming.phase === "completed" ||
+      state.streaming.phase === "canceled" ||
+      state.streaming.phase === "error"
+    ) {
       currentStreamIdRef.current = null;
     }
   }, [state.streaming.phase]);
-  
+
   // State machine stabilization: If the backend echoes the assistant message while
   // we're streaming, complete the stream to prevent UX deadlocks.
   // Only triggers during "streaming" phase (not "sending") because during "sending"
   // we haven't received any chunks yet and shouldn't auto-complete prematurely.
   useEffect(() => {
     const { phase, streamId, replaceMessageId, pendingAssistantId } = state.streaming;
-    
+
     // Only stabilize during streaming phase, not sending
     if (phase !== "streaming" || !streamId) {
       return;
     }
-    
+
     // The expected assistant message ID is either the replacement ID or the pending ID
     const expectedAssistantId = replaceMessageId ?? pendingAssistantId;
     if (!expectedAssistantId) {
       return;
     }
-    
+
     // Check if the expected assistant message has been echoed in base messages
     const assistantEchoed = messages.some((msg) => msg.id === expectedAssistantId);
-    
+
     if (assistantEchoed) {
       dispatch({ type: "STREAM_COMPLETE", streamId });
     }
@@ -393,21 +391,18 @@ function useConversationProviderValue(
     dispatch({ type: "SET_INPUT", value });
   }, []);
 
-  const handleStreamCallbacks = useCallback(
-    (streamId: string, overrides?: { replaceMessageId?: string | null }) => {
-      return {
-        onChunk: (chunk: string) => dispatch({ type: "STREAM_CHUNK", chunk, streamId }),
-        onComplete: () => dispatch({ type: "STREAM_COMPLETE", streamId }),
-        onCancel: () => dispatch({ type: "STREAM_CANCEL", streamId }),
-        onError: (error: unknown) => {
-          const message = error instanceof Error ? error.message : String(error ?? "Streaming failed");
-          dispatch({ type: "STREAM_ERROR", error: message, streamId });
-        },
-        replaceMessageId: overrides?.replaceMessageId,
-      };
-    },
-    [],
-  );
+  const handleStreamCallbacks = useCallback((streamId: string, overrides?: { replaceMessageId?: string | null }) => {
+    return {
+      onChunk: (chunk: string) => dispatch({ type: "STREAM_CHUNK", chunk, streamId }),
+      onComplete: () => dispatch({ type: "STREAM_COMPLETE", streamId }),
+      onCancel: () => dispatch({ type: "STREAM_CANCEL", streamId }),
+      onError: (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error ?? "Streaming failed");
+        dispatch({ type: "STREAM_ERROR", error: message, streamId });
+      },
+      replaceMessageId: overrides?.replaceMessageId,
+    };
+  }, []);
 
   const sendMessage = useCallback(
     (text: string) => {
@@ -437,9 +432,7 @@ function useConversationProviderValue(
       const callbacks = handleStreamCallbacks(streamId);
       // Wrap in try-catch to handle both sync throws and async rejections
       try {
-        void Promise.resolve(
-          controller.startStream(state.conversationId, trimmed, callbacks),
-        ).catch((error) => {
+        void Promise.resolve(controller.startStream(state.conversationId, trimmed, callbacks)).catch((error) => {
           callbacks.onError?.(error);
         });
       } catch (error) {
@@ -466,9 +459,9 @@ function useConversationProviderValue(
       });
       const callbacks = handleStreamCallbacks(streamId, { replaceMessageId: options?.replaceMessageId });
       try {
-        void Promise.resolve(
-          controller.resumeStream(targetConversationId, callbacks),
-        ).catch((error) => callbacks.onError?.(error));
+        void Promise.resolve(controller.resumeStream(targetConversationId, callbacks)).catch((error) =>
+          callbacks.onError?.(error),
+        );
       } catch (error) {
         callbacks.onError?.(error);
       }
@@ -483,13 +476,13 @@ function useConversationProviderValue(
       if (!targetConversationId) {
         return;
       }
-      
+
       // If the target conversationId is different from state, update state first
       // This ensures the streaming state is associated with the correct conversation
       if (targetConversationId !== conversationIdRef.current) {
         // Update conversation state first, which will reset any existing stream
-        dispatch({ 
-          type: "SET_CONVERSATION", 
+        dispatch({
+          type: "SET_CONVERSATION",
           conversationId: targetConversationId,
           conversationGroupId: state.conversationGroupId,
         });
@@ -506,12 +499,12 @@ function useConversationProviderValue(
         });
         return;
       }
-      
+
       // Guard against concurrent streams using current state
       if (state.streaming.phase === "sending" || state.streaming.phase === "streaming") {
         return;
       }
-      
+
       const idFactory = controller.idFactory ?? (() => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
       const streamId = generateStreamId();
       // For resume with replacement, use the replaceMessageId; otherwise generate new
@@ -526,14 +519,21 @@ function useConversationProviderValue(
       const callbacks = handleStreamCallbacks(streamId, { replaceMessageId: options?.replaceMessageId });
       // Wrap in try-catch to handle both sync throws and async rejections
       try {
-        void Promise.resolve(
-          controller.resumeStream(targetConversationId, callbacks),
-        ).catch((error) => callbacks.onError?.(error));
+        void Promise.resolve(controller.resumeStream(targetConversationId, callbacks)).catch((error) =>
+          callbacks.onError?.(error),
+        );
       } catch (error) {
         callbacks.onError?.(error);
       }
     },
-    [controller, handleStreamCallbacks, state.conversationId, state.conversationGroupId, state.streaming.phase, resumeStreamAfterStateUpdate],
+    [
+      controller,
+      handleStreamCallbacks,
+      state.conversationId,
+      state.conversationGroupId,
+      state.streaming.phase,
+      resumeStreamAfterStateUpdate,
+    ],
   );
 
   const cancelStream = useCallback(() => {
@@ -552,7 +552,7 @@ function useConversationProviderValue(
       dispatch({ type: "RESET_STREAM" });
       return;
     }
-    
+
     // Wrap in try-catch to handle sync throws from controller
     try {
       void Promise.resolve(controller.cancelStream(state.conversationId))
@@ -591,15 +591,7 @@ function useConversationProviderValue(
       selectConversation,
       setInputValue,
     }),
-    [
-      state,
-      controller,
-      sendMessage,
-      resumeStream,
-      cancelStream,
-      selectConversation,
-      setInputValue,
-    ],
+    [state, controller, sendMessage, resumeStream, cancelStream, selectConversation, setInputValue],
   );
 }
 
@@ -632,7 +624,7 @@ export function useMessageContext() {
  * Selector hook that reconciles base messages with streaming state.
  * Handles echo detection (user/assistant message deduplication) that was
  * previously in the reducer.
- * 
+ *
  * IMPORTANT: previousMessageId inference assumes messages are provided in chronological order.
  * If messages arrive out of order, the inferred lineage may be incorrect.
  * To avoid this, either:
@@ -643,7 +635,7 @@ export function useMessageContext() {
 export function useConversationMessages() {
   const { state } = useConversationContext();
   const { baseMessages, streaming } = state;
-  
+
   // Deduplicate base messages by ID
   const dedupedBase = useMemo(() => {
     const seen = new Set<string>();
@@ -660,7 +652,9 @@ export function useConversationMessages() {
     const lastByConversation = new Map<string, string | null>();
     const items: RenderableConversationMessage[] = dedupedBase.map((msg) => {
       const previous =
-        msg.previousMessageId === undefined ? (lastByConversation.get(msg.conversationId) ?? null) : msg.previousMessageId;
+        msg.previousMessageId === undefined
+          ? (lastByConversation.get(msg.conversationId) ?? null)
+          : msg.previousMessageId;
       lastByConversation.set(msg.conversationId, msg.id);
       return {
         ...msg,
@@ -716,12 +710,19 @@ export function useConversationMessages() {
     // Reconciliation: Check if streaming assistant message is already in base messages (ID-based echo detection)
     // Handle all streaming phases (sending, streaming, error, canceled) when we have a pendingAssistantId
     // This ensures we show placeholder messages even if error/cancel happens before first chunk
-    if ((streaming.phase === "sending" || streaming.phase === "streaming" || streaming.phase === "error" || streaming.phase === "canceled") && streaming.streamId && streaming.pendingAssistantId) {
+    if (
+      (streaming.phase === "sending" ||
+        streaming.phase === "streaming" ||
+        streaming.phase === "error" ||
+        streaming.phase === "canceled") &&
+      streaming.streamId &&
+      streaming.pendingAssistantId
+    ) {
       const assistantId = streaming.replaceMessageId ?? streaming.pendingAssistantId;
       if (assistantId && state.conversationId) {
         // Check if this assistant message already exists in base messages
         const hasAssistantEcho = dedupedBase.some((msg) => msg.id === assistantId);
-        
+
         if (!hasAssistantEcho) {
           // Create the streaming message even if we haven't received chunks yet
           const assistantMessage: ConversationMessage = streaming.assistantMessage ?? {
@@ -730,7 +731,7 @@ export function useConversationMessages() {
             conversationId: state.conversationId,
             content: "",
           };
-          
+
           const replacementIndex = streaming.replaceMessageId
             ? items.findIndex((msg) => msg.id === streaming.replaceMessageId)
             : -1;
@@ -741,7 +742,14 @@ export function useConversationMessages() {
           const streamingEntry: RenderableConversationMessage = {
             ...assistantMessage,
             previousMessageId: previous,
-            displayState: streaming.phase === "error" ? "error" : streaming.phase === "canceled" ? "canceled" : streaming.phase === "sending" ? "pending" : "streaming",
+            displayState:
+              streaming.phase === "error"
+                ? "error"
+                : streaming.phase === "canceled"
+                  ? "canceled"
+                  : streaming.phase === "sending"
+                    ? "pending"
+                    : "streaming",
           };
           if (replacementIndex >= 0) {
             items.splice(replacementIndex, 1, streamingEntry);
@@ -753,7 +761,7 @@ export function useConversationMessages() {
     } else if (streaming.assistantMessage) {
       // Legacy path for when assistantMessage exists (shouldn't be needed but keeping for safety)
       const hasAssistantEcho = dedupedBase.some((msg) => msg.id === streaming.assistantMessage?.id);
-      
+
       if (!hasAssistantEcho) {
         const replacementIndex = streaming.replaceMessageId
           ? items.findIndex((msg) => msg.id === streaming.replaceMessageId)
@@ -765,7 +773,8 @@ export function useConversationMessages() {
         const streamingEntry: RenderableConversationMessage = {
           ...streaming.assistantMessage,
           previousMessageId: previous,
-          displayState: streaming.phase === "error" ? "error" : streaming.phase === "canceled" ? "canceled" : "streaming",
+          displayState:
+            streaming.phase === "error" ? "error" : streaming.phase === "canceled" ? "canceled" : "streaming",
         };
         if (replacementIndex >= 0) {
           items.splice(replacementIndex, 1, streamingEntry);
@@ -775,7 +784,16 @@ export function useConversationMessages() {
       }
     }
     return items;
-  }, [dedupedBase, streaming.assistantMessage, streaming.phase, streaming.replaceMessageId, streaming.userMessage, streaming.streamId, streaming.pendingAssistantId, state.conversationId]);
+  }, [
+    dedupedBase,
+    streaming.assistantMessage,
+    streaming.phase,
+    streaming.replaceMessageId,
+    streaming.userMessage,
+    streaming.streamId,
+    streaming.pendingAssistantId,
+    state.conversationId,
+  ]);
 
   return {
     conversationId: state.conversationId,
@@ -824,14 +842,7 @@ const ConversationViewport = forwardRef<HTMLDivElement, AsChildProps & React.HTM
     // role="log" is appropriate for chat-like content where new messages appear
     // aria-live="polite" announces new content without interrupting the user
     return (
-      <Comp
-        role="log"
-        aria-live="polite"
-        aria-relevant="additions"
-        data-state={streaming.phase}
-        ref={ref}
-        {...props}
-      />
+      <Comp role="log" aria-live="polite" aria-relevant="additions" data-state={streaming.phase} ref={ref} {...props} />
     );
   },
 );
@@ -841,24 +852,11 @@ ConversationViewport.displayName = "ConversationViewport";
 const ConversationMessages = forwardRef<
   HTMLDivElement,
   ConversationMessagesProps & Omit<React.HTMLAttributes<HTMLDivElement>, "children">
->(
-  ({ asChild, children, ...props }, ref) => {
-    const { messages } = useConversationMessages();
-    const Comp = asChild ? Slot : "div";
-    // role="list" provides semantic structure for screen readers
-    if (typeof children === "function") {
-      return (
-        <Comp
-          role="list"
-          aria-label="Conversation messages"
-          data-state={messages.length ? "rendered" : "empty"}
-          ref={ref}
-          {...props}
-        >
-          {children(messages)}
-        </Comp>
-      );
-    }
+>(({ asChild, children, ...props }, ref) => {
+  const { messages } = useConversationMessages();
+  const Comp = asChild ? Slot : "div";
+  // role="list" provides semantic structure for screen readers
+  if (typeof children === "function") {
     return (
       <Comp
         role="list"
@@ -867,11 +865,22 @@ const ConversationMessages = forwardRef<
         ref={ref}
         {...props}
       >
-        {children}
+        {children(messages)}
       </Comp>
     );
-  },
-);
+  }
+  return (
+    <Comp
+      role="list"
+      aria-label="Conversation messages"
+      data-state={messages.length ? "rendered" : "empty"}
+      ref={ref}
+      {...props}
+    >
+      {children}
+    </Comp>
+  );
+});
 
 ConversationMessages.displayName = "ConversationMessages";
 
@@ -885,7 +894,7 @@ const ConversationMessage = forwardRef<HTMLDivElement, ConversationMessageProps 
     const ariaLive = isStreaming ? "polite" : "off";
     // Provide descriptive label for screen readers
     const authorLabel = message.author === "user" ? "You" : message.author === "assistant" ? "Assistant" : "System";
-    
+
     return (
       <MessageContext.Provider value={message}>
         <Comp
@@ -913,7 +922,7 @@ const ConversationInput = forwardRef<HTMLTextAreaElement, ConversationInputProps
     const { value, setValue } = useConversationInput();
     const { streaming, sendMessage } = useConversationStreaming();
     const Comp = asChild ? Slot : "textarea";
-    
+
     // Fixed double-submit: Submit exactly once using the passed value.
     // If onSubmit is provided, delegate entirely to it (it may call sendMessage itself).
     // Otherwise, call sendMessage directly with the actual value at submit time.
@@ -933,7 +942,7 @@ const ConversationInput = forwardRef<HTMLTextAreaElement, ConversationInputProps
       },
       [onSubmit, sendMessage],
     );
-    
+
     const handleKeyDown = useCallback(
       (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
         onKeyDown?.(event);
@@ -950,7 +959,7 @@ const ConversationInput = forwardRef<HTMLTextAreaElement, ConversationInputProps
     );
 
     const isBusy = streaming.phase === "sending" || streaming.phase === "streaming";
-    
+
     return (
       <Comp
         ref={ref}
