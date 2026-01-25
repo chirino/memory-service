@@ -1,28 +1,10 @@
 ---
 layout: ../../layouts/DocsLayout.astro
 title: Configuration
-description: Configure Memory Service databases, vector stores, and client settings.
+description: Configure Memory Service databases, vector stores, and authentication using environment variables.
 ---
 
-Memory Service supports extensive configuration options for databases, vector stores, and service behavior.
-
-## Client Configuration
-
-When using the Quarkus extension, configure the client in your `application.properties`:
-
-```properties
-# Memory Service URL (required unless using Dev Services)
-memory-service.url=http://localhost:8080
-
-# Connection timeout (default: 30s)
-memory-service.connect-timeout=30s
-
-# Read timeout (default: 60s)
-memory-service.read-timeout=60s
-
-# Enable TLS verification (default: true)
-memory-service.tls.verify=true
-```
+Memory Service is configured entirely through environment variables. This approach works consistently across all deployment methods—Docker, Kubernetes, or bare metal.
 
 ## Database Configuration
 
@@ -30,23 +12,44 @@ Memory Service supports multiple database backends for storing conversation data
 
 ### PostgreSQL (Recommended)
 
-```properties
+```bash
 # PostgreSQL connection
-quarkus.datasource.db-kind=postgresql
-quarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/memoryservice
-quarkus.datasource.username=postgres
-quarkus.datasource.password=postgres
+QUARKUS_DATASOURCE_DB_KIND=postgresql
+QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://localhost:5432/memoryservice
+QUARKUS_DATASOURCE_USERNAME=postgres
+QUARKUS_DATASOURCE_PASSWORD=postgres
 
 # Enable automatic schema creation
-quarkus.hibernate-orm.database.generation=update
+QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION=update
 ```
 
 ### MongoDB
 
-```properties
+```bash
 # MongoDB connection
-quarkus.mongodb.connection-string=mongodb://localhost:27017
-quarkus.mongodb.database=memoryservice
+QUARKUS_DATASOURCE_DB_KIND=mongodb
+QUARKUS_MONGODB_CONNECTION_STRING=mongodb://localhost:27017
+QUARKUS_MONGODB_DATABASE=memoryservice
+```
+
+## Cache Configuration
+
+Memory Service uses caching to improve performance.
+
+### Redis
+
+```bash
+# Redis connection
+QUARKUS_REDIS_HOSTS=redis://localhost:6379
+```
+
+### Infinispan
+
+```bash
+# Infinispan connection
+QUARKUS_INFINISPAN_CLIENT_HOSTS=localhost:11222
+QUARKUS_INFINISPAN_CLIENT_USERNAME=admin
+QUARKUS_INFINISPAN_CLIENT_PASSWORD=password
 ```
 
 ## Vector Store Configuration
@@ -55,84 +58,108 @@ For semantic search capabilities, configure a vector store.
 
 ### pgvector (PostgreSQL)
 
-```properties
-# Enable pgvector extension
-memory-service.vector-store.type=pgvector
-memory-service.vector-store.dimension=1536
+When using PostgreSQL with the pgvector extension:
 
-# Embedding model
-memory-service.embedding.model=text-embedding-ada-002
-memory-service.embedding.api-key=${OPENAI_API_KEY}
+```bash
+# Enable pgvector for semantic search
+MEMORY_SERVICE_VECTOR_STORE_TYPE=pgvector
+MEMORY_SERVICE_VECTOR_STORE_DIMENSION=1536
+
+# Embedding model configuration
+MEMORY_SERVICE_EMBEDDING_MODEL=text-embedding-ada-002
+OPENAI_API_KEY=your-api-key
 ```
 
 ### MongoDB Atlas Vector Search
 
-```properties
+```bash
 # MongoDB vector search
-memory-service.vector-store.type=mongodb
-memory-service.vector-store.mongodb.index=vector_index
-memory-service.vector-store.dimension=1536
+MEMORY_SERVICE_VECTOR_STORE_TYPE=mongodb
+MEMORY_SERVICE_VECTOR_STORE_MONGODB_INDEX=vector_index
+MEMORY_SERVICE_VECTOR_STORE_DIMENSION=1536
 ```
 
 ## Authentication Configuration
 
 Memory Service supports OIDC authentication via Keycloak or any compliant provider.
 
-```properties
+```bash
 # OIDC configuration
-quarkus.oidc.auth-server-url=http://localhost:8180/realms/memory-service
-quarkus.oidc.client-id=memory-service
-quarkus.oidc.credentials.secret=${OIDC_SECRET}
+QUARKUS_OIDC_AUTH_SERVER_URL=http://localhost:8180/realms/memory-service
+QUARKUS_OIDC_CLIENT_ID=memory-service
+QUARKUS_OIDC_CREDENTIALS_SECRET=your-client-secret
 
 # Enable authentication
-memory-service.auth.enabled=true
+MEMORY_SERVICE_AUTH_ENABLED=true
 ```
 
-## Dev Services
+## Server Configuration
 
-The Quarkus extension includes Dev Services for local development. These automatically start required services in Docker.
+```bash
+# HTTP port (default: 8080)
+QUARKUS_HTTP_PORT=8080
 
-```properties
-# Enable/disable Dev Services (default: true in dev mode)
-quarkus.memory-service.devservices.enabled=true
+# gRPC port (default: 9000)
+QUARKUS_GRPC_SERVER_PORT=9000
 
-# Custom Docker image
-quarkus.memory-service.devservices.image-name=ghcr.io/chirino/memory-service:latest
-
-# Port configuration
-quarkus.memory-service.devservices.port=8081
+# Enable CORS
+QUARKUS_HTTP_CORS=true
+QUARKUS_HTTP_CORS_ORIGINS=http://localhost:3000
 ```
-
-## Environment Variables
-
-All configuration properties can be set via environment variables:
-
-| Property | Environment Variable |
-|----------|---------------------|
-| `memory-service.url` | `MEMORY_SERVICE_URL` |
-| `memory-service.connect-timeout` | `MEMORY_SERVICE_CONNECT_TIMEOUT` |
-| `quarkus.datasource.jdbc.url` | `QUARKUS_DATASOURCE_JDBC_URL` |
 
 ## Production Recommendations
 
-For production deployments:
+For production deployments, consider the following environment variables:
 
-1. **Use connection pooling** - Configure appropriate pool sizes for your database
-2. **Enable TLS** - Always use encrypted connections
-3. **Set resource limits** - Configure memory and CPU limits for containers
-4. **Use external secrets** - Store credentials in a secrets manager
-5. **Enable monitoring** - Use the built-in health checks and metrics
+### Connection Pooling
 
-```properties
-# Production configuration example
-quarkus.datasource.jdbc.max-size=20
-quarkus.datasource.jdbc.min-size=5
+```bash
+# Database connection pool
+QUARKUS_DATASOURCE_JDBC_MAX_SIZE=20
+QUARKUS_DATASOURCE_JDBC_MIN_SIZE=5
+```
 
-# Health checks
-quarkus.health.extensions.enabled=true
+### Health Checks and Metrics
 
-# Metrics
-quarkus.micrometer.export.prometheus.enabled=true
+```bash
+# Enable health endpoints
+QUARKUS_HEALTH_EXTENSIONS_ENABLED=true
+
+# Enable Prometheus metrics
+QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED=true
+```
+
+### Logging
+
+```bash
+# Set log level
+QUARKUS_LOG_LEVEL=INFO
+QUARKUS_LOG_CATEGORY__IO_GITHUB_CHIRINO__LEVEL=DEBUG
+```
+
+## Example: Docker Compose
+
+```yaml
+services:
+  memory-service:
+    image: ghcr.io/chirino/memory-service:latest
+    environment:
+      # Database
+      QUARKUS_DATASOURCE_DB_KIND: postgresql
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/memoryservice
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: postgres
+      
+      # Cache
+      QUARKUS_REDIS_HOSTS: redis://redis:6379
+      
+      # Authentication
+      QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8180/realms/memory-service
+      QUARKUS_OIDC_CLIENT_ID: memory-service
+      QUARKUS_OIDC_CREDENTIALS_SECRET: ${OIDC_SECRET}
+    depends_on:
+      - postgres
+      - redis
 ```
 
 ## Next Steps

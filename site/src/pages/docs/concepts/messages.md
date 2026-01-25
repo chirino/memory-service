@@ -6,16 +6,15 @@ description: Understanding messages in Memory Service.
 
 Messages are the individual units of communication within a conversation. Memory Service stores messages with full context and metadata.
 
-## Message Types
+## Message Channels
 
-Memory Service supports different message types:
+Messages are organized into logical channels within a conversation:
 
-| Type | Description |
-|------|-------------|
-| `USER` | Messages from the end user |
-| `AI` | Responses from the AI model |
-| `SYSTEM` | System prompts and instructions |
-| `TOOL_EXECUTION` | Results from tool/function calls |
+| Channel | Description |
+|---------|-------------|
+| `history` | User-visible conversation between users and agents |
+| `memory` | Agent memory messages, scoped to the calling client ID |
+| `summary` | Summarization messages (not visible in user-facing lists) |
 
 ## Message Structure
 
@@ -23,86 +22,90 @@ Each message contains:
 
 ```json
 {
-  "id": "msg-123",
-  "conversationId": "conv-456",
-  "type": "USER",
-  "content": "What's the weather like?",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "metadata": {
-    "client": "web",
-    "language": "en"
-  }
+  "id": "msg_01HF8XJQWXYZ9876ABCD5432",
+  "conversationId": "conv_01HF8XH1XABCD1234EFGH5678",
+  "userId": "user_1234",
+  "channel": "history",
+  "memoryEpoch": null,
+  "content": [
+    {
+      "type": "text",
+      "text": "What's the weather like?"
+    }
+  ],
+  "createdAt": "2025-01-10T14:40:12Z"
 }
 ```
 
+| Property | Description |
+|----------|-------------|
+| `id` | Unique message identifier |
+| `conversationId` | ID of the parent conversation |
+| `userId` | Human user associated with the message |
+| `channel` | Logical channel (`history`, `memory`, `summary`) |
+| `memoryEpoch` | Memory epoch number (for `memory` channel messages) |
+| `content` | Array of content blocks (opaque, agent-defined) |
+| `createdAt` | Creation timestamp |
+
 ## Adding Messages
 
-### Using LangChain4j Integration
-
-```java
-ChatMemory memory = memoryProvider.get(conversationId);
-
-// Add a user message
-memory.add(UserMessage.from("Hello, how can I help?"));
-
-// Add an AI response
-memory.add(AiMessage.from("I'm here to assist you!"));
+```bash
+curl -X POST http://localhost:8080/v1/conversations/{conversationId}/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "channel": "history",
+    "content": [{"type": "text", "text": "Hello!"}]
+  }'
 ```
 
-### Using the REST API
+Response:
 
-```bash
-curl -X POST http://localhost:8080/api/v1/conversations/conv-123/messages \
-  -H "Content-Type: application/json" \
-  -d '{
-    "type": "USER",
-    "content": "Hello!",
-    "metadata": {"source": "api"}
-  }'
+```json
+{
+  "id": "msg_01HF8XJQWXYZ9876ABCD5432",
+  "conversationId": "conv_01HF8XH1XABCD1234EFGH5678",
+  "userId": "user_1234",
+  "channel": "history",
+  "content": [{"type": "text", "text": "Hello!"}],
+  "createdAt": "2025-01-10T14:40:12Z"
+}
 ```
 
 ## Message Ordering
 
-Messages are stored with:
-
-- **Timestamp** - When the message was created
-- **Sequence number** - Order within the conversation
-
-This ensures consistent replay even if timestamps are identical.
-
-## Embeddings
-
-When semantic search is enabled, messages are automatically:
-
-1. Processed by the configured embedding model
-2. Stored in the vector store
-3. Indexed for similarity search
-
-```properties
-# Configure embedding model
-memory-service.embedding.model=text-embedding-ada-002
-memory-service.embedding.api-key=${OPENAI_API_KEY}
-```
+Messages are returned ordered by creation time (`createdAt`). Use cursor-based pagination with the `after` parameter to retrieve messages in batches.
 
 ## Retrieving Messages
 
-### All Messages
-
-```java
-List<ChatMessage> allMessages = memory.messages();
-```
-
-### With Pagination
-
 ```bash
-curl "http://localhost:8080/api/v1/conversations/conv-123/messages?limit=20&offset=0"
+curl "http://localhost:8080/v1/conversations/{conversationId}/messages?limit=50&channel=history" \
+  -H "Authorization: Bearer <token>"
 ```
 
-### By Time Range
+Response:
 
-```bash
-curl "http://localhost:8080/api/v1/conversations/conv-123/messages?after=2024-01-01T00:00:00Z"
+```json
+{
+  "data": [
+    {
+      "id": "msg_01HF8XJQWXYZ9876ABCD5432",
+      "conversationId": "conv_01HF8XH1XABCD1234EFGH5678",
+      "userId": "user_1234",
+      "channel": "history",
+      "content": [{"type": "text", "text": "Hello!"}],
+      "createdAt": "2025-01-10T14:40:12Z"
+    }
+  ],
+  "nextCursor": "msg_01HF8XJQWXYZ9876ABCD5433"
+}
 ```
+
+Query parameters:
+- `limit` - Maximum messages to return (default: 50)
+- `after` - Cursor for pagination (message ID)
+- `channel` - Filter by channel: `history` (default), `memory`, or `summary`
+- `epoch` - For `memory` channel: `latest`, `all`, or a specific epoch number
 
 ## Next Steps
 

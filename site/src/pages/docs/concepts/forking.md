@@ -33,75 +33,41 @@ The forked conversation:
 
 ### Using the REST API
 
+Fork at a specific message by calling the fork endpoint with the message ID:
+
 ```bash
-curl -X POST http://localhost:8080/api/v1/conversations/original-id/fork \
+curl -X POST "http://localhost:8080/v1/conversations/{conversationId}/messages/{messageId}/fork" \
   -H "Content-Type: application/json" \
-  -d '{
-    "newId": "forked-conversation",
-    "atMessage": 2
-  }'
+  -H "Authorization: Bearer <token>" \
+  -d '{"title": "Alternative approach"}'
 ```
 
-### Using Java
-
-```java
-@Inject
-ConversationService conversationService;
-
-public void forkConversation() {
-    String forkedId = conversationService.fork(
-        "original-conversation",
-        "forked-conversation",
-        2  // Fork after message index 2
-    );
-}
-```
+The fork point must be an existing user-authored message. The forked conversation will contain history up to (but not including) that message.
 
 ## Fork Properties
 
 When you fork a conversation, the new conversation has:
 
-| Property | Value |
-|----------|-------|
-| `parentId` | ID of the original conversation |
-| `forkPoint` | Message index where fork occurred |
-| `messages` | Copy of messages up to fork point |
-| `ownerId` | Same as original (or specified new owner) |
+| Property | Description |
+|----------|-------------|
+| `forkedAtConversationId` | ID of the conversation where the fork occurred |
+| `forkedAtMessageId` | Message ID at which the fork diverged |
+| `conversationGroupId` | Shared group ID linking related conversations |
+| `ownerUserId` | Same owner as the original conversation |
 
 ## Use Cases
 
-### 1. Agent Development
+### 1. User Correction
 
-Fork a conversation to test different prompts:
+Allow users to "go back" and try a different question. When a user wants to rephrase their last message, fork at that message to create a new branch.
 
-```java
-// Original conversation had a poor response at message 5
-String testFork = conversationService.fork("prod-conv", "test-fork", 4);
+### 2. Agent Development
 
-// Try a different approach
-ChatMemory testMemory = memoryProvider.get(testFork);
-testMemory.add(SystemMessage.from("New instructions..."));
-```
-
-### 2. User Correction
-
-Allow users to "go back" and try a different question:
-
-```java
-// User wants to rephrase their last question
-String correctedConv = conversationService.fork(conversationId, newId, lastGoodMessage);
-```
+Fork a conversation to test different prompts or agent behaviors without affecting the original conversation.
 
 ### 3. Parallel Exploration
 
-Create multiple forks to explore different paths:
-
-```java
-for (int i = 0; i < 3; i++) {
-    String forkId = conversationService.fork(original, "fork-" + i, forkPoint);
-    // Each fork can now diverge independently
-}
-```
+Create multiple forks from the same point to explore different conversation paths simultaneously.
 
 ## Best Practices
 
@@ -110,13 +76,23 @@ for (int i = 0; i < 3; i++) {
 3. **Clean up experiments** - Delete test forks when no longer needed
 4. **Consider storage** - Forks duplicate messages, plan storage accordingly
 
+## Listing Forks
+
+To see all forks related to a conversation:
+
+```bash
+curl "http://localhost:8080/v1/conversations/{conversationId}/forks" \
+  -H "Authorization: Bearer <token>"
+```
+
+This returns all forked conversations that share the same `conversationGroupId`.
+
 ## Limitations
 
-- Forks create copies, not references (storage implications)
-- Cannot fork a fork (only one level deep) - use the API to work around
-- Fork point must be a valid message index
+- Fork point must be an existing user-authored message
+- The forked message itself is not included in the new conversation
 
 ## Next Steps
 
 - Learn about [Semantic Search](/docs/concepts/semantic-search/)
-- Explore the [REST API](/docs/integrations/rest-api/)
+- Explore the [API Contracts](/docs/api-contracts/)

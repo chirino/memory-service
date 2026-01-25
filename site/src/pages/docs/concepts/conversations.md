@@ -19,33 +19,46 @@ A conversation in Memory Service is:
 
 ### Creating a Conversation
 
-Conversations are created automatically when you first add a message:
-
-```java
-ChatMemory memory = memoryProvider.get("my-conversation-id");
-memory.add(UserMessage.from("Hello!"));
-// Conversation is now persisted
+```bash
+curl -X POST http://localhost:8080/v1/conversations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"title": "Support chat", "metadata": {"topic": "support"}}'
 ```
 
-Or explicitly via the API:
+Response:
 
-```bash
-curl -X POST http://localhost:8080/api/v1/conversations \
-  -H "Content-Type: application/json" \
-  -d '{"id": "my-conversation-id", "metadata": {"topic": "support"}}'
+```json
+{
+  "id": "conv_01HF8XH1XABCD1234EFGH5678",
+  "title": "Support chat",
+  "ownerUserId": "user_1234",
+  "createdAt": "2025-01-10T14:32:05Z",
+  "updatedAt": "2025-01-10T14:32:05Z",
+  "accessLevel": "owner",
+  "conversationGroupId": "conv_01HF8XH1XABCD1234EFGH5678"
+}
 ```
 
 ### Retrieving a Conversation
 
-```java
-// Get all messages in a conversation
-List<ChatMessage> messages = memory.messages();
+```bash
+curl http://localhost:8080/v1/conversations/{conversationId} \
+  -H "Authorization: Bearer <token>"
+```
+
+### Listing Conversations
+
+```bash
+curl "http://localhost:8080/v1/conversations?limit=20" \
+  -H "Authorization: Bearer <token>"
 ```
 
 ### Deleting a Conversation
 
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/conversations/my-conversation-id
+curl -X DELETE http://localhost:8080/v1/conversations/{conversationId} \
+  -H "Authorization: Bearer <token>"
 ```
 
 ## Conversation Properties
@@ -53,19 +66,20 @@ curl -X DELETE http://localhost:8080/api/v1/conversations/my-conversation-id
 | Property | Description |
 |----------|-------------|
 | `id` | Unique identifier (string) |
-| `ownerId` | User who owns the conversation |
+| `title` | Optional conversation title |
+| `ownerUserId` | User who owns the conversation |
 | `createdAt` | Creation timestamp |
 | `updatedAt` | Last modification timestamp |
-| `metadata` | Custom key-value pairs |
-| `parentId` | ID of parent conversation (if forked) |
-| `forkPoint` | Message index where fork occurred |
+| `lastMessagePreview` | Preview of the last message |
+| `accessLevel` | Current user's access level (`owner`, `manager`, `writer`, `reader`) |
+| `conversationGroupId` | Group ID shared by forked conversations |
+| `forkedAtConversationId` | ID of conversation this was forked from (if forked) |
+| `forkedAtMessageId` | Message ID where the fork occurred (if forked) |
 
 ## Best Practices
 
-1. **Use meaningful IDs** - Include context like user ID or session ID
-2. **Set metadata** - Tag conversations for easier filtering
-3. **Consider retention** - Implement cleanup policies for old conversations
-4. **Handle pagination** - Use limit/offset for conversations with many messages
+1. **Set metadata** - Tag conversations for easier filtering
+2. **Handle pagination** - Use limit/offset for conversations with many messages
 
 ## Next Steps
 

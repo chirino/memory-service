@@ -1,6 +1,6 @@
 ---
 layout: ../../../layouts/DocsLayout.astro
-title: Quarkus Extension
+title: Quarkus Integration
 description: Integrate Memory Service with Quarkus applications.
 ---
 
@@ -49,33 +49,6 @@ public void createConversation(String id) {
 }
 ```
 
-## ChatMemory Provider
-
-For LangChain4j integration, inject the `ChatMemoryProvider`:
-
-```java
-@Inject
-ChatMemoryProvider memoryProvider;
-
-@Inject
-ChatLanguageModel model;
-
-public String chat(String conversationId, String userMessage) {
-    ChatMemory memory = memoryProvider.get(conversationId);
-
-    // Add user message
-    memory.add(UserMessage.from(userMessage));
-
-    // Get AI response
-    AiMessage response = model.generate(memory.messages()).content();
-
-    // Store AI response
-    memory.add(response);
-
-    return response.text();
-}
-```
-
 ## Configuration Reference
 
 | Property | Description | Default |
@@ -87,55 +60,8 @@ public String chat(String conversationId, String userMessage) {
 | `quarkus.memory-service.devservices.enabled` | Enable Dev Services | `true` in dev |
 | `quarkus.memory-service.devservices.port` | Dev Services port | random |
 
-## Advanced Usage
-
-### Custom Memory Window
-
-Limit the number of messages returned:
-
-```java
-ChatMemory memory = memoryProvider.get(conversationId);
-// Configure window size
-memory.windowSize(20);
-```
-
-### Metadata
-
-Attach metadata to conversations:
-
-```java
-memoryClient.conversations().update(
-    conversationId,
-    UpdateRequest.builder()
-        .metadata(Map.of(
-            "topic", "support",
-            "priority", "high"
-        ))
-        .build()
-);
-```
-
-### Health Checks
-
-The extension adds automatic health checks:
-
-```bash
-curl http://localhost:8080/q/health
-```
-
-```json
-{
-  "status": "UP",
-  "checks": [
-    {
-      "name": "Memory Service connection",
-      "status": "UP"
-    }
-  ]
-}
-```
-
 ## Next Steps
 
-- Learn about [LangChain4j Integration](/docs/integrations/langchain4j/)
-- Explore the [REST API](/docs/integrations/rest-api/)
+- [REST Client](/docs/quarkus/rest-client/) - Using the REST API client
+- [gRPC Client](/docs/quarkus/grpc-client/) - Using the gRPC client
+- [LangChain4j Integration](/docs/quarkus/langchain4j/) - ChatMemory provider

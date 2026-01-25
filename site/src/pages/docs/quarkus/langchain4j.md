@@ -180,5 +180,5 @@ public String chatWithRAG(String conversationId, String question) {
 
 ## Next Steps
 
-- Explore the [REST API](/docs/integrations/rest-api/)
-- Learn about [gRPC API](/docs/integrations/grpc/)
+- [REST Client](/docs/quarkus/rest-client/) - Direct API access
+- [gRPC Client](/docs/quarkus/grpc-client/) - Streaming and high-performance

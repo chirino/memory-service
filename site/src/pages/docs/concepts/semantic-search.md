@@ -39,12 +39,12 @@ memory-service.embedding.dimension=1536
 ### REST API
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/search \
+curl -X POST http://localhost:8080/v1/user/search/messages \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
   -d '{
     "query": "How do I configure authentication?",
-    "limit": 10,
-    "minScore": 0.7
+    "topK": 10
   }'
 ```
 
@@ -52,30 +52,19 @@ curl -X POST http://localhost:8080/api/v1/search \
 
 ```json
 {
-  "results": [
+  "data": [
     {
-      "messageId": "msg-123",
-      "conversationId": "conv-456",
-      "content": "To configure authentication, you need to...",
-      "score": 0.92,
-      "metadata": {}
+      "message": {
+        "id": "msg_01HF8XJQWXYZ9876ABCD5430",
+        "conversationId": "conv_01HF8XH1XABCD1234EFGH5678",
+        "channel": "history",
+        "content": [{"type": "text", "text": "To configure authentication..."}],
+        "createdAt": "2025-01-10T14:32:05Z"
+      },
+      "score": 0.93,
+      "highlights": "configure authentication"
     }
   ]
-}
-```
-
-### Java API
-
-```java
-@Inject
-SearchService searchService;
-
-public List<SearchResult> findRelevant(String query) {
-    return searchService.search(SearchRequest.builder()
-        .query(query)
-        .limit(10)
-        .minScore(0.7)
-        .build());
 }
 ```
 
@@ -83,43 +72,34 @@ public List<SearchResult> findRelevant(String query) {
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `query` | Search text (required) | - |
-| `limit` | Maximum results | 10 |
-| `minScore` | Minimum similarity (0-1) | 0.5 |
+| `query` | Natural language search text (required) | - |
+| `topK` | Maximum results to return | 20 |
 | `conversationIds` | Filter to specific conversations | all |
-| `messageTypes` | Filter by message type | all |
-| `after` | Only messages after timestamp | - |
-| `before` | Only messages before timestamp | - |
+| `before` | Only messages before this message ID | - |
 
 ## Filtering Results
 
 ### By Conversation
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/search \
+curl -X POST http://localhost:8080/v1/user/search/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
   -d '{
     "query": "authentication",
-    "conversationIds": ["conv-1", "conv-2"]
+    "conversationIds": ["conv_01HF8XH1XABCD1234EFGH5678", "conv_01HF8XH1XABCD1234EFGH5679"]
   }'
 ```
 
-### By Message Type
+### With Temporal Filter
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/search \
-  -d '{
-    "query": "error handling",
-    "messageTypes": ["AI"]
-  }'
-```
-
-### By Time Range
-
-```bash
-curl -X POST http://localhost:8080/api/v1/search \
+curl -X POST http://localhost:8080/v1/user/search/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
   -d '{
     "query": "deployment",
-    "after": "2024-01-01T00:00:00Z"
+    "before": "msg_01HF8XJQWXYZ9876ABCD5431"
   }'
 ```
 
@@ -127,61 +107,23 @@ curl -X POST http://localhost:8080/api/v1/search \
 
 ### 1. Knowledge Retrieval
 
-Find relevant past conversations to inform current responses:
-
-```java
-// Get context for the current question
-List<SearchResult> context = searchService.search(
-    SearchRequest.builder()
-        .query(userQuestion)
-        .limit(5)
-        .build()
-);
-
-// Include in system prompt
-String enhancedPrompt = buildPromptWithContext(context);
-```
+Find relevant past conversations to inform current agent responses using RAG (Retrieval Augmented Generation).
 
 ### 2. Duplicate Detection
 
-Check if a question was already asked:
-
-```java
-List<SearchResult> similar = searchService.search(
-    SearchRequest.builder()
-        .query(newQuestion)
-        .minScore(0.95)
-        .limit(1)
-        .build()
-);
-
-if (!similar.isEmpty()) {
-    // Return cached response or reference existing conversation
-}
-```
+Check if a similar question was already asked to avoid redundant conversations.
 
 ### 3. Analytics
 
-Find patterns in conversations:
-
-```java
-// Find all conversations about errors
-List<SearchResult> errorConvs = searchService.search(
-    SearchRequest.builder()
-        .query("error exception failed")
-        .messageTypes(List.of("USER"))
-        .build()
-);
-```
+Find patterns across conversations by searching for common themes or issues.
 
 ## Performance Tips
 
-1. **Index selectively** - Not all messages need embedding (e.g., skip system messages)
-2. **Use filters** - Narrow search scope with conversation IDs or time ranges
-3. **Tune minScore** - Higher scores = more relevant but fewer results
-4. **Batch embeddings** - Embed multiple messages in one API call
+1. **Use filters** - Narrow search scope with conversation IDs
+2. **Adjust topK** - Request only as many results as needed
+3. **Use highlights** - The `highlights` field shows matching text snippets
 
 ## Next Steps
 
 - Configure [Vector Stores](/docs/deployment/databases/)
-- Learn about the [REST API](/docs/integrations/rest-api/)
+- View the [API Contracts](/docs/api-contracts/)
