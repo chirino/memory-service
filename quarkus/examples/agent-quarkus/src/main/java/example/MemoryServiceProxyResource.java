@@ -2,6 +2,7 @@ package example;
 
 import io.github.chirino.memory.client.model.MessageChannel;
 import io.github.chirino.memory.runtime.MemoryServiceProxy;
+import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -21,6 +22,7 @@ import jakarta.ws.rs.core.Response;
  */
 @Path("/v1/conversations")
 @ApplicationScoped
+@Blocking // Offload REST client calls from the event loop to prevent deadlock
 public class MemoryServiceProxyResource {
 
     @Inject MemoryServiceProxy proxy;

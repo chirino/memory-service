@@ -18,9 +18,10 @@ public class MemoryServiceApiBuilder {
     @Inject
     public MemoryServiceApiBuilder(
             @ConfigProperty(name = "memory-service-client.url") Optional<String> clientUrl,
-            @ConfigProperty(name = "memory-service.url") Optional<String> legacyUrl,
+            @ConfigProperty(name = "quarkus.rest-client.memory-service-client.url")
+                    Optional<String> quarkusRestClientUrl,
             @ConfigProperty(name = "memory-service-client.api-key") Optional<String> apiKey) {
-        this(resolveBaseUrl(clientUrl, legacyUrl), apiKey.orElse(null), null);
+        this(resolveBaseUrl(clientUrl, quarkusRestClientUrl), apiKey.orElse(null), null);
     }
 
     private MemoryServiceApiBuilder(String baseUrl, String apiKey, String bearerToken) {

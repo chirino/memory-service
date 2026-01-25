@@ -2,7 +2,7 @@ FROM maven:3.9.9-eclipse-temurin-21 AS build
 
 WORKDIR /build
 
-# Copy Maven files
+# Download mvn dependencies to speed up subsequent builds.
 COPY mvnw .
 COPY .mvn .mvn
 COPY pom.xml .
@@ -16,13 +16,10 @@ COPY quarkus/quarkus-data-encryption/runtime/pom.xml quarkus/quarkus-data-encryp
 COPY quarkus/quarkus-data-encryption/deployment/pom.xml quarkus/quarkus-data-encryption/deployment/
 COPY quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/
 COPY quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/
-
 RUN ./mvnw -Pmemory-service-only -P\!all-modules quarkus:go-offline
 
-# Copy all the sources
+# Copy the source code and build the app
 COPY . .
-
-# Build the service application
 RUN ./mvnw -T 1C -B -q -Pmemory-service-only -P\!all-modules -pl memory-service -am clean package -DskipTests -Dquarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/memory_service
 
 # Runtime stage

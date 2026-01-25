@@ -18,9 +18,13 @@ public class MemoryServiceApiStartupObserver {
     void onStart(@Observes StartupEvent ev) {
         var config = ConfigProvider.getConfig();
         String baseUrl =
-                config.getOptionalValue(
-                                "quarkus.rest-client.memory-service-client.url", String.class)
+                config.getOptionalValue("memory-service-client.url", String.class)
+                        .or(
+                                () ->
+                                        config.getOptionalValue(
+                                                "quarkus.rest-client.memory-service-client.url",
+                                                String.class))
                         .orElse("not configured");
-        LOG.infof("Memory Service REST client base URL configured: %s", baseUrl);
+        LOG.infof("Memory Service client base URL configured: %s", baseUrl);
     }
 }

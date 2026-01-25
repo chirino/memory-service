@@ -1,45 +1,63 @@
 FROM docker.io/library/node:22-alpine AS frontend-builder
 
 WORKDIR /build
-COPY examples/agent-webui/package.json .
-COPY examples/agent-webui/package-lock.json .
+COPY common/agent-webui/package.json .
+COPY common/agent-webui/package-lock.json .
 RUN npm install
 
-COPY examples/agent-webui .
+COPY common/agent-webui .
 RUN npm run build
 
 FROM maven:3.9.9-eclipse-temurin-21 AS build
 
 WORKDIR /build
 
-# Copy Maven files
-COPY pom.xml .
+# Download mvn dependencies to speed up subsequent builds.
 COPY mvnw .
 COPY .mvn .mvn
+COPY ./pom.xml ./pom.xml
+COPY ./quarkus/memory-service-proto-quarkus/pom.xml ./quarkus/memory-service-proto-quarkus/pom.xml
+COPY ./quarkus/memory-service-rest-quarkus/pom.xml ./quarkus/memory-service-rest-quarkus/pom.xml
+COPY ./quarkus/pom.xml ./quarkus/pom.xml
+COPY ./quarkus/memory-service-extension/runtime/pom.xml ./quarkus/memory-service-extension/runtime/pom.xml
+COPY ./quarkus/memory-service-extension/pom.xml ./quarkus/memory-service-extension/pom.xml
+COPY ./quarkus/memory-service-extension/deployment/pom.xml ./quarkus/memory-service-extension/deployment/pom.xml
+COPY ./quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml ./quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml
+COPY ./quarkus/quarkus-data-encryption/runtime/pom.xml ./quarkus/quarkus-data-encryption/runtime/pom.xml
+COPY ./quarkus/quarkus-data-encryption/pom.xml ./quarkus/quarkus-data-encryption/pom.xml
+COPY ./quarkus/quarkus-data-encryption/deployment/pom.xml ./quarkus/quarkus-data-encryption/deployment/pom.xml
+COPY ./quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml ./quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml
+COPY ./quarkus/examples/pom.xml ./quarkus/examples/pom.xml
+COPY ./quarkus/examples/agent-quarkus/pom.xml ./quarkus/examples/agent-quarkus/pom.xml
+COPY ./memory-service-contracts/pom.xml ./memory-service-contracts/pom.xml
+COPY ./memory-service/pom.xml ./memory-service/pom.xml
+COPY ./common/agent-webui/pom.xml ./common/agent-webui/pom.xml
+COPY ./spring/memory-service-spring-boot-autoconfigure/pom.xml ./spring/memory-service-spring-boot-autoconfigure/pom.xml
+COPY ./spring/pom.xml ./spring/pom.xml
+COPY ./spring/memory-service-rest-spring/target/generated-sources/openapi/pom.xml ./spring/memory-service-rest-spring/target/generated-sources/openapi/pom.xml
+COPY ./spring/memory-service-rest-spring/pom.xml ./spring/memory-service-rest-spring/pom.xml
+COPY ./spring/memory-service-proto-spring/pom.xml ./spring/memory-service-proto-spring/pom.xml
+COPY ./spring/examples/agent-spring/pom.xml ./spring/examples/agent-spring/pom.xml
+COPY ./spring/examples/pom.xml ./spring/examples/pom.xml
+COPY ./spring/memory-service-spring-boot-starter/pom.xml ./spring/memory-service-spring-boot-starter/pom.xml
+RUN ./mvnw quarkus:go-offline
 
 # Copy the frontend build into the agent resources
-COPY --chmod=755 --from=frontend-builder /build/dist examples/agent-quarkus/src/main/resources/META-INF/resources
+COPY --chmod=755 --from=frontend-builder /build/dist ./quarkus/examples/agent-quarkus/src/main/resources/META-INF/resources
 
-# Copy module sources
-COPY memory-service-contracts memory-service-contracts
-COPY quarkus quarkus
-COPY spring/pom.xml spring/
-COPY spring/memory-service-proto-spring/pom.xml spring/memory-service-proto-spring/
-COPY examples/pom.xml examples/
-COPY examples/agent-quarkus examples/agent-quarkus
-
-# Build the agent application
-RUN ./mvnw -B -q -pl examples/agent-quarkus -am clean package -DskipTests
+# Copy the source code and build the app
+COPY . .
+RUN ./mvnw -B -q -am  -pl :memory-service-extension-deployment,:agent-quarkus clean install -DskipTests
 
 FROM registry.access.redhat.com/ubi9/openjdk-21:1.23
 
 ENV LANGUAGE='en_US:en'
 
 # Copy the built agent application from build stage
-COPY --from=build --chown=185 /build/examples/agent-quarkus/target/quarkus-app/lib/ /deployments/lib/
-COPY --from=build --chown=185 /build/examples/agent-quarkus/target/quarkus-app/*.jar /deployments/
-COPY --from=build --chown=185 /build/examples/agent-quarkus/target/quarkus-app/app/ /deployments/app/
-COPY --from=build --chown=185 /build/examples/agent-quarkus/target/quarkus-app/quarkus/ /deployments/quarkus/
+COPY --from=build --chown=185 /build/quarkus/examples/agent-quarkus/target/quarkus-app/lib/ /deployments/lib/
+COPY --from=build --chown=185 /build/quarkus/examples/agent-quarkus/target/quarkus-app/*.jar /deployments/
+COPY --from=build --chown=185 /build/quarkus/examples/agent-quarkus/target/quarkus-app/app/ /deployments/app/
+COPY --from=build --chown=185 /build/quarkus/examples/agent-quarkus/target/quarkus-app/quarkus/ /deployments/quarkus/
 
 EXPOSE 8080
 USER 185

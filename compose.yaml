@@ -5,11 +5,9 @@ services:
       POSTGRES_DB: memory_service
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    ports:
-      - "55432:5432"
     volumes:
       # Init script mount (read-only); data lives on tmpfs below so it disappears with the container
-      - ../../../common/keycloak/postgres-init-keycloak.sql:/docker-entrypoint-initdb.d/postgres-init-keycloak.sql:ro
+      - ./common/keycloak/postgres-init-keycloak.sql:/docker-entrypoint-initdb.d/postgres-init-keycloak.sql:ro
     tmpfs:
       # Ephemeral Postgres data dir; removed automatically when the container is deleted
       - /var/lib/postgresql/data
@@ -22,8 +20,6 @@ services:
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]
-    ports:
-      - "56379:6379"
     tmpfs:
       # Keep Redis data in-memory and drop it with the container
       - /data
@@ -45,23 +41,30 @@ services:
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak
       KC_HTTP_RELATIVE_PATH: /
+      KC_HEALTH_ENABLED: "true"
       # External hostname for browser redirects (configurable via env var)
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
       KC_HOSTNAME_PORT: ${KEYCLOAK_HOSTNAME_PORT:-8081}
       # Allow internal (Docker network) backchannel communication
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     volumes:
-      - ../../../common/keycloak/memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
+      - ./common/keycloak/memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8081:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'UP'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
   memory-service:
     image: ghcr.io/chirino/memory-service:latest
     build:
-      context: ../../
+      context: .
       dockerfile: Dockerfile
     environment:
       # Trusted agent API keys (first value is surfaced to the Spring app via the service connection)
@@ -82,14 +85,33 @@ services:
       redis:
         condition: service_healthy
       keycloak:
-        condition: service_started
-    ports:
-      - "8082:8080"
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/v1/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
 
-# Host port mappings are provided so Spring Boot service connections can reach the containers.
-# Spring Boot 3.1+ will auto-detect this compose file when running from this directory.
+  demo-agent:
+    image: ghcr.io/chirino/memory-service-demo-agent:latest
+    build:
+      context: .
+      dockerfile: ./quarkus/examples/agent-quarkus/Dockerfile
+    environment:
+      # Unified config key for REST client
+      MEMORY_SERVICE_CLIENT_URL: http://memory-service:8080
+      MEMORY_SERVICE_CLIENT_API_KEY: agent-api-key-1
+      # gRPC client config (must be set explicitly as env vars are not available at build time)
+      QUARKUS_GRPC_CLIENTS_RESPONSERESUMER_HOST: memory-service
+      QUARKUS_GRPC_CLIENTS_RESPONSERESUMER_PORT: 8080
+      QUARKUS_GRPC_CLIENTS_RESPONSERESUMER_PLAIN_TEXT: true
+      QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080/realms/memory-service
+      QUARKUS_OIDC_TOKEN_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
+      KEYCLOAK_CLIENT_SECRET: change-me
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY env var must be set}
+      # OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}/v1
+    depends_on:
+      memory-service:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
