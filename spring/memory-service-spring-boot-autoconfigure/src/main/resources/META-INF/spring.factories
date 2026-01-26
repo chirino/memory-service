@@ -1,2 +1,2 @@
-org.springframework.boot.autoconfigure.service.connection.ConnectionDetailsFactory=\
-io.github.chirino.memoryservice.spring.autoconfigure.serviceconnection.MemoryServiceDockerComposeConnectionDetailsFactory
+# Docker Compose connection details factory is now provided by
+# memory-service-spring-boot-docker-compose-starter module

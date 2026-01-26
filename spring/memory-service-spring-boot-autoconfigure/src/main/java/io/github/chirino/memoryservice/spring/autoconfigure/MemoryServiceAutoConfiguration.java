@@ -1,5 +1,7 @@
 package io.github.chirino.memoryservice.spring.autoconfigure;
 
+import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
+import io.github.chirino.memoryservice.client.MemoryServiceProxy;
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
 import io.github.chirino.memoryservice.client.api.SearchApi;
 import io.github.chirino.memoryservice.client.api.SystemApi;
@@ -22,6 +24,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -59,16 +62,17 @@ public class MemoryServiceAutoConfiguration {
                     "MemoryService connection details not provided; falling back to properties");
         }
 
-        URI baseUri =
+        String basePath =
                 Optional.ofNullable(connectionDetails)
                         .map(MemoryServiceConnectionDetails::getBaseUri)
+                        .map(URI::toString)
                         .orElseGet(
                                 () ->
                                         Optional.ofNullable(properties.getBaseUrl())
-                                                .orElseGet(
-                                                        () -> URI.create(apiClient.getBasePath())));
+                                                .filter(StringUtils::hasText)
+                                                .orElseGet(apiClient::getBasePath));
 
-        apiClient.setBasePath(baseUri.toString());
+        apiClient.setBasePath(basePath);
         configureApiKey(properties, connectionDetails, apiClient);
         configureBearer(properties, apiClient);
         return apiClient;
@@ -126,6 +130,43 @@ public class MemoryServiceAutoConfiguration {
         return new SystemApi(apiClient);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnClass(MemoryServiceProxy.class)
+    public MemoryServiceProxy memoryServiceProxy(
+            MemoryServiceClientProperties properties,
+            WebClient.Builder webClientBuilder,
+            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider,
+            ObjectProvider<MemoryServiceConnectionDetails> connectionDetailsProvider) {
+
+        // Merge connection details into properties if not already set
+        MemoryServiceConnectionDetails connectionDetails =
+                connectionDetailsProvider.getIfAvailable();
+        if (connectionDetails != null) {
+            if (!StringUtils.hasText(properties.getApiKey())
+                    && StringUtils.hasText(connectionDetails.getApiKey())) {
+                properties.setApiKey(connectionDetails.getApiKey());
+            }
+            if (!StringUtils.hasText(properties.getBaseUrl())
+                    && connectionDetails.getBaseUri() != null) {
+                properties.setBaseUrl(connectionDetails.getBaseUri().toString());
+            }
+            logger.info(
+                    "MemoryServiceProxy configured from connection details: baseUrl={},"
+                            + " apiKeyPresent={}",
+                    properties.getBaseUrl(),
+                    StringUtils.hasText(properties.getApiKey()));
+        } else {
+            logger.info(
+                    "MemoryServiceProxy configured from properties: baseUrl={}, apiKeyPresent={}",
+                    properties.getBaseUrl(),
+                    StringUtils.hasText(properties.getApiKey()));
+        }
+
+        return new MemoryServiceProxy(
+                properties, webClientBuilder, authorizedClientServiceProvider.getIfAvailable());
+    }
+
     // ----- gRPC Client Auto-Configuration -----
 
     /**
@@ -138,8 +179,8 @@ public class MemoryServiceAutoConfiguration {
         if (connectionDetails != null && connectionDetails.getBaseUri() != null) {
             return connectionDetails.getBaseUri();
         }
-        if (properties.getBaseUrl() != null) {
-            return properties.getBaseUrl();
+        if (StringUtils.hasText(properties.getBaseUrl())) {
+            return URI.create(properties.getBaseUrl());
         }
         return null;
     }

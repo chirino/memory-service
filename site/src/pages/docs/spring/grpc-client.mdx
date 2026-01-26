@@ -1,0 +1,300 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Spring gRPC Client
+description: Using the Memory Service gRPC client in Spring Boot applications.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+export const mavenDep = `<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-spring-boot-starter</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>`;
+
+The Spring Boot starter provides a gRPC client for high-performance communication with Memory Service. gRPC is particularly useful for streaming scenarios and response resumption.
+
+## When to Use gRPC
+
+Choose gRPC over REST when you need:
+
+- **Response Resumption** - Required for resuming interrupted streaming responses
+- **High throughput** - Binary protocol is more efficient than JSON
+- **Real-time streaming** - Server-side streaming for message updates
+- **Strong typing** - Generated stubs catch errors at compile time
+
+## Setup
+
+The gRPC client is included in the starter. gRPC is auto-configured when:
+
+- `memory-service.grpc.enabled=true` is set, OR
+- gRPC target is auto-derived from the REST client base URL
+
+<Code code={mavenDep} lang="xml" />
+
+## Configuration
+
+Configure gRPC in `application.properties`:
+
+```properties
+# Enable gRPC explicitly
+memory-service.grpc.enabled=true
+memory-service.grpc.target=localhost:6565
+memory-service.grpc.plaintext=true
+
+# Or let it auto-derive from REST client baseUrl
+memory-service.client.base-url=http://localhost:8082
+# gRPC will be auto-configured to use the same host/port
+```
+
+When `memory-service.grpc.enabled` is not explicitly set to `true`, the starter will attempt to auto-derive gRPC settings from the REST client's `base-url`. This allows you to configure both REST and gRPC with a single URL.
+
+## Injecting Stubs
+
+The starter auto-configures a `ManagedChannel` and `MemoryServiceGrpcClients.MemoryServiceStubs` bean. Inject the stubs:
+
+```java
+import io.github.chirino.memoryservice.grpc.MemoryServiceGrpcClients.MemoryServiceStubs;
+import io.grpc.ManagedChannel;
+import org.springframework.stereotype.Service;
+
+@Service
+public class MyService {
+    private final MemoryServiceStubs stubs;
+
+    public MyService(MemoryServiceStubs stubs) {
+        this.stubs = stubs;
+    }
+}
+```
+
+The `MemoryServiceStubs` provides access to all service stubs:
+
+- `systemService()` - System health and status (blocking)
+- `conversationsService()` - Conversation operations (blocking)
+- `membershipsService()` - Conversation membership operations (blocking)
+- `messagesService()` - Message operations (blocking)
+- `searchService()` - Search operations (blocking)
+- `responseResumerService()` - Response resumption (async, streaming)
+
+## Example Operations
+
+### Get Conversation (Blocking)
+
+```java
+import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
+import io.github.chirino.memory.grpc.v1.GetConversationRequest;
+
+ConversationsServiceGrpc.ConversationsServiceBlockingStub conversations = 
+    stubs.conversationsService();
+
+GetConversationRequest request = GetConversationRequest.newBuilder()
+    .setId("my-conversation")
+    .build();
+
+Conversation conversation = conversations.getConversation(request);
+System.out.println(conversation.getTitle());
+```
+
+### Create Conversation (Blocking)
+
+```java
+import io.github.chirino.memory.grpc.v1.CreateConversationRequest;
+
+CreateConversationRequest request = CreateConversationRequest.newBuilder()
+    .setId("my-conversation")
+    .putMetadata("topic", "support")
+    .build();
+
+Conversation conversation = conversations.createConversation(request);
+```
+
+### List Conversations (Blocking)
+
+```java
+import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
+
+ListConversationsRequest request = ListConversationsRequest.newBuilder()
+    .setLimit(20)
+    .build();
+
+ListConversationsResponse response = conversations.listConversations(request);
+response.getConversationsList().forEach(conv -> {
+    System.out.println(conv.getId());
+});
+```
+
+## Streaming Messages
+
+### Server Streaming - Get All Messages
+
+```java
+import io.github.chirino.memory.grpc.v1.MessagesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.GetMessagesRequest;
+import io.grpc.stub.StreamObserver;
+
+MessagesServiceGrpc.MessagesServiceStub messages = 
+    MessagesServiceGrpc.newStub(stubs.conversationsService().getChannel());
+
+GetMessagesRequest request = GetMessagesRequest.newBuilder()
+    .setConversationId("my-conversation")
+    .build();
+
+messages.getMessages(request, new StreamObserver<Message>() {
+    @Override
+    public void onNext(Message message) {
+        System.out.println("Received: " + message.getContent());
+    }
+
+    @Override
+    public void onError(Throwable t) {
+        t.printStackTrace();
+    }
+
+    @Override
+    public void onCompleted() {
+        System.out.println("Stream completed");
+    }
+});
+```
+
+### Real-time Message Updates
+
+Subscribe to new messages as they arrive:
+
+```java
+import io.github.chirino.memory.grpc.v1.StreamMessagesRequest;
+
+StreamMessagesRequest request = StreamMessagesRequest.newBuilder()
+    .setConversationId("my-conversation")
+    .setFromSequence(lastKnownSequence)
+    .build();
+
+messages.streamMessages(request, new StreamObserver<Message>() {
+    @Override
+    public void onNext(Message message) {
+        // Handle new message in real-time
+        updateUI(message);
+    }
+
+    @Override
+    public void onError(Throwable t) {
+        // Handle reconnection
+        reconnect();
+    }
+
+    @Override
+    public void onCompleted() {
+        // Stream ended
+    }
+});
+```
+
+## Response Resumption
+
+The `responseResumerService()` provides async streaming for response resumption. This is used internally by the `ResponseResumer` bean, but you can also use it directly:
+
+```java
+import io.github.chirino.memory.grpc.v1.ResponseResumerServiceGrpc;
+import io.github.chirino.memory.grpc.v1.ReplayResponseRequest;
+import reactor.core.publisher.Flux;
+
+ResponseResumerServiceGrpc.ResponseResumerServiceStub resumer = 
+    stubs.responseResumerService();
+
+ReplayResponseRequest request = ReplayResponseRequest.newBuilder()
+    .setConversationId("my-conversation")
+    .build();
+
+// Convert gRPC stream to Reactor Flux
+Flux<String> responseFlux = Flux.create(sink -> {
+    resumer.replayResponse(request, new StreamObserver<ReplayResponseResponse>() {
+        @Override
+        public void onNext(ReplayResponseResponse response) {
+            sink.next(response.getContent());
+        }
+
+        @Override
+        public void onError(Throwable t) {
+            sink.error(t);
+        }
+
+        @Override
+        public void onCompleted() {
+            sink.complete();
+        }
+    });
+});
+```
+
+## Error Handling
+
+```java
+import io.grpc.StatusRuntimeException;
+
+try {
+    Conversation conv = conversations.getConversation(request);
+} catch (StatusRuntimeException e) {
+    switch (e.getStatus().getCode()) {
+        case NOT_FOUND:
+            // Conversation not found
+            break;
+        case UNAUTHENTICATED:
+            // Missing or invalid credentials
+            break;
+        case PERMISSION_DENIED:
+            // Access denied
+            break;
+        default:
+            throw e;
+    }
+}
+```
+
+## Authentication
+
+gRPC uses the same authentication as REST. Configure API keys or bearer tokens via headers:
+
+```properties
+# API key is automatically added to gRPC requests
+memory-service.client.api-key=agent-api-key-1
+
+# Or use bearer token
+memory-service.client.bearer-token=${BEARER_TOKEN:}
+```
+
+For OAuth2, the bearer token is obtained from the OAuth2 context and passed via gRPC metadata.
+
+## TLS Configuration
+
+For production, enable TLS:
+
+```properties
+memory-service.grpc.plaintext=false
+memory-service.grpc.target=memory-service.example.com:443
+```
+
+## Configuration Properties
+
+```properties
+# Enable gRPC (or auto-derive from REST baseUrl)
+memory-service.grpc.enabled=true
+
+# gRPC target (host:port)
+memory-service.grpc.target=localhost:6565
+
+# Use plaintext (false for TLS)
+memory-service.grpc.plaintext=true
+
+# Keep-alive settings
+memory-service.grpc.keep-alive-time=30s
+memory-service.grpc.keep-alive-timeout=5s
+
+# Custom headers
+memory-service.grpc.headers.X-Custom-Header=value
+```
+
+## Next Steps
+
+- [REST Client](/docs/spring/rest-client/) - For simpler use cases
+- [Advanced Features](/docs/spring/advanced-features/) - Response resumption and streaming

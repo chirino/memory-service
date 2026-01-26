@@ -16,10 +16,14 @@
   <properties>
     <contracts.dir>${project.build.directory}/generated-resources/contracts</contracts.dir>
     <contracts.source.dir>${maven.multiModuleProjectDirectory}/memory-service-contracts/src/main/resources</contracts.source.dir>
-    <protoc.version>3.25.3</protoc.version>
+    <protoc.version>${protobuf.version}</protoc.version>
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.github.chirino.memory-service</groupId>
       <artifactId>memory-service-contracts</artifactId>

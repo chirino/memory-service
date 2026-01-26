@@ -18,6 +18,7 @@
     <module>memory-service-proto-spring</module>
     <module>memory-service-spring-boot-autoconfigure</module>
     <module>memory-service-spring-boot-starter</module>
+    <module>memory-service-spring-boot-docker-compose-starter</module>
     <module>examples</module>
   </modules>
 
@@ -27,6 +28,7 @@
     <openapi.generator.version>7.8.0</openapi.generator.version>
     <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
     <grpc.version>1.67.1</grpc.version>
+    <protobuf.version>4.29.3</protobuf.version>
   </properties>
 
   <dependencyManagement>
@@ -45,6 +47,12 @@
         <version>${spring.boot.version}</version>
         <type>pom</type>
         <scope>import</scope>
+      </dependency>
+      <!-- Override protobuf version for gRPC 1.67+ compatibility -->
+      <dependency>
+        <groupId>com.google.protobuf</groupId>
+        <artifactId>protobuf-java</artifactId>
+        <version>${protobuf.version}</version>
       </dependency>
     </dependencies>
 

@@ -1,0 +1,203 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Conversation History
+description: Record conversation history and expose APIs for frontend applications.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+This guide continues from [Getting Started](/docs/spring/getting-started/) and shows how to record conversation history and expose APIs for frontend applications.
+
+## Prerequisites
+
+Make sure you've completed the [Getting Started](/docs/spring/getting-started/) guide first. You should have:
+- A working Spring Boot agent with the Memory Service starter
+- Memory Service running via Docker Compose
+- OAuth2 authentication configured
+- curl and jq installed
+
+## Understanding Memory vs History
+
+There are two types of message storage in Memory Service:
+
+- **Agent Memory** - Internal context window for the LLM, stored in the `memory` channel. This is what the agent uses to maintain context across messages.
+- **Conversation History** - What users see in the UI, stored in the `history` channel. This records the actual messages exchanged between users and the agent.
+
+In the previous guide, we only added agent memory. To display conversation history in a frontend UI, we need to also record history.
+
+## Enable History Recording
+
+The Memory Service starter provides `ConversationHistoryStreamAdvisorBuilder` which creates an advisor that automatically records user messages and agent responses to the `history` channel.
+
+Update your controller to include the history advisor:
+
+```java
+package com.example.demo;
+
+import io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisorBuilder;
+import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryBuilder;
+import io.github.chirino.memoryservice.security.SecurityHelper;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class ChatController {
+    private final ChatClient.Builder chatClientBuilder;
+    private final MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder;
+    private final ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder;
+    private final OAuth2AuthorizedClientService authorizedClientService;
+
+    public ChatController(
+            ChatClient.Builder chatClientBuilder,
+            MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder,
+            ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder,
+            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
+        this.chatClientBuilder = chatClientBuilder;
+        this.repositoryBuilder = repositoryBuilder;
+        this.historyAdvisorBuilder = historyAdvisorBuilder;
+        this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
+    }
+
+    @PostMapping("/chat/{conversationId}")
+    public String chat(
+            @PathVariable String conversationId,
+            @RequestBody String message) {
+
+        String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
+        var chatMemoryAdvisor = MessageChatMemoryAdvisor.builder(MessageWindowChatMemory.builder()
+                .chatMemoryRepository(repositoryBuilder.build(bearerToken))
+                .build()).build();
+        var historyAdvisor = historyAdvisorBuilder.build(bearerToken);
+
+        var chatClient = chatClientBuilder.clone()
+                .defaultSystem("You are a helpful assistant.")
+                .defaultAdvisors(historyAdvisor, chatMemoryAdvisor)
+                .defaultAdvisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
+                .build();
+
+        return chatClient.prompt().user(message).call().content();
+    }
+}
+```
+
+The `historyAdvisor` automatically records:
+- User messages before calling the LLM
+- Complete agent responses after the call completes
+
+Run your agent again:
+
+```bash
+./mvnw spring-boot:run
+```
+
+Test it with curl:
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Give me a random number between 1 and 100."
+```
+
+This time when you browse to to the demo agent app at 
+[http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942) 
+you should see the messages that were exchanged between you and the agent.
+
+## Expose Conversation APIs
+
+The Memory Service starter auto-configures a `MemoryServiceProxy` bean that makes it easy to expose conversation APIs to your frontend. This helper handles authentication with the memory service and passes through the user's bearer token for authorization.
+
+Create a REST controller that proxies requests to Memory Service:
+
+```java
+package com.example.demo;
+
+import io.github.chirino.memoryservice.client.MemoryServiceProxy;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/v1/conversations")
+class MemoryServiceProxyController {
+    private final MemoryServiceProxy proxy;
+
+    MemoryServiceProxyController(MemoryServiceProxy proxy) {
+        this.proxy = proxy;
+    }
+    
+    @GetMapping("/{conversationId}")
+    public ResponseEntity<?> getConversation(@PathVariable String conversationId) {
+        return proxy.getConversation(conversationId);
+    }
+
+    @GetMapping("/{conversationId}/messages")
+    public ResponseEntity<?> listConversationMessages(
+            @PathVariable String conversationId,
+            @RequestParam(required = false) String after,
+            @RequestParam(required = false) Integer limit) {
+        return proxy.listConversationMessages(conversationId, after, limit);
+    }
+}
+```
+
+The `MemoryServiceProxy` also handles proper error handling and response mapping.
+
+Test it with curl:
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/messages \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+You should see the conversation and messages that were exchanged between you and the agent.
+
+## Expose Conversation Listing API
+
+To let users see all their conversations, add the `listConversations` method to your `MemoryServiceProxyController`:
+
+```java
+@GetMapping
+public ResponseEntity<?> listConversations(
+        @RequestParam(value = "mode", required = false) String mode,
+        @RequestParam(value = "after", required = false) String after,
+        @RequestParam(value = "limit", required = false) Integer limit,
+        @RequestParam(value = "query", required = false) String query) {
+    return proxy.listConversations(mode, after, limit, query);
+}
+```
+
+The `listConversations` endpoint supports:
+- **Pagination** via `after` (cursor) and `limit` parameters
+- **Search** via the `query` parameter for filtering conversations
+- **Mode** for different listing modes (e.g., `owned`, `shared`)
+
+Test it with curl:
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+## Next Steps
+
+Continue to [Advanced Features](/docs/spring/advanced-features/) to learn about:
+- Conversation forking
+- Streaming responses
+- Response resumption and cancellation

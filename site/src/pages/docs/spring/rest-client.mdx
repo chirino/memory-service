@@ -1,0 +1,295 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Spring REST Client
+description: Using the Memory Service REST client in Spring Boot applications.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+export const mavenDep = `<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-spring-boot-starter</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>`;
+
+The Spring Boot starter provides a type-safe REST client for interacting with Memory Service. The client is automatically configured when you include the starter.
+
+## Setup
+
+The REST client is included in the starter:
+
+<Code code={mavenDep} lang="xml" />
+
+## Injecting the Client
+
+The starter auto-configures an `ApiClient` bean. You can inject it and create API instances:
+
+```java
+import io.github.chirino.memoryservice.client.api.ConversationsApi;
+import io.github.chirino.memoryservice.client.api.UserConversationsApi;
+import io.github.chirino.memoryservice.client.api.SearchApi;
+import io.github.chirino.memoryservice.client.invoker.ApiClient;
+import org.springframework.stereotype.Service;
+
+@Service
+public class MyService {
+    private final ConversationsApi conversationsApi;
+    private final UserConversationsApi userConversationsApi;
+    private final SearchApi searchApi;
+
+    public MyService(ApiClient apiClient) {
+        this.conversationsApi = new ConversationsApi(apiClient);
+        this.userConversationsApi = new UserConversationsApi(apiClient);
+        this.searchApi = new SearchApi(apiClient);
+    }
+}
+```
+
+Alternatively, you can use `MemoryServiceClients.createApiClient()` to create a custom client with specific configuration:
+
+```java
+import io.github.chirino.memoryservice.client.MemoryServiceClients;
+import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
+import org.springframework.web.reactive.function.client.WebClient;
+
+ApiClient apiClient = MemoryServiceClients.createApiClient(
+    properties,
+    WebClient.builder(),
+    null // OAuth2AuthorizedClientManager if needed
+);
+```
+
+## API Overview
+
+The REST client provides several API classes:
+
+- **`ConversationsApi`** - CRUD operations for conversations
+- **`UserConversationsApi`** - User-scoped conversation operations
+- **`SearchApi`** - Semantic search across conversations
+- **`SystemApi`** - System health and status
+
+## Conversations API
+
+### List Conversations
+
+```java
+import io.github.chirino.memoryservice.client.api.ConversationsApi;
+import reactor.core.publisher.Mono;
+
+Mono<ConversationsResponse> response = conversationsApi.listConversations(
+    null, // mode
+    null, // after (cursor)
+    20,   // limit
+    null  // query
+);
+
+response.block().getData().forEach(conversation -> {
+    System.out.println(conversation.getId());
+});
+```
+
+### Get Conversation
+
+```java
+Mono<Conversation> conversation = conversationsApi.getConversation("conversation-id");
+Conversation conv = conversation.block();
+System.out.println(conv.getTitle());
+```
+
+### Create Conversation
+
+```java
+import io.github.chirino.memoryservice.client.model.CreateConversationRequest;
+
+CreateConversationRequest request = new CreateConversationRequest();
+request.setId("my-conversation");
+request.setMetadata(Map.of("topic", "support"));
+
+Mono<Conversation> conversation = conversationsApi.createConversation(request);
+Conversation conv = conversation.block();
+```
+
+### Update Conversation
+
+```java
+import io.github.chirino.memoryservice.client.model.UpdateConversationRequest;
+
+UpdateConversationRequest request = new UpdateConversationRequest();
+request.setMetadata(Map.of("status", "resolved"));
+
+Mono<Conversation> conversation = conversationsApi.updateConversation(
+    "conversation-id",
+    request
+);
+```
+
+### Delete Conversation
+
+```java
+Mono<Void> result = conversationsApi.deleteConversation("conversation-id");
+result.block();
+```
+
+### Fork Conversation
+
+```java
+import io.github.chirino.memoryservice.client.model.ForkFromMessageRequest;
+
+ForkFromMessageRequest request = new ForkFromMessageRequest();
+request.setTitle("Alternative approach");
+
+Mono<Conversation> forked = conversationsApi.forkConversationAtMessage(
+    "original-id",
+    "message-id",
+    request
+);
+```
+
+## Messages API
+
+### List Messages
+
+```java
+import io.github.chirino.memoryservice.client.model.MessageChannel;
+
+Mono<MessagesResponse> response = conversationsApi.listConversationMessages(
+    "conversation-id",
+    null, // after
+    100,  // limit
+    MessageChannel.HISTORY, // channel
+    null  // actor
+);
+
+response.block().getData().forEach(message -> {
+    System.out.println(message.getType() + ": " + message.getContent());
+});
+```
+
+### Add Message
+
+```java
+import io.github.chirino.memoryservice.client.model.AddMessageRequest;
+import io.github.chirino.memoryservice.client.model.MessageType;
+
+AddMessageRequest request = new AddMessageRequest();
+request.setType(MessageType.USER);
+request.setContent("Hello, how can you help?");
+request.setMetadata(Map.of("client", "web"));
+
+Mono<Message> message = conversationsApi.addMessage("conversation-id", request);
+```
+
+## User Conversations API
+
+The `UserConversationsApi` provides user-scoped operations that automatically use the authenticated user's context:
+
+### List User Conversations
+
+```java
+import io.github.chirino.memoryservice.client.api.UserConversationsApi;
+
+Mono<ConversationsResponse> response = userConversationsApi.listConversations(
+    null, // mode
+    null, // after
+    20,   // limit
+    null  // query
+);
+```
+
+### Get User Conversation
+
+```java
+Mono<Conversation> conversation = userConversationsApi.getConversation("conversation-id");
+```
+
+## Search API
+
+### Semantic Search
+
+```java
+import io.github.chirino.memoryservice.client.api.SearchApi;
+import io.github.chirino.memoryservice.client.model.SearchRequest;
+
+SearchRequest request = new SearchRequest();
+request.setQuery("How do I configure authentication?");
+request.setLimit(10);
+request.setMinScore(0.7);
+
+Mono<SearchResponse> response = searchApi.search(request);
+response.block().getData().forEach(result -> {
+    System.out.println(result.getScore() + ": " + result.getContent());
+});
+```
+
+### Filtered Search
+
+```java
+SearchRequest request = new SearchRequest();
+request.setQuery("error handling");
+request.setConversationIds(List.of("conv-1", "conv-2"));
+request.setMessageTypes(List.of(MessageType.AI));
+// request.setAfter(Instant.parse("2024-01-01T00:00:00Z"));
+
+Mono<SearchResponse> response = searchApi.search(request);
+```
+
+## Error Handling
+
+The client uses reactive types (`Mono`), so errors are propagated through the reactive chain:
+
+```java
+try {
+    Conversation conv = conversationsApi.getConversation("unknown-id").block();
+} catch (WebClientResponseException e) {
+    if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+        // Conversation not found
+    } else {
+        // Other API error
+        System.err.println("Error: " + e.getStatusCode() + " - " + e.getMessage());
+    }
+}
+```
+
+## Configuration Properties
+
+Configure the REST client in `application.properties`:
+
+```properties
+# Memory Service URL
+memory-service.client.base-url=${MEMORY_SERVICE_URL:http://localhost:8082}
+
+# API Key for agent authentication
+memory-service.client.api-key=${MEMORY_SERVICE_API_KEY:}
+
+# Bearer token (alternative to OAuth2)
+memory-service.client.bearer-token=${MEMORY_SERVICE_BEARER_TOKEN:}
+
+# Request logging
+memory-service.client.log-requests=true
+
+# Timeout
+memory-service.client.timeout=30s
+
+# OIDC client registration (for OAuth2)
+memory-service.client.oidc-client-registration=memory-service-client
+```
+
+## Using with OAuth2
+
+When using OAuth2, the client can automatically obtain tokens. Configure OAuth2 in `application.properties`:
+
+```properties
+spring.security.oauth2.client.registration.memory-service-client.client-id=memory-service-client
+spring.security.oauth2.client.registration.memory-service-client.client-secret=change-me
+spring.security.oauth2.client.registration.memory-service-client.scope=openid,profile,email
+spring.security.oauth2.client.provider.memory-service-client.issuer-uri=http://localhost:8081/realms/memory-service
+
+memory-service.client.oidc-client-registration=memory-service-client
+```
+
+The client will automatically use OAuth2 tokens when making requests.
+
+## Next Steps
+
+- [gRPC Client](/docs/spring/grpc-client/) - For streaming and high-performance use cases
+- [Advanced Features](/docs/spring/advanced-features/) - Streaming, forking, and response resumption

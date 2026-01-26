@@ -54,7 +54,37 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
 
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        return chain.nextCall(request);
+        String conversationId = resolveConversationId(request);
+        if (!StringUtils.hasText(conversationId)) {
+            return chain.nextCall(request);
+        }
+        safeAppendUserMessage(conversationId, resolveUserMessage(request), bearerToken);
+        ResponseRecorder recorder = responseResumer.recorder(conversationId, bearerToken);
+        ChatClientResponse response = chain.nextCall(request);
+        try {
+            recordCallResponse(conversationId, recorder, response);
+        } finally {
+            recorder.complete();
+        }
+        return response;
+    }
+
+    private void recordCallResponse(
+            String conversationId, ResponseRecorder recorder, ChatClientResponse response) {
+        String content = extractChunk(response);
+        if (!StringUtils.hasText(content)) {
+            return;
+        }
+        try {
+            conversationStore.appendAgentMessage(conversationId, content, bearerToken);
+            conversationStore.markCompleted(conversationId);
+        } catch (Exception e) {
+            LOG.debug(
+                    "Failed to append final agent message for conversationId={}",
+                    conversationId,
+                    e);
+        }
+        recorder.record(content);
     }
 
     @Override

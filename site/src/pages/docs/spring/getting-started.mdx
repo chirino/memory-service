@@ -1,0 +1,279 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Spring Getting Started
+description: Step-by-step guide to integrating Memory Service with your Spring Boot AI agent.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+This guide walks you through integrating Memory Service with a Spring Boot AI agent. You'll start with basic chat memory and can progressively add features in the follow-up guides.
+
+## Prerequisites
+
+- **Java 21** or later
+- **Maven** (or use the included `./mvnw` wrapper)
+- **Docker** (for Memory Service)
+- curl and jq installed
+
+## Build from Source
+
+> **Note:** This project is currently in the proof-of-concept (POC) phase and has not yet published any releases. You'll need to build it from source before using it in your project.
+
+Clone the repository and build all modules:
+
+```bash
+git clone https://github.com/chirino/memory-service.git
+cd memory-service
+./mvnw -DskipTests clean install
+```
+
+This installs all project artifacts to your local Maven repository.
+
+## Step 1: Create a Simple Spring AI App
+
+First, let's create a new Spring Boot application. Use [Spring Initializr](https://start.spring.io/#!type=maven-project&language=java&platformVersion=3.5.10&packaging=jar&configurationFileFormat=properties&jvmVersion=21&groupId=com.example&artifactId=demo&name=demo&description=Demo%20project%20for%20Spring%20Boot&packageName=com.example.demo&dependencies=spring-ai-openai,web) to setup the project.
+Make sure to use Spring Boot 3.5 as that the latest version supported by Spring AI and add the OpenAI and Spring Web dependencies.
+
+Once you download the starter project extract it and open it in your favorite IDE.
+
+```bash
+unzip demo.zip
+cd demo
+```
+
+
+Create a simple REST controller:
+
+```java
+package com.example.demo;
+
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class ChatController {
+    private final ChatClient chatClient;
+
+    public ChatController(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
+    }
+
+    @PostMapping("/chat")
+    public String chat(@RequestBody String message) {
+        return chatClient.prompt().user(message).call().content();
+    }
+}
+```
+
+Configure the server port and OpenAI credentials in `application.properties`:
+
+```properties
+server.port=9090
+spring.ai.openai.api-key=${OPENAI_API_KEY:}
+spring.ai.openai.base-url=${OPENAI_BASE_URL:https://api.openai.com}
+```
+
+Run your agent:
+
+```bash
+export OPENAI_API_KEY=your-api-key
+```
+```bash
+./mvnw spring-boot:run
+```
+
+Test it with curl:
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat \
+  -H "Content-Type: application/json" \
+  -d '"Hi, I'\''m Hiram, who are you?"'
+```
+```bash
+curl -NsSfX POST http://localhost:9090/chat \
+  -H "Content-Type: application/json" \
+  -d '"Who am I?"'
+```
+
+This works, but you may have noticed that the agent has no memory. Each request is independent. Let's add conversation memory.
+
+## Step 2: Add Memory Service Starter
+
+Add the Memory Service Spring Boot starter and OAuth2 resource server dependencies to your `pom.xml`:
+
+<Code lang="xml" code={`<dependency>
+    <groupId>io.github.chirino.memory-service</groupId>
+    <artifactId>memory-service-spring-boot-starter</artifactId>
+    <version>${PROJECT_VERSION}</version>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+</dependency>
+`} />
+
+Start the Memory Service in Docker Compose following the [Getting Started](/docs/getting-started/) guide.
+
+Configure the connection to the Memory Service in `application.properties`:
+
+```properties
+memory-service.client.base-url=http://localhost:8082
+memory-service.client.api-key=agent-api-key-1
+memory-service.client.log-requests=true
+```
+
+Configure OAuth2 in `application.properties`. The client configuration supports browser-based login, while the resource server configuration enables Bearer token authentication for API clients:
+
+```properties
+# OAuth2 client configuration (for browser-based login)
+spring.security.oauth2.client.provider.memory-service-client.issuer-uri=http://localhost:8081/realms/memory-service
+spring.security.oauth2.client.registration.memory-service-client.client-id=memory-service-client
+spring.security.oauth2.client.registration.memory-service-client.client-secret=change-me
+spring.security.oauth2.client.registration.memory-service-client.scope=openid,profile,email
+spring.security.oauth2.client.registration.memory-service-client.authorization-grant-type=authorization_code
+spring.security.oauth2.client.registration.memory-service-client.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}
+
+# OAuth2 resource server configuration (for Bearer token authentication)
+spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8081/realms/memory-service
+```
+
+Configure security. The configuration supports both browser-based OAuth2 login and Bearer token authentication:
+
+```java
+package com.example.demo;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+class SecurityConfig {
+
+    @Bean
+    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http.csrf(csrf -> csrf.disable())
+            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+            .oauth2Login(oauth2 -> oauth2.defaultSuccessUrl("/", false))
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}))
+            .logout(logout -> logout.logoutSuccessUrl("/"));
+        return http.build();
+    }
+}
+```
+
+Now let's update the controller to use chat memory. The Memory Service starter provides `MemoryServiceChatMemoryRepositoryBuilder` which you can use to build a `MessageWindowChatMemory`:
+
+```java
+package com.example.demo;
+
+import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryBuilder;
+import io.github.chirino.memoryservice.security.SecurityHelper;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class ChatController {
+    private final ChatClient.Builder chatClientBuilder;
+    private final MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder;
+    private final OAuth2AuthorizedClientService authorizedClientService;
+
+    public ChatController(
+            ChatClient.Builder chatClientBuilder,
+            MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder,
+            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
+        this.chatClientBuilder = chatClientBuilder;
+        this.repositoryBuilder = repositoryBuilder;
+        this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
+    }
+
+    @PostMapping("/chat/{conversationId}")
+    public String chat(
+            @PathVariable String conversationId,
+            @RequestBody String message) {
+
+        String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
+        MessageChatMemoryAdvisor chatMemoryAdvisor = MessageChatMemoryAdvisor.builder(MessageWindowChatMemory.builder()
+                .chatMemoryRepository(repositoryBuilder.build(bearerToken))
+                .build()).build();
+        
+        var chatClient = chatClientBuilder.clone()
+                .defaultSystem("You are a helpful assistant.")
+                .defaultAdvisors(chatMemoryAdvisor)
+                .defaultAdvisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
+                .build();
+
+        return chatClient.prompt().user(message).call().content();
+    }
+}
+```
+
+Run your agent again:
+
+```bash
+export OPENAI_API_KEY=your-api-key
+./mvnw spring-boot:run
+```
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Test it with curl—now with conversation memory:
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '"Hi, I'\''m Hiram, who are you?"'
+```
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '"Who am I?"'
+```
+
+The agent now remembers context within the same conversation ID!
+
+If you browse to the demo agent app at [http://localhost:8080/](http://localhost:8080/), you will see that a conversation has been created with the ID `3579aac5-c86e-4b67-bbea-6ec1a3644942`.
+But it won't show any messages.  That's because we are not yet storing what we call the history of the conversation.  The only thing being stored is the agent memory, and 
+that's not typically what you want to display to a user in a UI.
+
+## Next Steps
+
+Continue to [Conversation History](/docs/spring/conversation-history/) to learn how to:
+- Record conversation history for frontend display
+- Expose conversation APIs (messages, listing)
+- Build a complete chat UI experience
+
+Or jump ahead to [Advanced Features](/docs/spring/advanced-features/) for:
+- Conversation forking
+- Streaming responses
+- Response resumption and cancellation
+
+## Complete Example
+
+For a complete working example, see the `spring/examples/agent-spring` directory in the repository.
