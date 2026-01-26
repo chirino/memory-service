@@ -1,0 +1,196 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Conversation History
+description: Record conversation history and expose APIs for frontend applications.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+This guide continues from [Getting Started](/docs/quarkus/getting-started/) and shows how to record conversation history and expose APIs for frontend applications.
+
+## Prerequisites
+
+Make sure you've completed the [Getting Started](/docs/quarkus/getting-started/) guide first. You should have:
+- A working Quarkus agent with the Memory Service extension
+- Memory Service running via Docker Compose
+- OIDC authentication configured
+
+## Enable Conversation History Recording
+
+In the [previous guide](/docs/quarkus/getting-started/), you added conversation memory, but messages don't appear in the UI yet. That's because we're only storing *agent memory*, not the *conversation history* that users see.
+
+To display conversation history in a frontend UI, wrap your agent with the `@RecordConversation` interceptor. This records both user messages and agent responses to the `history` channel (separate from the `memory` channel used by agents).
+
+Create a wrapper class:
+
+```java
+package org.acme;
+
+import io.github.chirino.memory.history.annotations.ConversationId;
+import io.github.chirino.memory.history.annotations.RecordConversation;
+import io.github.chirino.memory.history.annotations.UserMessage;
+import io.smallrye.mutiny.Multi;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+@ApplicationScoped
+public class HistoryRecordingAgent {
+
+    private final Agent agent;
+
+    @Inject
+    public HistoryRecordingAgent(Agent agent) {
+        this.agent = agent;
+    }
+
+    @RecordConversation
+    public String chat(
+            @ConversationId String conversationId, 
+            @UserMessage String userMessage) {
+        return agent.chat(conversationId, userMessage);
+    }
+}
+```
+
+The `@RecordConversation` interceptor automatically:
+- Stores the user message before calling your method
+- Stores the complete agent response after streaming completes
+
+Use `HistoryRecordingAgent` in your endpoints instead of calling `Agent` directly.
+
+Update the `ChatResource.java`:
+
+```java
+@Path("/chat")
+public class ChatResource {
+
+    @Inject
+    HistoryRecordingAgent agent;
+
+... existing code ...
+```
+
+Now test it again.
+
+```bash
+curl -i -s -X POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d "Givem a random number between 1 and 100."
+```
+
+This time when you browse to to the demo agent app at 
+[http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942) 
+you should see the messages that were exchanged between you and the agent.
+
+## Expose Conversation Messages API
+
+To let the frontend load a conversation's message history,
+add a jackson dependency to enable JSON serialization/deserialization to the `pom.xml`:
+
+```xml
+<dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-rest-jackson</artifactId>
+</dependency>
+```
+
+Then create a REST resource that proxies requests to Memory Service:
+
+```java
+package org.acme;
+
+import io.github.chirino.memory.client.model.MessageChannel;
+import io.github.chirino.memory.runtime.MemoryServiceProxy;
+import io.smallrye.common.annotation.Blocking;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
+@Path("/v1/conversations")
+@ApplicationScoped
+@Blocking
+public class ConversationsResource {
+
+    @Inject 
+    MemoryServiceProxy proxy;
+
+    @GET
+    @Path("/{conversationId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getConversation(@PathParam("conversationId") String conversationId) {
+        return proxy.getConversation(conversationId);
+    }
+
+    @GET
+    @Path("/{conversationId}/messages")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listConversationMessages(
+            @PathParam("conversationId") String conversationId,
+            @QueryParam("after") String after,
+            @QueryParam("limit") Integer limit) {
+        return proxy.listConversationMessages(
+                conversationId, after, limit, MessageChannel.HISTORY, null);
+    }
+}
+```
+
+The `MemoryServiceProxy` is helper class that makes it easier to implement a JAXRS proxy to the memory service apis.  It handles:
+- Authentication with the memory service
+- Passing through the user's bearer token for authorization
+
+The `MessageChannel.HISTORY` parameter ensures you get messages from the history channel (recorded by `@RecordConversation`) rather than the memory channel (used by agents internally).
+
+Test it with curl:
+
+```bash
+curl -i -s -X GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/ \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -i -s -X GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/messages \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+You should see the conversation and messages that were exchanged between you and the agent.
+
+## Expose Conversation Listing API
+
+A more advanced frontend might want to list all conversations a user has had and display them in a list.
+To let users see all their conversations, add these methods to the `ConversationsResource.java`:
+
+```java
+@GET
+@Produces(MediaType.APPLICATION_JSON)
+public Response listConversations(
+        @QueryParam("mode") String mode,
+        @QueryParam("after") String after,
+        @QueryParam("limit") Integer limit,
+        @QueryParam("query") String query) {
+    return proxy.listConversations(mode, after, limit, query);
+}
+```
+
+Test it with curl:
+
+```bash
+curl -i -s -X GET http://localhost:9090/v1/conversations \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+The `listConversations` endpoint supports:
+- **Pagination** via `after` (cursor) and `limit` parameters
+- **Search** via the `query` parameter for filtering conversations
+- **Mode** for different listing modes (e.g., `owned`, `shared`)
+
+## Next Steps
+
+Continue to [Advanced Features](/docs/quarkus/advanced-features/) to learn about:
+- Conversation forking
+- Streaming responses
+- Response resumption and cancellation
