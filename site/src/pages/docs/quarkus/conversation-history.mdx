@@ -14,6 +14,7 @@ Make sure you've completed the [Getting Started](/docs/quarkus/getting-started/)
 - A working Quarkus agent with the Memory Service extension
 - Memory Service running via Docker Compose
 - OIDC authentication configured
+- curl and jq installed
 
 ## Enable Conversation History Recording
 
@@ -70,12 +71,28 @@ public class ChatResource {
 ... existing code ...
 ```
 
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}  
+```
+
 Now test it again.
 
 ```bash
-curl -i -s -X POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
   -H "Content-Type: text/plain" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $(get-token)" \
   -d "Givem a random number between 1 and 100."
 ```
 
@@ -150,11 +167,11 @@ The `MessageChannel.HISTORY` parameter ensures you get messages from the history
 Test it with curl:
 
 ```bash
-curl -i -s -X GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/ \
-  -H "Authorization: Bearer $TOKEN"
+curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/ \
+  -H "Authorization: Bearer $(get-token)" | jq
 
-curl -i -s -X GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/messages \
-  -H "Authorization: Bearer $TOKEN"
+curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/messages \
+  -H "Authorization: Bearer $(get-token)" | jq
 ```
 
 You should see the conversation and messages that were exchanged between you and the agent.
@@ -179,8 +196,8 @@ public Response listConversations(
 Test it with curl:
 
 ```bash
-curl -i -s -X GET http://localhost:9090/v1/conversations \
-  -H "Authorization: Bearer $TOKEN"
+curl -sSfX GET http://localhost:9090/v1/conversations \
+  -H "Authorization: Bearer $(get-token)" | jq
 ```
 
 The `listConversations` endpoint supports:

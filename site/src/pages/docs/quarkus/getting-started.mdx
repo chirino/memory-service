@@ -14,6 +14,7 @@ This guide walks you through integrating Memory Service with a Quarkus AI agent.
 - **Java 21** or later
 - **Maven** (or use the included `./mvnw` wrapper)
 - **Docker** (for Dev Services)
+- curl and jq installed
 
 ## Build from Source
 
@@ -114,11 +115,11 @@ export OPENAI_API_KEY=your-api-key
 Test it with curl:
 
 ```bash
-curl -i -s -X POST http://localhost:9090/chat \
+curl -NsSfX POST http://localhost:9090/chat \
   -H "Content-Type: text/plain" \
   -d "Hi, I'm Hiram, who are you?"
 
-curl -i -s -X POST http://localhost:9090/chat \
+curl -NsSfX POST http://localhost:9090/chat \
   -H "Content-Type: text/plain" \
   -d "Who am I?"
 ```
@@ -210,30 +211,33 @@ export OPENAI_API_KEY=your-api-key
 ./mvnw quarkus:dev
 ```
 
-Login to Keycloak and get a bearer token using a username/password grant.
+Make sure you define a shell function that can get the bearer token for the bob user:
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "client_id=memory-service-client" \
-  -d "client_secret=change-me" \
-  -d "grant_type=password" \
-  -d "username=bob" \
-  -d "password=bob" \
-  | jq -r '.access_token')
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}  
 ```
+
 
 Test it with curl—now with conversation memory:
 
 ```bash
-curl -i -s -X POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
   -H "Content-Type: text/plain" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $(get-token)" \
   -d "Hi, I'm Hiram, who are you?"
 
-curl -i -s -X POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
   -H "Content-Type: text/plain" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $(get-token)" \
   -d "Who am I?"
 ```
 

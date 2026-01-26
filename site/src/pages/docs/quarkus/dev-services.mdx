@@ -1,0 +1,186 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Dev Services
+description: Automatic memory-service container startup for development and testing.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+The Memory Service extension provides **Dev Services** that automatically start a memory-service container in development mode. This eliminates the need to manually configure and run the memory-service separately, making local development much easier.
+
+## Why Use Dev Services?
+
+Dev Services automatically:
+
+- **Starts a memory-service container** using the `ghcr.io/chirino/memory-service:latest` image
+- **Configures your application** with the correct connection URL and API key
+- **Reuses existing dev service containers** (PostgreSQL, Keycloak, Redis, Infinispan) started by your application
+- **Handles container lifecycle** - starts on application startup, stops when the application stops
+- **Generates secure API keys** automatically if not configured
+
+This means you can focus on developing your agent application without worrying about setting up and managing the memory-service infrastructure.
+
+## How It Works
+
+When you run your Quarkus application in dev mode (`./mvnw quarkus:dev`), the extension:
+
+1. Checks if Docker is available
+2. Checks if `memory-service-client.url` is already configured
+3. If not configured, starts a memory-service container
+4. Automatically configures your application with:
+   - `memory-service-client.url` - The base URL of the dev memory-service
+   - `memory-service-client.api-key` - The API key (generated or from your config)
+
+The memory-service container automatically connects to:
+- **PostgreSQL** dev service (if available) - for the main datastore
+- **Keycloak** dev service (if available) - for OIDC authentication
+- **Redis** dev service (if available and response-resumer is set to "redis") - for caching
+- **Infinispan** dev service (if available and response-resumer is set to "infinispan") - for caching
+
+## Configuration Properties
+
+The following configuration properties control Dev Services behavior:
+
+### `memory-service-client.url`
+
+**Type:** `String`  
+**Default:** Not set (triggers Dev Services)  
+**Description:** The base URL of the memory-service instance. If this is set, Dev Services will **not** start automatically. Use this to point to an existing memory-service instance.
+
+```properties
+# Disable Dev Services and use existing instance
+memory-service-client.url=http://localhost:8082
+```
+
+### `memory-service-client.api-key`
+
+**Type:** `String`  
+**Default:** Auto-generated random key if not set  
+**Description:** The API key used to authenticate agent requests to the memory-service. If not configured, Dev Services generates a secure random Base64-encoded key and exposes it to both the container and your application.
+
+```properties
+# Use a specific API key
+memory-service-client.api-key=my-custom-api-key
+```
+
+### `memory-service.response-resumer`
+
+**Type:** `String`  
+**Default:** Not set  
+**Description:** Configures the response resumption backend. Valid values are `"redis"` or `"infinispan"`. When set, the memory-service container will be configured to use the corresponding dev service (Redis or Infinispan) for response resumption.
+
+```properties
+# Use Redis for response resumption
+memory-service.response-resumer=redis
+
+# Use Infinispan for response resumption
+memory-service.response-resumer=infinispan
+```
+
+### `quarkus.devservices.enabled`
+
+**Type:** `boolean`  
+**Default:** `true`  
+**Description:** Global Quarkus Dev Services toggle. Set to `false` to disable all Dev Services, including the memory-service container.
+
+```properties
+# Disable all Dev Services
+quarkus.devservices.enabled=false
+```
+
+## Required Dependencies
+
+For Dev Services to work properly, your application needs to include dev service dependencies for the data stores and caches that the memory-service container will use.
+
+### Required: Database Dev Service
+
+The memory-service container requires either PostgreSQL or MongoDB. Add one of these dependencies:
+
+**PostgreSQL (Recommended):**
+
+<Code lang="xml" code={`<dependency>
+  <groupId>io.quarkus</groupId>
+  <artifactId>quarkus-jdbc-postgresql</artifactId>
+</dependency>`} />
+
+**MongoDB:**
+
+<Code lang="xml" code={`<dependency>
+  <groupId>io.quarkus</groupId>
+  <artifactId>quarkus-mongodb-client</artifactId>
+</dependency>`} />
+
+### Required: OIDC Dev Service
+
+The memory-service container requires Keycloak for authentication. Add this dependency:
+
+<Code lang="xml" code={`<dependency>
+  <groupId>io.quarkus</groupId>
+  <artifactId>quarkus-oidc</artifactId>
+</dependency>`} />
+
+### Optional: Cache Dev Services
+
+If you're using response resumption with Redis or Infinispan, add the corresponding dev service dependency:
+
+**Redis (for `memory-service.response-resumer=redis`):**
+
+<Code lang="xml" code={`<dependency>
+  <groupId>io.quarkus</groupId>
+  <artifactId>quarkus-redis-client</artifactId>
+</dependency>`} />
+
+**Infinispan (for `memory-service.response-resumer=infinispan`):**
+
+<Code lang="xml" code={`<dependency>
+  <groupId>io.quarkus</groupId>
+  <artifactId>quarkus-infinispan-client</artifactId>
+</dependency>`} />
+
+## Complete Example
+
+Here's a complete `pom.xml` example showing all the dependencies needed for Dev Services with PostgreSQL and Redis:
+
+<Code lang="xml" code={`<dependencies>
+  <!-- Memory Service Extension (provides Dev Services) -->
+  <dependency>
+    <groupId>io.github.chirino.memory-service</groupId>
+    <artifactId>memory-service-extension</artifactId>
+    <version>${PROJECT_VERSION}</version>
+  </dependency>
+
+  <!-- PostgreSQL Dev Service (required) -->
+  <dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-jdbc-postgresql</artifactId>
+  </dependency>
+
+  <!-- OIDC Dev Service (required) -->
+  <dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-oidc</artifactId>
+  </dependency>
+
+  <!-- Redis Dev Service (optional, for response resumption) -->
+  <dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-redis-client</artifactId>
+  </dependency>
+</dependencies>`} />
+
+And the corresponding `application.properties`:
+
+<Code lang="properties" code={`# Enable Redis-based response resumption
+memory-service.response-resumer=redis
+
+# OIDC configuration
+quarkus.oidc.client-id=memory-service-client
+quarkus.oidc.credentials.secret=change-me`} />
+
+{/* 
+## Next Steps
+
+- [Getting Started](/docs/quarkus/getting-started/) - Learn how to integrate Memory Service with your agent
+- [Advanced Features](/docs/quarkus/advanced-features/) - Explore response resumption and streaming
+- [Configuration](/docs/configuration/) - All configuration options 
+*/}
