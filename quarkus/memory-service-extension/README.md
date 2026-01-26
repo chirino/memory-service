@@ -51,11 +51,12 @@ and simply calls `ctx.proceed()`.
 Streaming responses can be cached in Redis or Infinispan so WebSocket clients
 can resume a token stream after reconnecting:
 
-- Enable with `memory-service.response-resumer=redis`. By default the
+- Enable with `memory-service.cache.type=redis`. By default the
   extension uses the default Redis client; pick a different one via
-  `memory-service.response-resumer.redis.client=<client-name>`.
-- Enable with `memory-service.response-resumer=infinispan` and configure
+  `memory-service.cache.redis.client=<client-name>`.
+- Enable with `memory-service.cache.type=infinispan` and configure
   `quarkus.infinispan-client.server-list=localhost:11222`.
+- The response resumer automatically uses the configured cache backend.
 - Tokens are written to a Redis stream key `conversation:response:{id}` with
   IDs derived from the cumulative UTF-8 byte offset of the response payload.
 - The sample WebSocket endpoint now exposes

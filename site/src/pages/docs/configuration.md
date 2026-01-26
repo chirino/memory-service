@@ -6,6 +6,18 @@ description: Configure Memory Service databases, vector stores, and authenticati
 
 Memory Service is configured entirely through environment variables. This approach works consistently across all deployment methods—Docker, Kubernetes, or bare metal.
 
+> **Note:** Environment variables follow Quarkus conventions. Property names like `memory-service.datastore.type` become `MEMORY_SERVICE_DATASTORE_TYPE` as environment variables (dots and hyphens become underscores, all uppercase).
+
+## Memory Service Configuration
+
+These are the core Memory Service configuration options:
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory-service.datastore.type` | `postgres`, `mongo`, `mongodb` | `postgres` | Database backend for storing conversations |
+| `memory-service.cache.type` | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching (used by response resumer and future cache features) |
+| `memory-service.vector.type` | `none`, `pgvector`, `postgres`, `mongo`, `mongodb` | `none` | Vector store for semantic search |
+
 ## Database Configuration
 
 Memory Service supports multiple database backends for storing conversation data.
@@ -13,48 +25,92 @@ Memory Service supports multiple database backends for storing conversation data
 ### PostgreSQL (Recommended)
 
 ```bash
+# Select PostgreSQL as the datastore
+MEMORY_SERVICE_DATASTORE_TYPE=postgres
+
 # PostgreSQL connection
 QUARKUS_DATASOURCE_DB_KIND=postgresql
 QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://localhost:5432/memoryservice
 QUARKUS_DATASOURCE_USERNAME=postgres
 QUARKUS_DATASOURCE_PASSWORD=postgres
-
-# Enable automatic schema creation
-QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION=update
 ```
 
 ### MongoDB
 
 ```bash
+# Select MongoDB as the datastore
+MEMORY_SERVICE_DATASTORE_TYPE=mongo
+
 # MongoDB connection
-QUARKUS_DATASOURCE_DB_KIND=mongodb
 QUARKUS_MONGODB_CONNECTION_STRING=mongodb://localhost:27017
 QUARKUS_MONGODB_DATABASE=memoryservice
 ```
 
 ## Cache Configuration
 
-Memory Service uses caching to improve performance.
+Memory Service uses a unified cache configuration for all cache-dependent features, including the response resumer. Configure the cache backend once, and all features will use it automatically.
 
-### Redis
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory-service.cache.type` | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching |
+| `memory-service.cache.redis.client` | client name | default | Optional: specify a named Redis client |
+| `memory-service.cache.infinispan.startup-timeout` | duration | `PT30S` | Startup timeout for Infinispan connection |
+
+### Response Resumer Settings
+
+The Response Resumer enables clients to reconnect to in-progress streaming responses after a network interruption. It automatically uses the configured cache backend.
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory-service.response-resumer.enabled` | `true`, `false` | auto-detect | Enable/disable response resumer (auto-enabled when cache.type is redis or infinispan) |
+| `memory-service.response-resumer.temp-dir` | path | system temp dir | Directory for temporary response files |
+| `memory-service.response-resumer.temp-file-retention` | duration | `PT30M` | How long to retain temp files |
+| `memory-service.grpc-advertised-address` | `host:port` | auto-detected | Address clients use to reconnect (for multi-instance deployments) |
+
+### Redis Backend
 
 ```bash
+# Enable Redis cache (response resumer will automatically use it)
+MEMORY_SERVICE_CACHE_TYPE=redis
+
 # Redis connection
 QUARKUS_REDIS_HOSTS=redis://localhost:6379
+
+# Optional: specify a named Redis client
+MEMORY_SERVICE_CACHE_REDIS_CLIENT=my-redis-client
+
+# Optional: disable response resumer even with cache enabled
+MEMORY_SERVICE_RESPONSE_RESUMER_ENABLED=false
 ```
 
-### Infinispan
+### Infinispan Backend
 
 ```bash
+# Enable Infinispan cache (response resumer will automatically use it)
+MEMORY_SERVICE_CACHE_TYPE=infinispan
+
 # Infinispan connection
 QUARKUS_INFINISPAN_CLIENT_HOSTS=localhost:11222
 QUARKUS_INFINISPAN_CLIENT_USERNAME=admin
 QUARKUS_INFINISPAN_CLIENT_PASSWORD=password
+
+# Optional: startup timeout for Infinispan connection
+MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT=PT30S
+
+# Optional: disable response resumer even with cache enabled
+MEMORY_SERVICE_RESPONSE_RESUMER_ENABLED=false
 ```
 
 ## Vector Store Configuration
 
-For semantic search capabilities, configure a vector store.
+For semantic search capabilities, configure a vector store and embedding settings.
+
+### Embedding Configuration
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory.embedding.type` | `none`, `hash` | `hash` | Embedding algorithm (`hash` is a simple built-in implementation) |
+| `memory.embedding.dimension` | integer | `256` | Vector dimension size |
 
 ### pgvector (PostgreSQL)
 
@@ -62,24 +118,37 @@ When using PostgreSQL with the pgvector extension:
 
 ```bash
 # Enable pgvector for semantic search
-MEMORY_SERVICE_VECTOR_STORE_TYPE=pgvector
-MEMORY_SERVICE_VECTOR_STORE_DIMENSION=1536
+MEMORY_SERVICE_VECTOR_TYPE=pgvector
 
-# Embedding model configuration
-MEMORY_SERVICE_EMBEDDING_MODEL=text-embedding-ada-002
-OPENAI_API_KEY=your-api-key
+# Embedding configuration
+MEMORY_EMBEDDING_TYPE=hash
+MEMORY_EMBEDDING_DIMENSION=256
 ```
 
 ### MongoDB Atlas Vector Search
 
 ```bash
-# MongoDB vector search
-MEMORY_SERVICE_VECTOR_STORE_TYPE=mongodb
-MEMORY_SERVICE_VECTOR_STORE_MONGODB_INDEX=vector_index
-MEMORY_SERVICE_VECTOR_STORE_DIMENSION=1536
+# Enable MongoDB vector search
+MEMORY_SERVICE_VECTOR_TYPE=mongodb
+
+# Embedding configuration
+MEMORY_EMBEDDING_TYPE=hash
+MEMORY_EMBEDDING_DIMENSION=256
 ```
 
-## Authentication Configuration
+## API Key Authentication
+
+Memory Service supports API key authentication for trusted agents. Configure API keys by client ID:
+
+```bash
+# Format: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=key1,key2,...
+MEMORY_SERVICE_API_KEYS_AGENT_A=agent-a-key-1,agent-a-key-2
+MEMORY_SERVICE_API_KEYS_AGENT_B=agent-b-key-1
+```
+
+Clients include the API key in requests via the `X-API-Key` header.
+
+## OIDC Authentication
 
 Memory Service supports OIDC authentication via Keycloak or any compliant provider.
 
@@ -88,9 +157,6 @@ Memory Service supports OIDC authentication via Keycloak or any compliant provid
 QUARKUS_OIDC_AUTH_SERVER_URL=http://localhost:8180/realms/memory-service
 QUARKUS_OIDC_CLIENT_ID=memory-service
 QUARKUS_OIDC_CREDENTIALS_SECRET=your-client-secret
-
-# Enable authentication
-MEMORY_SERVICE_AUTH_ENABLED=true
 ```
 
 ## Server Configuration
@@ -99,8 +165,8 @@ MEMORY_SERVICE_AUTH_ENABLED=true
 # HTTP port (default: 8080)
 QUARKUS_HTTP_PORT=8080
 
-# gRPC port (default: 9000)
-QUARKUS_GRPC_SERVER_PORT=9000
+# gRPC port (uses HTTP port when use-separate-server=false)
+QUARKUS_GRPC_SERVER_USE_SEPARATE_SERVER=false
 
 # Enable CORS
 QUARKUS_HTTP_CORS=true
@@ -144,15 +210,19 @@ services:
   memory-service:
     image: ghcr.io/chirino/memory-service:latest
     environment:
-      # Database
+      # Datastore selection
+      MEMORY_SERVICE_DATASTORE_TYPE: postgres
+
+      # PostgreSQL connection
       QUARKUS_DATASOURCE_DB_KIND: postgresql
       QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/memoryservice
       QUARKUS_DATASOURCE_USERNAME: postgres
       QUARKUS_DATASOURCE_PASSWORD: postgres
-      
-      # Cache
+
+      # Cache with Redis (response resumer automatically enabled)
+      MEMORY_SERVICE_CACHE_TYPE: redis
       QUARKUS_REDIS_HOSTS: redis://redis:6379
-      
+
       # Authentication
       QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8180/realms/memory-service
       QUARKUS_OIDC_CLIENT_ID: memory-service

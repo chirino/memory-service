@@ -10,7 +10,7 @@ public class MongoRedisTestProfile implements QuarkusTestProfile {
         return Map.of(
                 "memory-service.datastore.type", "mongo",
                 "memory-service.vector.type", "mongodb",
-                "memory-service.response-resumer", "redis",
+                "memory-service.cache.type", "redis",
                 "quarkus.mongodb.devservices.enabled", "true",
                 "quarkus.redis.devservices.enabled", "true",
                 "quarkus.liquibase-mongodb.migrate-at-start", "true",

@@ -190,7 +190,7 @@ public class MemoryServiceDevServicesProcessor {
                                                                 DEV_SERVICE_LABEL,
                                                                 "memory-service");
 
-                                        // Pass response resumer configuration if set
+                                        // Pass cache configuration if set (for response resumer)
                                         if (responseResumerConfig != null
                                                 && !responseResumerConfig.isBlank()) {
                                             // Set as Quarkus config property via environment
@@ -198,19 +198,18 @@ public class MemoryServiceDevServicesProcessor {
                                             // Note: Quarkus converts env vars to config properties
                                             // by replacing
                                             // underscores with dots. Since the property name is
-                                            // "memory-service.response-resumer" (with hyphens), we
+                                            // "memory-service.cache.type" (with dots), we
                                             // need to set
                                             // it in a way that Quarkus can map it correctly.
-                                            // We use the format where dots and hyphens become
-                                            // underscores.
+                                            // We use the format where dots become underscores.
                                             // Quarkus will attempt to match this to config
                                             // properties.
                                             container.withEnv(
-                                                    "MEMORY_SERVICE_RESPONSE_RESUMER",
+                                                    "MEMORY_SERVICE_CACHE_TYPE",
                                                     responseResumerConfig);
                                             LOG.debugf(
                                                     "Configuring memory-service container with"
-                                                            + " response-resumer: %s",
+                                                            + " cache.type: %s",
                                                     responseResumerConfig);
                                         }
 
@@ -299,7 +298,7 @@ public class MemoryServiceDevServicesProcessor {
                                         }
 
                                         // Configure Redis hosts for the memory-service container
-                                        // only if response-resumer is set to "redis".
+                                        // only if cache.type is set to "redis".
                                         // First check if Redis hosts are already configured in the
                                         // app config.
                                         // If not, look for the Redis dev service container.
@@ -341,7 +340,7 @@ public class MemoryServiceDevServicesProcessor {
                                         }
 
                                         // Configure Infinispan server list for the
-                                        // memory-service container only if response-resumer is
+                                        // memory-service container only if cache.type is
                                         // set to "infinispan".
                                         if ("infinispan".equalsIgnoreCase(responseResumerConfig)) {
                                             String serverList = null;
@@ -411,12 +410,11 @@ public class MemoryServiceDevServicesProcessor {
     private String getResponseResumerConfig() {
         try {
             return ConfigProvider.getConfig()
-                    .getOptionalValue("memory-service.response-resumer", String.class)
+                    .getOptionalValue("memory-service.cache.type", String.class)
+                    .filter(type -> !"none".equals(type))
                     .orElse(null);
         } catch (IllegalStateException e) {
-            LOG.debug(
-                    "Unable to read memory-service.response-resumer from config, using default.",
-                    e);
+            LOG.debug("Unable to read cache configuration from config, using default.", e);
             return null;
         }
     }

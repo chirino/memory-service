@@ -10,7 +10,7 @@ public class PostgresqlInfinispanTestProfile implements QuarkusTestProfile {
         return Map.of(
                 "memory-service.datastore.type", "postgres",
                 "memory-service.vector.type", "pgvector",
-                "memory-service.response-resumer", "infinispan",
+                "memory-service.cache.type", "infinispan",
                 "quarkus.infinispan-client.cache.response-resumer.configuration",
                         "<distributed-cache><encoding"
                                 + " media-type=\"application/x-protostream\"/></distributed-cache>",

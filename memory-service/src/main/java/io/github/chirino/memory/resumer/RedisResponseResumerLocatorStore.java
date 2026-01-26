@@ -28,11 +28,10 @@ public class RedisResponseResumerLocatorStore implements ResponseResumerLocatorS
 
     @Inject
     public RedisResponseResumerLocatorStore(
-            @ConfigProperty(name = "memory-service.response-resumer") Optional<String> resumerType,
-            @ConfigProperty(name = "memory-service.response-resumer.redis.client")
-                    Optional<String> clientName,
+            @ConfigProperty(name = "memory-service.cache.type") Optional<String> cacheType,
+            @ConfigProperty(name = "memory-service.cache.redis.client") Optional<String> clientName,
             @Any Instance<ReactiveRedisDataSource> redisSources) {
-        this.redisEnabled = resumerType.map("redis"::equalsIgnoreCase).orElse(false);
+        this.redisEnabled = cacheType.map("redis"::equalsIgnoreCase).orElse(false);
         this.clientName = clientName.filter(it -> !it.isBlank()).orElse(null);
         this.redisSources = redisSources;
     }
@@ -49,7 +48,7 @@ public class RedisResponseResumerLocatorStore implements ResponseResumerLocatorS
                         : redisSources;
         if (selected.isUnsatisfied()) {
             throw new IllegalStateException(
-                    "Response resumer is enabled (memory-service.response-resumer=redis) but Redis"
+                    "Response resumer is enabled (memory-service.cache.type=redis) but Redis"
                             + " client '%s' is not available."
                                     .formatted(clientName == null ? "<default>" : clientName));
         }

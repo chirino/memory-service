@@ -30,13 +30,13 @@ public class InfinispanResponseResumerLocatorStore implements ResponseResumerLoc
 
     @Inject
     public InfinispanResponseResumerLocatorStore(
-            @ConfigProperty(name = "memory-service.response-resumer") Optional<String> resumerType,
+            @ConfigProperty(name = "memory-service.cache.type") Optional<String> cacheType,
             @ConfigProperty(
-                            name = "memory-service.response-resumer.infinispan.startup-timeout",
+                            name = "memory-service.cache.infinispan.startup-timeout",
                             defaultValue = "PT30S")
                     Duration startupTimeout,
             @Any Instance<RemoteCacheManager> cacheManagers) {
-        this.infinispanEnabled = resumerType.map("infinispan"::equalsIgnoreCase).orElse(false);
+        this.infinispanEnabled = cacheType.map("infinispan"::equalsIgnoreCase).orElse(false);
         this.startupTimeout = startupTimeout;
         this.cacheManagers = cacheManagers;
     }
@@ -49,7 +49,7 @@ public class InfinispanResponseResumerLocatorStore implements ResponseResumerLoc
 
         if (cacheManagers.isUnsatisfied()) {
             throw new IllegalStateException(
-                    "Response resumer is enabled (memory-service.response-resumer=infinispan) but"
+                    "Response resumer is enabled (memory-service.cache.type=infinispan) but"
                             + " no Infinispan client is available.");
         }
 
@@ -57,7 +57,7 @@ public class InfinispanResponseResumerLocatorStore implements ResponseResumerLoc
         cache = cacheManager.getCache(CACHE_NAME);
         if (cache == null) {
             throw new IllegalStateException(
-                    "Response resumer is enabled (memory-service.response-resumer=infinispan) but"
+                    "Response resumer is enabled (memory-service.cache.type=infinispan) but"
                             + " cache '"
                             + CACHE_NAME
                             + "' is not available.");

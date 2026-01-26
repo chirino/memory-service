@@ -63,18 +63,18 @@ memory-service-client.url=http://localhost:8082
 memory-service-client.api-key=my-custom-api-key
 ```
 
-### `memory-service.response-resumer`
+### `memory-service.cache.type`
 
 **Type:** `String`  
-**Default:** Not set  
-**Description:** Configures the response resumption backend. Valid values are `"redis"` or `"infinispan"`. When set, the memory-service container will be configured to use the corresponding dev service (Redis or Infinispan) for response resumption.
+**Default:** `"none"`  
+**Description:** Configures the cache backend. Valid values are `"redis"` or `"infinispan"`. When set, the memory-service container will be configured to use the corresponding dev service (Redis or Infinispan) for caching. The response resumer automatically uses the configured cache backend.
 
 ```properties
-# Use Redis for response resumption
-memory-service.response-resumer=redis
+# Use Redis for caching (response resumer will automatically use it)
+memory-service.cache.type=redis
 
-# Use Infinispan for response resumption
-memory-service.response-resumer=infinispan
+# Use Infinispan for caching (response resumer will automatically use it)
+memory-service.cache.type=infinispan
 ```
 
 ### `quarkus.devservices.enabled`
@@ -123,14 +123,14 @@ The memory-service container requires Keycloak for authentication. Add this depe
 
 If you're using response resumption with Redis or Infinispan, add the corresponding dev service dependency:
 
-**Redis (for `memory-service.response-resumer=redis`):**
+**Redis (for `memory-service.cache.type=redis`):**
 
 <Code lang="xml" code={`<dependency>
   <groupId>io.quarkus</groupId>
   <artifactId>quarkus-redis-client</artifactId>
 </dependency>`} />
 
-**Infinispan (for `memory-service.response-resumer=infinispan`):**
+**Infinispan (for `memory-service.cache.type=infinispan`):**
 
 <Code lang="xml" code={`<dependency>
   <groupId>io.quarkus</groupId>
@@ -170,8 +170,8 @@ Here's a complete `pom.xml` example showing all the dependencies needed for Dev 
 
 And the corresponding `application.properties`:
 
-<Code lang="properties" code={`# Enable Redis-based response resumption
-memory-service.response-resumer=redis
+<Code lang="properties" code={`# Enable Redis-based cache (response resumer will automatically use it)
+memory-service.cache.type=redis
 
 # OIDC configuration
 quarkus.oidc.client-id=memory-service-client

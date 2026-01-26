@@ -14,12 +14,26 @@ public class CacheSelector {
 
     @Inject NoopConversationCache noopConversationCache;
 
+    // TODO: Inject RedisConversationCache and InfinispanConversationCache when implemented
+    // @Inject RedisConversationCache redisConversationCache;
+    // @Inject InfinispanConversationCache infinispanConversationCache;
+
     public ConversationCache getCache() {
         String type = cacheType == null ? "none" : cacheType.trim().toLowerCase();
-        if ("none".equals(type)) {
-            return noopConversationCache;
-        }
-        // Placeholders for redis / infinispan implementations can be added here.
-        return noopConversationCache;
+        return switch (type) {
+            case "redis" -> {
+                // TODO: Return redisConversationCache when implemented
+                yield noopConversationCache;
+            }
+            case "infinispan" -> {
+                // TODO: Return infinispanConversationCache when implemented
+                yield noopConversationCache;
+            }
+            default -> noopConversationCache;
+        };
+    }
+
+    public String getCacheType() {
+        return cacheType;
     }
 }
