@@ -111,6 +111,9 @@ services:
       retries: 12
 ```
 
+Add a [`memory-service-realm.json`](https://raw.githubusercontent.com/chirino/memory-service/refs/heads/main/common/keycloak/memory-service-realm.json) file 
+to the root of your project.  This file contains an example Keycloak realm configuration for the Memory Service.
+
 ## Service Connection
 
 Spring Boot automatically detects the `memory-service` container and provides connection details via `MemoryServiceConnectionDetails`. The starter uses these connection 

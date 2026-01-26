@@ -16,6 +16,20 @@
       "realmRoles": ["user"],
       "groups": [],
       "requiredActions": []
+    },
+    {
+      "username": "alice",
+      "enabled": true,
+      "firstName": "Alice",
+      "lastName": "Tester",
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "alice", "temporary": false }
+      ],
+      "realmRoles": ["user"],
+      "groups": [],
+      "requiredActions": []
     }
   ],
   "roles": {
@@ -35,7 +49,7 @@
       "secret": "change-me",
       "redirectUris": [
         "http://localhost:8080/*",
-        "http://127.0.0.1:9080/*",
+        "http://127.0.0.1:8080/*",
         "http://localhost:9090/*",
         "http://127.0.0.1:9090/*"
       ],

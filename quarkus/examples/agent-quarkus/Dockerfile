@@ -15,31 +15,34 @@ WORKDIR /build
 # Download mvn dependencies to speed up subsequent builds.
 COPY mvnw .
 COPY .mvn .mvn
+
+COPY ./common/agent-webui/pom.xml ./common/agent-webui/pom.xml
+COPY ./memory-service-contracts/pom.xml ./memory-service-contracts/pom.xml
+COPY ./memory-service/pom.xml ./memory-service/pom.xml
 COPY ./pom.xml ./pom.xml
+COPY ./quarkus/examples/agent-quarkus/pom.xml ./quarkus/examples/agent-quarkus/pom.xml
+COPY ./quarkus/examples/pom.xml ./quarkus/examples/pom.xml
+COPY ./quarkus/memory-service-extension/deployment/pom.xml ./quarkus/memory-service-extension/deployment/pom.xml
+COPY ./quarkus/memory-service-extension/pom.xml ./quarkus/memory-service-extension/pom.xml
+COPY ./quarkus/memory-service-extension/runtime/pom.xml ./quarkus/memory-service-extension/runtime/pom.xml
 COPY ./quarkus/memory-service-proto-quarkus/pom.xml ./quarkus/memory-service-proto-quarkus/pom.xml
 COPY ./quarkus/memory-service-rest-quarkus/pom.xml ./quarkus/memory-service-rest-quarkus/pom.xml
 COPY ./quarkus/pom.xml ./quarkus/pom.xml
-COPY ./quarkus/memory-service-extension/runtime/pom.xml ./quarkus/memory-service-extension/runtime/pom.xml
-COPY ./quarkus/memory-service-extension/pom.xml ./quarkus/memory-service-extension/pom.xml
-COPY ./quarkus/memory-service-extension/deployment/pom.xml ./quarkus/memory-service-extension/deployment/pom.xml
-COPY ./quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml ./quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml
-COPY ./quarkus/quarkus-data-encryption/runtime/pom.xml ./quarkus/quarkus-data-encryption/runtime/pom.xml
-COPY ./quarkus/quarkus-data-encryption/pom.xml ./quarkus/quarkus-data-encryption/pom.xml
 COPY ./quarkus/quarkus-data-encryption/deployment/pom.xml ./quarkus/quarkus-data-encryption/deployment/pom.xml
+COPY ./quarkus/quarkus-data-encryption/pom.xml ./quarkus/quarkus-data-encryption/pom.xml
+COPY ./quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml ./quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml
 COPY ./quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml ./quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml
-COPY ./quarkus/examples/pom.xml ./quarkus/examples/pom.xml
-COPY ./quarkus/examples/agent-quarkus/pom.xml ./quarkus/examples/agent-quarkus/pom.xml
-COPY ./memory-service-contracts/pom.xml ./memory-service-contracts/pom.xml
-COPY ./memory-service/pom.xml ./memory-service/pom.xml
-COPY ./common/agent-webui/pom.xml ./common/agent-webui/pom.xml
-COPY ./spring/memory-service-spring-boot-autoconfigure/pom.xml ./spring/memory-service-spring-boot-autoconfigure/pom.xml
-COPY ./spring/pom.xml ./spring/pom.xml
-COPY ./spring/memory-service-rest-spring/target/generated-sources/openapi/pom.xml ./spring/memory-service-rest-spring/target/generated-sources/openapi/pom.xml
-COPY ./spring/memory-service-rest-spring/pom.xml ./spring/memory-service-rest-spring/pom.xml
-COPY ./spring/memory-service-proto-spring/pom.xml ./spring/memory-service-proto-spring/pom.xml
+COPY ./quarkus/quarkus-data-encryption/runtime/pom.xml ./quarkus/quarkus-data-encryption/runtime/pom.xml
 COPY ./spring/examples/agent-spring/pom.xml ./spring/examples/agent-spring/pom.xml
 COPY ./spring/examples/pom.xml ./spring/examples/pom.xml
+COPY ./spring/memory-service-proto-spring/pom.xml ./spring/memory-service-proto-spring/pom.xml
+COPY ./spring/memory-service-rest-spring/pom.xml ./spring/memory-service-rest-spring/pom.xml
+COPY ./spring/memory-service-rest-spring/target/generated-sources/openapi/pom.xml ./spring/memory-service-rest-spring/target/generated-sources/openapi/pom.xml
+COPY ./spring/memory-service-spring-boot-autoconfigure/pom.xml ./spring/memory-service-spring-boot-autoconfigure/pom.xml
+COPY ./spring/memory-service-spring-boot-docker-compose-starter/pom.xml ./spring/memory-service-spring-boot-docker-compose-starter/pom.xml
 COPY ./spring/memory-service-spring-boot-starter/pom.xml ./spring/memory-service-spring-boot-starter/pom.xml
+COPY ./spring/pom.xml ./spring/pom.xml
+
 RUN ./mvnw quarkus:go-offline
 
 # Copy the frontend build into the agent resources
