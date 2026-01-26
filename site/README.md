@@ -118,11 +118,14 @@ const navigation: NavSection[] = [
 |----------|-------------|---------|
 | `ASTRO_BASE` | Base path for the site | `/` |
 | `ASTRO_SITE` | Full site URL | `https://chirino.github.io` |
+| `PROJECT_VERSION` | Project version shown in Maven dependencies and Docker image tags | `999-SNAPSHOT` |
 
 The base path is used for all internal links and assets. It's configured automatically by the GitHub Actions workflows:
 
 - **Main branch**: `ASTRO_BASE=/memory-service/`
 - **Tagged releases**: `ASTRO_BASE=/memory-service/docs/v1.0.0/`
+
+The `PROJECT_VERSION` variable is used in documentation code examples for Maven dependencies and Docker image tags. When building for a release, set this to the actual version number.
 
 ### Building for Different Environments
 
@@ -134,7 +137,7 @@ npm run build
 ASTRO_BASE=/memory-service/ npm run build
 
 # Build for a specific version
-ASTRO_BASE=/memory-service/docs/v1.0.0/ npm run build
+ASTRO_BASE=/memory-service/docs/v1.0.0/ PROJECT_VERSION=1.0.0 npm run build
 ```
 
 ## Versioned Documentation

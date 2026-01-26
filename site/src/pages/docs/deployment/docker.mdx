@@ -3,6 +3,29 @@ layout: ../../../layouts/DocsLayout.astro
 title: Docker Deployment
 description: Deploy Memory Service using Docker.
 ---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+export const productionConfig = `services:
+  memory-service:
+    image: ghcr.io/chirino/memory-service:${PROJECT_VERSION}  # Pin to specific version
+    restart: unless-stopped
+    environment:
+      # Use secrets instead of plain text
+      - QUARKUS_DATASOURCE_PASSWORD_FILE=/run/secrets/db_password
+      # Enable TLS
+      - QUARKUS_HTTP_SSL_CERTIFICATE_FILES=/certs/server.crt
+      - QUARKUS_HTTP_SSL_CERTIFICATE_KEY_FILES=/certs/server.key
+      # Production logging
+      - QUARKUS_LOG_LEVEL=INFO
+    secrets:
+      - db_password
+    volumes:
+      - ./certs:/certs:ro
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt`;
 
 Memory Service is distributed as a Docker image, making it easy to deploy in any container environment.
 
@@ -138,28 +161,7 @@ services:
 
 For production deployments:
 
-```yaml
-services:
-  memory-service:
-    image: ghcr.io/chirino/memory-service:1.0.0  # Pin to specific version
-    restart: unless-stopped
-    environment:
-      # Use secrets instead of plain text
-      - QUARKUS_DATASOURCE_PASSWORD_FILE=/run/secrets/db_password
-      # Enable TLS
-      - QUARKUS_HTTP_SSL_CERTIFICATE_FILES=/certs/server.crt
-      - QUARKUS_HTTP_SSL_CERTIFICATE_KEY_FILES=/certs/server.key
-      # Production logging
-      - QUARKUS_LOG_LEVEL=INFO
-    secrets:
-      - db_password
-    volumes:
-      - ./certs:/certs:ro
-
-secrets:
-  db_password:
-    file: ./secrets/db_password.txt
-```
+<Code code={productionConfig} lang="yaml" />
 
 ## Multi-Container Setup
 

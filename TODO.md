@@ -1,9 +1,12 @@
 # TODO List
 
+* hide the concept of conversation groups from the API.
+* Conversation Soft Deletes.
+* Batch job to delete conversations / epochs that are older than a retention date.
+* drop the resumePosition arg of ResponseResumer.replay
+
 * Improve the langchain4j memory interface: Switch to the langchain4j MemoryChatStore once https://github.com/langchain4j/langchain4j/pull/4416 is released.
-
 * Figure out how muli-modal content should be handled.
-
 * Implement conversation sharing / multi-user conversations (some backend is there, need front end using to demo)
 
 * Manging the React state of conversation + conversation resumption is complex: provide a headless React component that does it for ui implementors.
@@ -14,10 +17,9 @@
 * test/find the message size limits of the app.
 * validate all api fields
 * protect against huge api requests.
-* DONE: rename memory-service-client to memory-service-rest-quarkus and reorganize modules under quarkus/examples parents.
 * Document the spring support
 * generate project static site to promote and document usage.
-* Simplify the resume api.
+* Brand the project and move it to an org/foundation.
 
 # Need Dev Feedback for:
 

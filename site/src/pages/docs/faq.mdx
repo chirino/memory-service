@@ -1,0 +1,87 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: FAQ
+description: Frequently asked questions about Memory Service.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../config';
+
+export const mavenDep = `<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-extension</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>`;
+
+Find answers to commonly asked questions about Memory Service.
+
+## General
+
+### What is Memory Service?
+
+Memory Service is a backend service that provides persistent memory for AI agents. It stores conversation history, enables semantic search across conversations, and supports advanced features like conversation forking.
+
+### Is Memory Service production-ready?
+
+Not yet. Memory Service is in active development and has not reached its first stable release. APIs may change without notice, so production 
+use is not recommended at this time.
+
+### What databases are supported?
+
+Memory Service supports:
+- **PostgreSQL** (recommended) - with pgvector for semantic search
+- **MongoDB** - with Atlas Vector Search support
+
+### What vector stores are supported?
+
+For semantic search capabilities:
+- **pgvector** - PostgreSQL extension
+- **MongoDB Atlas Vector Search**
+
+## Installation & Setup
+
+### How do I install Memory Service?
+
+See the [Getting Started](/docs/getting-started/) guide for detailed instructions.
+
+### Do I need to run a separate service?
+
+In development mode, the Quarkus Dev Services automatically start Memory Service in a Docker container. For production environments, 
+you'll deploy Memory Service as a separate service.
+
+### What Java version is required?
+
+Memory Service requires Java 21 or later.
+
+## Features
+
+### What is conversation forking?
+
+Conversation forking allows you to create a new conversation branch from any point in an existing conversation. This is useful for:
+- If you think that correcting or adding more context to a previous message would improve the response, you can fork the conversation at that message and add the new context to continue from that point instead of starting a fresh conversatin.
+- Exploring alternative conversation paths
+
+{/* 
+### How does semantic search work?
+
+Memory Service uses vector embeddings to enable semantic search across all stored conversations. When you store a message, it's automatically embedded using your configured embedding model. You can then search for semantically similar content across all conversations. 
+*/}
+
+### Can multiple agents share conversations?
+
+Yes! Memory Service supports multiple agents acessing a single conversation.  Each agent gets identified by an API key and each agent gets it's private memory for a given conversation.
+
+## Contributing
+
+### How can I contribute?
+
+We welcome contributions! Check out the [GitHub repository](https://github.com/chirino/memory-service) for:
+- Open issues
+- Pull requests
+
+### Where do I report bugs?
+
+Please report bugs on [GitHub Issues](https://github.com/chirino/memory-service/issues).
+
+### How do I request a feature?
+
+Open an issue on [GitHub Issues](https://github.com/chirino/memory-service/issues).

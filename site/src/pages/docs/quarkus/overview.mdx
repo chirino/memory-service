@@ -3,6 +3,14 @@ layout: ../../../layouts/DocsLayout.astro
 title: Quarkus Integration
 description: Integrate Memory Service with Quarkus applications.
 ---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+export const mavenDep = `<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-extension</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>`;
 
 The Memory Service Quarkus extension provides seamless integration with Quarkus applications, including automatic Dev Services, client injection, and LangChain4j support.
 
@@ -10,13 +18,7 @@ The Memory Service Quarkus extension provides seamless integration with Quarkus 
 
 Add the extension to your `pom.xml`:
 
-```xml
-<dependency>
-  <groupId>io.github.chirino.memory-service</groupId>
-  <artifactId>memory-service-extension</artifactId>
-  <version>1.0.0</version>
-</dependency>
-```
+<Code code={mavenDep} lang="xml" />
 
 ## Dev Services
 

@@ -3,6 +3,14 @@ layout: ../../../layouts/DocsLayout.astro
 title: Quarkus gRPC Client
 description: Using the Memory Service gRPC client in Quarkus applications.
 ---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+export const mavenDep = `<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-proto-quarkus</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>`;
 
 The Quarkus extension provides a gRPC client for high-performance communication with Memory Service.
 
@@ -10,13 +18,7 @@ The Quarkus extension provides a gRPC client for high-performance communication 
 
 Add the gRPC client dependency:
 
-```xml
-<dependency>
-  <groupId>io.github.chirino.memory-service</groupId>
-  <artifactId>memory-service-proto-quarkus</artifactId>
-  <version>1.0.0</version>
-</dependency>
-```
+<Code code={mavenDep} lang="xml" />
 
 ## Configuration
 

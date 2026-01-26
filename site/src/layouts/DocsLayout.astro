@@ -12,9 +12,9 @@ interface Props {
   headings?: { depth: number; slug: string; text: string }[];
 }
 
-const { title, description = 'Memory Service Documentation', headings = [] } = Astro.props;
-const siteTitle = 'Memory Service';
-const fullTitle = `${title} | ${siteTitle} Docs`;
+const { title, description = 'Memory Service Documentation', headings = [] } = (Astro.props as any).content || {};
+const siteTitle = 'Memory Service Docs';
+const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${siteTitle}`;
 ---
 
 <!DOCTYPE html>
@@ -29,7 +29,6 @@ const fullTitle = `${title} | ${siteTitle} Docs`;
   </head>
   <body class="min-h-screen flex flex-col bg-white dark:bg-surface-950">
     <Header />
-
     <div class="flex-1 flex">
       <!-- Mobile sidebar toggle -->
       <button

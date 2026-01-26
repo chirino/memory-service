@@ -91,6 +91,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+    ports:
+      - "8082:8080"
 
   demo-agent:
     image: ghcr.io/chirino/memory-service-demo-agent:latest

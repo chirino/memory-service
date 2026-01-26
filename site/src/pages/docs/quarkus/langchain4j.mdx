@@ -3,6 +3,19 @@ layout: ../../../layouts/DocsLayout.astro
 title: LangChain4j Integration
 description: Use Memory Service with LangChain4j for AI agent development.
 ---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+export const mavenDeps = `<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-extension</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>
+<dependency>
+  <groupId>io.quarkiverse.langchain4j</groupId>
+  <artifactId>quarkus-langchain4j-openai</artifactId>
+  <version>0.8.0</version>
+</dependency>`;
 
 Memory Service provides native integration with LangChain4j, the Java library for building AI applications.
 
@@ -10,18 +23,7 @@ Memory Service provides native integration with LangChain4j, the Java library fo
 
 With the Quarkus extension, LangChain4j integration is automatic:
 
-```xml
-<dependency>
-  <groupId>io.github.chirino.memory-service</groupId>
-  <artifactId>memory-service-extension</artifactId>
-  <version>1.0.0</version>
-</dependency>
-<dependency>
-  <groupId>io.quarkiverse.langchain4j</groupId>
-  <artifactId>quarkus-langchain4j-openai</artifactId>
-  <version>0.8.0</version>
-</dependency>
-```
+<Code code={mavenDeps} lang="xml" />
 
 ## ChatMemoryProvider
 

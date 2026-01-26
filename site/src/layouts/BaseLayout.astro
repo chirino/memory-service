@@ -8,9 +8,9 @@ interface Props {
   description?: string;
 }
 
-const { title, description = 'A persistent memory service for AI agents' } = Astro.props;
+const { title, description = 'A persistent memory service for AI agents' } = (Astro.props as any).content || {};
 const siteTitle = 'Memory Service';
-const fullTitle = title === siteTitle ? title : `${title} | ${siteTitle}`;
+const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${siteTitle}`;
 ---
 
 <!DOCTYPE html>

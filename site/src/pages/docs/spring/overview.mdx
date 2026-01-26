@@ -3,6 +3,14 @@ layout: ../../../layouts/DocsLayout.astro
 title: Spring Integration
 description: Integrate Memory Service with Spring Boot applications.
 ---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+export const mavenDep = `<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-spring-boot-starter</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>`;
 
 Spring Boot integration for Memory Service is currently under development.
 
@@ -19,13 +27,7 @@ The Spring integration will include:
 
 ### Spring Boot Starter
 
-```xml
-<dependency>
-  <groupId>io.github.chirino.memory-service</groupId>
-  <artifactId>memory-service-spring-boot-starter</artifactId>
-  <version>1.0.0</version>
-</dependency>
-```
+<Code code={mavenDep} lang="xml" />
 
 ### Configuration
 

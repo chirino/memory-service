@@ -3,6 +3,14 @@ layout: ../../../layouts/DocsLayout.astro
 title: Quarkus REST Client
 description: Using the Memory Service REST client in Quarkus applications.
 ---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+
+export const mavenDep = `<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-extension</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>`;
 
 The Quarkus extension provides a type-safe REST client for interacting with Memory Service.
 
@@ -10,13 +18,7 @@ The Quarkus extension provides a type-safe REST client for interacting with Memo
 
 The REST client is included in the extension:
 
-```xml
-<dependency>
-  <groupId>io.github.chirino.memory-service</groupId>
-  <artifactId>memory-service-extension</artifactId>
-  <version>1.0.0</version>
-</dependency>
-```
+<Code code={mavenDep} lang="xml" />
 
 ## Injecting the Client
 

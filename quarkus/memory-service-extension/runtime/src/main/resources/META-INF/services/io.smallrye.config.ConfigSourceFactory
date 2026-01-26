@@ -1,1 +1,2 @@
 io.github.chirino.memory.runtime.MemoryServiceClientAliasConfigSourceFactory
+io.github.chirino.memory.runtime.GrpcFromUrlConfigSourceFactory

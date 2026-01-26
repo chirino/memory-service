@@ -3,15 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: Kubernetes Deployment
 description: Deploy Memory Service on Kubernetes.
 ---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
 
-Deploy Memory Service on Kubernetes for scalable, production-grade deployments.
-
-## Quick Start
-
-### Deployment
-
-```yaml
-apiVersion: apps/v1
+export const k8sDeployment = `apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: memory-service
@@ -29,7 +24,7 @@ spec:
     spec:
       containers:
         - name: memory-service
-          image: ghcr.io/chirino/memory-service:1.0.0
+          image: ghcr.io/chirino/memory-service:${PROJECT_VERSION}
           ports:
             - containerPort: 8080
               name: http
@@ -69,8 +64,15 @@ spec:
               path: /q/health/ready
               port: 8080
             initialDelaySeconds: 5
-            periodSeconds: 5
-```
+            periodSeconds: 5`;
+
+Deploy Memory Service on Kubernetes for scalable, production-grade deployments.
+
+## Quick Start
+
+### Deployment
+
+<Code code={k8sDeployment} lang="yaml" />
 
 ### Service
 

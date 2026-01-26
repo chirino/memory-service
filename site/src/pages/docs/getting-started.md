@@ -6,13 +6,14 @@ description: Learn how to deploy Memory Service using Docker Compose for quick s
 
 This guide will walk you through deploying Memory Service using Docker Compose for a quick demo setup.
 
+> **Note:** This project is currently in the proof-of-concept (POC) phase and has not yet published any releases. To try it out, you'll need to build it from source code. Don't worry—Docker Compose will handle building the project automatically when you run the deployment commands below. Be aware that the initial build may take several minutes, so please be patient.
+
 ## Prerequisites
 
 Before you begin, make sure you have:
 
 - **Docker** and **Docker Compose** installed
 - An **OpenAI API key** (or compatible endpoint)
-- At least 4GB of available RAM
 
 ## Quick Start
 
@@ -38,35 +39,17 @@ docker compose up -d
 ```
 
 This will start:
-- **Memory Service** on port 8080
-- **PostgreSQL** for data storage
-- **Redis** for caching
-- **MongoDB** for vector storage
-- **Keycloak** for authentication
+- **Demo Agent** for an AI chat interface
+- **Memory Service** this project's service (used by the demo agent)
+- **Keycloak** for authentication (used by the memory service and demo agent)
+- **PostgreSQL** for data and vector storage (used by the memory service)
+- **Redis** for caching (used by the memory service)
 
-### 4. Access the Application
+### 4. Access the Demo Agent
 
 Open `http://localhost:8080` in your browser and sign in with:
 - Username: `bob`
 - Password: `bob`
-
-## Services Overview
-
-| Service | Port | Description |
-|---------|------|-------------|
-| Memory Service | 8080 | Main API and web interface |
-| PostgreSQL | 5432 | Primary database |
-| Redis | 6379 | Caching layer |
-| MongoDB | 27017 | Vector storage for semantic search |
-| Keycloak | 8180 | OIDC authentication provider |
-
-## Default Configuration
-
-The Docker Compose setup includes:
-- Pre-configured Keycloak realm with test users
-- Automatic database initialization
-- Health checks for all services
-- Persistent data volumes
 
 ## Test Users
 
@@ -76,7 +59,13 @@ Keycloak is pre-configured with these test users:
 |----------|----------|------|
 | bob | bob | user |
 | alice | alice | user |
-| charlie | charlie | user |
+
+## Things to notice in the Demo.
+
+* You can fork any user message and switch between forks
+* Agent memory stays consistent with the fork your on.  Ask it to recall previous fact you have told it.
+* Streaming responses survice browser page reloads.  You can even switch to a diferent device and still view the response that is currently being generated.
+* Users can see a list of all their previous conversations.
 
 ## Next Steps
 
@@ -84,20 +73,3 @@ Keycloak is pre-configured with these test users:
 - Understand [Core Concepts](/docs/concepts/conversations/)
 - Explore [Framework Integrations](/docs/apis/frameworks/quarkus/)
 - Review [Deployment Options](/docs/deployment/kubernetes/)
-
-## Troubleshooting
-
-### Services Not Starting
-
-Check service logs:
-```bash
-docker compose logs [service-name]
-```
-
-### Memory Issues
-
-Increase Docker memory limits or reduce service memory usage in `docker-compose.yml`.
-
-### Port Conflicts
-
-Ensure ports 8080, 5432, 6379, 27017, and 8180 are available on your system.
