@@ -59,31 +59,26 @@ public class AgentSseResource {
     }
 
     @GET
-    @Path("/{conversationId}/resume/{resumePosition}")
+    @Path("/{conversationId}/resume")
     @Blocking
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    public Multi<TokenFrame> resume(
-            @PathParam("conversationId") String conversationId,
-            @PathParam("resumePosition") String resumePosition) {
+    public Multi<TokenFrame> resume(@PathParam("conversationId") String conversationId) {
         if (conversationId == null || conversationId.isBlank()) {
             throw new BadRequestException("Conversation ID is required");
         }
 
-        Log.infof(
-                "SSE resume request for conversationId=%s resumePosition=%s",
-                conversationId, resumePosition);
+        Log.infof("SSE resume request for conversationId=%s", conversationId);
 
         String bearerToken = bearerToken(securityIdentity);
-        return resumer.replay(conversationId, resumePosition, bearerToken)
+        return resumer.replay(conversationId, bearerToken)
                 .map(TokenFrame::new)
                 .onFailure()
                 .invoke(
                         failure ->
                                 Log.warnf(
                                         failure,
-                                        "Resume failed for conversationId=%s resumePosition=%s",
-                                        conversationId,
-                                        resumePosition));
+                                        "Resume failed for conversationId=%s",
+                                        conversationId));
     }
 
     public static final class TokenFrame {

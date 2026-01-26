@@ -18,21 +18,21 @@ export function useWebSocketStream(): StreamClient {
 
   const start = useCallback(
     (params: StreamStartParams) => {
-      const { sessionId, text, resumePosition, resetResume, onChunk, onReplayFailed, onCleanEnd, onError } = params;
+      const { sessionId, text, resetResume, onChunk, onReplayFailed, onCleanEnd, onError } = params;
       close();
 
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 
       // Determine if this is a resume operation
-      // Resume: text is empty, resumePosition is 0, and resetResume is false
-      const isResume = !text && resumePosition === 0 && !resetResume;
+      // Resume: text is empty and resetResume is false
+      const isResume = !text && !resetResume;
 
       let url: string;
       if (isResume) {
-        // Resume WebSocket: /customer-support-agent/{conversationId}/ws/{resumePosition}
+        // Resume WebSocket: /customer-support-agent/{conversationId}/ws/resume
         url = `${protocol}://${window.location.host}/customer-support-agent/${encodeURIComponent(
           sessionId,
-        )}/ws/${resumePosition}`;
+        )}/ws/resume`;
       } else {
         // Normal chat WebSocket: /customer-support-agent/{conversationId}/ws
         url = `${protocol}://${window.location.host}/customer-support-agent/${encodeURIComponent(sessionId)}/ws`;

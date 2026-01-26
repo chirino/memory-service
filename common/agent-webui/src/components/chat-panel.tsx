@@ -1303,7 +1303,6 @@ export function ChatPanel({
     (
       targetConversationId: string,
       text: string,
-      resumePosition: number,
       resetResume: boolean,
       callbacks: {
         onChunk?: (chunk: string) => void;
@@ -1325,7 +1324,6 @@ export function ChatPanel({
       const params: StreamStartParams = {
         sessionId: targetConversationId,
         text,
-        resumePosition,
         resetResume,
         onChunk: appendAssistantChunk,
         onReplayFailed: () => {
@@ -1412,7 +1410,7 @@ export function ChatPanel({
           queue.push(pendingAssistantId);
           pendingAssistantIdsRef.current.set(targetConversationId, queue);
         }
-        startEventStream(targetConversationId, text, 0, true, callbacks);
+        startEventStream(targetConversationId, text, true, callbacks);
       },
       resumeStream: async (targetConversationId, callbacks) => {
         if (!callbacks.replaceMessageId) {
@@ -1441,7 +1439,7 @@ export function ChatPanel({
             pendingAssistantIdsRef.current.set(targetConversationId, queue);
           }
         }
-        startEventStream(targetConversationId, "", 0, false, callbacks);
+        startEventStream(targetConversationId, "", false, callbacks);
       },
       cancelStream: async (targetConversationId) => {
         if (!targetConversationId) {

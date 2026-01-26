@@ -129,13 +129,12 @@ public class TempFileResumerBackend implements ResponseResumerBackend {
     }
 
     @Override
-    public Multi<String> replay(String conversationId, long resumePosition) {
-        return replay(conversationId, resumePosition, null);
+    public Multi<String> replay(String conversationId) {
+        return replay(conversationId, null);
     }
 
     @Override
-    public Multi<String> replay(
-            String conversationId, long resumePosition, AdvertisedAddress advertisedAddress) {
+    public Multi<String> replay(String conversationId, AdvertisedAddress advertisedAddress) {
 
         Optional<ResponseResumerLocator> locator = locatorStore.get(conversationId);
         if (locator.isEmpty()) {
@@ -152,17 +151,11 @@ public class TempFileResumerBackend implements ResponseResumerBackend {
             return Multi.createFrom().empty();
         }
 
-        long startOffset = Math.max(0L, resumePosition);
         return Multi.createFrom()
                 .emitter(
                         emitter ->
                                 replayExecutor.execute(
-                                        () ->
-                                                replayFromFile(
-                                                        conversationId,
-                                                        entry,
-                                                        startOffset,
-                                                        emitter)));
+                                        () -> replayFromFile(conversationId, entry, emitter)));
     }
 
     @Override
@@ -225,7 +218,6 @@ public class TempFileResumerBackend implements ResponseResumerBackend {
     private void replayFromFile(
             String conversationId,
             TempFileRegistryEntry entry,
-            long resumePosition,
             MultiEmitter<? super String> emitter) {
         AtomicBoolean cancelled = new AtomicBoolean(false);
         emitter.onTermination(() -> cancelled.set(true));
@@ -263,29 +255,15 @@ public class TempFileResumerBackend implements ResponseResumerBackend {
                 }
 
                 long tokenStartOffset = readOffset;
-                long tokenEndOffset = readOffset;
 
                 byte[] tokenData = new byte[(int) chunkSize];
                 input.seek(readByteOffset);
                 input.readFully(tokenData);
 
                 String token = new String(tokenData, StandardCharsets.UTF_8);
-                tokenEndOffset = tokenStartOffset + token.length();
+                long tokenEndOffset = tokenStartOffset + token.length();
                 readOffset = tokenEndOffset;
                 readByteOffset += chunkSize;
-
-                if (tokenEndOffset <= resumePosition) {
-                    continue;
-                }
-
-                if (tokenStartOffset < resumePosition) {
-                    int startIndex = (int) (resumePosition - tokenStartOffset);
-                    if (startIndex < token.length()) {
-                        token = token.substring(startIndex);
-                    } else {
-                        continue;
-                    }
-                }
 
                 emitter.emit(token);
 

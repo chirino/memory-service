@@ -11,15 +11,7 @@ public interface ResponseResumer {
         return recorder(conversationId);
     }
 
-    default Multi<String> replay(String conversationId, String resumePosition, String bearerToken) {
-        try {
-            return replay(conversationId, Long.parseLong(resumePosition), bearerToken);
-        } catch (NumberFormatException e) {
-            return Multi.createFrom().empty();
-        }
-    }
-
-    Multi<String> replay(String conversationId, long resumePosition, String bearerToken);
+    Multi<String> replay(String conversationId, String bearerToken);
 
     /**
      * Check which conversations from the provided list have responses in progress,

@@ -16,10 +16,9 @@ import org.jboss.logging.Logger;
 
 /**
  * WebSocket endpoint for resuming in-progress conversation response.
- * Opens with a resume position, sends all cached tokens from that position,
- * and closes the connection when all tokens are sent.
+ * Sends all cached tokens from the beginning and closes the connection when all tokens are sent.
  */
-@WebSocket(path = "/customer-support-agent/{conversationId}/ws/{resumePosition}")
+@WebSocket(path = "/customer-support-agent/{conversationId}/ws/resume")
 public class ResumeWebSocket {
 
     private static final Logger LOG = Logger.getLogger(ResumeWebSocket.class);
@@ -34,13 +33,9 @@ public class ResumeWebSocket {
 
     @OnOpen
     public Multi<Void> onOpen(
-            WebSocketConnection connection,
-            @PathParam("conversationId") String conversationId,
-            @PathParam("resumePosition") String resumePosition) {
+            WebSocketConnection connection, @PathParam("conversationId") String conversationId) {
 
-        LOG.infof(
-                "Resume WebSocket opened for conversationId=%s resumePosition=%s",
-                conversationId, resumePosition);
+        LOG.infof("Resume WebSocket opened for conversationId=%s", conversationId);
 
         String bearerToken = bearerToken(securityIdentity);
         if (bearerToken != null) {
@@ -48,7 +43,7 @@ public class ResumeWebSocket {
         }
 
         return Multi.createFrom()
-                .deferred(() -> resumer.replay(conversationId, resumePosition, bearerToken))
+                .deferred(() -> resumer.replay(conversationId, bearerToken))
                 .runSubscriptionOn(Infrastructure.getDefaultExecutor())
                 .onItem()
                 .transformToUniAndConcatenate(connection::sendText)
@@ -56,9 +51,8 @@ public class ResumeWebSocket {
                 .call(
                         () -> {
                             LOG.infof(
-                                    "Resume completed for conversationId=%s resumePosition=%s,"
-                                            + " closing connection",
-                                    conversationId, resumePosition);
+                                    "Resume completed for conversationId=%s, closing connection",
+                                    conversationId);
                             return connection.close(CloseReason.NORMAL);
                         })
                 .onFailure()
@@ -66,10 +60,8 @@ public class ResumeWebSocket {
                         failure ->
                                 LOG.warnf(
                                         failure,
-                                        "Failed to replay cached tokens for conversationId=%s from"
-                                                + " resumePosition=%s",
-                                        conversationId,
-                                        resumePosition))
+                                        "Failed to replay cached tokens for conversationId=%s",
+                                        conversationId))
                 .onFailure()
                 .call(
                         () ->

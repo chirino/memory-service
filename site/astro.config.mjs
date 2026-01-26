@@ -1,6 +1,7 @@
 import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 import tailwindcss from '@tailwindcss/vite';
+import { remarkBasePath } from './remark-base-path.mjs';
 
 // Get base path from environment variable
 // For main branch: ASTRO_BASE=/memory-service/
@@ -24,6 +25,7 @@ export default defineConfig({
     },
   },
   markdown: {
+    remarkPlugins: [remarkBasePath],
     shikiConfig: {
       theme: 'github-dark',
       wrap: true,

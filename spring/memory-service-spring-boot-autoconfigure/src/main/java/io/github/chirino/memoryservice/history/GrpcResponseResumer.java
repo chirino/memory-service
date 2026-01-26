@@ -66,15 +66,13 @@ public class GrpcResponseResumer implements ResponseResumer {
     }
 
     @Override
-    public Flux<String> replay(
-            String conversationId, long resumePosition, @Nullable String bearerToken) {
+    public Flux<String> replay(String conversationId, @Nullable String bearerToken) {
         final long[] tokenCount = {0};
         return Flux.<String>create(
                         sink -> {
                             ReplayResponseTokensRequest request =
                                     ReplayResponseTokensRequest.newBuilder()
                                             .setConversationId(conversationId)
-                                            .setResumePosition(resumePosition)
                                             .build();
                             stub(bearerToken)
                                     .replayResponseTokens(
@@ -101,9 +99,8 @@ public class GrpcResponseResumer implements ResponseResumer {
                 .doOnError(
                         failure ->
                                 LOG.warn(
-                                        "Failed to replay tokens for conversationId={} start={}",
+                                        "Failed to replay tokens for conversationId={}",
                                         conversationId,
-                                        resumePosition,
                                         failure));
     }
 

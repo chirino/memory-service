@@ -25,7 +25,7 @@ public class NoopResponseResumer implements ResponseResumer {
     }
 
     @Override
-    public Multi<String> replay(String conversationId, long resumePosition, String token) {
+    public Multi<String> replay(String conversationId, String token) {
         return Multi.createFrom().empty();
     }
 

@@ -284,7 +284,7 @@ message StreamResponseTokenResponse {
 
 message ReplayResponseTokensRequest {
   string conversation_id = 1;
-  int64 resume_position = 2;    // Byte offset to resume from
+  // Field 2 (resume_position) removed - always replays from beginning
 }
 
 message ReplayResponseTokensResponse {

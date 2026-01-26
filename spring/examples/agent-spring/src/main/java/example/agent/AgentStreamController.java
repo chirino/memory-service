@@ -111,11 +111,8 @@ class AgentStreamController {
         return emitter;
     }
 
-    @GetMapping(
-            path = "/{conversationId}/resume/{resumePosition}",
-            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter resume(
-            @PathVariable String conversationId, @PathVariable long resumePosition) {
+    @GetMapping(path = "/{conversationId}/resume", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter resume(@PathVariable String conversationId) {
         if (!StringUtils.hasText(conversationId)) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Conversation ID is required");
@@ -125,7 +122,7 @@ class AgentStreamController {
         String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
         Disposable subscription =
                 responseResumer
-                        .replay(conversationId, resumePosition, bearerToken)
+                        .replay(conversationId, bearerToken)
                         .subscribe(
                                 chunk ->
                                         safeSendChunk(

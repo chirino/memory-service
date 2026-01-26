@@ -349,10 +349,9 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                     .asRuntimeException());
         }
 
-        long resumePosition = request.getResumePosition();
-        AtomicLong currentOffset = new AtomicLong(resumePosition);
+        AtomicLong currentOffset = new AtomicLong(0);
 
-        return backend.replay(conversationId, resumePosition, resolveAdvertisedAddress())
+        return backend.replay(conversationId, resolveAdvertisedAddress())
                 .onItem()
                 .transform(
                         token -> {

@@ -15,11 +15,10 @@ public interface ResponseResumerBackend {
         return recorder(conversationId);
     }
 
-    Multi<String> replay(String conversationId, long resumePosition);
+    Multi<String> replay(String conversationId);
 
-    default Multi<String> replay(
-            String conversationId, long resumePosition, AdvertisedAddress advertisedAddress) {
-        return replay(conversationId, resumePosition);
+    default Multi<String> replay(String conversationId, AdvertisedAddress advertisedAddress) {
+        return replay(conversationId);
     }
 
     boolean enabled();

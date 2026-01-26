@@ -85,7 +85,7 @@ Feature: Response Resumer gRPC API
   Scenario: Replay response tokens while stream is in progress
     Given I start streaming tokens "Hello World" to the conversation with 50ms delay and keep the stream open for 1500ms
     And I wait for the response stream to send at least 2 tokens
-    When I replay response tokens from position 0 in a second session and collect tokens "Hello World"
+    When I replay response tokens from the beginning in a second session and collect tokens "Hello World"
     Then the replay should start before the stream completes
     And I wait for the response stream to complete
 
@@ -127,22 +127,11 @@ Feature: Response Resumer gRPC API
     """
     Then the gRPC response should have status "NOT_FOUND"
 
-  Scenario: Replay response tokens from position zero
+  Scenario: Replay response tokens from beginning
     Given I have streamed tokens "Hello World" to the conversation
     When I send gRPC request "ResponseResumerService/ReplayResponseTokens" with body:
     """
     conversation_id: "${conversationId}"
-    resume_position: 0
-    """
-    Then the gRPC response should not have an error
-    # Note: Server streaming responses need special handling in step definitions
-
-  Scenario: Replay response tokens from middle position
-    Given I have streamed tokens "Hello World" to the conversation
-    When I send gRPC request "ResponseResumerService/ReplayResponseTokens" with body:
-    """
-    conversation_id: "${conversationId}"
-    resume_position: 6
     """
     Then the gRPC response should not have an error
     # Note: Server streaming responses need special handling in step definitions
@@ -152,7 +141,6 @@ Feature: Response Resumer gRPC API
     When I send gRPC request "ResponseResumerService/ReplayResponseTokens" with body:
     """
     conversation_id: "${conversationId}"
-    resume_position: 0
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
@@ -160,16 +148,5 @@ Feature: Response Resumer gRPC API
     When I send gRPC request "ResponseResumerService/ReplayResponseTokens" with body:
     """
     conversation_id: "00000000-0000-0000-0000-000000000000"
-    resume_position: 0
     """
     Then the gRPC response should have status "NOT_FOUND"
-
-  Scenario: Replay response tokens with invalid resume position
-    Given I have streamed tokens "Hello" to the conversation
-    When I send gRPC request "ResponseResumerService/ReplayResponseTokens" with body:
-    """
-    conversation_id: "${conversationId}"
-    resume_position: 1000
-    """
-    Then the gRPC response should not have an error
-    # Note: Server streaming responses need special handling in step definitions

@@ -213,7 +213,7 @@ public class ResumeResource {
     public Multi<String> resume(
             @PathParam("conversationId") String conversationId) {
         String bearerToken = bearerToken(securityIdentity);
-        return resumer.replay(conversationId, "0", bearerToken);
+        return resumer.replay(conversationId, bearerToken);
     }
 
     @POST

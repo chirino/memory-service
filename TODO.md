@@ -3,7 +3,6 @@
 * hide the concept of conversation groups from the API.
 * Conversation Soft Deletes.
 * Batch job to delete conversations / epochs that are older than a retention date.
-* drop the resumePosition arg of ResponseResumer.replay
 
 * Improve the langchain4j memory interface: Switch to the langchain4j MemoryChatStore once https://github.com/langchain4j/langchain4j/pull/4416 is released.
 * Figure out how muli-modal content should be handled.

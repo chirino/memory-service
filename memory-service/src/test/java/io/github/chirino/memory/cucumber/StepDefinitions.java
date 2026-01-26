@@ -530,10 +530,10 @@ public class StepDefinitions {
     }
 
     @io.cucumber.java.en.When(
-            "I replay response tokens from position {long} in a second session and collect tokens"
+            "I replay response tokens from the beginning in a second session and collect tokens"
                     + " {string}")
-    public void iReplayResponseTokensFromPositionInSecondSessionAndCollectTokens(
-            long resumePosition, String expectedTokens) {
+    public void iReplayResponseTokensFromBeginningInSecondSessionAndCollectTokens(
+            String expectedTokens) {
         if (inProgressStreamResponse == null) {
             throw new AssertionError("No in-progress response stream found");
         }
@@ -547,10 +547,7 @@ public class StepDefinitions {
         }
 
         var request =
-                ReplayResponseTokensRequest.newBuilder()
-                        .setConversationId(conversationId)
-                        .setResumePosition(resumePosition)
-                        .build();
+                ReplayResponseTokensRequest.newBuilder().setConversationId(conversationId).build();
 
         int expectedCount = expectedTokens.length();
         List<ReplayResponseTokensResponse> responses;

@@ -29,8 +29,8 @@ export function useSseStream(): StreamClient {
 
       const trimmedMessage = params.text?.trim();
       // Determine if this is a resume operation
-      // Resume: text is empty, resumePosition is 0, and resetResume is false
-      const isResume = !trimmedMessage && params.resumePosition === 0 && !params.resetResume;
+      // Resume: text is empty and resetResume is false
+      const isResume = !trimmedMessage && !params.resetResume;
 
       if (!isResume && !trimmedMessage) {
         params.onError?.(new Error("SSE stream requires a message"));
@@ -50,8 +50,8 @@ export function useSseStream(): StreamClient {
           let fetchOptions: RequestInit;
 
           if (isResume) {
-            // Resume SSE: GET /customer-support-agent/{conversationId}/resume/{resumePosition}
-            url = `/customer-support-agent/${encodeURIComponent(params.sessionId)}/resume/${params.resumePosition}`;
+            // Resume SSE: GET /customer-support-agent/{conversationId}/resume
+            url = `/customer-support-agent/${encodeURIComponent(params.sessionId)}/resume`;
             fetchOptions = {
               method: "GET",
               headers: { Accept: "text/event-stream" },

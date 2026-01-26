@@ -20,8 +20,7 @@ final class NoopResponseResumer implements ResponseResumer {
     }
 
     @Override
-    public Flux<String> replay(
-            String conversationId, long resumePosition, @Nullable String bearerToken) {
+    public Flux<String> replay(String conversationId, @Nullable String bearerToken) {
         return Flux.empty();
     }
 

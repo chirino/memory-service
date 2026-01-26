@@ -17,7 +17,7 @@ public class NoopResponseResumerBackend implements ResponseResumerBackend {
     }
 
     @Override
-    public Multi<String> replay(String conversationId, long resumePosition) {
+    public Multi<String> replay(String conversationId) {
         return Multi.createFrom().empty();
     }
 
