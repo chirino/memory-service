@@ -139,16 +139,18 @@ public class MemoryServiceAutoConfiguration {
             ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider,
             ObjectProvider<MemoryServiceConnectionDetails> connectionDetailsProvider) {
 
-        // Merge connection details into properties if not already set
+        // Connection details (from Docker Compose/Testcontainers) take precedence over defaults.
+        // Only explicit property configuration should override connection details.
         MemoryServiceConnectionDetails connectionDetails =
                 connectionDetailsProvider.getIfAvailable();
         if (connectionDetails != null) {
+            // Prefer connection details for API key if not explicitly configured
             if (!StringUtils.hasText(properties.getApiKey())
                     && StringUtils.hasText(connectionDetails.getApiKey())) {
                 properties.setApiKey(connectionDetails.getApiKey());
             }
-            if (!StringUtils.hasText(properties.getBaseUrl())
-                    && connectionDetails.getBaseUri() != null) {
+            // Prefer connection details for base URL (overrides the default value)
+            if (connectionDetails.getBaseUri() != null) {
                 properties.setBaseUrl(connectionDetails.getBaseUri().toString());
             }
             logger.info(

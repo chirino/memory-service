@@ -28,6 +28,7 @@
 * Do we need multi-tenancy support?  What would it look like?
 * Ponder how best to kick off/manage async summerization / search indexing
 * How useful is the current summarize/index feature?
+* Should the Message type in the api contracts be rename to something like Entry/Event/Posting (since it actually holds messages?)
 
 # Bug List
 

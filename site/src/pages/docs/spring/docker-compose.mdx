@@ -21,21 +21,20 @@ Spring Boot's Docker Compose integration provides:
 
 Add the Docker Compose dependency to your `pom.xml`:
 
-```xml
-<dependency>
-  <groupId>org.springframework.boot</groupId>
-  <artifactId>spring-boot-docker-compose</artifactId>
-  <scope>runtime</scope>
-  <optional>true</optional>
+<Code lang="xml" code={`<dependency>
+    <groupId>io.github.chirino.memory-service</groupId>
+    <artifactId>memory-service-spring-boot-docker-compose-starter</artifactId>
+    <version>${PROJECT_VERSION}</version>
 </dependency>
-```
+`} />
+
 
 Place a `compose.yaml` file in your project root (Spring Boot auto-detects it):
 
 ```yaml
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: memory_service
       POSTGRES_USER: postgres
@@ -67,14 +66,14 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_DB: postgres
       KC_DB_URL_HOST: postgres
-      KC_DB_URL_DATABASE: keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: keycloak
+      KC_DB_URL_DATABASE: postgres
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
       KC_HOSTNAME_PORT: ${KEYCLOAK_HOSTNAME_PORT:-8081}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     volumes:
-      - ./keycloak/memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
+      - ./memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,65 +113,14 @@ services:
 
 ## Service Connection
 
-Spring Boot automatically detects the `memory-service` container and provides connection details via `MemoryServiceConnectionDetails`. The starter uses these connection details to configure the REST and gRPC clients.
+Spring Boot automatically detects the `memory-service` container and provides connection details via `MemoryServiceConnectionDetails`. The starter uses these connection 
+details to configure the REST and gRPC clients.
 
-The service connection provides:
-- `baseUrl` - The URL to reach the memory-service container
-- `apiKey` - The first API key from `MEMORY_SERVICE_API_KEYS_AGENT`
-
-### Using Connection Details
-
-The `MemoryServiceConfig` example shows how to use connection details:
-
-```java
-package com.example.demo;
-
-import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
-import io.github.chirino.memoryservice.client.MemoryServiceProxy;
-import io.github.chirino.memoryservice.spring.autoconfigure.serviceconnection.MemoryServiceConnectionDetails;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
-import org.springframework.util.StringUtils;
-import org.springframework.web.reactive.function.client.WebClient;
-
-@Configuration
-@EnableConfigurationProperties(MemoryServiceClientProperties.class)
-class MemoryServiceConfig {
-
-    @Bean
-    MemoryServiceProxy memoryServiceProxy(
-            MemoryServiceClientProperties properties,
-            WebClient.Builder webClientBuilder,
-            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientService,
-            ObjectProvider<MemoryServiceConnectionDetails> connectionDetailsProvider) {
-        
-        // Apply connection details if available (from Docker Compose)
-        MemoryServiceConnectionDetails connectionDetails = connectionDetailsProvider.getIfAvailable();
-        if (connectionDetails != null) {
-            if (!StringUtils.hasText(properties.getApiKey())) {
-                properties.setApiKey(connectionDetails.getApiKey());
-            }
-            if (!StringUtils.hasText(properties.getBaseUrl())) {
-                properties.setBaseUrl(connectionDetails.getBaseUrl());
-            }
-        }
-        
-        return new MemoryServiceProxy(properties, webClientBuilder, authorizedClientService.getIfAvailable());
-    }
-}
-```
-
-## Configuration
-
-You can still override connection details via `application.properties`:
-
+Make sure you comment out the memory-service.client properties in your application.properties file to pickup the connection details from the Docker Compose file.
 ```properties
 # These will override Docker Compose connection details if set
-memory-service.client.base-url=http://localhost:8082
-memory-service.client.api-key=agent-api-key-1
+#memory-service.client.base-url=http://localhost:8082
+#memory-service.client.api-key=agent-api-key-1
 ```
 
 ## Running the Application
@@ -204,24 +152,6 @@ Or set the environment variable:
 export SPRING_DOCKER_COMPOSE_ENABLED=false
 ```
 
-## Lifecycle Management
-
-By default, Spring Boot will:
-- Start containers when the app starts
-- Stop containers when the app shuts down (if `spring.docker.compose.stop.command=stop`)
-
-To keep containers running after app shutdown:
-
-```properties
-spring.docker.compose.stop.command=down
-```
-
-Or to never stop containers:
-
-```properties
-spring.docker.compose.stop.command=ignore
-```
-
 ## Custom Compose File Location
 
 If your `compose.yaml` is in a different location:
@@ -230,40 +160,6 @@ If your `compose.yaml` is in a different location:
 spring.docker.compose.file=./docker/compose.yaml
 ```
 
-## Troubleshooting
-
-### Containers Not Starting
-
-Check that Docker is running and accessible:
-
-```bash
-docker ps
-```
-
-### Health Checks Failing
-
-Ensure health checks are properly configured and services are ready:
-
-```bash
-docker compose ps
-docker compose logs memory-service
-```
-
-### Port Conflicts
-
-If ports are already in use, either:
-- Stop the conflicting services
-- Change the port mappings in `compose.yaml`
-- Use `spring.docker.compose.enabled=false` and connect to external services
-
-### Connection Details Not Available
-
-Verify that:
-- `spring-boot-docker-compose` dependency is included
-- `compose.yaml` is in the project root
-- The `memory-service` service is defined correctly
-- Health checks are passing
-
 ## Complete Example
 
 For a complete working example with Docker Compose integration, see the `spring/examples/agent-spring` directory in the repository. The example includes:
@@ -271,7 +167,9 @@ For a complete working example with Docker Compose integration, see the `spring/
 - `MemoryServiceConfig` that uses connection details
 - Proper health checks and dependencies
 
+{/* 
 ## Next Steps
 
 - [Getting Started](/docs/spring/getting-started/) - Build your first Spring AI agent with Memory Service
-- [Configuration](/docs/configuration/) - Learn about all configuration options
+- [Configuration](/docs/configuration/) - Learn about all configuration options 
+*/}
