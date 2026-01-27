@@ -19,6 +19,7 @@ import com.google.protobuf.Message;
 import com.google.protobuf.TextFormat;
 import com.google.protobuf.util.JsonFormat;
 import com.jayway.jsonpath.InvalidPathException;
+import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
@@ -82,13 +83,16 @@ import io.restassured.path.json.JsonPath;
 import io.restassured.response.Response;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.core.MediaType;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -116,6 +120,8 @@ public class StepDefinitions {
     @Inject MemoryStoreSelector memoryStoreSelector;
     @Inject ApiKeyManager apiKeyManager;
 
+    @Inject org.eclipse.microprofile.config.Config config;
+
     @Inject Instance<ConversationRepository> conversationRepository;
     @Inject Instance<MessageRepository> messageRepository;
     @Inject Instance<ConversationMembershipRepository> membershipRepository;
@@ -124,6 +130,8 @@ public class StepDefinitions {
     @Inject Instance<MongoMessageRepository> mongoMessageRepository;
     @Inject Instance<MongoConversationMembershipRepository> mongoMembershipRepository;
     @Inject Instance<MongoConversationOwnershipTransferRepository> mongoOwnershipTransferRepository;
+
+    @Inject Instance<EntityManager> entityManager;
 
     private final KeycloakTestClient keycloakClient = new KeycloakTestClient();
 
@@ -191,9 +199,11 @@ public class StepDefinitions {
     public void iHaveAConversationWithTitle(String title) {
         CreateConversationRequest request = new CreateConversationRequest();
         request.setTitle(title);
-        this.conversationId =
-                memoryStoreSelector.getStore().createConversation(currentUserId, request).getId();
+        ConversationDto conversation =
+                memoryStoreSelector.getStore().createConversation(currentUserId, request);
+        this.conversationId = conversation.getId();
         contextVariables.put("conversationId", conversationId);
+        contextVariables.put("conversationGroupId", conversation.getConversationGroupId());
         contextVariables.put("conversationOwner", currentUserId);
     }
 
@@ -1396,6 +1406,36 @@ public class StepDefinitions {
         lastResponse.then().body("code", is(errorCode));
     }
 
+    @io.cucumber.java.en.And("set {string} to {string}")
+    public void setContextVariable(String variableName, String valueTemplate) {
+        // Check if the template is a simple variable reference like ${foo}
+        Matcher m = PLACEHOLDER_PATTERN.matcher(valueTemplate);
+        if (m.matches()) {
+            String expression = m.group(1).trim();
+            // If it's a simple context variable reference, copy the value directly
+            if (contextVariables.containsKey(expression)) {
+                contextVariables.put(variableName, contextVariables.get(expression));
+                return;
+            }
+        }
+        // Fall back to template rendering for complex expressions
+        String renderedValue = renderTemplate(valueTemplate);
+        contextVariables.put(variableName, renderedValue);
+    }
+
+    @io.cucumber.java.en.Then("the response should contain {int} conversation")
+    public void theResponseShouldContainConversation(int expectedCount) {
+        if (lastResponse == null) {
+            throw new AssertionError("No HTTP response has been received");
+        }
+        JsonPath jsonPath = lastResponse.jsonPath();
+        List<?> conversations = jsonPath.get("data");
+        assertThat(
+                "Response should contain " + expectedCount + " conversation(s)",
+                conversations != null ? conversations.size() : 0,
+                is(expectedCount));
+    }
+
     @io.cucumber.java.en.Then("set {string} to the json response field {string}")
     public void setContextVariableToJsonResponseField(String variableName, String path) {
         if (lastResponse == null) {
@@ -1751,10 +1791,13 @@ public class StepDefinitions {
     private boolean isSurroundedByQuotes(String template, int start, int end) {
         int before = start - 1;
         int after = end;
-        return before >= 0
-                && after < template.length()
-                && template.charAt(before) == '"'
-                && template.charAt(after) == '"';
+        if (before < 0 || after >= template.length()) {
+            return false;
+        }
+        char beforeChar = template.charAt(before);
+        char afterChar = template.charAt(after);
+        // Check for matching double quotes or single quotes (for SQL)
+        return (beforeChar == '"' && afterChar == '"') || (beforeChar == '\'' && afterChar == '\'');
     }
 
     private String serializeReplacement(Object value, boolean inQuotes) {
@@ -2265,5 +2308,179 @@ public class StepDefinitions {
         mongoMembershipRepository.get().deleteAll();
         mongoOwnershipTransferRepository.get().deleteAll();
         mongoConversationRepository.get().deleteAll();
+    }
+
+    private List<Map<String, Object>> lastSqlResult;
+
+    @io.cucumber.java.en.When("I execute SQL query:")
+    public void iExecuteSqlQuery(String sql) {
+        // Check if we're using PostgreSQL datastore
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        if (!"postgres".equals(datastoreType)) {
+            // Skip SQL queries for non-PostgreSQL datastores (e.g., MongoDB)
+            lastSqlResult = new ArrayList<>();
+            return;
+        }
+
+        String renderedSql = renderTemplate(sql);
+        // Remove JSON string quotes from UUID values in SQL (e.g., '"uuid"' -> 'uuid')
+        renderedSql =
+                renderedSql.replaceAll(
+                        "'\"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\"'",
+                        "'$1'");
+
+        if (entityManager.isUnsatisfied()) {
+            throw new IllegalStateException("SQL steps only available with PostgreSQL profile");
+        }
+
+        jakarta.persistence.Query query = entityManager.get().createNativeQuery(renderedSql);
+        @SuppressWarnings("unchecked")
+        List<?> rawRows = query.getResultList();
+
+        // Extract column names from SELECT statement
+        lastSqlResult = new ArrayList<>();
+
+        // Handle case where query returns scalar values (single column) vs row arrays
+        List<Object[]> rows = new ArrayList<>();
+        for (Object rawRow : rawRows) {
+            if (rawRow instanceof Object[]) {
+                rows.add((Object[]) rawRow);
+            } else {
+                // Single column result - wrap in array
+                rows.add(new Object[] {rawRow});
+            }
+        }
+
+        String[] columnNames =
+                extractColumnNames(renderedSql, rows.isEmpty() ? 0 : rows.get(0).length);
+
+        for (Object[] row : rows) {
+            Map<String, Object> rowMap = new LinkedHashMap<>();
+            for (int i = 0; i < row.length && i < columnNames.length; i++) {
+                rowMap.put(columnNames[i], row[i]);
+            }
+            lastSqlResult.add(rowMap);
+        }
+    }
+
+    private String[] extractColumnNames(String sql, int columnCount) {
+        String[] columnNames = new String[columnCount];
+        for (int i = 0; i < columnNames.length; i++) {
+            columnNames[i] = "col" + i; // Default fallback
+        }
+
+        if (sql.trim().toUpperCase().startsWith("SELECT")) {
+            try {
+                // Extract SELECT clause
+                String selectClause = sql.toUpperCase().split("SELECT")[1].split("FROM")[0].trim();
+                String[] parts = selectClause.split(",");
+                for (int i = 0; i < Math.min(parts.length, columnNames.length); i++) {
+                    String part = parts[i].trim();
+                    // Handle AS alias
+                    if (part.contains(" AS ")) {
+                        columnNames[i] = part.split(" AS ")[1].trim().toLowerCase();
+                    } else if (part.contains(" as ")) {
+                        columnNames[i] = part.split(" as ")[1].trim().toLowerCase();
+                    } else {
+                        // Extract column name (remove table prefix if present)
+                        String colName = part;
+                        if (colName.contains(".")) {
+                            colName = colName.substring(colName.lastIndexOf(".") + 1).trim();
+                        }
+                        // Remove any function calls or expressions - just get the base name
+                        colName = colName.replaceAll("\\(.*\\)", "").trim();
+                        if (!colName.isEmpty()) {
+                            columnNames[i] = colName.toLowerCase();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // If parsing fails, fall back to col0, col1, etc.
+            }
+        }
+        return columnNames;
+    }
+
+    @io.cucumber.java.en.Then("the SQL result should have {int} row(s)")
+    public void theSqlResultShouldHaveRows(int expectedCount) {
+        // Skip SQL assertions for non-PostgreSQL datastores
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        if (!"postgres".equals(datastoreType)) {
+            return; // Skip assertion for MongoDB
+        }
+        assertThat("SQL result row count", lastSqlResult.size(), is(expectedCount));
+    }
+
+    @io.cucumber.java.en.Then("the SQL result should match:")
+    public void theSqlResultShouldMatch(io.cucumber.datatable.DataTable dataTable) {
+        // Skip SQL assertions for non-PostgreSQL datastores
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        if (!"postgres".equals(datastoreType)) {
+            return; // Skip assertion for MongoDB
+        }
+        List<Map<String, String>> expected = dataTable.asMaps();
+        assertThat("SQL result row count", lastSqlResult.size(), is(expected.size()));
+
+        for (int i = 0; i < expected.size(); i++) {
+            Map<String, String> expectedRow = expected.get(i);
+            Map<String, Object> actualRow = lastSqlResult.get(i);
+
+            for (Map.Entry<String, String> entry : expectedRow.entrySet()) {
+                String column = entry.getKey();
+                String expectedValue = renderTemplate(entry.getValue());
+                Object actualValue = actualRow.get(column);
+
+                if ("*".equals(expectedValue)) {
+                    // Wildcard: just check column exists and is not null
+                    assertThat(
+                            "Column " + column + " should exist and be non-null",
+                            actualValue,
+                            notNullValue());
+                } else if ("NULL".equals(expectedValue)) {
+                    assertThat("Column " + column + " should be null", actualValue, nullValue());
+                } else {
+                    assertThat(
+                            "Column " + column + " in row " + i,
+                            String.valueOf(actualValue),
+                            is(expectedValue));
+                }
+            }
+        }
+    }
+
+    @io.cucumber.java.en.Then("the SQL result column {string} should be non-null")
+    public void theSqlResultColumnShouldBeNonNull(String column) {
+        // Skip SQL assertions for non-PostgreSQL datastores
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        if (!"postgres".equals(datastoreType)) {
+            return; // Skip assertion for MongoDB
+        }
+        assertThat("SQL result should have at least one row", lastSqlResult.size(), greaterThan(0));
+        for (Map<String, Object> row : lastSqlResult) {
+            assertThat("Column " + column + " should be non-null", row.get(column), notNullValue());
+        }
+    }
+
+    @io.cucumber.java.en.Then("the SQL result column {string} should be null")
+    public void theSqlResultColumnShouldBeNull(String column) {
+        // Skip SQL assertions for non-PostgreSQL datastores
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        if (!"postgres".equals(datastoreType)) {
+            return; // Skip assertion for MongoDB
+        }
+        assertThat("SQL result should have at least one row", lastSqlResult.size(), greaterThan(0));
+        for (Map<String, Object> row : lastSqlResult) {
+            assertThat("Column " + column + " should be null", row.get(column), nullValue());
+        }
     }
 }

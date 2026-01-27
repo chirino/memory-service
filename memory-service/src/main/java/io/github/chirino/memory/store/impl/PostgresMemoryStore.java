@@ -121,7 +121,8 @@ public class PostgresMemoryStore implements MemoryStore {
                     conversationRepository
                             .find(
                                     "conversationGroup.id in ?1 and forkedAtMessageId is null and"
-                                            + " forkedAtConversationId is null",
+                                        + " forkedAtConversationId is null and deletedAt IS NULL"
+                                        + " and conversationGroup.deletedAt IS NULL",
                                     accessByGroup.keySet())
                             .list();
             return roots.stream()
@@ -148,7 +149,12 @@ public class PostgresMemoryStore implements MemoryStore {
         }
         Set<UUID> groupIds = accessByGroup.keySet();
         List<ConversationEntity> candidates =
-                conversationRepository.find("conversationGroup.id in ?1", groupIds).list();
+                conversationRepository
+                        .find(
+                                "conversationGroup.id in ?1 and deletedAt IS NULL and"
+                                        + " conversationGroup.deletedAt IS NULL",
+                                groupIds)
+                        .list();
 
         if (mode == ConversationListMode.LATEST_FORK) {
             Map<UUID, ConversationEntity> latestByGroup = new HashMap<>();
@@ -193,7 +199,7 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID id = UUID.fromString(conversationId);
         ConversationEntity entity =
                 conversationRepository
-                        .findByIdOptional(id)
+                        .findActiveById(id)
                         .orElseThrow(
                                 () ->
                                         new ResourceNotFoundException(
@@ -213,7 +219,7 @@ public class PostgresMemoryStore implements MemoryStore {
         // Check if conversation exists first to avoid Hibernate transient entity issues
         ConversationEntity conversation =
                 conversationRepository
-                        .findByIdOptional(id)
+                        .findActiveById(id)
                         .orElseThrow(
                                 () ->
                                         new ResourceNotFoundException(
@@ -228,7 +234,7 @@ public class PostgresMemoryStore implements MemoryStore {
         if (accessLevel != AccessLevel.OWNER && accessLevel != AccessLevel.MANAGER) {
             throw new AccessDeniedException("Only owner or manager can delete conversation");
         }
-        deleteConversationGroupData(groupId);
+        softDeleteConversationGroup(groupId);
     }
 
     @Override
@@ -236,7 +242,7 @@ public class PostgresMemoryStore implements MemoryStore {
     public MessageDto appendUserMessage(
             String userId, String conversationId, CreateUserMessageRequest request) {
         UUID cid = UUID.fromString(conversationId);
-        ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
+        ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
 
         // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
         if (conversation == null) {
@@ -248,7 +254,7 @@ public class PostgresMemoryStore implements MemoryStore {
             conversation.setMetadata(Collections.emptyMap());
             ConversationGroupEntity conversationGroup =
                     conversationGroupRepository
-                            .findByIdOptional(cid)
+                            .findActiveById(cid)
                             .orElseGet(
                                     () -> {
                                         ConversationGroupEntity group =
@@ -299,7 +305,7 @@ public class PostgresMemoryStore implements MemoryStore {
         ensureHasAccess(groupId, userId, AccessLevel.MANAGER);
         ConversationEntity conversation =
                 conversationRepository
-                        .findByIdOptional(cid)
+                        .findActiveById(cid)
                         .orElseThrow(
                                 () ->
                                         new ResourceNotFoundException(
@@ -338,9 +344,12 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID cid = UUID.fromString(conversationId);
         UUID groupId = resolveGroupId(cid);
         ensureHasAccess(groupId, userId, AccessLevel.MANAGER);
-        membershipRepository
-                .findMembership(groupId, memberUserId)
-                .ifPresent(membershipRepository::delete);
+        membershipRepository.update(
+                "deletedAt = ?1 WHERE id.conversationGroupId = ?2 AND id.userId = ?3 AND deletedAt"
+                        + " IS NULL",
+                OffsetDateTime.now(),
+                groupId,
+                memberUserId);
     }
 
     @Override
@@ -354,7 +363,7 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID originalId = UUID.fromString(conversationId);
         ConversationEntity originalEntity =
                 conversationRepository
-                        .findByIdOptional(originalId)
+                        .findActiveById(originalId)
                         .orElseThrow(
                                 () ->
                                         new ResourceNotFoundException(
@@ -414,7 +423,7 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation =
                 conversationRepository
-                        .findByIdOptional(cid)
+                        .findActiveById(cid)
                         .orElseThrow(
                                 () ->
                                         new ResourceNotFoundException(
@@ -423,7 +432,12 @@ public class PostgresMemoryStore implements MemoryStore {
         ensureHasAccess(groupId, userId, AccessLevel.READER);
 
         List<ConversationEntity> candidates =
-                conversationRepository.find("conversationGroup.id", groupId).list();
+                conversationRepository
+                        .find(
+                                "conversationGroup.id = ?1 AND deletedAt IS NULL AND"
+                                        + " conversationGroup.deletedAt IS NULL",
+                                groupId)
+                        .list();
         List<ConversationForkSummaryDto> results = new ArrayList<>();
         for (ConversationEntity candidate : candidates) {
             ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
@@ -474,7 +488,7 @@ public class PostgresMemoryStore implements MemoryStore {
             MemoryEpochFilter epochFilter,
             String clientId) {
         UUID cid = UUID.fromString(conversationId);
-        ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
+        ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
         if (conversation == null) {
             PagedMessages empty = new PagedMessages();
             empty.setConversationId(conversationId);
@@ -540,7 +554,7 @@ public class PostgresMemoryStore implements MemoryStore {
             List<CreateMessageRequest> messages,
             String clientId) {
         UUID cid = UUID.fromString(conversationId);
-        ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
+        ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
 
         // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
         if (conversation == null) {
@@ -552,7 +566,7 @@ public class PostgresMemoryStore implements MemoryStore {
             conversation.setMetadata(Collections.emptyMap());
             ConversationGroupEntity conversationGroup =
                     conversationGroupRepository
-                            .findByIdOptional(cid)
+                            .findActiveById(cid)
                             .orElseGet(
                                     () -> {
                                         ConversationGroupEntity group =
@@ -689,7 +703,7 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation =
                 conversationRepository
-                        .findByIdOptional(cid)
+                        .findActiveById(cid)
                         .orElseThrow(
                                 () ->
                                         new ResourceNotFoundException(
@@ -973,19 +987,38 @@ public class PostgresMemoryStore implements MemoryStore {
         }
     }
 
-    private void deleteConversationGroupData(UUID conversationGroupId) {
-        // Delete summaries before messages to avoid FK violations on until_message_id.
-        messageRepository.delete("conversationGroupId", conversationGroupId);
-        conversationRepository.delete("conversationGroup.id", conversationGroupId);
-        membershipRepository.delete("id.conversationGroupId", conversationGroupId);
-        ownershipTransferRepository.delete("conversationGroup.id", conversationGroupId);
-        conversationGroupRepository.delete("id", conversationGroupId);
+    private void softDeleteConversationGroup(UUID conversationGroupId) {
+        OffsetDateTime now = OffsetDateTime.now();
+
+        // Mark conversation group as deleted
+        conversationGroupRepository.update(
+                "deletedAt = ?1 WHERE id = ?2 AND deletedAt IS NULL", now, conversationGroupId);
+
+        // Mark all conversations in the group as deleted
+        conversationRepository.update(
+                "deletedAt = ?1 WHERE conversationGroup.id = ?2 AND deletedAt IS NULL",
+                now,
+                conversationGroupId);
+
+        // Mark all memberships as deleted
+        membershipRepository.update(
+                "deletedAt = ?1 WHERE id.conversationGroupId = ?2 AND deletedAt IS NULL",
+                now,
+                conversationGroupId);
+
+        // Expire pending ownership transfers
+        ownershipTransferRepository.update(
+                "status = ?1, updatedAt = ?2 WHERE conversationGroup.id = ?3 AND status = ?4",
+                ConversationOwnershipTransferEntity.TransferStatus.EXPIRED,
+                now,
+                conversationGroupId,
+                ConversationOwnershipTransferEntity.TransferStatus.PENDING);
     }
 
     private UUID resolveGroupId(UUID conversationId) {
         ConversationEntity conversation =
                 conversationRepository
-                        .findByIdOptional(conversationId)
+                        .findActiveById(conversationId)
                         .orElseThrow(
                                 () ->
                                         new ResourceNotFoundException(

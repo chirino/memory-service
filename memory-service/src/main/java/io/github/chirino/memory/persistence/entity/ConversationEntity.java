@@ -52,6 +52,9 @@ public class ConversationEntity {
     @Column(name = "vectorized_at")
     private OffsetDateTime vectorizedAt;
 
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
+
     public UUID getId() {
         return id;
     }
@@ -130,6 +133,18 @@ public class ConversationEntity {
 
     public void setVectorizedAt(OffsetDateTime vectorizedAt) {
         this.vectorizedAt = vectorizedAt;
+    }
+
+    public OffsetDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(OffsetDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 
     @PrePersist

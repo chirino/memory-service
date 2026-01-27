@@ -131,12 +131,66 @@ Feature: Conversations REST API
     Then the response status should be 403
     And the response should contain error code "forbidden"
 
-  Scenario: Delete a conversation
+  Scenario: Delete a conversation performs soft delete
     Given I have a conversation with title "To Be Deleted"
     When I delete the conversation
     Then the response status should be 204
+    # API should treat it as deleted
     When I get the conversation
     Then the response status should be 404
+    # But data should still exist in database with deleted_at set
+    When I execute SQL query:
+    """
+    SELECT id, deleted_at FROM conversations WHERE id = '${conversationId}'
+    """
+    Then the SQL result should have 1 row
+    And the SQL result column "deleted_at" should be non-null
+
+  Scenario: Deleted conversation excluded from list
+    Given I have a conversation with title "Active Conversation"
+    And set "activeConversationId" to "${conversationId}"
+    And I have a conversation with title "To Be Deleted"
+    And set "deletedConversationId" to "${conversationId}"
+    When I delete the conversation
+    And I list conversations
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    # Verify both still exist in database
+    When I execute SQL query:
+    """
+    SELECT id, title, deleted_at FROM conversations ORDER BY created_at
+    """
+    Then the SQL result should have 2 rows
+
+  Scenario: Soft delete cascades to conversation group and memberships
+    Given I have a conversation with title "Test Conversation"
+    And set "groupId" to "${conversationGroupId}"
+    When I delete the conversation
+    Then the response status should be 204
+    # Verify conversation group is soft deleted
+    When I execute SQL query:
+    """
+    SELECT id, deleted_at FROM conversation_groups WHERE id = '${groupId}'
+    """
+    Then the SQL result should have 1 row
+    And the SQL result column "deleted_at" should be non-null
+    # Verify membership is soft deleted
+    When I execute SQL query:
+    """
+    SELECT conversation_group_id, user_id, deleted_at
+    FROM conversation_memberships
+    WHERE conversation_group_id = '${groupId}'
+    """
+    Then the SQL result should have 1 row
+    And the SQL result column "deleted_at" should be non-null
+    # Verify messages still exist (not soft deleted, just orphaned by parent)
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) as count FROM messages WHERE conversation_group_id = '${groupId}'
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
 
   Scenario: Delete non-existent conversation
     When I delete conversation "00000000-0000-0000-0000-000000000000"

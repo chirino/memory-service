@@ -14,4 +14,5 @@ public class MongoConversationMembership {
     public String userId;
     public AccessLevel accessLevel;
     public Instant createdAt;
+    public Instant deletedAt;
 }

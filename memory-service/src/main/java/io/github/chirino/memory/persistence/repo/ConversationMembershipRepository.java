@@ -18,16 +18,29 @@ public class ConversationMembershipRepository
     @jakarta.inject.Inject EntityManager entityManager;
 
     public List<ConversationMembershipEntity> listForConversationGroup(UUID conversationGroupId) {
-        return list("id.conversationGroupId", conversationGroupId);
+        return find(
+                        "id.conversationGroupId = ?1 AND deletedAt IS NULL AND"
+                                + " conversationGroup.deletedAt IS NULL",
+                        conversationGroupId)
+                .list();
     }
 
     public List<ConversationMembershipEntity> listForUser(String userId, int limit) {
-        return find("id.userId = ?1", userId).page(0, limit).list();
+        return find(
+                        "id.userId = ?1 AND deletedAt IS NULL AND conversationGroup.deletedAt IS"
+                                + " NULL",
+                        userId)
+                .page(0, limit)
+                .list();
     }
 
     public Optional<ConversationMembershipEntity> findMembership(
             UUID conversationGroupId, String userId) {
-        return find("id.conversationGroupId = ?1 and id.userId = ?2", conversationGroupId, userId)
+        return find(
+                        "id.conversationGroupId = ?1 AND id.userId = ?2 AND deletedAt IS NULL AND"
+                                + " conversationGroup.deletedAt IS NULL",
+                        conversationGroupId,
+                        userId)
                 .firstResultOptional();
     }
 
@@ -36,7 +49,8 @@ public class ConversationMembershipRepository
                 .createQuery(
                         "select m.accessLevel from ConversationMembershipEntity m where"
                             + " m.id.conversationGroupId = :conversationGroupId and m.id.userId ="
-                            + " :userId",
+                            + " :userId and m.deletedAt IS NULL and m.conversationGroup.deletedAt"
+                            + " IS NULL",
                         AccessLevel.class)
                 .setParameter("conversationGroupId", conversationGroupId)
                 .setParameter("userId", userId)

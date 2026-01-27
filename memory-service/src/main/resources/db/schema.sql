@@ -12,7 +12,8 @@
 
 CREATE TABLE IF NOT EXISTS conversation_groups (
     id              UUID PRIMARY KEY,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -26,7 +27,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     forked_at_conversation_id UUID REFERENCES conversations (id) ON DELETE CASCADE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    vectorized_at   TIMESTAMPTZ
+    vectorized_at   TIMESTAMPTZ,
+    deleted_at      TIMESTAMPTZ
 );
 
 -- Per-user access to conversations.
@@ -37,11 +39,21 @@ CREATE TABLE IF NOT EXISTS conversation_memberships (
     user_id           TEXT NOT NULL,
     access_level      TEXT NOT NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at        TIMESTAMPTZ,
     PRIMARY KEY (conversation_group_id, user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversation_memberships_user
     ON conversation_memberships (user_id, conversation_group_id);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_groups_not_deleted
+    ON conversation_groups (deleted_at) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_conversations_not_deleted
+    ON conversations (deleted_at) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_conversation_memberships_not_deleted
+    ON conversation_memberships (deleted_at) WHERE deleted_at IS NULL;
 
 ------------------------------------------------------------
 -- Messages & summaries

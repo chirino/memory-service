@@ -10,4 +10,6 @@ public class MongoConversationGroup {
     @BsonId public String id;
 
     public Instant createdAt;
+
+    public Instant deletedAt;
 }

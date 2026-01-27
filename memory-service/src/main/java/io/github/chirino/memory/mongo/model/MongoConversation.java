@@ -19,4 +19,5 @@ public class MongoConversation {
     public Instant createdAt;
     public Instant updatedAt;
     public Instant vectorizedAt;
+    public Instant deletedAt;
 }

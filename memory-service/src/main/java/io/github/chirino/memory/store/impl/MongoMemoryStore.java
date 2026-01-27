@@ -124,7 +124,9 @@ public class MongoMemoryStore implements MemoryStore {
                                     "conversationGroupId in ?1 and forkedAtMessageId is null and"
                                             + " forkedAtConversationId is null",
                                     accessByGroup.keySet())
-                            .list();
+                            .stream()
+                            .filter(c -> c.deletedAt == null)
+                            .collect(Collectors.toList());
             return roots.stream()
                     .map(
                             c ->
@@ -146,7 +148,9 @@ public class MongoMemoryStore implements MemoryStore {
         }
         Set<String> groupIds = accessByGroup.keySet();
         List<MongoConversation> candidates =
-                conversationRepository.find("conversationGroupId in ?1", groupIds).list();
+                conversationRepository.find("conversationGroupId in ?1", groupIds).stream()
+                        .filter(c -> c.deletedAt == null)
+                        .collect(Collectors.toList());
 
         if (mode == ConversationListMode.LATEST_FORK) {
             Map<String, MongoConversation> latestByGroup = new HashMap<>();
@@ -188,7 +192,7 @@ public class MongoMemoryStore implements MemoryStore {
     @Override
     public ConversationDto getConversation(String userId, String conversationId) {
         MongoConversation c = conversationRepository.findById(conversationId);
-        if (c == null) {
+        if (c == null || c.deletedAt != null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         String groupId = c.conversationGroupId;
@@ -211,11 +215,7 @@ public class MongoMemoryStore implements MemoryStore {
                 && membership.accessLevel != AccessLevel.MANAGER) {
             throw new AccessDeniedException("Only owner or manager can delete conversation");
         }
-        messageRepository.delete("conversationGroupId", groupId);
-        conversationRepository.delete("conversationGroupId", groupId);
-        membershipRepository.delete("conversationGroupId", groupId);
-        ownershipTransferRepository.delete("conversationGroupId", groupId);
-        conversationGroupRepository.deleteById(groupId);
+        softDeleteConversationGroup(groupId);
     }
 
     @Override
@@ -223,13 +223,18 @@ public class MongoMemoryStore implements MemoryStore {
     public MessageDto appendUserMessage(
             String userId, String conversationId, CreateUserMessageRequest request) {
         MongoConversation c = conversationRepository.findById(conversationId);
+        if (c != null && c.deletedAt != null) {
+            c = null; // Treat soft-deleted as non-existent for auto-create
+        }
 
         // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
         if (c == null) {
             c = new MongoConversation();
             c.id = conversationId;
             c.conversationGroupId = conversationId;
-            if (conversationGroupRepository.findById(conversationId) == null) {
+            MongoConversationGroup existingGroup =
+                    conversationGroupRepository.findById(conversationId);
+            if (existingGroup == null || existingGroup.deletedAt != null) {
                 MongoConversationGroup group = new MongoConversationGroup();
                 group.id = conversationId;
                 group.createdAt = Instant.now();
@@ -282,7 +287,7 @@ public class MongoMemoryStore implements MemoryStore {
         String groupId = resolveGroupId(conversationId);
         ensureHasAccess(groupId, userId, AccessLevel.MANAGER);
         MongoConversation c = conversationRepository.findById(conversationId);
-        if (c == null) {
+        if (c == null || c.deletedAt != null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         MongoConversationMembership m =
@@ -317,9 +322,12 @@ public class MongoMemoryStore implements MemoryStore {
     public void deleteMembership(String userId, String conversationId, String memberUserId) {
         String groupId = resolveGroupId(conversationId);
         ensureHasAccess(groupId, userId, AccessLevel.MANAGER);
-        membershipRepository
-                .findMembership(groupId, memberUserId)
-                .ifPresent(membershipRepository::delete);
+        MongoConversationMembership membership =
+                membershipRepository.findMembership(groupId, memberUserId).orElse(null);
+        if (membership != null) {
+            membership.deletedAt = Instant.now();
+            membershipRepository.update(membership);
+        }
     }
 
     @Override
@@ -330,7 +338,7 @@ public class MongoMemoryStore implements MemoryStore {
             String messageId,
             ForkFromMessageRequest request) {
         MongoConversation original = conversationRepository.findById(conversationId);
-        if (original == null) {
+        if (original == null || original.deletedAt != null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         String groupId = original.conversationGroupId;
@@ -391,14 +399,16 @@ public class MongoMemoryStore implements MemoryStore {
     @Override
     public List<ConversationForkSummaryDto> listForks(String userId, String conversationId) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
-        if (conversation == null) {
+        if (conversation == null || conversation.deletedAt != null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         String groupId = conversation.conversationGroupId;
         ensureHasAccess(groupId, userId, AccessLevel.READER);
 
         List<MongoConversation> candidates =
-                conversationRepository.find("conversationGroupId", groupId).list();
+                conversationRepository.find("conversationGroupId", groupId).stream()
+                        .filter(c -> c.deletedAt == null)
+                        .collect(Collectors.toList());
         List<ConversationForkSummaryDto> results = new ArrayList<>();
         for (MongoConversation candidate : candidates) {
             ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
@@ -449,7 +459,7 @@ public class MongoMemoryStore implements MemoryStore {
             MemoryEpochFilter epochFilter,
             String clientId) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
-        if (conversation == null) {
+        if (conversation == null || conversation.deletedAt != null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         String groupId = conversation.conversationGroupId;
@@ -513,13 +523,18 @@ public class MongoMemoryStore implements MemoryStore {
             List<CreateMessageRequest> messages,
             String clientId) {
         MongoConversation c = conversationRepository.findById(conversationId);
+        if (c != null && c.deletedAt != null) {
+            c = null; // Treat soft-deleted as non-existent for auto-create
+        }
 
         // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
         if (c == null) {
             c = new MongoConversation();
             c.id = conversationId;
             c.conversationGroupId = conversationId;
-            if (conversationGroupRepository.findById(conversationId) == null) {
+            MongoConversationGroup existingGroup =
+                    conversationGroupRepository.findById(conversationId);
+            if (existingGroup == null || existingGroup.deletedAt != null) {
                 MongoConversationGroup group = new MongoConversationGroup();
                 group.id = conversationId;
                 group.createdAt = Instant.now();
@@ -750,7 +765,9 @@ public class MongoMemoryStore implements MemoryStore {
         }
 
         List<MongoConversation> conversations =
-                conversationRepository.find("conversationGroupId in ?1", groupIds).list();
+                conversationRepository.find("conversationGroupId in ?1", groupIds).stream()
+                        .filter(c -> c.deletedAt == null)
+                        .collect(Collectors.toList());
         Set<String> userConversationIds =
                 conversations.stream().map(c -> c.id).collect(Collectors.toSet());
 
@@ -965,10 +982,54 @@ public class MongoMemoryStore implements MemoryStore {
 
     private String resolveGroupId(String conversationId) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
-        if (conversation == null) {
+        if (conversation == null || conversation.deletedAt != null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         return conversation.conversationGroupId;
+    }
+
+    private void softDeleteConversationGroup(String conversationGroupId) {
+        Instant now = Instant.now();
+
+        // Mark conversation group as deleted
+        MongoConversationGroup group = conversationGroupRepository.findById(conversationGroupId);
+        if (group != null && group.deletedAt == null) {
+            group.deletedAt = now;
+            conversationGroupRepository.update(group);
+        }
+
+        // Mark all conversations as deleted
+        List<MongoConversation> conversations =
+                conversationRepository.find("conversationGroupId", conversationGroupId).stream()
+                        .filter(c -> c.deletedAt == null)
+                        .collect(Collectors.toList());
+        for (MongoConversation c : conversations) {
+            c.deletedAt = now;
+            conversationRepository.update(c);
+        }
+
+        // Mark all memberships as deleted
+        List<MongoConversationMembership> memberships =
+                membershipRepository.listForConversationGroup(conversationGroupId);
+        for (MongoConversationMembership m : memberships) {
+            m.deletedAt = now;
+            membershipRepository.update(m);
+        }
+
+        // Expire pending ownership transfers
+        List<MongoConversationOwnershipTransfer> transfers =
+                ownershipTransferRepository.find("conversationGroupId", conversationGroupId).list();
+        for (MongoConversationOwnershipTransfer transfer : transfers) {
+            if (transfer.status
+                    == io.github.chirino.memory.persistence.entity
+                            .ConversationOwnershipTransferEntity.TransferStatus.PENDING) {
+                transfer.status =
+                        io.github.chirino.memory.persistence.entity
+                                .ConversationOwnershipTransferEntity.TransferStatus.EXPIRED;
+                transfer.updatedAt = now;
+                ownershipTransferRepository.update(transfer);
+            }
+        }
     }
 
     private byte[] encryptTitle(String title) {
