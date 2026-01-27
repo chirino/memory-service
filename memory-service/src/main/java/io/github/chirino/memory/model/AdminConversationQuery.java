@@ -1,0 +1,70 @@
+package io.github.chirino.memory.model;
+
+import java.time.OffsetDateTime;
+
+public class AdminConversationQuery {
+
+    private String userId;
+    private boolean includeDeleted;
+    private boolean onlyDeleted;
+    private OffsetDateTime deletedAfter;
+    private OffsetDateTime deletedBefore;
+    private String after;
+    private int limit;
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+
+    public boolean isIncludeDeleted() {
+        return includeDeleted;
+    }
+
+    public void setIncludeDeleted(boolean includeDeleted) {
+        this.includeDeleted = includeDeleted;
+    }
+
+    public boolean isOnlyDeleted() {
+        return onlyDeleted;
+    }
+
+    public void setOnlyDeleted(boolean onlyDeleted) {
+        this.onlyDeleted = onlyDeleted;
+    }
+
+    public OffsetDateTime getDeletedAfter() {
+        return deletedAfter;
+    }
+
+    public void setDeletedAfter(OffsetDateTime deletedAfter) {
+        this.deletedAfter = deletedAfter;
+    }
+
+    public OffsetDateTime getDeletedBefore() {
+        return deletedBefore;
+    }
+
+    public void setDeletedBefore(OffsetDateTime deletedBefore) {
+        this.deletedBefore = deletedBefore;
+    }
+
+    public String getAfter() {
+        return after;
+    }
+
+    public void setAfter(String after) {
+        this.after = after;
+    }
+
+    public int getLimit() {
+        return limit;
+    }
+
+    public void setLimit(int limit) {
+        this.limit = limit;
+    }
+}

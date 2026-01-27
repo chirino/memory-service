@@ -27,14 +27,16 @@
       "credentials": [
         { "type": "password", "value": "alice", "temporary": false }
       ],
-      "realmRoles": ["user"],
+      "realmRoles": ["user", "admin"],
       "groups": [],
       "requiredActions": []
     }
   ],
   "roles": {
     "realm": [
-      { "name": "user", "description": "Standard user" }
+      { "name": "user", "description": "Standard user" },
+      { "name": "admin", "description": "Administrator with full access" },
+      { "name": "auditor", "description": "Auditor with read-only access" }
     ],
     "client": {}
   },

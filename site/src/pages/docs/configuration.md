@@ -159,6 +159,93 @@ QUARKUS_OIDC_CLIENT_ID=memory-service
 QUARKUS_OIDC_CREDENTIALS_SECRET=your-client-secret
 ```
 
+## Admin Access Configuration
+
+Memory Service provides `/v1/admin/*` APIs for platform administrators and auditors.
+Access is controlled through role assignment, which can be configured via OIDC token roles,
+explicit user lists, or API key client IDs. All three mechanisms are checked — if any
+grants a role, the caller has that role.
+
+### Roles
+
+| Role | Access | Description |
+|------|--------|-------------|
+| `admin` | Read + Write | Full administrative access across all users. Implies `auditor`. |
+| `auditor` | Read-only | View any user's conversations and search system-wide. Cannot modify data. |
+
+### Role Assignment
+
+Roles can be assigned through three complementary mechanisms:
+
+#### OIDC Role Mapping
+
+Map OIDC token roles to internal Memory Service roles. This is useful when the OIDC
+provider uses different role names (e.g., `administrator` instead of `admin`).
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `memory-service.roles.admin.oidc.role` | `admin` | OIDC role name that maps to the internal `admin` role |
+| `memory-service.roles.auditor.oidc.role` | `auditor` | OIDC role name that maps to the internal `auditor` role |
+
+```bash
+# Map OIDC "administrator" role to internal "admin" role
+MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE=administrator
+
+# Map OIDC "manager" role to internal "auditor" role
+MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE=manager
+```
+
+#### User-Based Assignment
+
+Assign roles directly to user IDs (matched against the OIDC token principal name):
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `memory-service.roles.admin.users` | _(empty)_ | Comma-separated list of user IDs with admin access |
+| `memory-service.roles.auditor.users` | _(empty)_ | Comma-separated list of user IDs with auditor access |
+
+```bash
+MEMORY_SERVICE_ROLES_ADMIN_USERS=alice,bob
+MEMORY_SERVICE_ROLES_AUDITOR_USERS=charlie,dave
+```
+
+#### Client-Based Assignment (API Key)
+
+Assign roles to API key client IDs, allowing agents or services to call admin APIs.
+The client ID is resolved from the `X-API-Key` header via the existing API key configuration.
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `memory-service.roles.admin.clients` | _(empty)_ | Comma-separated list of API key client IDs with admin access |
+| `memory-service.roles.auditor.clients` | _(empty)_ | Comma-separated list of API key client IDs with auditor access |
+
+```bash
+MEMORY_SERVICE_ROLES_ADMIN_CLIENTS=admin-agent
+MEMORY_SERVICE_ROLES_AUDITOR_CLIENTS=monitoring-agent,audit-agent
+```
+
+### Audit Logging
+
+All admin API calls are logged to a dedicated logger (`io.github.chirino.memory.admin.audit`).
+Each request can include a `justification` field explaining why the admin action was taken.
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory-service.admin.require-justification` | `true`, `false` | `false` | When `true`, all admin API calls must include a `justification` or receive `400 Bad Request` |
+
+```bash
+# Require justification for all admin operations
+MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION=true
+```
+
+To route admin audit logs to a separate file or external system, configure the Quarkus
+logging category:
+
+```bash
+# Set admin audit log level
+QUARKUS_LOG_CATEGORY__IO_GITHUB_CHIRINO_MEMORY_ADMIN_AUDIT__LEVEL=INFO
+```
+
 ## Server Configuration
 
 ```bash

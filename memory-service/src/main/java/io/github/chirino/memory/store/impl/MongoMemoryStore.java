@@ -19,6 +19,9 @@ import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
+import io.github.chirino.memory.model.AdminConversationQuery;
+import io.github.chirino.memory.model.AdminMessageQuery;
+import io.github.chirino.memory.model.AdminSearchQuery;
 import io.github.chirino.memory.model.MessageChannel;
 import io.github.chirino.memory.mongo.model.MongoConversation;
 import io.github.chirino.memory.mongo.model.MongoConversationGroup;
@@ -33,6 +36,7 @@ import io.github.chirino.memory.mongo.repo.MongoMessageRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.github.chirino.memory.store.MemoryStore;
+import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
 import io.github.chirino.memory.vector.VectorStore;
@@ -49,10 +53,12 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import memory.service.io.github.chirino.dataencryption.DataEncryptionService;
+import org.bson.Document;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
@@ -834,6 +840,9 @@ public class MongoMemoryStore implements MemoryStore {
         dto.setUpdatedAt(formatInstant(entity.updatedAt));
         dto.setLastMessagePreview(lastMessagePreview);
         dto.setAccessLevel(accessLevel);
+        if (entity.deletedAt != null) {
+            dto.setDeletedAt(formatInstant(entity.deletedAt));
+        }
         return dto;
     }
 
@@ -847,6 +856,9 @@ public class MongoMemoryStore implements MemoryStore {
         dto.setUpdatedAt(formatInstant(entity.updatedAt));
         dto.setLastMessagePreview(lastMessagePreview);
         dto.setAccessLevel(accessLevel);
+        if (entity.deletedAt != null) {
+            dto.setDeletedAt(formatInstant(entity.deletedAt));
+        }
         dto.setConversationGroupId(entity.conversationGroupId);
         dto.setForkedAtMessageId(entity.forkedAtMessageId);
         dto.setForkedAtConversationId(entity.forkedAtConversationId);
@@ -1050,5 +1062,300 @@ public class MongoMemoryStore implements MemoryStore {
 
     private String formatInstant(Instant instant) {
         return ISO_FORMATTER.format(instant.atOffset(ZoneOffset.UTC));
+    }
+
+    // Admin methods
+
+    @Override
+    public List<ConversationSummaryDto> adminListConversations(AdminConversationQuery query) {
+        Document filter = new Document();
+
+        if (query.getUserId() != null && !query.getUserId().isBlank()) {
+            filter.append("ownerUserId", query.getUserId());
+        }
+
+        if (query.isOnlyDeleted()) {
+            Document deletedFilter = new Document("$ne", null);
+            if (query.getDeletedAfter() != null) {
+                deletedFilter = new Document("$ne", null);
+                filter.append(
+                        "deletedAt",
+                        new Document("$ne", null)
+                                .append("$gte", query.getDeletedAfter().toInstant()));
+            }
+            if (query.getDeletedBefore() != null) {
+                filter.append(
+                        "deletedAt",
+                        filter.containsKey("deletedAt")
+                                ? ((Document) filter.get("deletedAt"))
+                                        .append("$lt", query.getDeletedBefore().toInstant())
+                                : new Document("$ne", null)
+                                        .append("$lt", query.getDeletedBefore().toInstant()));
+            }
+            if (!filter.containsKey("deletedAt")) {
+                filter.append("deletedAt", new Document("$ne", null));
+            }
+        } else if (!query.isIncludeDeleted()) {
+            filter.append("deletedAt", null);
+        } else {
+            // includeDeleted=true with date filters
+            if (query.getDeletedAfter() != null || query.getDeletedBefore() != null) {
+                List<Document> orClauses = new ArrayList<>();
+                orClauses.add(new Document("deletedAt", null));
+                Document deletedDateFilter = new Document("$ne", null);
+                if (query.getDeletedAfter() != null) {
+                    deletedDateFilter.append("$gte", query.getDeletedAfter().toInstant());
+                }
+                if (query.getDeletedBefore() != null) {
+                    deletedDateFilter.append("$lt", query.getDeletedBefore().toInstant());
+                }
+                orClauses.add(new Document("deletedAt", deletedDateFilter));
+                filter.append("$or", orClauses);
+            }
+        }
+
+        int limit = query.getLimit() > 0 ? query.getLimit() : 100;
+        Document sort = new Document("updatedAt", -1);
+        List<MongoConversation> conversations =
+                conversationRepository.find(filter, sort).page(0, limit).list();
+
+        // For non-deleted queries, also filter out conversations whose group is deleted
+        if (!query.isIncludeDeleted() && !query.isOnlyDeleted()) {
+            conversations =
+                    conversations.stream()
+                            .filter(
+                                    c -> {
+                                        MongoConversationGroup group =
+                                                conversationGroupRepository.findById(
+                                                        c.conversationGroupId);
+                                        return group == null || group.deletedAt == null;
+                                    })
+                            .collect(Collectors.toList());
+        }
+
+        return conversations.stream()
+                .map(c -> toConversationSummaryDto(c, AccessLevel.OWNER, null))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public Optional<ConversationDto> adminGetConversation(
+            String conversationId, boolean includeDeleted) {
+        MongoConversation conversation = conversationRepository.findById(conversationId);
+        if (conversation == null) {
+            return Optional.empty();
+        }
+        if (!includeDeleted && conversation.deletedAt != null) {
+            return Optional.empty();
+        }
+        return Optional.of(toConversationDto(conversation, AccessLevel.OWNER, null));
+    }
+
+    @Override
+    @Transactional
+    public void adminDeleteConversation(String conversationId) {
+        MongoConversation conversation = conversationRepository.findById(conversationId);
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        String groupId = conversation.conversationGroupId;
+        softDeleteConversationGroup(groupId);
+    }
+
+    @Override
+    @Transactional
+    public void adminRestoreConversation(String conversationId) {
+        MongoConversation conversation = conversationRepository.findById(conversationId);
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        String groupId = conversation.conversationGroupId;
+        MongoConversationGroup group = conversationGroupRepository.findById(groupId);
+        if (group == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        if (group.deletedAt == null) {
+            throw new ResourceConflictException(
+                    "conversation", conversationId, "Conversation is not deleted");
+        }
+
+        // Restore conversation group
+        group.deletedAt = null;
+        conversationGroupRepository.update(group);
+
+        // Restore all conversations in the group
+        List<MongoConversation> conversations =
+                conversationRepository.find("conversationGroupId", groupId).list();
+        for (MongoConversation c : conversations) {
+            c.deletedAt = null;
+            conversationRepository.update(c);
+        }
+
+        // Restore all memberships
+        List<MongoConversationMembership> memberships =
+                membershipRepository.listForConversationGroup(groupId);
+        for (MongoConversationMembership m : memberships) {
+            m.deletedAt = null;
+            membershipRepository.update(m);
+        }
+    }
+
+    @Override
+    public PagedMessages adminGetMessages(String conversationId, AdminMessageQuery query) {
+        MongoConversation conversation;
+        if (query.isIncludeDeleted()) {
+            conversation = conversationRepository.findById(conversationId);
+        } else {
+            conversation = conversationRepository.findById(conversationId);
+            if (conversation != null && conversation.deletedAt != null) {
+                conversation = null;
+            }
+        }
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+
+        List<MongoMessage> allMessages =
+                messageRepository.find("conversationId", conversationId).list();
+
+        // Sort by createdAt first so cursor-based filtering works correctly
+        allMessages.sort(Comparator.comparing(m -> m.createdAt));
+
+        // Find the cursor message's createdAt if afterMessageId is provided
+        Instant cursorCreatedAt = null;
+        String cursorId = null;
+        if (query.getAfterMessageId() != null && !query.getAfterMessageId().isBlank()) {
+            cursorId = query.getAfterMessageId();
+            for (MongoMessage m : allMessages) {
+                if (m.id.equals(cursorId)) {
+                    cursorCreatedAt = m.createdAt;
+                    break;
+                }
+            }
+        }
+
+        List<MongoMessage> filtered = new ArrayList<>();
+        for (MongoMessage m : allMessages) {
+            if (query.getChannel() != null && m.channel != query.getChannel()) {
+                continue;
+            }
+            // Skip messages at or before the cursor position
+            if (cursorCreatedAt != null) {
+                if (m.createdAt.isBefore(cursorCreatedAt)) {
+                    continue;
+                }
+                if (m.createdAt.equals(cursorCreatedAt) && m.id.compareTo(cursorId) <= 0) {
+                    continue;
+                }
+            }
+            filtered.add(m);
+        }
+
+        int limit = query.getLimit() > 0 ? query.getLimit() : 50;
+        List<MongoMessage> limited = filtered.stream().limit(limit).collect(Collectors.toList());
+
+        List<MessageDto> messages =
+                limited.stream().map(this::toMessageDto).collect(Collectors.toList());
+
+        String nextCursor = null;
+        if (limited.size() == limit && filtered.size() > limit) {
+            nextCursor = limited.get(limited.size() - 1).id;
+        }
+
+        PagedMessages result = new PagedMessages();
+        result.setConversationId(conversationId);
+        result.setMessages(messages);
+        result.setNextCursor(nextCursor);
+        return result;
+    }
+
+    @Override
+    public List<ConversationMembershipDto> adminListMemberships(
+            String conversationId, boolean includeDeleted) {
+        MongoConversation conversation;
+        if (includeDeleted) {
+            conversation = conversationRepository.findById(conversationId);
+        } else {
+            conversation = conversationRepository.findById(conversationId);
+            if (conversation != null && conversation.deletedAt != null) {
+                conversation = null;
+            }
+        }
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        String groupId = conversation.conversationGroupId;
+        List<MongoConversationMembership> memberships =
+                membershipRepository.listForConversationGroup(groupId);
+        if (!includeDeleted) {
+            memberships =
+                    memberships.stream()
+                            .filter(m -> m.deletedAt == null)
+                            .collect(Collectors.toList());
+        }
+        return memberships.stream().map(this::toMembershipDto).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<SearchResultDto> adminSearchMessages(AdminSearchQuery query) {
+        if (query.getQuery() == null || query.getQuery().isBlank()) {
+            return Collections.emptyList();
+        }
+
+        List<MongoConversation> allConversations = conversationRepository.listAll();
+        Set<String> conversationIds =
+                allConversations.stream()
+                        .filter(
+                                c -> {
+                                    // Filter by userId
+                                    if (query.getUserId() != null
+                                            && !query.getUserId().isBlank()
+                                            && !query.getUserId().equals(c.ownerUserId)) {
+                                        return false;
+                                    }
+                                    // Filter by deleted status
+                                    if (!query.isIncludeDeleted() && c.deletedAt != null) {
+                                        return false;
+                                    }
+                                    return true;
+                                })
+                        .map(c -> c.id)
+                        .collect(Collectors.toSet());
+
+        if (query.getConversationIds() != null && !query.getConversationIds().isEmpty()) {
+            Set<String> requested = Set.copyOf(query.getConversationIds());
+            conversationIds.retainAll(requested);
+        }
+
+        if (conversationIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        String searchQuery = query.getQuery().toLowerCase();
+        int limit = query.getTopK() != null ? query.getTopK() : 20;
+
+        List<MongoMessage> candidates =
+                messageRepository.find("conversationId in ?1", conversationIds).list();
+
+        return candidates.stream()
+                .map(
+                        m -> {
+                            List<Object> content = decryptContent(m.content);
+                            if (content == null || content.isEmpty()) {
+                                return null;
+                            }
+                            String text = extractSearchText(content);
+                            if (text == null || !text.toLowerCase().contains(searchQuery)) {
+                                return null;
+                            }
+                            SearchResultDto dto = new SearchResultDto();
+                            dto.setMessage(toMessageDto(m, content));
+                            dto.setScore(1.0);
+                            dto.setHighlights(null);
+                            return dto;
+                        })
+                .filter(r -> r != null)
+                .limit(limit)
+                .collect(Collectors.toList());
     }
 }

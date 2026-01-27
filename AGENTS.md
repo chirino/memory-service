@@ -150,7 +150,9 @@ It will support semantic search across all preivous converstations for a user by
   - Testing internal implementation details and business logic
   - Testing infrastructure/configuration (e.g., Liquibase migrations, selector logic)
   - Testing test framework behavior itself
-- **Cucumber Test Failure Reporting**: When memory-service Cucumber tests fail, check `memory-service/target/cucumber/failures.txt` for a structured, failure-only summary. This file contains:
+- **Cucumber Test Failure Reporting**:
+  - when memory-service Cucumber tests fail, run the `memory-service/src/test/resources/extract-failures.sh` script to produce a `memory-service/target/cucumber/failures.txt`
+  - check `memory-service/target/cucumber/failures.txt` for a structured, failure-only summary. This file contains:
   - Feature and scenario names for failed tests
   - Failed step details with full error messages and stack traces
   - Machine-readable JSON output in `memory-service/target/cucumber/failures.json`

@@ -19,6 +19,9 @@ import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
+import io.github.chirino.memory.model.AdminConversationQuery;
+import io.github.chirino.memory.model.AdminMessageQuery;
+import io.github.chirino.memory.model.AdminSearchQuery;
 import io.github.chirino.memory.model.MessageChannel;
 import io.github.chirino.memory.persistence.entity.ConversationEntity;
 import io.github.chirino.memory.persistence.entity.ConversationGroupEntity;
@@ -33,6 +36,7 @@ import io.github.chirino.memory.persistence.repo.MessageRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.github.chirino.memory.store.MemoryStore;
+import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
 import io.github.chirino.memory.vector.VectorStore;
@@ -48,6 +52,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -1036,6 +1041,9 @@ public class PostgresMemoryStore implements MemoryStore {
         dto.setUpdatedAt(ISO_FORMATTER.format(entity.getUpdatedAt()));
         dto.setLastMessagePreview(lastMessagePreview);
         dto.setAccessLevel(accessLevel);
+        if (entity.getDeletedAt() != null) {
+            dto.setDeletedAt(ISO_FORMATTER.format(entity.getDeletedAt()));
+        }
         return dto;
     }
 
@@ -1049,6 +1057,9 @@ public class PostgresMemoryStore implements MemoryStore {
         dto.setUpdatedAt(ISO_FORMATTER.format(entity.getUpdatedAt()));
         dto.setLastMessagePreview(lastMessagePreview);
         dto.setAccessLevel(accessLevel);
+        if (entity.getDeletedAt() != null) {
+            dto.setDeletedAt(ISO_FORMATTER.format(entity.getDeletedAt()));
+        }
         dto.setConversationGroupId(entity.getConversationGroup().getId().toString());
         dto.setForkedAtMessageId(
                 entity.getForkedAtMessageId() != null
@@ -1091,5 +1102,268 @@ public class PostgresMemoryStore implements MemoryStore {
             return Collections.emptyList();
         }
         return List.of(Map.of("type", "text", "text", text));
+    }
+
+    // Admin methods
+
+    @Override
+    public List<ConversationSummaryDto> adminListConversations(AdminConversationQuery query) {
+        StringBuilder jpql = new StringBuilder("FROM ConversationEntity c WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+        int paramIndex = 1;
+
+        if (query.getUserId() != null && !query.getUserId().isBlank()) {
+            jpql.append(" AND c.ownerUserId = ?").append(paramIndex++);
+            params.add(query.getUserId());
+        }
+
+        if (query.isOnlyDeleted()) {
+            jpql.append(" AND c.deletedAt IS NOT NULL");
+            if (query.getDeletedAfter() != null) {
+                jpql.append(" AND c.deletedAt >= ?").append(paramIndex++);
+                params.add(query.getDeletedAfter());
+            }
+            if (query.getDeletedBefore() != null) {
+                jpql.append(" AND c.deletedAt < ?").append(paramIndex++);
+                params.add(query.getDeletedBefore());
+            }
+        } else if (!query.isIncludeDeleted()) {
+            jpql.append(" AND c.deletedAt IS NULL AND c.conversationGroup.deletedAt IS NULL");
+        } else {
+            // includeDeleted=true: show all, but still filter by date if provided
+            if (query.getDeletedAfter() != null) {
+                jpql.append(" AND (c.deletedAt IS NULL OR c.deletedAt >= ?").append(paramIndex++);
+                params.add(query.getDeletedAfter());
+                jpql.append(")");
+            }
+            if (query.getDeletedBefore() != null) {
+                jpql.append(" AND (c.deletedAt IS NULL OR c.deletedAt < ?").append(paramIndex++);
+                params.add(query.getDeletedBefore());
+                jpql.append(")");
+            }
+        }
+
+        jpql.append(" ORDER BY c.updatedAt DESC");
+
+        int limit = query.getLimit() > 0 ? query.getLimit() : 100;
+        List<ConversationEntity> entities =
+                conversationRepository
+                        .find(jpql.toString(), params.toArray())
+                        .page(0, limit)
+                        .list();
+        return entities.stream()
+                .map(entity -> toConversationSummaryDto(entity, AccessLevel.OWNER, null))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public Optional<ConversationDto> adminGetConversation(
+            String conversationId, boolean includeDeleted) {
+        UUID id = UUID.fromString(conversationId);
+        ConversationEntity entity;
+        if (includeDeleted) {
+            entity = conversationRepository.findByIdOptional(id).orElse(null);
+        } else {
+            entity = conversationRepository.findActiveById(id).orElse(null);
+        }
+        if (entity == null) {
+            return Optional.empty();
+        }
+        return Optional.of(toConversationDto(entity, AccessLevel.OWNER, null));
+    }
+
+    @Override
+    @Transactional
+    public void adminDeleteConversation(String conversationId) {
+        UUID id = UUID.fromString(conversationId);
+        ConversationEntity conversation = conversationRepository.findByIdOptional(id).orElse(null);
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        UUID groupId = conversation.getConversationGroup().getId();
+        softDeleteConversationGroup(groupId);
+    }
+
+    @Override
+    @Transactional
+    public void adminRestoreConversation(String conversationId) {
+        UUID id = UUID.fromString(conversationId);
+        ConversationEntity conversation = conversationRepository.findByIdOptional(id).orElse(null);
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        UUID groupId = conversation.getConversationGroup().getId();
+        ConversationGroupEntity group =
+                conversationGroupRepository.findByIdOptional(groupId).orElse(null);
+        if (group == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        if (group.getDeletedAt() == null) {
+            throw new ResourceConflictException(
+                    "conversation", conversationId, "Conversation is not deleted");
+        }
+
+        // Restore conversation group
+        conversationGroupRepository.update("deletedAt = NULL WHERE id = ?1", groupId);
+
+        // Restore all conversations in the group
+        conversationRepository.update("deletedAt = NULL WHERE conversationGroup.id = ?1", groupId);
+
+        // Restore all memberships
+        membershipRepository.update("deletedAt = NULL WHERE id.conversationGroupId = ?1", groupId);
+    }
+
+    @Override
+    public PagedMessages adminGetMessages(String conversationId, AdminMessageQuery query) {
+        UUID cid = UUID.fromString(conversationId);
+        ConversationEntity conversation;
+        if (query.isIncludeDeleted()) {
+            conversation = conversationRepository.findByIdOptional(cid).orElse(null);
+        } else {
+            conversation = conversationRepository.findActiveById(cid).orElse(null);
+        }
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+
+        StringBuilder jpql = new StringBuilder("FROM MessageEntity m WHERE m.conversation.id = ?1");
+        List<Object> params = new ArrayList<>();
+        params.add(cid);
+        int paramIndex = 2;
+
+        if (!query.isIncludeDeleted()) {
+            jpql.append(" AND m.conversation.deletedAt IS NULL");
+            jpql.append(" AND m.conversation.conversationGroup.deletedAt IS NULL");
+        }
+
+        if (query.getChannel() != null) {
+            jpql.append(" AND m.channel = ?").append(paramIndex++);
+            params.add(query.getChannel());
+        }
+
+        if (query.getAfterMessageId() != null && !query.getAfterMessageId().isBlank()) {
+            UUID afterId = UUID.fromString(query.getAfterMessageId());
+            jpql.append(
+                            " AND (m.createdAt > (SELECT m2.createdAt FROM MessageEntity m2 WHERE"
+                                    + " m2.id = ?")
+                    .append(paramIndex)
+                    .append(
+                            ") OR (m.createdAt = (SELECT m2.createdAt FROM MessageEntity m2 WHERE"
+                                    + " m2.id = ?")
+                    .append(paramIndex)
+                    .append(") AND m.id > ?")
+                    .append(paramIndex)
+                    .append("))");
+            params.add(afterId);
+            params.add(afterId);
+            params.add(afterId);
+            paramIndex += 3;
+        }
+
+        jpql.append(" ORDER BY m.createdAt ASC, m.id ASC");
+
+        List<MessageEntity> entities =
+                messageRepository
+                        .find(jpql.toString(), params.toArray())
+                        .page(0, query.getLimit() > 0 ? query.getLimit() : 50)
+                        .list();
+
+        List<MessageDto> messages =
+                entities.stream().map(this::toMessageDto).collect(Collectors.toList());
+
+        String nextCursor = null;
+        if (messages.size() == query.getLimit()) {
+            MessageEntity last = entities.get(entities.size() - 1);
+            nextCursor = last.getId().toString();
+        }
+
+        PagedMessages result = new PagedMessages();
+        result.setConversationId(conversationId);
+        result.setMessages(messages);
+        result.setNextCursor(nextCursor);
+        return result;
+    }
+
+    @Override
+    public List<ConversationMembershipDto> adminListMemberships(
+            String conversationId, boolean includeDeleted) {
+        UUID cid = UUID.fromString(conversationId);
+        ConversationEntity conversation;
+        if (includeDeleted) {
+            conversation = conversationRepository.findByIdOptional(cid).orElse(null);
+        } else {
+            conversation = conversationRepository.findActiveById(cid).orElse(null);
+        }
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        UUID groupId = conversation.getConversationGroup().getId();
+        List<ConversationMembershipEntity> memberships;
+        if (includeDeleted) {
+            memberships = membershipRepository.find("id.conversationGroupId", groupId).list();
+        } else {
+            memberships = membershipRepository.listForConversationGroup(groupId);
+        }
+        return memberships.stream().map(this::toMembershipDto).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<SearchResultDto> adminSearchMessages(AdminSearchQuery query) {
+        if (query.getQuery() == null || query.getQuery().isBlank()) {
+            return Collections.emptyList();
+        }
+
+        StringBuilder jpql = new StringBuilder("FROM ConversationEntity c WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+        int paramIndex = 1;
+
+        if (query.getUserId() != null && !query.getUserId().isBlank()) {
+            jpql.append(" AND c.ownerUserId = ?").append(paramIndex++);
+            params.add(query.getUserId());
+        }
+
+        if (!query.isIncludeDeleted()) {
+            jpql.append(" AND c.deletedAt IS NULL AND c.conversationGroup.deletedAt IS NULL");
+        }
+
+        List<ConversationEntity> conversations =
+                conversationRepository.find(jpql.toString(), params.toArray()).list();
+        Set<UUID> conversationIds =
+                conversations.stream().map(ConversationEntity::getId).collect(Collectors.toSet());
+
+        if (query.getConversationIds() != null && !query.getConversationIds().isEmpty()) {
+            Set<UUID> requested =
+                    query.getConversationIds().stream()
+                            .map(UUID::fromString)
+                            .collect(Collectors.toSet());
+            conversationIds.retainAll(requested);
+        }
+
+        if (conversationIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        String searchQuery = query.getQuery().toLowerCase();
+        int limit = query.getTopK() != null ? query.getTopK() : 20;
+
+        List<MessageEntity> candidates =
+                messageRepository.find("conversation.id in ?1", conversationIds).list();
+
+        return candidates.stream()
+                .map(
+                        m -> {
+                            List<Object> content = decryptContent(m.getContent());
+                            if (content == null || content.isEmpty()) {
+                                return null;
+                            }
+                            String text = extractSearchText(content);
+                            if (text == null || !text.toLowerCase().contains(searchQuery)) {
+                                return null;
+                            }
+                            return toSearchResult(m, content);
+                        })
+                .filter(r -> r != null)
+                .limit(limit)
+                .collect(Collectors.toList());
     }
 }
