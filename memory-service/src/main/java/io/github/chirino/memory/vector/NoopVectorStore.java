@@ -23,4 +23,9 @@ public class NoopVectorStore implements VectorStore {
     public void upsertSummaryEmbedding(String conversationId, String messageId, float[] embedding) {
         // no-op
     }
+
+    @Override
+    public void deleteByConversationGroupId(String conversationGroupId) {
+        // no-op
+    }
 }

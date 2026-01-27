@@ -128,3 +128,20 @@ CREATE TABLE IF NOT EXISTS conversation_ownership_transfers (
 
 CREATE INDEX IF NOT EXISTS idx_ownership_transfers_to_user
     ON conversation_ownership_transfers (to_user_id, status);
+
+------------------------------------------------------------
+-- Background task queue
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id              UUID PRIMARY KEY,
+    task_type       TEXT NOT NULL,
+    task_body       JSONB NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    retry_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_error      TEXT,
+    retry_count     INT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_ready 
+    ON tasks (task_type, retry_at);

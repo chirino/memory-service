@@ -7,6 +7,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.util.List;
 import java.util.Locale;
+import org.jboss.logging.Logger;
 
 /**
  * Placeholder PgVector-backed implementation.
@@ -18,6 +19,8 @@ import java.util.Locale;
  */
 @ApplicationScoped
 public class PgVectorStore implements VectorStore {
+
+    private static final Logger LOG = Logger.getLogger(PgVectorStore.class);
 
     @Inject PostgresMemoryStore postgresMemoryStore;
 
@@ -40,6 +43,18 @@ public class PgVectorStore implements VectorStore {
         }
         embeddingRepository.upsertEmbedding(
                 messageId, conversationId, toPgVectorLiteral(embedding));
+    }
+
+    @Override
+    public void deleteByConversationGroupId(String conversationGroupId) {
+        try {
+            embeddingRepository.deleteByConversationGroupId(conversationGroupId);
+        } catch (Exception e) {
+            // May fail if message_embeddings table does not exist yet
+            LOG.debugf(
+                    "Could not delete embeddings for group %s: %s",
+                    conversationGroupId, e.getMessage());
+        }
     }
 
     private String toPgVectorLiteral(float[] embedding) {

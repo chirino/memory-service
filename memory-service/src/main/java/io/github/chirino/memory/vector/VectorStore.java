@@ -11,4 +11,10 @@ public interface VectorStore {
     List<SearchResultDto> search(String userId, SearchMessagesRequest request);
 
     void upsertSummaryEmbedding(String conversationId, String messageId, float[] embedding);
+
+    /**
+     * Delete all embeddings for a conversation group.
+     * Used by the background task queue for cleanup after eviction.
+     */
+    void deleteByConversationGroupId(String conversationGroupId);
 }

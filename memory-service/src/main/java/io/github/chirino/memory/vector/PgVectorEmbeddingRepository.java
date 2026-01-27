@@ -26,4 +26,20 @@ public class PgVectorEmbeddingRepository {
                 .setParameter(3, embedding)
                 .executeUpdate();
     }
+
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void deleteByConversationGroupId(String conversationGroupId) {
+        // Delete embeddings for all messages in conversations belonging to the group
+        // This joins through messages -> conversations -> conversation_groups
+        entityManager
+                .createNativeQuery(
+                        "DELETE FROM message_embeddings "
+                                + "WHERE message_id IN ("
+                                + "  SELECT m.id FROM messages m "
+                                + "  JOIN conversations c ON m.conversation_id = c.id "
+                                + "  WHERE c.conversation_group_id = ?1"
+                                + ")")
+                .setParameter(1, UUID.fromString(conversationGroupId))
+                .executeUpdate();
+    }
 }

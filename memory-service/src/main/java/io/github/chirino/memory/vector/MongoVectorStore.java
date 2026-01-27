@@ -35,4 +35,9 @@ public class MongoVectorStore implements VectorStore {
     public void upsertSummaryEmbedding(String conversationId, String messageId, float[] embedding) {
         // no-op until Mongo vector support is implemented
     }
+
+    @Override
+    public void deleteByConversationGroupId(String conversationGroupId) {
+        // no-op until Mongo vector support is implemented
+    }
 }
