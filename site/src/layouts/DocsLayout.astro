@@ -12,7 +12,8 @@ interface Props {
   headings?: { depth: number; slug: string; text: string }[];
 }
 
-const { title, description = 'Memory Service Documentation', headings = [] } = (Astro.props as any).content || {};
+const { title, description = 'Memory Service Documentation' } = (Astro.props as any).content || {};
+const headings = (Astro.props as any).headings || [];
 const siteTitle = 'Memory Service Docs';
 const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${siteTitle}`;
 ---
