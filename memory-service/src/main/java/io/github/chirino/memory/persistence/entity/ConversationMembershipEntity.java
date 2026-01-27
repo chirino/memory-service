@@ -35,6 +35,9 @@ public class ConversationMembershipEntity {
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
+
     public ConversationMembershipId getId() {
         return id;
     }
@@ -65,6 +68,18 @@ public class ConversationMembershipEntity {
 
     public void setCreatedAt(OffsetDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public OffsetDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(OffsetDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 
     @PrePersist

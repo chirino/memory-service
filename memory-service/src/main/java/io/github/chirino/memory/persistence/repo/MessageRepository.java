@@ -15,7 +15,10 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
 
     public List<MessageEntity> listUserVisible(
             UUID conversationId, String afterMessageId, int limit) {
-        String baseQuery = "from MessageEntity m where m.conversation.id = ?1 and m.channel = ?2";
+        String baseQuery =
+                "from MessageEntity m where m.conversation.id = ?1 and m.channel = ?2 and"
+                        + " m.conversation.deletedAt IS NULL and"
+                        + " m.conversation.conversationGroup.deletedAt IS NULL";
         if (afterMessageId != null) {
             UUID afterId = UUID.fromString(afterMessageId);
             MessageEntity afterMessage = findById(afterId);
@@ -45,7 +48,9 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
             int limit,
             MessageChannel channel,
             String clientId) {
-        String baseQuery = "from MessageEntity m where m.conversation.id = ?1";
+        String baseQuery =
+                "from MessageEntity m where m.conversation.id = ?1 and m.conversation.deletedAt IS"
+                        + " NULL and m.conversation.conversationGroup.deletedAt IS NULL";
         List<Object> params = new ArrayList<>();
         params.add(conversationId);
 
@@ -84,7 +89,9 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
             return getEntityManager()
                     .createQuery(
                             "select max(m.memoryEpoch) from MessageEntity m where m.conversation.id"
-                                    + " = :cid and m.channel = :channel and m.clientId = :clientId",
+                                + " = :cid and m.channel = :channel and m.clientId = :clientId and"
+                                + " m.conversation.deletedAt IS NULL and"
+                                + " m.conversation.conversationGroup.deletedAt IS NULL",
                             Long.class)
                     .setParameter("cid", conversationId)
                     .setParameter("channel", MessageChannel.MEMORY)
@@ -104,7 +111,8 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
             UUID conversationId, String afterMessageId, int limit, Long epoch, String clientId) {
         String baseQuery =
                 "from MessageEntity m where m.conversation.id = ?1 and m.channel = ?2 and"
-                        + " m.clientId = ?3";
+                        + " m.clientId = ?3 and m.conversation.deletedAt IS NULL and"
+                        + " m.conversation.conversationGroup.deletedAt IS NULL";
         List<Object> params = new ArrayList<>();
         params.add(conversationId);
         params.add(MessageChannel.MEMORY);

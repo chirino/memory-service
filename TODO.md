@@ -22,6 +22,7 @@
 
 # Need Dev Feedback for:
 
+* Conversations id are UUIDs.. should support an string?
 * How much should we trust the agent: Should the agent just tell use the user id or do we distrust it and get it from a bearer token?
 * All the class/method names of all the public apis should be reviewed.
 * Review/Harden the @RecordConversation impl.
