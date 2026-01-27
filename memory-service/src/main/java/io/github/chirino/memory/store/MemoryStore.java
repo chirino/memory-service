@@ -16,8 +16,12 @@ import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.model.AdminConversationQuery;
+import io.github.chirino.memory.model.AdminMessageQuery;
+import io.github.chirino.memory.model.AdminSearchQuery;
 import io.github.chirino.memory.model.MessageChannel;
 import java.util.List;
+import java.util.Optional;
 
 public interface MemoryStore {
 
@@ -77,4 +81,20 @@ public interface MemoryStore {
     MessageDto createSummary(String conversationId, CreateSummaryRequest request, String clientId);
 
     List<SearchResultDto> searchMessages(String userId, SearchMessagesRequest request);
+
+    // Admin methods — no userId scoping, configurable deleted-resource visibility
+    List<ConversationSummaryDto> adminListConversations(AdminConversationQuery query);
+
+    Optional<ConversationDto> adminGetConversation(String conversationId, boolean includeDeleted);
+
+    void adminDeleteConversation(String conversationId);
+
+    void adminRestoreConversation(String conversationId);
+
+    PagedMessages adminGetMessages(String conversationId, AdminMessageQuery query);
+
+    List<ConversationMembershipDto> adminListMemberships(
+            String conversationId, boolean includeDeleted);
+
+    List<SearchResultDto> adminSearchMessages(AdminSearchQuery query);
 }

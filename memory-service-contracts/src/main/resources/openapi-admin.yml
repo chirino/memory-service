@@ -1,0 +1,535 @@
+openapi: 3.1.0
+info:
+  title: Memory Service Admin API
+  version: v1
+  description: |-
+    Admin APIs for Memory Service. These endpoints provide administrative access
+    to all conversations across all users, including soft-deleted resources.
+    Access requires admin or auditor role.
+tags:
+  - name: Admin
+    description: Administrative APIs for system-wide access to conversations and messages.
+paths:
+  /v1/admin/conversations:
+    get:
+      tags: [Admin]
+      summary: List all conversations (admin/auditor)
+      description: |-
+        Lists conversations across all users. Supports filtering by userId,
+        deleted status, and date ranges. Requires auditor or admin role.
+      operationId: adminListConversations
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          description: Filter conversations owned by this user.
+          schema:
+            type: string
+        - name: includeDeleted
+          in: query
+          required: false
+          description: Include soft-deleted conversations in results.
+          schema:
+            type: boolean
+            default: false
+        - name: onlyDeleted
+          in: query
+          required: false
+          description: Show only soft-deleted conversations.
+          schema:
+            type: boolean
+            default: false
+        - name: deletedAfter
+          in: query
+          required: false
+          description: "Filter: deleted at or after this time (ISO 8601)."
+          schema:
+            type: string
+            format: date-time
+        - name: deletedBefore
+          in: query
+          required: false
+          description: "Filter: deleted before this time (ISO 8601)."
+          schema:
+            type: string
+            format: date-time
+        - name: after
+          in: query
+          required: false
+          description: Cursor for pagination.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of conversations to return.
+          schema:
+            type: integer
+            default: 100
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of conversations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminConversationSummary'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/conversations/{id}:
+    get:
+      tags: [Admin]
+      summary: Get any conversation (admin/auditor)
+      description: |-
+        Retrieves a conversation by ID, including soft-deleted conversations
+        if includeDeleted=true. Requires auditor or admin role.
+      operationId: adminGetConversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation identifier.
+          schema:
+            type: string
+        - name: includeDeleted
+          in: query
+          required: false
+          description: Include soft-deleted conversations.
+          schema:
+            type: boolean
+            default: false
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConversation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    delete:
+      tags: [Admin]
+      summary: Soft-delete any conversation (admin only)
+      description: |-
+        Soft-deletes a conversation. Requires admin role.
+      operationId: adminDeleteConversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation identifier.
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminActionRequest'
+      responses:
+        '204':
+          description: Conversation deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/conversations/{id}/restore:
+    post:
+      tags: [Admin]
+      summary: Restore a soft-deleted conversation (admin only)
+      description: |-
+        Restores a soft-deleted conversation. Requires admin role.
+      operationId: adminRestoreConversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation identifier.
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminActionRequest'
+      responses:
+        '200':
+          description: Conversation restored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConversation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conversation is not deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/conversations/{id}/messages:
+    get:
+      tags: [Admin]
+      summary: Get messages from any conversation (admin/auditor)
+      description: |-
+        Retrieves messages from a conversation, including soft-deleted
+        conversations if includeDeleted=true. Requires auditor or admin role.
+      operationId: adminGetMessages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation identifier.
+          schema:
+            type: string
+        - name: after
+          in: query
+          required: false
+          description: Cursor for pagination.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of messages to return.
+          schema:
+            type: integer
+            default: 50
+        - name: channel
+          in: query
+          required: false
+          description: Filter by message channel.
+          schema:
+            $ref: '#/components/schemas/MessageChannel'
+        - name: includeDeleted
+          in: query
+          required: false
+          description: Include messages from soft-deleted conversations.
+          schema:
+            type: boolean
+            default: false
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  nextCursor:
+                    type: string
+                    nullable: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/conversations/{id}/memberships:
+    get:
+      tags: [Admin]
+      summary: Get memberships for any conversation (admin/auditor)
+      description: |-
+        Retrieves memberships for a conversation. Requires auditor or admin role.
+      operationId: adminGetMemberships
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation identifier.
+          schema:
+            type: string
+        - name: includeDeleted
+          in: query
+          required: false
+          description: Include memberships from soft-deleted conversations.
+          schema:
+            type: boolean
+            default: false
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Memberships.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConversationMembership'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/search/messages:
+    post:
+      tags: [Admin]
+      summary: System-wide semantic search (admin/auditor)
+      description: |-
+        Performs semantic search across all conversations, optionally filtered
+        by userId. Requires auditor or admin role.
+      operationId: adminSearchMessages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSearchMessagesRequest'
+      parameters:
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SearchResult'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    AccessLevel:
+      type: string
+      description: Access level of a user for a conversation.
+      enum:
+        - owner
+        - manager
+        - writer
+        - reader
+
+    AdminConversationSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+          nullable: true
+        ownerUserId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the conversation was soft-deleted.
+        lastMessagePreview:
+          type: string
+          nullable: true
+        accessLevel:
+          $ref: '#/components/schemas/AccessLevel'
+
+    AdminConversation:
+      allOf:
+        - $ref: '#/components/schemas/AdminConversationSummary'
+        - type: object
+          properties:
+            conversationGroupId:
+              type: string
+            forkedAtMessageId:
+              type: string
+              nullable: true
+            forkedAtConversationId:
+              type: string
+              nullable: true
+
+    AdminActionRequest:
+      type: object
+      properties:
+        justification:
+          type: string
+          description: Reason for the admin action (for audit log).
+      example:
+        justification: "User requested account cleanup per support ticket #1234"
+
+    MessageChannel:
+      type: string
+      description: Logical channel of the message within the conversation.
+      enum:
+        - history
+        - memory
+        - summary
+
+    Message:
+      type: object
+      required:
+        - id
+        - conversationId
+        - channel
+        - content
+        - createdAt
+      properties:
+        id:
+          type: string
+        conversationId:
+          type: string
+        userId:
+          type: string
+          nullable: true
+        channel:
+          $ref: '#/components/schemas/MessageChannel'
+        memoryEpoch:
+          type: integer
+          format: int64
+          nullable: true
+        content:
+          type: array
+          items: {}
+        createdAt:
+          type: string
+          format: date-time
+
+    ConversationMembership:
+      type: object
+      properties:
+        conversationGroupId:
+          type: string
+        userId:
+          type: string
+        accessLevel:
+          $ref: '#/components/schemas/AccessLevel'
+        createdAt:
+          type: string
+          format: date-time
+
+    AdminSearchMessagesRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Natural language query.
+        topK:
+          type: integer
+          default: 20
+        conversationIds:
+          type: array
+          items:
+            type: string
+          nullable: true
+        userId:
+          type: string
+          nullable: true
+          description: Filter search to conversations owned by this user.
+        before:
+          type: string
+          nullable: true
+        includeDeleted:
+          type: boolean
+          default: false
+          description: Include messages from soft-deleted conversations.
+
+    SearchResult:
+      type: object
+      properties:
+        message:
+          $ref: '#/components/schemas/Message'
+        score:
+          type: number
+          format: float
+        highlights:
+          type: string
+          nullable: true

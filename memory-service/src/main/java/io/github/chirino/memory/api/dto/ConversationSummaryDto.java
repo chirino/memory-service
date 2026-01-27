@@ -11,6 +11,7 @@ public class ConversationSummaryDto {
     private String updatedAt;
     private String lastMessagePreview;
     private AccessLevel accessLevel;
+    private String deletedAt;
 
     public String getId() {
         return id;
@@ -66,5 +67,13 @@ public class ConversationSummaryDto {
 
     public void setAccessLevel(AccessLevel accessLevel) {
         this.accessLevel = accessLevel;
+    }
+
+    public String getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(String deletedAt) {
+        this.deletedAt = deletedAt;
     }
 }

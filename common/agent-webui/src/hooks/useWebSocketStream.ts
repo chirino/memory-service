@@ -30,9 +30,7 @@ export function useWebSocketStream(): StreamClient {
       let url: string;
       if (isResume) {
         // Resume WebSocket: /customer-support-agent/{conversationId}/ws/resume
-        url = `${protocol}://${window.location.host}/customer-support-agent/${encodeURIComponent(
-          sessionId,
-        )}/ws/resume`;
+        url = `${protocol}://${window.location.host}/customer-support-agent/${encodeURIComponent(sessionId)}/ws/resume`;
       } else {
         // Normal chat WebSocket: /customer-support-agent/{conversationId}/ws
         url = `${protocol}://${window.location.host}/customer-support-agent/${encodeURIComponent(sessionId)}/ws`;

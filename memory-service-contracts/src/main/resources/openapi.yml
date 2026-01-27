@@ -9,9 +9,6 @@ info:
     other actors, supports replay and forking of conversations, and exposes
     user-facing and agent-facing APIs. Conversation access is controlled by
     per-user permissions (owner, manager, writer, reader).
-servers:
-  - url: http://localhost:8080
-    description: Local development
 tags:
   - name: Conversations
     description: APIs for listing, reading, writing, and sharing conversations (user and agent views).

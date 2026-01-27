@@ -1,7 +1,6 @@
 # TODO List
 
 * hide the concept of conversation groups from the API.
-* Conversation Soft Deletes.
 * Batch job to delete conversations / epochs that are older than a retention date.
 
 * Improve the langchain4j memory interface: Switch to the langchain4j MemoryChatStore once https://github.com/langchain4j/langchain4j/pull/4416 is released.
@@ -22,7 +21,7 @@
 
 # Need Dev Feedback for:
 
-* Conversations id are UUIDs.. should support an string?
+* Conversations id are UUIDs.. should support any string?
 * How much should we trust the agent: Should the agent just tell use the user id or do we distrust it and get it from a bearer token?
 * All the class/method names of all the public apis should be reviewed.
 * Review/Harden the @RecordConversation impl.
