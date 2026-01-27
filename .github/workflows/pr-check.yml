@@ -1,4 +1,4 @@
-name: Build
+name: CI
 
 on:
   pull_request:
@@ -29,4 +29,7 @@ jobs:
         run: ./mvnw -B verify
 
       - name: Build Docker images
+        env:
+          # otherwise compose will fail if OPENAI_API_KEY is not set 
+          OPENAI_API_KEY: none 
         run: docker compose build
