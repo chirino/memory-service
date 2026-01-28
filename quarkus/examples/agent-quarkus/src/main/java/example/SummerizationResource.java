@@ -5,10 +5,10 @@ import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.api.SearchApi;
+import io.github.chirino.memory.client.model.Channel;
 import io.github.chirino.memory.client.model.CreateSummaryRequest;
-import io.github.chirino.memory.client.model.ListConversationMessages200Response;
-import io.github.chirino.memory.client.model.Message;
-import io.github.chirino.memory.client.model.MessageChannel;
+import io.github.chirino.memory.client.model.Entry;
+import io.github.chirino.memory.client.model.ListConversationEntries200Response;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -60,17 +60,17 @@ public class SummerizationResource {
     public Response summerize(@PathParam("conversationId") String conversationId) {
         try {
 
-            List<Message> historyMessages = fetchHistoryMessages(conversationId);
-            if (historyMessages.isEmpty()) {
+            List<Entry> historyEntries = fetchHistoryEntries(conversationId);
+            if (historyEntries.isEmpty()) {
                 return Response.noContent().build();
             }
 
-            String transcript = buildTranscript(historyMessages);
+            String transcript = buildTranscript(historyEntries);
             if (transcript.isBlank()) {
                 return Response.noContent().build();
             }
 
-            Message last = historyMessages.get(historyMessages.size() - 1);
+            Entry last = historyEntries.get(historyEntries.size() - 1);
             OffsetDateTime summarizedAt =
                     last.getCreatedAt() != null ? last.getCreatedAt() : OffsetDateTime.now();
 
@@ -86,7 +86,7 @@ public class SummerizationResource {
             CreateSummaryRequest request = new CreateSummaryRequest();
             request.setTitle(redactionPayload.title());
             request.setSummary(redactedTranscript);
-            request.setUntilMessageId(last.getId());
+            request.setUntilEntryId(last.getId());
             request.setSummarizedAt(summarizedAt);
             searchApi().createConversationSummary(conversationId, request);
             return Response.status(Response.Status.CREATED).build();
@@ -96,19 +96,15 @@ public class SummerizationResource {
         }
     }
 
-    private List<Message> fetchHistoryMessages(String conversationId) {
-        List<Message> all = new ArrayList<>();
+    private List<Entry> fetchHistoryEntries(String conversationId) {
+        List<Entry> all = new ArrayList<>();
         String cursor = null;
         while (true) {
-            ListConversationMessages200Response response =
+            ListConversationEntries200Response response =
                     conversationsApi()
-                            .listConversationMessages(
-                                    conversationId,
-                                    cursor,
-                                    PAGE_SIZE,
-                                    MessageChannel.HISTORY,
-                                    null);
-            List<Message> data = response != null ? response.getData() : null;
+                            .listConversationEntries(
+                                    conversationId, cursor, PAGE_SIZE, Channel.HISTORY, null);
+            List<Entry> data = response != null ? response.getData() : null;
             if (data != null && !data.isEmpty()) {
                 all.addAll(data);
             }
@@ -216,13 +212,13 @@ public class SummerizationResource {
         return trimmed;
     }
 
-    private String buildTranscript(List<Message> messages) {
+    private String buildTranscript(List<Entry> entries) {
         StringBuilder builder = new StringBuilder();
-        for (Message message : messages) {
-            if (message == null) {
+        for (Entry entry : entries) {
+            if (entry == null) {
                 continue;
             }
-            for (Object block : message.getContent()) {
+            for (Object block : entry.getContent()) {
                 if (block == null) {
                     continue;
                 }

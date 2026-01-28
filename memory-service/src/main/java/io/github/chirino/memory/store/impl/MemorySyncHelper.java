@@ -2,8 +2,8 @@ package io.github.chirino.memory.store.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.chirino.memory.api.dto.MessageDto;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.api.dto.EntryDto;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -15,12 +15,12 @@ public final class MemorySyncHelper {
 
     private MemorySyncHelper() {}
 
-    public static List<MessageContent> fromRequests(List<CreateMessageRequest> requests) {
+    public static List<MessageContent> fromRequests(List<CreateEntryRequest> requests) {
         if (requests == null || requests.isEmpty()) {
             return Collections.emptyList();
         }
         List<MessageContent> result = new ArrayList<>(requests.size());
-        for (CreateMessageRequest request : requests) {
+        for (CreateEntryRequest request : requests) {
             if (request == null) {
                 continue;
             }
@@ -29,12 +29,12 @@ public final class MemorySyncHelper {
         return result;
     }
 
-    public static List<MessageContent> fromDtos(List<MessageDto> messages) {
+    public static List<MessageContent> fromDtos(List<EntryDto> messages) {
         if (messages == null || messages.isEmpty()) {
             return Collections.emptyList();
         }
         List<MessageContent> result = new ArrayList<>(messages.size());
-        for (MessageDto message : messages) {
+        for (EntryDto message : messages) {
             if (message == null) {
                 continue;
             }
@@ -55,17 +55,18 @@ public final class MemorySyncHelper {
         return true;
     }
 
-    public static List<CreateMessageRequest> withEpoch(
-            List<CreateMessageRequest> originals, Long epoch) {
+    public static List<CreateEntryRequest> withEpoch(
+            List<CreateEntryRequest> originals, Long epoch) {
         if (originals == null || originals.isEmpty()) {
             return Collections.emptyList();
         }
-        List<CreateMessageRequest> normalized = new ArrayList<>(originals.size());
-        for (CreateMessageRequest original : originals) {
-            CreateMessageRequest copy = new CreateMessageRequest();
+        List<CreateEntryRequest> normalized = new ArrayList<>(originals.size());
+        for (CreateEntryRequest original : originals) {
+            CreateEntryRequest copy = new CreateEntryRequest();
             copy.setUserId(original != null ? original.getUserId() : null);
-            copy.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
+            copy.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
             copy.setEpoch(epoch);
+            copy.setContentType(original != null ? original.getContentType() : null);
             copy.setContent(original != null ? original.getContent() : null);
             normalized.add(copy);
         }
@@ -90,12 +91,12 @@ public final class MemorySyncHelper {
             }
         }
 
-        static MessageContent fromRequest(CreateMessageRequest request) {
+        static MessageContent fromRequest(CreateEntryRequest request) {
             List<Object> blocks = request.getContent();
             return new MessageContent(request.getUserId(), blocks);
         }
 
-        static MessageContent fromDto(MessageDto message) {
+        static MessageContent fromDto(EntryDto message) {
             return new MessageContent(message.getUserId(), message.getContent());
         }
 

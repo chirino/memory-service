@@ -9,10 +9,11 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.JacksonChatMessageJsonCodec;
 import dev.langchain4j.memory.ChatMemory;
 import io.github.chirino.memory.client.api.ConversationsApi;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
-import io.github.chirino.memory.client.model.ListConversationMessages200Response;
-import io.github.chirino.memory.client.model.Message;
-import io.github.chirino.memory.client.model.MessageChannel;
+import io.github.chirino.memory.client.model.Channel;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
+import io.github.chirino.memory.client.model.Entry;
+import io.github.chirino.memory.client.model.ListConversationEntries200Response;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.ws.rs.WebApplicationException;
@@ -55,28 +56,29 @@ public class MemoryServiceChatMemory implements ChatMemory {
 
     @Override
     public void add(ChatMessage chatMessage) {
-        CreateMessageRequest request = new CreateMessageRequest();
+        CreateEntryRequest request = new CreateEntryRequest();
         String userId = principalName(securityIdentity);
         if (userId != null) {
             request.setUserId(userId);
         }
-        request.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
+        request.setChannel(ChannelEnum.MEMORY);
+        request.setContentType("LC4J");
 
         String json = CODEC.messageToJson(chatMessage);
         // LOG.infof("Encoding content block: [%s]", json);
         request.setContent(List.of(new RawValue(json)));
 
-        conversationsApi().appendConversationMessage(conversationId, request);
+        conversationsApi().appendConversationEntry(conversationId, request);
     }
 
     @Override
     public List<ChatMessage> messages() {
-        ListConversationMessages200Response context;
+        ListConversationEntries200Response context;
         try {
             context =
                     conversationsApi()
-                            .listConversationMessages(
-                                    conversationId, null, 50, MessageChannel.MEMORY, null);
+                            .listConversationEntries(
+                                    conversationId, null, 50, Channel.MEMORY, null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
             if (status == 404) {
@@ -93,18 +95,18 @@ public class MemoryServiceChatMemory implements ChatMemory {
             return result;
         }
 
-        for (Message message : context.getData()) {
-            if (message.getContent() == null) {
+        for (Entry entry : context.getData()) {
+            if (entry.getContent() == null) {
                 continue;
             }
 
-            LOG.infof("Message was on channel: %s", message.getChannel());
+            LOG.infof("Entry was on channel: %s", entry.getChannel());
 
-            for (Object block : message.getContent()) {
+            for (Object block : entry.getContent()) {
                 if (block == null) {
                     continue;
                 }
-                var decoded = decodeContentBlock(block, message.getId());
+                var decoded = decodeContentBlock(block, entry.getId());
                 result.addAll(decoded);
             }
         }
@@ -126,7 +128,7 @@ public class MemoryServiceChatMemory implements ChatMemory {
      * Decode a single content block coming back from the memory-service into a LangChain4j
      * ChatMessage.
      */
-    private List<ChatMessage> decodeContentBlock(Object block, String messageId) {
+    private List<ChatMessage> decodeContentBlock(Object block, String entryId) {
         try {
             String json = OBJECT_MAPPER.writeValueAsString(List.of(block));
             // LOG.infof("Decoding content block: %s", json);
@@ -134,9 +136,9 @@ public class MemoryServiceChatMemory implements ChatMemory {
         } catch (Exception e) {
             LOG.warnf(
                     e,
-                    "Failed to decode content block for conversationId=%s, messageId=%s",
+                    "Failed to decode content block for conversationId=%s, entryId=%s",
                     conversationId,
-                    messageId);
+                    entryId);
         }
         return null;
     }

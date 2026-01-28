@@ -66,7 +66,7 @@ memory-service.vector-store.lists=100
 
 ```sql
 -- Create HNSW index for better performance
-CREATE INDEX ON messages USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX ON entries USING hnsw (embedding vector_cosine_ops);
 ```
 
 ## MongoDB

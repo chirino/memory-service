@@ -2,16 +2,16 @@ package io.github.chirino.memory.api.dto;
 
 public class SearchResultDto {
 
-    private MessageDto message;
+    private EntryDto entry;
     private double score;
     private String highlights;
 
-    public MessageDto getMessage() {
-        return message;
+    public EntryDto getEntry() {
+        return entry;
     }
 
-    public void setMessage(MessageDto message) {
-        this.message = message;
+    public void setEntry(EntryDto entry) {
+        this.entry = entry;
     }
 
     public double getScore() {

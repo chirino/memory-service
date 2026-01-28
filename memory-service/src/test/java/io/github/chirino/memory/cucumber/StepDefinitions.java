@@ -23,10 +23,10 @@ import com.google.protobuf.util.JsonFormat;
 import com.jayway.jsonpath.InvalidPathException;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
-import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
-import io.github.chirino.memory.grpc.v1.AppendMessageRequest;
+import io.github.chirino.memory.grpc.v1.AppendEntryRequest;
 import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
 import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
 import io.github.chirino.memory.grpc.v1.Conversation;
@@ -36,29 +36,30 @@ import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.CreateSummaryRequest;
 import io.github.chirino.memory.grpc.v1.DeleteConversationRequest;
 import io.github.chirino.memory.grpc.v1.DeleteMembershipRequest;
+import io.github.chirino.memory.grpc.v1.EntriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.chirino.memory.grpc.v1.HealthResponse;
 import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
+import io.github.chirino.memory.grpc.v1.ListEntriesRequest;
+import io.github.chirino.memory.grpc.v1.ListEntriesResponse;
 import io.github.chirino.memory.grpc.v1.ListForksRequest;
 import io.github.chirino.memory.grpc.v1.ListForksResponse;
 import io.github.chirino.memory.grpc.v1.ListMembershipsRequest;
 import io.github.chirino.memory.grpc.v1.ListMembershipsResponse;
-import io.github.chirino.memory.grpc.v1.ListMessagesRequest;
-import io.github.chirino.memory.grpc.v1.ListMessagesResponse;
-import io.github.chirino.memory.grpc.v1.MessagesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.MutinyResponseResumerServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensResponse;
 import io.github.chirino.memory.grpc.v1.ResponseResumerServiceGrpc;
-import io.github.chirino.memory.grpc.v1.SearchMessagesRequest;
-import io.github.chirino.memory.grpc.v1.SearchMessagesResponse;
+import io.github.chirino.memory.grpc.v1.SearchEntriesRequest;
+import io.github.chirino.memory.grpc.v1.SearchEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SearchServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ShareConversationRequest;
 import io.github.chirino.memory.grpc.v1.StreamResponseTokenRequest;
 import io.github.chirino.memory.grpc.v1.StreamResponseTokenResponse;
-import io.github.chirino.memory.grpc.v1.SyncMessagesRequest;
+import io.github.chirino.memory.grpc.v1.SyncEntriesRequest;
+import io.github.chirino.memory.grpc.v1.SyncEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
 import io.github.chirino.memory.grpc.v1.TransferOwnershipRequest;
 import io.github.chirino.memory.grpc.v1.UpdateMembershipRequest;
@@ -66,12 +67,12 @@ import io.github.chirino.memory.mongo.repo.MongoConversationGroupRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationOwnershipTransferRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationRepository;
-import io.github.chirino.memory.mongo.repo.MongoMessageRepository;
+import io.github.chirino.memory.mongo.repo.MongoEntryRepository;
 import io.github.chirino.memory.persistence.repo.ConversationGroupRepository;
 import io.github.chirino.memory.persistence.repo.ConversationMembershipRepository;
 import io.github.chirino.memory.persistence.repo.ConversationOwnershipTransferRepository;
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
-import io.github.chirino.memory.persistence.repo.MessageRepository;
+import io.github.chirino.memory.persistence.repo.EntryRepository;
 import io.github.chirino.memory.security.ApiKeyManager;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
@@ -128,12 +129,12 @@ public class StepDefinitions {
 
     @Inject Instance<ConversationRepository> conversationRepository;
     @Inject Instance<ConversationGroupRepository> conversationGroupRepository;
-    @Inject Instance<MessageRepository> messageRepository;
+    @Inject Instance<EntryRepository> entryRepository;
     @Inject Instance<ConversationMembershipRepository> membershipRepository;
     @Inject Instance<ConversationOwnershipTransferRepository> ownershipTransferRepository;
     @Inject Instance<MongoConversationRepository> mongoConversationRepository;
     @Inject Instance<MongoConversationGroupRepository> mongoConversationGroupRepository;
-    @Inject Instance<MongoMessageRepository> mongoMessageRepository;
+    @Inject Instance<MongoEntryRepository> mongoEntryRepository;
     @Inject Instance<MongoConversationMembershipRepository> mongoMembershipRepository;
     @Inject Instance<MongoConversationOwnershipTransferRepository> mongoOwnershipTransferRepository;
 
@@ -266,45 +267,77 @@ public class StepDefinitions {
         contextVariables.put("conversationId", conversationId);
     }
 
-    @io.cucumber.java.en.Given("the conversation has no messages")
-    public void theConversationHasNoMessages() {
+    @io.cucumber.java.en.Given("the conversation has no entries")
+    public void theConversationHasNoEntries() {
         // Conversation already exists from background, no action needed
     }
 
-    @io.cucumber.java.en.Given("the conversation has a message {string}")
-    public void theConversationHasAMessage(String content) {
-        CreateUserMessageRequest request = new CreateUserMessageRequest();
+    @io.cucumber.java.en.Given("the conversation has an entry {string}")
+    public void theConversationHasAnEntry(String content) {
+        CreateUserEntryRequest request = new CreateUserEntryRequest();
         request.setContent(content);
-        memoryStoreSelector.getStore().appendUserMessage(currentUserId, conversationId, request);
+        memoryStoreSelector.getStore().appendUserEntry(currentUserId, conversationId, request);
     }
 
-    @io.cucumber.java.en.Given("the conversation has {int} messages")
-    public void theConversationHasMessages(int count) {
+    @io.cucumber.java.en.Given("the conversation has {int} entries")
+    public void theConversationHasEntries(int count) {
         for (int i = 1; i <= count; i++) {
-            theConversationHasAMessage("Message " + i);
+            theConversationHasAnEntry("Entry " + i);
         }
     }
 
-    @io.cucumber.java.en.Given("the conversation has a message {string} in channel {string}")
-    public void theConversationHasAMessageInChannel(String content, String channel) {
-        CreateMessageRequest request = new CreateMessageRequest();
+    @io.cucumber.java.en.Given("the conversation has an entry {string} in channel {string}")
+    public void theConversationHasAnEntryInChannel(String content, String channel) {
+        CreateEntryRequest request = new CreateEntryRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
-        request.setChannel(CreateMessageRequest.ChannelEnum.fromString(channel.toLowerCase()));
+        request.setChannel(CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase()));
+        request.setContentType("test.v1");
         memoryStoreSelector
                 .getStore()
-                .appendAgentMessages(
+                .appendAgentEntries(
                         currentUserId, conversationId, List.of(request), resolveClientId());
     }
 
-    @io.cucumber.java.en.Given("the conversation has a memory message {string} with epoch {int}")
-    public void theConversationHasAMemoryMessageWithEpoch(String content, int epoch) {
-        CreateMessageRequest request = new CreateMessageRequest();
+    @io.cucumber.java.en.Given(
+            "the conversation has an entry {string} in channel {string} with contentType {string}")
+    public void theConversationHasAnEntryInChannelWithContentType(
+            String content, String channel, String contentType) {
+        CreateEntryRequest request = new CreateEntryRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
-        request.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
-        request.setEpoch((long) epoch);
+        request.setChannel(CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase()));
+        request.setContentType(contentType);
         memoryStoreSelector
                 .getStore()
-                .appendAgentMessages(
+                .appendAgentEntries(
+                        currentUserId, conversationId, List.of(request), resolveClientId());
+    }
+
+    @io.cucumber.java.en.Given("the conversation has a memory entry {string} with epoch {int}")
+    public void theConversationHasAMemoryEntryWithEpoch(String content, int epoch) {
+        CreateEntryRequest request = new CreateEntryRequest();
+        request.setContent(List.of(Map.of("type", "text", "text", content)));
+        request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
+        request.setEpoch((long) epoch);
+        request.setContentType("test.v1");
+        memoryStoreSelector
+                .getStore()
+                .appendAgentEntries(
+                        currentUserId, conversationId, List.of(request), resolveClientId());
+    }
+
+    @io.cucumber.java.en.Given(
+            "the conversation has a memory entry {string} with epoch {int} and contentType"
+                    + " {string}")
+    public void theConversationHasAMemoryEntryWithEpochAndContentType(
+            String content, int epoch, String contentType) {
+        CreateEntryRequest request = new CreateEntryRequest();
+        request.setContent(List.of(Map.of("type", "text", "text", content)));
+        request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
+        request.setEpoch((long) epoch);
+        request.setContentType(contentType);
+        memoryStoreSelector
+                .getStore()
+                .appendAgentEntries(
                         currentUserId, conversationId, List.of(request), resolveClientId());
     }
 
@@ -672,38 +705,38 @@ public class StepDefinitions {
         contextVariables.put("conversationOwner", ownerId);
     }
 
-    @io.cucumber.java.en.When("I list messages for the conversation")
-    public void iListMessagesForTheConversation() {
-        iListMessagesForTheConversationWithParams(null, null, null, null);
+    @io.cucumber.java.en.When("I list entries for the conversation")
+    public void iListEntriesForTheConversation() {
+        iListEntriesForTheConversationWithParams(null, null, null, null);
     }
 
-    @io.cucumber.java.en.When("I list messages with limit {int}")
-    public void iListMessagesWithLimit(int limit) {
-        iListMessagesForTheConversationWithParams(null, limit, null, null);
+    @io.cucumber.java.en.When("I list entries with limit {int}")
+    public void iListEntriesWithLimit(int limit) {
+        iListEntriesForTheConversationWithParams(null, limit, null, null);
     }
 
-    @io.cucumber.java.en.When("I list messages for the conversation with channel {string}")
-    public void iListMessagesForTheConversationWithChannel(String channel) {
-        iListMessagesForTheConversationWithParams(null, null, channel, null);
+    @io.cucumber.java.en.When("I list entries for the conversation with channel {string}")
+    public void iListEntriesForTheConversationWithChannel(String channel) {
+        iListEntriesForTheConversationWithParams(null, null, channel, null);
     }
 
-    @io.cucumber.java.en.When("I list memory messages for the conversation with epoch {string}")
-    public void iListMemoryMessagesForTheConversationWithEpoch(String epoch) {
-        iListMessagesForTheConversationWithParams(null, null, "MEMORY", epoch);
+    @io.cucumber.java.en.When("I list memory entries for the conversation with epoch {string}")
+    public void iListMemoryEntriesForTheConversationWithEpoch(String epoch) {
+        iListEntriesForTheConversationWithParams(null, null, "MEMORY", epoch);
     }
 
-    @io.cucumber.java.en.When("I list messages for conversation {string}")
-    public void iListMessagesForConversation(String convId) {
+    @io.cucumber.java.en.When("I list entries for conversation {string}")
+    public void iListEntriesForConversation(String convId) {
         this.conversationId = convId;
-        iListMessagesForTheConversation();
+        iListEntriesForTheConversation();
     }
 
-    @io.cucumber.java.en.When("I list messages for that conversation")
-    public void iListMessagesForThatConversation() {
-        iListMessagesForTheConversation();
+    @io.cucumber.java.en.When("I list entries for that conversation")
+    public void iListEntriesForThatConversation() {
+        iListEntriesForTheConversation();
     }
 
-    private void iListMessagesForTheConversationWithParams(
+    private void iListEntriesForTheConversationWithParams(
             String after, Integer limit, String channel, String epoch) {
         var requestSpec = given();
         requestSpec = authenticateRequest(requestSpec);
@@ -720,11 +753,11 @@ public class StepDefinitions {
         if (epoch != null) {
             request = request.queryParam("epoch", epoch);
         }
-        this.lastResponse = request.get("/v1/conversations/{id}/messages", conversationId);
+        this.lastResponse = request.get("/v1/conversations/{id}/entries", conversationId);
     }
 
-    @io.cucumber.java.en.When("I append a message with content {string} and channel {string}")
-    public void iAppendAMessageWithContentAndChannel(String content, String channel) {
+    @io.cucumber.java.en.When("I append an entry with content {string} and channel {string}")
+    public void iAppendAnEntryWithContentAndChannel(String content, String channel) {
         var requestSpec =
                 given().contentType(MediaType.APPLICATION_JSON)
                         .body(
@@ -735,53 +768,72 @@ public class StepDefinitions {
                                         channel));
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
-                requestSpec.when().post("/v1/conversations/{id}/messages", conversationId);
+                requestSpec.when().post("/v1/conversations/{id}/entries", conversationId);
     }
 
-    @io.cucumber.java.en.When("I try to append a message with content {string}")
-    public void iTryToAppendAMessageWithContent(String content) {
+    @io.cucumber.java.en.When(
+            "I append an entry with content {string} and channel {string} and contentType"
+                    + " {string}")
+    public void iAppendAnEntryWithContentAndChannelAndContentType(
+            String content, String channel, String contentType) {
+        var requestSpec =
+                given().contentType(MediaType.APPLICATION_JSON)
+                        .body(
+                                Map.of(
+                                        "content",
+                                        List.of(Map.of("type", "text", "text", content)),
+                                        "channel",
+                                        channel,
+                                        "contentType",
+                                        contentType));
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse =
+                requestSpec.when().post("/v1/conversations/{id}/entries", conversationId);
+    }
+
+    @io.cucumber.java.en.When("I try to append an entry with content {string}")
+    public void iTryToAppendAnEntryWithContent(String content) {
         var requestSpec =
                 given().contentType(MediaType.APPLICATION_JSON)
                         .body(Map.of("content", List.of(Map.of("type", "text", "text", content))));
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
-                requestSpec.when().post("/v1/conversations/{id}/messages", conversationId);
+                requestSpec.when().post("/v1/conversations/{id}/entries", conversationId);
     }
 
-    @io.cucumber.java.en.And("I append a message to the conversation:")
-    public void iAppendAMessageToTheConversation(String requestBody) {
+    @io.cucumber.java.en.And("I append an entry to the conversation:")
+    public void iAppendAnEntryToTheConversation(String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
-                requestSpec.when().post("/v1/conversations/{id}/messages", conversationId);
+                requestSpec.when().post("/v1/conversations/{id}/entries", conversationId);
     }
 
-    @io.cucumber.java.en.When("I sync memory messages with request:")
-    public void iSyncMemoryMessagesWithRequest(String requestBody) {
+    @io.cucumber.java.en.When("I sync memory entries with request:")
+    public void iSyncMemoryEntriesWithRequest(String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
                 requestSpec
                         .when()
-                        .post("/v1/conversations/{id}/memory/messages/sync", conversationId);
+                        .post("/v1/conversations/{id}/memory/entries/sync", conversationId);
     }
 
-    @io.cucumber.java.en.Then("the sync response should contain {int} messages")
-    public void theSyncResponseShouldContainMessages(int count) {
+    @io.cucumber.java.en.Then("the sync response should contain {int} entries")
+    public void theSyncResponseShouldContainEntries(int count) {
         if (lastResponse == null) {
             throw new AssertionError("No response has been received");
         }
         JsonPath jsonPath = lastResponse.jsonPath();
-        List<Object> messages = jsonPath.getList("messages");
-        if (messages == null) {
+        List<Object> entries = jsonPath.getList("entries");
+        if (entries == null) {
             throw new AssertionError(
-                    "Response does not contain 'messages' field. Response body: "
+                    "Response does not contain 'entries' field. Response body: "
                             + lastResponse.getBody().asString());
         }
-        assertThat(
-                "Sync response should contain " + count + " messages", messages.size(), is(count));
+        assertThat("Sync response should contain " + count + " entries", entries.size(), is(count));
     }
 
     @io.cucumber.java.en.When("I create a summary with request:")
@@ -793,12 +845,12 @@ public class StepDefinitions {
                 requestSpec.when().post("/v1/conversations/{id}/summaries", conversationId);
     }
 
-    @io.cucumber.java.en.When("I search messages with request:")
-    public void iSearchMessagesWithRequest(String requestBody) {
+    @io.cucumber.java.en.When("I search entries with request:")
+    public void iSearchEntriesWithRequest(String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
-        this.lastResponse = requestSpec.when().post("/v1/user/search/messages");
+        this.lastResponse = requestSpec.when().post("/v1/user/search/entries");
     }
 
     @io.cucumber.java.en.Then("the search response should contain at least {int} results")
@@ -806,12 +858,12 @@ public class StepDefinitions {
         lastResponse.then().body("data.size()", greaterThan(minCount - 1));
     }
 
-    @io.cucumber.java.en.When("I search messages for query {string}")
-    public void iSearchMessagesForQuery(String query) {
+    @io.cucumber.java.en.When("I search entries for query {string}")
+    public void iSearchEntriesForQuery(String query) {
         var requestSpec =
                 given().contentType(MediaType.APPLICATION_JSON).body(Map.of("query", query));
         requestSpec = authenticateRequest(requestSpec);
-        this.lastResponse = requestSpec.when().post("/v1/user/search/messages");
+        this.lastResponse = requestSpec.when().post("/v1/user/search/entries");
     }
 
     @io.cucumber.java.en.When("I create a conversation with request:")
@@ -992,29 +1044,29 @@ public class StepDefinitions {
         assertThat("Response body should not contain: " + text, body, not(containsString(text)));
     }
 
-    @io.cucumber.java.en.When("I fork the conversation at message {string}")
-    public void iForkTheConversationAtMessage(String messageId) {
+    @io.cucumber.java.en.When("I fork the conversation at entry {string}")
+    public void iForkTheConversationAtEntry(String entryId) {
         // Fork without a request body (uses empty JSON object)
-        iForkTheConversationAtMessageWithRequest(messageId, "{}");
+        iForkTheConversationAtEntryWithRequest(entryId, "{}");
     }
 
-    @io.cucumber.java.en.When("I fork the conversation at message {string} with request:")
-    public void iForkTheConversationAtMessageWithRequest(String messageId, String requestBody) {
+    @io.cucumber.java.en.When("I fork the conversation at entry {string} with request:")
+    public void iForkTheConversationAtEntryWithRequest(String entryId, String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
-        String renderedMessageId = renderTemplate(messageId);
+        String renderedEntryId = renderTemplate(entryId);
         // Remove quotes if present (from template rendering)
-        if (renderedMessageId.startsWith("\"") && renderedMessageId.endsWith("\"")) {
-            renderedMessageId = renderedMessageId.substring(1, renderedMessageId.length() - 1);
+        if (renderedEntryId.startsWith("\"") && renderedEntryId.endsWith("\"")) {
+            renderedEntryId = renderedEntryId.substring(1, renderedEntryId.length() - 1);
         }
         this.lastResponse =
                 requestSpec
                         .when()
                         .post(
-                                "/v1/conversations/{id}/messages/{mid}/fork",
+                                "/v1/conversations/{id}/entries/{eid}/fork",
                                 conversationId,
-                                renderedMessageId);
+                                renderedEntryId);
         if (lastResponse.getStatusCode() == 201) {
             String id = lastResponse.jsonPath().getString("id");
             if (id != null) {
@@ -1023,29 +1075,26 @@ public class StepDefinitions {
         }
     }
 
-    @io.cucumber.java.en.When("I fork conversation {string} at message {string} with request:")
-    public void iForkConversationAtMessageWithRequest(
-            String convId, String messageId, String requestBody) {
+    @io.cucumber.java.en.When("I fork conversation {string} at entry {string} with request:")
+    public void iForkConversationAtEntryWithRequest(
+            String convId, String entryId, String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
-        String renderedMessageId = renderTemplate(messageId);
+        String renderedEntryId = renderTemplate(entryId);
         // Remove quotes if present (from template rendering)
-        if (renderedMessageId.startsWith("\"") && renderedMessageId.endsWith("\"")) {
-            renderedMessageId = renderedMessageId.substring(1, renderedMessageId.length() - 1);
+        if (renderedEntryId.startsWith("\"") && renderedEntryId.endsWith("\"")) {
+            renderedEntryId = renderedEntryId.substring(1, renderedEntryId.length() - 1);
         }
         this.lastResponse =
                 requestSpec
                         .when()
-                        .post(
-                                "/v1/conversations/{id}/messages/{mid}/fork",
-                                convId,
-                                renderedMessageId);
+                        .post("/v1/conversations/{id}/entries/{eid}/fork", convId, renderedEntryId);
     }
 
-    @io.cucumber.java.en.When("I fork that conversation at message {string} with request:")
-    public void iForkThatConversationAtMessageWithRequest(String messageId, String requestBody) {
-        iForkTheConversationAtMessageWithRequest(messageId, requestBody);
+    @io.cucumber.java.en.When("I fork that conversation at entry {string} with request:")
+    public void iForkThatConversationAtEntryWithRequest(String entryId, String requestBody) {
+        iForkTheConversationAtEntryWithRequest(entryId, requestBody);
     }
 
     @io.cucumber.java.en.When("I list forks for the conversation")
@@ -1345,18 +1394,18 @@ public class StepDefinitions {
         }
     }
 
-    @io.cucumber.java.en.Then("the response should contain an empty list of messages")
-    public void theResponseShouldContainAnEmptyListOfMessages() {
+    @io.cucumber.java.en.Then("the response should contain an empty list of entries")
+    public void theResponseShouldContainAnEmptyListOfEntries() {
         lastResponse.then().body("data", hasSize(0));
     }
 
-    @io.cucumber.java.en.Then("the response should contain {int} messages")
-    public void theResponseShouldContainMessages(int count) {
+    @io.cucumber.java.en.Then("the response should contain {int} entries")
+    public void theResponseShouldContainEntries(int count) {
         lastResponse.then().body("data", hasSize(count));
     }
 
-    @io.cucumber.java.en.Then("the response should contain {int} message")
-    public void theResponseShouldContainMessage(int count) {
+    @io.cucumber.java.en.Then("the response should contain {int} entry")
+    public void theResponseShouldContainEntry(int count) {
         lastResponse.then().body("data", hasSize(count));
     }
 
@@ -1371,15 +1420,15 @@ public class StepDefinitions {
         lastResponse.then().body("data", hasSize(count));
     }
 
-    @io.cucumber.java.en.Then("search result at index {int} should have message content {string}")
-    public void searchResultAtIndexShouldHaveMessageContent(int index, String expectedContent) {
+    @io.cucumber.java.en.Then("search result at index {int} should have entry content {string}")
+    public void searchResultAtIndexShouldHaveEntryContent(int index, String expectedContent) {
         JsonPath jsonPath = lastResponse.jsonPath();
-        String actualContent = jsonPath.getString("data[" + index + "].message.content[0].text");
+        String actualContent = jsonPath.getString("data[" + index + "].entry.content[0].text");
         assertThat(actualContent, is(expectedContent));
     }
 
-    @io.cucumber.java.en.Then("message at index {int} should have content {string}")
-    public void messageAtIndexShouldHaveContent(int index, String expectedContent) {
+    @io.cucumber.java.en.Then("entry at index {int} should have content {string}")
+    public void entryAtIndexShouldHaveContent(int index, String expectedContent) {
         JsonPath jsonPath = lastResponse.jsonPath();
         String actualContent = jsonPath.getString("data[" + index + "].content[0].text");
         assertThat(actualContent, is(expectedContent));
@@ -1390,19 +1439,24 @@ public class StepDefinitions {
         lastResponse.then().body("nextCursor", notNullValue());
     }
 
-    @io.cucumber.java.en.Then("the response should contain the created message")
-    public void theResponseShouldContainTheCreatedMessage() {
+    @io.cucumber.java.en.Then("the response should contain the created entry")
+    public void theResponseShouldContainTheCreatedEntry() {
         lastResponse.then().body("id", notNullValue());
     }
 
-    @io.cucumber.java.en.Then("the message should have content {string}")
-    public void theMessageShouldHaveContent(String expectedContent) {
+    @io.cucumber.java.en.Then("the entry should have content {string}")
+    public void theEntryShouldHaveContent(String expectedContent) {
         lastResponse.then().body("content[0].text", is(expectedContent));
     }
 
-    @io.cucumber.java.en.Then("the message should have channel {string}")
-    public void theMessageShouldHaveChannel(String expectedChannel) {
+    @io.cucumber.java.en.Then("the entry should have channel {string}")
+    public void theEntryShouldHaveChannel(String expectedChannel) {
         lastResponse.then().body("channel", is(expectedChannel.toLowerCase()));
+    }
+
+    @io.cucumber.java.en.Then("the entry should have contentType {string}")
+    public void theEntryShouldHaveContentType(String expectedContentType) {
+        lastResponse.then().body("contentType", is(expectedContentType));
     }
 
     @io.cucumber.java.en.Then("the response should contain error code {string}")
@@ -1463,18 +1517,18 @@ public class StepDefinitions {
         contextVariables.put(variableName, value);
     }
 
-    @io.cucumber.java.en.Then("the gRPC response should contain {int} message")
-    public void theGrpcResponseShouldContainMessage(int count) {
-        assertGrpcMessageCount(count);
+    @io.cucumber.java.en.Then("the gRPC response should contain {int} entry")
+    public void theGrpcResponseShouldContainEntry(int count) {
+        assertGrpcEntryCount(count);
     }
 
-    @io.cucumber.java.en.Then("the gRPC response should contain {int} messages")
-    public void theGrpcResponseShouldContainMessages(int count) {
-        assertGrpcMessageCount(count);
+    @io.cucumber.java.en.Then("the gRPC response should contain {int} entries")
+    public void theGrpcResponseShouldContainEntries(int count) {
+        assertGrpcEntryCount(count);
     }
 
-    @io.cucumber.java.en.Then("gRPC message at index {int} should have content {string}")
-    public void grpcMessageAtIndexShouldHaveContent(int index, String expectedContent) {
+    @io.cucumber.java.en.Then("gRPC entry at index {int} should have content {string}")
+    public void grpcEntryAtIndexShouldHaveContent(int index, String expectedContent) {
         JsonPath jsonPath = ensureGrpcJsonPath();
         String actualContent = jsonPath.getString("data[" + index + "].content[0].text");
         assertThat(actualContent, is(expectedContent));
@@ -1857,19 +1911,20 @@ public class StepDefinitions {
         }
     }
 
-    private void assertGrpcMessageCount(int count) {
+    private void assertGrpcEntryCount(int count) {
         JsonPath jsonPath = ensureGrpcJsonPath();
-        assertThat(jsonPath.getList("messages"), hasSize(count));
+        assertThat(jsonPath.getList("entries"), hasSize(count));
     }
 
     private Message.Builder createGrpcResponseBuilder(String serviceMethod) {
         return switch (serviceMethod) {
-            case "MessagesService/ListMessages" -> ListMessagesResponse.newBuilder();
-            case "MessagesService/AppendMessage" ->
-                    io.github.chirino.memory.grpc.v1.Message.newBuilder();
+            case "EntriesService/ListEntries" -> ListEntriesResponse.newBuilder();
+            case "MessagesService/AppendMessage", "EntriesService/AppendEntry" ->
+                    io.github.chirino.memory.grpc.v1.Entry.newBuilder();
+            case "EntriesService/SyncEntries" -> SyncEntriesResponse.newBuilder();
             case "SearchService/CreateSummary" ->
-                    io.github.chirino.memory.grpc.v1.Message.newBuilder();
-            case "SearchService/SearchMessages" -> SearchMessagesResponse.newBuilder();
+                    io.github.chirino.memory.grpc.v1.Entry.newBuilder();
+            case "SearchService/SearchEntries" -> SearchEntriesResponse.newBuilder();
             case "SystemService/GetHealth" -> HealthResponse.newBuilder();
             case "ConversationsService/ListConversations" -> ListConversationsResponse.newBuilder();
             case "ConversationsService/CreateConversation" -> Conversation.newBuilder();
@@ -1979,7 +2034,7 @@ public class StepDefinitions {
 
         return switch (service) {
             case "SystemService" -> callSystemService(method, metadata, body);
-            case "MessagesService" -> callMessagesService(method, metadata, body);
+            case "MessagesService", "EntriesService" -> callEntriesService(method, metadata, body);
             case "SearchService" -> callSearchService(method, metadata, body);
             case "ConversationsService" -> callConversationsService(method, metadata, body);
             case "ConversationMembershipsService" ->
@@ -2003,39 +2058,39 @@ public class StepDefinitions {
         return stub.getHealth(Empty.newBuilder().build());
     }
 
-    private Message callMessagesService(String method, Metadata metadata, String body)
+    private Message callEntriesService(String method, Metadata metadata, String body)
             throws Exception {
-        var stub = MessagesServiceGrpc.newBlockingStub(grpcChannel);
+        var stub = EntriesServiceGrpc.newBlockingStub(grpcChannel);
         if (metadata != null) {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
         switch (method) {
-            case "ListMessages":
+            case "ListMessages", "ListEntries":
                 {
-                    var requestBuilder = ListMessagesRequest.newBuilder();
+                    var requestBuilder = ListEntriesRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.listMessages(requestBuilder.build());
+                    return stub.listEntries(requestBuilder.build());
                 }
-            case "AppendMessage":
+            case "AppendMessage", "AppendEntry":
                 {
-                    var requestBuilder = AppendMessageRequest.newBuilder();
+                    var requestBuilder = AppendEntryRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.appendMessage(requestBuilder.build());
+                    return stub.appendEntry(requestBuilder.build());
                 }
-            case "SyncMessages":
+            case "SyncMessages", "SyncEntries":
                 {
-                    var requestBuilder = SyncMessagesRequest.newBuilder();
+                    var requestBuilder = SyncEntriesRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.syncMessages(requestBuilder.build());
+                    return stub.syncEntries(requestBuilder.build());
                 }
             default:
-                throw new IllegalArgumentException("Unsupported MessagesService method: " + method);
+                throw new IllegalArgumentException("Unsupported EntriesService method: " + method);
         }
     }
 
@@ -2056,11 +2111,11 @@ public class StepDefinitions {
                 }
             case "SearchMessages":
                 {
-                    var requestBuilder = SearchMessagesRequest.newBuilder();
+                    var requestBuilder = SearchEntriesRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.searchMessages(requestBuilder.build());
+                    return stub.searchEntries(requestBuilder.build());
                 }
             default:
                 throw new IllegalArgumentException("Unsupported SearchService method: " + method);
@@ -2355,10 +2410,10 @@ public class StepDefinitions {
     private record GrpcEndpoint(String host, int port) {}
 
     private void clearRelationalData() {
-        if (messageRepository.isUnsatisfied()) {
+        if (entryRepository.isUnsatisfied()) {
             return;
         }
-        messageRepository.get().deleteAll();
+        entryRepository.get().deleteAll();
         membershipRepository.get().deleteAll();
         ownershipTransferRepository.get().deleteAll();
         conversationRepository.get().deleteAll();
@@ -2366,10 +2421,10 @@ public class StepDefinitions {
     }
 
     private void clearMongoData() {
-        if (mongoMessageRepository.isUnsatisfied()) {
+        if (mongoEntryRepository.isUnsatisfied()) {
             return;
         }
-        mongoMessageRepository.get().deleteAll();
+        mongoEntryRepository.get().deleteAll();
         mongoMembershipRepository.get().deleteAll();
         mongoOwnershipTransferRepository.get().deleteAll();
         mongoConversationRepository.get().deleteAll();
@@ -2638,8 +2693,8 @@ public class StepDefinitions {
         contextVariables.put("conversationOwner", ownerId);
     }
 
-    @io.cucumber.java.en.Given("the conversation owned by {string} has a message {string}")
-    public void theConversationOwnedByHasAMessage(String ownerId, String content) {
+    @io.cucumber.java.en.Given("the conversation owned by {string} has an entry {string}")
+    public void theConversationOwnedByHasAnEntry(String ownerId, String content) {
         // Find the conversation ID for this owner
         String convId = null;
         String ownerVar = ownerId + "ConversationId";
@@ -2653,9 +2708,9 @@ public class StepDefinitions {
                 convId = conversationId;
             }
         }
-        CreateUserMessageRequest request = new CreateUserMessageRequest();
+        CreateUserEntryRequest request = new CreateUserEntryRequest();
         request.setContent(content);
-        memoryStoreSelector.getStore().appendUserMessage(ownerId, convId, request);
+        memoryStoreSelector.getStore().appendUserEntry(ownerId, convId, request);
     }
 
     @io.cucumber.java.en.Given("the conversation owned by {string} is deleted")
@@ -2817,10 +2872,9 @@ public class StepDefinitions {
         JsonPath jsonPath = lastResponse.jsonPath();
         List<Map<String, Object>> results = jsonPath.getList("data");
         for (Map<String, Object> result : results) {
-            Map<String, Object> message = (Map<String, Object>) result.get("message");
-            if (message != null) {
-                Map<String, Object> conversation =
-                        (Map<String, Object>) message.get("conversation");
+            Map<String, Object> entry = (Map<String, Object>) result.get("entry");
+            if (entry != null) {
+                Map<String, Object> conversation = (Map<String, Object>) entry.get("conversation");
                 if (conversation != null) {
                     String ownerUserId = (String) conversation.get("ownerUserId");
                     assertThat(
@@ -3235,18 +3289,18 @@ public class StepDefinitions {
         }
     }
 
-    @io.cucumber.java.en.Given("the conversation has messages")
-    public void theConversationHasMessages() {
+    @io.cucumber.java.en.Given("the conversation has entries")
+    public void theConversationHasEntries() {
         if (conversationId == null) {
             throw new IllegalStateException("No conversation available");
         }
         String userId = currentUserId != null ? currentUserId : "alice";
-        CreateUserMessageRequest request1 = new CreateUserMessageRequest();
-        request1.setContent("Message 1");
-        memoryStoreSelector.getStore().appendUserMessage(userId, conversationId, request1);
-        CreateUserMessageRequest request2 = new CreateUserMessageRequest();
-        request2.setContent("Message 2");
-        memoryStoreSelector.getStore().appendUserMessage(userId, conversationId, request2);
+        CreateUserEntryRequest request1 = new CreateUserEntryRequest();
+        request1.setContent("Entry 1");
+        memoryStoreSelector.getStore().appendUserEntry(userId, conversationId, request1);
+        CreateUserEntryRequest request2 = new CreateUserEntryRequest();
+        request2.setContent("Entry 2");
+        memoryStoreSelector.getStore().appendUserEntry(userId, conversationId, request2);
     }
 
     @io.cucumber.java.en.Given("the conversation is shared with user {string}")

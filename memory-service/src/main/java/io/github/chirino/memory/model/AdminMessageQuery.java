@@ -2,17 +2,17 @@ package io.github.chirino.memory.model;
 
 public class AdminMessageQuery {
 
-    private String afterMessageId;
+    private String afterEntryId;
     private int limit;
-    private MessageChannel channel;
+    private Channel channel;
     private boolean includeDeleted;
 
-    public String getAfterMessageId() {
-        return afterMessageId;
+    public String getAfterEntryId() {
+        return afterEntryId;
     }
 
-    public void setAfterMessageId(String afterMessageId) {
-        this.afterMessageId = afterMessageId;
+    public void setAfterEntryId(String afterEntryId) {
+        this.afterEntryId = afterEntryId;
     }
 
     public int getLimit() {
@@ -23,11 +23,11 @@ public class AdminMessageQuery {
         this.limit = limit;
     }
 
-    public MessageChannel getChannel() {
+    public Channel getChannel() {
         return channel;
     }
 
-    public void setChannel(MessageChannel channel) {
+    public void setChannel(Channel channel) {
         this.channel = channel;
     }
 

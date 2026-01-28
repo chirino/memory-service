@@ -1,13 +1,13 @@
 package io.github.chirino.memory.api;
 
-import io.github.chirino.memory.api.dto.MessageDto;
+import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
-import io.github.chirino.memory.client.model.Message;
-import io.github.chirino.memory.client.model.SearchMessagesRequest;
+import io.github.chirino.memory.client.model.SearchEntriesRequest;
 import io.github.chirino.memory.client.model.SearchResult;
 import io.github.chirino.memory.config.VectorStoreSelector;
-import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.model.Channel;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.VectorStore;
@@ -47,15 +47,15 @@ public class SearchResource {
     }
 
     @POST
-    @Path("/messages")
-    public Response searchMessages(SearchMessagesRequest request) {
+    @Path("/entries")
+    public Response searchEntries(SearchEntriesRequest request) {
         VectorStore vectorStore = vectorStore();
         if (vectorStore == null || !vectorStore.isEnabled()) {
             return vectorStoreUnavailable();
         }
         try {
-            io.github.chirino.memory.api.dto.SearchMessagesRequest internal =
-                    new io.github.chirino.memory.api.dto.SearchMessagesRequest();
+            io.github.chirino.memory.api.dto.SearchEntriesRequest internal =
+                    new io.github.chirino.memory.api.dto.SearchEntriesRequest();
             internal.setQuery(request.getQuery());
             internal.setTopK(request.getTopK());
             internal.setConversationIds(request.getConversationIds());
@@ -103,25 +103,26 @@ public class SearchResource {
             return null;
         }
         SearchResult result = new SearchResult();
-        result.setMessage(toClientMessage(dto.getMessage()));
+        result.setEntry(toClientEntry(dto.getEntry()));
         result.setScore((float) dto.getScore());
         result.setHighlights(dto.getHighlights());
         return result;
     }
 
-    private Message toClientMessage(MessageDto dto) {
+    private Entry toClientEntry(EntryDto dto) {
         if (dto == null) {
             return null;
         }
-        Message result = new Message();
+        Entry result = new Entry();
         result.setId(dto.getId());
         result.setConversationId(dto.getConversationId());
         result.setUserId(dto.getUserId());
-        MessageChannel channel = dto.getChannel();
+        Channel channel = dto.getChannel();
         if (channel != null) {
-            result.setChannel(Message.ChannelEnum.fromString(channel.toValue()));
+            result.setChannel(Entry.ChannelEnum.fromString(channel.toValue()));
         }
         result.setEpoch(dto.getEpoch());
+        result.setContentType(dto.getContentType());
         if (dto.getContent() != null) {
             result.setContent(dto.getContent());
         }

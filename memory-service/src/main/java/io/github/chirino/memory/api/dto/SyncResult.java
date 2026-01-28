@@ -8,7 +8,7 @@ public class SyncResult {
     private Long epoch;
     private boolean noOp;
     private boolean epochIncremented;
-    private List<MessageDto> messages = Collections.emptyList();
+    private List<EntryDto> entries = Collections.emptyList();
 
     public Long getEpoch() {
         return epoch;
@@ -34,11 +34,11 @@ public class SyncResult {
         this.epochIncremented = epochIncremented;
     }
 
-    public List<MessageDto> getMessages() {
-        return messages;
+    public List<EntryDto> getEntries() {
+        return entries;
     }
 
-    public void setMessages(List<MessageDto> messages) {
-        this.messages = messages != null ? messages : Collections.emptyList();
+    public void setEntries(List<EntryDto> entries) {
+        this.entries = entries != null ? entries : Collections.emptyList();
     }
 }

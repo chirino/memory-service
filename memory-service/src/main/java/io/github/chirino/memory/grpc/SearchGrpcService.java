@@ -3,9 +3,9 @@ package io.github.chirino.memory.grpc;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.grpc.v1.CreateSummaryRequest;
-import io.github.chirino.memory.grpc.v1.Message;
-import io.github.chirino.memory.grpc.v1.SearchMessagesRequest;
-import io.github.chirino.memory.grpc.v1.SearchMessagesResponse;
+import io.github.chirino.memory.grpc.v1.Entry;
+import io.github.chirino.memory.grpc.v1.SearchEntriesRequest;
+import io.github.chirino.memory.grpc.v1.SearchEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SearchService;
 import io.github.chirino.memory.vector.VectorStore;
 import io.grpc.Status;
@@ -28,7 +28,7 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
     }
 
     @Override
-    public Uni<SearchMessagesResponse> searchMessages(SearchMessagesRequest request) {
+    public Uni<SearchEntriesResponse> searchEntries(SearchEntriesRequest request) {
         return Uni.createFrom()
                 .item(
                         () -> {
@@ -43,8 +43,8 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                                         .withDescription("Vector store is not available")
                                         .asRuntimeException();
                             }
-                            io.github.chirino.memory.api.dto.SearchMessagesRequest internal =
-                                    new io.github.chirino.memory.api.dto.SearchMessagesRequest();
+                            io.github.chirino.memory.api.dto.SearchEntriesRequest internal =
+                                    new io.github.chirino.memory.api.dto.SearchEntriesRequest();
                             internal.setQuery(request.getQuery());
                             internal.setTopK(request.getTopK() > 0 ? request.getTopK() : 20);
                             if (!request.getConversationIdsList().isEmpty()) {
@@ -56,7 +56,7 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                             }
                             List<SearchResultDto> internalResults =
                                     vectorStore.search(currentUserId(), internal);
-                            return SearchMessagesResponse.newBuilder()
+                            return SearchEntriesResponse.newBuilder()
                                     .addAllResults(
                                             internalResults.stream()
                                                     .map(GrpcDtoMapper::toProto)
@@ -68,7 +68,7 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
     }
 
     @Override
-    public Uni<Message> createSummary(CreateSummaryRequest request) {
+    public Uni<Entry> createSummary(CreateSummaryRequest request) {
         return Uni.createFrom()
                 .item(
                         () -> {
@@ -93,9 +93,9 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                                     new io.github.chirino.memory.api.dto.CreateSummaryRequest();
                             internal.setTitle(request.getTitle());
                             internal.setSummary(request.getSummary());
-                            internal.setUntilMessageId(request.getUntilMessageId());
+                            internal.setUntilEntryId(request.getUntilEntryId());
                             internal.setSummarizedAt(request.getSummarizedAt());
-                            io.github.chirino.memory.api.dto.MessageDto dto =
+                            io.github.chirino.memory.api.dto.EntryDto dto =
                                     store().createSummary(
                                                     request.getConversationId(),
                                                     internal,
@@ -122,7 +122,7 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                     .withDescription("summary is required")
                     .asRuntimeException();
         }
-        if (request.getUntilMessageId() == null || request.getUntilMessageId().isBlank()) {
+        if (request.getUntilEntryId() == null || request.getUntilEntryId().isBlank()) {
             return Status.INVALID_ARGUMENT
                     .withDescription("untilMessageId is required")
                     .asRuntimeException();

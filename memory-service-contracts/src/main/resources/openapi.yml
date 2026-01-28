@@ -5,7 +5,7 @@ info:
   description: |-
     Memory Service for AI agents.
 
-    The service stores all messages exchanged between agents, users, and
+    The service stores all entries exchanged between agents, users, and
     other actors, supports replay and forking of conversations, and exposes
     user-facing and agent-facing APIs. Conversation access is controlled by
     per-user permissions (owner, manager, writer, reader).
@@ -156,22 +156,22 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/conversations/{conversationId}/messages:
+  /v1/conversations/{conversationId}/entries:
     get:
       tags: [Conversations]
-      summary: List conversation messages
+      summary: List conversation entries
       description: |-
-        Returns messages in a conversation, ordered by creation time.
+        Returns entries in a conversation, ordered by creation time.
 
-        The `channel` parameter determines which logical channel of messages
+        The `channel` parameter determines which logical channel of entries
         is returned:
 
         - `history` (default) returns the user-visible conversation between
           users and the agent.
-        - `memory` returns agent memory messages which are typically not
-          shown directly to end users. Memory messages are scoped to the
+        - `memory` returns agent memory entries which are typically not
+          shown directly to end users. Memory entries are scoped to the
           calling client id derived from the API key.
-      operationId: listConversationMessages
+      operationId: listConversationEntries
       parameters:
         - name: conversationId
           in: path
@@ -181,7 +181,7 @@ paths:
         - name: after
           in: query
           required: false
-          description: Cursor for pagination; returns messages after this message id.
+          description: Cursor for pagination; returns entries after this entry id.
           schema:
             type: string
             nullable: true
@@ -195,11 +195,11 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/MessageChannel'
+            $ref: '#/components/schemas/Channel'
             default: history
           description: |-
-            Channel of messages to return. Defaults to `history` for the
-            user-visible conversation; `memory` returns agent memory messages
+            Channel of entries to return. Defaults to `history` for the
+            user-visible conversation; `memory` returns agent memory entries
             scoped to the calling client id.
         - name: epoch
           in: query
@@ -215,7 +215,7 @@ paths:
             calling client id.
       responses:
         '200':
-          description: A list of messages.
+          description: A list of entries.
           content:
             application/json:
               schema:
@@ -224,7 +224,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Message'
+                      $ref: '#/components/schemas/Entry'
                   nextCursor:
                     type: string
                     nullable: true
@@ -236,15 +236,15 @@ paths:
         - BearerAuth: []
     post:
       tags: [Conversations]
-      summary: Append a message
+      summary: Append an entry
       description: |-
-        Appends a new message to the conversation.
+        Appends a new entry to the conversation.
 
         This endpoint is used by both end-user clients and agents.
         The service determines whether the caller is a user or an agent
         based on authentication (for example, API keys or tokens) and
-        stores the message with the appropriate internal role and visibility.
-      operationId: appendConversationMessage
+        stores the entry with the appropriate internal role and visibility.
+      operationId: appendConversationEntry
       parameters:
         - name: conversationId
           in: path
@@ -256,14 +256,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateMessageRequest'
+              $ref: '#/components/schemas/CreateEntryRequest'
       responses:
         '201':
-          description: The created message.
+          description: The created entry.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Message'
+                $ref: '#/components/schemas/Entry'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -271,17 +271,17 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/conversations/{conversationId}/memory/messages/sync:
+  /v1/conversations/{conversationId}/memory/entries/sync:
     post:
       tags: [Conversations]
       summary: Synchronize the agent memory epoch
       description: |-
         Synchronizes the in-memory context for the conversation. The service fails
-        when any message is not targeting the `memory` channel, then compares the
-        provided list to the messages already stored in the latest memory epoch.
+        when any entry is not targeting the `memory` channel, then compares the
+        provided list to the entries already stored in the latest memory epoch.
         If there is no difference it is a no-op, if the list merely appends more
-        messages they are added to the current epoch, otherwise a new epoch is
-        created and all provided messages are stored under the new epoch. Memory
+        entries they are added to the current epoch, otherwise a new epoch is
+        created and all provided entries are stored under the new epoch. Memory
         sync is scoped to the calling client id (from the API key). Requires a
         valid agent API key.
       operationId: syncConversationMemory
@@ -296,14 +296,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SyncMessagesRequest'
+              $ref: '#/components/schemas/SyncEntriesRequest'
       responses:
         '200':
           description: Result of the sync operation.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SyncMessagesResponse'
+                $ref: '#/components/schemas/SyncEntriesResponse'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -311,25 +311,25 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/conversations/{conversationId}/messages/{messageId}/fork:
+  /v1/conversations/{conversationId}/entries/{entryId}/fork:
     post:
       tags: [Conversations]
-      summary: Fork a conversation at a given user message
+      summary: Fork a conversation at a given user entry
       description: |-
         Creates a new conversation that replays history up to just before the selected
-        user message and then diverges starting at that point.
+        user entry and then diverges starting at that point.
 
-        The fork point must be an existing user-authored message; in the new forked
-        conversation that original message is not present and the next user message
+        The fork point must be an existing user-authored entry; in the new forked
+        conversation that original entry is not present and the next user entry
         is supplied by the caller in a follow-up request.
-      operationId: forkConversationAtMessage
+      operationId: forkConversationAtEntry
       parameters:
         - name: conversationId
           in: path
           required: true
           schema:
             type: string
-        - name: messageId
+        - name: entryId
           in: path
           required: true
           schema:
@@ -339,7 +339,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ForkFromMessageRequest'
+              $ref: '#/components/schemas/ForkFromEntryRequest'
       responses:
         '201':
           description: The newly created forked conversation.
@@ -586,20 +586,20 @@ paths:
   # Search
   ############################################################
 
-  /v1/user/search/messages:
+  /v1/user/search/entries:
     post:
       tags: [Search]
       summary: Semantic search across user's conversations
       description: |-
         Performs semantic and/or keyword search across all conversations the user has access to.
         Backed by an internal vector store (pgvector, MongoDB, etc.).
-      operationId: searchMessages
+      operationId: searchEntries
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SearchMessagesRequest'
+              $ref: '#/components/schemas/SearchEntriesRequest'
       responses:
         '200':
           description: Search results.
@@ -620,10 +620,10 @@ paths:
   /v1/conversations/{conversationId}/summaries:
     post:
       tags: [Search]
-      summary: Store a summarization of previous messages
+      summary: Store a summarization of previous entries
       description: |-
-        Stores an internal summarization of previous messages in the conversation.
-        Summary messages are not visible in user-facing message lists.
+        Stores an internal summarization of previous entries in the conversation.
+        Summary entries are not visible in user-facing entry lists.
         Requires a valid agent API key.
       operationId: createConversationSummary
       parameters:
@@ -640,11 +640,11 @@ paths:
               $ref: '#/components/schemas/CreateSummaryRequest'
       responses:
         '201':
-          description: The created summary message.
+          description: The created summary entry.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Message'
+                $ref: '#/components/schemas/Entry'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -729,7 +729,7 @@ components:
         - $ref: '#/components/schemas/ConversationSummary'
         - type: object
           properties:
-            forkedAtMessageId:
+            forkedAtEntryId:
               type: string
               nullable: true
             forkedAtConversationId:
@@ -743,7 +743,7 @@ components:
             updatedAt: "2025-01-10T14:45:12Z"
             lastMessagePreview: "Let's try modeling forks as separate conversations…"
             accessLevel: "owner"
-            forkedAtMessageId: null
+            forkedAtEntryId: null
             forkedAtConversationId: null
 
     CreateConversationRequest:
@@ -776,13 +776,13 @@ components:
 
     ConversationForkSummary:
       type: object
-      description: Summary of a forked conversation originating at a given message.
+      description: Summary of a forked conversation originating at a given entry.
       properties:
         conversationId:
           type: string
-        forkedAtMessageId:
+        forkedAtEntryId:
           type: string
-          description: Message id at which this forked conversation diverged.
+          description: Entry id at which this forked conversation diverged.
         forkedAtConversationId:
           type: string
           nullable: true
@@ -808,7 +808,7 @@ components:
           type: string
           format: date-time
 
-    ForkFromMessageRequest:
+    ForkFromEntryRequest:
       type: object
       properties:
         title:
@@ -816,20 +816,21 @@ components:
           nullable: true
           description: Optional title for the new forked conversation.
 
-    MessageChannel:
+    Channel:
       type: string
-      description: Logical channel of the message within the conversation.
+      description: Logical channel of the entry within the conversation.
       enum:
         - history
         - memory
         - summary
 
-    Message:
+    Entry:
       type: object
       required:
         - id
         - conversationId
         - channel
+        - contentType
         - content
         - createdAt
       properties:
@@ -841,23 +842,28 @@ components:
           type: string
           nullable: true
           description: |-
-            Human user this message is associated with.
-            For history messages authored by a user, this is the sender.
-            For agent messages, this is the user the agent is responding to.
+            Human user this entry is associated with.
+            For history entries authored by a user, this is the sender.
+            For agent entries, this is the user the agent is responding to.
         channel:
-          $ref: '#/components/schemas/MessageChannel'
+          $ref: '#/components/schemas/Channel'
         epoch:
           type: integer
           format: int64
           nullable: true
           description: |-
-            Logical memory epoch this message belongs to.
-            For history messages this is typically null. For memory messages,
+            Logical memory epoch this entry belongs to.
+            For history entries this is typically null. For memory entries,
             the agent increments the epoch when starting a new memory version.
+        contentType:
+          type: string
+          description: |-
+            Describes the schema/format of the content array.
+            Examples: "message", "LC4J", "SpringAI"
         content:
           type: array
           description: |-
-            Opaque, agent-defined message content blocks.
+            Opaque, agent-defined content blocks.
             Different agents may use different schemas; the memory-service
             stores and returns them without interpretation.
           items: {}
@@ -865,74 +871,84 @@ components:
           type: string
           format: date-time
       example:
-        id: "msg_01HF8XJQWXYZ9876ABCD5432"
+        id: "entry_01HF8XJQWXYZ9876ABCD5432"
         conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
         userId: "user_1234"
         channel: "history"
         epoch: null
+        contentType: "message"
         content:
           - type: "text"
             text: "Here is a summary of what we discussed so far…"
         createdAt: "2025-01-10T14:40:12Z"
 
-    CreateMessageRequest:
+    CreateEntryRequest:
       type: object
       required:
+        - contentType
         - content
       properties:
         userId:
           type: string
           nullable: true
           description: |-
-            Human user this message is associated with.
-            For history messages authored by a user, this is the sender.
-            For agent messages, this is the user the agent is responding to.
+            Human user this entry is associated with.
+            For history entries authored by a user, this is the sender.
+            For agent entries, this is the user the agent is responding to.
         channel:
-          $ref: '#/components/schemas/MessageChannel'
+          $ref: '#/components/schemas/Channel'
         epoch:
           type: integer
           format: int64
           nullable: true
           description: |-
-            For memory messages, the epoch the agent wants this message to
+            For memory entries, the epoch the agent wants this entry to
             belong to. The agent increments this when starting a new epoch.
+        contentType:
+          type: string
+          description: |-
+            Describes the schema/format of the content array.
+            Examples: "message", "LC4J", "SpringAI"
         content:
           type: array
           items: {}
       example:
-        senderId: "user_1234"
+        userId: "user_1234"
         channel: "history"
+        contentType: "message"
         content:
           - type: "text"
             text: "Based on your past chats, here are three possible approaches…"
 
-    SyncMessagesRequest:
+    SyncEntriesRequest:
       type: object
       required:
-        - messages
+        - entries
       properties:
-        messages:
+        entries:
           type: array
           description: |-
             The desired memory epoch contents. Each entry must include the
             `memory` channel and should match the ordering that the agent expects to
             see replayed; only the agent may call this endpoint.
           items:
-            $ref: '#/components/schemas/CreateMessageRequest'
+            $ref: '#/components/schemas/CreateEntryRequest'
       example:
-        messages:
+        entries:
           - userId: "user_1234"
             channel: "memory"
+            contentType: "LC4J"
             content:
               - type: "text"
                 text: "The user asked about memory sync."
           - userId: "user_1234"
             channel: "memory"
+            contentType: "LC4J"
             content:
               - type: "text"
                 text: "I learned that child steps matter."
 
-    SyncMessagesResponse:
+    SyncEntriesResponse:
       type: object
       properties:
         epoch:
@@ -946,21 +962,22 @@ components:
         epochIncremented:
           type: boolean
           description: True when the provided list diverged and a new epoch was started.
-        messages:
+        entries:
           type: array
-          description: List of messages that were appended during this sync.
+          description: List of entries that were appended during this sync.
           items:
-            $ref: '#/components/schemas/Message'
+            $ref: '#/components/schemas/Entry'
       example:
         epoch: 5
         noOp: false
         epochIncremented: true
-        messages:
-          - id: "msg_01HF8XJQWXYZ9876ABCD5432"
+        entries:
+          - id: "entry_01HF8XJQWXYZ9876ABCD5432"
             conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
             userId: "agent_memory"
             channel: "memory"
             epoch: 5
+            contentType: "LC4J"
             content:
               - type: "text"
                 text: "Updated memory after re-sync."
@@ -971,7 +988,7 @@ components:
       required:
         - title
         - summary
-        - untilMessageId
+        - untilEntryId
         - summarizedAt
       properties:
         title:
@@ -980,7 +997,7 @@ components:
         summary:
           type: string
           description: Summary text.
-        untilMessageId:
+        untilEntryId:
           type: string
           description: Highest message id covered by the summary (inclusive).
         summarizedAt:
@@ -990,10 +1007,10 @@ components:
       example:
         title: "Conversation forking design"
         summary: "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch."
-        untilMessageId: "msg_01HF8XJQWXYZ9876ABCD5431"
+        untilEntryId: "msg_01HF8XJQWXYZ9876ABCD5431"
         summarizedAt: "2024-05-01T12:34:56Z"
 
-    SearchMessagesRequest:
+    SearchEntriesRequest:
       type: object
       required:
         - query
@@ -1012,20 +1029,20 @@ components:
         before:
           type: string
           nullable: true
-          description: Optional upper bound message id for temporal filtering.
+          description: Optional upper bound entry id for temporal filtering.
       example:
         query: "summary of memory service design decisions"
         topK: 5
         conversationIds:
           - "conv_01HF8XH1XABCD1234EFGH5678"
           - "conv_01HF8XH1XABCD1234EFGH5679"
-        before: "msg_01HF8XJQWXYZ9876ABCD5431"
+        before: "entry_01HF8XJQWXYZ9876ABCD5431"
 
     SearchResult:
       type: object
       properties:
-        message:
-          $ref: '#/components/schemas/Message'
+        entry:
+          $ref: '#/components/schemas/Entry'
         score:
           type: number
           format: float
@@ -1033,16 +1050,15 @@ components:
           type: string
           nullable: true
       example:
-        message:
-          id: "msg_01HF8XJQWXYZ9876ABCD5430"
+        entry:
+          id: "entry_01HF8XJQWXYZ9876ABCD5430"
           conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
-          role: "user"
-          visibility: "user"
+          userId: "user_1234"
+          channel: "history"
+          contentType: "message"
           content:
             - type: "text"
               text: "Help me design a memory service for my agent."
-          metadata:
-            source: "search"
           createdAt: "2025-01-10T14:32:05Z"
         score: 0.93
         highlights: "design a memory service for my agent"

@@ -1,15 +1,15 @@
-Feature: Messages gRPC API
+Feature: Entries gRPC API
   As a client of the memory service
-  I want to manage messages via gRPC
+  I want to manage entries via gRPC
   So that I can store and retrieve conversation history using gRPC
 
   Background:
     Given I am authenticated as user "alice"
     And I have a conversation with title "Test Conversation"
-    And the conversation has a message "Hello from Alice"
+    And the conversation has an entry "Hello from Alice"
 
-  Scenario: List messages via gRPC
-    When I send gRPC request "MessagesService/ListMessages" with body:
+  Scenario: List entries via gRPC
+    When I send gRPC request "EntriesService/ListEntries" with body:
     """
     conversation_id: "${conversationId}"
     channel: HISTORY
@@ -18,20 +18,21 @@ Feature: Messages gRPC API
     }
     """
     Then the gRPC response should not have an error
-    And set "messageId" to the gRPC response field "messages[0].id"
+    And set "entryId" to the gRPC response field "entries[0].id"
     And the gRPC response text should match text proto:
     """
-    messages {
+    entries {
       conversation_id: "${conversationId}"
       user_id: "alice"
       channel: HISTORY
+      content_type: "message"
     }
     """
 
-  Scenario: List messages with pagination via gRPC
+  Scenario: List entries with pagination via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has 5 messages
-    When I send gRPC request "MessagesService/ListMessages" with body:
+    And the conversation has 5 entries
+    When I send gRPC request "EntriesService/ListEntries" with body:
     """
     conversation_id: "${conversationId}"
     channel: HISTORY
@@ -40,24 +41,25 @@ Feature: Messages gRPC API
     }
     """
     Then the gRPC response should not have an error
-    And the gRPC response should contain 2 messages
+    And the gRPC response should contain 2 entries
     And the gRPC response field "pageInfo.nextPageToken" should not be null
     And the gRPC response text should match text proto:
     """
-    messages {
+    entries {
       conversation_id: "${conversationId}"
       channel: HISTORY
+      content_type: "message"
     }
     page_info {
       next_page_token: "${response.body.pageInfo.nextPageToken}"
     }
     """
 
-  Scenario: List messages with channel filter via gRPC
+  Scenario: List entries with channel filter via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has a message "Memory message" in channel "MEMORY"
-    And the conversation has a message "History message" in channel "HISTORY"
-    When I send gRPC request "MessagesService/ListMessages" with body:
+    And the conversation has an entry "Memory entry" in channel "MEMORY" with contentType "test.v1"
+    And the conversation has an entry "History entry" in channel "HISTORY"
+    When I send gRPC request "EntriesService/ListEntries" with body:
     """
     conversation_id: "${conversationId}"
     channel: MEMORY
@@ -66,20 +68,21 @@ Feature: Messages gRPC API
     }
     """
     Then the gRPC response should not have an error
-    And the gRPC response should contain 1 message
+    And the gRPC response should contain 1 entry
     And the gRPC response text should match text proto:
     """
-    messages {
+    entries {
       conversation_id: "${conversationId}"
       channel: MEMORY
+      content_type: "test.v1"
     }
     """
 
-  Scenario: Agent can filter memory messages by epoch via gRPC
+  Scenario: Agent can filter memory entries by epoch via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has a memory message "Epoch One" with epoch 1
-    And the conversation has a memory message "Epoch Two" with epoch 2
-    When I send gRPC request "MessagesService/ListMessages" with body:
+    And the conversation has a memory entry "Epoch One" with epoch 1 and contentType "test.v1"
+    And the conversation has a memory entry "Epoch Two" with epoch 2 and contentType "test.v1"
+    When I send gRPC request "EntriesService/ListEntries" with body:
     """
     conversation_id: "${conversationId}"
     channel: MEMORY
@@ -89,17 +92,18 @@ Feature: Messages gRPC API
     }
     """
     Then the gRPC response should not have an error
-    And the gRPC response should contain 1 message
-    And the gRPC response field "messages[0].content[0].text" should be "Epoch One"
+    And the gRPC response should contain 1 entry
+    And the gRPC response field "entries[0].content[0].text" should be "Epoch One"
 
-  Scenario: Sync memory messages via gRPC is no-op when there are no changes
+  Scenario: Sync memory entries via gRPC is no-op when there are no changes
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has a memory message "Stable gRPC epoch" with epoch 1
-    When I send gRPC request "MessagesService/SyncMessages" with body:
+    And the conversation has a memory entry "Stable gRPC epoch" with epoch 1 and contentType "test.v1"
+    When I send gRPC request "EntriesService/SyncEntries" with body:
     """
     conversation_id: "${conversationId}"
-    messages {
+    entries {
       channel: MEMORY
+      content_type: "test.v1"
       content {
         struct_value {
           fields {
@@ -122,18 +126,19 @@ Feature: Messages gRPC API
     And the gRPC response field "epoch" should be "1"
     And the gRPC response field "noOp" should be true
     And the gRPC response field "epochIncremented" should be false
-    And the gRPC response should contain 0 messages
+    And the gRPC response should contain 0 entries
 
-  Scenario: Sync memory messages via gRPC creates a new epoch when history diverges
+  Scenario: Sync memory entries via gRPC creates a new epoch when history diverges
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has a memory message "Original epoch message" with epoch 1
-    When I send gRPC request "MessagesService/SyncMessages" with body:
+    And the conversation has a memory entry "Original epoch entry" with epoch 1 and contentType "test.v1"
+    When I send gRPC request "EntriesService/SyncEntries" with body:
     """
     conversation_id: "${conversationId}"
-    messages {
+    entries {
       channel: MEMORY
+      content_type: "test.v1"
       content {
-        string_value: "Updated epoch message"
+        string_value: "Updated epoch entry"
       }
     }
     """
@@ -141,17 +146,18 @@ Feature: Messages gRPC API
     And the gRPC response field "epoch" should be "2"
     And the gRPC response field "noOp" should be false
     And the gRPC response field "epochIncremented" should be true
-    And the gRPC response should contain 1 message
-    And the gRPC response field "messages[0].content[0]" should be "Updated epoch message"
+    And the gRPC response should contain 1 entry
+    And the gRPC response field "entries[0].content[0]" should be "Updated epoch entry"
 
-  Scenario: Append message requires API key via gRPC
+  Scenario: Append entry requires API key via gRPC
     Given I am authenticated as user "alice"
     And the conversation exists
-    When I send gRPC request "MessagesService/AppendMessage" with body:
+    When I send gRPC request "EntriesService/AppendEntry" with body:
     """
     conversation_id: "${conversationId}"
-    message {
+    entry {
       user_id: "alice"
+      content_type: "message"
       content {
         string_value: "hi"
       }
@@ -159,17 +165,18 @@ Feature: Messages gRPC API
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
-  Scenario: Agent can append message via gRPC
+  Scenario: Agent can append entry via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists
-    When I send gRPC request "MessagesService/AppendMessage" with body:
+    When I send gRPC request "EntriesService/AppendEntry" with body:
     """
     conversation_id: "${conversationId}"
-    message {
+    entry {
       user_id: "alice"
       channel: MEMORY
+      content_type: "test.v1"
       content {
-        string_value: "Agent message via gRPC"
+        string_value: "Agent entry via gRPC"
       }
     }
     """
@@ -177,26 +184,29 @@ Feature: Messages gRPC API
     And the gRPC response field "id" should not be null
     And the gRPC response field "conversationId" should be "${conversationId}"
     And the gRPC response field "channel" should be "MEMORY"
+    And the gRPC response field "contentType" should be "test.v1"
     And the gRPC response text should match text proto:
     """
     id: "${response.body.id}"
     conversation_id: "${conversationId}"
     user_id: "alice"
     channel: MEMORY
+    content_type: "test.v1"
     content {
-      string_value: "Agent message via gRPC"
+      string_value: "Agent entry via gRPC"
     }
     """
 
-  Scenario: Agent can append message with multiple content blocks via gRPC
+  Scenario: Agent can append entry with multiple content blocks via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists
-    When I send gRPC request "MessagesService/AppendMessage" with body:
+    When I send gRPC request "EntriesService/AppendEntry" with body:
     """
     conversation_id: "${conversationId}"
-    message {
+    entry {
       user_id: "alice"
       channel: HISTORY
+      content_type: "message"
       content {
         string_value: "First part"
       }
@@ -208,3 +218,4 @@ Feature: Messages gRPC API
     Then the gRPC response should not have an error
     And the gRPC response field "id" should not be null
     And the gRPC response field "channel" should be "HISTORY"
+    And the gRPC response field "contentType" should be "message"

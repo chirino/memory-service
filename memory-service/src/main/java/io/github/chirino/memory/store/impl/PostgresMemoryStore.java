@@ -8,31 +8,31 @@ import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateSummaryRequest;
-import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
-import io.github.chirino.memory.api.dto.ForkFromMessageRequest;
-import io.github.chirino.memory.api.dto.MessageDto;
-import io.github.chirino.memory.api.dto.PagedMessages;
-import io.github.chirino.memory.api.dto.SearchMessagesRequest;
+import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
+import io.github.chirino.memory.api.dto.EntryDto;
+import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
+import io.github.chirino.memory.api.dto.PagedEntries;
+import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
 import io.github.chirino.memory.model.AdminSearchQuery;
-import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.model.Channel;
 import io.github.chirino.memory.persistence.entity.ConversationEntity;
 import io.github.chirino.memory.persistence.entity.ConversationGroupEntity;
 import io.github.chirino.memory.persistence.entity.ConversationMembershipEntity;
 import io.github.chirino.memory.persistence.entity.ConversationOwnershipTransferEntity;
-import io.github.chirino.memory.persistence.entity.MessageEntity;
+import io.github.chirino.memory.persistence.entity.EntryEntity;
 import io.github.chirino.memory.persistence.repo.ConversationGroupRepository;
 import io.github.chirino.memory.persistence.repo.ConversationMembershipRepository;
 import io.github.chirino.memory.persistence.repo.ConversationOwnershipTransferRepository;
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
-import io.github.chirino.memory.persistence.repo.MessageRepository;
+import io.github.chirino.memory.persistence.repo.EntryRepository;
 import io.github.chirino.memory.persistence.repo.TaskRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
@@ -73,7 +73,7 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Inject ConversationMembershipRepository membershipRepository;
 
-    @Inject MessageRepository messageRepository;
+    @Inject EntryRepository entryRepository;
 
     @Inject ConversationOwnershipTransferRepository ownershipTransferRepository;
 
@@ -131,7 +131,7 @@ public class PostgresMemoryStore implements MemoryStore {
             List<ConversationEntity> roots =
                     conversationRepository
                             .find(
-                                    "conversationGroup.id in ?1 and forkedAtMessageId is null and"
+                                    "conversationGroup.id in ?1 and forkedAtEntryId is null and"
                                         + " forkedAtConversationId is null and deletedAt IS NULL"
                                         + " and conversationGroup.deletedAt IS NULL",
                                     accessByGroup.keySet())
@@ -250,8 +250,8 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public MessageDto appendUserMessage(
-            String userId, String conversationId, CreateUserMessageRequest request) {
+    public EntryDto appendUserEntry(
+            String userId, String conversationId, CreateUserEntryRequest request) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
 
@@ -260,7 +260,7 @@ public class PostgresMemoryStore implements MemoryStore {
             conversation = new ConversationEntity();
             conversation.setId(cid);
             conversation.setOwnerUserId(userId);
-            String inferredTitle = inferTitleFromUserMessage(request);
+            String inferredTitle = inferTitleFromUserEntry(request);
             conversation.setTitle(encryptTitle(inferredTitle));
             conversation.setMetadata(Collections.emptyMap());
             ConversationGroupEntity conversationGroup =
@@ -282,19 +282,20 @@ public class PostgresMemoryStore implements MemoryStore {
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);
         }
 
-        MessageEntity message = new MessageEntity();
-        message.setConversation(conversation);
-        message.setUserId(userId);
-        message.setChannel(io.github.chirino.memory.model.MessageChannel.HISTORY);
-        message.setEpoch(null);
-        message.setContent(encryptContent(toContentBlocksFromUser(request.getContent())));
-        message.setConversationGroupId(conversation.getConversationGroup().getId());
+        EntryEntity entry = new EntryEntity();
+        entry.setConversation(conversation);
+        entry.setUserId(userId);
+        entry.setChannel(Channel.HISTORY);
+        entry.setEpoch(null);
+        entry.setContentType("message");
+        entry.setContent(encryptContent(toContentBlocksFromUser(request.getContent())));
+        entry.setConversationGroupId(conversation.getConversationGroup().getId());
         OffsetDateTime createdAt = OffsetDateTime.now();
-        message.setCreatedAt(createdAt);
-        messageRepository.persist(message);
+        entry.setCreatedAt(createdAt);
+        entryRepository.persist(entry);
         conversationRepository.update(
                 "updatedAt = ?1 where id = ?2", createdAt, conversation.getId());
-        return toMessageDto(message);
+        return toEntryDto(entry);
     }
 
     @Override
@@ -365,12 +366,9 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public ConversationDto forkConversationAtMessage(
-            String userId,
-            String conversationId,
-            String messageId,
-            ForkFromMessageRequest request) {
-        // Create a new fork conversation without copying messages.
+    public ConversationDto forkConversationAtEntry(
+            String userId, String conversationId, String entryId, ForkFromEntryRequest request) {
+        // Create a new fork conversation without copying entries.
         UUID originalId = UUID.fromString(conversationId);
         ConversationEntity originalEntity =
                 conversationRepository
@@ -382,26 +380,26 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID groupId = originalEntity.getConversationGroup().getId();
         ensureHasAccess(groupId, userId, AccessLevel.WRITER);
 
-        MessageEntity target =
-                messageRepository
-                        .findByIdOptional(UUID.fromString(messageId))
-                        .orElseThrow(() -> new ResourceNotFoundException("message", messageId));
+        EntryEntity target =
+                entryRepository
+                        .findByIdOptional(UUID.fromString(entryId))
+                        .orElseThrow(() -> new ResourceNotFoundException("entry", entryId));
         if (target.getConversation() == null
                 || !originalId.equals(target.getConversation().getId())) {
-            throw new ResourceNotFoundException("message", messageId);
+            throw new ResourceNotFoundException("entry", entryId);
         }
-        if (target.getChannel() != MessageChannel.HISTORY) {
-            throw new AccessDeniedException("Forking is only allowed for history messages");
+        if (target.getChannel() != Channel.HISTORY) {
+            throw new AccessDeniedException("Forking is only allowed for history entries");
         }
 
-        MessageEntity previous =
-                messageRepository
+        EntryEntity previous =
+                entryRepository
                         .find(
-                                "from MessageEntity m where m.conversation.id = ?1 and m.channel ="
-                                    + " ?2 and (m.createdAt < ?3 or (m.createdAt = ?3 and m.id <"
-                                    + " ?4)) order by m.createdAt desc, m.id desc",
+                                "from EntryEntity m where m.conversation.id = ?1 and m.channel = ?2"
+                                    + " and (m.createdAt < ?3 or (m.createdAt = ?3 and m.id < ?4))"
+                                    + " order by m.createdAt desc, m.id desc",
                                 originalId,
-                                MessageChannel.HISTORY,
+                                Channel.HISTORY,
                                 target.getCreatedAt(),
                                 target.getId())
                         .firstResult();
@@ -417,7 +415,7 @@ public class PostgresMemoryStore implements MemoryStore {
         forkEntity.setMetadata(Collections.emptyMap());
         forkEntity.setConversationGroup(originalEntity.getConversationGroup());
         forkEntity.setForkedAtConversationId(originalEntity.getId());
-        forkEntity.setForkedAtMessageId(previousId);
+        forkEntity.setForkedAtEntryId(previousId);
         conversationRepository.persist(forkEntity);
 
         return toConversationDto(
@@ -454,9 +452,9 @@ public class PostgresMemoryStore implements MemoryStore {
             ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
             dto.setConversationId(candidate.getId().toString());
             dto.setConversationGroupId(groupId.toString());
-            dto.setForkedAtMessageId(
-                    candidate.getForkedAtMessageId() != null
-                            ? candidate.getForkedAtMessageId().toString()
+            dto.setForkedAtEntryId(
+                    candidate.getForkedAtEntryId() != null
+                            ? candidate.getForkedAtEntryId().toString()
                             : null);
             dto.setForkedAtConversationId(
                     candidate.getForkedAtConversationId() != null
@@ -490,45 +488,44 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public PagedMessages getMessages(
+    public PagedEntries getEntries(
             String userId,
             String conversationId,
-            String afterMessageId,
+            String afterEntryId,
             int limit,
-            MessageChannel channel,
+            Channel channel,
             MemoryEpochFilter epochFilter,
             String clientId) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
         if (conversation == null) {
-            PagedMessages empty = new PagedMessages();
+            PagedEntries empty = new PagedEntries();
             empty.setConversationId(conversationId);
-            empty.setMessages(Collections.emptyList());
+            empty.setEntries(Collections.emptyList());
             empty.setNextCursor(null);
             return empty;
         }
         UUID groupId = conversation.getConversationGroup().getId();
         ensureHasAccess(groupId, userId, AccessLevel.READER);
-        List<MessageEntity> messages;
-        if (channel == MessageChannel.MEMORY) {
-            messages = fetchMemoryMessages(cid, afterMessageId, limit, epochFilter, clientId);
+        List<EntryEntity> entries;
+        if (channel == Channel.MEMORY) {
+            entries = fetchMemoryEntries(cid, afterEntryId, limit, epochFilter, clientId);
         } else {
-            messages =
-                    messageRepository.listByChannel(cid, afterMessageId, limit, channel, clientId);
+            entries = entryRepository.listByChannel(cid, afterEntryId, limit, channel, clientId);
         }
-        PagedMessages page = new PagedMessages();
+        PagedEntries page = new PagedEntries();
         page.setConversationId(conversationId);
-        List<MessageDto> dtos = messages.stream().map(this::toMessageDto).toList();
-        page.setMessages(dtos);
+        List<EntryDto> dtos = entries.stream().map(this::toEntryDto).toList();
+        page.setEntries(dtos);
         String nextCursor =
                 dtos.size() == limit && !dtos.isEmpty() ? dtos.get(dtos.size() - 1).getId() : null;
         page.setNextCursor(nextCursor);
         return page;
     }
 
-    private List<MessageEntity> fetchMemoryMessages(
+    private List<EntryEntity> fetchMemoryEntries(
             UUID conversationId,
-            String afterMessageId,
+            String afterEntryId,
             int limit,
             MemoryEpochFilter epochFilter,
             String clientId) {
@@ -538,31 +535,30 @@ public class PostgresMemoryStore implements MemoryStore {
         MemoryEpochFilter filter = epochFilter != null ? epochFilter : MemoryEpochFilter.latest();
         return switch (filter.getMode()) {
             case ALL ->
-                    messageRepository.listByChannel(
-                            conversationId, afterMessageId, limit, MessageChannel.MEMORY, clientId);
+                    entryRepository.listByChannel(
+                            conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
             case LATEST -> {
-                Long latestEpoch =
-                        messageRepository.findLatestMemoryEpoch(conversationId, clientId);
-                // If no messages with epochs exist, list all memory messages
+                Long latestEpoch = entryRepository.findLatestMemoryEpoch(conversationId, clientId);
+                // If no entries with epochs exist, list all memory entries
                 if (latestEpoch == null) {
-                    yield messageRepository.listByChannel(
-                            conversationId, afterMessageId, limit, MessageChannel.MEMORY, clientId);
+                    yield entryRepository.listByChannel(
+                            conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
                 }
-                yield messageRepository.listMemoryMessagesByEpoch(
-                        conversationId, afterMessageId, limit, latestEpoch, clientId);
+                yield entryRepository.listMemoryEntriesByEpoch(
+                        conversationId, afterEntryId, limit, latestEpoch, clientId);
             }
             case EPOCH ->
-                    messageRepository.listMemoryMessagesByEpoch(
-                            conversationId, afterMessageId, limit, filter.getEpoch(), clientId);
+                    entryRepository.listMemoryEntriesByEpoch(
+                            conversationId, afterEntryId, limit, filter.getEpoch(), clientId);
         };
     }
 
     @Override
     @Transactional
-    public List<MessageDto> appendAgentMessages(
+    public List<EntryDto> appendAgentEntries(
             String userId,
             String conversationId,
-            List<CreateMessageRequest> messages,
+            List<CreateEntryRequest> entries,
             String clientId) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
@@ -572,7 +568,7 @@ public class PostgresMemoryStore implements MemoryStore {
             conversation = new ConversationEntity();
             conversation.setId(cid);
             conversation.setOwnerUserId(userId);
-            String inferredTitle = inferTitleFromMessages(messages);
+            String inferredTitle = inferTitleFromEntries(entries);
             conversation.setTitle(encryptTitle(inferredTitle));
             conversation.setMetadata(Collections.emptyMap());
             ConversationGroupEntity conversationGroup =
@@ -596,29 +592,30 @@ public class PostgresMemoryStore implements MemoryStore {
 
         // Make conversation effectively final for lambda
         OffsetDateTime latestHistoryTimestamp = null;
-        List<MessageDto> created = new ArrayList<>(messages.size());
-        for (CreateMessageRequest req : messages) {
-            MessageEntity entity = new MessageEntity();
+        List<EntryDto> created = new ArrayList<>(entries.size());
+        for (CreateEntryRequest req : entries) {
+            EntryEntity entity = new EntryEntity();
             entity.setConversation(conversation);
             entity.setUserId(req.getUserId());
             entity.setClientId(clientId);
             if (req.getChannel() != null) {
                 entity.setChannel(
-                        io.github.chirino.memory.model.MessageChannel.fromString(
+                        io.github.chirino.memory.model.Channel.fromString(
                                 req.getChannel().value()));
             } else {
-                entity.setChannel(io.github.chirino.memory.model.MessageChannel.MEMORY);
+                entity.setChannel(io.github.chirino.memory.model.Channel.MEMORY);
             }
             entity.setEpoch(req.getEpoch());
+            entity.setContentType(req.getContentType() != null ? req.getContentType() : "message");
             entity.setContent(encryptContent(req.getContent()));
             entity.setConversationGroupId(conversation.getConversationGroup().getId());
             OffsetDateTime createdAt = OffsetDateTime.now();
             entity.setCreatedAt(createdAt);
-            messageRepository.persist(entity);
-            if (entity.getChannel() == MessageChannel.HISTORY) {
+            entryRepository.persist(entity);
+            if (entity.getChannel() == Channel.HISTORY) {
                 latestHistoryTimestamp = createdAt;
             }
-            created.add(toMessageDto(entity));
+            created.add(toEntryDto(entity));
         }
         if (latestHistoryTimestamp != null) {
             conversationRepository.update(
@@ -629,87 +626,86 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public SyncResult syncAgentMessages(
+    public SyncResult syncAgentEntries(
             String userId,
             String conversationId,
-            List<CreateMessageRequest> messages,
+            List<CreateEntryRequest> entries,
             String clientId) {
-        validateSyncMessages(messages);
+        validateSyncEntries(entries);
         UUID cid = UUID.fromString(conversationId);
-        Long latestEpoch = messageRepository.findLatestMemoryEpoch(cid, clientId);
-        List<MessageDto> latestEpochMessages =
+        Long latestEpoch = entryRepository.findLatestMemoryEpoch(cid, clientId);
+        List<EntryDto> latestEpochEntries =
                 latestEpoch != null
-                        ? messageRepository
-                                .listMemoryMessagesByEpoch(cid, latestEpoch, clientId)
+                        ? entryRepository
+                                .listMemoryEntriesByEpoch(cid, latestEpoch, clientId)
                                 .stream()
-                                .map(this::toMessageDto)
+                                .map(this::toEntryDto)
                                 .collect(Collectors.toList())
                         : Collections.emptyList();
 
         List<MemorySyncHelper.MessageContent> existing =
-                MemorySyncHelper.fromDtos(latestEpochMessages);
-        List<MemorySyncHelper.MessageContent> incoming = MemorySyncHelper.fromRequests(messages);
+                MemorySyncHelper.fromDtos(latestEpochEntries);
+        List<MemorySyncHelper.MessageContent> incoming = MemorySyncHelper.fromRequests(entries);
 
         SyncResult result = new SyncResult();
-        result.setMessages(Collections.emptyList());
+        result.setEntries(Collections.emptyList());
         result.setEpoch(latestEpoch);
 
-        // If no existing messages and incoming is empty, that's a no-op (shouldn't happen due to
+        // If no existing entries and incoming is empty, that's a no-op (shouldn't happen due to
         // validation)
         if (existing.isEmpty() && incoming.isEmpty()) {
             result.setNoOp(true);
             return result;
         }
 
-        // If existing messages match incoming exactly, it's a no-op
+        // If existing entries match incoming exactly, it's a no-op
         if (!existing.isEmpty() && existing.equals(incoming)) {
             result.setNoOp(true);
             return result;
         }
 
-        // If incoming is a prefix extension of existing (only adding more messages), append to
+        // If incoming is a prefix extension of existing (only adding more entries), append to
         // current epoch
         if (!existing.isEmpty()
                 && incoming.size() > existing.size()
                 && MemorySyncHelper.isPrefix(existing, incoming)) {
-            List<CreateMessageRequest> delta =
+            List<CreateEntryRequest> delta =
                     MemorySyncHelper.withEpoch(
-                            messages.subList(existing.size(), messages.size()), latestEpoch);
-            List<MessageDto> appended =
-                    appendAgentMessages(userId, conversationId, delta, clientId);
-            result.setMessages(appended);
+                            entries.subList(existing.size(), entries.size()), latestEpoch);
+            List<EntryDto> appended = appendAgentEntries(userId, conversationId, delta, clientId);
+            result.setEntries(appended);
             result.setEpochIncremented(false);
             result.setNoOp(false);
             return result;
         }
 
-        // Otherwise, create a new epoch with all incoming messages
+        // Otherwise, create a new epoch with all incoming entries
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
-        List<CreateMessageRequest> toAppend = MemorySyncHelper.withEpoch(messages, nextEpoch);
-        List<MessageDto> appended = appendAgentMessages(userId, conversationId, toAppend, clientId);
+        List<CreateEntryRequest> toAppend = MemorySyncHelper.withEpoch(entries, nextEpoch);
+        List<EntryDto> appended = appendAgentEntries(userId, conversationId, toAppend, clientId);
         result.setEpoch(nextEpoch);
-        result.setMessages(appended);
+        result.setEntries(appended);
         result.setEpochIncremented(true);
         result.setNoOp(false);
         return result;
     }
 
-    private void validateSyncMessages(List<CreateMessageRequest> messages) {
-        if (messages == null || messages.isEmpty()) {
-            throw new IllegalArgumentException("messages are required");
+    private void validateSyncEntries(List<CreateEntryRequest> entries) {
+        if (entries == null || entries.isEmpty()) {
+            throw new IllegalArgumentException("entries are required");
         }
-        for (CreateMessageRequest message : messages) {
-            if (message == null
-                    || message.getChannel() == null
-                    || message.getChannel() != CreateMessageRequest.ChannelEnum.MEMORY) {
-                throw new IllegalArgumentException("all sync messages must target memory channel");
+        for (CreateEntryRequest entry : entries) {
+            if (entry == null
+                    || entry.getChannel() == null
+                    || entry.getChannel() != CreateEntryRequest.ChannelEnum.MEMORY) {
+                throw new IllegalArgumentException("all sync entries must target memory channel");
             }
         }
     }
 
     @Override
     @Transactional
-    public MessageDto createSummary(
+    public EntryDto createSummary(
             String conversationId, CreateSummaryRequest request, String clientId) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation =
@@ -720,15 +716,16 @@ public class PostgresMemoryStore implements MemoryStore {
                                         new ResourceNotFoundException(
                                                 "conversation", conversationId));
 
-        MessageEntity summaryMessage = new MessageEntity();
+        EntryEntity summaryMessage = new EntryEntity();
         summaryMessage.setConversation(conversation);
         summaryMessage.setUserId(null);
         summaryMessage.setClientId(clientId);
-        summaryMessage.setChannel(io.github.chirino.memory.model.MessageChannel.SUMMARY);
+        summaryMessage.setChannel(io.github.chirino.memory.model.Channel.SUMMARY);
         summaryMessage.setEpoch(null);
+        summaryMessage.setContentType("summary");
         summaryMessage.setContent(encryptContentFromSummary(request));
         summaryMessage.setConversationGroupId(conversation.getConversationGroup().getId());
-        messageRepository.persist(summaryMessage);
+        entryRepository.persist(summaryMessage);
 
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             conversation.setTitle(encryptTitle(request.getTitle()));
@@ -738,11 +735,11 @@ public class PostgresMemoryStore implements MemoryStore {
             vectorizeSummary(conversation, summaryMessage, request);
         }
 
-        return toMessageDto(summaryMessage);
+        return toEntryDto(summaryMessage);
     }
 
     @Override
-    public List<SearchResultDto> searchMessages(String userId, SearchMessagesRequest request) {
+    public List<SearchResultDto> searchEntries(String userId, SearchEntriesRequest request) {
         if (request.getQuery() == null || request.getQuery().isBlank()) {
             return Collections.emptyList();
         }
@@ -785,8 +782,8 @@ public class PostgresMemoryStore implements MemoryStore {
         String query = request.getQuery().toLowerCase();
         int limit = request.getTopK() != null ? request.getTopK() : 20;
 
-        List<MessageEntity> candidates =
-                messageRepository.find("conversation.id in ?1", targetConversationIds).list();
+        List<EntryEntity> candidates =
+                entryRepository.find("conversation.id in ?1", targetConversationIds).list();
 
         return candidates.stream()
                 .map(
@@ -800,7 +797,7 @@ public class PostgresMemoryStore implements MemoryStore {
                                 return null;
                             }
                             SearchResultDto dto = new SearchResultDto();
-                            dto.setMessage(toMessageDto(m, content));
+                            dto.setEntry(toEntryDto(m, content));
                             dto.setScore(1.0);
                             dto.setHighlights(null);
                             return dto;
@@ -842,8 +839,8 @@ public class PostgresMemoryStore implements MemoryStore {
         Map<String, Object> block = new HashMap<>();
         block.put("type", "summary");
         block.put("text", request.getSummary());
-        if (request.getUntilMessageId() != null) {
-            block.put("untilMessageId", request.getUntilMessageId());
+        if (request.getUntilEntryId() != null) {
+            block.put("untilEntryId", request.getUntilEntryId());
         }
         if (request.getSummarizedAt() != null) {
             block.put("summarizedAt", request.getSummarizedAt());
@@ -858,7 +855,7 @@ public class PostgresMemoryStore implements MemoryStore {
 
     private void vectorizeSummary(
             ConversationEntity conversation,
-            MessageEntity summaryMessage,
+            EntryEntity summaryMessage,
             CreateSummaryRequest request) {
         if (request == null || request.getSummary() == null || request.getSummary().isBlank()) {
             return;
@@ -906,7 +903,7 @@ public class PostgresMemoryStore implements MemoryStore {
         return null;
     }
 
-    private String inferTitleFromUserMessage(CreateUserMessageRequest request) {
+    private String inferTitleFromUserEntry(CreateUserEntryRequest request) {
         if (request == null) {
             return null;
         }
@@ -918,15 +915,15 @@ public class PostgresMemoryStore implements MemoryStore {
         return abbreviateTitle(extractedText);
     }
 
-    private String inferTitleFromMessages(List<CreateMessageRequest> messages) {
-        if (messages == null || messages.isEmpty()) {
+    private String inferTitleFromEntries(List<CreateEntryRequest> entries) {
+        if (entries == null || entries.isEmpty()) {
             return null;
         }
-        for (CreateMessageRequest message : messages) {
-            if (message == null) {
+        for (CreateEntryRequest entry : entries) {
+            if (entry == null) {
                 continue;
             }
-            String text = extractSearchText(message.getContent());
+            String text = extractSearchText(entry.getContent());
             if (text != null && !text.isBlank()) {
                 return abbreviateTitle(text);
             }
@@ -978,9 +975,9 @@ public class PostgresMemoryStore implements MemoryStore {
         return new String(plain, StandardCharsets.UTF_8);
     }
 
-    private SearchResultDto toSearchResult(MessageEntity entity, List<Object> content) {
+    private SearchResultDto toSearchResult(EntryEntity entity, List<Object> content) {
         SearchResultDto dto = new SearchResultDto();
-        dto.setMessage(toMessageDto(entity, content));
+        dto.setEntry(toEntryDto(entity, content));
         dto.setScore(1.0);
         dto.setHighlights(null);
         return dto;
@@ -1067,9 +1064,9 @@ public class PostgresMemoryStore implements MemoryStore {
             dto.setDeletedAt(ISO_FORMATTER.format(entity.getDeletedAt()));
         }
         dto.setConversationGroupId(entity.getConversationGroup().getId().toString());
-        dto.setForkedAtMessageId(
-                entity.getForkedAtMessageId() != null
-                        ? entity.getForkedAtMessageId().toString()
+        dto.setForkedAtEntryId(
+                entity.getForkedAtEntryId() != null
+                        ? entity.getForkedAtEntryId().toString()
                         : null);
         dto.setForkedAtConversationId(
                 entity.getForkedAtConversationId() != null
@@ -1087,17 +1084,18 @@ public class PostgresMemoryStore implements MemoryStore {
         return dto;
     }
 
-    private MessageDto toMessageDto(MessageEntity entity) {
-        return toMessageDto(entity, decryptContent(entity.getContent()));
+    private EntryDto toEntryDto(EntryEntity entity) {
+        return toEntryDto(entity, decryptContent(entity.getContent()));
     }
 
-    private MessageDto toMessageDto(MessageEntity entity, List<Object> content) {
-        MessageDto dto = new MessageDto();
+    private EntryDto toEntryDto(EntryEntity entity, List<Object> content) {
+        EntryDto dto = new EntryDto();
         dto.setId(entity.getId().toString());
         dto.setConversationId(entity.getConversation().getId().toString());
         dto.setUserId(entity.getUserId());
         dto.setChannel(entity.getChannel());
         dto.setEpoch(entity.getEpoch());
+        dto.setContentType(entity.getContentType());
         dto.setContent(content != null ? content : Collections.emptyList());
         dto.setCreatedAt(ISO_FORMATTER.format(entity.getCreatedAt()));
         return dto;
@@ -1220,7 +1218,7 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public PagedMessages adminGetMessages(String conversationId, AdminMessageQuery query) {
+    public PagedEntries adminGetEntries(String conversationId, AdminMessageQuery query) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation;
         if (query.isIncludeDeleted()) {
@@ -1232,7 +1230,7 @@ public class PostgresMemoryStore implements MemoryStore {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
 
-        StringBuilder jpql = new StringBuilder("FROM MessageEntity m WHERE m.conversation.id = ?1");
+        StringBuilder jpql = new StringBuilder("FROM EntryEntity m WHERE m.conversation.id = ?1");
         List<Object> params = new ArrayList<>();
         params.add(cid);
         int paramIndex = 2;
@@ -1247,14 +1245,14 @@ public class PostgresMemoryStore implements MemoryStore {
             params.add(query.getChannel());
         }
 
-        if (query.getAfterMessageId() != null && !query.getAfterMessageId().isBlank()) {
-            UUID afterId = UUID.fromString(query.getAfterMessageId());
+        if (query.getAfterEntryId() != null && !query.getAfterEntryId().isBlank()) {
+            UUID afterId = UUID.fromString(query.getAfterEntryId());
             jpql.append(
-                            " AND (m.createdAt > (SELECT m2.createdAt FROM MessageEntity m2 WHERE"
+                            " AND (m.createdAt > (SELECT m2.createdAt FROM EntryEntity m2 WHERE"
                                     + " m2.id = ?")
                     .append(paramIndex)
                     .append(
-                            ") OR (m.createdAt = (SELECT m2.createdAt FROM MessageEntity m2 WHERE"
+                            ") OR (m.createdAt = (SELECT m2.createdAt FROM EntryEntity m2 WHERE"
                                     + " m2.id = ?")
                     .append(paramIndex)
                     .append(") AND m.id > ?")
@@ -1268,24 +1266,24 @@ public class PostgresMemoryStore implements MemoryStore {
 
         jpql.append(" ORDER BY m.createdAt ASC, m.id ASC");
 
-        List<MessageEntity> entities =
-                messageRepository
+        List<EntryEntity> entities =
+                entryRepository
                         .find(jpql.toString(), params.toArray())
                         .page(0, query.getLimit() > 0 ? query.getLimit() : 50)
                         .list();
 
-        List<MessageDto> messages =
-                entities.stream().map(this::toMessageDto).collect(Collectors.toList());
+        List<EntryDto> entryDtos =
+                entities.stream().map(this::toEntryDto).collect(Collectors.toList());
 
         String nextCursor = null;
-        if (messages.size() == query.getLimit()) {
-            MessageEntity last = entities.get(entities.size() - 1);
+        if (entryDtos.size() == query.getLimit()) {
+            EntryEntity last = entities.get(entities.size() - 1);
             nextCursor = last.getId().toString();
         }
 
-        PagedMessages result = new PagedMessages();
+        PagedEntries result = new PagedEntries();
         result.setConversationId(conversationId);
-        result.setMessages(messages);
+        result.setEntries(entryDtos);
         result.setNextCursor(nextCursor);
         return result;
     }
@@ -1314,7 +1312,7 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<SearchResultDto> adminSearchMessages(AdminSearchQuery query) {
+    public List<SearchResultDto> adminSearchEntries(AdminSearchQuery query) {
         if (query.getQuery() == null || query.getQuery().isBlank()) {
             return Collections.emptyList();
         }
@@ -1352,8 +1350,8 @@ public class PostgresMemoryStore implements MemoryStore {
         String searchQuery = query.getQuery().toLowerCase();
         int limit = query.getTopK() != null ? query.getTopK() : 20;
 
-        List<MessageEntity> candidates =
-                messageRepository.find("conversation.id in ?1", conversationIds).list();
+        List<EntryEntity> candidates =
+                entryRepository.find("conversation.id in ?1", conversationIds).list();
 
         return candidates.stream()
                 .map(

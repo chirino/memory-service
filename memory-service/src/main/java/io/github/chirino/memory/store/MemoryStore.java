@@ -7,19 +7,19 @@ import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateSummaryRequest;
-import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
-import io.github.chirino.memory.api.dto.ForkFromMessageRequest;
-import io.github.chirino.memory.api.dto.MessageDto;
-import io.github.chirino.memory.api.dto.PagedMessages;
-import io.github.chirino.memory.api.dto.SearchMessagesRequest;
+import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
+import io.github.chirino.memory.api.dto.EntryDto;
+import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
+import io.github.chirino.memory.api.dto.PagedEntries;
+import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
 import io.github.chirino.memory.model.AdminSearchQuery;
-import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.model.Channel;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -35,8 +35,7 @@ public interface MemoryStore {
 
     void deleteConversation(String userId, String conversationId);
 
-    MessageDto appendUserMessage(
-            String userId, String conversationId, CreateUserMessageRequest request);
+    EntryDto appendUserEntry(String userId, String conversationId, CreateUserEntryRequest request);
 
     List<ConversationMembershipDto> listMemberships(String userId, String conversationId);
 
@@ -51,37 +50,37 @@ public interface MemoryStore {
 
     void deleteMembership(String userId, String conversationId, String memberUserId);
 
-    ConversationDto forkConversationAtMessage(
-            String userId, String conversationId, String messageId, ForkFromMessageRequest request);
+    ConversationDto forkConversationAtEntry(
+            String userId, String conversationId, String entryId, ForkFromEntryRequest request);
 
     List<ConversationForkSummaryDto> listForks(String userId, String conversationId);
 
     void requestOwnershipTransfer(String userId, String conversationId, String newOwnerUserId);
 
-    PagedMessages getMessages(
+    PagedEntries getEntries(
             String userId,
             String conversationId,
-            String afterMessageId,
+            String afterEntryId,
             int limit,
-            MessageChannel channel,
+            Channel channel,
             MemoryEpochFilter epochFilter,
             String clientId);
 
-    List<MessageDto> appendAgentMessages(
+    List<EntryDto> appendAgentEntries(
             String userId,
             String conversationId,
-            List<CreateMessageRequest> messages,
+            List<CreateEntryRequest> entries,
             String clientId);
 
-    SyncResult syncAgentMessages(
+    SyncResult syncAgentEntries(
             String userId,
             String conversationId,
-            List<CreateMessageRequest> messages,
+            List<CreateEntryRequest> entries,
             String clientId);
 
-    MessageDto createSummary(String conversationId, CreateSummaryRequest request, String clientId);
+    EntryDto createSummary(String conversationId, CreateSummaryRequest request, String clientId);
 
-    List<SearchResultDto> searchMessages(String userId, SearchMessagesRequest request);
+    List<SearchResultDto> searchEntries(String userId, SearchEntriesRequest request);
 
     // Admin methods — no userId scoping, configurable deleted-resource visibility
     List<ConversationSummaryDto> adminListConversations(AdminConversationQuery query);
@@ -92,12 +91,12 @@ public interface MemoryStore {
 
     void adminRestoreConversation(String conversationId);
 
-    PagedMessages adminGetMessages(String conversationId, AdminMessageQuery query);
+    PagedEntries adminGetEntries(String conversationId, AdminMessageQuery query);
 
     List<ConversationMembershipDto> adminListMemberships(
             String conversationId, boolean includeDeleted);
 
-    List<SearchResultDto> adminSearchMessages(AdminSearchQuery query);
+    List<SearchResultDto> adminSearchEntries(AdminSearchQuery query);
 
     // Eviction support
     List<String> findEvictableGroupIds(OffsetDateTime cutoff, int limit);

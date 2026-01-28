@@ -2,7 +2,7 @@ package io.github.chirino.memoryservice.grpc;
 
 import io.github.chirino.memory.grpc.v1.ConversationMembershipsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
-import io.github.chirino.memory.grpc.v1.MessagesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.EntriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ResponseResumerServiceGrpc;
 import io.github.chirino.memory.grpc.v1.SearchServiceGrpc;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
@@ -60,7 +60,7 @@ public final class MemoryServiceGrpcClients {
                 conversationsService;
         private final ConversationMembershipsServiceGrpc.ConversationMembershipsServiceBlockingStub
                 membershipsService;
-        private final MessagesServiceGrpc.MessagesServiceBlockingStub messagesService;
+        private final EntriesServiceGrpc.EntriesServiceBlockingStub entriesService;
         private final SearchServiceGrpc.SearchServiceBlockingStub searchService;
         private final ResponseResumerServiceGrpc.ResponseResumerServiceStub responseResumerService;
 
@@ -69,7 +69,7 @@ public final class MemoryServiceGrpcClients {
             this.systemService = SystemServiceGrpc.newBlockingStub(channel);
             this.conversationsService = ConversationsServiceGrpc.newBlockingStub(channel);
             this.membershipsService = ConversationMembershipsServiceGrpc.newBlockingStub(channel);
-            this.messagesService = MessagesServiceGrpc.newBlockingStub(channel);
+            this.entriesService = EntriesServiceGrpc.newBlockingStub(channel);
             this.searchService = SearchServiceGrpc.newBlockingStub(channel);
             this.responseResumerService = ResponseResumerServiceGrpc.newStub(channel);
         }
@@ -87,8 +87,8 @@ public final class MemoryServiceGrpcClients {
             return membershipsService;
         }
 
-        public MessagesServiceGrpc.MessagesServiceBlockingStub messagesService() {
-            return messagesService;
+        public EntriesServiceGrpc.EntriesServiceBlockingStub entriesService() {
+            return entriesService;
         }
 
         public SearchServiceGrpc.SearchServiceBlockingStub searchService() {

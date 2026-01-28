@@ -70,7 +70,7 @@ export const $Conversation = {
     {
       type: "object",
       properties: {
-        forkedAtMessageId: {
+        forkedAtEntryId: {
           type: "string",
           nullable: true,
         },
@@ -87,7 +87,7 @@ export const $Conversation = {
         updatedAt: "2025-01-10T14:45:12Z",
         lastMessagePreview: "Let's try modeling forks as separate conversations…",
         accessLevel: "owner",
-        forkedAtMessageId: null,
+        forkedAtEntryId: null,
         forkedAtConversationId: null,
       },
     },
@@ -136,14 +136,14 @@ export const $ConversationMembership = {
 
 export const $ConversationForkSummary = {
   type: "object",
-  description: "Summary of a forked conversation originating at a given message.",
+  description: "Summary of a forked conversation originating at a given entry.",
   properties: {
     conversationId: {
       type: "string",
     },
-    forkedAtMessageId: {
+    forkedAtEntryId: {
       type: "string",
-      description: "Message id at which this forked conversation diverged.",
+      description: "Entry id at which this forked conversation diverged.",
     },
     forkedAtConversationId: {
       type: "string",
@@ -178,7 +178,7 @@ export const $ShareConversationRequest = {
   },
 } as const;
 
-export const $ForkFromMessageRequest = {
+export const $ForkFromEntryRequest = {
   type: "object",
   properties: {
     title: {
@@ -189,15 +189,15 @@ export const $ForkFromMessageRequest = {
   },
 } as const;
 
-export const $MessageChannel = {
+export const $Channel = {
   type: "string",
-  description: "Logical channel of the message within the conversation.",
+  description: "Logical channel of the entry within the conversation.",
   enum: ["history", "memory", "summary"],
 } as const;
 
-export const $Message = {
+export const $Entry = {
   type: "object",
-  required: ["id", "conversationId", "channel", "content", "createdAt"],
+  required: ["id", "conversationId", "channel", "contentType", "content", "createdAt"],
   properties: {
     id: {
       type: "string",
@@ -208,24 +208,29 @@ export const $Message = {
     userId: {
       type: "string",
       nullable: true,
-      description: `Human user this message is associated with.
-For history messages authored by a user, this is the sender.
-For agent messages, this is the user the agent is responding to.`,
+      description: `Human user this entry is associated with.
+For history entries authored by a user, this is the sender.
+For agent entries, this is the user the agent is responding to.`,
     },
     channel: {
-      $ref: "#/components/schemas/MessageChannel",
+      $ref: "#/components/schemas/Channel",
     },
     epoch: {
       type: "integer",
       format: "int64",
       nullable: true,
-      description: `Logical memory epoch this message belongs to.
-For history messages this is typically null. For memory messages,
+      description: `Logical memory epoch this entry belongs to.
+For history entries this is typically null. For memory entries,
 the agent increments the epoch when starting a new memory version.`,
+    },
+    contentType: {
+      type: "string",
+      description: `Describes the schema/format of the content array.
+Examples: "message", "LC4J", "SpringAI"`,
     },
     content: {
       type: "array",
-      description: `Opaque, agent-defined message content blocks.
+      description: `Opaque, agent-defined content blocks.
 Different agents may use different schemas; the memory-service
 stores and returns them without interpretation.`,
       items: {},
@@ -236,11 +241,12 @@ stores and returns them without interpretation.`,
     },
   },
   example: {
-    id: "msg_01HF8XJQWXYZ9876ABCD5432",
+    id: "entry_01HF8XJQWXYZ9876ABCD5432",
     conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
     userId: "user_1234",
     channel: "history",
     epoch: null,
+    contentType: "message",
     content: [
       {
         type: "text",
@@ -251,26 +257,31 @@ stores and returns them without interpretation.`,
   },
 } as const;
 
-export const $CreateMessageRequest = {
+export const $CreateEntryRequest = {
   type: "object",
-  required: ["content"],
+  required: ["contentType", "content"],
   properties: {
     userId: {
       type: "string",
       nullable: true,
-      description: `Human user this message is associated with.
-For history messages authored by a user, this is the sender.
-For agent messages, this is the user the agent is responding to.`,
+      description: `Human user this entry is associated with.
+For history entries authored by a user, this is the sender.
+For agent entries, this is the user the agent is responding to.`,
     },
     channel: {
-      $ref: "#/components/schemas/MessageChannel",
+      $ref: "#/components/schemas/Channel",
     },
     epoch: {
       type: "integer",
       format: "int64",
       nullable: true,
-      description: `For memory messages, the epoch the agent wants this message to
+      description: `For memory entries, the epoch the agent wants this entry to
 belong to. The agent increments this when starting a new epoch.`,
+    },
+    contentType: {
+      type: "string",
+      description: `Describes the schema/format of the content array.
+Examples: "message", "LC4J", "SpringAI"`,
     },
     content: {
       type: "array",
@@ -278,8 +289,9 @@ belong to. The agent increments this when starting a new epoch.`,
     },
   },
   example: {
-    senderId: "user_1234",
+    userId: "user_1234",
     channel: "history",
+    contentType: "message",
     content: [
       {
         type: "text",
@@ -289,25 +301,26 @@ belong to. The agent increments this when starting a new epoch.`,
   },
 } as const;
 
-export const $SyncMessagesRequest = {
+export const $SyncEntriesRequest = {
   type: "object",
-  required: ["messages"],
+  required: ["entries"],
   properties: {
-    messages: {
+    entries: {
       type: "array",
       description: `The desired memory epoch contents. Each entry must include the
 \`memory\` channel and should match the ordering that the agent expects to
 see replayed; only the agent may call this endpoint.`,
       items: {
-        $ref: "#/components/schemas/CreateMessageRequest",
+        $ref: "#/components/schemas/CreateEntryRequest",
       },
     },
   },
   example: {
-    messages: [
+    entries: [
       {
         userId: "user_1234",
         channel: "memory",
+        contentType: "LC4J",
         content: [
           {
             type: "text",
@@ -318,6 +331,7 @@ see replayed; only the agent may call this endpoint.`,
       {
         userId: "user_1234",
         channel: "memory",
+        contentType: "LC4J",
         content: [
           {
             type: "text",
@@ -329,7 +343,7 @@ see replayed; only the agent may call this endpoint.`,
   },
 } as const;
 
-export const $SyncMessagesResponse = {
+export const $SyncEntriesResponse = {
   type: "object",
   properties: {
     epoch: {
@@ -346,11 +360,11 @@ export const $SyncMessagesResponse = {
       type: "boolean",
       description: "True when the provided list diverged and a new epoch was started.",
     },
-    messages: {
+    entries: {
       type: "array",
-      description: "List of messages that were appended during this sync.",
+      description: "List of entries that were appended during this sync.",
       items: {
-        $ref: "#/components/schemas/Message",
+        $ref: "#/components/schemas/Entry",
       },
     },
   },
@@ -358,13 +372,14 @@ export const $SyncMessagesResponse = {
     epoch: 5,
     noOp: false,
     epochIncremented: true,
-    messages: [
+    entries: [
       {
-        id: "msg_01HF8XJQWXYZ9876ABCD5432",
+        id: "entry_01HF8XJQWXYZ9876ABCD5432",
         conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
         userId: "agent_memory",
         channel: "memory",
         epoch: 5,
+        contentType: "LC4J",
         content: [
           {
             type: "text",
@@ -379,7 +394,7 @@ export const $SyncMessagesResponse = {
 
 export const $CreateSummaryRequest = {
   type: "object",
-  required: ["title", "summary", "untilMessageId", "summarizedAt"],
+  required: ["title", "summary", "untilEntryId", "summarizedAt"],
   properties: {
     title: {
       type: "string",
@@ -389,7 +404,7 @@ export const $CreateSummaryRequest = {
       type: "string",
       description: "Summary text.",
     },
-    untilMessageId: {
+    untilEntryId: {
       type: "string",
       description: "Highest message id covered by the summary (inclusive).",
     },
@@ -403,12 +418,12 @@ export const $CreateSummaryRequest = {
     title: "Conversation forking design",
     summary:
       "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch.",
-    untilMessageId: "msg_01HF8XJQWXYZ9876ABCD5431",
+    untilEntryId: "msg_01HF8XJQWXYZ9876ABCD5431",
     summarizedAt: "2024-05-01T12:34:56Z",
   },
 } as const;
 
-export const $SearchMessagesRequest = {
+export const $SearchEntriesRequest = {
   type: "object",
   required: ["query"],
   properties: {
@@ -430,22 +445,22 @@ export const $SearchMessagesRequest = {
     before: {
       type: "string",
       nullable: true,
-      description: "Optional upper bound message id for temporal filtering.",
+      description: "Optional upper bound entry id for temporal filtering.",
     },
   },
   example: {
     query: "summary of memory service design decisions",
     topK: 5,
     conversationIds: ["conv_01HF8XH1XABCD1234EFGH5678", "conv_01HF8XH1XABCD1234EFGH5679"],
-    before: "msg_01HF8XJQWXYZ9876ABCD5431",
+    before: "entry_01HF8XJQWXYZ9876ABCD5431",
   },
 } as const;
 
 export const $SearchResult = {
   type: "object",
   properties: {
-    message: {
-      $ref: "#/components/schemas/Message",
+    entry: {
+      $ref: "#/components/schemas/Entry",
     },
     score: {
       type: "number",
@@ -457,20 +472,18 @@ export const $SearchResult = {
     },
   },
   example: {
-    message: {
-      id: "msg_01HF8XJQWXYZ9876ABCD5430",
+    entry: {
+      id: "entry_01HF8XJQWXYZ9876ABCD5430",
       conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
-      role: "user",
-      visibility: "user",
+      userId: "user_1234",
+      channel: "history",
+      contentType: "message",
       content: [
         {
           type: "text",
           text: "Help me design a memory service for my agent.",
         },
       ],
-      metadata: {
-        source: "search",
-      },
       createdAt: "2025-01-10T14:32:05Z",
     },
     score: 0.93,

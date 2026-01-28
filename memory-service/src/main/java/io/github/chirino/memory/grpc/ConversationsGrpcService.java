@@ -5,7 +5,7 @@ import io.github.chirino.memory.api.ConversationListMode;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
-import io.github.chirino.memory.api.dto.ForkFromMessageRequest;
+import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.grpc.v1.Conversation;
 import io.github.chirino.memory.grpc.v1.ConversationsService;
 import io.github.chirino.memory.grpc.v1.CreateConversationRequest;
@@ -112,15 +112,15 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
         return Uni.createFrom()
                 .item(
                         () -> {
-                            ForkFromMessageRequest internal = new ForkFromMessageRequest();
+                            ForkFromEntryRequest internal = new ForkFromEntryRequest();
                             if (request.getTitle() != null) {
                                 internal.setTitle(request.getTitle());
                             }
                             ConversationDto forked =
-                                    store().forkConversationAtMessage(
+                                    store().forkConversationAtEntry(
                                                     currentUserId(),
                                                     request.getConversationId(),
-                                                    request.getMessageId(),
+                                                    request.getEntryId(),
                                                     internal);
                             return GrpcDtoMapper.toProto(forked);
                         })

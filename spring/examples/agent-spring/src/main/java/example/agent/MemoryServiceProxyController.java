@@ -40,20 +40,20 @@ class MemoryServiceProxyController {
         return proxy.deleteConversation(conversationId);
     }
 
-    @GetMapping("/{conversationId}/messages")
-    public ResponseEntity<?> listConversationMessages(
+    @GetMapping("/{conversationId}/entries")
+    public ResponseEntity<?> listConversationEntries(
             @PathVariable String conversationId,
             @RequestParam(value = "after", required = false) String after,
             @RequestParam(value = "limit", required = false) Integer limit) {
-        return proxy.listConversationMessages(conversationId, after, limit);
+        return proxy.listConversationEntries(conversationId, after, limit);
     }
 
-    @PostMapping("/{conversationId}/messages/{messageId}/fork")
-    public ResponseEntity<?> forkConversationAtMessage(
+    @PostMapping("/{conversationId}/entries/{entryId}/fork")
+    public ResponseEntity<?> forkConversationAtEntry(
             @PathVariable String conversationId,
-            @PathVariable String messageId,
+            @PathVariable String entryId,
             @RequestBody(required = false) String body) {
-        return proxy.forkConversationAtMessage(conversationId, messageId, body);
+        return proxy.forkConversationAtEntry(conversationId, entryId, body);
     }
 
     @GetMapping("/{conversationId}/forks")

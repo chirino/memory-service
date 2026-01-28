@@ -1,6 +1,6 @@
 package io.github.chirino.memory.vector;
 
-import io.github.chirino.memory.api.dto.SearchMessagesRequest;
+import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.store.impl.PostgresMemoryStore;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -12,7 +12,7 @@ import org.jboss.logging.Logger;
 /**
  * Placeholder PgVector-backed implementation.
  *
- * For now this delegates to PostgresMemoryStore.searchMessages, which
+ * For now this delegates to PostgresMemoryStore.searchEntries, which
  * performs keyword-based search. Once pgvector and the message_embeddings
  * table are provisioned, this class is the right place to switch to a true
  * vector similarity query.
@@ -32,17 +32,16 @@ public class PgVectorStore implements VectorStore {
     }
 
     @Override
-    public List<SearchResultDto> search(String userId, SearchMessagesRequest request) {
-        return postgresMemoryStore.searchMessages(userId, request);
+    public List<SearchResultDto> search(String userId, SearchEntriesRequest request) {
+        return postgresMemoryStore.searchEntries(userId, request);
     }
 
     @Override
-    public void upsertSummaryEmbedding(String conversationId, String messageId, float[] embedding) {
+    public void upsertSummaryEmbedding(String conversationId, String entryId, float[] embedding) {
         if (embedding == null || embedding.length == 0) {
             return;
         }
-        embeddingRepository.upsertEmbedding(
-                messageId, conversationId, toPgVectorLiteral(embedding));
+        embeddingRepository.upsertEmbedding(entryId, conversationId, toPgVectorLiteral(embedding));
     }
 
     @Override

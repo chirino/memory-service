@@ -1,6 +1,6 @@
 package io.github.chirino.memory.vector;
 
-import io.github.chirino.memory.api.dto.SearchMessagesRequest;
+import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import java.util.List;
 
@@ -8,9 +8,9 @@ public interface VectorStore {
 
     boolean isEnabled();
 
-    List<SearchResultDto> search(String userId, SearchMessagesRequest request);
+    List<SearchResultDto> search(String userId, SearchEntriesRequest request);
 
-    void upsertSummaryEmbedding(String conversationId, String messageId, float[] embedding);
+    void upsertSummaryEmbedding(String conversationId, String entryId, float[] embedding);
 
     /**
      * Delete all embeddings for a conversation group.

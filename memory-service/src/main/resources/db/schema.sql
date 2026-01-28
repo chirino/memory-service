@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     owner_user_id   TEXT NOT NULL,
     metadata        JSONB NOT NULL DEFAULT '{}'::JSONB,
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
-    forked_at_message_id UUID,
+    forked_at_entry_id UUID,
     forked_at_conversation_id UUID REFERENCES conversations (id) ON DELETE CASCADE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -63,10 +63,10 @@ CREATE INDEX IF NOT EXISTS idx_conversation_memberships_deleted
     ON conversation_memberships (deleted_at) WHERE deleted_at IS NOT NULL;
 
 ------------------------------------------------------------
--- Messages & summaries
+-- Entries & summaries
 ------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE IF NOT EXISTS entries (
     id                UUID PRIMARY KEY,
     conversation_id   UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
@@ -74,18 +74,19 @@ CREATE TABLE IF NOT EXISTS messages (
     client_id         TEXT,
     channel           TEXT NOT NULL,
     epoch             BIGINT,
+    content_type      TEXT NOT NULL,
     content           BYTEA NOT NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_conversation_created_at
-    ON messages (conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_entries_conversation_created_at
+    ON entries (conversation_id, created_at);
 
-CREATE INDEX IF NOT EXISTS idx_messages_group_created_at
-    ON messages (conversation_group_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_entries_group_created_at
+    ON entries (conversation_group_id, created_at);
 
-CREATE INDEX IF NOT EXISTS idx_messages_conversation_channel_client_epoch_created_at
-    ON messages (conversation_id, channel, client_id, epoch, created_at);
+CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_epoch_created_at
+    ON entries (conversation_id, channel, client_id, epoch, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_conversations_group
     ON conversations (conversation_group_id);
@@ -93,28 +94,28 @@ CREATE INDEX IF NOT EXISTS idx_conversations_group
 CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_conversation
     ON conversations (forked_at_conversation_id);
 
-CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_message
-    ON conversations (forked_at_message_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_entry
+    ON conversations (forked_at_entry_id);
 
 ------------------------------------------------------------
 -- Semantic search (pgvector-backed, optional)
 ------------------------------------------------------------
 
 -- If pgvector is enabled, uncomment the extension above and this table.
--- Embeddings are associated with individual messages.
--- CREATE TABLE IF NOT EXISTS message_embeddings (
---     message_id       UUID PRIMARY KEY REFERENCES messages (id) ON DELETE CASCADE,
+-- Embeddings are associated with individual entries.
+-- CREATE TABLE IF NOT EXISTS entry_embeddings (
+--     entry_id         UUID PRIMARY KEY REFERENCES entries (id) ON DELETE CASCADE,
 --     conversation_id  UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
 --     -- Adjust dimension to match the configured embedding model.
 --     embedding        vector(768) NOT NULL,
 --     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 -- );
 --
--- CREATE INDEX IF NOT EXISTS idx_message_embeddings_conversation
---     ON message_embeddings (conversation_id);
+-- CREATE INDEX IF NOT EXISTS idx_entry_embeddings_conversation
+--     ON entry_embeddings (conversation_id);
 --
--- CREATE INDEX IF NOT EXISTS idx_message_embeddings_embedding
---     ON message_embeddings
+-- CREATE INDEX IF NOT EXISTS idx_entry_embeddings_embedding
+--     ON entry_embeddings
 --     USING ivfflat (embedding vector_cosine_ops)
 --     WITH (lists = 100);
 

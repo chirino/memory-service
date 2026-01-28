@@ -9,11 +9,12 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.JacksonChatMessageJsonCodec;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import io.github.chirino.memory.client.api.ConversationsApi;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
-import io.github.chirino.memory.client.model.ListConversationMessages200Response;
-import io.github.chirino.memory.client.model.Message;
-import io.github.chirino.memory.client.model.MessageChannel;
-import io.github.chirino.memory.client.model.SyncMessagesRequest;
+import io.github.chirino.memory.client.model.Channel;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
+import io.github.chirino.memory.client.model.Entry;
+import io.github.chirino.memory.client.model.ListConversationEntries200Response;
+import io.github.chirino.memory.client.model.SyncEntriesRequest;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.inject.Instance;
@@ -56,12 +57,12 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
         Objects.requireNonNull(memoryId, "memoryId");
-        ListConversationMessages200Response context;
+        ListConversationEntries200Response context;
         try {
             context =
                     conversationsApi()
-                            .listConversationMessages(
-                                    memoryId.toString(), null, 50, MessageChannel.MEMORY, null);
+                            .listConversationEntries(
+                                    memoryId.toString(), null, 50, Channel.MEMORY, null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
             if (status == 404) {
@@ -78,16 +79,16 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
             return result;
         }
 
-        for (Message message : context.getData()) {
-            if (message.getContent() == null) {
+        for (Entry entry : context.getData()) {
+            if (entry.getContent() == null) {
                 continue;
             }
-            for (Object block : message.getContent()) {
+            for (Object block : entry.getContent()) {
                 if (block == null) {
                     continue;
                 }
                 List<ChatMessage> decoded =
-                        decodeContentBlock(block, memoryId.toString(), message.getId());
+                        decodeContentBlock(block, memoryId.toString(), entry.getId());
                 if (decoded != null && !decoded.isEmpty()) {
                     result.addAll(decoded);
                 }
@@ -123,19 +124,19 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                 messages.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")),
                 stackTrace());
 
-        SyncMessagesRequest syncRequest = new SyncMessagesRequest();
-        List<CreateMessageRequest> syncMessages = new ArrayList<>();
+        SyncEntriesRequest syncRequest = new SyncEntriesRequest();
+        List<CreateEntryRequest> syncEntries = new ArrayList<>();
         for (ChatMessage chatMessage : messages) {
             if (chatMessage == null) {
                 continue;
             }
-            syncMessages.add(toCreateMessageRequest(chatMessage));
+            syncEntries.add(toCreateEntryRequest(chatMessage));
         }
-        if (syncMessages.isEmpty()) {
+        if (syncEntries.isEmpty()) {
             LOG.infof("Skipping sync for empty memory update on conversationId=%s", memoryId);
             return;
         }
-        syncRequest.setMessages(syncMessages);
+        syncRequest.setEntries(syncEntries);
         conversationsApi().syncConversationMemory(memoryId.toString(), syncRequest);
     }
 
@@ -148,14 +149,15 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                 memoryId, stackTrace());
     }
 
-    private CreateMessageRequest toCreateMessageRequest(ChatMessage chatMessage) {
-        CreateMessageRequest request = new CreateMessageRequest();
+    private CreateEntryRequest toCreateEntryRequest(ChatMessage chatMessage) {
+        CreateEntryRequest request = new CreateEntryRequest();
         SecurityIdentity identity = resolveSecurityIdentity();
         String userId = principalName(identity);
         if (userId != null) {
             request.setUserId(userId);
         }
-        request.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
+        request.setChannel(ChannelEnum.MEMORY);
+        request.setContentType("LC4J");
 
         String json = CODEC.messageToJson(chatMessage);
         // LOG.infof("Encoding content block: [%s]", json);
@@ -173,16 +175,16 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     }
 
     private List<ChatMessage> decodeContentBlock(
-            Object block, String conversationId, String messageId) {
+            Object block, String conversationId, String entryId) {
         try {
             String json = OBJECT_MAPPER.writeValueAsString(List.of(block));
             return CODEC.messagesFromJson(json);
         } catch (Exception e) {
             LOG.warnf(
                     e,
-                    "Failed to decode content block for conversationId=%s, messageId=%s",
+                    "Failed to decode content block for conversationId=%s, entryId=%s",
                     conversationId,
-                    messageId);
+                    entryId);
         }
         return null;
     }

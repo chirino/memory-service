@@ -3,10 +3,10 @@ package io.github.chirino.memory.model;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
-public enum MessageVisibility {
-    USER,
-    AGENT,
-    SYSTEM;
+public enum Channel {
+    HISTORY,
+    MEMORY,
+    SUMMARY;
 
     @JsonValue
     public String toValue() {
@@ -14,10 +14,10 @@ public enum MessageVisibility {
     }
 
     @JsonCreator
-    public static MessageVisibility fromString(String value) {
+    public static Channel fromString(String value) {
         if (value == null) {
             return null;
         }
-        return MessageVisibility.valueOf(value.toUpperCase());
+        return Channel.valueOf(value.toUpperCase());
     }
 }

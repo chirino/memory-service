@@ -6,7 +6,7 @@ public class ConversationDto extends ConversationSummaryDto {
 
     // Internal field - not exposed in API responses
     @JsonIgnore private String conversationGroupId;
-    private String forkedAtMessageId;
+    private String forkedAtEntryId;
     private String forkedAtConversationId;
 
     public String getConversationGroupId() {
@@ -17,12 +17,12 @@ public class ConversationDto extends ConversationSummaryDto {
         this.conversationGroupId = conversationGroupId;
     }
 
-    public String getForkedAtMessageId() {
-        return forkedAtMessageId;
+    public String getForkedAtEntryId() {
+        return forkedAtEntryId;
     }
 
-    public void setForkedAtMessageId(String forkedAtMessageId) {
-        this.forkedAtMessageId = forkedAtMessageId;
+    public void setForkedAtEntryId(String forkedAtEntryId) {
+        this.forkedAtEntryId = forkedAtEntryId;
     }
 
     public String getForkedAtConversationId() {

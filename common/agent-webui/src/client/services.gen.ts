@@ -117,41 +117,41 @@ export class ConversationsService {
   }
 
   /**
-   * List conversation messages
-   * Returns messages in a conversation, ordered by creation time.
+   * List conversation entries
+   * Returns entries in a conversation, ordered by creation time.
    *
-   * The `channel` parameter determines which logical channel of messages
+   * The `channel` parameter determines which logical channel of entries
    * is returned:
    *
    * - `history` (default) returns the user-visible conversation between
    * users and the agent.
-   * - `memory` returns agent memory messages which are typically not
-   * shown directly to end users. Memory messages are scoped to the
+   * - `memory` returns agent memory entries which are typically not
+   * shown directly to end users. Memory entries are scoped to the
    * calling client id derived from the API key.
    * @param data The data for the request.
    * @param data.conversationId
-   * @param data.after Cursor for pagination; returns messages after this message id.
+   * @param data.after Cursor for pagination; returns entries after this entry id.
    * @param data.limit
-   * @param data.channel Channel of messages to return. Defaults to `history` for the
-   * user-visible conversation; `memory` returns agent memory messages
+   * @param data.channel Channel of entries to return. Defaults to `history` for the
+   * user-visible conversation; `memory` returns agent memory entries
    * scoped to the calling client id.
    * @param data.epoch Optional epoch filter when listing the `memory` channel. Valid values
    * are `latest`, `all`, or a numeric epoch identifier. Defaults to
    * `latest` when not provided. The epoch selection is scoped to the
    * calling client id.
-   * @returns unknown A list of messages.
+   * @returns unknown A list of entries.
    * @returns ErrorResponse Error response
    * @throws ApiError
    */
-  public static listConversationMessages(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/messages"]["get"]["req"],
+  public static listConversationEntries(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/entries"]["get"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/messages"]["get"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/messages"]["get"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/entries"]["get"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/entries"]["get"]["res"][200]
   > {
     return __request(OpenAPI, {
       method: "GET",
-      url: "/v1/conversations/{conversationId}/messages",
+      url: "/v1/conversations/{conversationId}/entries",
       path: {
         conversationId: data.conversationId,
       },
@@ -168,29 +168,29 @@ export class ConversationsService {
   }
 
   /**
-   * Append a message
-   * Appends a new message to the conversation.
+   * Append an entry
+   * Appends a new entry to the conversation.
    *
    * This endpoint is used by both end-user clients and agents.
    * The service determines whether the caller is a user or an agent
    * based on authentication (for example, API keys or tokens) and
-   * stores the message with the appropriate internal role and visibility.
+   * stores the entry with the appropriate internal role and visibility.
    * @param data The data for the request.
    * @param data.conversationId
    * @param data.requestBody
    * @returns ErrorResponse Error response
-   * @returns Message The created message.
+   * @returns Entry The created entry.
    * @throws ApiError
    */
-  public static appendConversationMessage(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/messages"]["post"]["req"],
+  public static appendConversationEntry(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/entries"]["post"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/messages"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/messages"]["post"]["res"][201]
+    | $OpenApiTs["/v1/conversations/{conversationId}/entries"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/entries"]["post"]["res"][201]
   > {
     return __request(OpenAPI, {
       method: "POST",
-      url: "/v1/conversations/{conversationId}/messages",
+      url: "/v1/conversations/{conversationId}/entries",
       path: {
         conversationId: data.conversationId,
       },
@@ -205,29 +205,29 @@ export class ConversationsService {
   /**
    * Synchronize the agent memory epoch
    * Synchronizes the in-memory context for the conversation. The service fails
-   * when any message is not targeting the `memory` channel, then compares the
-   * provided list to the messages already stored in the latest memory epoch.
+   * when any entry is not targeting the `memory` channel, then compares the
+   * provided list to the entries already stored in the latest memory epoch.
    * If there is no difference it is a no-op, if the list merely appends more
-   * messages they are added to the current epoch, otherwise a new epoch is
-   * created and all provided messages are stored under the new epoch. Memory
+   * entries they are added to the current epoch, otherwise a new epoch is
+   * created and all provided entries are stored under the new epoch. Memory
    * sync is scoped to the calling client id (from the API key). Requires a
    * valid agent API key.
    * @param data The data for the request.
    * @param data.conversationId
    * @param data.requestBody
-   * @returns SyncMessagesResponse Result of the sync operation.
+   * @returns SyncEntriesResponse Result of the sync operation.
    * @returns ErrorResponse Error response
    * @throws ApiError
    */
   public static syncConversationMemory(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/memory/messages/sync"]["post"]["req"],
+    data: $OpenApiTs["/v1/conversations/{conversationId}/memory/entries/sync"]["post"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/memory/messages/sync"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/memory/messages/sync"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/memory/entries/sync"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/memory/entries/sync"]["post"]["res"][200]
   > {
     return __request(OpenAPI, {
       method: "POST",
-      url: "/v1/conversations/{conversationId}/memory/messages/sync",
+      url: "/v1/conversations/{conversationId}/memory/entries/sync",
       path: {
         conversationId: data.conversationId,
       },
@@ -240,33 +240,33 @@ export class ConversationsService {
   }
 
   /**
-   * Fork a conversation at a given user message
+   * Fork a conversation at a given user entry
    * Creates a new conversation that replays history up to just before the selected
-   * user message and then diverges starting at that point.
+   * user entry and then diverges starting at that point.
    *
-   * The fork point must be an existing user-authored message; in the new forked
-   * conversation that original message is not present and the next user message
+   * The fork point must be an existing user-authored entry; in the new forked
+   * conversation that original entry is not present and the next user entry
    * is supplied by the caller in a follow-up request.
    * @param data The data for the request.
    * @param data.conversationId
-   * @param data.messageId
+   * @param data.entryId
    * @param data.requestBody
    * @returns ErrorResponse Error response
    * @returns Conversation The newly created forked conversation.
    * @throws ApiError
    */
-  public static forkConversationAtMessage(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/messages/{messageId}/fork"]["post"]["req"],
+  public static forkConversationAtEntry(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/entries/{entryId}/fork"]["post"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/messages/{messageId}/fork"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/messages/{messageId}/fork"]["post"]["res"][201]
+    | $OpenApiTs["/v1/conversations/{conversationId}/entries/{entryId}/fork"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/entries/{entryId}/fork"]["post"]["res"][201]
   > {
     return __request(OpenAPI, {
       method: "POST",
-      url: "/v1/conversations/{conversationId}/messages/{messageId}/fork",
+      url: "/v1/conversations/{conversationId}/entries/{entryId}/fork",
       path: {
         conversationId: data.conversationId,
-        messageId: data.messageId,
+        entryId: data.entryId,
       },
       body: data.requestBody,
       mediaType: "application/json",
@@ -498,30 +498,30 @@ export class SearchService {
    * @returns ErrorResponse Error response
    * @throws ApiError
    */
-  public static searchMessages(
-    data: $OpenApiTs["/v1/user/search/messages"]["post"]["req"],
+  public static searchEntries(
+    data: $OpenApiTs["/v1/user/search/entries"]["post"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/user/search/messages"]["post"]["res"][200]
-    | $OpenApiTs["/v1/user/search/messages"]["post"]["res"][200]
+    | $OpenApiTs["/v1/user/search/entries"]["post"]["res"][200]
+    | $OpenApiTs["/v1/user/search/entries"]["post"]["res"][200]
   > {
     return __request(OpenAPI, {
       method: "POST",
-      url: "/v1/user/search/messages",
+      url: "/v1/user/search/entries",
       body: data.requestBody,
       mediaType: "application/json",
     });
   }
 
   /**
-   * Store a summarization of previous messages
-   * Stores an internal summarization of previous messages in the conversation.
-   * Summary messages are not visible in user-facing message lists.
+   * Store a summarization of previous entries
+   * Stores an internal summarization of previous entries in the conversation.
+   * Summary entries are not visible in user-facing entry lists.
    * Requires a valid agent API key.
    * @param data The data for the request.
    * @param data.conversationId
    * @param data.requestBody
    * @returns ErrorResponse Error response
-   * @returns Message The created summary message.
+   * @returns Entry The created summary entry.
    * @throws ApiError
    */
   public static createConversationSummary(

@@ -1,6 +1,6 @@
 package io.github.chirino.memory.api.dto;
 
-public class ForkFromMessageRequest {
+public class ForkFromEntryRequest {
 
     private String title;
 

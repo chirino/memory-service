@@ -31,8 +31,8 @@ enum AccessLevel {
   READER = 4;
 }
 
-enum MessageChannel {
-  MESSAGE_CHANNEL_UNSPECIFIED = 0;
+enum Channel {
+  CHANNEL_UNSPECIFIED = 0;
   HISTORY = 1;
   MEMORY = 2;
   SUMMARY = 3;
@@ -57,7 +57,7 @@ message Conversation {
   string last_message_preview = 6;
   AccessLevel access_level = 7;
   reserved 8; // conversation_group_id removed
-  string forked_at_message_id = 9;
+  string forked_at_entry_id = 9;
   string forked_at_conversation_id = 10;
 }
 
@@ -72,7 +72,7 @@ message ConversationMembership {
 message ConversationForkSummary {
   string conversation_id = 1;
   reserved 2; // conversation_group_id removed
-  string forked_at_message_id = 3;
+  string forked_at_entry_id = 3;
   string forked_at_conversation_id = 4;
   string title = 5;
   string created_at = 6;
@@ -104,7 +104,7 @@ message DeleteConversationRequest {
 
 message ForkConversationRequest {
   string conversation_id = 1;
-  string message_id = 2;
+  string entry_id = 2;
   string title = 3;
 }
 
@@ -121,50 +121,52 @@ message TransferOwnershipRequest {
   string new_owner_user_id = 2;
 }
 
-message CreateMessageRequest {
+message CreateEntryRequest {
   string user_id = 1;
-  MessageChannel channel = 2;
+  Channel channel = 2;
   int64 epoch = 3;
-  repeated google.protobuf.Value content = 4;
+  string content_type = 4;
+  repeated google.protobuf.Value content = 5;
 }
 
-message SyncMessagesRequest {
+message SyncEntriesRequest {
   string conversation_id = 1;
-  repeated CreateMessageRequest messages = 2;
+  repeated CreateEntryRequest entries = 2;
 }
 
-message SyncMessagesResponse {
+message SyncEntriesResponse {
   optional int64 epoch = 1;
   bool no_op = 2;
   bool epoch_incremented = 3;
-  repeated Message messages = 4;
+  repeated Entry entries = 4;
 }
 
-message AppendMessageRequest {
+message AppendEntryRequest {
   string conversation_id = 1;
-  CreateMessageRequest message = 2;
+  CreateEntryRequest entry = 2;
 }
 
-message ListMessagesRequest {
+message ListEntriesRequest {
   string conversation_id = 1;
-  MessageChannel channel = 2;
+  Channel channel = 2;
   string epoch_filter = 3;
   PageRequest page = 4;
 }
 
-message ListMessagesResponse {
-  repeated Message messages = 1;
+message ListEntriesResponse {
+  repeated Entry entries = 1;
   PageInfo page_info = 2;
 }
 
-message Message {
+message Entry {
   string id = 1;
   string conversation_id = 2;
   string user_id = 3;
-  MessageChannel channel = 4;
+  Channel channel = 4;
   int64 epoch = 5;
-  repeated google.protobuf.Value content = 6;
-  string created_at = 7;
+  string content_type = 6;
+  repeated google.protobuf.Value content = 7;
+  string created_at = 8;
 }
 
 message ListMembershipsRequest {
@@ -192,19 +194,19 @@ message DeleteMembershipRequest {
   string member_user_id = 2;
 }
 
-message SearchMessagesRequest {
+message SearchEntriesRequest {
   string query = 1;
   int32 top_k = 2;
   repeated string conversation_ids = 3;
   string before = 4;
 }
 
-message SearchMessagesResponse {
+message SearchEntriesResponse {
   repeated SearchResult results = 1;
 }
 
 message SearchResult {
-  Message message = 1;
+  Entry entry = 1;
   float score = 2;
   string highlights = 3;
 }
@@ -213,7 +215,7 @@ message CreateSummaryRequest {
   string conversation_id = 1;
   string title = 2;
   string summary = 3;
-  string until_message_id = 4;
+  string until_entry_id = 4;
   string summarized_at = 5;
 }
 
@@ -229,7 +231,7 @@ service ConversationsService {
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
   rpc CreateConversation(CreateConversationRequest) returns (Conversation);
   rpc GetConversation(GetConversationRequest) returns (Conversation);
-  // DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
+  // DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
   rpc DeleteConversation(DeleteConversationRequest) returns (google.protobuf.Empty);
   rpc ForkConversation(ForkConversationRequest) returns (Conversation);
   rpc ListForks(ListForksRequest) returns (ListForksResponse);
@@ -243,15 +245,15 @@ service ConversationMembershipsService {
   rpc DeleteMembership(DeleteMembershipRequest) returns (google.protobuf.Empty);
 }
 
-service MessagesService {
-  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
-  rpc AppendMessage(AppendMessageRequest) returns (Message);
-  rpc SyncMessages(SyncMessagesRequest) returns (SyncMessagesResponse);
+service EntriesService {
+  rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
+  rpc AppendEntry(AppendEntryRequest) returns (Entry);
+  rpc SyncEntries(SyncEntriesRequest) returns (SyncEntriesResponse);
 }
 
 service SearchService {
-  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
-  rpc CreateSummary(CreateSummaryRequest) returns (Message);
+  rpc SearchEntries(SearchEntriesRequest) returns (SearchEntriesResponse);
+  rpc CreateSummary(CreateSummaryRequest) returns (Entry);
 }
 
 service ResponseResumerService {

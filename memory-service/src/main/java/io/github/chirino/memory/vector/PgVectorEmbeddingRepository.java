@@ -12,16 +12,16 @@ public class PgVectorEmbeddingRepository {
     @Inject EntityManager entityManager;
 
     @Transactional
-    public void upsertEmbedding(String messageId, String conversationId, String embedding) {
+    public void upsertEmbedding(String entryId, String conversationId, String embedding) {
         entityManager
                 .createNativeQuery(
-                        "INSERT INTO message_embeddings (message_id, conversation_id, embedding) "
+                        "INSERT INTO entry_embeddings (entry_id, conversation_id, embedding) "
                                 + "VALUES (?1, ?2, CAST(?3 AS vector)) "
-                                + "ON CONFLICT (message_id) DO UPDATE SET "
+                                + "ON CONFLICT (entry_id) DO UPDATE SET "
                                 + "conversation_id = EXCLUDED.conversation_id, "
                                 + "embedding = EXCLUDED.embedding, "
                                 + "created_at = NOW()")
-                .setParameter(1, UUID.fromString(messageId))
+                .setParameter(1, UUID.fromString(entryId))
                 .setParameter(2, UUID.fromString(conversationId))
                 .setParameter(3, embedding)
                 .executeUpdate();
@@ -29,14 +29,14 @@ public class PgVectorEmbeddingRepository {
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void deleteByConversationGroupId(String conversationGroupId) {
-        // Delete embeddings for all messages in conversations belonging to the group
-        // This joins through messages -> conversations -> conversation_groups
+        // Delete embeddings for all entries in conversations belonging to the group
+        // This joins through entries -> conversations -> conversation_groups
         entityManager
                 .createNativeQuery(
-                        "DELETE FROM message_embeddings "
-                                + "WHERE message_id IN ("
-                                + "  SELECT m.id FROM messages m "
-                                + "  JOIN conversations c ON m.conversation_id = c.id "
+                        "DELETE FROM entry_embeddings "
+                                + "WHERE entry_id IN ("
+                                + "  SELECT e.id FROM entries e "
+                                + "  JOIN conversations c ON e.conversation_id = c.id "
                                 + "  WHERE c.conversation_group_id = ?1"
                                 + ")")
                 .setParameter(1, UUID.fromString(conversationGroupId))

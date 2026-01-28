@@ -2,10 +2,11 @@ package io.github.chirino.memoryservice.memory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
-import io.github.chirino.memoryservice.client.model.CreateMessageRequest;
-import io.github.chirino.memoryservice.client.model.ListConversationMessages200Response;
-import io.github.chirino.memoryservice.client.model.MessageChannel;
-import io.github.chirino.memoryservice.client.model.SyncMessagesRequest;
+import io.github.chirino.memoryservice.client.model.Channel;
+import io.github.chirino.memoryservice.client.model.CreateEntryRequest;
+import io.github.chirino.memoryservice.client.model.Entry;
+import io.github.chirino.memoryservice.client.model.ListConversationEntries200Response;
+import io.github.chirino.memoryservice.client.model.SyncEntriesRequest;
 import io.github.chirino.memoryservice.history.ConversationsApiFactory;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.util.ArrayList;
@@ -66,12 +67,12 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         Objects.requireNonNull(conversationId, "conversationId");
         LOG.debug("findByConversationId called for conversationId={}", conversationId);
 
-        ListConversationMessages200Response response;
+        ListConversationEntries200Response response;
         try {
             response =
                     conversationsApi()
-                            .listConversationMessages(
-                                    conversationId, null, 1000, MessageChannel.MEMORY, null)
+                            .listConversationEntries(
+                                    conversationId, null, 1000, Channel.MEMORY, null)
                             .block();
         } catch (WebClientResponseException e) {
             int status = e.getStatusCode().value();
@@ -89,12 +90,12 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         }
 
         List<Message> result = new ArrayList<>();
-        for (io.github.chirino.memoryservice.client.model.Message msg : response.getData()) {
-            if (msg.getContent() == null) {
+        for (Entry entry : response.getData()) {
+            if (entry.getContent() == null) {
                 continue;
             }
-            for (Object contentBlock : msg.getContent()) {
-                Message decoded = decodeContentBlock(contentBlock, conversationId, msg.getId());
+            for (Object contentBlock : entry.getContent()) {
+                Message decoded = decodeContentBlock(contentBlock, conversationId, entry.getId());
                 if (decoded != null) {
                     result.add(decoded);
                 }
@@ -118,34 +119,34 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
             return;
         }
 
-        SyncMessagesRequest syncRequest = new SyncMessagesRequest();
-        List<CreateMessageRequest> syncMessages = new ArrayList<>();
+        SyncEntriesRequest syncRequest = new SyncEntriesRequest();
+        List<CreateEntryRequest> syncEntries = new ArrayList<>();
 
         for (Message message : messages) {
             if (message == null) {
                 continue;
             }
-            CreateMessageRequest request = toCreateMessageRequest(message);
+            CreateEntryRequest request = toCreateEntryRequest(message);
             if (request != null) {
-                syncMessages.add(request);
+                syncEntries.add(request);
             }
         }
 
-        if (syncMessages.isEmpty()) {
-            LOG.debug("No valid messages to sync for conversationId={}", conversationId);
+        if (syncEntries.isEmpty()) {
+            LOG.debug("No valid entries to sync for conversationId={}", conversationId);
             return;
         }
 
-        syncRequest.setMessages(syncMessages);
+        syncRequest.setEntries(syncEntries);
 
         try {
             conversationsApi().syncConversationMemory(conversationId, syncRequest).block();
             LOG.debug(
-                    "Successfully synced {} messages for conversationId={}",
-                    syncMessages.size(),
+                    "Successfully synced {} entries for conversationId={}",
+                    syncEntries.size(),
                     conversationId);
         } catch (Exception e) {
-            LOG.warn("Failed to sync messages for conversationId={}", conversationId, e);
+            LOG.warn("Failed to sync entries for conversationId={}", conversationId, e);
             throw e;
         }
     }
@@ -167,9 +168,10 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         return apiFactory.create(bearerToken);
     }
 
-    private CreateMessageRequest toCreateMessageRequest(Message message) {
-        CreateMessageRequest request = new CreateMessageRequest();
-        request.setChannel(MessageChannel.MEMORY);
+    private CreateEntryRequest toCreateEntryRequest(Message message) {
+        CreateEntryRequest request = new CreateEntryRequest();
+        request.setChannel(Channel.MEMORY);
+        request.setContentType("SpringAI");
 
         String userId = SecurityHelper.principalName();
         if (userId != null) {
@@ -184,7 +186,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
     }
 
     @Nullable
-    private Message decodeContentBlock(Object block, String conversationId, String messageId) {
+    private Message decodeContentBlock(Object block, String conversationId, String entryId) {
         if (block == null) {
             return null;
         }
@@ -202,18 +204,18 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
 
             if (role == null || text == null) {
                 LOG.debug(
-                        "Content block missing role or text for conversationId={}, messageId={}",
+                        "Content block missing role or text for conversationId={}, entryId={}",
                         conversationId,
-                        messageId);
+                        entryId);
                 return null;
             }
 
             return createMessage(role, text);
         } catch (Exception e) {
             LOG.warn(
-                    "Failed to decode content block for conversationId={}, messageId={}",
+                    "Failed to decode content block for conversationId={}, entryId={}",
                     conversationId,
-                    messageId,
+                    entryId,
                     e);
             return null;
         }

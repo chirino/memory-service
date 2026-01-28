@@ -2,7 +2,7 @@ package io.github.chirino.memory.api.dto;
 
 import java.util.Map;
 
-public class CreateUserMessageRequest {
+public class CreateUserEntryRequest {
 
     private String content;
     private Map<String, Object> metadata;

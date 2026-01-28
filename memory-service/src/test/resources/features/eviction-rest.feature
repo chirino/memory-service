@@ -106,7 +106,7 @@ Feature: Data Eviction
       """
       {
         "retentionPeriod": "P90D",
-        "resourceTypes": ["messages"]
+        "resourceTypes": ["entries"]
       }
       """
     Then the response status should be 400
@@ -114,7 +114,7 @@ Feature: Data Eviction
   Scenario: Cascade deletes child records
     Given I have a conversation with title "Parent Conversation"
     And set "groupId" to "${conversationGroupId}"
-    And the conversation has messages
+    And the conversation has entries
     And the conversation was soft-deleted 100 days ago
     When I call POST "/v1/admin/evict" with body:
       """
@@ -124,10 +124,10 @@ Feature: Data Eviction
       }
       """
     Then the response status should be 204
-    # Verify messages were cascade deleted
+    # Verify entries were cascade deleted
     When I execute SQL query:
       """
-      SELECT COUNT(*) as count FROM messages WHERE conversation_group_id = '${groupId}'
+      SELECT COUNT(*) as count FROM entries WHERE conversation_group_id = '${groupId}'
       """
     Then the SQL result should match:
       | count |

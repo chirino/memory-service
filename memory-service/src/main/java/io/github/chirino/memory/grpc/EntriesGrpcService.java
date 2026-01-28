@@ -1,16 +1,16 @@
 package io.github.chirino.memory.grpc;
 
-import io.github.chirino.memory.api.dto.PagedMessages;
+import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SyncResult;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
-import io.github.chirino.memory.grpc.v1.AppendMessageRequest;
-import io.github.chirino.memory.grpc.v1.ListMessagesRequest;
-import io.github.chirino.memory.grpc.v1.ListMessagesResponse;
-import io.github.chirino.memory.grpc.v1.Message;
-import io.github.chirino.memory.grpc.v1.MessagesService;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
+import io.github.chirino.memory.grpc.v1.AppendEntryRequest;
+import io.github.chirino.memory.grpc.v1.EntriesService;
+import io.github.chirino.memory.grpc.v1.Entry;
+import io.github.chirino.memory.grpc.v1.ListEntriesRequest;
+import io.github.chirino.memory.grpc.v1.ListEntriesResponse;
 import io.github.chirino.memory.grpc.v1.PageInfo;
-import io.github.chirino.memory.grpc.v1.SyncMessagesRequest;
-import io.github.chirino.memory.grpc.v1.SyncMessagesResponse;
+import io.github.chirino.memory.grpc.v1.SyncEntriesRequest;
+import io.github.chirino.memory.grpc.v1.SyncEntriesResponse;
 import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.grpc.Status;
 import io.quarkus.grpc.GrpcService;
@@ -22,10 +22,10 @@ import java.util.stream.Collectors;
 
 @GrpcService
 @Blocking
-public class MessagesGrpcService extends AbstractGrpcService implements MessagesService {
+public class EntriesGrpcService extends AbstractGrpcService implements EntriesService {
 
     @Override
-    public Uni<ListMessagesResponse> listMessages(ListMessagesRequest request) {
+    public Uni<ListEntriesResponse> listEntries(ListEntriesRequest request) {
         return Uni.createFrom()
                 .item(
                         () -> {
@@ -35,12 +35,12 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                         .withDescription("conversationId is required")
                                         .asRuntimeException();
                             }
-                            io.github.chirino.memory.model.MessageChannel requestedChannel =
+                            io.github.chirino.memory.model.Channel requestedChannel =
                                     GrpcDtoMapper.fromProtoChannel(request.getChannel());
-                            io.github.chirino.memory.model.MessageChannel channel =
+                            io.github.chirino.memory.model.Channel channel =
                                     toEffectiveChannel(requestedChannel);
                             MemoryEpochFilter epochFilter = null;
-                            if (channel == io.github.chirino.memory.model.MessageChannel.MEMORY) {
+                            if (channel == io.github.chirino.memory.model.Channel.MEMORY) {
                                 if (currentClientId() == null || currentClientId().isBlank()) {
                                     throw Status.PERMISSION_DENIED
                                             .withDescription(
@@ -64,8 +64,8 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                     request.hasPage() && request.getPage().getPageSize() > 0
                                             ? request.getPage().getPageSize()
                                             : 50;
-                            PagedMessages paged =
-                                    store().getMessages(
+                            PagedEntries paged =
+                                    store().getEntries(
                                                     currentUserId(),
                                                     request.getConversationId(),
                                                     token,
@@ -73,11 +73,10 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                                     channel,
                                                     epochFilter,
                                                     currentClientId());
-                            ListMessagesResponse.Builder builder =
-                                    ListMessagesResponse.newBuilder();
+                            ListEntriesResponse.Builder builder = ListEntriesResponse.newBuilder();
                             if (paged != null) {
-                                builder.addAllMessages(
-                                        paged.getMessages().stream()
+                                builder.addAllEntries(
+                                        paged.getEntries().stream()
                                                 .map(GrpcDtoMapper::toProto)
                                                 .collect(Collectors.toList()));
                                 String nextCursor = paged.getNextCursor();
@@ -93,14 +92,14 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
     }
 
     @Override
-    public Uni<Message> appendMessage(AppendMessageRequest request) {
+    public Uni<Entry> appendEntry(AppendEntryRequest request) {
         return Uni.createFrom()
                 .item(
                         () -> {
                             if (!hasValidApiKey()) {
                                 throw Status.PERMISSION_DENIED
                                         .withDescription(
-                                                "Agent API key is required to append messages")
+                                                "Agent API key is required to append entries")
                                         .asRuntimeException();
                             }
                             if (request.getConversationId() == null
@@ -109,55 +108,53 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                         .withDescription("conversationId is required")
                                         .asRuntimeException();
                             }
-                            if (!request.hasMessage()) {
+                            if (!request.hasEntry()) {
                                 throw Status.INVALID_ARGUMENT
-                                        .withDescription("message payload is required")
+                                        .withDescription("entry payload is required")
                                         .asRuntimeException();
                             }
                             String clientId = currentClientId();
                             if (clientId == null || clientId.isBlank()) {
                                 throw Status.PERMISSION_DENIED
-                                        .withDescription("Client id is required for agent messages")
+                                        .withDescription("Client id is required for agent entries")
                                         .asRuntimeException();
                             }
-                            CreateMessageRequest internal = new CreateMessageRequest();
-                            internal.setUserId(request.getMessage().getUserId());
-                            io.github.chirino.memory.model.MessageChannel requestChannel =
-                                    GrpcDtoMapper.fromProtoChannel(
-                                            request.getMessage().getChannel());
-                            internal.setChannel(
-                                    GrpcDtoMapper.toCreateMessageChannel(requestChannel));
-                            internal.setEpoch(request.getMessage().getEpoch());
+                            CreateEntryRequest internal = new CreateEntryRequest();
+                            internal.setUserId(request.getEntry().getUserId());
+                            io.github.chirino.memory.model.Channel requestChannel =
+                                    GrpcDtoMapper.fromProtoChannel(request.getEntry().getChannel());
+                            internal.setChannel(GrpcDtoMapper.toCreateEntryChannel(requestChannel));
+                            internal.setEpoch(request.getEntry().getEpoch());
+                            internal.setContentType(request.getEntry().getContentType());
                             internal.setContent(
-                                    GrpcDtoMapper.fromValues(
-                                            request.getMessage().getContentList()));
-                            List<io.github.chirino.memory.api.dto.MessageDto> appended =
-                                    store().appendAgentMessages(
+                                    GrpcDtoMapper.fromValues(request.getEntry().getContentList()));
+                            List<io.github.chirino.memory.api.dto.EntryDto> appended =
+                                    store().appendAgentEntries(
                                                     currentUserId(),
                                                     request.getConversationId(),
                                                     List.of(internal),
                                                     clientId);
-                            io.github.chirino.memory.api.dto.MessageDto latest =
+                            io.github.chirino.memory.api.dto.EntryDto latest =
                                     appended != null && !appended.isEmpty()
                                             ? appended.get(appended.size() - 1)
                                             : null;
                             return latest != null
                                     ? GrpcDtoMapper.toProto(latest)
-                                    : Message.getDefaultInstance();
+                                    : Entry.getDefaultInstance();
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
     }
 
     @Override
-    public Uni<SyncMessagesResponse> syncMessages(SyncMessagesRequest request) {
+    public Uni<SyncEntriesResponse> syncEntries(SyncEntriesRequest request) {
         return Uni.createFrom()
                 .item(
                         () -> {
                             if (!hasValidApiKey()) {
                                 throw Status.PERMISSION_DENIED
                                         .withDescription(
-                                                "Agent API key is required to sync memory messages")
+                                                "Agent API key is required to sync memory entries")
                                         .asRuntimeException();
                             }
                             if (request.getConversationId() == null
@@ -166,49 +163,49 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                         .withDescription("conversationId is required")
                                         .asRuntimeException();
                             }
-                            if (request.getMessagesCount() == 0) {
+                            if (request.getEntriesCount() == 0) {
                                 throw Status.INVALID_ARGUMENT
-                                        .withDescription("at least one message is required")
+                                        .withDescription("at least one entry is required")
                                         .asRuntimeException();
                             }
                             String clientId = currentClientId();
                             if (clientId == null || clientId.isBlank()) {
                                 throw Status.PERMISSION_DENIED
                                         .withDescription(
-                                                "Client id is required to sync memory messages")
+                                                "Client id is required to sync memory entries")
                                         .asRuntimeException();
                             }
-                            List<CreateMessageRequest> internal =
-                                    new ArrayList<>(request.getMessagesCount());
-                            for (io.github.chirino.memory.grpc.v1.CreateMessageRequest message :
-                                    request.getMessagesList()) {
-                                if (message == null
-                                        || message.getChannel()
-                                                != io.github.chirino.memory.grpc.v1.MessageChannel
+                            List<CreateEntryRequest> internal =
+                                    new ArrayList<>(request.getEntriesCount());
+                            for (io.github.chirino.memory.grpc.v1.CreateEntryRequest entry :
+                                    request.getEntriesList()) {
+                                if (entry == null
+                                        || entry.getChannel()
+                                                != io.github.chirino.memory.grpc.v1.Channel
                                                         .MEMORY) {
                                     throw Status.INVALID_ARGUMENT
                                             .withDescription(
-                                                    "all sync messages must target the memory"
+                                                    "all sync entries must target the memory"
                                                             + " channel")
                                             .asRuntimeException();
                                 }
-                                internal.add(toClientCreateMessage(message));
+                                internal.add(toClientCreateEntry(entry));
                             }
                             SyncResult result =
-                                    store().syncAgentMessages(
+                                    store().syncAgentEntries(
                                                     currentUserId(),
                                                     request.getConversationId(),
                                                     internal,
                                                     clientId);
-                            SyncMessagesResponse.Builder builder =
-                                    SyncMessagesResponse.newBuilder()
+                            SyncEntriesResponse.Builder builder =
+                                    SyncEntriesResponse.newBuilder()
                                             .setNoOp(result.isNoOp())
                                             .setEpochIncremented(result.isEpochIncremented());
                             if (result.getEpoch() != null) {
                                 builder.setEpoch(result.getEpoch());
                             }
-                            builder.addAllMessages(
-                                    result.getMessages().stream()
+                            builder.addAllEntries(
+                                    result.getEntries().stream()
                                             .map(GrpcDtoMapper::toProto)
                                             .collect(Collectors.toList()));
                             return builder.build();
@@ -217,27 +214,26 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                 .transform(GrpcStatusMapper::map);
     }
 
-    private io.github.chirino.memory.model.MessageChannel toEffectiveChannel(
-            io.github.chirino.memory.model.MessageChannel requested) {
-        io.github.chirino.memory.model.MessageChannel safeChannel =
-                requested != null
-                        ? requested
-                        : io.github.chirino.memory.model.MessageChannel.HISTORY;
+    private io.github.chirino.memory.model.Channel toEffectiveChannel(
+            io.github.chirino.memory.model.Channel requested) {
+        io.github.chirino.memory.model.Channel safeChannel =
+                requested != null ? requested : io.github.chirino.memory.model.Channel.HISTORY;
         if (!hasValidApiKey()) {
-            return io.github.chirino.memory.model.MessageChannel.HISTORY;
+            return io.github.chirino.memory.model.Channel.HISTORY;
         }
         return safeChannel;
     }
 
-    private CreateMessageRequest toClientCreateMessage(
-            io.github.chirino.memory.grpc.v1.CreateMessageRequest request) {
-        CreateMessageRequest internal = new CreateMessageRequest();
+    private CreateEntryRequest toClientCreateEntry(
+            io.github.chirino.memory.grpc.v1.CreateEntryRequest request) {
+        CreateEntryRequest internal = new CreateEntryRequest();
         String userId = request.getUserId();
         internal.setUserId(userId == null || userId.isBlank() ? null : userId);
-        io.github.chirino.memory.model.MessageChannel requestChannel =
+        io.github.chirino.memory.model.Channel requestChannel =
                 GrpcDtoMapper.fromProtoChannel(request.getChannel());
-        internal.setChannel(GrpcDtoMapper.toCreateMessageChannel(requestChannel));
+        internal.setChannel(GrpcDtoMapper.toCreateEntryChannel(requestChannel));
         internal.setEpoch(request.getEpoch());
+        internal.setContentType(request.getContentType());
         internal.setContent(GrpcDtoMapper.fromValues(request.getContentList()));
         return internal;
     }

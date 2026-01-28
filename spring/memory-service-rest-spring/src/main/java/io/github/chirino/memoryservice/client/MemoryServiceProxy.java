@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
 import io.github.chirino.memoryservice.client.api.SharingApi;
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
-import io.github.chirino.memoryservice.client.model.ForkFromMessageRequest;
-import io.github.chirino.memoryservice.client.model.MessageChannel;
+import io.github.chirino.memoryservice.client.model.Channel;
+import io.github.chirino.memoryservice.client.model.ForkFromEntryRequest;
 import io.github.chirino.memoryservice.client.model.ShareConversationRequest;
 import io.github.chirino.memoryservice.client.model.TransferConversationOwnershipRequest;
 import java.time.Duration;
@@ -66,12 +66,12 @@ public class MemoryServiceProxy {
                 api -> api.deleteConversationWithHttpInfo(conversationId), HttpStatus.NO_CONTENT);
     }
 
-    public ResponseEntity<?> listConversationMessages(
+    public ResponseEntity<?> listConversationEntries(
             String conversationId, String after, Integer limit) {
         return execute(
                 api ->
-                        api.listConversationMessagesWithHttpInfo(
-                                conversationId, after, limit, MessageChannel.HISTORY, null),
+                        api.listConversationEntriesWithHttpInfo(
+                                conversationId, after, limit, Channel.HISTORY, null),
                 HttpStatus.OK);
     }
 
@@ -79,17 +79,17 @@ public class MemoryServiceProxy {
         return execute(api -> api.listConversationForksWithHttpInfo(conversationId), HttpStatus.OK);
     }
 
-    public ResponseEntity<?> forkConversationAtMessage(
-            String conversationId, String messageId, String body) {
+    public ResponseEntity<?> forkConversationAtEntry(
+            String conversationId, String entryId, String body) {
         try {
-            ForkFromMessageRequest request =
+            ForkFromEntryRequest request =
                     StringUtils.hasText(body)
-                            ? OBJECT_MAPPER.readValue(body, ForkFromMessageRequest.class)
-                            : new ForkFromMessageRequest();
+                            ? OBJECT_MAPPER.readValue(body, ForkFromEntryRequest.class)
+                            : new ForkFromEntryRequest();
             return execute(
                     api ->
-                            api.forkConversationAtMessageWithHttpInfo(
-                                    conversationId, messageId, request),
+                            api.forkConversationAtEntryWithHttpInfo(
+                                    conversationId, entryId, request),
                     HttpStatus.OK);
         } catch (Exception e) {
             LOG.error("Error parsing fork request body", e);
