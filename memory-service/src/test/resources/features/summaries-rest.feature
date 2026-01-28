@@ -6,35 +6,36 @@ Feature: Summaries REST API
   Background:
     Given I am authenticated as user "alice"
     And I have a conversation with title "Test Conversation"
-    And the conversation has a message "Order status question"
+    And the conversation has an entry "Order status question"
 
   Scenario: Agent can create a summary and user can search it
     Given I am authenticated as agent with API key "test-agent-key"
-    When I list messages for the conversation
-    And set "firstMessageId" to the json response field "data[0].id"
+    When I list entries for the conversation
+    And set "firstEntryId" to the json response field "data[0].id"
     When I create a summary with request:
     """
     {
       "title": "Order summary",
       "summary": "Customer asked about refund policy.",
-      "untilMessageId": "${firstMessageId}",
+      "untilEntryId": "${firstEntryId}",
       "summarizedAt": "2024-01-01T00:00:00Z"
     }
     """
     Then the response status should be 201
-    And the message should have channel "SUMMARY"
-    And the message should have content "Customer asked about refund policy."
+    And the entry should have channel "SUMMARY"
+    And the entry should have content "Customer asked about refund policy."
     And the response body should be json:
     """
     {
       "id": "${response.body.id}",
       "conversationId": "${conversationId}",
       "channel": "summary",
+      "contentType": "summary",
       "content": [
         {
           "type": "summary",
           "text": "Customer asked about refund policy.",
-          "untilMessageId": "${firstMessageId}",
+          "untilEntryId": "${firstEntryId}",
           "summarizedAt": "2024-01-01T00:00:00Z"
         }
       ],
@@ -42,21 +43,22 @@ Feature: Summaries REST API
     }
     """
     Given I am authenticated as user "alice"
-    When I search messages for query "refund policy"
+    When I search entries for query "refund policy"
     Then the response status should be 200
     And the search response should contain 1 results
-    And search result at index 0 should have message content "Customer asked about refund policy."
+    And search result at index 0 should have entry content "Customer asked about refund policy."
     And the response body should be json:
     """
     {
       "data": [
         {
-          "message": {
-            "id": "${response.body.data[0].message.id}",
-            "conversationId": "${response.body.data[0].message.conversationId}",
-            "channel": "${response.body.data[0].message.channel}",
-            "content": ${response.body.data[0].message.content},
-            "createdAt": "${response.body.data[0].message.createdAt}"
+          "entry": {
+            "id": "${response.body.data[0].entry.id}",
+            "conversationId": "${response.body.data[0].entry.conversationId}",
+            "channel": "${response.body.data[0].entry.channel}",
+            "contentType": "${response.body.data[0].entry.contentType}",
+            "content": ${response.body.data[0].entry.content},
+            "createdAt": "${response.body.data[0].entry.createdAt}"
           },
           "score": ${response.body.data[0].score}
         }
@@ -66,14 +68,14 @@ Feature: Summaries REST API
 
   Scenario: Summary creation requires agent API key
     Given I am authenticated as user "alice"
-    When I list messages for the conversation
-    And set "firstMessageId" to the json response field "data[0].id"
+    When I list entries for the conversation
+    And set "firstEntryId" to the json response field "data[0].id"
     When I create a summary with request:
     """
     {
       "title": "Blocked summary",
       "summary": "Should not be created.",
-      "untilMessageId": "${firstMessageId}",
+      "untilEntryId": "${firstEntryId}",
       "summarizedAt": "2024-01-01T00:00:00Z"
     }
     """
@@ -90,22 +92,22 @@ Feature: Summaries REST API
     }
     """
 
-  Scenario: Search messages with query
+  Scenario: Search entries with query
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has a message "Customer wants to return item"
-    When I list messages for the conversation
-    And set "firstMessageId" to the json response field "data[0].id"
+    And the conversation has an entry "Customer wants to return item"
+    When I list entries for the conversation
+    And set "firstEntryId" to the json response field "data[0].id"
     When I create a summary with request:
     """
     {
       "title": "Return request",
       "summary": "Customer wants to return an item and get a refund.",
-      "untilMessageId": "${firstMessageId}",
+      "untilEntryId": "${firstEntryId}",
       "summarizedAt": "2024-01-01T00:00:00Z"
     }
     """
     Given I am authenticated as user "alice"
-    When I search messages with request:
+    When I search entries with request:
     """
     {
       "query": "return item",

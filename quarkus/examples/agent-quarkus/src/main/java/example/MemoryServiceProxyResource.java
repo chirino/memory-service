@@ -1,6 +1,6 @@
 package example;
 
-import io.github.chirino.memory.client.model.MessageChannel;
+import io.github.chirino.memory.client.model.Channel;
 import io.github.chirino.memory.runtime.MemoryServiceProxy;
 import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -51,25 +51,24 @@ public class MemoryServiceProxyResource {
     }
 
     @GET
-    @Path("/{conversationId}/messages")
+    @Path("/{conversationId}/entries")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response listConversationMessages(
+    public Response listConversationEntries(
             @PathParam("conversationId") String conversationId,
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit) {
-        return proxy.listConversationMessages(
-                conversationId, after, limit, MessageChannel.HISTORY, null);
+        return proxy.listConversationEntries(conversationId, after, limit, Channel.HISTORY, null);
     }
 
     @POST
-    @Path("/{conversationId}/messages/{messageId}/fork")
+    @Path("/{conversationId}/entries/{entryId}/fork")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response forkConversationAtMessage(
+    public Response forkConversationAtEntry(
             @PathParam("conversationId") String conversationId,
-            @PathParam("messageId") String messageId,
+            @PathParam("entryId") String entryId,
             String body) {
-        return proxy.forkConversationAtMessage(conversationId, messageId, body);
+        return proxy.forkConversationAtEntry(conversationId, entryId, body);
     }
 
     @GET
@@ -104,12 +103,12 @@ public class MemoryServiceProxyResource {
     //     return proxy.createConversation(body);
     // }
     // @POST
-    // @Path("/{conversationId}/messages")
+    // @Path("/{conversationId}/entries")
     // @Consumes(MediaType.APPLICATION_JSON)
     // @Produces(MediaType.APPLICATION_JSON)
-    // public Response appendConversationMessage(
+    // public Response appendConversationEntry(
     //         @PathParam("conversationId") String conversationId, String body) {
-    //     return proxy.appendConversationMessage(conversationId, body);
+    //     return proxy.appendConversationEntry(conversationId, body);
     // }
     // @GET
     // @Path("/{conversationId}/memberships")

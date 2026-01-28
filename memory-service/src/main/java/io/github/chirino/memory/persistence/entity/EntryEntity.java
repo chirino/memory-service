@@ -1,6 +1,6 @@
 package io.github.chirino.memory.persistence.entity;
 
-import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.model.Channel;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -15,8 +15,8 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "messages")
-public class MessageEntity {
+@Table(name = "entries")
+public class EntryEntity {
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)
@@ -37,10 +37,13 @@ public class MessageEntity {
 
     @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
     @Column(name = "channel", nullable = false)
-    private MessageChannel channel;
+    private Channel channel;
 
     @Column(name = "epoch")
     private Long epoch;
+
+    @Column(name = "content_type", nullable = false)
+    private String contentType;
 
     @JdbcTypeCode(SqlTypes.BINARY)
     @Column(name = "content", nullable = false, columnDefinition = "bytea")
@@ -89,11 +92,11 @@ public class MessageEntity {
         this.clientId = clientId;
     }
 
-    public MessageChannel getChannel() {
+    public Channel getChannel() {
         return channel;
     }
 
-    public void setChannel(MessageChannel channel) {
+    public void setChannel(Channel channel) {
         this.channel = channel;
     }
 
@@ -103,6 +106,14 @@ public class MessageEntity {
 
     public void setEpoch(Long epoch) {
         this.epoch = epoch;
+    }
+
+    public String getContentType() {
+        return contentType;
+    }
+
+    public void setContentType(String contentType) {
+        this.contentType = contentType;
     }
 
     public byte[] getContent() {

@@ -16,17 +16,17 @@ import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
-import io.github.chirino.memory.api.dto.MessageDto;
+import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.SearchResultDto;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.grpc.v1.Conversation;
 import io.github.chirino.memory.grpc.v1.ConversationForkSummary;
 import io.github.chirino.memory.grpc.v1.ConversationMembership;
 import io.github.chirino.memory.grpc.v1.ConversationSummary;
-import io.github.chirino.memory.grpc.v1.Message;
+import io.github.chirino.memory.grpc.v1.Entry;
 import io.github.chirino.memory.grpc.v1.SearchResult;
 import io.github.chirino.memory.model.AccessLevel;
-import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.model.Channel;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -69,8 +69,8 @@ public final class GrpcDtoMapper {
                         dto.getLastMessagePreview() == null ? "" : dto.getLastMessagePreview())
                 .setAccessLevel(accessLevelToProto(dto.getAccessLevel()))
                 // conversation_group_id is not exposed in API responses
-                .setForkedAtMessageId(
-                        dto.getForkedAtMessageId() == null ? "" : dto.getForkedAtMessageId())
+                .setForkedAtEntryId(
+                        dto.getForkedAtEntryId() == null ? "" : dto.getForkedAtEntryId())
                 .setForkedAtConversationId(
                         dto.getForkedAtConversationId() == null
                                 ? ""
@@ -98,8 +98,8 @@ public final class GrpcDtoMapper {
         return ConversationForkSummary.newBuilder()
                 .setConversationId(dto.getConversationId() == null ? "" : dto.getConversationId())
                 // conversation_group_id is not exposed in API responses
-                .setForkedAtMessageId(
-                        dto.getForkedAtMessageId() == null ? "" : dto.getForkedAtMessageId())
+                .setForkedAtEntryId(
+                        dto.getForkedAtEntryId() == null ? "" : dto.getForkedAtEntryId())
                 .setForkedAtConversationId(
                         dto.getForkedAtConversationId() == null
                                 ? ""
@@ -109,17 +109,18 @@ public final class GrpcDtoMapper {
                 .build();
     }
 
-    public static Message toProto(MessageDto dto) {
+    public static Entry toProto(EntryDto dto) {
         if (dto == null) {
             return null;
         }
-        Message.Builder builder =
-                Message.newBuilder()
+        Entry.Builder builder =
+                Entry.newBuilder()
                         .setId(dto.getId() == null ? "" : dto.getId())
                         .setConversationId(
                                 dto.getConversationId() == null ? "" : dto.getConversationId())
                         .setUserId(dto.getUserId() == null ? "" : dto.getUserId())
                         .setChannel(toProtoChannel(dto.getChannel()))
+                        .setContentType(dto.getContentType() == null ? "" : dto.getContentType())
                         .addAllContent(toValues(dto.getContent()))
                         .setCreatedAt(dto.getCreatedAt() == null ? "" : dto.getCreatedAt());
         if (dto.getEpoch() != null) {
@@ -133,7 +134,7 @@ public final class GrpcDtoMapper {
             return null;
         }
         return SearchResult.newBuilder()
-                .setMessage(toProto(dto.getMessage()))
+                .setEntry(toProto(dto.getEntry()))
                 .setScore((float) dto.getScore())
                 .setHighlights(dto.getHighlights() == null ? "" : dto.getHighlights())
                 .build();
@@ -200,39 +201,37 @@ public final class GrpcDtoMapper {
         };
     }
 
-    public static io.github.chirino.memory.grpc.v1.MessageChannel toProtoChannel(
-            MessageChannel channel) {
+    public static io.github.chirino.memory.grpc.v1.Channel toProtoChannel(Channel channel) {
         if (channel == null) {
-            return io.github.chirino.memory.grpc.v1.MessageChannel.MESSAGE_CHANNEL_UNSPECIFIED;
+            return io.github.chirino.memory.grpc.v1.Channel.CHANNEL_UNSPECIFIED;
         }
         return switch (channel) {
-            case HISTORY -> io.github.chirino.memory.grpc.v1.MessageChannel.HISTORY;
-            case MEMORY -> io.github.chirino.memory.grpc.v1.MessageChannel.MEMORY;
-            case SUMMARY -> io.github.chirino.memory.grpc.v1.MessageChannel.SUMMARY;
+            case HISTORY -> io.github.chirino.memory.grpc.v1.Channel.HISTORY;
+            case MEMORY -> io.github.chirino.memory.grpc.v1.Channel.MEMORY;
+            case SUMMARY -> io.github.chirino.memory.grpc.v1.Channel.SUMMARY;
         };
     }
 
-    public static MessageChannel fromProtoChannel(
-            io.github.chirino.memory.grpc.v1.MessageChannel channel) {
+    public static Channel fromProtoChannel(io.github.chirino.memory.grpc.v1.Channel channel) {
         if (channel == null) {
             return null;
         }
         return switch (channel) {
-            case HISTORY -> MessageChannel.HISTORY;
-            case MEMORY -> MessageChannel.MEMORY;
-            case SUMMARY -> MessageChannel.SUMMARY;
+            case HISTORY -> Channel.HISTORY;
+            case MEMORY -> Channel.MEMORY;
+            case SUMMARY -> Channel.SUMMARY;
             default -> null;
         };
     }
 
-    public static CreateMessageRequest.ChannelEnum toCreateMessageChannel(MessageChannel channel) {
+    public static CreateEntryRequest.ChannelEnum toCreateEntryChannel(Channel channel) {
         if (channel == null) {
             return null;
         }
         return switch (channel) {
-            case HISTORY -> CreateMessageRequest.ChannelEnum.HISTORY;
-            case MEMORY -> CreateMessageRequest.ChannelEnum.MEMORY;
-            case SUMMARY -> CreateMessageRequest.ChannelEnum.SUMMARY;
+            case HISTORY -> CreateEntryRequest.ChannelEnum.HISTORY;
+            case MEMORY -> CreateEntryRequest.ChannelEnum.MEMORY;
+            case SUMMARY -> CreateEntryRequest.ChannelEnum.SUMMARY;
         };
     }
 

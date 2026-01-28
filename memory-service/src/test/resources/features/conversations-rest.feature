@@ -180,10 +180,10 @@ Feature: Conversations REST API
     """
     Then the SQL result should have 1 row
     And the SQL result column "deleted_at" should be non-null
-    # Verify messages still exist (not soft deleted, just orphaned by parent)
+    # Verify entries still exist (not soft deleted, just orphaned by parent)
     When I execute SQL query:
     """
-    SELECT COUNT(*) as count FROM messages WHERE conversation_group_id = '${groupId}'
+    SELECT COUNT(*) as count FROM entries WHERE conversation_group_id = '${groupId}'
     """
     Then the SQL result should match:
       | count |
@@ -213,14 +213,15 @@ Feature: Conversations REST API
   Scenario: Deleting a conversation deletes all forks
     Given I have a conversation with title "Root Conversation"
     And set "rootConversationId" to "${conversationId}"
-    And I append a message to the conversation:
+    And I append an entry to the conversation:
     """
     {
-      "content": [{"type": "text", "text": "First message"}]
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
     }
     """
-    And set "messageId" to "${response.body.id}"
-    When I fork the conversation at message "${messageId}"
+    And set "entryId" to "${response.body.id}"
+    When I fork the conversation at entry "${entryId}"
     And set "forkConversationId" to "${response.body.id}"
     And I delete conversation "${rootConversationId}"
     Then the response status should be 204
@@ -232,14 +233,15 @@ Feature: Conversations REST API
   Scenario: Deleting a fork deletes the entire fork tree
     Given I have a conversation with title "Root Conversation"
     And set "rootConversationId" to "${conversationId}"
-    And I append a message to the conversation:
+    And I append an entry to the conversation:
     """
     {
-      "content": [{"type": "text", "text": "First message"}]
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
     }
     """
-    And set "messageId" to "${response.body.id}"
-    When I fork the conversation at message "${messageId}"
+    And set "entryId" to "${response.body.id}"
+    When I fork the conversation at entry "${entryId}"
     And set "forkConversationId" to "${response.body.id}"
     And I delete conversation "${forkConversationId}"
     Then the response status should be 204

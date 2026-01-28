@@ -4,13 +4,13 @@ title: Conversations
 description: Understanding conversations in Memory Service.
 ---
 
-Conversations are the fundamental unit of organization in Memory Service. A conversation represents a sequence of messages between users, agents, and AI models.
+Conversations are the fundamental unit of organization in Memory Service. A conversation represents a sequence of entries between users, agents, and AI models.
 
 ## What is a Conversation?
 
 A conversation in Memory Service is:
 
-- A container for a sequence of **messages**
+- A container for a sequence of **entries**
 - Identified by a unique **conversation ID**
 - Owned by a **user** (for access control)
 - Optionally associated with **metadata**
@@ -60,7 +60,7 @@ curl -X DELETE http://localhost:8080/v1/conversations/{conversationId} \
   -H "Authorization: Bearer <token>"
 ```
 
-**Note:** Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks), along with their messages and memberships.
+**Note:** Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks), along with their entries and memberships.
 
 ## Conversation Properties
 
@@ -71,17 +71,17 @@ curl -X DELETE http://localhost:8080/v1/conversations/{conversationId} \
 | `ownerUserId` | User who owns the conversation |
 | `createdAt` | Creation timestamp |
 | `updatedAt` | Last modification timestamp |
-| `lastMessagePreview` | Preview of the last message |
+| `lastEntryPreview` | Preview of the last entry |
 | `accessLevel` | Current user's access level (`owner`, `manager`, `writer`, `reader`) |
 | `forkedAtConversationId` | ID of conversation this was forked from (if forked) |
-| `forkedAtMessageId` | Message ID where the fork occurred (if forked) |
+| `forkedAtEntryId` | Entry ID where the fork occurred (if forked) |
 
 ## Best Practices
 
 1. **Set metadata** - Tag conversations for easier filtering
-2. **Handle pagination** - Use limit/offset for conversations with many messages
+2. **Handle pagination** - Use limit/offset for conversations with many entries
 
 ## Next Steps
 
-- Learn about [Messages](/docs/concepts/messages/)
+- Learn about [Entries](/docs/concepts/entries/)
 - Understand [Conversation Forking](/docs/concepts/forking/)

@@ -8,7 +8,7 @@ Conversation forking allows you to create a new conversation branch from any poi
 
 ## What is Forking?
 
-Forking creates a copy of a conversation up to, but not including, the specified user message.  Forking allows you to:
+Forking creates a copy of a conversation up to, but not including, the specified user entry.  Forking allows you to:
 
 - **Explore alternatives** - Try different responses or approaches
 - **Debug issues** - Isolate problematic conversation states
@@ -27,16 +27,16 @@ The forked conversation:
 
 ### Using the REST API
 
-Fork at a specific message by calling the fork endpoint with the message ID:
+Fork at a specific entry by calling the fork endpoint with the entry ID:
 
 ```bash
-curl -X POST "http://localhost:8080/v1/conversations/{conversationId}/messages/{messageId}/fork" \
+curl -X POST "http://localhost:8080/v1/conversations/{conversationId}/entries/{entryId}/fork" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
   -d '{"title": "Alternative approach"}'
 ```
 
-The fork point must be an existing user-authored message. The forked conversation will contain history up to (but not including) that message.
+The fork point must be an existing user-authored entry. The forked conversation will contain history up to (but not including) that entry.
 
 ## Fork Properties
 
@@ -45,7 +45,7 @@ When you fork a conversation, the new conversation has:
 | Property | Description |
 |----------|-------------|
 | `forkedAtConversationId` | ID of the conversation where the fork occurred |
-| `forkedAtMessageId` | Message ID at which the fork diverged |
+| `forkedAtEntryId` | Entry ID at which the fork diverged |
 | `ownerUserId` | Same owner as the original conversation |
 
 ## Fork Trees
@@ -54,7 +54,7 @@ When you create a conversation, the service internally groups it with any future
 
 You don't need to know about this grouping directly. Use the `/forks` endpoint on any conversation to discover all related conversations in the tree.
 
-Deleting any conversation in a fork tree deletes the entire tree (root and all forks), along with associated messages and memberships.
+Deleting any conversation in a fork tree deletes the entire tree (root and all forks), along with associated entries and memberships.
 
 ### Querying Related Conversations
 
@@ -71,7 +71,7 @@ This returns all conversations in the same fork tree.
 
 ### 1. User Correction
 
-Allow users to "go back" and try a different question. When a user wants to rephrase their last message, fork at that message to create a new branch.
+Allow users to "go back" and try a different question. When a user wants to rephrase their last entry, fork at that entry to create a new branch.
 
 ### 2. Agent Development
 
@@ -94,8 +94,8 @@ This returns all conversations in the same fork tree.
 
 ## Limitations
 
-- Fork point must be an existing user-authored message
-- The forked message itself is not included in the new conversation
+- Fork point must be an existing user-authored entry
+- The forked entry itself is not included in the new conversation
 
 ## Next Steps
 

@@ -114,9 +114,9 @@ Feature: Admin REST API
     And the admin audit log should contain "listConversations"
     And the admin audit log should contain "Support ticket 1234"
 
-  Scenario: Admin can get messages from any conversation
-    Given the conversation owned by "bob" has a message "Test message"
-    When I call GET "/v1/admin/conversations/${bobConversationId}/messages"
+  Scenario: Admin can get entries from any conversation
+    Given the conversation owned by "bob" has an entry "Test entry"
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries"
     Then the response status should be 200
     And the response should contain at least 1 items
 
@@ -126,8 +126,8 @@ Feature: Admin REST API
     And the response should contain at least 1 memberships
 
   Scenario: Admin can perform system-wide semantic search
-    Given the conversation owned by "bob" has a message "Searchable content"
-    When I call POST "/v1/admin/search/messages" with body:
+    Given the conversation owned by "bob" has an entry "Searchable content"
+    When I call POST "/v1/admin/search/entries" with body:
     """
     {
       "query": "Searchable"
@@ -137,12 +137,12 @@ Feature: Admin REST API
     And the response should contain at least 1 items
 
   Scenario: Admin search can filter by userId
-    Given the conversation owned by "bob" has a message "Bob's message"
-    Given the conversation owned by "alice" has a message "Alice's message"
-    When I call POST "/v1/admin/search/messages" with body:
+    Given the conversation owned by "bob" has an entry "Bob's entry"
+    Given the conversation owned by "alice" has an entry "Alice's entry"
+    When I call POST "/v1/admin/search/entries" with body:
     """
     {
-      "query": "message",
+      "query": "entry",
       "userId": "bob"
     }
     """

@@ -1,20 +1,20 @@
 Feature: Conversation Forking REST API
   As a user
-  I want to fork conversations at specific messages via REST API
+  I want to fork conversations at specific entries via REST API
   So that I can create alternative conversation branches
 
   Background:
     Given I am authenticated as user "alice"
     And I have a conversation with title "Base Conversation"
-    And the conversation has a message "First message"
-    And the conversation has a message "Second message"
-    And the conversation has a message "Third message"
+    And the conversation has an entry "First entry"
+    And the conversation has an entry "Second entry"
+    And the conversation has an entry "Third entry"
 
-  Scenario: Fork a conversation at a message
-    When I list messages for the conversation
-    And set "secondMessageId" to the json response field "data[1].id"
-    And set "firstMessageId" to the json response field "data[0].id"
-    When I fork the conversation at message "${secondMessageId}" with request:
+  Scenario: Fork a conversation at an entry
+    When I list entries for the conversation
+    And set "secondEntryId" to the json response field "data[1].id"
+    And set "firstEntryId" to the json response field "data[0].id"
+    When I fork the conversation at entry "${secondEntryId}" with request:
     """
     {
       "title": "Forked Conversation"
@@ -30,15 +30,15 @@ Feature: Conversation Forking REST API
       "createdAt": "${response.body.createdAt}",
       "updatedAt": "${response.body.updatedAt}",
       "accessLevel": "owner",
-      "forkedAtMessageId": "${firstMessageId}",
+      "forkedAtEntryId": "${firstEntryId}",
       "forkedAtConversationId": "${conversationId}"
     }
     """
 
   Scenario: Fork a conversation without title
-    When I list messages for the conversation
-    And set "firstMessageId" to the json response field "data[0].id"
-    When I fork the conversation at message "${firstMessageId}" with request:
+    When I list entries for the conversation
+    And set "firstEntryId" to the json response field "data[0].id"
+    When I fork the conversation at entry "${firstEntryId}" with request:
     """
     {}
     """
@@ -50,17 +50,17 @@ Feature: Conversation Forking REST API
     And the response body should contain "forkedAtConversationId"
 
   Scenario: List forks for a conversation
-    When I list messages for the conversation
-    And set "secondMessageId" to the json response field "data[1].id"
-    And set "firstMessageId" to the json response field "data[0].id"
-    When I fork the conversation at message "${secondMessageId}" with request:
+    When I list entries for the conversation
+    And set "secondEntryId" to the json response field "data[1].id"
+    And set "firstEntryId" to the json response field "data[0].id"
+    When I fork the conversation at entry "${secondEntryId}" with request:
     """
     {
       "title": "Fork 1"
     }
     """
     And set "fork1Id" to the json response field "id"
-    When I fork the conversation at message "${secondMessageId}" with request:
+    When I fork the conversation at entry "${secondEntryId}" with request:
     """
     {
       "title": "Fork 2"
@@ -70,18 +70,18 @@ Feature: Conversation Forking REST API
     When I list forks for the conversation
     Then the response status should be 200
     And the response should contain at least 3 conversations
-    # The response includes the original conversation (no forkedAtMessageId) plus the 2 forks
-    # Verify: original at [0] has no forkedAtMessageId, forks at [1] and [2] have forkedAtMessageId
-    And the response body should contain "forkedAtMessageId"
+    # The response includes the original conversation (no forkedAtEntryId) plus the 2 forks
+    # Verify: original at [0] has no forkedAtEntryId, forks at [1] and [2] have forkedAtEntryId
+    And the response body should contain "forkedAtEntryId"
     And the response body "data[0].conversationId" should be "${conversationId}"
-    And the response body "data[0].forkedAtMessageId" should be "null"
-    And the response body "data[1].forkedAtMessageId" should be "${firstMessageId}"
+    And the response body "data[0].forkedAtEntryId" should be "null"
+    And the response body "data[1].forkedAtEntryId" should be "${firstEntryId}"
     And the response body "data[1].forkedAtConversationId" should be "${conversationId}"
-    And the response body "data[2].forkedAtMessageId" should be "${firstMessageId}"
+    And the response body "data[2].forkedAtEntryId" should be "${firstEntryId}"
     And the response body "data[2].forkedAtConversationId" should be "${conversationId}"
 
   Scenario: Fork non-existent conversation
-    When I fork conversation "00000000-0000-0000-0000-000000000000" at message "00000000-0000-0000-0000-000000000001" with request:
+    When I fork conversation "00000000-0000-0000-0000-000000000000" at entry "00000000-0000-0000-0000-000000000001" with request:
     """
     {
       "title": "Fork"
@@ -90,8 +90,8 @@ Feature: Conversation Forking REST API
     Then the response status should be 404
     And the response should contain error code "not_found"
 
-  Scenario: Fork at non-existent message
-    When I fork the conversation at message "00000000-0000-0000-0000-000000000000" with request:
+  Scenario: Fork at non-existent entry
+    When I fork the conversation at entry "00000000-0000-0000-0000-000000000000" with request:
     """
     {
       "title": "Fork"
@@ -102,7 +102,7 @@ Feature: Conversation Forking REST API
 
   Scenario: Fork conversation without access
     Given there is a conversation owned by "bob"
-    When I fork that conversation at message "00000000-0000-0000-0000-000000000000" with request:
+    When I fork that conversation at entry "00000000-0000-0000-0000-000000000000" with request:
     """
     {
       "title": "Fork"
@@ -124,9 +124,9 @@ Feature: Conversation Forking REST API
 
   Scenario: Forked conversation shares membership with root
     Given I share the conversation with user "bob" and access level "reader"
-    When I list messages for the conversation
-    And set "firstMessageId" to the json response field "data[0].id"
-    When I fork the conversation at message "${firstMessageId}" with request:
+    When I list entries for the conversation
+    And set "firstEntryId" to the json response field "data[0].id"
+    When I fork the conversation at entry "${firstEntryId}" with request:
     """
     {
       "title": "Forked Conversation"

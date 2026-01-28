@@ -2,7 +2,7 @@ package io.github.chirino.memory.api.dto;
 
 import java.util.List;
 
-public class SearchMessagesRequest {
+public class SearchEntriesRequest {
 
     private String query;
     private Integer topK;

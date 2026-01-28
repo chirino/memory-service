@@ -3,20 +3,20 @@ package io.github.chirino.memory.api;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
+import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.EvictRequest;
-import io.github.chirino.memory.api.dto.MessageDto;
-import io.github.chirino.memory.api.dto.PagedMessages;
+import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.client.model.ConversationMembership;
+import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
-import io.github.chirino.memory.client.model.Message;
 import io.github.chirino.memory.client.model.SearchResult;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AdminActionRequest;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
 import io.github.chirino.memory.model.AdminSearchQuery;
-import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.model.Channel;
 import io.github.chirino.memory.security.AdminAuditLogger;
 import io.github.chirino.memory.security.AdminRoleResolver;
 import io.github.chirino.memory.security.ApiKeyContext;
@@ -202,8 +202,8 @@ public class AdminResource {
     }
 
     @GET
-    @Path("/conversations/{id}/messages")
-    public Response getMessages(
+    @Path("/conversations/{id}/entries")
+    public Response getEntries(
             @PathParam("id") String id,
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit,
@@ -219,16 +219,16 @@ public class AdminResource {
             auditLogger.logRead("getMessages", params, justification, identity, apiKeyContext);
 
             AdminMessageQuery query = new AdminMessageQuery();
-            query.setAfterMessageId(after);
+            query.setAfterEntryId(after);
             query.setLimit(limit != null ? limit : 50);
             if (channel != null && !channel.isBlank()) {
-                query.setChannel(MessageChannel.fromString(channel));
+                query.setChannel(Channel.fromString(channel));
             }
             query.setIncludeDeleted(includeDeleted);
 
-            PagedMessages result = store().adminGetMessages(id, query);
+            PagedEntries result = store().adminGetEntries(id, query);
             Map<String, Object> response = new HashMap<>();
-            response.put("data", result.getMessages());
+            response.put("data", result.getEntries());
             response.put("nextCursor", result.getNextCursor());
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
@@ -293,8 +293,8 @@ public class AdminResource {
     }
 
     @POST
-    @Path("/search/messages")
-    public Response searchMessages(
+    @Path("/search/entries")
+    public Response searchEntries(
             AdminSearchQuery request, @QueryParam("justification") String justification) {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
@@ -308,13 +308,13 @@ public class AdminResource {
                 return badRequest("query is required");
             }
 
-            List<SearchResultDto> results = store().adminSearchMessages(request);
+            List<SearchResultDto> results = store().adminSearchEntries(request);
             List<SearchResult> data =
                     results.stream()
                             .map(
                                     dto -> {
                                         SearchResult result = new SearchResult();
-                                        result.setMessage(toClientMessage(dto.getMessage()));
+                                        result.setEntry(toClientEntry(dto.getEntry()));
                                         result.setScore((float) dto.getScore());
                                         result.setHighlights(dto.getHighlights());
                                         return result;
@@ -517,18 +517,19 @@ public class AdminResource {
         return response;
     }
 
-    private Message toClientMessage(MessageDto dto) {
+    private Entry toClientEntry(EntryDto dto) {
         if (dto == null) {
             return null;
         }
-        Message result = new Message();
+        Entry result = new Entry();
         result.setId(dto.getId());
         result.setConversationId(dto.getConversationId());
         result.setUserId(dto.getUserId());
         if (dto.getChannel() != null) {
-            result.setChannel(Message.ChannelEnum.fromString(dto.getChannel().toValue()));
+            result.setChannel(Entry.ChannelEnum.fromString(dto.getChannel().toValue()));
         }
         result.setEpoch(dto.getEpoch());
+        result.setContentType(dto.getContentType());
         if (dto.getContent() != null) {
             result.setContent(dto.getContent());
         }

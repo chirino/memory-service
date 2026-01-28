@@ -7,7 +7,7 @@ public class ConversationForkSummaryDto {
     private String conversationId;
     // Internal field - not exposed in API responses
     @JsonIgnore private String conversationGroupId;
-    private String forkedAtMessageId;
+    private String forkedAtEntryId;
     private String forkedAtConversationId;
     private String title;
     private String createdAt;
@@ -28,12 +28,12 @@ public class ConversationForkSummaryDto {
         this.conversationGroupId = conversationGroupId;
     }
 
-    public String getForkedAtMessageId() {
-        return forkedAtMessageId;
+    public String getForkedAtEntryId() {
+        return forkedAtEntryId;
     }
 
-    public void setForkedAtMessageId(String forkedAtMessageId) {
-        this.forkedAtMessageId = forkedAtMessageId;
+    public void setForkedAtEntryId(String forkedAtEntryId) {
+        this.forkedAtEntryId = forkedAtEntryId;
     }
 
     public String getForkedAtConversationId() {

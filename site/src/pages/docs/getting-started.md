@@ -62,7 +62,7 @@ Keycloak is pre-configured with these test users:
 
 ## Things to notice in the Demo.
 
-* You can fork any user message and switch between forks
+* You can fork any user entry and switch between forks
 * Agent memory stays consistent with the fork your on.  Ask it to recall previous fact you have told it.
 * Streaming responses survice browser page reloads.  You can even switch to a diferent device and still view the response that is currently being generated.
 * Users can see a list of all their previous conversations.

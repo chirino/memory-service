@@ -37,8 +37,8 @@ public class ConversationEntity {
     @JoinColumn(name = "conversation_group_id", nullable = false)
     private ConversationGroupEntity conversationGroup;
 
-    @Column(name = "forked_at_message_id")
-    private UUID forkedAtMessageId;
+    @Column(name = "forked_at_entry_id")
+    private UUID forkedAtEntryId;
 
     @Column(name = "forked_at_conversation_id")
     private UUID forkedAtConversationId;
@@ -95,12 +95,12 @@ public class ConversationEntity {
         this.conversationGroup = conversationGroup;
     }
 
-    public UUID getForkedAtMessageId() {
-        return forkedAtMessageId;
+    public UUID getForkedAtEntryId() {
+        return forkedAtEntryId;
     }
 
-    public void setForkedAtMessageId(UUID forkedAtMessageId) {
-        this.forkedAtMessageId = forkedAtMessageId;
+    public void setForkedAtEntryId(UUID forkedAtEntryId) {
+        this.forkedAtEntryId = forkedAtEntryId;
     }
 
     public UUID getForkedAtConversationId() {

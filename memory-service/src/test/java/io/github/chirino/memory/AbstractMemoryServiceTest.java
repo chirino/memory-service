@@ -9,19 +9,19 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
-import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
-import io.github.chirino.memory.api.dto.MessageDto;
+import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
+import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationOwnershipTransferRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationRepository;
-import io.github.chirino.memory.mongo.repo.MongoMessageRepository;
+import io.github.chirino.memory.mongo.repo.MongoEntryRepository;
 import io.github.chirino.memory.persistence.repo.ConversationMembershipRepository;
 import io.github.chirino.memory.persistence.repo.ConversationOwnershipTransferRepository;
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
-import io.github.chirino.memory.persistence.repo.MessageRepository;
+import io.github.chirino.memory.persistence.repo.EntryRepository;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.path.json.JsonPath;
 import jakarta.enterprise.inject.Instance;
@@ -44,11 +44,11 @@ abstract class AbstractMemoryServiceTest {
     @Inject protected MemoryStoreSelector memoryStoreSelector;
 
     @Inject Instance<ConversationRepository> conversationRepository;
-    @Inject Instance<MessageRepository> messageRepository;
+    @Inject Instance<EntryRepository> entryRepository;
     @Inject Instance<ConversationMembershipRepository> membershipRepository;
     @Inject Instance<ConversationOwnershipTransferRepository> ownershipTransferRepository;
     @Inject Instance<MongoConversationRepository> mongoConversationRepository;
-    @Inject Instance<MongoMessageRepository> mongoMessageRepository;
+    @Inject Instance<MongoEntryRepository> mongoEntryRepository;
     @Inject Instance<MongoConversationMembershipRepository> mongoMembershipRepository;
     @Inject Instance<MongoConversationOwnershipTransferRepository> mongoOwnershipTransferRepository;
 
@@ -105,69 +105,67 @@ abstract class AbstractMemoryServiceTest {
         //         .statusCode(403)
         //         .body("code", is("forbidden"));
 
-        // Seed a couple of user messages directly via the store
-        CreateUserMessageRequest u1 = new CreateUserMessageRequest();
+        // Seed a couple of user entries directly via the store
+        CreateUserEntryRequest u1 = new CreateUserEntryRequest();
         u1.setContent("Hello world from Alice");
-        memoryStoreSelector.getStore().appendUserMessage("alice", conversationId, u1);
+        memoryStoreSelector.getStore().appendUserEntry("alice", conversationId, u1);
 
-        CreateUserMessageRequest u2 = new CreateUserMessageRequest();
-        u2.setContent("Second user message with keyword alpha");
-        memoryStoreSelector.getStore().appendUserMessage("alice", conversationId, u2);
+        CreateUserEntryRequest u2 = new CreateUserEntryRequest();
+        u2.setContent("Second user entry with keyword alpha");
+        memoryStoreSelector.getStore().appendUserEntry("alice", conversationId, u2);
 
-        // User-visible messages should be listed in order
-        JsonPath messagesJson =
+        // User-visible entries should be listed in order
+        JsonPath entriesJson =
                 given().when()
-                        .get("/v1/conversations/{id}/messages", conversationId)
+                        .get("/v1/conversations/{id}/entries", conversationId)
                         .then()
                         .statusCode(200)
                         .body("data", hasSize(2))
                         .extract()
                         .jsonPath();
 
-        List<String> createdAtStrings = messagesJson.getList("data.createdAt", String.class);
+        List<String> createdAtStrings = entriesJson.getList("data.createdAt", String.class);
         OffsetDateTime first = OffsetDateTime.parse(createdAtStrings.get(0));
         OffsetDateTime second = OffsetDateTime.parse(createdAtStrings.get(1));
         assertThat(second, greaterThan(first));
 
-        // Append agent messages directly via the store so we can verify
+        // Append agent entries directly via the store so we can verify
         // the agent view without relying on a dedicated HTTP endpoint.
-        io.github.chirino.memory.client.model.CreateMessageRequest a1 =
-                new io.github.chirino.memory.client.model.CreateMessageRequest();
-        a1.setChannel(
-                io.github.chirino.memory.client.model.CreateMessageRequest.ChannelEnum.MEMORY);
+        io.github.chirino.memory.client.model.CreateEntryRequest a1 =
+                new io.github.chirino.memory.client.model.CreateEntryRequest();
+        a1.setChannel(io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum.MEMORY);
         a1.setContent(List.of(Map.of("type", "text", "text", "Agent response one")));
 
-        io.github.chirino.memory.client.model.CreateMessageRequest a2 =
-                new io.github.chirino.memory.client.model.CreateMessageRequest();
-        a2.setChannel(
-                io.github.chirino.memory.client.model.CreateMessageRequest.ChannelEnum.MEMORY);
+        io.github.chirino.memory.client.model.CreateEntryRequest a2 =
+                new io.github.chirino.memory.client.model.CreateEntryRequest();
+        a2.setChannel(io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum.MEMORY);
         a2.setContent(
                 List.of(Map.of("type", "text", "text", "Agent response two with keyword beta")));
 
         memoryStoreSelector
                 .getStore()
-                .appendAgentMessages("alice", conversationId, List.of(a1, a2), "test-agent");
+                .appendAgentEntries("alice", conversationId, List.of(a1, a2), "test-agent");
 
-        // Agent view of messages should include all messages
+        // Agent view of entries should include all entries
         given().header("X-API-Key", "test-agent-key")
                 .when()
-                .get("/v1/conversations/{id}/messages", conversationId)
+                .get("/v1/conversations/{id}/entries", conversationId)
                 .then()
                 .statusCode(200)
                 .body("data.size()", equalTo(4));
 
-        // Search should find messages by keyword
+        // Search should find entries by keyword
         Map<String, Object> searchRequest =
                 Map.of("query", "alpha", "topK", 10, "conversationIds", List.of(conversationId));
 
         given().contentType(MediaType.APPLICATION_JSON)
                 .body(searchRequest)
                 .when()
-                .post("/v1/user/search/messages")
+                .post("/v1/user/search/entries")
                 .then()
                 .statusCode(200)
                 .body("data", hasSize(1))
-                .body("data[0].message.content[0].text", containsString("alpha"));
+                .body("data[0].entry.content[0].text", containsString("alpha"));
     }
 
     @Test
@@ -243,7 +241,7 @@ abstract class AbstractMemoryServiceTest {
     @Test
     @TestSecurity(user = "forker")
     void forking_creates_new_conversation_with_expected_history() {
-        // Create base conversation with three user messages
+        // Create base conversation with three user entries
         String conversationId =
                 given().contentType(MediaType.APPLICATION_JSON)
                         .body(Map.of("title", "Fork Base"))
@@ -254,40 +252,38 @@ abstract class AbstractMemoryServiceTest {
                         .extract()
                         .path("id");
 
-        CreateUserMessageRequest u1 = new CreateUserMessageRequest();
-        u1.setContent("Message 1");
-        MessageDto m1 =
-                memoryStoreSelector.getStore().appendUserMessage("forker", conversationId, u1);
+        CreateUserEntryRequest u1 = new CreateUserEntryRequest();
+        u1.setContent("Entry 1");
+        EntryDto m1 = memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u1);
 
-        CreateUserMessageRequest u2 = new CreateUserMessageRequest();
-        u2.setContent("Message 2 - fork point");
-        MessageDto m2 =
-                memoryStoreSelector.getStore().appendUserMessage("forker", conversationId, u2);
+        CreateUserEntryRequest u2 = new CreateUserEntryRequest();
+        u2.setContent("Entry 2 - fork point");
+        EntryDto m2 = memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u2);
 
-        CreateUserMessageRequest u3 = new CreateUserMessageRequest();
-        u3.setContent("Message 3");
-        memoryStoreSelector.getStore().appendUserMessage("forker", conversationId, u3);
+        CreateUserEntryRequest u3 = new CreateUserEntryRequest();
+        u3.setContent("Entry 3");
+        memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u3);
 
-        // Fork at the second message
+        // Fork at the second entry
         String forkedId =
                 given().contentType(MediaType.APPLICATION_JSON)
                         .body(Map.of("title", "Forked Conversation"))
                         .when()
                         .post(
-                                "/v1/conversations/{cid}/messages/{mid}/fork",
+                                "/v1/conversations/{cid}/entries/{eid}/fork",
                                 conversationId,
                                 m2.getId())
                         .then()
                         .statusCode(201)
                         .body("title", is("Forked Conversation"))
                         .body("forkedAtConversationId", is(conversationId))
-                        .body("forkedAtMessageId", is(m1.getId()))
+                        .body("forkedAtEntryId", is(m1.getId()))
                         .extract()
                         .path("id");
 
-        // Fork should start empty (no message copying)
+        // Fork should start empty (no entry copying)
         given().when()
-                .get("/v1/conversations/{id}/messages", forkedId)
+                .get("/v1/conversations/{id}/entries", forkedId)
                 .then()
                 .statusCode(200)
                 .body("data", hasSize(0));
@@ -320,20 +316,20 @@ abstract class AbstractMemoryServiceTest {
     }
 
     private void clearRelationalData() {
-        if (messageRepository.isUnsatisfied()) {
+        if (entryRepository.isUnsatisfied()) {
             return;
         }
-        messageRepository.get().deleteAll();
+        entryRepository.get().deleteAll();
         membershipRepository.get().deleteAll();
         ownershipTransferRepository.get().deleteAll();
         conversationRepository.get().deleteAll();
     }
 
     private void clearMongoData() {
-        if (mongoMessageRepository.isUnsatisfied()) {
+        if (mongoEntryRepository.isUnsatisfied()) {
             return;
         }
-        mongoMessageRepository.get().deleteAll();
+        mongoEntryRepository.get().deleteAll();
         mongoMembershipRepository.get().deleteAll();
         mongoOwnershipTransferRepository.get().deleteAll();
         mongoConversationRepository.get().deleteAll();

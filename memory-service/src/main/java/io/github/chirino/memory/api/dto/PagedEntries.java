@@ -2,10 +2,10 @@ package io.github.chirino.memory.api.dto;
 
 import java.util.List;
 
-public class PagedMessages {
+public class PagedEntries {
 
     private String conversationId;
-    private List<MessageDto> messages;
+    private List<EntryDto> entries;
     private String nextCursor;
 
     public String getConversationId() {
@@ -16,12 +16,12 @@ public class PagedMessages {
         this.conversationId = conversationId;
     }
 
-    public List<MessageDto> getMessages() {
-        return messages;
+    public List<EntryDto> getEntries() {
+        return entries;
     }
 
-    public void setMessages(List<MessageDto> messages) {
-        this.messages = messages;
+    public void setEntries(List<EntryDto> entries) {
+        this.entries = entries;
     }
 
     public String getNextCursor() {

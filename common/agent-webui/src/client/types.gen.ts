@@ -24,7 +24,7 @@ export type ConversationSummary = {
 };
 
 export type Conversation = ConversationSummary & {
-  forkedAtMessageId?: string | null;
+  forkedAtEntryId?: string | null;
   forkedAtConversationId?: string | null;
 };
 
@@ -43,14 +43,14 @@ export type ConversationMembership = {
 };
 
 /**
- * Summary of a forked conversation originating at a given message.
+ * Summary of a forked conversation originating at a given entry.
  */
 export type ConversationForkSummary = {
   conversationId?: string;
   /**
-   * Message id at which this forked conversation diverged.
+   * Entry id at which this forked conversation diverged.
    */
-  forkedAtMessageId?: string;
+  forkedAtEntryId?: string;
   /**
    * Conversation id where the fork occurred.
    */
@@ -65,7 +65,7 @@ export type ShareConversationRequest = {
   createdAt?: string;
 };
 
-export type ForkFromMessageRequest = {
+export type ForkFromEntryRequest = {
   /**
    * Optional title for the new forked conversation.
    */
@@ -73,28 +73,33 @@ export type ForkFromMessageRequest = {
 };
 
 /**
- * Logical channel of the message within the conversation.
+ * Logical channel of the entry within the conversation.
  */
-export type MessageChannel = "history" | "memory" | "summary";
+export type Channel = "history" | "memory" | "summary";
 
-export type Message = {
+export type Entry = {
   id: string;
   conversationId: string;
   /**
-   * Human user this message is associated with.
-   * For history messages authored by a user, this is the sender.
-   * For agent messages, this is the user the agent is responding to.
+   * Human user this entry is associated with.
+   * For history entries authored by a user, this is the sender.
+   * For agent entries, this is the user the agent is responding to.
    */
   userId?: string | null;
-  channel: MessageChannel;
+  channel: Channel;
   /**
-   * Logical memory epoch this message belongs to.
-   * For history messages this is typically null. For memory messages,
+   * Logical memory epoch this entry belongs to.
+   * For history entries this is typically null. For memory entries,
    * the agent increments the epoch when starting a new memory version.
    */
   epoch?: number | null;
   /**
-   * Opaque, agent-defined message content blocks.
+   * Describes the schema/format of the content array.
+   * Examples: "message", "LC4J", "SpringAI"
+   */
+  contentType: string;
+  /**
+   * Opaque, agent-defined content blocks.
    * Different agents may use different schemas; the memory-service
    * stores and returns them without interpretation.
    */
@@ -102,32 +107,37 @@ export type Message = {
   createdAt: string;
 };
 
-export type CreateMessageRequest = {
+export type CreateEntryRequest = {
   /**
-   * Human user this message is associated with.
-   * For history messages authored by a user, this is the sender.
-   * For agent messages, this is the user the agent is responding to.
+   * Human user this entry is associated with.
+   * For history entries authored by a user, this is the sender.
+   * For agent entries, this is the user the agent is responding to.
    */
   userId?: string | null;
-  channel?: MessageChannel;
+  channel?: Channel;
   /**
-   * For memory messages, the epoch the agent wants this message to
+   * For memory entries, the epoch the agent wants this entry to
    * belong to. The agent increments this when starting a new epoch.
    */
   epoch?: number | null;
+  /**
+   * Describes the schema/format of the content array.
+   * Examples: "message", "LC4J", "SpringAI"
+   */
+  contentType: string;
   content: Array<unknown>;
 };
 
-export type SyncMessagesRequest = {
+export type SyncEntriesRequest = {
   /**
    * The desired memory epoch contents. Each entry must include the
    * `memory` channel and should match the ordering that the agent expects to
    * see replayed; only the agent may call this endpoint.
    */
-  messages: Array<CreateMessageRequest>;
+  entries: Array<CreateEntryRequest>;
 };
 
-export type SyncMessagesResponse = {
+export type SyncEntriesResponse = {
   /**
    * The epoch number that now reflects the stored memory state.
    */
@@ -141,9 +151,9 @@ export type SyncMessagesResponse = {
    */
   epochIncremented?: boolean;
   /**
-   * List of messages that were appended during this sync.
+   * List of entries that were appended during this sync.
    */
-  messages?: Array<Message>;
+  entries?: Array<Entry>;
 };
 
 export type CreateSummaryRequest = {
@@ -158,14 +168,14 @@ export type CreateSummaryRequest = {
   /**
    * Highest message id covered by the summary (inclusive).
    */
-  untilMessageId: string;
+  untilEntryId: string;
   /**
    * Timestamp of the last message covered by the summary.
    */
   summarizedAt: string;
 };
 
-export type SearchMessagesRequest = {
+export type SearchEntriesRequest = {
   /**
    * Natural language query.
    */
@@ -173,13 +183,13 @@ export type SearchMessagesRequest = {
   topK?: number;
   conversationIds?: Array<string> | null;
   /**
-   * Optional upper bound message id for temporal filtering.
+   * Optional upper bound entry id for temporal filtering.
    */
   before?: string | null;
 };
 
 export type SearchResult = {
-  message?: Message;
+  entry?: Entry;
   score?: number;
   highlights?: string | null;
 };
@@ -270,19 +280,19 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/messages": {
+  "/v1/conversations/{conversationId}/entries": {
     get: {
       req: {
         /**
-         * Cursor for pagination; returns messages after this message id.
+         * Cursor for pagination; returns entries after this entry id.
          */
         after?: string | null;
         /**
-         * Channel of messages to return. Defaults to `history` for the
-         * user-visible conversation; `memory` returns agent memory messages
+         * Channel of entries to return. Defaults to `history` for the
+         * user-visible conversation; `memory` returns agent memory entries
          * scoped to the calling client id.
          */
-        channel?: MessageChannel;
+        channel?: Channel;
         conversationId: string;
         /**
          * Optional epoch filter when listing the `memory` channel. Valid values
@@ -307,7 +317,7 @@ export type $OpenApiTs = {
     post: {
       req: {
         conversationId: string;
-        requestBody: CreateMessageRequest;
+        requestBody: CreateEntryRequest;
       };
       res: {
         /**
@@ -315,9 +325,9 @@ export type $OpenApiTs = {
          */
         200: ErrorResponse;
         /**
-         * The created message.
+         * The created entry.
          */
-        201: Message;
+        201: Entry;
         /**
          * Resource not found
          */
@@ -325,11 +335,11 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/memory/messages/sync": {
+  "/v1/conversations/{conversationId}/memory/entries/sync": {
     post: {
       req: {
         conversationId: string;
-        requestBody: SyncMessagesRequest;
+        requestBody: SyncEntriesRequest;
       };
       res: {
         /**
@@ -343,12 +353,12 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/messages/{messageId}/fork": {
+  "/v1/conversations/{conversationId}/entries/{entryId}/fork": {
     post: {
       req: {
         conversationId: string;
-        messageId: string;
-        requestBody?: ForkFromMessageRequest;
+        entryId: string;
+        requestBody?: ForkFromEntryRequest;
       };
       res: {
         /**
@@ -506,10 +516,10 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/user/search/messages": {
+  "/v1/user/search/entries": {
     post: {
       req: {
-        requestBody: SearchMessagesRequest;
+        requestBody: SearchEntriesRequest;
       };
       res: {
         /**
@@ -531,9 +541,9 @@ export type $OpenApiTs = {
          */
         200: ErrorResponse;
         /**
-         * The created summary message.
+         * The created summary entry.
          */
-        201: Message;
+        201: Entry;
         /**
          * Resource not found
          */

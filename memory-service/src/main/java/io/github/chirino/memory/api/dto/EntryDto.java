@@ -1,16 +1,17 @@
 package io.github.chirino.memory.api.dto;
 
-import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.model.Channel;
 import java.util.List;
 
-public class MessageDto {
+public class EntryDto {
 
     private String id;
     private String conversationId;
     private String userId;
-    private MessageChannel channel;
+    private Channel channel;
     private Long epoch;
     private List<Object> content;
+    private String contentType;
     private String createdAt;
 
     public String getId() {
@@ -37,11 +38,11 @@ public class MessageDto {
         this.userId = userId;
     }
 
-    public MessageChannel getChannel() {
+    public Channel getChannel() {
         return channel;
     }
 
-    public void setChannel(MessageChannel channel) {
+    public void setChannel(Channel channel) {
         this.channel = channel;
     }
 
@@ -59,6 +60,14 @@ public class MessageDto {
 
     public void setContent(List<Object> content) {
         this.content = content;
+    }
+
+    public String getContentType() {
+        return contentType;
+    }
+
+    public void setContentType(String contentType) {
+        this.contentType = contentType;
     }
 
     public String getCreatedAt() {

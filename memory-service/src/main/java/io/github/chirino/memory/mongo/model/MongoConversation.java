@@ -14,7 +14,7 @@ public class MongoConversation {
     public String ownerUserId;
     public Map<String, Object> metadata;
     public String conversationGroupId;
-    public String forkedAtMessageId;
+    public String forkedAtEntryId;
     public String forkedAtConversationId;
     public Instant createdAt;
     public Instant updatedAt;

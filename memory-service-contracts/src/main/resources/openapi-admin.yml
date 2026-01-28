@@ -8,7 +8,7 @@ info:
     Access requires admin or auditor role.
 tags:
   - name: Admin
-    description: Administrative APIs for system-wide access to conversations and messages.
+    description: Administrative APIs for system-wide access to conversations and entries.
   - name: System
     description: Health Endpoints
 paths:
@@ -162,7 +162,7 @@ paths:
       description: |-
         Soft-deletes a conversation. Requires admin role.
         
-        **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
+        **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
       operationId: adminDeleteConversation
       parameters:
         - name: id
@@ -227,14 +227,14 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/admin/conversations/{id}/messages:
+  /v1/admin/conversations/{id}/entries:
     get:
       tags: [Admin]
-      summary: Get messages from any conversation (admin/auditor)
+      summary: Get entries from any conversation (admin/auditor)
       description: |-
-        Retrieves messages from a conversation, including soft-deleted
+        Retrieves entries from a conversation, including soft-deleted
         conversations if includeDeleted=true. Requires auditor or admin role.
-      operationId: adminGetMessages
+      operationId: adminGetEntries
       parameters:
         - name: id
           in: path
@@ -251,20 +251,20 @@ paths:
         - name: limit
           in: query
           required: false
-          description: Maximum number of messages to return.
+          description: Maximum number of entries to return.
           schema:
             type: integer
             default: 50
         - name: channel
           in: query
           required: false
-          description: Filter by message channel.
+          description: Filter by entry channel.
           schema:
-            $ref: '#/components/schemas/MessageChannel'
+            $ref: '#/components/schemas/Channel'
         - name: includeDeleted
           in: query
           required: false
-          description: Include messages from soft-deleted conversations.
+          description: Include entries from soft-deleted conversations.
           schema:
             type: boolean
             default: false
@@ -276,7 +276,7 @@ paths:
             type: string
       responses:
         '200':
-          description: Messages.
+          description: Entries.
           content:
             application/json:
               schema:
@@ -285,7 +285,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Message'
+                      $ref: '#/components/schemas/Entry'
                   nextCursor:
                     type: string
                     nullable: true
@@ -342,20 +342,20 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/admin/search/messages:
+  /v1/admin/search/entries:
     post:
       tags: [Admin]
       summary: System-wide semantic search (admin/auditor)
       description: |-
         Performs semantic search across all conversations, optionally filtered
         by userId. Requires auditor or admin role.
-      operationId: adminSearchMessages
+      operationId: adminSearchEntries
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AdminSearchMessagesRequest'
+              $ref: '#/components/schemas/AdminSearchEntriesRequest'
       parameters:
         - name: justification
           in: query
@@ -560,7 +560,7 @@ components:
         - $ref: '#/components/schemas/AdminConversationSummary'
         - type: object
           properties:
-            forkedAtMessageId:
+            forkedAtEntryId:
               type: string
               nullable: true
             forkedAtConversationId:
@@ -576,20 +576,21 @@ components:
       example:
         justification: "User requested account cleanup per support ticket #1234"
 
-    MessageChannel:
+    Channel:
       type: string
-      description: Logical channel of the message within the conversation.
+      description: Logical channel of the entry within the conversation.
       enum:
         - history
         - memory
         - summary
 
-    Message:
+    Entry:
       type: object
       required:
         - id
         - conversationId
         - channel
+        - contentType
         - content
         - createdAt
       properties:
@@ -601,11 +602,16 @@ components:
           type: string
           nullable: true
         channel:
-          $ref: '#/components/schemas/MessageChannel'
+          $ref: '#/components/schemas/Channel'
         epoch:
           type: integer
           format: int64
           nullable: true
+        contentType:
+          type: string
+          description: |-
+            Describes the schema/format of the content array.
+            Examples: "message", "LC4J", "SpringAI"
         content:
           type: array
           items: {}
@@ -626,7 +632,7 @@ components:
           type: string
           format: date-time
 
-    AdminSearchMessagesRequest:
+    AdminSearchEntriesRequest:
       type: object
       required:
         - query
@@ -652,13 +658,13 @@ components:
         includeDeleted:
           type: boolean
           default: false
-          description: Include messages from soft-deleted conversations.
+          description: Include entries from soft-deleted conversations.
 
     SearchResult:
       type: object
       properties:
-        message:
-          $ref: '#/components/schemas/Message'
+        entry:
+          $ref: '#/components/schemas/Entry'
         score:
           type: number
           format: float

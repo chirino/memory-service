@@ -9,11 +9,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.api.SearchApi;
 import io.github.chirino.memory.client.api.SharingApi;
+import io.github.chirino.memory.client.model.Channel;
 import io.github.chirino.memory.client.model.CreateConversationRequest;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.CreateSummaryRequest;
-import io.github.chirino.memory.client.model.ForkFromMessageRequest;
-import io.github.chirino.memory.client.model.MessageChannel;
+import io.github.chirino.memory.client.model.ForkFromEntryRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.TransferConversationOwnershipRequest;
 import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest;
@@ -59,37 +59,32 @@ public class MemoryServiceProxy {
                 conversationId);
     }
 
-    public Response listConversationMessages(
-            String conversationId,
-            String after,
-            Integer limit,
-            MessageChannel channel,
-            String epoch) {
+    public Response listConversationEntries(
+            String conversationId, String after, Integer limit, Channel channel, String epoch) {
         return execute(
                 () ->
                         conversationsApi()
-                                .listConversationMessages(
+                                .listConversationEntries(
                                         conversationId, after, limit, channel, epoch),
                 OK,
-                "Error listing messages for history %s",
+                "Error listing entries for history %s",
                 conversationId);
     }
 
-    public Response forkConversationAtMessage(
-            String conversationId, String messageId, String body) {
+    public Response forkConversationAtEntry(String conversationId, String entryId, String body) {
         try {
-            ForkFromMessageRequest request =
+            ForkFromEntryRequest request =
                     body == null || body.isBlank()
-                            ? new ForkFromMessageRequest()
-                            : OBJECT_MAPPER.readValue(body, ForkFromMessageRequest.class);
+                            ? new ForkFromEntryRequest()
+                            : OBJECT_MAPPER.readValue(body, ForkFromEntryRequest.class);
             return execute(
                     () ->
                             conversationsApi()
-                                    .forkConversationAtMessage(conversationId, messageId, request),
+                                    .forkConversationAtEntry(conversationId, entryId, request),
                     OK,
-                    "Error forking history %s at message %s",
+                    "Error forking history %s at entry %s",
                     conversationId,
-                    messageId);
+                    entryId);
         } catch (Exception e) {
             LOG.errorf(e, "Error parsing fork request body");
             return handleException(e);
@@ -141,17 +136,16 @@ public class MemoryServiceProxy {
         }
     }
 
-    public Response appendConversationMessage(String conversationId, String body) {
+    public Response appendConversationEntry(String conversationId, String body) {
         try {
-            CreateMessageRequest request =
-                    OBJECT_MAPPER.readValue(body, CreateMessageRequest.class);
+            CreateEntryRequest request = OBJECT_MAPPER.readValue(body, CreateEntryRequest.class);
             return execute(
-                    () -> conversationsApi().appendConversationMessage(conversationId, request),
+                    () -> conversationsApi().appendConversationEntry(conversationId, request),
                     CREATED,
-                    "Error appending message to history %s",
+                    "Error appending entry to history %s",
                     conversationId);
         } catch (Exception e) {
-            LOG.errorf(e, "Error parsing append message request body");
+            LOG.errorf(e, "Error parsing append entry request body");
             return handleException(e);
         }
     }

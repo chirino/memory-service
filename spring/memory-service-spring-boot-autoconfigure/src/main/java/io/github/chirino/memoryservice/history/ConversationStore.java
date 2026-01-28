@@ -1,8 +1,8 @@
 package io.github.chirino.memoryservice.history;
 
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
-import io.github.chirino.memoryservice.client.model.CreateMessageRequest;
-import io.github.chirino.memoryservice.client.model.MessageChannel;
+import io.github.chirino.memoryservice.client.model.Channel;
+import io.github.chirino.memoryservice.client.model.CreateEntryRequest;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.util.HashMap;
 import java.util.List;
@@ -32,7 +32,7 @@ public class ConversationStore {
         if (!StringUtils.hasText(content)) {
             return;
         }
-        CreateMessageRequest request = createRequest(content, "USER");
+        CreateEntryRequest request = createRequest(content, "USER");
         callAppend(conversationId, request, resolveBearerToken(bearerToken));
     }
 
@@ -41,7 +41,7 @@ public class ConversationStore {
         if (!StringUtils.hasText(content)) {
             return;
         }
-        CreateMessageRequest request = createRequest(content, "AI");
+        CreateEntryRequest request = createRequest(content, "AI");
         callAppend(conversationId, request, resolveBearerToken(bearerToken));
     }
 
@@ -50,13 +50,13 @@ public class ConversationStore {
     public void markCompleted(String conversationId) {}
 
     private void callAppend(
-            String conversationId, CreateMessageRequest request, @Nullable String bearerToken) {
+            String conversationId, CreateEntryRequest request, @Nullable String bearerToken) {
         try {
             ConversationsApi api = apiFactory.create(bearerToken);
-            api.appendConversationMessage(conversationId, request).block();
+            api.appendConversationEntry(conversationId, request).block();
         } catch (Exception e) {
             LOG.warn(
-                    "Failed to append conversation message for conversationId={}, continuing"
+                    "Failed to append conversation entry for conversationId={}, continuing"
                             + " without recording.",
                     conversationId,
                     e);
@@ -67,9 +67,10 @@ public class ConversationStore {
         return SecurityHelper.principalName();
     }
 
-    private CreateMessageRequest createRequest(String content, String role) {
-        CreateMessageRequest request = new CreateMessageRequest();
-        request.channel(MessageChannel.HISTORY);
+    private CreateEntryRequest createRequest(String content, String role) {
+        CreateEntryRequest request = new CreateEntryRequest();
+        request.channel(Channel.HISTORY);
+        request.contentType("message");
         String userId = resolveUserId();
         if (userId != null) {
             request.userId(userId);

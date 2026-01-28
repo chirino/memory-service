@@ -4,7 +4,8 @@ import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 import static io.github.chirino.memory.security.SecurityHelper.principalName;
 
 import io.github.chirino.memory.client.api.ConversationsApi;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.arc.Arc;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -22,8 +23,9 @@ public class ConversationStore {
     @Inject SecurityIdentity securityIdentity;
 
     public void appendUserMessage(String conversationId, String content) {
-        CreateMessageRequest request = new CreateMessageRequest();
-        request.setChannel(CreateMessageRequest.ChannelEnum.HISTORY);
+        CreateEntryRequest request = new CreateEntryRequest();
+        request.setChannel(ChannelEnum.HISTORY);
+        request.setContentType("message");
         String userId = resolveUserId();
         if (userId != null) {
             request.setUserId(userId);
@@ -33,14 +35,15 @@ public class ConversationStore {
         block.put("role", "USER");
         request.setContent(List.of(block));
         conversationsApi(bearerToken(securityIdentity))
-                .appendConversationMessage(conversationId, request);
+                .appendConversationEntry(conversationId, request);
     }
 
     public void appendAgentMessage(String conversationId, String content, String bearerToken) {
         // For now, agent messages use the same append endpoint; the backend
         // determines the role (user vs agent) from authentication context.
-        CreateMessageRequest request = new CreateMessageRequest();
-        request.setChannel(CreateMessageRequest.ChannelEnum.HISTORY);
+        CreateEntryRequest request = new CreateEntryRequest();
+        request.setChannel(ChannelEnum.HISTORY);
+        request.setContentType("message");
         String userId = resolveUserId();
         if (userId != null) {
             request.setUserId(userId);
@@ -51,7 +54,7 @@ public class ConversationStore {
         request.setContent(List.of(block));
         String effectiveToken;
         effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
-        conversationsApi(effectiveToken).appendConversationMessage(conversationId, request);
+        conversationsApi(effectiveToken).appendConversationEntry(conversationId, request);
     }
 
     public void appendPartialAgentMessage(String conversationId, String delta) {}

@@ -4,25 +4,25 @@ import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
-import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
-import io.github.chirino.memory.api.dto.MessageDto;
-import io.github.chirino.memory.api.dto.PagedMessages;
+import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
+import io.github.chirino.memory.api.dto.EntryDto;
+import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.Conversation;
 import io.github.chirino.memory.client.model.ConversationForkSummary;
 import io.github.chirino.memory.client.model.ConversationMembership;
 import io.github.chirino.memory.client.model.ConversationSummary;
 import io.github.chirino.memory.client.model.CreateConversationRequest;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.CreateSummaryRequest;
+import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
-import io.github.chirino.memory.client.model.ForkFromMessageRequest;
-import io.github.chirino.memory.client.model.Message;
+import io.github.chirino.memory.client.model.ForkFromEntryRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
-import io.github.chirino.memory.client.model.SyncMessagesRequest;
+import io.github.chirino.memory.client.model.SyncEntriesRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
-import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.model.Channel;
 import io.github.chirino.memory.resumer.AdvertisedAddress;
 import io.github.chirino.memory.resumer.ResponseResumerBackend;
 import io.github.chirino.memory.resumer.ResponseResumerRedirectException;
@@ -164,8 +164,8 @@ public class ConversationsResource {
     }
 
     @GET
-    @Path("/conversations/{conversationId}/messages")
-    public Response listMessages(
+    @Path("/conversations/{conversationId}/entries")
+    public Response listEntries(
             @PathParam("conversationId") String conversationId,
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit,
@@ -175,18 +175,17 @@ public class ConversationsResource {
                 "Listing messages for conversationId=%s, user=%s, after=%s, limit=%s,"
                         + " channel=%s",
                 conversationId, currentUserId(), after, limit, channel);
-        MessageChannel requestedChannel =
-                channel != null ? MessageChannel.fromString(channel) : null;
+        Channel requestedChannel = channel != null ? Channel.fromString(channel) : null;
         try {
             int pageSize = limit != null ? limit : 50;
-            List<MessageDto> internal;
+            List<EntryDto> internal;
             String nextCursor = null;
             boolean hasApiKey = apiKeyContext != null && apiKeyContext.hasValidApiKey();
             MemoryEpochFilter epochFilter = null;
-            MessageChannel effectiveChannel = requestedChannel;
+            Channel effectiveChannel = requestedChannel;
             if (!hasApiKey) {
-                effectiveChannel = MessageChannel.HISTORY;
-            } else if (effectiveChannel == MessageChannel.MEMORY) {
+                effectiveChannel = Channel.HISTORY;
+            } else if (effectiveChannel == Channel.MEMORY) {
                 if (apiKeyContext.getClientId() == null || apiKeyContext.getClientId().isBlank()) {
                     return forbidden(
                             new AccessDeniedException("Client id is required for memory access"));
@@ -197,8 +196,8 @@ public class ConversationsResource {
                     return badRequest(e.getMessage());
                 }
             }
-            PagedMessages context =
-                    store().getMessages(
+            PagedEntries context =
+                    store().getEntries(
                                     currentUserId(),
                                     conversationId,
                                     after,
@@ -206,9 +205,9 @@ public class ConversationsResource {
                                     effectiveChannel,
                                     epochFilter,
                                     hasApiKey ? apiKeyContext.getClientId() : null);
-            internal = context.getMessages();
+            internal = context.getEntries();
             nextCursor = context.getNextCursor();
-            List<Message> data = internal.stream().map(this::toClientMessage).toList();
+            List<Entry> data = internal.stream().map(this::toClientEntry).toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
             response.put("nextCursor", nextCursor);
@@ -234,11 +233,11 @@ public class ConversationsResource {
     }
 
     @POST
-    @Path("/conversations/{conversationId}/messages")
-    public Response appendMessage(
-            @PathParam("conversationId") String conversationId, CreateMessageRequest request) {
+    @Path("/conversations/{conversationId}/entries")
+    public Response appendEntry(
+            @PathParam("conversationId") String conversationId, CreateEntryRequest request) {
         try {
-            Message result;
+            Entry result;
             if (apiKeyContext != null && apiKeyContext.hasValidApiKey()) {
                 String clientId = apiKeyContext.getClientId();
                 if (clientId == null || clientId.isBlank()) {
@@ -246,23 +245,23 @@ public class ConversationsResource {
                             new AccessDeniedException("Client id is required for agent messages"));
                 }
                 // Agents provide fully-typed content and channel/epoch directly
-                List<CreateMessageRequest> messages = List.of(request);
-                List<MessageDto> appended =
-                        store().appendAgentMessages(
+                List<CreateEntryRequest> messages = List.of(request);
+                List<EntryDto> appended =
+                        store().appendAgentEntries(
                                         currentUserId(), conversationId, messages, clientId);
-                MessageDto dto =
+                EntryDto dto =
                         appended != null && !appended.isEmpty()
                                 ? appended.get(appended.size() - 1)
                                 : null;
-                result = dto != null ? toClientMessage(dto) : null;
+                result = dto != null ? toClientEntry(dto) : null;
             } else {
                 // Users cannot set channel to MEMORY - only agents can
-                if (request.getChannel() == CreateMessageRequest.ChannelEnum.MEMORY) {
+                if (request.getChannel() == CreateEntryRequest.ChannelEnum.MEMORY) {
                     return forbidden(
                             new AccessDeniedException(
                                     "Only agents can append messages to the MEMORY channel"));
                 }
-                // Users: convert CreateMessageRequest to CreateUserMessageRequest
+                // Users: convert CreateEntryRequest to CreateUserEntryRequest
                 String textContent = extractTextFromContent(request.getContent());
                 if (textContent == null || textContent.isBlank()) {
                     io.github.chirino.memory.client.model.ErrorResponse error =
@@ -271,12 +270,12 @@ public class ConversationsResource {
                     error.setCode("invalid_request");
                     return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
                 }
-                CreateUserMessageRequest userRequest = new CreateUserMessageRequest();
+                CreateUserEntryRequest userRequest = new CreateUserEntryRequest();
                 userRequest.setContent(textContent);
-                // Note: CreateMessageRequest doesn't have metadata, so we skip it
-                MessageDto dto =
-                        store().appendUserMessage(currentUserId(), conversationId, userRequest);
-                result = toClientMessage(dto);
+                // Note: CreateEntryRequest doesn't have metadata, so we skip it
+                EntryDto dto =
+                        store().appendUserEntry(currentUserId(), conversationId, userRequest);
+                result = toClientEntry(dto);
             }
             return Response.status(Response.Status.CREATED).entity(result).build();
         } catch (ResourceNotFoundException e) {
@@ -287,9 +286,9 @@ public class ConversationsResource {
     }
 
     @POST
-    @Path("/conversations/{conversationId}/memory/messages/sync")
-    public Response syncMemoryMessages(
-            @PathParam("conversationId") String conversationId, SyncMessagesRequest request) {
+    @Path("/conversations/{conversationId}/memory/entries/sync")
+    public Response syncMemoryEntries(
+            @PathParam("conversationId") String conversationId, SyncEntriesRequest request) {
         if (apiKeyContext == null || !apiKeyContext.hasValidApiKey()) {
             return forbidden(
                     new AccessDeniedException("Agent API key is required to sync memory messages"));
@@ -299,29 +298,29 @@ public class ConversationsResource {
             return forbidden(
                     new AccessDeniedException("Client id is required to sync memory messages"));
         }
-        if (request == null || request.getMessages() == null || request.getMessages().isEmpty()) {
+        if (request == null || request.getEntries() == null || request.getEntries().isEmpty()) {
             return badRequest("messages are required");
         }
-        for (CreateMessageRequest message : request.getMessages()) {
+        for (CreateEntryRequest message : request.getEntries()) {
             if (message == null
                     || message.getChannel() == null
-                    || message.getChannel() != CreateMessageRequest.ChannelEnum.MEMORY) {
+                    || message.getChannel() != CreateEntryRequest.ChannelEnum.MEMORY) {
                 return badRequest("all sync messages must target the memory channel");
             }
         }
         try {
             SyncResult result =
-                    store().syncAgentMessages(
+                    store().syncAgentEntries(
                                     currentUserId(),
                                     conversationId,
-                                    request.getMessages(),
+                                    request.getEntries(),
                                     clientId);
             Map<String, Object> response = new HashMap<>();
             response.put("epoch", result.getEpoch());
             response.put("noOp", result.isNoOp());
             response.put("epochIncremented", result.isEpochIncremented());
-            List<Message> data = result.getMessages().stream().map(this::toClientMessage).toList();
-            response.put("messages", data);
+            List<Entry> data = result.getEntries().stream().map(this::toClientEntry).toList();
+            response.put("entries", data);
             return Response.ok(response).build();
         } catch (ResourceNotFoundException e) {
             return notFound(e);
@@ -414,22 +413,22 @@ public class ConversationsResource {
     }
 
     @POST
-    @Path("/conversations/{conversationId}/messages/{messageId}/fork")
+    @Path("/conversations/{conversationId}/entries/{entryId}/fork")
     public Response forkConversation(
             @PathParam("conversationId") String conversationId,
-            @PathParam("messageId") String messageId,
-            ForkFromMessageRequest request) {
+            @PathParam("entryId") String entryId,
+            ForkFromEntryRequest request) {
         try {
             if (request == null) {
-                request = new ForkFromMessageRequest();
+                request = new ForkFromEntryRequest();
             }
-            io.github.chirino.memory.api.dto.ForkFromMessageRequest internal =
-                    new io.github.chirino.memory.api.dto.ForkFromMessageRequest();
+            io.github.chirino.memory.api.dto.ForkFromEntryRequest internal =
+                    new io.github.chirino.memory.api.dto.ForkFromEntryRequest();
             internal.setTitle(request.getTitle());
 
             ConversationDto dto =
-                    store().forkConversationAtMessage(
-                                    currentUserId(), conversationId, messageId, internal);
+                    store().forkConversationAtEntry(
+                                    currentUserId(), conversationId, entryId, internal);
             Conversation result = toClientConversation(dto);
             return Response.status(Response.Status.CREATED).entity(result).build();
         } catch (ResourceNotFoundException e) {
@@ -506,11 +505,11 @@ public class ConversationsResource {
             error.setDetails(Map.of("message", "Title is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
-        if (request.getUntilMessageId() == null || request.getUntilMessageId().isBlank()) {
+        if (request.getUntilEntryId() == null || request.getUntilEntryId().isBlank()) {
             ErrorResponse error = new ErrorResponse();
             error.setError("Invalid request");
             error.setCode("bad_request");
-            error.setDetails(Map.of("message", "untilMessageId is required"));
+            error.setDetails(Map.of("message", "untilEntryId is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
         if (request.getSummarizedAt() == null) {
@@ -520,23 +519,23 @@ public class ConversationsResource {
             error.setDetails(Map.of("message", "summarizedAt is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
-        String untilMessageId = request.getUntilMessageId();
+        String untilEntryId = request.getUntilEntryId();
         LOG.infof(
-                "Creating summary for conversationId=%s, untilMessageId=%s",
-                conversationId, untilMessageId);
+                "Creating summary for conversationId=%s, untilEntryId=%s",
+                conversationId, untilEntryId);
         try {
             io.github.chirino.memory.api.dto.CreateSummaryRequest internal =
                     new io.github.chirino.memory.api.dto.CreateSummaryRequest();
             internal.setTitle(request.getTitle());
             internal.setSummary(request.getSummary());
-            internal.setUntilMessageId(request.getUntilMessageId());
+            internal.setUntilEntryId(request.getUntilEntryId());
             internal.setSummarizedAt(request.getSummarizedAt().format(ISO_FORMATTER));
 
-            MessageDto dto = store().createSummary(conversationId, internal, clientId);
+            EntryDto dto = store().createSummary(conversationId, internal, clientId);
             LOG.infof(
                     "Successfully created summary for conversationId=%s, summaryId=%s",
                     conversationId, dto.getId());
-            Message result = toClientMessage(dto);
+            Entry result = toClientEntry(dto);
             return Response.status(Response.Status.CREATED).entity(result).build();
         } catch (ResourceNotFoundException e) {
             LOG.infof("Conversation not found: conversationId=%s", conversationId);
@@ -793,7 +792,7 @@ public class ConversationsResource {
                             dto.getAccessLevel().name().toLowerCase()));
         }
         // conversationGroupId is not exposed in API responses
-        result.setForkedAtMessageId(dto.getForkedAtMessageId());
+        result.setForkedAtEntryId(dto.getForkedAtEntryId());
         result.setForkedAtConversationId(dto.getForkedAtConversationId());
         return result;
     }
@@ -823,25 +822,26 @@ public class ConversationsResource {
         ConversationForkSummary result = new ConversationForkSummary();
         result.setConversationId(dto.getConversationId());
         // conversationGroupId is not exposed in API responses
-        result.setForkedAtMessageId(dto.getForkedAtMessageId());
+        result.setForkedAtEntryId(dto.getForkedAtEntryId());
         result.setForkedAtConversationId(dto.getForkedAtConversationId());
         result.setTitle(dto.getTitle());
         result.setCreatedAt(parseDate(dto.getCreatedAt()));
         return result;
     }
 
-    private Message toClientMessage(MessageDto dto) {
+    private Entry toClientEntry(EntryDto dto) {
         if (dto == null) {
             return null;
         }
-        Message result = new Message();
+        Entry result = new Entry();
         result.setId(dto.getId());
         result.setConversationId(dto.getConversationId());
         result.setUserId(dto.getUserId());
         if (dto.getChannel() != null) {
-            result.setChannel(Message.ChannelEnum.fromString(dto.getChannel().toValue()));
+            result.setChannel(Entry.ChannelEnum.fromString(dto.getChannel().toValue()));
         }
         result.setEpoch(dto.getEpoch());
+        result.setContentType(dto.getContentType());
         if (dto.getContent() != null) {
             result.setContent(dto.getContent());
         }

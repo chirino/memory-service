@@ -4,7 +4,7 @@ public class CreateSummaryRequest {
 
     private String title;
     private String summary;
-    private String untilMessageId;
+    private String untilEntryId;
     private String summarizedAt;
 
     public String getTitle() {
@@ -23,12 +23,12 @@ public class CreateSummaryRequest {
         this.summary = summary;
     }
 
-    public String getUntilMessageId() {
-        return untilMessageId;
+    public String getUntilEntryId() {
+        return untilEntryId;
     }
 
-    public void setUntilMessageId(String untilMessageId) {
-        this.untilMessageId = untilMessageId;
+    public void setUntilEntryId(String untilEntryId) {
+        this.untilEntryId = untilEntryId;
     }
 
     public String getSummarizedAt() {

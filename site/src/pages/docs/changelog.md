@@ -33,8 +33,8 @@ Memory Service is currently in active development and has not yet reached versio
 ### Current Features
 
 - **Conversation Storage** - Store and retrieve conversation history
-- **Message Management** - Full CRUD operations for messages
-- **Conversation Forking** - Fork conversations at any message
+- **Entry Management** - Full CRUD operations for entries
+- **Conversation Forking** - Fork conversations at any entry
 - **Semantic Search** - Vector-based search across conversations
 - **Access Control** - User-based permissions and sharing
 - **Multiple Databases** - Support for PostgreSQL and MongoDB

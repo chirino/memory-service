@@ -57,10 +57,7 @@ class TestSecurityTokenTest {
                         .path("id");
 
         // Verify we can access it
-        given().when()
-                .get("/v1/conversations/{id}/messages", conversationId)
-                .then()
-                .statusCode(200);
+        given().when().get("/v1/conversations/{id}/entries", conversationId).then().statusCode(200);
     }
 
     @Test

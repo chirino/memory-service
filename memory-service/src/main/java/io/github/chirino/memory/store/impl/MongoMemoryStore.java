@@ -11,31 +11,31 @@ import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateSummaryRequest;
-import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
-import io.github.chirino.memory.api.dto.ForkFromMessageRequest;
-import io.github.chirino.memory.api.dto.MessageDto;
-import io.github.chirino.memory.api.dto.PagedMessages;
-import io.github.chirino.memory.api.dto.SearchMessagesRequest;
+import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
+import io.github.chirino.memory.api.dto.EntryDto;
+import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
+import io.github.chirino.memory.api.dto.PagedEntries;
+import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
-import io.github.chirino.memory.client.model.CreateMessageRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
 import io.github.chirino.memory.model.AdminSearchQuery;
-import io.github.chirino.memory.model.MessageChannel;
+import io.github.chirino.memory.model.Channel;
 import io.github.chirino.memory.mongo.model.MongoConversation;
 import io.github.chirino.memory.mongo.model.MongoConversationGroup;
 import io.github.chirino.memory.mongo.model.MongoConversationMembership;
 import io.github.chirino.memory.mongo.model.MongoConversationOwnershipTransfer;
-import io.github.chirino.memory.mongo.model.MongoMessage;
+import io.github.chirino.memory.mongo.model.MongoEntry;
 import io.github.chirino.memory.mongo.repo.MongoConversationGroupRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationOwnershipTransferRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationRepository;
-import io.github.chirino.memory.mongo.repo.MongoMessageRepository;
+import io.github.chirino.memory.mongo.repo.MongoEntryRepository;
 import io.github.chirino.memory.mongo.repo.MongoTaskRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
@@ -79,7 +79,7 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Inject MongoConversationMembershipRepository membershipRepository;
 
-    @Inject MongoMessageRepository messageRepository;
+    @Inject MongoEntryRepository entryRepository;
 
     @Inject MongoConversationOwnershipTransferRepository ownershipTransferRepository;
 
@@ -103,8 +103,8 @@ public class MongoMemoryStore implements MemoryStore {
         return mongoClient.getDatabase("memory").getCollection("conversations");
     }
 
-    private MongoCollection<Document> getMessageCollection() {
-        return mongoClient.getDatabase("memory").getCollection("messages");
+    private MongoCollection<Document> getEntryCollection() {
+        return mongoClient.getDatabase("memory").getCollection("entries");
     }
 
     private MongoCollection<Document> getMembershipCollection() {
@@ -157,7 +157,7 @@ public class MongoMemoryStore implements MemoryStore {
             List<MongoConversation> roots =
                     conversationRepository
                             .find(
-                                    "conversationGroupId in ?1 and forkedAtMessageId is null and"
+                                    "conversationGroupId in ?1 and forkedAtEntryId is null and"
                                             + " forkedAtConversationId is null",
                                     accessByGroup.keySet())
                             .stream()
@@ -256,8 +256,8 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public MessageDto appendUserMessage(
-            String userId, String conversationId, CreateUserMessageRequest request) {
+    public EntryDto appendUserEntry(
+            String userId, String conversationId, CreateUserEntryRequest request) {
         MongoConversation c = conversationRepository.findById(conversationId);
         if (c != null && c.deletedAt != null) {
             c = null; // Treat soft-deleted as non-existent for auto-create
@@ -277,7 +277,7 @@ public class MongoMemoryStore implements MemoryStore {
                 conversationGroupRepository.persist(group);
             }
             c.ownerUserId = userId;
-            String inferredTitle = inferTitleFromUserMessage(request);
+            String inferredTitle = inferTitleFromUserEntry(request);
             c.title = encryptTitle(inferredTitle);
             c.metadata = Collections.emptyMap();
             Instant now = Instant.now();
@@ -290,21 +290,22 @@ public class MongoMemoryStore implements MemoryStore {
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);
         }
 
-        MongoMessage m = new MongoMessage();
+        MongoEntry m = new MongoEntry();
         m.id = UUID.randomUUID().toString();
         m.conversationId = conversationId;
         m.userId = userId;
-        m.channel = MessageChannel.HISTORY;
+        m.channel = Channel.HISTORY;
         m.epoch = null;
+        m.contentType = "message";
         m.conversationGroupId = c.conversationGroupId;
         m.decodedContent = List.of(Map.of("type", "text", "text", request.getContent()));
         m.content = encryptContent(m.decodedContent);
         Instant createdAt = Instant.now();
         m.createdAt = createdAt;
-        messageRepository.persist(m);
+        entryRepository.persist(m);
         c.updatedAt = createdAt;
         conversationRepository.persistOrUpdate(c);
-        return toMessageDto(m);
+        return toEntryDto(m);
     }
 
     @Override
@@ -368,11 +369,8 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public ConversationDto forkConversationAtMessage(
-            String userId,
-            String conversationId,
-            String messageId,
-            ForkFromMessageRequest request) {
+    public ConversationDto forkConversationAtEntry(
+            String userId, String conversationId, String entryId, ForkFromEntryRequest request) {
         MongoConversation original = conversationRepository.findById(conversationId);
         if (original == null || original.deletedAt != null) {
             throw new ResourceNotFoundException("conversation", conversationId);
@@ -380,19 +378,19 @@ public class MongoMemoryStore implements MemoryStore {
         String groupId = original.conversationGroupId;
         ensureHasAccess(groupId, userId, AccessLevel.WRITER);
 
-        MongoMessage target =
-                messageRepository
-                        .findByIdOptional(messageId)
-                        .orElseThrow(() -> new ResourceNotFoundException("message", messageId));
+        MongoEntry target =
+                entryRepository
+                        .findByIdOptional(entryId)
+                        .orElseThrow(() -> new ResourceNotFoundException("entry", entryId));
         if (!conversationId.equals(target.conversationId)) {
-            throw new ResourceNotFoundException("message", messageId);
+            throw new ResourceNotFoundException("entry", entryId);
         }
-        if (target.channel != MessageChannel.HISTORY) {
-            throw new AccessDeniedException("Forking is only allowed for history messages");
+        if (target.channel != Channel.HISTORY) {
+            throw new AccessDeniedException("Forking is only allowed for history entries");
         }
 
-        MongoMessage previous =
-                messageRepository
+        MongoEntry previous =
+                entryRepository
                         .find(
                                 "conversationId = ?1 and channel = ?2 and (createdAt < ?3 or"
                                         + " (createdAt = ?3 and id < ?4))",
@@ -401,7 +399,7 @@ public class MongoMemoryStore implements MemoryStore {
                                         .and("id")
                                         .descending(),
                                 conversationId,
-                                MessageChannel.HISTORY,
+                                Channel.HISTORY,
                                 target.createdAt,
                                 target.id)
                         .firstResult();
@@ -417,7 +415,7 @@ public class MongoMemoryStore implements MemoryStore {
         fork.metadata = Collections.emptyMap();
         fork.conversationGroupId = original.conversationGroupId;
         fork.forkedAtConversationId = original.id;
-        fork.forkedAtMessageId = previous != null ? previous.id : null;
+        fork.forkedAtEntryId = previous != null ? previous.id : null;
         Instant now = Instant.now();
         fork.createdAt = now;
         fork.updatedAt = now;
@@ -450,7 +448,7 @@ public class MongoMemoryStore implements MemoryStore {
             ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
             dto.setConversationId(candidate.id);
             dto.setConversationGroupId(groupId);
-            dto.setForkedAtMessageId(candidate.forkedAtMessageId);
+            dto.setForkedAtEntryId(candidate.forkedAtEntryId);
             dto.setForkedAtConversationId(candidate.forkedAtConversationId);
             dto.setTitle(decryptTitle(candidate.title));
             dto.setCreatedAt(formatInstant(candidate.createdAt));
@@ -486,12 +484,12 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public PagedMessages getMessages(
+    public PagedEntries getEntries(
             String userId,
             String conversationId,
-            String afterMessageId,
+            String afterEntryId,
             int limit,
-            MessageChannel channel,
+            Channel channel,
             MemoryEpochFilter epochFilter,
             String clientId) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
@@ -500,29 +498,28 @@ public class MongoMemoryStore implements MemoryStore {
         }
         String groupId = conversation.conversationGroupId;
         ensureHasAccess(groupId, userId, AccessLevel.READER);
-        List<MongoMessage> messages;
-        if (channel == MessageChannel.MEMORY) {
-            messages =
-                    fetchMemoryMessages(
-                            conversationId, afterMessageId, limit, epochFilter, clientId);
+        List<MongoEntry> entries;
+        if (channel == Channel.MEMORY) {
+            entries =
+                    fetchMemoryEntries(conversationId, afterEntryId, limit, epochFilter, clientId);
         } else {
-            messages =
-                    messageRepository.listByChannel(
-                            conversationId, afterMessageId, limit, channel, clientId);
+            entries =
+                    entryRepository.listByChannel(
+                            conversationId, afterEntryId, limit, channel, clientId);
         }
-        PagedMessages page = new PagedMessages();
+        PagedEntries page = new PagedEntries();
         page.setConversationId(conversationId);
-        List<MessageDto> dtos = messages.stream().map(this::toMessageDto).toList();
-        page.setMessages(dtos);
+        List<EntryDto> dtos = entries.stream().map(this::toEntryDto).toList();
+        page.setEntries(dtos);
         String nextCursor =
                 dtos.size() == limit && !dtos.isEmpty() ? dtos.get(dtos.size() - 1).getId() : null;
         page.setNextCursor(nextCursor);
         return page;
     }
 
-    private List<MongoMessage> fetchMemoryMessages(
+    private List<MongoEntry> fetchMemoryEntries(
             String conversationId,
-            String afterMessageId,
+            String afterEntryId,
             int limit,
             MemoryEpochFilter epochFilter,
             String clientId) {
@@ -532,31 +529,30 @@ public class MongoMemoryStore implements MemoryStore {
         MemoryEpochFilter filter = epochFilter != null ? epochFilter : MemoryEpochFilter.latest();
         return switch (filter.getMode()) {
             case ALL ->
-                    messageRepository.listByChannel(
-                            conversationId, afterMessageId, limit, MessageChannel.MEMORY, clientId);
+                    entryRepository.listByChannel(
+                            conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
             case LATEST -> {
-                Long latestEpoch =
-                        messageRepository.findLatestMemoryEpoch(conversationId, clientId);
-                // If no messages with epochs exist, list all memory messages
+                Long latestEpoch = entryRepository.findLatestMemoryEpoch(conversationId, clientId);
+                // If no entries with epochs exist, list all memory entries
                 if (latestEpoch == null) {
-                    yield messageRepository.listByChannel(
-                            conversationId, afterMessageId, limit, MessageChannel.MEMORY, clientId);
+                    yield entryRepository.listByChannel(
+                            conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
                 }
-                yield messageRepository.listMemoryMessagesByEpoch(
-                        conversationId, afterMessageId, limit, latestEpoch, clientId);
+                yield entryRepository.listMemoryEntriesByEpoch(
+                        conversationId, afterEntryId, limit, latestEpoch, clientId);
             }
             case EPOCH ->
-                    messageRepository.listMemoryMessagesByEpoch(
-                            conversationId, afterMessageId, limit, filter.getEpoch(), clientId);
+                    entryRepository.listMemoryEntriesByEpoch(
+                            conversationId, afterEntryId, limit, filter.getEpoch(), clientId);
         };
     }
 
     @Override
     @Transactional
-    public List<MessageDto> appendAgentMessages(
+    public List<EntryDto> appendAgentEntries(
             String userId,
             String conversationId,
-            List<CreateMessageRequest> messages,
+            List<CreateEntryRequest> entries,
             String clientId) {
         MongoConversation c = conversationRepository.findById(conversationId);
         if (c != null && c.deletedAt != null) {
@@ -577,7 +573,7 @@ public class MongoMemoryStore implements MemoryStore {
                 conversationGroupRepository.persist(group);
             }
             c.ownerUserId = userId;
-            String inferredTitle = inferTitleFromMessages(messages);
+            String inferredTitle = inferTitleFromEntries(entries);
             c.title = encryptTitle(inferredTitle);
             c.metadata = Collections.emptyMap();
             Instant now = Instant.now();
@@ -591,28 +587,29 @@ public class MongoMemoryStore implements MemoryStore {
         }
 
         Instant latestHistoryTimestamp = null;
-        List<MessageDto> created = new ArrayList<>(messages.size());
-        for (CreateMessageRequest req : messages) {
-            MongoMessage m = new MongoMessage();
+        List<EntryDto> created = new ArrayList<>(entries.size());
+        for (CreateEntryRequest req : entries) {
+            MongoEntry m = new MongoEntry();
             m.id = UUID.randomUUID().toString();
             m.conversationId = conversationId;
             m.userId = req.getUserId();
             m.clientId = clientId;
             m.channel =
                     req.getChannel() != null
-                            ? MessageChannel.fromString(req.getChannel().value())
-                            : MessageChannel.MEMORY;
+                            ? Channel.fromString(req.getChannel().value())
+                            : Channel.MEMORY;
             m.epoch = req.getEpoch();
+            m.contentType = req.getContentType() != null ? req.getContentType() : "message";
             m.decodedContent = req.getContent();
             m.content = encryptContent(m.decodedContent);
             m.conversationGroupId = c.conversationGroupId;
             Instant createdAt = Instant.now();
             m.createdAt = createdAt;
-            messageRepository.persist(m);
-            if (m.channel == MessageChannel.HISTORY) {
+            entryRepository.persist(m);
+            if (m.channel == Channel.HISTORY) {
                 latestHistoryTimestamp = createdAt;
             }
-            created.add(toMessageDto(m));
+            created.add(toEntryDto(m));
         }
         if (latestHistoryTimestamp != null) {
             c.updatedAt = latestHistoryTimestamp;
@@ -623,103 +620,103 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public SyncResult syncAgentMessages(
+    public SyncResult syncAgentEntries(
             String userId,
             String conversationId,
-            List<CreateMessageRequest> messages,
+            List<CreateEntryRequest> entries,
             String clientId) {
-        validateSyncMessages(messages);
-        Long latestEpoch = messageRepository.findLatestMemoryEpoch(conversationId, clientId);
-        List<MessageDto> latestEpochMessages =
+        validateSyncEntries(entries);
+        Long latestEpoch = entryRepository.findLatestMemoryEpoch(conversationId, clientId);
+        List<EntryDto> latestEpochEntries =
                 latestEpoch != null
-                        ? messageRepository
-                                .listMemoryMessagesByEpoch(conversationId, latestEpoch, clientId)
+                        ? entryRepository
+                                .listMemoryEntriesByEpoch(conversationId, latestEpoch, clientId)
                                 .stream()
-                                .map(this::toMessageDto)
+                                .map(this::toEntryDto)
                                 .collect(Collectors.toList())
                         : Collections.emptyList();
 
         List<MemorySyncHelper.MessageContent> existing =
-                MemorySyncHelper.fromDtos(latestEpochMessages);
-        List<MemorySyncHelper.MessageContent> incoming = MemorySyncHelper.fromRequests(messages);
+                MemorySyncHelper.fromDtos(latestEpochEntries);
+        List<MemorySyncHelper.MessageContent> incoming = MemorySyncHelper.fromRequests(entries);
 
         SyncResult result = new SyncResult();
-        result.setMessages(Collections.emptyList());
+        result.setEntries(Collections.emptyList());
         result.setEpoch(latestEpoch);
 
-        // If no existing messages and incoming is empty, that's a no-op (shouldn't happen due to
+        // If no existing entries and incoming is empty, that's a no-op (shouldn't happen due to
         // validation)
         if (existing.isEmpty() && incoming.isEmpty()) {
             result.setNoOp(true);
             return result;
         }
 
-        // If existing messages match incoming exactly, it's a no-op
+        // If existing entries match incoming exactly, it's a no-op
         if (!existing.isEmpty() && existing.equals(incoming)) {
             result.setNoOp(true);
             return result;
         }
 
-        // If incoming is a prefix extension of existing (only adding more messages), append to
+        // If incoming is a prefix extension of existing (only adding more entries), append to
         // current epoch
         if (!existing.isEmpty()
                 && incoming.size() > existing.size()
                 && MemorySyncHelper.isPrefix(existing, incoming)) {
-            List<CreateMessageRequest> delta =
+            List<CreateEntryRequest> delta =
                     MemorySyncHelper.withEpoch(
-                            messages.subList(existing.size(), messages.size()), latestEpoch);
-            List<MessageDto> appended =
-                    appendAgentMessages(userId, conversationId, delta, clientId);
-            result.setMessages(appended);
+                            entries.subList(existing.size(), entries.size()), latestEpoch);
+            List<EntryDto> appended = appendAgentEntries(userId, conversationId, delta, clientId);
+            result.setEntries(appended);
             result.setEpochIncremented(false);
             result.setNoOp(false);
             return result;
         }
 
-        // Otherwise, create a new epoch with all incoming messages
+        // Otherwise, create a new epoch with all incoming entries
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
-        List<CreateMessageRequest> toAppend = MemorySyncHelper.withEpoch(messages, nextEpoch);
-        List<MessageDto> appended = appendAgentMessages(userId, conversationId, toAppend, clientId);
+        List<CreateEntryRequest> toAppend = MemorySyncHelper.withEpoch(entries, nextEpoch);
+        List<EntryDto> appended = appendAgentEntries(userId, conversationId, toAppend, clientId);
         result.setEpoch(nextEpoch);
-        result.setMessages(appended);
+        result.setEntries(appended);
         result.setEpochIncremented(true);
         result.setNoOp(false);
         return result;
     }
 
-    private void validateSyncMessages(List<CreateMessageRequest> messages) {
-        if (messages == null || messages.isEmpty()) {
-            throw new IllegalArgumentException("messages are required");
+    private void validateSyncEntries(List<CreateEntryRequest> entries) {
+        if (entries == null || entries.isEmpty()) {
+            throw new IllegalArgumentException("entries are required");
         }
-        for (CreateMessageRequest message : messages) {
-            if (message == null
-                    || message.getChannel() == null
-                    || message.getChannel() != CreateMessageRequest.ChannelEnum.MEMORY) {
-                throw new IllegalArgumentException("sync messages must target memory channel");
+        for (CreateEntryRequest entry : entries) {
+            if (entry == null
+                    || entry.getChannel() == null
+                    || entry.getChannel() != CreateEntryRequest.ChannelEnum.MEMORY) {
+                throw new IllegalArgumentException("sync entries must target memory channel");
             }
         }
     }
 
     @Override
     @Transactional
-    public MessageDto createSummary(
+    public EntryDto createSummary(
             String conversationId, CreateSummaryRequest request, String clientId) {
         MongoConversation c = conversationRepository.findById(conversationId);
         if (c == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
-        MongoMessage summary = new MongoMessage();
+        MongoEntry summary = new MongoEntry();
         summary.id = UUID.randomUUID().toString();
         summary.conversationId = conversationId;
         summary.userId = null;
         summary.clientId = clientId;
-        summary.channel = MessageChannel.SUMMARY;
+        summary.channel = Channel.SUMMARY;
         summary.epoch = null;
+        summary.contentType = "summary";
         summary.decodedContent = buildSummaryContent(request);
         summary.content = encryptContent(summary.decodedContent);
         summary.conversationGroupId = c.conversationGroupId;
         summary.createdAt = Instant.now();
-        messageRepository.persist(summary);
+        entryRepository.persist(summary);
 
         boolean conversationUpdated = false;
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
@@ -732,7 +729,7 @@ public class MongoMemoryStore implements MemoryStore {
             conversationRepository.persistOrUpdate(c);
         }
 
-        return toMessageDto(summary);
+        return toEntryDto(summary);
     }
 
     private List<Object> buildSummaryContent(CreateSummaryRequest request) {
@@ -742,8 +739,8 @@ public class MongoMemoryStore implements MemoryStore {
         Map<String, Object> block = new HashMap<>();
         block.put("type", "summary");
         block.put("text", request.getSummary());
-        if (request.getUntilMessageId() != null) {
-            block.put("untilMessageId", request.getUntilMessageId());
+        if (request.getUntilEntryId() != null) {
+            block.put("untilEntryId", request.getUntilEntryId());
         }
         if (request.getSummarizedAt() != null) {
             block.put("summarizedAt", request.getSummarizedAt());
@@ -757,7 +754,7 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     private void vectorizeSummary(
-            MongoConversation conversation, MongoMessage summary, CreateSummaryRequest request) {
+            MongoConversation conversation, MongoEntry summary, CreateSummaryRequest request) {
         if (request == null || request.getSummary() == null || request.getSummary().isBlank()) {
             return;
         }
@@ -787,7 +784,7 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<SearchResultDto> searchMessages(String userId, SearchMessagesRequest request) {
+    public List<SearchResultDto> searchEntries(String userId, SearchEntriesRequest request) {
         if (request.getQuery() == null || request.getQuery().isBlank()) {
             return Collections.emptyList();
         }
@@ -823,8 +820,8 @@ public class MongoMemoryStore implements MemoryStore {
         String query = request.getQuery().toLowerCase();
         int limit = request.getTopK() != null ? request.getTopK() : 20;
 
-        List<MongoMessage> candidates =
-                messageRepository.find("conversationId in ?1", targetConversationIds).list();
+        List<MongoEntry> candidates =
+                entryRepository.find("conversationId in ?1", targetConversationIds).list();
 
         return candidates.stream()
                 .map(
@@ -838,7 +835,7 @@ public class MongoMemoryStore implements MemoryStore {
                                 return null;
                             }
                             SearchResultDto dto = new SearchResultDto();
-                            dto.setMessage(toMessageDto(m, content));
+                            dto.setEntry(toEntryDto(m, content));
                             dto.setScore(1.0);
                             dto.setHighlights(null);
                             return dto;
@@ -890,7 +887,7 @@ public class MongoMemoryStore implements MemoryStore {
             dto.setDeletedAt(formatInstant(entity.deletedAt));
         }
         dto.setConversationGroupId(entity.conversationGroupId);
-        dto.setForkedAtMessageId(entity.forkedAtMessageId);
+        dto.setForkedAtEntryId(entity.forkedAtEntryId);
         dto.setForkedAtConversationId(entity.forkedAtConversationId);
         return dto;
     }
@@ -904,21 +901,22 @@ public class MongoMemoryStore implements MemoryStore {
         return dto;
     }
 
-    private MessageDto toMessageDto(MongoMessage entity) {
+    private EntryDto toEntryDto(MongoEntry entity) {
         List<Object> content =
                 entity.decodedContent != null
                         ? entity.decodedContent
                         : decryptContent(entity.content);
-        return toMessageDto(entity, content);
+        return toEntryDto(entity, content);
     }
 
-    private MessageDto toMessageDto(MongoMessage entity, List<Object> content) {
-        MessageDto dto = new MessageDto();
+    private EntryDto toEntryDto(MongoEntry entity, List<Object> content) {
+        EntryDto dto = new EntryDto();
         dto.setId(entity.id);
         dto.setConversationId(entity.conversationId);
         dto.setUserId(entity.userId);
         dto.setChannel(entity.channel);
         dto.setEpoch(entity.epoch);
+        dto.setContentType(entity.contentType);
         dto.setContent(content != null ? content : Collections.emptyList());
         dto.setCreatedAt(formatInstant(entity.createdAt));
         return dto;
@@ -966,7 +964,7 @@ public class MongoMemoryStore implements MemoryStore {
         return null;
     }
 
-    private String inferTitleFromUserMessage(CreateUserMessageRequest request) {
+    private String inferTitleFromUserEntry(CreateUserEntryRequest request) {
         if (request == null) {
             return null;
         }
@@ -978,15 +976,15 @@ public class MongoMemoryStore implements MemoryStore {
         return abbreviateTitle(extractedText);
     }
 
-    private String inferTitleFromMessages(List<CreateMessageRequest> messages) {
-        if (messages == null || messages.isEmpty()) {
+    private String inferTitleFromEntries(List<CreateEntryRequest> entries) {
+        if (entries == null || entries.isEmpty()) {
             return null;
         }
-        for (CreateMessageRequest message : messages) {
-            if (message == null) {
+        for (CreateEntryRequest entry : entries) {
+            if (entry == null) {
                 continue;
             }
-            String text = extractSearchText(message.getContent());
+            String text = extractSearchText(entry.getContent());
             if (text != null && !text.isBlank()) {
                 return abbreviateTitle(text);
             }
@@ -1231,7 +1229,7 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public PagedMessages adminGetMessages(String conversationId, AdminMessageQuery query) {
+    public PagedEntries adminGetEntries(String conversationId, AdminMessageQuery query) {
         MongoConversation conversation;
         if (query.isIncludeDeleted()) {
             conversation = conversationRepository.findById(conversationId);
@@ -1245,18 +1243,17 @@ public class MongoMemoryStore implements MemoryStore {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
 
-        List<MongoMessage> allMessages =
-                messageRepository.find("conversationId", conversationId).list();
+        List<MongoEntry> allEntries = entryRepository.find("conversationId", conversationId).list();
 
         // Sort by createdAt first so cursor-based filtering works correctly
-        allMessages.sort(Comparator.comparing(m -> m.createdAt));
+        allEntries.sort(Comparator.comparing(m -> m.createdAt));
 
-        // Find the cursor message's createdAt if afterMessageId is provided
+        // Find the cursor entry's createdAt if afterEntryId is provided
         Instant cursorCreatedAt = null;
         String cursorId = null;
-        if (query.getAfterMessageId() != null && !query.getAfterMessageId().isBlank()) {
-            cursorId = query.getAfterMessageId();
-            for (MongoMessage m : allMessages) {
+        if (query.getAfterEntryId() != null && !query.getAfterEntryId().isBlank()) {
+            cursorId = query.getAfterEntryId();
+            for (MongoEntry m : allEntries) {
                 if (m.id.equals(cursorId)) {
                     cursorCreatedAt = m.createdAt;
                     break;
@@ -1264,12 +1261,12 @@ public class MongoMemoryStore implements MemoryStore {
             }
         }
 
-        List<MongoMessage> filtered = new ArrayList<>();
-        for (MongoMessage m : allMessages) {
+        List<MongoEntry> filtered = new ArrayList<>();
+        for (MongoEntry m : allEntries) {
             if (query.getChannel() != null && m.channel != query.getChannel()) {
                 continue;
             }
-            // Skip messages at or before the cursor position
+            // Skip entries at or before the cursor position
             if (cursorCreatedAt != null) {
                 if (m.createdAt.isBefore(cursorCreatedAt)) {
                     continue;
@@ -1282,19 +1279,19 @@ public class MongoMemoryStore implements MemoryStore {
         }
 
         int limit = query.getLimit() > 0 ? query.getLimit() : 50;
-        List<MongoMessage> limited = filtered.stream().limit(limit).collect(Collectors.toList());
+        List<MongoEntry> limited = filtered.stream().limit(limit).collect(Collectors.toList());
 
-        List<MessageDto> messages =
-                limited.stream().map(this::toMessageDto).collect(Collectors.toList());
+        List<EntryDto> entryDtos =
+                limited.stream().map(this::toEntryDto).collect(Collectors.toList());
 
         String nextCursor = null;
         if (limited.size() == limit && filtered.size() > limit) {
             nextCursor = limited.get(limited.size() - 1).id;
         }
 
-        PagedMessages result = new PagedMessages();
+        PagedEntries result = new PagedEntries();
         result.setConversationId(conversationId);
-        result.setMessages(messages);
+        result.setEntries(entryDtos);
         result.setNextCursor(nextCursor);
         return result;
     }
@@ -1327,7 +1324,7 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<SearchResultDto> adminSearchMessages(AdminSearchQuery query) {
+    public List<SearchResultDto> adminSearchEntries(AdminSearchQuery query) {
         if (query.getQuery() == null || query.getQuery().isBlank()) {
             return Collections.emptyList();
         }
@@ -1364,8 +1361,8 @@ public class MongoMemoryStore implements MemoryStore {
         String searchQuery = query.getQuery().toLowerCase();
         int limit = query.getTopK() != null ? query.getTopK() : 20;
 
-        List<MongoMessage> candidates =
-                messageRepository.find("conversationId in ?1", conversationIds).list();
+        List<MongoEntry> candidates =
+                entryRepository.find("conversationId in ?1", conversationIds).list();
 
         return candidates.stream()
                 .map(
@@ -1379,7 +1376,7 @@ public class MongoMemoryStore implements MemoryStore {
                                 return null;
                             }
                             SearchResultDto dto = new SearchResultDto();
-                            dto.setMessage(toMessageDto(m, content));
+                            dto.setEntry(toEntryDto(m, content));
                             dto.setScore(1.0);
                             dto.setHighlights(null);
                             return dto;
@@ -1431,7 +1428,7 @@ public class MongoMemoryStore implements MemoryStore {
         Bson groupFilter = Filters.in("_id", groupIds);
 
         // Delete children first, then parents
-        getMessageCollection().deleteMany(filter);
+        getEntryCollection().deleteMany(filter);
         getConversationCollection().deleteMany(filter);
         getMembershipCollection().deleteMany(filter);
         getOwnershipTransferCollection().deleteMany(filter);
