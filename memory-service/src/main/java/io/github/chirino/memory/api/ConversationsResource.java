@@ -245,7 +245,7 @@ public class ConversationsResource {
                     return forbidden(
                             new AccessDeniedException("Client id is required for agent messages"));
                 }
-                // Agents provide fully-typed content and channel/memoryEpoch directly
+                // Agents provide fully-typed content and channel/epoch directly
                 List<CreateMessageRequest> messages = List.of(request);
                 List<MessageDto> appended =
                         store().appendAgentMessages(
@@ -317,7 +317,7 @@ public class ConversationsResource {
                                     request.getMessages(),
                                     clientId);
             Map<String, Object> response = new HashMap<>();
-            response.put("memoryEpoch", result.getMemoryEpoch());
+            response.put("epoch", result.getEpoch());
             response.put("noOp", result.isNoOp());
             response.put("epochIncremented", result.isEpochIncremented());
             List<Message> data = result.getMessages().stream().map(this::toClientMessage).toList();
@@ -841,7 +841,7 @@ public class ConversationsResource {
         if (dto.getChannel() != null) {
             result.setChannel(Message.ChannelEnum.fromString(dto.getChannel().toValue()));
         }
-        result.setMemoryEpoch(dto.getMemoryEpoch());
+        result.setEpoch(dto.getEpoch());
         if (dto.getContent() != null) {
             result.setContent(dto.getContent());
         }

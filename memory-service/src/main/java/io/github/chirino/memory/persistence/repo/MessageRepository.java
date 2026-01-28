@@ -88,8 +88,8 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
         try {
             return getEntityManager()
                     .createQuery(
-                            "select max(m.memoryEpoch) from MessageEntity m where m.conversation.id"
-                                + " = :cid and m.channel = :channel and m.clientId = :clientId and"
+                            "select max(m.epoch) from MessageEntity m where m.conversation.id ="
+                                + " :cid and m.channel = :channel and m.clientId = :clientId and"
                                 + " m.conversation.deletedAt IS NULL and"
                                 + " m.conversation.conversationGroup.deletedAt IS NULL",
                             Long.class)
@@ -119,9 +119,9 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
         params.add(clientId);
 
         if (epoch == null) {
-            baseQuery += " and m.memoryEpoch is null";
+            baseQuery += " and m.epoch is null";
         } else {
-            baseQuery += " and m.memoryEpoch = ?" + (params.size() + 1);
+            baseQuery += " and m.epoch = ?" + (params.size() + 1);
             params.add(epoch);
         }
 
@@ -133,7 +133,7 @@ public class MessageRepository implements PanacheRepositoryBase<MessageEntity, U
                     && conversationId.equals(afterMessage.getConversation().getId())
                     && afterMessage.getCreatedAt() != null
                     && afterMessage.getChannel() == MessageChannel.MEMORY
-                    && Objects.equals(afterMessage.getMemoryEpoch(), epoch)) {
+                    && Objects.equals(afterMessage.getEpoch(), epoch)) {
                 params.add(afterMessage.getCreatedAt());
                 baseQuery += " and m.createdAt > ?" + params.size();
             }

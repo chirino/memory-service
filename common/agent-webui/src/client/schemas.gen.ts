@@ -215,7 +215,7 @@ For agent messages, this is the user the agent is responding to.`,
     channel: {
       $ref: "#/components/schemas/MessageChannel",
     },
-    memoryEpoch: {
+    epoch: {
       type: "integer",
       format: "int64",
       nullable: true,
@@ -240,7 +240,7 @@ stores and returns them without interpretation.`,
     conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
     userId: "user_1234",
     channel: "history",
-    memoryEpoch: null,
+    epoch: null,
     content: [
       {
         type: "text",
@@ -265,7 +265,7 @@ For agent messages, this is the user the agent is responding to.`,
     channel: {
       $ref: "#/components/schemas/MessageChannel",
     },
-    memoryEpoch: {
+    epoch: {
       type: "integer",
       format: "int64",
       nullable: true,
@@ -332,7 +332,7 @@ see replayed; only the agent may call this endpoint.`,
 export const $SyncMessagesResponse = {
   type: "object",
   properties: {
-    memoryEpoch: {
+    epoch: {
       type: "integer",
       format: "int64",
       nullable: true,
@@ -355,7 +355,7 @@ export const $SyncMessagesResponse = {
     },
   },
   example: {
-    memoryEpoch: 5,
+    epoch: 5,
     noOp: false,
     epochIncremented: true,
     messages: [
@@ -364,7 +364,7 @@ export const $SyncMessagesResponse = {
         conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
         userId: "agent_memory",
         channel: "memory",
-        memoryEpoch: 5,
+        epoch: 5,
         content: [
           {
             type: "text",

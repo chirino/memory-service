@@ -65,7 +65,7 @@ public final class MemorySyncHelper {
             CreateMessageRequest copy = new CreateMessageRequest();
             copy.setUserId(original != null ? original.getUserId() : null);
             copy.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
-            copy.setMemoryEpoch(epoch);
+            copy.setEpoch(epoch);
             copy.setContent(original != null ? original.getContent() : null);
             normalized.add(copy);
         }

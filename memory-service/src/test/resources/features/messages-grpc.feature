@@ -119,7 +119,7 @@ Feature: Messages gRPC API
     }
     """
     Then the gRPC response should not have an error
-    And the gRPC response field "memoryEpoch" should be "1"
+    And the gRPC response field "epoch" should be "1"
     And the gRPC response field "noOp" should be true
     And the gRPC response field "epochIncremented" should be false
     And the gRPC response should contain 0 messages
@@ -138,7 +138,7 @@ Feature: Messages gRPC API
     }
     """
     Then the gRPC response should not have an error
-    And the gRPC response field "memoryEpoch" should be "2"
+    And the gRPC response field "epoch" should be "2"
     And the gRPC response field "noOp" should be false
     And the gRPC response field "epochIncremented" should be true
     And the gRPC response should contain 1 message

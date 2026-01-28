@@ -9,7 +9,7 @@ public class MessageDto {
     private String conversationId;
     private String userId;
     private MessageChannel channel;
-    private Long memoryEpoch;
+    private Long epoch;
     private List<Object> content;
     private String createdAt;
 
@@ -45,12 +45,12 @@ public class MessageDto {
         this.channel = channel;
     }
 
-    public Long getMemoryEpoch() {
-        return memoryEpoch;
+    public Long getEpoch() {
+        return epoch;
     }
 
-    public void setMemoryEpoch(Long memoryEpoch) {
-        this.memoryEpoch = memoryEpoch;
+    public void setEpoch(Long epoch) {
+        this.epoch = epoch;
     }
 
     public List<Object> getContent() {

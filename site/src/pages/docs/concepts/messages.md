@@ -26,7 +26,7 @@ Each message contains:
   "conversationId": "conv_01HF8XH1XABCD1234EFGH5678",
   "userId": "user_1234",
   "channel": "history",
-  "memoryEpoch": null,
+  "epoch": null,
   "content": [
     {
       "type": "text",
@@ -43,7 +43,7 @@ Each message contains:
 | `conversationId` | ID of the parent conversation |
 | `userId` | Human user associated with the message |
 | `channel` | Logical channel (`history`, `memory`, `summary`) |
-| `memoryEpoch` | Memory epoch number (for `memory` channel messages) |
+| `epoch` | Memory epoch number (for `memory` channel messages) |
 | `content` | Array of content blocks (opaque, agent-defined) |
 | `createdAt` | Creation timestamp |
 

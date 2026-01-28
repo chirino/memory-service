@@ -301,7 +301,7 @@ public class StepDefinitions {
         CreateMessageRequest request = new CreateMessageRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
         request.setChannel(CreateMessageRequest.ChannelEnum.MEMORY);
-        request.setMemoryEpoch((long) epoch);
+        request.setEpoch((long) epoch);
         memoryStoreSelector
                 .getStore()
                 .appendAgentMessages(

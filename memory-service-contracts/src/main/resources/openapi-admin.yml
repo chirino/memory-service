@@ -602,7 +602,7 @@ components:
           nullable: true
         channel:
           $ref: '#/components/schemas/MessageChannel'
-        memoryEpoch:
+        epoch:
           type: integer
           format: int64
           nullable: true

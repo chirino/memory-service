@@ -17,7 +17,7 @@ public class MongoMessage {
     public String userId;
     public String clientId;
     public MessageChannel channel;
-    public Long memoryEpoch;
+    public Long epoch;
     public byte[] content;
     @BsonIgnore public List<Object> decodedContent;
     public Instant createdAt;

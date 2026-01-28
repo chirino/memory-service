@@ -61,11 +61,11 @@ by agent-authenticated calls.
 PostgreSQL:
 - Add `client_id TEXT NULL` to the `messages` table.
 - Add indexes to support memory-channel filtering, for example:
-  - `(conversation_id, channel, client_id, memory_epoch, created_at)`
+  - `(conversation_id, channel, client_id, epoch, created_at)`
 
 MongoDB:
 - Add `clientId` field to `MongoMessage`.
-- Add an index on `(conversationId, channel, clientId, memoryEpoch, createdAt)`.
+- Add an index on `(conversationId, channel, clientId, epoch, createdAt)`.
 
 JPA / Panache models:
 - `MessageEntity` -> add `clientId` column mapping.

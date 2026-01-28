@@ -528,7 +528,7 @@ public class AdminResource {
         if (dto.getChannel() != null) {
             result.setChannel(Message.ChannelEnum.fromString(dto.getChannel().toValue()));
         }
-        result.setMemoryEpoch(dto.getMemoryEpoch());
+        result.setEpoch(dto.getEpoch());
         if (dto.getContent() != null) {
             result.setContent(dto.getContent());
         }

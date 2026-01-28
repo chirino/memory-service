@@ -121,7 +121,7 @@ public class SearchResource {
         if (channel != null) {
             result.setChannel(Message.ChannelEnum.fromString(channel.toValue()));
         }
-        result.setMemoryEpoch(dto.getMemoryEpoch());
+        result.setEpoch(dto.getEpoch());
         if (dto.getContent() != null) {
             result.setContent(dto.getContent());
         }
