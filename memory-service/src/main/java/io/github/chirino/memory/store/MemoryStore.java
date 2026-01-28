@@ -20,6 +20,7 @@ import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
 import io.github.chirino.memory.model.AdminSearchQuery;
 import io.github.chirino.memory.model.MessageChannel;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -97,4 +98,15 @@ public interface MemoryStore {
             String conversationId, boolean includeDeleted);
 
     List<SearchResultDto> adminSearchMessages(AdminSearchQuery query);
+
+    // Eviction support
+    List<String> findEvictableGroupIds(OffsetDateTime cutoff, int limit);
+
+    long countEvictableGroups(OffsetDateTime cutoff);
+
+    void hardDeleteConversationGroups(List<String> groupIds);
+
+    long countEvictableMemberships(OffsetDateTime cutoff);
+
+    int hardDeleteMembershipsBatch(OffsetDateTime cutoff, int limit);
 }

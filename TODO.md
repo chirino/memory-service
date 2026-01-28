@@ -19,6 +19,7 @@
 * Document the spring support
 * generate project static site to promote and document usage.
 * Brand the project and move it to an org/foundation.
+* Look into partioning the messages table to improve pref.
 
 # Need Dev Feedback for:
 
@@ -30,6 +31,7 @@
 * Ponder how best to kick off/manage async summerization / search indexing
 * How useful is the current summarize/index feature?
 * Should the Message type in the api contracts be rename to something like Entry/Event/Posting (since it actually holds messages?)
+* Should we start thinking about partioned postgresql tables
 
 # Bug List
 

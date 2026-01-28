@@ -1,6 +1,9 @@
 package io.github.chirino.memory.store.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.Filters;
 import io.github.chirino.memory.api.ConversationListMode;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
@@ -33,6 +36,7 @@ import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository
 import io.github.chirino.memory.mongo.repo.MongoConversationOwnershipTransferRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationRepository;
 import io.github.chirino.memory.mongo.repo.MongoMessageRepository;
+import io.github.chirino.memory.mongo.repo.MongoTaskRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.github.chirino.memory.store.MemoryStore;
@@ -45,6 +49,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -59,6 +64,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import memory.service.io.github.chirino.dataencryption.DataEncryptionService;
 import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
@@ -84,6 +90,30 @@ public class MongoMemoryStore implements MemoryStore {
     @Inject VectorStoreSelector vectorStoreSelector;
 
     @Inject EmbeddingService embeddingService;
+
+    @Inject MongoClient mongoClient;
+
+    @Inject MongoTaskRepository taskRepository;
+
+    private MongoCollection<Document> getConversationGroupCollection() {
+        return mongoClient.getDatabase("memory").getCollection("conversationGroups");
+    }
+
+    private MongoCollection<Document> getConversationCollection() {
+        return mongoClient.getDatabase("memory").getCollection("conversations");
+    }
+
+    private MongoCollection<Document> getMessageCollection() {
+        return mongoClient.getDatabase("memory").getCollection("messages");
+    }
+
+    private MongoCollection<Document> getMembershipCollection() {
+        return mongoClient.getDatabase("memory").getCollection("conversationMemberships");
+    }
+
+    private MongoCollection<Document> getOwnershipTransferCollection() {
+        return mongoClient.getDatabase("memory").getCollection("conversationOwnershipTransfers");
+    }
 
     @Override
     @Transactional
@@ -1357,5 +1387,102 @@ public class MongoMemoryStore implements MemoryStore {
                 .filter(r -> r != null)
                 .limit(limit)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public List<String> findEvictableGroupIds(OffsetDateTime cutoff, int limit) {
+        Instant cutoffInstant = cutoff.toInstant();
+        return getConversationGroupCollection()
+                .find(
+                        Filters.and(
+                                Filters.ne("deletedAt", null),
+                                Filters.lt("deletedAt", cutoffInstant)))
+                .limit(limit)
+                .map(doc -> doc.getString("_id"))
+                .into(new ArrayList<>());
+    }
+
+    @Override
+    public long countEvictableGroups(OffsetDateTime cutoff) {
+        Instant cutoffInstant = cutoff.toInstant();
+        return getConversationGroupCollection()
+                .countDocuments(
+                        Filters.and(
+                                Filters.ne("deletedAt", null),
+                                Filters.lt("deletedAt", cutoffInstant)));
+    }
+
+    @Override
+    @Transactional
+    public void hardDeleteConversationGroups(List<String> groupIds) {
+        if (groupIds.isEmpty()) {
+            return;
+        }
+
+        // 1. Create tasks for vector store cleanup
+        for (String groupId : groupIds) {
+            taskRepository.createTask(
+                    "vector_store_delete", Map.of("conversationGroupId", groupId));
+        }
+
+        // 2. Delete from data store (explicit cascade - MongoDB has no ON DELETE CASCADE)
+        Bson filter = Filters.in("conversationGroupId", groupIds);
+        Bson groupFilter = Filters.in("_id", groupIds);
+
+        // Delete children first, then parents
+        getMessageCollection().deleteMany(filter);
+        getConversationCollection().deleteMany(filter);
+        getMembershipCollection().deleteMany(filter);
+        getOwnershipTransferCollection().deleteMany(filter);
+        getConversationGroupCollection().deleteMany(groupFilter);
+    }
+
+    @Override
+    public long countEvictableMemberships(OffsetDateTime cutoff) {
+        Instant cutoffInstant = cutoff.toInstant();
+        return getMembershipCollection()
+                .countDocuments(
+                        Filters.and(
+                                Filters.ne("deletedAt", null),
+                                Filters.lt("deletedAt", cutoffInstant)));
+    }
+
+    @Override
+    @Transactional
+    public int hardDeleteMembershipsBatch(OffsetDateTime cutoff, int limit) {
+        Instant cutoffInstant = cutoff.toInstant();
+        Bson filter =
+                Filters.and(Filters.ne("deletedAt", null), Filters.lt("deletedAt", cutoffInstant));
+
+        // Find and delete in batches - MongoDB doesn't have FOR UPDATE SKIP LOCKED,
+        // but deleteMany is idempotent (deleting already-deleted is a no-op)
+        List<Document> batch =
+                getMembershipCollection().find(filter).limit(limit).into(new ArrayList<>());
+
+        if (batch.isEmpty()) {
+            return 0;
+        }
+
+        List<String> groupIds = new ArrayList<>();
+        List<String> userIds = new ArrayList<>();
+        for (Document doc : batch) {
+            Document id = doc.get("_id", Document.class);
+            if (id != null) {
+                groupIds.add(id.getString("conversationGroupId"));
+                userIds.add(id.getString("userId"));
+            }
+        }
+
+        if (groupIds.isEmpty()) {
+            return 0;
+        }
+
+        // Delete matching memberships
+        Bson deleteFilter =
+                Filters.and(
+                        Filters.in("_id.conversationGroupId", groupIds),
+                        Filters.in("_id.userId", userIds));
+        return (int) getMembershipCollection().deleteMany(deleteFilter).getDeletedCount();
     }
 }

@@ -3,6 +3,7 @@ package io.github.chirino.memory.api;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
+import io.github.chirino.memory.api.dto.EvictRequest;
 import io.github.chirino.memory.api.dto.MessageDto;
 import io.github.chirino.memory.api.dto.PagedMessages;
 import io.github.chirino.memory.api.dto.SearchResultDto;
@@ -20,6 +21,7 @@ import io.github.chirino.memory.security.AdminAuditLogger;
 import io.github.chirino.memory.security.AdminRoleResolver;
 import io.github.chirino.memory.security.ApiKeyContext;
 import io.github.chirino.memory.security.JustificationRequiredException;
+import io.github.chirino.memory.service.EvictionService;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryStore;
 import io.github.chirino.memory.store.ResourceConflictException;
@@ -29,7 +31,9 @@ import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -37,12 +41,18 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.jboss.logging.Logger;
 
 @Path("/v1/admin")
@@ -63,6 +73,8 @@ public class AdminResource {
     @Inject AdminRoleResolver roleResolver;
 
     @Inject AdminAuditLogger auditLogger;
+
+    @Inject EvictionService evictionService;
 
     private MemoryStore store() {
         return storeSelector.getStore();
@@ -316,6 +328,74 @@ public class AdminResource {
             return justificationRequired();
         } catch (IllegalArgumentException e) {
             return badRequest(e.getMessage());
+        }
+    }
+
+    @POST
+    @Path("/evict")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces({MediaType.APPLICATION_JSON, "text/event-stream"})
+    public Response evict(
+            @HeaderParam("Accept") @DefaultValue(MediaType.APPLICATION_JSON) String accept,
+            EvictRequest request) {
+        try {
+            roleResolver.requireAdmin(identity, apiKeyContext);
+            String target =
+                    String.format(
+                            "retentionPeriod=%s,resourceTypes=%s",
+                            request.getRetentionPeriod(), request.getResourceTypes());
+            auditLogger.logWrite(
+                    "evict", target, request.getJustification(), identity, apiKeyContext);
+
+            Duration retention = Duration.parse(request.getRetentionPeriod());
+            Set<String> resourceTypes = Set.copyOf(request.getResourceTypes());
+
+            // Validate resource types
+            for (String type : resourceTypes) {
+                if (!"conversation_groups".equals(type)
+                        && !"conversation_memberships".equals(type)) {
+                    return badRequest("Unknown resource type: " + type);
+                }
+            }
+
+            boolean wantsSSE = accept.contains("text/event-stream");
+
+            if (wantsSSE) {
+                // Return SSE stream with progress updates
+                return Response.ok(
+                                new StreamingOutput() {
+                                    @Override
+                                    public void write(OutputStream output) throws IOException {
+                                        try (PrintWriter writer = new PrintWriter(output, true)) {
+                                            evictionService.evict(
+                                                    retention,
+                                                    resourceTypes,
+                                                    progress -> {
+                                                        writer.println(
+                                                                "data: {\"progress\": "
+                                                                        + progress
+                                                                        + "}");
+                                                        writer.println();
+                                                        writer.flush();
+                                                    });
+                                        }
+                                    }
+                                })
+                        .type("text/event-stream")
+                        .build();
+            } else {
+                // Default: simple 204 No Content
+                evictionService.evict(retention, resourceTypes, null);
+                return Response.noContent().build();
+            }
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        } catch (JustificationRequiredException e) {
+            return justificationRequired();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        } catch (java.time.format.DateTimeParseException e) {
+            return badRequest("Invalid retention period format: " + e.getMessage());
         }
     }
 
