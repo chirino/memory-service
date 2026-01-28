@@ -1464,25 +1464,21 @@ public class MongoMemoryStore implements MemoryStore {
             return 0;
         }
 
-        List<String> groupIds = new ArrayList<>();
-        List<String> userIds = new ArrayList<>();
+        // Collect the _id values (which are strings like "conversationId:userId")
+        List<String> ids = new ArrayList<>();
         for (Document doc : batch) {
-            Document id = doc.get("_id", Document.class);
+            Object id = doc.get("_id");
             if (id != null) {
-                groupIds.add(id.getString("conversationGroupId"));
-                userIds.add(id.getString("userId"));
+                ids.add(id.toString());
             }
         }
 
-        if (groupIds.isEmpty()) {
+        if (ids.isEmpty()) {
             return 0;
         }
 
-        // Delete matching memberships
-        Bson deleteFilter =
-                Filters.and(
-                        Filters.in("_id.conversationGroupId", groupIds),
-                        Filters.in("_id.userId", userIds));
+        // Delete by exact _id match to avoid cross-product issues
+        Bson deleteFilter = Filters.in("_id", ids);
         return (int) getMembershipCollection().deleteMany(deleteFilter).getDeletedCount();
     }
 }

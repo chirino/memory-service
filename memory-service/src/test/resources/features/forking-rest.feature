@@ -30,7 +30,6 @@ Feature: Conversation Forking REST API
       "createdAt": "${response.body.createdAt}",
       "updatedAt": "${response.body.updatedAt}",
       "accessLevel": "owner",
-      "conversationGroupId": "${response.body.conversationGroupId}",
       "forkedAtMessageId": "${firstMessageId}",
       "forkedAtConversationId": "${conversationId}"
     }
@@ -122,3 +121,18 @@ Feature: Conversation Forking REST API
     When I list forks for that conversation
     Then the response status should be 403
     And the response should contain error code "forbidden"
+
+  Scenario: Forked conversation shares membership with root
+    Given I share the conversation with user "bob" and access level "reader"
+    When I list messages for the conversation
+    And set "firstMessageId" to the json response field "data[0].id"
+    When I fork the conversation at message "${firstMessageId}" with request:
+    """
+    {
+      "title": "Forked Conversation"
+    }
+    """
+    And set "forkConversationId" to "${response.body.id}"
+    And I authenticate as user "bob"
+    When I get conversation "${forkConversationId}"
+    Then the response status should be 200

@@ -55,6 +55,13 @@ CREATE INDEX IF NOT EXISTS idx_conversations_not_deleted
 CREATE INDEX IF NOT EXISTS idx_conversation_memberships_not_deleted
     ON conversation_memberships (deleted_at) WHERE deleted_at IS NULL;
 
+-- Indexes for eviction queries (deleted records past retention)
+CREATE INDEX IF NOT EXISTS idx_conversation_groups_deleted
+    ON conversation_groups (deleted_at) WHERE deleted_at IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_conversation_memberships_deleted
+    ON conversation_memberships (deleted_at) WHERE deleted_at IS NOT NULL;
+
 ------------------------------------------------------------
 -- Messages & summaries
 ------------------------------------------------------------

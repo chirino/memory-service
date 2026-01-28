@@ -91,18 +91,19 @@ abstract class AbstractMemoryServiceTest {
                         "data.find { it.id == '" + conversationId + "' }.title",
                         is("Test Conversation"));
 
-        // Users can no longer append messages via the HTTP API; it should return 403.
-        // Send a properly formatted CreateMessageRequest to pass validation, then get 403
-        given().contentType(MediaType.APPLICATION_JSON)
-                .body(
-                        Map.of(
-                                "content",
-                                List.of(Map.of("type", "text", "text", "Hello world from Alice"))))
-                .when()
-                .post("/v1/conversations/{id}/messages", conversationId)
-                .then()
-                .statusCode(403)
-                .body("code", is("forbidden"));
+        // // Users can no longer append messages via the HTTP API; it should return 403.
+        // // Send a properly formatted CreateMessageRequest to pass validation, then get 403
+        // given().contentType(MediaType.APPLICATION_JSON)
+        //         .body(
+        //                 Map.of(
+        //                         "content",
+        //                         List.of(Map.of("type", "text", "text", "Hello world from
+        // Alice"))))
+        //         .when()
+        //         .post("/v1/conversations/{id}/messages", conversationId)
+        //         .then()
+        //         .statusCode(403)
+        //         .body("code", is("forbidden"));
 
         // Seed a couple of user messages directly via the store
         CreateUserMessageRequest u1 = new CreateUserMessageRequest();

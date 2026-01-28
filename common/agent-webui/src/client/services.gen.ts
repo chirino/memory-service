@@ -107,6 +107,8 @@ export class ConversationsService {
   /**
    * Delete a conversation
    * Deletes a conversation. Only the owner (or manager, depending on policy) may delete.
+   *
+   * **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
    * @param data The data for the request.
    * @param data.conversationId
    * @returns ErrorResponse Error response

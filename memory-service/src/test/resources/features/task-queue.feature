@@ -1,5 +1,8 @@
 Feature: Background Task Queue
 
+  Background:
+    Given all tasks are deleted
+
   Scenario: Task is created and processed successfully
     Given I create a task with type "vector_store_delete" and body:
       """

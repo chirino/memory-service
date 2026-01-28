@@ -4,6 +4,7 @@ import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
+import io.github.chirino.memory.api.dto.CreateUserMessageRequest;
 import io.github.chirino.memory.api.dto.MessageDto;
 import io.github.chirino.memory.api.dto.PagedMessages;
 import io.github.chirino.memory.api.dto.SyncResult;
@@ -255,11 +256,27 @@ public class ConversationsResource {
                                 : null;
                 result = dto != null ? toClientMessage(dto) : null;
             } else {
-                // Users are no longer allowed to append messages via this endpoint.
-                // Only authenticated agents (identified via API keys) may append.
-                return forbidden(
-                        new AccessDeniedException(
-                                "User messages cannot be appended via this endpoint"));
+                // Users cannot set channel to MEMORY - only agents can
+                if (request.getChannel() == CreateMessageRequest.ChannelEnum.MEMORY) {
+                    return forbidden(
+                            new AccessDeniedException(
+                                    "Only agents can append messages to the MEMORY channel"));
+                }
+                // Users: convert CreateMessageRequest to CreateUserMessageRequest
+                String textContent = extractTextFromContent(request.getContent());
+                if (textContent == null || textContent.isBlank()) {
+                    io.github.chirino.memory.client.model.ErrorResponse error =
+                            new io.github.chirino.memory.client.model.ErrorResponse();
+                    error.setError("Message content is required");
+                    error.setCode("invalid_request");
+                    return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+                }
+                CreateUserMessageRequest userRequest = new CreateUserMessageRequest();
+                userRequest.setContent(textContent);
+                // Note: CreateMessageRequest doesn't have metadata, so we skip it
+                MessageDto dto =
+                        store().appendUserMessage(currentUserId(), conversationId, userRequest);
+                result = toClientMessage(dto);
             }
             return Response.status(Response.Status.CREATED).entity(result).build();
         } catch (ResourceNotFoundException e) {
@@ -320,7 +337,9 @@ public class ConversationsResource {
             List<ConversationMembershipDto> internal =
                     store().listMemberships(currentUserId(), conversationId);
             List<ConversationMembership> data =
-                    internal.stream().map(this::toClientConversationMembership).toList();
+                    internal.stream()
+                            .map(dto -> toClientConversationMembership(dto, conversationId))
+                            .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
             return Response.ok(response).build();
@@ -345,7 +364,7 @@ public class ConversationsResource {
 
             ConversationMembershipDto dto =
                     store().shareConversation(currentUserId(), conversationId, internal);
-            ConversationMembership result = toClientConversationMembership(dto);
+            ConversationMembership result = toClientConversationMembership(dto, conversationId);
             return Response.status(Response.Status.CREATED).entity(result).build();
         } catch (ResourceNotFoundException e) {
             return notFound(e);
@@ -370,7 +389,7 @@ public class ConversationsResource {
 
             ConversationMembershipDto dto =
                     store().updateMembership(currentUserId(), conversationId, userId, internal);
-            ConversationMembership result = toClientConversationMembership(dto);
+            ConversationMembership result = toClientConversationMembership(dto, conversationId);
             return Response.ok(result).build();
         } catch (ResourceNotFoundException e) {
             return notFound(e);
@@ -773,18 +792,19 @@ public class ConversationsResource {
                     Conversation.AccessLevelEnum.fromString(
                             dto.getAccessLevel().name().toLowerCase()));
         }
-        result.setConversationGroupId(dto.getConversationGroupId());
+        // conversationGroupId is not exposed in API responses
         result.setForkedAtMessageId(dto.getForkedAtMessageId());
         result.setForkedAtConversationId(dto.getForkedAtConversationId());
         return result;
     }
 
-    private ConversationMembership toClientConversationMembership(ConversationMembershipDto dto) {
+    private ConversationMembership toClientConversationMembership(
+            ConversationMembershipDto dto, String conversationId) {
         if (dto == null) {
             return null;
         }
         ConversationMembership result = new ConversationMembership();
-        result.setConversationGroupId(dto.getConversationGroupId());
+        result.setConversationId(conversationId);
         result.setUserId(dto.getUserId());
         if (dto.getAccessLevel() != null) {
             result.setAccessLevel(
@@ -802,7 +822,7 @@ public class ConversationsResource {
         }
         ConversationForkSummary result = new ConversationForkSummary();
         result.setConversationId(dto.getConversationId());
-        result.setConversationGroupId(dto.getConversationGroupId());
+        // conversationGroupId is not exposed in API responses
         result.setForkedAtMessageId(dto.getForkedAtMessageId());
         result.setForkedAtConversationId(dto.getForkedAtConversationId());
         result.setTitle(dto.getTitle());

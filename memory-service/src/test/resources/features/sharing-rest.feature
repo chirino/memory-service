@@ -19,7 +19,7 @@ Feature: Conversation Sharing REST API
     And the response body should be json:
     """
     {
-      "conversationGroupId": "${response.body.conversationGroupId}",
+      "conversationId": "${conversationId}",
       "userId": "bob",
       "accessLevel": "writer",
       "createdAt": "${response.body.createdAt}"
@@ -38,7 +38,7 @@ Feature: Conversation Sharing REST API
     And the response body should be json:
     """
     {
-      "conversationGroupId": "${response.body.conversationGroupId}",
+      "conversationId": "${conversationId}",
       "userId": "charlie",
       "accessLevel": "reader",
       "createdAt": "${response.body.createdAt}"
@@ -57,7 +57,7 @@ Feature: Conversation Sharing REST API
     And the response body should be json:
     """
     {
-      "conversationGroupId": "${response.body.conversationGroupId}",
+      "conversationId": "${conversationId}",
       "userId": "dave",
       "accessLevel": "manager",
       "createdAt": "${response.body.createdAt}"
@@ -80,13 +80,13 @@ Feature: Conversation Sharing REST API
     {
       "data": [
         {
-          "conversationGroupId": "${response.body.data[0].conversationGroupId}",
+          "conversationId": "${conversationId}",
           "userId": "${response.body.data[0].userId}",
           "accessLevel": "${response.body.data[0].accessLevel}",
           "createdAt": "${response.body.data[0].createdAt}"
         },
         {
-          "conversationGroupId": "${response.body.data[1].conversationGroupId}",
+          "conversationId": "${conversationId}",
           "userId": "${response.body.data[1].userId}",
           "accessLevel": "${response.body.data[1].accessLevel}",
           "createdAt": "${response.body.data[1].createdAt}"
@@ -115,7 +115,7 @@ Feature: Conversation Sharing REST API
     And the response body should be json:
     """
     {
-      "conversationGroupId": "${response.body.conversationGroupId}",
+      "conversationId": "${conversationId}",
       "userId": "bob",
       "accessLevel": "writer",
       "createdAt": "${response.body.createdAt}"
@@ -218,3 +218,64 @@ Feature: Conversation Sharing REST API
     """
     Then the response status should be 403
     And the response should contain error code "forbidden"
+
+  Scenario: Membership response contains conversationId instead of conversationGroupId
+    When I share the conversation with user "bob" with request:
+    """
+    {
+      "userId": "bob",
+      "accessLevel": "writer"
+    }
+    """
+    Then the response status should be 201
+    And the response body should contain "conversationId"
+    And the response body should not contain "conversationGroupId"
+    And the response body "conversationId" should be "${conversationId}"
+
+  Scenario: Sharing via a fork applies to all conversations in the fork tree
+    Given I have a conversation with title "Root Conversation"
+    And set "rootConversationId" to "${conversationId}"
+    And I append a message to the conversation:
+    """
+    {
+      "content": [{"type": "text", "text": "First message"}]
+    }
+    """
+    And set "messageId" to "${response.body.id}"
+    When I fork the conversation at message "${messageId}"
+    And set "forkConversationId" to "${response.body.id}"
+    And I share conversation "${forkConversationId}" with user "bob" with request:
+    """
+    {
+      "userId": "bob",
+      "accessLevel": "reader"
+    }
+    """
+    And I authenticate as user "bob"
+    When I get conversation "${rootConversationId}"
+    Then the response status should be 200
+
+  Scenario: Listing memberships from a fork returns the same memberships as the root
+    Given I have a conversation with title "Root Conversation"
+    And set "rootConversationId" to "${conversationId}"
+    And I share the conversation with user "bob" with request:
+    """
+    {
+      "userId": "bob",
+      "accessLevel": "writer"
+    }
+    """
+    And I append a message to the conversation:
+    """
+    {
+      "content": [{"type": "text", "text": "First message"}]
+    }
+    """
+    And set "messageId" to "${response.body.id}"
+    When I fork the conversation at message "${messageId}"
+    And set "forkConversationId" to "${response.body.id}"
+    When I list memberships for conversation "${forkConversationId}"
+    Then the response status should be 200
+    And the response should contain at least 2 memberships
+    And the response should contain a membership for user "alice" with access level "owner"
+    And the response should contain a membership for user "bob" with access level "writer"

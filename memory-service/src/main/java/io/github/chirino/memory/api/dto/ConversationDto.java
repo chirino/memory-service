@@ -1,8 +1,11 @@
 package io.github.chirino.memory.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 public class ConversationDto extends ConversationSummaryDto {
 
-    private String conversationGroupId;
+    // Internal field - not exposed in API responses
+    @JsonIgnore private String conversationGroupId;
     private String forkedAtMessageId;
     private String forkedAtConversationId;
 

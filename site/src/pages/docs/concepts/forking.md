@@ -46,57 +46,26 @@ When you fork a conversation, the new conversation has:
 |----------|-------------|
 | `forkedAtConversationId` | ID of the conversation where the fork occurred |
 | `forkedAtMessageId` | Message ID at which the fork diverged |
-| `conversationGroupId` | Shared group ID linking related conversations |
 | `ownerUserId` | Same owner as the original conversation |
 
-## Conversation Groups
+## Fork Trees
 
-A **conversation group** is a logical grouping that links an original conversation with all of its forks. Every conversation belongs to exactly one group, identified by its `conversationGroupId`.
+When you create a conversation, the service internally groups it with any future forks. When you fork a conversation, the new fork is linked to the original. All conversations that share a common ancestor belong to the same fork tree.
 
-### How Groups Work
+You don't need to know about this grouping directly. Use the `/forks` endpoint on any conversation to discover all related conversations in the tree.
 
-When you create a conversation, it is automatically assigned to its own group (where the group ID equals the conversation ID). 
+Deleting any conversation in a fork tree deletes the entire tree (root and all forks), along with associated messages and memberships.
 
-```
-conversationGroupId: f81d4fae-7dec-11d0-a765-00a0c91e6bf6
-│
-└── Fork 1 
-    └── conversationId: f81d4fae-7dec-11d0-a765-00a0c91e6bf6
-```
+### Querying Related Conversations
 
-When you fork a conversation, the new fork inherits the same `conversationGroupId` as the original, linking them together.
-
-```
-conversationGroupId: f81d4fae-7dec-11d0-a765-00a0c91e6bf6
-│
-├── Fork 1 
-│   └── conversationId: f81d4fae-7dec-11d0-a765-00a0c91e6bf6
-│
-└── Fork 2 
-    └── conversationId: 64ac96aa-c0c7-47a9-8035-dd61ef7164f2
-```
-
-All the conversations that have a common ancestor share the same group ID, making it easy to find related conversations.
-
-### Why Groups Matter
-
-Conversation groups enable:
-
-- **Finding related conversations** - Query all forks of an original conversation
-- **Understanding lineage** - Track the family tree of forked conversations
-- **UI navigation** - Build interfaces that show conversation branches and allow switching between them
-- **Analytics** - Analyze how users explore different conversation paths
-
-### Querying a Group
-
-To retrieve all conversations in a group, use the `/forks` endpoint on any conversation in the group:
+To retrieve all conversations in a fork tree, use the `/forks` endpoint on any conversation in the tree:
 
 ```bash
 curl "http://localhost:8080/v1/conversations/{conversationId}/forks" \
   -H "Authorization: Bearer <token>"
 ```
 
-This returns all conversations that share the same `conversationGroupId`, regardless of which conversation in the group you query.
+This returns all conversations in the same fork tree.
 
 ## Use Cases
 
@@ -121,7 +90,7 @@ curl "http://localhost:8080/v1/conversations/{conversationId}/forks" \
   -H "Authorization: Bearer <token>"
 ```
 
-This returns all forked conversations that share the same `conversationGroupId`.
+This returns all conversations in the same fork tree.
 
 ## Limitations
 

@@ -1,12 +1,11 @@
 # TODO List
 
-* hide the concept of conversation groups from the API.
-* Batch job to delete conversations / epochs that are older than a retention date.
 * Getting latest memory of a converstation is likely to be a very frequently accessed operation: cache it.
 
 * Improve the langchain4j memory interface: Switch to the langchain4j MemoryChatStore once https://github.com/langchain4j/langchain4j/pull/4416 is released.
 * Figure out how muli-modal content should be handled.
 * Implement conversation sharing / multi-user conversations (some backend is there, need front end using to demo)
+* require API_KEY for all api calls.
 
 * Manging the React state of conversation + conversation resumption is complex: provide a headless React component that does it for ui implementors.
 * Review cache control headers

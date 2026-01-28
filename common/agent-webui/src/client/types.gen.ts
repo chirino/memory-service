@@ -24,7 +24,6 @@ export type ConversationSummary = {
 };
 
 export type Conversation = ConversationSummary & {
-  conversationGroupId?: string;
   forkedAtMessageId?: string | null;
   forkedAtConversationId?: string | null;
 };
@@ -37,7 +36,7 @@ export type CreateConversationRequest = {
 };
 
 export type ConversationMembership = {
-  conversationGroupId?: string;
+  conversationId?: string;
   userId?: string;
   accessLevel?: AccessLevel;
   createdAt?: string;
@@ -48,10 +47,6 @@ export type ConversationMembership = {
  */
 export type ConversationForkSummary = {
   conversationId?: string;
-  /**
-   * Conversation group id shared by this branch.
-   */
-  conversationGroupId?: string;
   /**
    * Message id at which this forked conversation diverged.
    */

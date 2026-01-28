@@ -135,6 +135,8 @@ paths:
       summary: Soft-delete any conversation (admin only)
       description: |-
         Soft-deletes a conversation. Requires admin role.
+        
+        **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
       operationId: adminDeleteConversation
       parameters:
         - name: id
@@ -359,15 +361,27 @@ paths:
       description: |-
         Permanently removes resources that have been soft-deleted for longer than
         the specified retention period. This operation is irreversible.
-        
+
         The operation runs in batches to minimize database lock contention.
-        
-        **Response modes (based on Accept header):**
+
+        **Execution modes:**
+        - **Synchronous** (default): Blocks until eviction completes.
+        - **Async** (`?async=true`): Returns immediately with a job ID. Poll `/v1/admin/evict/jobs/{jobId}` for status.
+
+        **Response modes (based on Accept header, synchronous only):**
         - `Accept: application/json` (default): Returns 204 No Content when complete.
         - `Accept: text/event-stream`: Streams progress updates as SSE events.
-        
+
         Requires admin role.
       operationId: adminEvict
+      parameters:
+        - name: async
+          in: query
+          required: false
+          description: Run eviction asynchronously and return a job ID.
+          schema:
+            type: boolean
+            default: false
       requestBody:
         required: true
         content:
@@ -386,14 +400,57 @@ paths:
                 description: Server-Sent Events stream with progress updates.
               example: |
                 data: {"progress": 0}
-                
+
                 data: {"progress": 50}
-                
+
                 data: {"progress": 100}
+        '202':
+          description: Async eviction job started (when async=true).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvictionJobResponse'
         '204':
-          description: Eviction completed successfully (default response).
+          description: Eviction completed successfully (default synchronous response).
         '400':
           description: Invalid request (bad retention period format, unknown resource type).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/evict/jobs/{jobId}:
+    get:
+      tags: [Admin]
+      summary: Get eviction job status
+      description: |-
+        Returns the current status and progress of an async eviction job.
+
+        Jobs are kept in memory for 1 hour after completion.
+
+        Requires admin role.
+      operationId: adminGetEvictionJobStatus
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: The job ID returned from an async eviction request.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvictionJobResponse'
+        '404':
+          description: Job not found (may have expired or never existed).
           content:
             application/json:
               schema:
@@ -477,8 +534,6 @@ components:
         - $ref: '#/components/schemas/AdminConversationSummary'
         - type: object
           properties:
-            conversationGroupId:
-              type: string
             forkedAtMessageId:
               type: string
               nullable: true
@@ -535,7 +590,7 @@ components:
     ConversationMembership:
       type: object
       properties:
-        conversationGroupId:
+        conversationId:
           type: string
         userId:
           type: string
@@ -620,3 +675,42 @@ components:
           maximum: 100
           description: Percentage of eviction completed (0-100).
           example: 55
+
+    EvictionJobResponse:
+      type: object
+      required:
+        - jobId
+        - status
+        - progress
+        - createdAt
+      properties:
+        jobId:
+          type: string
+          format: uuid
+          description: Unique identifier for the eviction job.
+        status:
+          type: string
+          enum:
+            - PENDING
+            - RUNNING
+            - COMPLETED
+            - FAILED
+          description: Current status of the eviction job.
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Percentage of eviction completed (0-100).
+        createdAt:
+          type: string
+          format: date-time
+          description: When the job was created.
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the job completed (null if still running).
+        error:
+          type: string
+          nullable: true
+          description: Error message if the job failed.

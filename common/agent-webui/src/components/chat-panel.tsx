@@ -1284,7 +1284,8 @@ export function ChatPanel({
     });
   }, [assistantIdOverrides, conversationMetaById, messagesQuery.data]);
 
-  const conversationGroupId = conversationQuery.data?.conversationGroupId ?? null;
+  // conversationGroupId is now hidden from the API; use conversationId for state tracking
+  const conversationGroupId = conversationId;
 
   const userMessageIndexById = useMemo(() => {
     const indexById = new Map<string, number>();

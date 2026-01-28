@@ -21,6 +21,7 @@ import io.github.chirino.memory.security.AdminAuditLogger;
 import io.github.chirino.memory.security.AdminRoleResolver;
 import io.github.chirino.memory.security.ApiKeyContext;
 import io.github.chirino.memory.security.JustificationRequiredException;
+import io.github.chirino.memory.service.EvictionJob;
 import io.github.chirino.memory.service.EvictionService;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryStore;
@@ -263,7 +264,7 @@ public class AdminResource {
                                     dto -> {
                                         ConversationMembership result =
                                                 new ConversationMembership();
-                                        result.setConversationGroupId(dto.getConversationGroupId());
+                                        result.setConversationId(id);
                                         result.setUserId(dto.getUserId());
                                         if (dto.getAccessLevel() != null) {
                                             result.setAccessLevel(
@@ -337,9 +338,19 @@ public class AdminResource {
     @Produces({MediaType.APPLICATION_JSON, "text/event-stream"})
     public Response evict(
             @HeaderParam("Accept") @DefaultValue(MediaType.APPLICATION_JSON) String accept,
+            @QueryParam("async") @DefaultValue("false") boolean async,
             EvictRequest request) {
         try {
             roleResolver.requireAdmin(identity, apiKeyContext);
+
+            // Validate required fields
+            if (request.getRetentionPeriod() == null) {
+                return badRequest("retentionPeriod is required");
+            }
+            if (request.getResourceTypes() == null || request.getResourceTypes().isEmpty()) {
+                return badRequest("resourceTypes is required and must not be empty");
+            }
+
             String target =
                     String.format(
                             "retentionPeriod=%s,resourceTypes=%s",
@@ -348,6 +359,12 @@ public class AdminResource {
                     "evict", target, request.getJustification(), identity, apiKeyContext);
 
             Duration retention = Duration.parse(request.getRetentionPeriod());
+
+            // Validate retention period is positive
+            if (retention.isNegative() || retention.isZero()) {
+                return badRequest("retentionPeriod must be a positive duration");
+            }
+
             Set<String> resourceTypes = Set.copyOf(request.getResourceTypes());
 
             // Validate resource types
@@ -356,6 +373,15 @@ public class AdminResource {
                         && !"conversation_memberships".equals(type)) {
                     return badRequest("Unknown resource type: " + type);
                 }
+            }
+
+            // Async mode: start job and return job ID
+            if (async) {
+                String jobId = evictionService.evictAsync(retention, resourceTypes);
+                Map<String, Object> response = new HashMap<>();
+                response.put("jobId", jobId);
+                response.put("status", "PENDING");
+                return Response.accepted(response).build();
             }
 
             boolean wantsSSE = accept.contains("text/event-stream");
@@ -367,17 +393,37 @@ public class AdminResource {
                                     @Override
                                     public void write(OutputStream output) throws IOException {
                                         try (PrintWriter writer = new PrintWriter(output, true)) {
-                                            evictionService.evict(
-                                                    retention,
-                                                    resourceTypes,
-                                                    progress -> {
-                                                        writer.println(
-                                                                "data: {\"progress\": "
-                                                                        + progress
-                                                                        + "}");
-                                                        writer.println();
-                                                        writer.flush();
-                                                    });
+                                            try {
+                                                evictionService.evict(
+                                                        retention,
+                                                        resourceTypes,
+                                                        progress -> {
+                                                            if (writer.checkError()) {
+                                                                throw new RuntimeException(
+                                                                        "Client disconnected");
+                                                            }
+                                                            writer.println(
+                                                                    "data: {\"progress\": "
+                                                                            + progress
+                                                                            + "}");
+                                                            writer.println();
+                                                            writer.flush();
+                                                        });
+                                            } catch (Exception e) {
+                                                // Emit error event before closing the stream
+                                                String errorMsg =
+                                                        e.getMessage() != null
+                                                                ? e.getMessage()
+                                                                        .replace("\"", "\\\"")
+                                                                        .replace("\n", " ")
+                                                                : "Unknown error";
+                                                writer.println(
+                                                        "event: error\ndata: {\"error\": \""
+                                                                + errorMsg
+                                                                + "\"}");
+                                                writer.println();
+                                                writer.flush();
+                                            }
                                         }
                                     }
                                 })
@@ -396,6 +442,36 @@ public class AdminResource {
             return badRequest(e.getMessage());
         } catch (java.time.format.DateTimeParseException e) {
             return badRequest("Invalid retention period format: " + e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/evict/jobs/{jobId}")
+    public Response getEvictionJobStatus(@PathParam("jobId") String jobId) {
+        try {
+            roleResolver.requireAdmin(identity, apiKeyContext);
+
+            Optional<EvictionJob> jobOpt = evictionService.getJob(jobId);
+            if (jobOpt.isEmpty()) {
+                return notFound(new ResourceNotFoundException("eviction_job", jobId));
+            }
+
+            EvictionJob job = jobOpt.get();
+            Map<String, Object> response = new HashMap<>();
+            response.put("jobId", job.getId());
+            response.put("status", job.getStatus().name());
+            response.put("progress", job.getProgress());
+            response.put("createdAt", job.getCreatedAt().toString());
+            if (job.getCompletedAt() != null) {
+                response.put("completedAt", job.getCompletedAt().toString());
+            }
+            if (job.getError() != null) {
+                response.put("error", job.getError());
+            }
+
+            return Response.ok(response).build();
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
         }
     }
 

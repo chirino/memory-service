@@ -6,9 +6,11 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.difflib.DiffUtils;
@@ -164,6 +166,23 @@ public class StepDefinitions {
     private final AtomicLong replayFinishedAtNs = new AtomicLong(0);
     private final AtomicLong replayFirstTokenAtNs = new AtomicLong(0);
 
+    /**
+     * Applies authentication (OIDC token and/or API key) to a RestAssured request specification.
+     */
+    private io.restassured.specification.RequestSpecification authenticateRequest(
+            io.restassured.specification.RequestSpecification requestSpec) {
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            if (token != null) {
+                requestSpec = requestSpec.auth().oauth2(token);
+            }
+        }
+        if (currentApiKey != null) {
+            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
+        }
+        return requestSpec;
+    }
+
     @io.cucumber.java.Before(order = 0)
     @Transactional
     public void cleanupTasks() {
@@ -223,7 +242,9 @@ public class StepDefinitions {
                 memoryStoreSelector.getStore().createConversation(currentUserId, request);
         this.conversationId = conversation.getId();
         contextVariables.put("conversationId", conversationId);
-        contextVariables.put("conversationGroupId", conversation.getConversationGroupId());
+        // Resolve conversationGroupId from database for test infrastructure
+        String groupId = resolveConversationGroupId(conversationId);
+        contextVariables.put("conversationGroupId", groupId);
         contextVariables.put("conversationOwner", currentUserId);
     }
 
@@ -345,7 +366,6 @@ public class StepDefinitions {
         inProgressStreamResponse = new CompletableFuture<>();
         streamCompletedAtNs.set(0);
         replayFinishedAtNs.set(0);
-        replayFirstTokenAtNs.set(0);
         replayFirstTokenAtNs.set(0);
         AtomicReference<StreamResponseTokenResponse> lastResponse = new AtomicReference<>();
 
@@ -686,15 +706,7 @@ public class StepDefinitions {
     private void iListMessagesForTheConversationWithParams(
             String after, Integer limit, String channel, String epoch) {
         var requestSpec = given();
-        // Add Authorization header using KeycloakTestClient to get a real token
-        // Agents need both OIDC auth AND API key
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         var request = requestSpec.when();
         if (after != null) {
             request = request.queryParam("after", after);
@@ -721,15 +733,7 @@ public class StepDefinitions {
                                         List.of(Map.of("type", "text", "text", content)),
                                         "channel",
                                         channel));
-        // Add Authorization header using KeycloakTestClient
-        // Agents need both OIDC auth AND API key
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
                 requestSpec.when().post("/v1/conversations/{id}/messages", conversationId);
     }
@@ -739,14 +743,16 @@ public class StepDefinitions {
         var requestSpec =
                 given().contentType(MediaType.APPLICATION_JSON)
                         .body(Map.of("content", List.of(Map.of("type", "text", "text", content))));
-        // Add Authorization header using KeycloakTestClient
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse =
+                requestSpec.when().post("/v1/conversations/{id}/messages", conversationId);
+    }
+
+    @io.cucumber.java.en.And("I append a message to the conversation:")
+    public void iAppendAMessageToTheConversation(String requestBody) {
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
                 requestSpec.when().post("/v1/conversations/{id}/messages", conversationId);
     }
@@ -755,15 +761,7 @@ public class StepDefinitions {
     public void iSyncMemoryMessagesWithRequest(String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        // Add Authorization header using KeycloakTestClient
-        // Agents need both OIDC auth AND API key
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
                 requestSpec
                         .when()
@@ -786,45 +784,11 @@ public class StepDefinitions {
                 "Sync response should contain " + count + " messages", messages.size(), is(count));
     }
 
-    @io.cucumber.java.en.When(
-            "I create a summary with title {string} and summary {string} and untilMessageId"
-                    + " {string} and summarizedAt {string}")
-    public void iCreateASummary(
-            String title, String summary, String untilMessageId, String summarizedAt) {
-        var requestSpec =
-                given().contentType(MediaType.APPLICATION_JSON)
-                        .body(
-                                Map.of(
-                                        "title",
-                                        title,
-                                        "summary",
-                                        summary,
-                                        "untilMessageId",
-                                        untilMessageId,
-                                        "summarizedAt",
-                                        summarizedAt));
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
-        this.lastResponse =
-                requestSpec.when().post("/v1/conversations/{id}/summaries", conversationId);
-    }
-
     @io.cucumber.java.en.When("I create a summary with request:")
     public void iCreateASummaryWithRequest(String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
                 requestSpec.when().post("/v1/conversations/{id}/summaries", conversationId);
     }
@@ -833,13 +797,7 @@ public class StepDefinitions {
     public void iSearchMessagesWithRequest(String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post("/v1/user/search/messages");
     }
 
@@ -852,13 +810,7 @@ public class StepDefinitions {
     public void iSearchMessagesForQuery(String query) {
         var requestSpec =
                 given().contentType(MediaType.APPLICATION_JSON).body(Map.of("query", query));
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post("/v1/user/search/messages");
     }
 
@@ -866,10 +818,7 @@ public class StepDefinitions {
     public void iCreateAConversationWithRequest(String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post("/v1/conversations");
         if (lastResponse.getStatusCode() == 201) {
             String id = lastResponse.jsonPath().getString("id");
@@ -905,10 +854,7 @@ public class StepDefinitions {
 
     private void iListConversationsWithParams(String after, Integer limit, String query) {
         var requestSpec = given();
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         var request = requestSpec.when();
         if (after != null) {
             request = request.queryParam("after", after);
@@ -935,12 +881,7 @@ public class StepDefinitions {
             renderedConvId = renderedConvId.substring(1, renderedConvId.length() - 1);
         }
         var requestSpec = given();
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            if (token != null) {
-                requestSpec = requestSpec.auth().oauth2(token);
-            }
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().get("/v1/conversations/{id}", renderedConvId);
     }
 
@@ -956,12 +897,15 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I delete conversation {string}")
     public void iDeleteConversation(String convId) {
-        var requestSpec = given();
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
+        // Render template to resolve variables like "${rootConversationId}"
+        String renderedConvId = renderTemplate(convId);
+        // Remove quotes if present (from template rendering)
+        if (renderedConvId.startsWith("\"") && renderedConvId.endsWith("\"")) {
+            renderedConvId = renderedConvId.substring(1, renderedConvId.length() - 1);
         }
-        this.lastResponse = requestSpec.when().delete("/v1/conversations/{id}", convId);
+        var requestSpec = given();
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().delete("/v1/conversations/{id}", renderedConvId);
     }
 
     @io.cucumber.java.en.When("I delete that conversation")
@@ -974,10 +918,7 @@ public class StepDefinitions {
             String newOwner, String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
                 requestSpec
                         .when()
@@ -990,10 +931,7 @@ public class StepDefinitions {
             String convId, String newOwner, String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
                 requestSpec.when().post("/v1/conversations/{id}/transfer-ownership", convId);
     }
@@ -1048,14 +986,23 @@ public class StepDefinitions {
         assertThat("Response body should contain: " + text, body, containsString(text));
     }
 
+    @io.cucumber.java.en.Then("the response body should not contain {string}")
+    public void theResponseBodyShouldNotContain(String text) {
+        String body = lastResponse.getBody().asString();
+        assertThat("Response body should not contain: " + text, body, not(containsString(text)));
+    }
+
+    @io.cucumber.java.en.When("I fork the conversation at message {string}")
+    public void iForkTheConversationAtMessage(String messageId) {
+        // Fork without a request body (uses empty JSON object)
+        iForkTheConversationAtMessageWithRequest(messageId, "{}");
+    }
+
     @io.cucumber.java.en.When("I fork the conversation at message {string} with request:")
     public void iForkTheConversationAtMessageWithRequest(String messageId, String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         String renderedMessageId = renderTemplate(messageId);
         // Remove quotes if present (from template rendering)
         if (renderedMessageId.startsWith("\"") && renderedMessageId.endsWith("\"")) {
@@ -1081,10 +1028,7 @@ public class StepDefinitions {
             String convId, String messageId, String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         String renderedMessageId = renderTemplate(messageId);
         // Remove quotes if present (from template rendering)
         if (renderedMessageId.startsWith("\"") && renderedMessageId.endsWith("\"")) {
@@ -1112,10 +1056,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.When("I list forks for conversation {string}")
     public void iListForksForConversation(String convId) {
         var requestSpec = given();
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().get("/v1/conversations/{id}/forks", convId);
     }
 
@@ -1133,10 +1074,7 @@ public class StepDefinitions {
     public void iShareTheConversationWithUserWithRequest(String userId, String requestBody) {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post("/v1/conversations/{id}/forks", conversationId);
     }
 
@@ -1144,17 +1082,39 @@ public class StepDefinitions {
     public void iShareConversationWithUserWithRequest(
             String convId, String userId, String requestBody) {
         String rendered = renderTemplate(requestBody);
-        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            requestSpec = requestSpec.auth().oauth2(token);
+        String renderedConvId = renderTemplate(convId);
+        // Strip quotes if present (RestAssured path parameters shouldn't have quotes)
+        if (renderedConvId.startsWith("\"") && renderedConvId.endsWith("\"")) {
+            renderedConvId = renderedConvId.substring(1, renderedConvId.length() - 1);
         }
-        this.lastResponse = requestSpec.when().post("/v1/conversations/{id}/forks", convId);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().post("/v1/conversations/{id}/forks", renderedConvId);
     }
 
     @io.cucumber.java.en.When("I share that conversation with user {string} with request:")
     public void iShareThatConversationWithUserWithRequest(String userId, String requestBody) {
         iShareTheConversationWithUserWithRequest(userId, requestBody);
+    }
+
+    @io.cucumber.java.en.Given(
+            "I share the conversation with user {string} and access level {string}")
+    public void iShareTheConversationWithUserAndAccessLevel(String userId, String accessLevel) {
+        String requestBody =
+                String.format(
+                        """
+                        {
+                          "userId": "%s",
+                          "accessLevel": "%s"
+                        }
+                        """,
+                        userId, accessLevel);
+        iShareTheConversationWithUserWithRequest(userId, requestBody);
+    }
+
+    @io.cucumber.java.en.When("I authenticate as user {string}")
+    public void iAuthenticateAsUser(String userId) {
+        iAmAuthenticatedAsUser(userId);
     }
 
     @io.cucumber.java.en.When("I list memberships for the conversation")
@@ -1164,6 +1124,11 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I list memberships for conversation {string}")
     public void iListMembershipsForConversation(String convId) {
+        String renderedConvId = renderTemplate(convId);
+        // Strip quotes if present (RestAssured path parameters shouldn't have quotes)
+        if (renderedConvId.startsWith("\"") && renderedConvId.endsWith("\"")) {
+            renderedConvId = renderedConvId.substring(1, renderedConvId.length() - 1);
+        }
         var requestSpec = given();
         if (currentUserId != null) {
             String token = keycloakClient.getAccessToken(currentUserId);
@@ -1175,7 +1140,8 @@ public class StepDefinitions {
             }
             requestSpec = requestSpec.auth().oauth2(token);
         }
-        this.lastResponse = requestSpec.when().get("/v1/conversations/{id}/memberships", convId);
+        this.lastResponse =
+                requestSpec.when().get("/v1/conversations/{id}/memberships", renderedConvId);
     }
 
     @io.cucumber.java.en.When("I list memberships for that conversation")
@@ -1318,7 +1284,7 @@ public class StepDefinitions {
             TextFormat.printer().print(response, textBuilder);
             lastGrpcResponseText = textBuilder.toString();
             lastGrpcResponseJson =
-                    JsonFormat.printer().includingDefaultValueFields().print(response);
+                    JsonFormat.printer().alwaysPrintFieldsWithNoPresence().print(response);
             lastGrpcJsonPath = JsonPath.from(lastGrpcResponseJson);
             lastGrpcMessage = response;
             lastGrpcServiceMethod = serviceMethod;
@@ -1539,6 +1505,36 @@ public class StepDefinitions {
         JsonPath jsonPath = ensureGrpcJsonPath();
         Object value = jsonPath.get(path);
         assertThat("gRPC response field '" + path + "' should not be null", value, notNullValue());
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response should not contain field {string}")
+    public void theGrpcResponseShouldNotContainField(String path) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        try {
+            Object value = jsonPath.get(path);
+            if (value != null) {
+                throw new AssertionError(
+                        "gRPC response should not contain field '"
+                                + path
+                                + "' but it has value: "
+                                + value);
+            }
+        } catch (com.jayway.jsonpath.PathNotFoundException e) {
+            // Field doesn't exist, which is what we want
+            return;
+        }
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response field {string} should be empty")
+    public void theGrpcResponseFieldShouldBeEmpty(String path) {
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Object value = jsonPath.get(path);
+        if (value == null) {
+            throw new AssertionError(
+                    "gRPC response field '" + path + "' is null or does not exist");
+        }
+        String actual = String.valueOf(value);
+        assertThat("gRPC response field '" + path + "' should be empty", actual, is(""));
     }
 
     @io.cucumber.java.en.Then("set {string} to the gRPC response field {string}")
@@ -1824,15 +1820,6 @@ public class StepDefinitions {
                 "Unknown expression '"
                         + expression
                         + "'. Supported: response.body[.*], context[.*]");
-    }
-
-    private void ensureHttpResponseAvailable(String expression, JsonPath responseJson) {
-        if (responseJson == null) {
-            throw new AssertionError(
-                    "Cannot evaluate '"
-                            + expression
-                            + "' because no HTTP response is available in the current scenario");
-        }
     }
 
     private boolean isSurroundedByQuotes(String template, int start, int end) {
@@ -2364,6 +2351,70 @@ public class StepDefinitions {
 
     private List<Map<String, Object>> lastSqlResult;
 
+    /**
+     * Resolves the conversation group ID for a given conversation ID from the database.
+     * This is used for test infrastructure when conversationGroupId is no longer exposed in API responses.
+     */
+    private String resolveConversationGroupId(String conversationId) {
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        if ("postgres".equals(datastoreType)) {
+            if (entityManager.isUnsatisfied()) {
+                throw new IllegalStateException(
+                        "Cannot resolve group ID: EntityManager not available");
+            }
+            // Cast conversationId to UUID since PostgreSQL stores id as UUID type
+            String sql =
+                    "SELECT conversation_group_id FROM conversations WHERE id ="
+                            + " CAST(:conversationId AS UUID)";
+            jakarta.persistence.Query query =
+                    entityManager
+                            .get()
+                            .createNativeQuery(sql)
+                            .setParameter("conversationId", conversationId);
+            @SuppressWarnings("unchecked")
+            List<Object> results = query.getResultList();
+            if (results.isEmpty()) {
+                throw new IllegalStateException("Conversation not found: " + conversationId);
+            }
+            Object groupId = results.get(0);
+            return groupId != null ? groupId.toString() : null;
+        } else {
+            // For MongoDB, we need to query the MongoDB repository
+            if (mongoConversationRepository.isUnsatisfied()) {
+                throw new IllegalStateException(
+                        "Cannot resolve group ID: MongoDB repository not available");
+            }
+            io.github.chirino.memory.mongo.model.MongoConversation conv =
+                    mongoConversationRepository.get().findById(conversationId);
+            if (conv == null) {
+                throw new IllegalStateException("Conversation not found: " + conversationId);
+            }
+            return conv.conversationGroupId;
+        }
+    }
+
+    @io.cucumber.java.en.Given(
+            "I resolve the conversation group ID for conversation {string} into {string}")
+    public void iResolveTheConversationGroupIdForConversationInto(
+            String conversationIdVar, String groupIdVar) {
+        // Extract variable name from template string like "${conversationId}" -> "conversationId"
+        String varName = conversationIdVar;
+        if (conversationIdVar.startsWith("${") && conversationIdVar.endsWith("}")) {
+            varName = conversationIdVar.substring(2, conversationIdVar.length() - 1);
+        }
+        // Get the actual conversation ID from context variables
+        Object conversationIdObj = contextVariables.get(varName);
+        if (conversationIdObj == null) {
+            throw new IllegalStateException(
+                    "Conversation ID variable '" + varName + "' not found in context");
+        }
+        String conversationId = conversationIdObj.toString();
+        String groupId = resolveConversationGroupId(conversationId);
+        contextVariables.put(groupIdVar, groupId);
+    }
+
     @io.cucumber.java.en.When("I execute SQL query:")
     public void iExecuteSqlQuery(String sql) {
         // Check if we're using PostgreSQL datastore
@@ -2621,15 +2672,7 @@ public class StepDefinitions {
     public void iCallGETWithQuery(String path, String queryString) {
         String renderedPath = renderTemplate(path);
         var requestSpec = given();
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            if (token != null) {
-                requestSpec = requestSpec.auth().oauth2(token);
-            }
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         var request = requestSpec.when();
         if (queryString != null && !queryString.isBlank()) {
             // Parse query string and add as query params
@@ -2649,15 +2692,7 @@ public class StepDefinitions {
         String renderedPath = renderTemplate(path);
         String renderedBody = renderTemplate(body);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(renderedBody);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            if (token != null) {
-                requestSpec = requestSpec.auth().oauth2(token);
-            }
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().delete(renderedPath);
     }
 
@@ -2666,15 +2701,7 @@ public class StepDefinitions {
         String renderedPath = renderTemplate(path);
         String renderedBody = renderTemplate(body);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(renderedBody);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            if (token != null) {
-                requestSpec = requestSpec.auth().oauth2(token);
-            }
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post(renderedPath);
     }
 
@@ -2758,6 +2785,7 @@ public class StepDefinitions {
     }
 
     @io.cucumber.java.en.Then("all search results should have conversation owned by {string}")
+    @SuppressWarnings("unchecked")
     public void allSearchResultsShouldHaveConversationOwnedBy(String expectedOwner) {
         JsonPath jsonPath = lastResponse.jsonPath();
         List<Map<String, Object>> results = jsonPath.getList("data");
@@ -2779,11 +2807,30 @@ public class StepDefinitions {
 
     // Task queue step definitions
 
+    private String lastCreatedTaskType;
+    private String lastCreatedTaskBodyJson;
+
+    @io.cucumber.java.en.Given("all tasks are deleted")
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void allTasksAreDeleted() {
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        if ("postgres".equals(datastoreType)) {
+            entityManager.get().createNativeQuery("DELETE FROM tasks").executeUpdate();
+        } else {
+            // MongoDB cleanup would go here
+        }
+    }
+
     @io.cucumber.java.en.Given("I create a task with type {string} and body:")
-    @Transactional
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void iCreateATaskWithTypeAndBody(String taskType, String bodyJson) throws Exception {
         JsonNode body = OBJECT_MAPPER.readTree(bodyJson);
-        Map<String, Object> taskBody = OBJECT_MAPPER.convertValue(body, Map.class);
+        Map<String, Object> taskBody =
+                OBJECT_MAPPER.convertValue(body, new TypeReference<Map<String, Object>>() {});
+        lastCreatedTaskType = taskType;
+        lastCreatedTaskBodyJson = bodyJson.trim();
         if (taskRepositorySelector.get().isPostgres()) {
             taskRepository.get().createTask(taskType, taskBody);
         } else {
@@ -2797,12 +2844,14 @@ public class StepDefinitions {
     }
 
     @io.cucumber.java.en.Then("the task should be deleted")
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void theTaskShouldBeDeleted() {
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
         if ("postgres".equals(datastoreType)) {
-            // Check PostgreSQL tasks table
+            // Check PostgreSQL tasks table is empty (Background step ensures cleanup)
+            @SuppressWarnings("unchecked")
             List<Map<String, Object>> tasks =
                     entityManager
                             .get()
@@ -2847,6 +2896,7 @@ public class StepDefinitions {
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
         if ("postgres".equals(datastoreType)) {
+            @SuppressWarnings("unchecked")
             List<Map<String, Object>> tasks =
                     entityManager
                             .get()
@@ -2862,6 +2912,7 @@ public class StepDefinitions {
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
         if ("postgres".equals(datastoreType)) {
+            @SuppressWarnings("unchecked")
             List<Map<String, Object>> tasks =
                     entityManager
                             .get()
@@ -2893,6 +2944,7 @@ public class StepDefinitions {
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
         if ("postgres".equals(datastoreType)) {
+            @SuppressWarnings("unchecked")
             List<Map<String, Object>> tasks =
                     entityManager
                             .get()
@@ -2910,6 +2962,7 @@ public class StepDefinitions {
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
         if ("postgres".equals(datastoreType)) {
+            @SuppressWarnings("unchecked")
             List<Map<String, Object>> tasks =
                     entityManager
                             .get()
@@ -3024,15 +3077,7 @@ public class StepDefinitions {
                 given().contentType(MediaType.APPLICATION_JSON)
                         .header("Accept", accept)
                         .body(renderedBody);
-        if (currentUserId != null) {
-            String token = keycloakClient.getAccessToken(currentUserId);
-            if (token != null) {
-                requestSpec = requestSpec.auth().oauth2(token);
-            }
-        }
-        if (currentApiKey != null) {
-            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-        }
+        requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post(renderedPath);
     }
 
@@ -3133,15 +3178,7 @@ public class StepDefinitions {
                                 var requestSpec =
                                         given().contentType(MediaType.APPLICATION_JSON)
                                                 .body(renderedBody);
-                                if (currentUserId != null) {
-                                    String token = keycloakClient.getAccessToken(currentUserId);
-                                    if (token != null) {
-                                        requestSpec = requestSpec.auth().oauth2(token);
-                                    }
-                                }
-                                if (currentApiKey != null) {
-                                    requestSpec = requestSpec.header("X-API-Key", currentApiKey);
-                                }
+                                requestSpec = authenticateRequest(requestSpec);
                                 return requestSpec.when().post(renderedPath);
                             }));
         }

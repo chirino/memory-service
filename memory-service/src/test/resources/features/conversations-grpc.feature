@@ -171,3 +171,39 @@ Feature: Conversations gRPC API
     conversation_id: "${conversationId}"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
+
+  Scenario: Conversation response does not contain conversation_group_id via gRPC
+    When I send gRPC request "ConversationsService/CreateConversation" with body:
+    """
+    title: "Test Conversation"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should not contain field "conversationGroupId"
+
+  Scenario: Deleting a conversation deletes all forks via gRPC
+    Given I have a conversation with title "Root Conversation"
+    And set "rootConversationId" to "${conversationId}"
+    And I append a message to the conversation:
+    """
+    {
+      "content": [{"type": "text", "text": "First message"}]
+    }
+    """
+    And set "messageId" to "${response.body.id}"
+    When I fork the conversation at message "${messageId}"
+    And set "forkConversationId" to "${response.body.id}"
+    When I send gRPC request "ConversationsService/DeleteConversation" with body:
+    """
+    conversation_id: "${rootConversationId}"
+    """
+    Then the gRPC response should not have an error
+    When I send gRPC request "ConversationsService/GetConversation" with body:
+    """
+    conversation_id: "${rootConversationId}"
+    """
+    Then the gRPC response should have status "NOT_FOUND"
+    When I send gRPC request "ConversationsService/GetConversation" with body:
+    """
+    conversation_id: "${forkConversationId}"
+    """
+    Then the gRPC response should have status "NOT_FOUND"
