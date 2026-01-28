@@ -19,12 +19,13 @@ This is a proof of concept (POC) currently under development.
 
 ## Documentation
 
-Visit the [Memory Service Documentation](https://chirino.github.io/memory-service/) for complete guides:
+Visit the [Memory Service Documentation](https://chirino.github.io/memory-service/docs/) for complete guides:
 
 - **[Getting Started](https://chirino.github.io/memory-service/docs/getting-started/)** - Deploy Memory Service using Docker Compose
-- **[Quarkus Integration](https://chirino.github.io/memory-service/docs/quarkus/getting-started/)** - Integrate with Quarkus LangChain4j agents
-- **[Configuration](https://chirino.github.io/memory-service/docs/configuration/)** - Service configuration options
 - **[Core Concepts](https://chirino.github.io/memory-service/docs/concepts/conversations/)** - Understanding conversations, messages, and forking
+- **[Quarkus LangChain4j Integration](https://chirino.github.io/memory-service/docs/quarkus/getting-started/)** - Integrate with Quarkus LangChain4j agents
+- **[Spring AI Integration](https://chirino.github.io/memory-service/docs/spring/getting-started/)** - Integrate with Spring AI agents
+- **[Configuration](https://chirino.github.io/memory-service/docs/configuration/)** - Service configuration reference
 
 ## License
 

@@ -110,6 +110,12 @@
       <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
 
+    <!-- Scheduler -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-scheduler</artifactId>
+    </dependency>
+
     <!-- Security (JWT Bearer Token) -->
     <dependency>
       <groupId>io.quarkus</groupId>
