@@ -14,30 +14,12 @@ tags:
     description: APIs for listing, reading, writing, and sharing conversations (user and agent views).
   - name: Search
     description: Semantic and keyword search APIs.
-  - name: System
-    description: Health and metadata endpoints.
+  - name: Sharing
+    description: APIs for managing conversation ownership and sharing.
 paths:
-  /v1/health:
-    get:
-      tags: [System]
-      summary: Health check
-      operationId: getHealth
-      responses:
-        '200':
-          description: Service is healthy.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-        default:
-          $ref: '#/components/responses/Error'
 
   ############################################################
-  # User-facing conversation APIs
+  # Conversations
   ############################################################
 
   /v1/conversations:
@@ -329,38 +311,6 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/conversations/{conversationId}/memberships:
-    get:
-      tags: [Conversations]
-      summary: List conversation memberships
-      description: |-
-        Lists all users that have access to the conversation and their access levels.
-      operationId: listConversationMemberships
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Memberships for the conversation.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ConversationMembership'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-      security:
-        - BearerAuth: []
-
   /v1/conversations/{conversationId}/messages/{messageId}/fork:
     post:
       tags: [Conversations]
@@ -472,9 +422,106 @@ paths:
       security:
         - BearerAuth: []
 
+  /v1/conversations/{conversationId}/cancel-response:
+    post:
+      tags: [Conversations]
+      summary: Cancel an in-progress response
+      description: |-
+        Requests cancellation of an in-progress response stream for the conversation.
+        Requires WRITER access and an authenticated user session.
+      operationId: cancelConversationResponse
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancel request accepted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  ############################################################
+  # Sharing
+  ############################################################
+  /v1/conversations/{conversationId}/transfer-ownership:
+    post:
+      tags: [Sharing]
+      summary: Request ownership transfer
+      description: |-
+        Initiates a transfer of conversation ownership to another user. The other
+        user must accept the transfer via a separate API or out-of-band process.
+      operationId: transferConversationOwnership
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newOwnerUserId
+              properties:
+                newOwnerUserId:
+                  type: string
+      responses:
+        '202':
+          description: Ownership transfer requested.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/memberships:
+    get:
+      tags: [Sharing]
+      summary: List conversation memberships
+      description: |-
+        Lists all users that have access to the conversation and their access levels.
+      operationId: listConversationMemberships
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Memberships for the conversation.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConversationMembership'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+
   /v1/conversations/{conversationId}/memberships/{userId}:
     patch:
-      tags: [Conversations]
+      tags: [Sharing]
       summary: Update a member's access level
       operationId: updateConversationMembership
       parameters:
@@ -511,7 +558,7 @@ paths:
       security:
         - BearerAuth: []
     delete:
-      tags: [UserConversations]
+      tags: [Sharing]
       summary: Remove a member from the conversation
       operationId: deleteConversationMembership
       parameters:
@@ -535,104 +582,8 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/conversations/{conversationId}/transfer-ownership:
-    post:
-      tags: [Conversations]
-      summary: Request ownership transfer
-      description: |-
-        Initiates a transfer of conversation ownership to another user. The other
-        user must accept the transfer via a separate API or out-of-band process.
-      operationId: transferConversationOwnership
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - newOwnerUserId
-              properties:
-                newOwnerUserId:
-                  type: string
-      responses:
-        '202':
-          description: Ownership transfer requested.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-      security:
-        - BearerAuth: []
-
-  /v1/conversations/{conversationId}/summaries:
-    post:
-      tags: [Conversations]
-      summary: Store a summarization of previous messages
-      description: |-
-        Stores an internal summarization of previous messages in the conversation.
-        Summary messages are not visible in user-facing message lists.
-        Requires a valid agent API key.
-      operationId: createConversationSummary
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateSummaryRequest'
-      responses:
-        '201':
-          description: The created summary message.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Message'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-      security:
-        - BearerAuth: []
-
-  /v1/conversations/{conversationId}/cancel-response:
-    post:
-      tags: [Conversations]
-      summary: Cancel an in-progress response
-      description: |-
-        Requests cancellation of an in-progress response stream for the conversation.
-        Requires WRITER access and an authenticated user session.
-      operationId: cancelConversationResponse
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Cancel request accepted.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Error'
-        default:
-          $ref: '#/components/responses/Error'
-      security:
-        - BearerAuth: []
-
   ############################################################
-  # Semantic search
+  # Search
   ############################################################
 
   /v1/user/search/messages:
@@ -661,6 +612,41 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/SearchResult'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/{conversationId}/summaries:
+    post:
+      tags: [Search]
+      summary: Store a summarization of previous messages
+      description: |-
+        Stores an internal summarization of previous messages in the conversation.
+        Summary messages are not visible in user-facing message lists.
+        Requires a valid agent API key.
+      operationId: createConversationSummary
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSummaryRequest'
+      responses:
+        '201':
+          description: The created summary message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '404':
+          $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
       security:

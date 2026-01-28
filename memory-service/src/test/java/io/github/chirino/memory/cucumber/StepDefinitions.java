@@ -2297,6 +2297,31 @@ public class StepDefinitions {
 
     private GrpcEndpoint resolveGrpcEndpoint() {
         Config config = ConfigProvider.getConfig();
+        // When gRPC uses the same server as HTTP (use-separate-server=false),
+        // extract the port from test.url which Quarkus sets to the actual test server URL
+        boolean useSeparateServer =
+                config.getOptionalValue("quarkus.grpc.server.use-separate-server", Boolean.class)
+                        .orElse(true);
+
+        if (!useSeparateServer) {
+            // gRPC shares the HTTP port - extract from test.url
+            String testUrl =
+                    config.getOptionalValue("test.url", String.class)
+                            .orElse("http://localhost:8081");
+            try {
+                URI uri = new URI(testUrl);
+                String host = uri.getHost() != null ? uri.getHost() : "localhost";
+                int port =
+                        uri.getPort() != -1
+                                ? uri.getPort()
+                                : ("https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80);
+                return new GrpcEndpoint(host, port);
+            } catch (URISyntaxException e) {
+                throw new IllegalStateException("Invalid test.url configuration: " + testUrl, e);
+            }
+        }
+
+        // gRPC uses a separate server - check for explicit port configuration
         if (config.getOptionalValue("quarkus.grpc.server.enabled", Boolean.class).orElse(false)) {
             String host =
                     config.getOptionalValue("quarkus.grpc.server.host", String.class)
@@ -2309,6 +2334,8 @@ public class StepDefinitions {
                                             .orElse(9000));
             return new GrpcEndpoint(host, port);
         }
+
+        // Fallback: extract from test.url
         String target =
                 config.getOptionalValue("test.url", String.class).orElse("http://localhost:8081");
         URI uri;

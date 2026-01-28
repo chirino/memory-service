@@ -4,6 +4,7 @@ import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
+import io.github.chirino.memory.client.api.SearchApi;
 import io.github.chirino.memory.client.model.CreateSummaryRequest;
 import io.github.chirino.memory.client.model.ListConversationMessages200Response;
 import io.github.chirino.memory.client.model.Message;
@@ -87,7 +88,7 @@ public class SummerizationResource {
             request.setSummary(redactedTranscript);
             request.setUntilMessageId(last.getId());
             request.setSummarizedAt(summarizedAt);
-            conversationsApi().createConversationSummary(conversationId, request);
+            searchApi().createConversationSummary(conversationId, request);
             return Response.status(Response.Status.CREATED).build();
         } catch (Exception e) {
             LOG.errorf(e, "Failed to summarize conversationId=%s", conversationId);
@@ -295,5 +296,10 @@ public class SummerizationResource {
     private ConversationsApi conversationsApi() {
         String bearerToken = bearerToken(securityIdentity);
         return memoryServiceApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
+    }
+
+    private SearchApi searchApi() {
+        String bearerToken = bearerToken(securityIdentity);
+        return memoryServiceApiBuilder.withBearerAuth(bearerToken).build(SearchApi.class);
     }
 }

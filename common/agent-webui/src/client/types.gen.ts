@@ -185,16 +185,6 @@ export type SearchResult = {
 };
 
 export type $OpenApiTs = {
-  "/v1/health": {
-    get: {
-      res: {
-        /**
-         * Error response
-         */
-        200: ErrorResponse;
-      };
-    };
-  };
   "/v1/conversations": {
     get: {
       req: {
@@ -353,23 +343,6 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/memberships": {
-    get: {
-      req: {
-        conversationId: string;
-      };
-      res: {
-        /**
-         * Error response
-         */
-        200: ErrorResponse;
-        /**
-         * Resource not found
-         */
-        404: ErrorResponse;
-      };
-    };
-  };
   "/v1/conversations/{conversationId}/messages/{messageId}/fork": {
     post: {
       req: {
@@ -430,6 +403,68 @@ export type $OpenApiTs = {
       };
     };
   };
+  "/v1/conversations/{conversationId}/cancel-response": {
+    post: {
+      req: {
+        conversationId: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+        /**
+         * Error response
+         */
+        409: ErrorResponse;
+      };
+    };
+  };
+  "/v1/conversations/{conversationId}/transfer-ownership": {
+    post: {
+      req: {
+        conversationId: string;
+        requestBody: {
+          newOwnerUserId: string;
+        };
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Ownership transfer requested.
+         */
+        202: unknown;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
+  };
+  "/v1/conversations/{conversationId}/memberships": {
+    get: {
+      req: {
+        conversationId: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
+  };
   "/v1/conversations/{conversationId}/memberships/{userId}": {
     patch: {
       req: {
@@ -471,27 +506,16 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/transfer-ownership": {
+  "/v1/user/search/messages": {
     post: {
       req: {
-        conversationId: string;
-        requestBody: {
-          newOwnerUserId: string;
-        };
+        requestBody: SearchMessagesRequest;
       };
       res: {
         /**
          * Error response
          */
         200: ErrorResponse;
-        /**
-         * Ownership transfer requested.
-         */
-        202: unknown;
-        /**
-         * Resource not found
-         */
-        404: ErrorResponse;
       };
     };
   };
@@ -514,40 +538,6 @@ export type $OpenApiTs = {
          * Resource not found
          */
         404: ErrorResponse;
-      };
-    };
-  };
-  "/v1/conversations/{conversationId}/cancel-response": {
-    post: {
-      req: {
-        conversationId: string;
-      };
-      res: {
-        /**
-         * Error response
-         */
-        200: ErrorResponse;
-        /**
-         * Resource not found
-         */
-        404: ErrorResponse;
-        /**
-         * Error response
-         */
-        409: ErrorResponse;
-      };
-    };
-  };
-  "/v1/user/search/messages": {
-    post: {
-      req: {
-        requestBody: SearchMessagesRequest;
-      };
-      res: {
-        /**
-         * Error response
-         */
-        200: ErrorResponse;
       };
     };
   };
