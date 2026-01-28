@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS messages (
     user_id           TEXT,
     client_id         TEXT,
     channel           TEXT NOT NULL,
-    memory_epoch      BIGINT,
+    epoch             BIGINT,
     content           BYTEA NOT NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -85,7 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_group_created_at
     ON messages (conversation_group_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_channel_client_epoch_created_at
-    ON messages (conversation_id, channel, client_id, memory_epoch, created_at);
+    ON messages (conversation_id, channel, client_id, epoch, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_conversations_group
     ON conversations (conversation_group_id);

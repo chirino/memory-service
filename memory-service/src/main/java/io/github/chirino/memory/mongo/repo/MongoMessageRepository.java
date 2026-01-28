@@ -112,18 +112,18 @@ public class MongoMessageRepository implements PanacheMongoRepositoryBase<MongoM
     }
 
     public Long findLatestMemoryEpoch(String conversationId, String clientId) {
-        Sort sort = Sort.by("memoryEpoch").descending();
+        Sort sort = Sort.by("epoch").descending();
         MongoMessage latest =
                 find(
                                 "conversationId = ?1 and channel = ?2 and clientId = ?3 and"
-                                        + " memoryEpoch != null",
+                                        + " epoch != null",
                                 sort,
                                 conversationId,
                                 MessageChannel.MEMORY,
                                 clientId)
                         .page(0, 1)
                         .firstResult();
-        return latest != null ? latest.memoryEpoch : null;
+        return latest != null ? latest.epoch : null;
     }
 
     public List<MongoMessage> listMemoryMessagesByEpoch(
@@ -140,9 +140,9 @@ public class MongoMessageRepository implements PanacheMongoRepositoryBase<MongoM
         params.add(clientId);
         String query = "conversationId = ?1 and channel = ?2 and clientId = ?3";
         if (epoch == null) {
-            query += " and memoryEpoch = null";
+            query += " and epoch = null";
         } else {
-            query += " and memoryEpoch = ?" + (params.size() + 1);
+            query += " and epoch = ?" + (params.size() + 1);
             params.add(epoch);
         }
         if (afterMessageId != null) {
@@ -152,7 +152,7 @@ public class MongoMessageRepository implements PanacheMongoRepositoryBase<MongoM
                 if (conversationId.equals(after.conversationId)
                         && after.channel == MessageChannel.MEMORY
                         && after.createdAt != null
-                        && Objects.equals(after.memoryEpoch, epoch)) {
+                        && Objects.equals(after.epoch, epoch)) {
                     params.add(after.createdAt);
                     query += " and createdAt > ?" + params.size();
                 }

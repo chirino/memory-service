@@ -92,7 +92,7 @@ export type Message = {
    * For history messages this is typically null. For memory messages,
    * the agent increments the epoch when starting a new memory version.
    */
-  memoryEpoch?: number | null;
+  epoch?: number | null;
   /**
    * Opaque, agent-defined message content blocks.
    * Different agents may use different schemas; the memory-service
@@ -114,7 +114,7 @@ export type CreateMessageRequest = {
    * For memory messages, the epoch the agent wants this message to
    * belong to. The agent increments this when starting a new epoch.
    */
-  memoryEpoch?: number | null;
+  epoch?: number | null;
   content: Array<unknown>;
 };
 
@@ -131,7 +131,7 @@ export type SyncMessagesResponse = {
   /**
    * The epoch number that now reflects the stored memory state.
    */
-  memoryEpoch?: number | null;
+  epoch?: number | null;
   /**
    * True when the request resulted in no stored changes.
    */

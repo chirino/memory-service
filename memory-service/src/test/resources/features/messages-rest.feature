@@ -139,7 +139,7 @@ Feature: Messages REST API
     }
     """
     Then the response status should be 200
-    And the response body field "memoryEpoch" should be "1"
+    And the response body field "epoch" should be "1"
     And the response body field "noOp" should be "true"
     And the response body field "epochIncremented" should be "false"
     And the sync response should contain 0 messages
@@ -173,7 +173,7 @@ Feature: Messages REST API
     }
     """
     Then the response status should be 200
-    And the response body field "memoryEpoch" should be "1"
+    And the response body field "epoch" should be "1"
     And the response body field "noOp" should be "false"
     And the response body field "epochIncremented" should be "false"
     And the response body field "messages[0].content[0].text" should be "Appended via sync"
@@ -199,7 +199,7 @@ Feature: Messages REST API
     }
     """
     Then the response status should be 200
-    And the response body field "memoryEpoch" should be "2"
+    And the response body field "epoch" should be "2"
     And the response body field "noOp" should be "false"
     And the response body field "epochIncremented" should be "true"
     And the sync response should contain 1 messages

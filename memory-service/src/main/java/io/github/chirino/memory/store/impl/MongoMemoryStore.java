@@ -295,7 +295,7 @@ public class MongoMemoryStore implements MemoryStore {
         m.conversationId = conversationId;
         m.userId = userId;
         m.channel = MessageChannel.HISTORY;
-        m.memoryEpoch = null;
+        m.epoch = null;
         m.conversationGroupId = c.conversationGroupId;
         m.decodedContent = List.of(Map.of("type", "text", "text", request.getContent()));
         m.content = encryptContent(m.decodedContent);
@@ -602,7 +602,7 @@ public class MongoMemoryStore implements MemoryStore {
                     req.getChannel() != null
                             ? MessageChannel.fromString(req.getChannel().value())
                             : MessageChannel.MEMORY;
-            m.memoryEpoch = req.getMemoryEpoch();
+            m.epoch = req.getEpoch();
             m.decodedContent = req.getContent();
             m.content = encryptContent(m.decodedContent);
             m.conversationGroupId = c.conversationGroupId;
@@ -645,7 +645,7 @@ public class MongoMemoryStore implements MemoryStore {
 
         SyncResult result = new SyncResult();
         result.setMessages(Collections.emptyList());
-        result.setMemoryEpoch(latestEpoch);
+        result.setEpoch(latestEpoch);
 
         // If no existing messages and incoming is empty, that's a no-op (shouldn't happen due to
         // validation)
@@ -680,7 +680,7 @@ public class MongoMemoryStore implements MemoryStore {
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
         List<CreateMessageRequest> toAppend = MemorySyncHelper.withEpoch(messages, nextEpoch);
         List<MessageDto> appended = appendAgentMessages(userId, conversationId, toAppend, clientId);
-        result.setMemoryEpoch(nextEpoch);
+        result.setEpoch(nextEpoch);
         result.setMessages(appended);
         result.setEpochIncremented(true);
         result.setNoOp(false);
@@ -714,7 +714,7 @@ public class MongoMemoryStore implements MemoryStore {
         summary.userId = null;
         summary.clientId = clientId;
         summary.channel = MessageChannel.SUMMARY;
-        summary.memoryEpoch = null;
+        summary.epoch = null;
         summary.decodedContent = buildSummaryContent(request);
         summary.content = encryptContent(summary.decodedContent);
         summary.conversationGroupId = c.conversationGroupId;
@@ -918,7 +918,7 @@ public class MongoMemoryStore implements MemoryStore {
         dto.setConversationId(entity.conversationId);
         dto.setUserId(entity.userId);
         dto.setChannel(entity.channel);
-        dto.setMemoryEpoch(entity.memoryEpoch);
+        dto.setEpoch(entity.epoch);
         dto.setContent(content != null ? content : Collections.emptyList());
         dto.setCreatedAt(formatInstant(entity.createdAt));
         return dto;

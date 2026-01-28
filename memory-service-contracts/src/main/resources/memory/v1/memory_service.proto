@@ -124,7 +124,7 @@ message TransferOwnershipRequest {
 message CreateMessageRequest {
   string user_id = 1;
   MessageChannel channel = 2;
-  int64 memory_epoch = 3;
+  int64 epoch = 3;
   repeated google.protobuf.Value content = 4;
 }
 
@@ -134,7 +134,7 @@ message SyncMessagesRequest {
 }
 
 message SyncMessagesResponse {
-  optional int64 memory_epoch = 1;
+  optional int64 epoch = 1;
   bool no_op = 2;
   bool epoch_incremented = 3;
   repeated Message messages = 4;
@@ -162,7 +162,7 @@ message Message {
   string conversation_id = 2;
   string user_id = 3;
   MessageChannel channel = 4;
-  int64 memory_epoch = 5;
+  int64 epoch = 5;
   repeated google.protobuf.Value content = 6;
   string created_at = 7;
 }

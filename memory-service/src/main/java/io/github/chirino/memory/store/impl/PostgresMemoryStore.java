@@ -286,7 +286,7 @@ public class PostgresMemoryStore implements MemoryStore {
         message.setConversation(conversation);
         message.setUserId(userId);
         message.setChannel(io.github.chirino.memory.model.MessageChannel.HISTORY);
-        message.setMemoryEpoch(null);
+        message.setEpoch(null);
         message.setContent(encryptContent(toContentBlocksFromUser(request.getContent())));
         message.setConversationGroupId(conversation.getConversationGroup().getId());
         OffsetDateTime createdAt = OffsetDateTime.now();
@@ -609,7 +609,7 @@ public class PostgresMemoryStore implements MemoryStore {
             } else {
                 entity.setChannel(io.github.chirino.memory.model.MessageChannel.MEMORY);
             }
-            entity.setMemoryEpoch(req.getMemoryEpoch());
+            entity.setEpoch(req.getEpoch());
             entity.setContent(encryptContent(req.getContent()));
             entity.setConversationGroupId(conversation.getConversationGroup().getId());
             OffsetDateTime createdAt = OffsetDateTime.now();
@@ -652,7 +652,7 @@ public class PostgresMemoryStore implements MemoryStore {
 
         SyncResult result = new SyncResult();
         result.setMessages(Collections.emptyList());
-        result.setMemoryEpoch(latestEpoch);
+        result.setEpoch(latestEpoch);
 
         // If no existing messages and incoming is empty, that's a no-op (shouldn't happen due to
         // validation)
@@ -687,7 +687,7 @@ public class PostgresMemoryStore implements MemoryStore {
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
         List<CreateMessageRequest> toAppend = MemorySyncHelper.withEpoch(messages, nextEpoch);
         List<MessageDto> appended = appendAgentMessages(userId, conversationId, toAppend, clientId);
-        result.setMemoryEpoch(nextEpoch);
+        result.setEpoch(nextEpoch);
         result.setMessages(appended);
         result.setEpochIncremented(true);
         result.setNoOp(false);
@@ -725,7 +725,7 @@ public class PostgresMemoryStore implements MemoryStore {
         summaryMessage.setUserId(null);
         summaryMessage.setClientId(clientId);
         summaryMessage.setChannel(io.github.chirino.memory.model.MessageChannel.SUMMARY);
-        summaryMessage.setMemoryEpoch(null);
+        summaryMessage.setEpoch(null);
         summaryMessage.setContent(encryptContentFromSummary(request));
         summaryMessage.setConversationGroupId(conversation.getConversationGroup().getId());
         messageRepository.persist(summaryMessage);
@@ -1097,7 +1097,7 @@ public class PostgresMemoryStore implements MemoryStore {
         dto.setConversationId(entity.getConversation().getId().toString());
         dto.setUserId(entity.getUserId());
         dto.setChannel(entity.getChannel());
-        dto.setMemoryEpoch(entity.getMemoryEpoch());
+        dto.setEpoch(entity.getEpoch());
         dto.setContent(content != null ? content : Collections.emptyList());
         dto.setCreatedAt(ISO_FORMATTER.format(entity.getCreatedAt()));
         return dto;

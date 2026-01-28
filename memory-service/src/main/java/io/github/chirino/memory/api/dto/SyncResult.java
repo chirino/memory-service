@@ -5,17 +5,17 @@ import java.util.List;
 
 public class SyncResult {
 
-    private Long memoryEpoch;
+    private Long epoch;
     private boolean noOp;
     private boolean epochIncremented;
     private List<MessageDto> messages = Collections.emptyList();
 
-    public Long getMemoryEpoch() {
-        return memoryEpoch;
+    public Long getEpoch() {
+        return epoch;
     }
 
-    public void setMemoryEpoch(Long memoryEpoch) {
-        this.memoryEpoch = memoryEpoch;
+    public void setEpoch(Long epoch) {
+        this.epoch = epoch;
     }
 
     public boolean isNoOp() {

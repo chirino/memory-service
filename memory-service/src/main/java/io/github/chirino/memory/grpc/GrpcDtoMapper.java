@@ -122,8 +122,8 @@ public final class GrpcDtoMapper {
                         .setChannel(toProtoChannel(dto.getChannel()))
                         .addAllContent(toValues(dto.getContent()))
                         .setCreatedAt(dto.getCreatedAt() == null ? "" : dto.getCreatedAt());
-        if (dto.getMemoryEpoch() != null) {
-            builder.setMemoryEpoch(dto.getMemoryEpoch());
+        if (dto.getEpoch() != null) {
+            builder.setEpoch(dto.getEpoch());
         }
         return builder.build();
     }

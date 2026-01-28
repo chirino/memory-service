@@ -127,7 +127,7 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                             request.getMessage().getChannel());
                             internal.setChannel(
                                     GrpcDtoMapper.toCreateMessageChannel(requestChannel));
-                            internal.setMemoryEpoch(request.getMessage().getMemoryEpoch());
+                            internal.setEpoch(request.getMessage().getEpoch());
                             internal.setContent(
                                     GrpcDtoMapper.fromValues(
                                             request.getMessage().getContentList()));
@@ -204,8 +204,8 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
                                     SyncMessagesResponse.newBuilder()
                                             .setNoOp(result.isNoOp())
                                             .setEpochIncremented(result.isEpochIncremented());
-                            if (result.getMemoryEpoch() != null) {
-                                builder.setMemoryEpoch(result.getMemoryEpoch());
+                            if (result.getEpoch() != null) {
+                                builder.setEpoch(result.getEpoch());
                             }
                             builder.addAllMessages(
                                     result.getMessages().stream()
@@ -237,7 +237,7 @@ public class MessagesGrpcService extends AbstractGrpcService implements Messages
         io.github.chirino.memory.model.MessageChannel requestChannel =
                 GrpcDtoMapper.fromProtoChannel(request.getChannel());
         internal.setChannel(GrpcDtoMapper.toCreateMessageChannel(requestChannel));
-        internal.setMemoryEpoch(request.getMemoryEpoch());
+        internal.setEpoch(request.getEpoch());
         internal.setContent(GrpcDtoMapper.fromValues(request.getContentList()));
         return internal;
     }

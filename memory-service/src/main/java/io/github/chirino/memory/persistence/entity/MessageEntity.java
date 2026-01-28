@@ -39,8 +39,8 @@ public class MessageEntity {
     @Column(name = "channel", nullable = false)
     private MessageChannel channel;
 
-    @Column(name = "memory_epoch")
-    private Long memoryEpoch;
+    @Column(name = "epoch")
+    private Long epoch;
 
     @JdbcTypeCode(SqlTypes.BINARY)
     @Column(name = "content", nullable = false, columnDefinition = "bytea")
@@ -97,12 +97,12 @@ public class MessageEntity {
         this.channel = channel;
     }
 
-    public Long getMemoryEpoch() {
-        return memoryEpoch;
+    public Long getEpoch() {
+        return epoch;
     }
 
-    public void setMemoryEpoch(Long memoryEpoch) {
-        this.memoryEpoch = memoryEpoch;
+    public void setEpoch(Long epoch) {
+        this.epoch = epoch;
     }
 
     public byte[] getContent() {
