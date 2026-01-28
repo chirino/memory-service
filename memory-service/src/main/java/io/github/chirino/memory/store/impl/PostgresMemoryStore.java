@@ -33,6 +33,7 @@ import io.github.chirino.memory.persistence.repo.ConversationMembershipRepositor
 import io.github.chirino.memory.persistence.repo.ConversationOwnershipTransferRepository;
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
 import io.github.chirino.memory.persistence.repo.MessageRepository;
+import io.github.chirino.memory.persistence.repo.TaskRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.github.chirino.memory.store.MemoryStore;
@@ -42,6 +43,7 @@ import io.github.chirino.memory.vector.EmbeddingService;
 import io.github.chirino.memory.vector.VectorStore;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -82,6 +84,10 @@ public class PostgresMemoryStore implements MemoryStore {
     @Inject VectorStoreSelector vectorStoreSelector;
 
     @Inject EmbeddingService embeddingService;
+
+    @Inject EntityManager entityManager;
+
+    @Inject TaskRepository taskRepository;
 
     @Override
     @Transactional
@@ -1365,5 +1371,87 @@ public class PostgresMemoryStore implements MemoryStore {
                 .filter(r -> r != null)
                 .limit(limit)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public List<String> findEvictableGroupIds(OffsetDateTime cutoff, int limit) {
+        @SuppressWarnings("unchecked")
+        List<UUID> ids =
+                entityManager
+                        .createNativeQuery(
+                                "SELECT id FROM conversation_groups "
+                                        + "WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff "
+                                        + "ORDER BY deleted_at "
+                                        + "LIMIT :limit "
+                                        + "FOR UPDATE SKIP LOCKED",
+                                UUID.class)
+                        .setParameter("cutoff", cutoff)
+                        .setParameter("limit", limit)
+                        .getResultList();
+        return ids.stream().map(UUID::toString).collect(Collectors.toList());
+    }
+
+    @Override
+    public long countEvictableGroups(OffsetDateTime cutoff) {
+        return ((Number)
+                        entityManager
+                                .createNativeQuery(
+                                        "SELECT COUNT(*) FROM conversation_groups WHERE deleted_at"
+                                                + " IS NOT NULL AND deleted_at < :cutoff")
+                                .setParameter("cutoff", cutoff)
+                                .getSingleResult())
+                .longValue();
+    }
+
+    @Override
+    @Transactional
+    public void hardDeleteConversationGroups(List<String> groupIds) {
+        if (groupIds.isEmpty()) {
+            return;
+        }
+
+        // 1. Create tasks for vector store cleanup
+        for (String groupId : groupIds) {
+            taskRepository.createTask(
+                    "vector_store_delete", Map.of("conversationGroupId", groupId));
+        }
+
+        // 2. Single DELETE statement - ON DELETE CASCADE handles all children
+        UUID[] uuids = groupIds.stream().map(UUID::fromString).toArray(UUID[]::new);
+        entityManager
+                .createNativeQuery("DELETE FROM conversation_groups WHERE id = ANY(:ids)")
+                .setParameter("ids", uuids)
+                .executeUpdate();
+    }
+
+    @Override
+    public long countEvictableMemberships(OffsetDateTime cutoff) {
+        return ((Number)
+                        entityManager
+                                .createNativeQuery(
+                                        "SELECT COUNT(*) FROM conversation_memberships WHERE"
+                                            + " deleted_at IS NOT NULL AND deleted_at < :cutoff")
+                                .setParameter("cutoff", cutoff)
+                                .getSingleResult())
+                .longValue();
+    }
+
+    @Override
+    @Transactional
+    public int hardDeleteMembershipsBatch(OffsetDateTime cutoff, int limit) {
+        // Single statement: select and delete in one CTE
+        // FOR UPDATE SKIP LOCKED ensures concurrent safety
+        return entityManager
+                .createNativeQuery(
+                        "WITH batch AS (  SELECT conversation_group_id, user_id FROM"
+                            + " conversation_memberships   WHERE deleted_at IS NOT NULL AND"
+                            + " deleted_at < :cutoff   LIMIT :limit   FOR UPDATE SKIP LOCKED)"
+                            + " DELETE FROM conversation_memberships m USING batch b WHERE"
+                            + " m.conversation_group_id = b.conversation_group_id   AND m.user_id ="
+                            + " b.user_id")
+                .setParameter("cutoff", cutoff)
+                .setParameter("limit", limit)
+                .executeUpdate();
     }
 }

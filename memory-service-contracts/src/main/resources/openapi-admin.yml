@@ -352,6 +352,57 @@ paths:
       security:
         - BearerAuth: []
 
+  /v1/admin/evict:
+    post:
+      tags: [Admin]
+      summary: Hard-delete soft-deleted resources past retention period
+      description: |-
+        Permanently removes resources that have been soft-deleted for longer than
+        the specified retention period. This operation is irreversible.
+        
+        The operation runs in batches to minimize database lock contention.
+        
+        **Response modes (based on Accept header):**
+        - `Accept: application/json` (default): Returns 204 No Content when complete.
+        - `Accept: text/event-stream`: Streams progress updates as SSE events.
+        
+        Requires admin role.
+      operationId: adminEvict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvictRequest'
+      responses:
+        '200':
+          description: |-
+            SSE progress stream (when Accept: text/event-stream).
+            Each event contains {"progress": N} where N is 0-100.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream with progress updates.
+              example: |
+                data: {"progress": 0}
+                
+                data: {"progress": 50}
+                
+                data: {"progress": 100}
+        '204':
+          description: Eviction completed successfully (default response).
+        '400':
+          description: Invalid request (bad retention period format, unknown resource type).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
 components:
   securitySchemes:
     BearerAuth:
@@ -533,3 +584,39 @@ components:
         highlights:
           type: string
           nullable: true
+
+    EvictRequest:
+      type: object
+      required:
+        - retentionPeriod
+        - resourceTypes
+      properties:
+        retentionPeriod:
+          type: string
+          description: |-
+            ISO 8601 duration. Resources soft-deleted longer than this are hard-deleted.
+            Examples: P90D (90 days), P1Y (1 year), PT24H (24 hours).
+          example: "P90D"
+        resourceTypes:
+          type: array
+          items:
+            type: string
+            enum:
+              - conversation_groups
+              - conversation_memberships
+          description: Which resource types to evict.
+          example: ["conversation_groups"]
+        justification:
+          type: string
+          description: Reason for the eviction (for audit log).
+          example: "Quarterly data cleanup per retention policy"
+
+    EvictProgressEvent:
+      type: object
+      properties:
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Percentage of eviction completed (0-100).
+          example: 55

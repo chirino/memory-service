@@ -60,10 +60,12 @@ import io.github.chirino.memory.grpc.v1.SyncMessagesRequest;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
 import io.github.chirino.memory.grpc.v1.TransferOwnershipRequest;
 import io.github.chirino.memory.grpc.v1.UpdateMembershipRequest;
+import io.github.chirino.memory.mongo.repo.MongoConversationGroupRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationOwnershipTransferRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationRepository;
 import io.github.chirino.memory.mongo.repo.MongoMessageRepository;
+import io.github.chirino.memory.persistence.repo.ConversationGroupRepository;
 import io.github.chirino.memory.persistence.repo.ConversationMembershipRepository;
 import io.github.chirino.memory.persistence.repo.ConversationOwnershipTransferRepository;
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
@@ -123,10 +125,12 @@ public class StepDefinitions {
     @Inject org.eclipse.microprofile.config.Config config;
 
     @Inject Instance<ConversationRepository> conversationRepository;
+    @Inject Instance<ConversationGroupRepository> conversationGroupRepository;
     @Inject Instance<MessageRepository> messageRepository;
     @Inject Instance<ConversationMembershipRepository> membershipRepository;
     @Inject Instance<ConversationOwnershipTransferRepository> ownershipTransferRepository;
     @Inject Instance<MongoConversationRepository> mongoConversationRepository;
+    @Inject Instance<MongoConversationGroupRepository> mongoConversationGroupRepository;
     @Inject Instance<MongoMessageRepository> mongoMessageRepository;
     @Inject Instance<MongoConversationMembershipRepository> mongoMembershipRepository;
     @Inject Instance<MongoConversationOwnershipTransferRepository> mongoOwnershipTransferRepository;
@@ -2344,6 +2348,7 @@ public class StepDefinitions {
         membershipRepository.get().deleteAll();
         ownershipTransferRepository.get().deleteAll();
         conversationRepository.get().deleteAll();
+        conversationGroupRepository.get().deleteAll();
     }
 
     private void clearMongoData() {
@@ -2354,6 +2359,7 @@ public class StepDefinitions {
         mongoMembershipRepository.get().deleteAll();
         mongoOwnershipTransferRepository.get().deleteAll();
         mongoConversationRepository.get().deleteAll();
+        mongoConversationGroupRepository.get().deleteAll();
     }
 
     private List<Map<String, Object>> lastSqlResult;
@@ -2975,5 +2981,246 @@ public class StepDefinitions {
     public void eachTaskShouldBeProcessedExactlyOnce() {
         // All tasks should be deleted
         theTaskShouldBeDeleted();
+    }
+
+    @io.cucumber.java.en.Given("the conversation was soft-deleted {int} days ago")
+    @Transactional
+    public void theConversationWasSoftDeletedDaysAgo(int daysAgo) {
+        // First soft-delete the conversation
+        if (conversationId != null) {
+            try {
+                memoryStoreSelector.getStore().deleteConversation(currentUserId, conversationId);
+            } catch (Exception e) {
+                memoryStoreSelector.getStore().adminDeleteConversation(conversationId);
+            }
+        }
+        // Then update deleted_at to N days ago
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        if ("postgres".equals(datastoreType)) {
+            String groupId = (String) contextVariables.get("conversationGroupId");
+            if (groupId == null) {
+                groupId = conversationId;
+            }
+            if (groupId != null) {
+                entityManager
+                        .get()
+                        .createNativeQuery(
+                                "UPDATE conversation_groups SET deleted_at = NOW() - INTERVAL '"
+                                        + daysAgo
+                                        + " days' WHERE id = :id")
+                        .setParameter("id", java.util.UUID.fromString(groupId))
+                        .executeUpdate();
+            }
+        }
+    }
+
+    @io.cucumber.java.en.When("I call POST {string} with Accept {string} and body:")
+    public void iCallPOSTWithAcceptAndBody(String path, String accept, String body) {
+        String renderedPath = renderTemplate(path);
+        String renderedBody = renderTemplate(body);
+        var requestSpec =
+                given().contentType(MediaType.APPLICATION_JSON)
+                        .header("Accept", accept)
+                        .body(renderedBody);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            if (token != null) {
+                requestSpec = requestSpec.auth().oauth2(token);
+            }
+        }
+        if (currentApiKey != null) {
+            requestSpec = requestSpec.header("X-API-Key", currentApiKey);
+        }
+        this.lastResponse = requestSpec.when().post(renderedPath);
+    }
+
+    @io.cucumber.java.en.Then("the response content type should be {string}")
+    public void theResponseContentTypeShouldBe(String expectedContentType) {
+        String actualContentType = lastResponse.getContentType();
+        assertThat(
+                "Response content type should be " + expectedContentType,
+                actualContentType,
+                containsString(expectedContentType));
+    }
+
+    private List<Integer> sseProgressValues = new ArrayList<>();
+
+    @io.cucumber.java.en.Then("the SSE stream should contain progress events")
+    public void theSseStreamShouldContainProgressEvents() {
+        String body = lastResponse.getBody().asString();
+        sseProgressValues.clear();
+        // Parse SSE events: data: {"progress": N}
+        String[] lines = body.split("\n");
+        for (String line : lines) {
+            if (line.startsWith("data: ")) {
+                String json = line.substring(6); // Remove "data: " prefix
+                try {
+                    JsonNode node = OBJECT_MAPPER.readTree(json);
+                    if (node.has("progress")) {
+                        sseProgressValues.add(node.get("progress").asInt());
+                    }
+                } catch (Exception e) {
+                    // Ignore parsing errors for non-progress events
+                }
+            }
+        }
+        assertThat(
+                "SSE stream should contain progress events",
+                sseProgressValues.size(),
+                greaterThan(0));
+    }
+
+    @io.cucumber.java.en.Then("the final progress should be {int}")
+    public void theFinalProgressShouldBe(int expectedProgress) {
+        assertThat(
+                "Final progress should be " + expectedProgress,
+                sseProgressValues.get(sseProgressValues.size() - 1),
+                is(expectedProgress));
+    }
+
+    @io.cucumber.java.en.Given("I have {int} conversations soft-deleted {int} days ago")
+    @Transactional
+    public void iHaveConversationsSoftDeletedDaysAgo(int count, int daysAgo) {
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        for (int i = 0; i < count; i++) {
+            CreateConversationRequest request = new CreateConversationRequest();
+            request.setTitle("Test Conversation " + i);
+            ConversationDto conv =
+                    memoryStoreSelector
+                            .getStore()
+                            .createConversation(
+                                    currentUserId != null ? currentUserId : "alice", request);
+            // Soft delete it
+            memoryStoreSelector.getStore().deleteConversation(conv.getOwnerUserId(), conv.getId());
+            // Update deleted_at to N days ago
+            if ("postgres".equals(datastoreType)) {
+                entityManager
+                        .get()
+                        .createNativeQuery(
+                                "UPDATE conversation_groups SET deleted_at = NOW() - INTERVAL '"
+                                        + daysAgo
+                                        + " days' WHERE id = :id")
+                        .setParameter(
+                                "id", java.util.UUID.fromString(conv.getConversationGroupId()))
+                        .executeUpdate();
+            }
+        }
+        // Flush to ensure all changes are committed before eviction runs
+        if ("postgres".equals(datastoreType)) {
+            entityManager.get().flush();
+        }
+    }
+
+    private List<Response> concurrentResponses = new ArrayList<>();
+
+    @io.cucumber.java.en.When("I call POST {string} concurrently {int} times with body:")
+    public void iCallPOSTConcurrentlyTimesWithBody(String path, int times, String body)
+            throws Exception {
+        String renderedPath = renderTemplate(path);
+        String renderedBody = renderTemplate(body);
+        concurrentResponses.clear();
+        java.util.concurrent.ExecutorService executor =
+                java.util.concurrent.Executors.newFixedThreadPool(times);
+        List<java.util.concurrent.Future<Response>> futures = new ArrayList<>();
+        for (int i = 0; i < times; i++) {
+            futures.add(
+                    executor.submit(
+                            () -> {
+                                var requestSpec =
+                                        given().contentType(MediaType.APPLICATION_JSON)
+                                                .body(renderedBody);
+                                if (currentUserId != null) {
+                                    String token = keycloakClient.getAccessToken(currentUserId);
+                                    if (token != null) {
+                                        requestSpec = requestSpec.auth().oauth2(token);
+                                    }
+                                }
+                                if (currentApiKey != null) {
+                                    requestSpec = requestSpec.header("X-API-Key", currentApiKey);
+                                }
+                                return requestSpec.when().post(renderedPath);
+                            }));
+        }
+        for (java.util.concurrent.Future<Response> future : futures) {
+            concurrentResponses.add(future.get());
+        }
+        executor.shutdown();
+        // Wait a bit to ensure all database transactions are committed
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        // Set lastResponse to the first one for compatibility
+        if (!concurrentResponses.isEmpty()) {
+            this.lastResponse = concurrentResponses.get(0);
+        }
+    }
+
+    @io.cucumber.java.en.Then("all responses should have status {int}")
+    public void allResponsesShouldHaveStatus(int expectedStatus) {
+        for (Response response : concurrentResponses) {
+            assertThat(
+                    "All responses should have status " + expectedStatus,
+                    response.getStatusCode(),
+                    is(expectedStatus));
+        }
+    }
+
+    @io.cucumber.java.en.Given("the conversation has messages")
+    public void theConversationHasMessages() {
+        if (conversationId == null) {
+            throw new IllegalStateException("No conversation available");
+        }
+        String userId = currentUserId != null ? currentUserId : "alice";
+        CreateUserMessageRequest request1 = new CreateUserMessageRequest();
+        request1.setContent("Message 1");
+        memoryStoreSelector.getStore().appendUserMessage(userId, conversationId, request1);
+        CreateUserMessageRequest request2 = new CreateUserMessageRequest();
+        request2.setContent("Message 2");
+        memoryStoreSelector.getStore().appendUserMessage(userId, conversationId, request2);
+    }
+
+    @io.cucumber.java.en.Given("the conversation is shared with user {string}")
+    @Transactional
+    public void theConversationIsSharedWithUser(String userId) {
+        theConversationIsSharedWithUserWithAccessLevel(userId, "reader");
+    }
+
+    @io.cucumber.java.en.Given("the membership for user {string} was soft-deleted {int} days ago")
+    @Transactional
+    public void theMembershipForUserWasSoftDeletedDaysAgo(String userId, int daysAgo) {
+        // Soft-delete the membership via the store API
+        String ownerId = (String) contextVariables.getOrDefault("conversationOwner", currentUserId);
+        memoryStoreSelector.getStore().deleteMembership(ownerId, conversationId, userId);
+
+        // Backdate the deleted_at timestamp
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+        if ("postgres".equals(datastoreType)) {
+            String groupId = (String) contextVariables.get("conversationGroupId");
+            entityManager
+                    .get()
+                    .createNativeQuery(
+                            "UPDATE conversation_memberships SET deleted_at = NOW() - INTERVAL '"
+                                    + daysAgo
+                                    + " days' WHERE conversation_group_id = :groupId"
+                                    + " AND user_id = :userId")
+                    .setParameter("groupId", java.util.UUID.fromString(groupId))
+                    .setParameter("userId", userId)
+                    .executeUpdate();
+        }
+    }
+
+    @io.cucumber.java.en.Given("the conversation has a pending ownership transfer to user {string}")
+    @Transactional
+    public void theConversationHasAPendingOwnershipTransferToUser(String toUserId) {
+        String ownerId = (String) contextVariables.getOrDefault("conversationOwner", currentUserId);
+        memoryStoreSelector.getStore().requestOwnershipTransfer(ownerId, conversationId, toUserId);
     }
 }
