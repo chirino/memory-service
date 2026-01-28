@@ -7,6 +7,8 @@ import static jakarta.ws.rs.core.Response.Status.OK;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
+import io.github.chirino.memory.client.api.SearchApi;
+import io.github.chirino.memory.client.api.SharingApi;
 import io.github.chirino.memory.client.model.CreateConversationRequest;
 import io.github.chirino.memory.client.model.CreateMessageRequest;
 import io.github.chirino.memory.client.model.CreateSummaryRequest;
@@ -156,7 +158,7 @@ public class MemoryServiceProxy {
 
     public Response listConversationMemberships(String conversationId) {
         return execute(
-                () -> conversationsApi().listConversationMemberships(conversationId),
+                () -> sharingApi().listConversationMemberships(conversationId),
                 OK,
                 "Error listing memberships for history %s",
                 conversationId);
@@ -169,7 +171,7 @@ public class MemoryServiceProxy {
                     OBJECT_MAPPER.readValue(body, UpdateConversationMembershipRequest.class);
             return execute(
                     () ->
-                            conversationsApi()
+                            sharingApi()
                                     .updateConversationMembership(conversationId, userId, request),
                     OK,
                     "Error updating membership for history %s, user %s",
@@ -186,7 +188,7 @@ public class MemoryServiceProxy {
             TransferConversationOwnershipRequest request =
                     OBJECT_MAPPER.readValue(body, TransferConversationOwnershipRequest.class);
             return executeVoid(
-                    () -> conversationsApi().transferConversationOwnership(conversationId, request),
+                    () -> sharingApi().transferConversationOwnership(conversationId, request),
                     Response.Status.ACCEPTED,
                     "Error transferring ownership of history %s",
                     conversationId);
@@ -201,7 +203,7 @@ public class MemoryServiceProxy {
             CreateSummaryRequest request =
                     OBJECT_MAPPER.readValue(body, CreateSummaryRequest.class);
             return execute(
-                    () -> conversationsApi().createConversationSummary(conversationId, request),
+                    () -> searchApi().createConversationSummary(conversationId, request),
                     CREATED,
                     "Error creating summary for history %s",
                     conversationId);
@@ -259,6 +261,16 @@ public class MemoryServiceProxy {
     private ConversationsApi conversationsApi() {
         String bearerToken = bearerToken(securityIdentity);
         return memoryServiceApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
+    }
+
+    private SharingApi sharingApi() {
+        String bearerToken = bearerToken(securityIdentity);
+        return memoryServiceApiBuilder.withBearerAuth(bearerToken).build(SharingApi.class);
+    }
+
+    private SearchApi searchApi() {
+        String bearerToken = bearerToken(securityIdentity);
+        return memoryServiceApiBuilder.withBearerAuth(bearerToken).build(SearchApi.class);
     }
 
     private Response handleException(Exception e) {

@@ -2,6 +2,7 @@ package io.github.chirino.memoryservice.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
+import io.github.chirino.memoryservice.client.api.SharingApi;
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
 import io.github.chirino.memoryservice.client.model.ForkFromMessageRequest;
 import io.github.chirino.memoryservice.client.model.MessageChannel;
@@ -120,7 +121,7 @@ public class MemoryServiceProxy {
         try {
             TransferConversationOwnershipRequest request =
                     OBJECT_MAPPER.readValue(body, TransferConversationOwnershipRequest.class);
-            return execute(
+            return executeSharingApi(
                     api -> api.transferConversationOwnershipWithHttpInfo(conversationId, request),
                     HttpStatus.ACCEPTED);
         } catch (Exception e) {
@@ -131,16 +132,23 @@ public class MemoryServiceProxy {
     }
 
     private ConversationsApi conversationsApi(@Nullable String explicitBearerToken) {
+        return new ConversationsApi(createConfiguredApiClient(explicitBearerToken));
+    }
+
+    private SharingApi sharingApi(@Nullable String explicitBearerToken) {
+        return new SharingApi(createConfiguredApiClient(explicitBearerToken));
+    }
+
+    private ApiClient createConfiguredApiClient(@Nullable String explicitBearerToken) {
         ApiClient apiClient =
                 MemoryServiceClients.createApiClient(properties, webClientBuilder, null);
-        String apiKey = properties.getApiKey();
         String bearer = resolveBearerToken(explicitBearerToken);
         if (StringUtils.hasText(bearer)) {
             apiClient.setBearerToken(bearer);
         } else if (StringUtils.hasText(properties.getBearerToken())) {
             apiClient.setBearerToken(properties.getBearerToken());
         }
-        return new ConversationsApi(apiClient);
+        return apiClient;
     }
 
     private <T> ResponseEntity<?> execute(
@@ -149,24 +157,7 @@ public class MemoryServiceProxy {
         try {
             ResponseEntity<T> upstream =
                     action.apply(conversationsApi(null)).block(resolveTimeout());
-            if (upstream == null) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-            }
-            HttpHeaders headers = new HttpHeaders();
-            upstream.getHeaders()
-                    .forEach(
-                            (name, values) -> {
-                                // Don't forward Content-Length or Transfer-Encoding since we're
-                                // re-serializing the body
-                                if (!name.equalsIgnoreCase(HttpHeaders.CONTENT_LENGTH)
-                                        && !name.equalsIgnoreCase(HttpHeaders.TRANSFER_ENCODING)) {
-                                    headers.addAll(name, values);
-                                }
-                            });
-            return ResponseEntity.status(upstream.getStatusCode())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .headers(headers)
-                    .body(upstream.getBody());
+            return handleUpstreamResponse(upstream);
         } catch (WebClientResponseException e) {
             LOG.warn("memory-service call failed: {}", e.getMessage());
             return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
@@ -175,6 +166,43 @@ public class MemoryServiceProxy {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Internal server error"));
         }
+    }
+
+    private <T> ResponseEntity<?> executeSharingApi(
+            ThrowingFunction<SharingApi, Mono<ResponseEntity<T>>> action,
+            HttpStatus expectedStatus) {
+        try {
+            ResponseEntity<T> upstream = action.apply(sharingApi(null)).block(resolveTimeout());
+            return handleUpstreamResponse(upstream);
+        } catch (WebClientResponseException e) {
+            LOG.warn("memory-service call failed: {}", e.getMessage());
+            return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
+        } catch (Exception e) {
+            LOG.error("Unexpected error calling memory-service", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Internal server error"));
+        }
+    }
+
+    private <T> ResponseEntity<?> handleUpstreamResponse(ResponseEntity<T> upstream) {
+        if (upstream == null) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+        HttpHeaders headers = new HttpHeaders();
+        upstream.getHeaders()
+                .forEach(
+                        (name, values) -> {
+                            // Don't forward Content-Length or Transfer-Encoding since we're
+                            // re-serializing the body
+                            if (!name.equalsIgnoreCase(HttpHeaders.CONTENT_LENGTH)
+                                    && !name.equalsIgnoreCase(HttpHeaders.TRANSFER_ENCODING)) {
+                                headers.addAll(name, values);
+                            }
+                        });
+        return ResponseEntity.status(upstream.getStatusCode())
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers)
+                .body(upstream.getBody());
     }
 
     private Duration resolveTimeout() {

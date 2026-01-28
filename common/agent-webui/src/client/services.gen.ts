@@ -5,23 +5,6 @@ import { OpenAPI } from "./core/OpenAPI";
 import { request as __request } from "./core/request";
 import type { $OpenApiTs } from "./types.gen";
 
-export class SystemService {
-  /**
-   * Health check
-   * @returns unknown Service is healthy.
-   * @returns ErrorResponse Error response
-   * @throws ApiError
-   */
-  public static getHealth(): CancelablePromise<
-    $OpenApiTs["/v1/health"]["get"]["res"][200] | $OpenApiTs["/v1/health"]["get"]["res"][200]
-  > {
-    return __request(OpenAPI, {
-      method: "GET",
-      url: "/v1/health",
-    });
-  }
-}
-
 export class ConversationsService {
   /**
    * List conversations visible to current user
@@ -257,33 +240,6 @@ export class ConversationsService {
   }
 
   /**
-   * List conversation memberships
-   * Lists all users that have access to the conversation and their access levels.
-   * @param data The data for the request.
-   * @param data.conversationId
-   * @returns unknown Memberships for the conversation.
-   * @returns ErrorResponse Error response
-   * @throws ApiError
-   */
-  public static listConversationMemberships(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/memberships"]["get"]["req"],
-  ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/memberships"]["get"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/memberships"]["get"]["res"][200]
-  > {
-    return __request(OpenAPI, {
-      method: "GET",
-      url: "/v1/conversations/{conversationId}/memberships",
-      path: {
-        conversationId: data.conversationId,
-      },
-      errors: {
-        404: "Resource not found",
-      },
-    });
-  }
-
-  /**
    * Fork a conversation at a given user message
    * Creates a new conversation that replays history up to just before the selected
    * user message and then diverges starting at that point.
@@ -383,36 +339,36 @@ export class ConversationsService {
   }
 
   /**
-   * Update a member's access level
+   * Cancel an in-progress response
+   * Requests cancellation of an in-progress response stream for the conversation.
+   * Requires WRITER access and an authenticated user session.
    * @param data The data for the request.
    * @param data.conversationId
-   * @param data.userId
-   * @param data.requestBody
-   * @returns ConversationMembership Updated membership.
+   * @returns unknown Cancel request accepted.
    * @returns ErrorResponse Error response
    * @throws ApiError
    */
-  public static updateConversationMembership(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/memberships/{userId}"]["patch"]["req"],
+  public static cancelConversationResponse(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/memberships/{userId}"]["patch"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/memberships/{userId}"]["patch"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["res"][200]
   > {
     return __request(OpenAPI, {
-      method: "PATCH",
-      url: "/v1/conversations/{conversationId}/memberships/{userId}",
+      method: "POST",
+      url: "/v1/conversations/{conversationId}/cancel-response",
       path: {
         conversationId: data.conversationId,
-        userId: data.userId,
       },
-      body: data.requestBody,
-      mediaType: "application/json",
       errors: {
         404: "Resource not found",
+        409: "Error response",
       },
     });
   }
+}
 
+export class SharingService {
   /**
    * Request ownership transfer
    * Initiates a transfer of conversation ownership to another user. The other
@@ -445,28 +401,54 @@ export class ConversationsService {
   }
 
   /**
-   * Store a summarization of previous messages
-   * Stores an internal summarization of previous messages in the conversation.
-   * Summary messages are not visible in user-facing message lists.
-   * Requires a valid agent API key.
+   * List conversation memberships
+   * Lists all users that have access to the conversation and their access levels.
    * @param data The data for the request.
    * @param data.conversationId
-   * @param data.requestBody
+   * @returns unknown Memberships for the conversation.
    * @returns ErrorResponse Error response
-   * @returns Message The created summary message.
    * @throws ApiError
    */
-  public static createConversationSummary(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/summaries"]["post"]["req"],
+  public static listConversationMemberships(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/memberships"]["get"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/summaries"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/summaries"]["post"]["res"][201]
+    | $OpenApiTs["/v1/conversations/{conversationId}/memberships"]["get"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/memberships"]["get"]["res"][200]
   > {
     return __request(OpenAPI, {
-      method: "POST",
-      url: "/v1/conversations/{conversationId}/summaries",
+      method: "GET",
+      url: "/v1/conversations/{conversationId}/memberships",
       path: {
         conversationId: data.conversationId,
+      },
+      errors: {
+        404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * Update a member's access level
+   * @param data The data for the request.
+   * @param data.conversationId
+   * @param data.userId
+   * @param data.requestBody
+   * @returns ConversationMembership Updated membership.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static updateConversationMembership(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/memberships/{userId}"]["patch"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/conversations/{conversationId}/memberships/{userId}"]["patch"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/memberships/{userId}"]["patch"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "PATCH",
+      url: "/v1/conversations/{conversationId}/memberships/{userId}",
+      path: {
+        conversationId: data.conversationId,
+        userId: data.userId,
       },
       body: data.requestBody,
       mediaType: "application/json",
@@ -476,37 +458,6 @@ export class ConversationsService {
     });
   }
 
-  /**
-   * Cancel an in-progress response
-   * Requests cancellation of an in-progress response stream for the conversation.
-   * Requires WRITER access and an authenticated user session.
-   * @param data The data for the request.
-   * @param data.conversationId
-   * @returns unknown Cancel request accepted.
-   * @returns ErrorResponse Error response
-   * @throws ApiError
-   */
-  public static cancelConversationResponse(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["req"],
-  ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["res"][200]
-  > {
-    return __request(OpenAPI, {
-      method: "POST",
-      url: "/v1/conversations/{conversationId}/cancel-response",
-      path: {
-        conversationId: data.conversationId,
-      },
-      errors: {
-        404: "Resource not found",
-        409: "Error response",
-      },
-    });
-  }
-}
-
-export class UserConversationsService {
   /**
    * Remove a member from the conversation
    * @param data The data for the request.
@@ -558,6 +509,38 @@ export class SearchService {
       url: "/v1/user/search/messages",
       body: data.requestBody,
       mediaType: "application/json",
+    });
+  }
+
+  /**
+   * Store a summarization of previous messages
+   * Stores an internal summarization of previous messages in the conversation.
+   * Summary messages are not visible in user-facing message lists.
+   * Requires a valid agent API key.
+   * @param data The data for the request.
+   * @param data.conversationId
+   * @param data.requestBody
+   * @returns ErrorResponse Error response
+   * @returns Message The created summary message.
+   * @throws ApiError
+   */
+  public static createConversationSummary(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/summaries"]["post"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/conversations/{conversationId}/summaries"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/summaries"]["post"]["res"][201]
+  > {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/v1/conversations/{conversationId}/summaries",
+      path: {
+        conversationId: data.conversationId,
+      },
+      body: data.requestBody,
+      mediaType: "application/json",
+      errors: {
+        404: "Resource not found",
+      },
     });
   }
 }

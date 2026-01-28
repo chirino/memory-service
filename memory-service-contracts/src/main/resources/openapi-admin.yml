@@ -9,7 +9,33 @@ info:
 tags:
   - name: Admin
     description: Administrative APIs for system-wide access to conversations and messages.
+  - name: System
+    description: Health Endpoints
 paths:
+
+  ############################################################
+  # System
+  ############################################################
+
+  /v1/health:
+    get:
+      tags: [System]
+      summary: Health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        default:
+          $ref: '#/components/responses/Error'
+
   /v1/admin/conversations:
     get:
       tags: [Admin]

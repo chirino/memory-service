@@ -4,8 +4,7 @@ import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
 import io.github.chirino.memoryservice.client.MemoryServiceProxy;
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
 import io.github.chirino.memoryservice.client.api.SearchApi;
-import io.github.chirino.memoryservice.client.api.SystemApi;
-import io.github.chirino.memoryservice.client.api.UserConversationsApi;
+import io.github.chirino.memoryservice.client.api.SharingApi;
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
 import io.github.chirino.memoryservice.client.invoker.auth.Authentication;
 import io.github.chirino.memoryservice.client.invoker.auth.HttpBearerAuth;
@@ -114,20 +113,14 @@ public class MemoryServiceAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public UserConversationsApi userConversationsApi(ApiClient apiClient) {
-        return new UserConversationsApi(apiClient);
+    public SharingApi sharingApi(ApiClient apiClient) {
+        return new SharingApi(apiClient);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public SearchApi searchApi(ApiClient apiClient) {
         return new SearchApi(apiClient);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public SystemApi systemApi(ApiClient apiClient) {
-        return new SystemApi(apiClient);
     }
 
     @Bean
