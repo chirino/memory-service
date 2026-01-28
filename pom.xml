@@ -131,6 +131,10 @@
         <version>${compiler-plugin.version}</version>
         <configuration>
           <parameters>true</parameters>
+          <compilerArgs>
+            <arg>-Xlint:-options</arg>
+            <arg>-Xlint:unchecked</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
       <plugin>

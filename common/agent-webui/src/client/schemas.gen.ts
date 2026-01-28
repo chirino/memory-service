@@ -70,9 +70,6 @@ export const $Conversation = {
     {
       type: "object",
       properties: {
-        conversationGroupId: {
-          type: "string",
-        },
         forkedAtMessageId: {
           type: "string",
           nullable: true,
@@ -88,9 +85,8 @@ export const $Conversation = {
         ownerUserId: "user_1234",
         createdAt: "2025-01-10T14:32:05Z",
         updatedAt: "2025-01-10T14:45:12Z",
-        lastMessagePreview: "Let’s try modeling forks as separate conversations…",
+        lastMessagePreview: "Let's try modeling forks as separate conversations…",
         accessLevel: "owner",
-        conversationGroupId: "conv_01HF8XH1XABCD1234EFGH5678",
         forkedAtMessageId: null,
         forkedAtConversationId: null,
       },
@@ -122,7 +118,7 @@ export const $CreateConversationRequest = {
 export const $ConversationMembership = {
   type: "object",
   properties: {
-    conversationGroupId: {
+    conversationId: {
       type: "string",
     },
     userId: {
@@ -144,10 +140,6 @@ export const $ConversationForkSummary = {
   properties: {
     conversationId: {
       type: "string",
-    },
-    conversationGroupId: {
-      type: "string",
-      description: "Conversation group id shared by this branch.",
     },
     forkedAtMessageId: {
       type: "string",

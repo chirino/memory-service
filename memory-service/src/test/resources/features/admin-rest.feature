@@ -148,3 +148,15 @@ Feature: Admin REST API
     """
     Then the response status should be 200
     And all search results should have conversation owned by "bob"
+
+  Scenario: Admin conversation response does not contain conversationGroupId
+    When I call GET "/v1/admin/conversations/${bobConversationId}"
+    Then the response status should be 200
+    And the response body should not contain "conversationGroupId"
+
+  Scenario: Admin membership response contains conversationId
+    When I call GET "/v1/admin/conversations/${bobConversationId}/memberships"
+    Then the response status should be 200
+    And the response should contain at least 1 memberships
+    And the response body "data[0].conversationId" should be "${bobConversationId}"
+    And the response body should not contain "conversationGroupId"

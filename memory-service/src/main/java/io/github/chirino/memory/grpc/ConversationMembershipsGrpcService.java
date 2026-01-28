@@ -31,7 +31,12 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
                             return ListMembershipsResponse.newBuilder()
                                     .addAllMemberships(
                                             internal.stream()
-                                                    .map(GrpcDtoMapper::toProto)
+                                                    .map(
+                                                            dto ->
+                                                                    GrpcDtoMapper.toProto(
+                                                                            dto,
+                                                                            request
+                                                                                    .getConversationId()))
                                                     .collect(Collectors.toList()))
                                     .build();
                         })
@@ -54,7 +59,7 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
                                                     currentUserId(),
                                                     request.getConversationId(),
                                                     internal);
-                            return GrpcDtoMapper.toProto(dto);
+                            return GrpcDtoMapper.toProto(dto, request.getConversationId());
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
@@ -75,7 +80,7 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
                                                     request.getConversationId(),
                                                     request.getMemberUserId(),
                                                     internal);
-                            return GrpcDtoMapper.toProto(dto);
+                            return GrpcDtoMapper.toProto(dto, request.getConversationId());
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);

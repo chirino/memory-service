@@ -19,7 +19,7 @@ Feature: Conversation Sharing gRPC API
     And the gRPC response field "accessLevel" should be "WRITER"
     And the gRPC response text should match text proto:
     """
-    conversation_group_id: "${response.body.conversationGroupId}"
+    conversation_id: "${conversationId}"
     user_id: "bob"
     access_level: WRITER
     """
@@ -82,7 +82,7 @@ Feature: Conversation Sharing gRPC API
     And the gRPC response field "accessLevel" should be "WRITER"
     And the gRPC response text should match text proto:
     """
-    conversation_group_id: "${response.body.conversationGroupId}"
+    conversation_id: "${conversationId}"
     user_id: "bob"
     access_level: WRITER
     """
@@ -184,3 +184,14 @@ Feature: Conversation Sharing gRPC API
     new_owner_user_id: "charlie"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
+
+  Scenario: Membership response contains conversation_id instead of conversation_group_id via gRPC
+    When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
+    """
+    conversation_id: "${conversationId}"
+    user_id: "bob"
+    access_level: WRITER
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "conversationId" should be "${conversationId}"
+    And the gRPC response should not contain field "conversationGroupId"

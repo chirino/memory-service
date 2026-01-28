@@ -1,10 +1,14 @@
 package io.github.chirino.memory.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.github.chirino.memory.model.AccessLevel;
 
 public class ConversationMembershipDto {
 
-    private String conversationGroupId;
+    // Internal field - not exposed in API responses
+    @JsonIgnore private String conversationGroupId;
+    // Public field - exposed in API responses
+    private String conversationId;
     private String userId;
     private AccessLevel accessLevel;
     private String createdAt;
@@ -15,6 +19,14 @@ public class ConversationMembershipDto {
 
     public void setConversationGroupId(String conversationGroupId) {
         this.conversationGroupId = conversationGroupId;
+    }
+
+    public String getConversationId() {
+        return conversationId;
+    }
+
+    public void setConversationId(String conversationId) {
+        this.conversationId = conversationId;
     }
 
     public String getUserId() {

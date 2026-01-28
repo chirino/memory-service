@@ -68,8 +68,7 @@ public final class GrpcDtoMapper {
                 .setLastMessagePreview(
                         dto.getLastMessagePreview() == null ? "" : dto.getLastMessagePreview())
                 .setAccessLevel(accessLevelToProto(dto.getAccessLevel()))
-                .setConversationGroupId(
-                        dto.getConversationGroupId() == null ? "" : dto.getConversationGroupId())
+                // conversation_group_id is not exposed in API responses
                 .setForkedAtMessageId(
                         dto.getForkedAtMessageId() == null ? "" : dto.getForkedAtMessageId())
                 .setForkedAtConversationId(
@@ -79,13 +78,13 @@ public final class GrpcDtoMapper {
                 .build();
     }
 
-    public static ConversationMembership toProto(ConversationMembershipDto dto) {
+    public static ConversationMembership toProto(
+            ConversationMembershipDto dto, String conversationId) {
         if (dto == null) {
             return null;
         }
         return ConversationMembership.newBuilder()
-                .setConversationGroupId(
-                        dto.getConversationGroupId() == null ? "" : dto.getConversationGroupId())
+                .setConversationId(conversationId == null ? "" : conversationId)
                 .setUserId(dto.getUserId() == null ? "" : dto.getUserId())
                 .setAccessLevel(accessLevelToProto(dto.getAccessLevel()))
                 .setCreatedAt(dto.getCreatedAt() == null ? "" : dto.getCreatedAt())
@@ -98,8 +97,7 @@ public final class GrpcDtoMapper {
         }
         return ConversationForkSummary.newBuilder()
                 .setConversationId(dto.getConversationId() == null ? "" : dto.getConversationId())
-                .setConversationGroupId(
-                        dto.getConversationGroupId() == null ? "" : dto.getConversationGroupId())
+                // conversation_group_id is not exposed in API responses
                 .setForkedAtMessageId(
                         dto.getForkedAtMessageId() == null ? "" : dto.getForkedAtMessageId())
                 .setForkedAtConversationId(
@@ -300,8 +298,8 @@ public final class GrpcDtoMapper {
         }
         if (node.isObject()) {
             Struct.Builder struct = Struct.newBuilder();
-            node.fields()
-                    .forEachRemaining(
+            node.properties()
+                    .forEach(
                             entry ->
                                     struct.putFields(
                                             entry.getKey(), jsonNodeToValue(entry.getValue())));

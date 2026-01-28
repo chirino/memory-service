@@ -22,8 +22,7 @@ Feature: Conversations REST API
       "ownerUserId": "alice",
       "createdAt": "${response.body.createdAt}",
       "updatedAt": "${response.body.updatedAt}",
-      "accessLevel": "owner",
-      "conversationGroupId": "${response.body.conversationGroupId}"
+      "accessLevel": "owner"
     }
     """
 
@@ -47,8 +46,7 @@ Feature: Conversations REST API
       "ownerUserId": "alice",
       "createdAt": "${response.body.createdAt}",
       "updatedAt": "${response.body.updatedAt}",
-      "accessLevel": "owner",
-      "conversationGroupId": "${response.body.conversationGroupId}"
+      "accessLevel": "owner"
     }
     """
 
@@ -115,8 +113,7 @@ Feature: Conversations REST API
       "ownerUserId": "alice",
       "createdAt": "${response.body.createdAt}",
       "updatedAt": "${response.body.updatedAt}",
-      "accessLevel": "owner",
-      "conversationGroupId": "${response.body.conversationGroupId}"
+      "accessLevel": "owner"
     }
     """
 
@@ -164,7 +161,7 @@ Feature: Conversations REST API
 
   Scenario: Soft delete cascades to conversation group and memberships
     Given I have a conversation with title "Test Conversation"
-    And set "groupId" to "${conversationGroupId}"
+    And I resolve the conversation group ID for conversation "${conversationId}" into "groupId"
     When I delete the conversation
     Then the response status should be 204
     # Verify conversation group is soft deleted
@@ -202,3 +199,51 @@ Feature: Conversations REST API
     When I delete that conversation
     Then the response status should be 403
     And the response should contain error code "forbidden"
+
+  Scenario: Conversation response does not contain conversationGroupId
+    When I create a conversation with request:
+    """
+    {
+      "title": "Test Conversation"
+    }
+    """
+    Then the response status should be 201
+    And the response body should not contain "conversationGroupId"
+
+  Scenario: Deleting a conversation deletes all forks
+    Given I have a conversation with title "Root Conversation"
+    And set "rootConversationId" to "${conversationId}"
+    And I append a message to the conversation:
+    """
+    {
+      "content": [{"type": "text", "text": "First message"}]
+    }
+    """
+    And set "messageId" to "${response.body.id}"
+    When I fork the conversation at message "${messageId}"
+    And set "forkConversationId" to "${response.body.id}"
+    And I delete conversation "${rootConversationId}"
+    Then the response status should be 204
+    When I get conversation "${rootConversationId}"
+    Then the response status should be 404
+    When I get conversation "${forkConversationId}"
+    Then the response status should be 404
+
+  Scenario: Deleting a fork deletes the entire fork tree
+    Given I have a conversation with title "Root Conversation"
+    And set "rootConversationId" to "${conversationId}"
+    And I append a message to the conversation:
+    """
+    {
+      "content": [{"type": "text", "text": "First message"}]
+    }
+    """
+    And set "messageId" to "${response.body.id}"
+    When I fork the conversation at message "${messageId}"
+    And set "forkConversationId" to "${response.body.id}"
+    And I delete conversation "${forkConversationId}"
+    Then the response status should be 204
+    When I get conversation "${rootConversationId}"
+    Then the response status should be 404
+    When I get conversation "${forkConversationId}"
+    Then the response status should be 404

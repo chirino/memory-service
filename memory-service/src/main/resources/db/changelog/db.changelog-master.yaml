@@ -35,3 +35,14 @@ databaseChangeLog:
                   ON message_embeddings
                   USING ivfflat (embedding vector_cosine_ops)
                   WITH (lists = 100);
+  - changeSet:
+      id: 3-eviction-indexes
+      author: memory-service
+      changes:
+        - sql:
+            splitStatements: true
+            sql: |
+              CREATE INDEX IF NOT EXISTS idx_conversation_groups_deleted
+                  ON conversation_groups (deleted_at) WHERE deleted_at IS NOT NULL;
+              CREATE INDEX IF NOT EXISTS idx_conversation_memberships_deleted
+                  ON conversation_memberships (deleted_at) WHERE deleted_at IS NOT NULL;

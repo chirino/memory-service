@@ -61,7 +61,7 @@ Feature: Messages REST API
     And the response should contain 2 messages
     And the response should have a nextCursor
 
-  Scenario: Agent can append messages to conversation
+  Scenario: Agent can append memory messages to conversation
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists
     When I append a message with content "Agent response" and channel "MEMORY"
@@ -85,10 +85,10 @@ Feature: Messages REST API
     }
     """
 
-  Scenario: User cannot append messages via API
+  Scenario: User cannot append memeory messages to conversation
     Given I am authenticated as user "alice"
     And the conversation exists
-    When I try to append a message with content "User message"
+    When I append a message with content "User message" and channel "MEMORY"
     Then the response status should be 403
     And the response should contain error code "forbidden"
     And the response body should be json:

@@ -35,8 +35,7 @@ Response:
   "ownerUserId": "user_1234",
   "createdAt": "2025-01-10T14:32:05Z",
   "updatedAt": "2025-01-10T14:32:05Z",
-  "accessLevel": "owner",
-  "conversationGroupId": "conv_01HF8XH1XABCD1234EFGH5678"
+  "accessLevel": "owner"
 }
 ```
 
@@ -61,6 +60,8 @@ curl -X DELETE http://localhost:8080/v1/conversations/{conversationId} \
   -H "Authorization: Bearer <token>"
 ```
 
+**Note:** Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks), along with their messages and memberships.
+
 ## Conversation Properties
 
 | Property | Description |
@@ -72,7 +73,6 @@ curl -X DELETE http://localhost:8080/v1/conversations/{conversationId} \
 | `updatedAt` | Last modification timestamp |
 | `lastMessagePreview` | Preview of the last message |
 | `accessLevel` | Current user's access level (`owner`, `manager`, `writer`, `reader`) |
-| `conversationGroupId` | Group ID shared by forked conversations |
 | `forkedAtConversationId` | ID of conversation this was forked from (if forked) |
 | `forkedAtMessageId` | Message ID where the fork occurred (if forked) |
 

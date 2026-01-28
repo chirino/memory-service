@@ -155,6 +155,8 @@ paths:
       summary: Delete a conversation
       description: |-
         Deletes a conversation. Only the owner (or manager, depending on policy) may delete.
+        
+        **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
       operationId: deleteConversation
       parameters:
         - name: conversationId
@@ -741,8 +743,6 @@ components:
         - $ref: '#/components/schemas/ConversationSummary'
         - type: object
           properties:
-            conversationGroupId:
-              type: string
             forkedAtMessageId:
               type: string
               nullable: true
@@ -755,9 +755,8 @@ components:
             ownerUserId: "user_1234"
             createdAt: "2025-01-10T14:32:05Z"
             updatedAt: "2025-01-10T14:45:12Z"
-            lastMessagePreview: "Let’s try modeling forks as separate conversations…"
+            lastMessagePreview: "Let's try modeling forks as separate conversations…"
             accessLevel: "owner"
-            conversationGroupId: "conv_01HF8XH1XABCD1234EFGH5678"
             forkedAtMessageId: null
             forkedAtConversationId: null
 
@@ -779,7 +778,7 @@ components:
     ConversationMembership:
       type: object
       properties:
-        conversationGroupId:
+        conversationId:
           type: string
         userId:
           type: string
@@ -795,9 +794,6 @@ components:
       properties:
         conversationId:
           type: string
-        conversationGroupId:
-          type: string
-          description: Conversation group id shared by this branch.
         forkedAtMessageId:
           type: string
           description: Message id at which this forked conversation diverged.
