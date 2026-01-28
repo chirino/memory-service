@@ -1,5 +1,6 @@
 package io.github.chirino.memory.cucumber;
 
+import static io.github.chirino.memory.cucumber.StepUsageTracker.trackUsage;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -224,6 +225,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("I am authenticated as user {string}")
     public void iAmAuthenticatedAsUser(String userId) {
+        trackUsage();
         this.currentUserId = userId;
         this.currentApiKey = null;
         // We'll use KeycloakTestClient to get a real token when making requests
@@ -231,12 +233,14 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("I am authenticated as agent with API key {string}")
     public void iAmAuthenticatedAsAgentWithApiKey(String apiKey) {
+        trackUsage();
         this.currentUserId = "alice"; // Default user for agent context
         this.currentApiKey = apiKey;
     }
 
     @io.cucumber.java.en.Given("I have a conversation with title {string}")
     public void iHaveAConversationWithTitle(String title) {
+        trackUsage();
         CreateConversationRequest request = new CreateConversationRequest();
         request.setTitle(title);
         ConversationDto conversation =
@@ -251,6 +255,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("the conversation exists")
     public void theConversationExists() {
+        trackUsage();
         if (this.conversationId == null) {
             iHaveAConversationWithTitle("Test Conversation");
         }
@@ -258,6 +263,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("the conversation id is {string}")
     public void theConversationIdIs(String id) {
+        trackUsage();
         this.conversationId = id;
         try {
             memoryStoreSelector.getStore().deleteConversation(currentUserId, id);
@@ -269,11 +275,13 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("the conversation has no entries")
     public void theConversationHasNoEntries() {
+        trackUsage();
         // Conversation already exists from background, no action needed
     }
 
     @io.cucumber.java.en.Given("the conversation has an entry {string}")
     public void theConversationHasAnEntry(String content) {
+        trackUsage();
         CreateUserEntryRequest request = new CreateUserEntryRequest();
         request.setContent(content);
         memoryStoreSelector.getStore().appendUserEntry(currentUserId, conversationId, request);
@@ -281,6 +289,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("the conversation has {int} entries")
     public void theConversationHasEntries(int count) {
+        trackUsage();
         for (int i = 1; i <= count; i++) {
             theConversationHasAnEntry("Entry " + i);
         }
@@ -288,6 +297,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("the conversation has an entry {string} in channel {string}")
     public void theConversationHasAnEntryInChannel(String content, String channel) {
+        trackUsage();
         CreateEntryRequest request = new CreateEntryRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
         request.setChannel(CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase()));
@@ -302,23 +312,11 @@ public class StepDefinitions {
             "the conversation has an entry {string} in channel {string} with contentType {string}")
     public void theConversationHasAnEntryInChannelWithContentType(
             String content, String channel, String contentType) {
+        trackUsage();
         CreateEntryRequest request = new CreateEntryRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
         request.setChannel(CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase()));
         request.setContentType(contentType);
-        memoryStoreSelector
-                .getStore()
-                .appendAgentEntries(
-                        currentUserId, conversationId, List.of(request), resolveClientId());
-    }
-
-    @io.cucumber.java.en.Given("the conversation has a memory entry {string} with epoch {int}")
-    public void theConversationHasAMemoryEntryWithEpoch(String content, int epoch) {
-        CreateEntryRequest request = new CreateEntryRequest();
-        request.setContent(List.of(Map.of("type", "text", "text", content)));
-        request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
-        request.setEpoch((long) epoch);
-        request.setContentType("test.v1");
         memoryStoreSelector
                 .getStore()
                 .appendAgentEntries(
@@ -330,6 +328,7 @@ public class StepDefinitions {
                     + " {string}")
     public void theConversationHasAMemoryEntryWithEpochAndContentType(
             String content, int epoch, String contentType) {
+        trackUsage();
         CreateEntryRequest request = new CreateEntryRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
         request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
@@ -343,6 +342,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("I have streamed tokens {string} to the conversation")
     public void iHaveStreamedTokensToTheConversation(String tokens) throws Exception {
+        trackUsage();
         // Stream tokens character by character to simulate token streaming
         Metadata metadata = buildGrpcMetadata();
         var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
@@ -389,6 +389,7 @@ public class StepDefinitions {
         Metadata metadata = buildGrpcMetadata();
         var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
         if (metadata != null) {
+            trackUsage();
             mutinyStub =
                     mutinyStub.withInterceptors(
                             MetadataUtils.newAttachHeadersInterceptor(metadata));
@@ -482,6 +483,7 @@ public class StepDefinitions {
         Metadata metadata = buildGrpcMetadata();
         var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
         if (metadata != null) {
+            trackUsage();
             mutinyStub =
                     mutinyStub.withInterceptors(
                             MetadataUtils.newAttachHeadersInterceptor(metadata));
@@ -596,6 +598,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("I wait for the response stream to send at least {int} tokens")
     public void iWaitForTheResponseStreamToSendAtLeastTokens(int count)
             throws InterruptedException {
+        trackUsage();
         if (streamStartedLatch == null || streamedTokenCount == null) {
             throw new AssertionError("No response stream is in progress");
         }
@@ -617,6 +620,7 @@ public class StepDefinitions {
                     + " {string}")
     public void iReplayResponseTokensFromBeginningInSecondSessionAndCollectTokens(
             String expectedTokens) {
+        trackUsage();
         if (inProgressStreamResponse == null) {
             throw new AssertionError("No in-progress response stream found");
         }
@@ -673,6 +677,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the replay should start before the stream completes")
     public void theReplayShouldStartBeforeTheStreamCompletes() {
+        trackUsage();
         long replayStarted = replayFirstTokenAtNs.get();
         if (replayStarted == 0) {
             throw new AssertionError("Replay did not receive any tokens");
@@ -685,6 +690,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("I wait for the response stream to complete")
     public void iWaitForTheResponseStreamToComplete() {
+        trackUsage();
         if (inProgressStreamResponse == null) {
             throw new AssertionError("No response stream is in progress");
         }
@@ -697,6 +703,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("there is a conversation owned by {string}")
     public void thereIsAConversationOwnedBy(String ownerId) {
+        trackUsage();
         CreateConversationRequest request = new CreateConversationRequest();
         request.setTitle("Owned by " + ownerId);
         this.conversationId =
@@ -707,32 +714,38 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I list entries for the conversation")
     public void iListEntriesForTheConversation() {
+        trackUsage();
         iListEntriesForTheConversationWithParams(null, null, null, null);
     }
 
     @io.cucumber.java.en.When("I list entries with limit {int}")
     public void iListEntriesWithLimit(int limit) {
+        trackUsage();
         iListEntriesForTheConversationWithParams(null, limit, null, null);
     }
 
     @io.cucumber.java.en.When("I list entries for the conversation with channel {string}")
     public void iListEntriesForTheConversationWithChannel(String channel) {
+        trackUsage();
         iListEntriesForTheConversationWithParams(null, null, channel, null);
     }
 
     @io.cucumber.java.en.When("I list memory entries for the conversation with epoch {string}")
     public void iListMemoryEntriesForTheConversationWithEpoch(String epoch) {
+        trackUsage();
         iListEntriesForTheConversationWithParams(null, null, "MEMORY", epoch);
     }
 
     @io.cucumber.java.en.When("I list entries for conversation {string}")
     public void iListEntriesForConversation(String convId) {
+        trackUsage();
         this.conversationId = convId;
         iListEntriesForTheConversation();
     }
 
     @io.cucumber.java.en.When("I list entries for that conversation")
     public void iListEntriesForThatConversation() {
+        trackUsage();
         iListEntriesForTheConversation();
     }
 
@@ -756,26 +769,12 @@ public class StepDefinitions {
         this.lastResponse = request.get("/v1/conversations/{id}/entries", conversationId);
     }
 
-    @io.cucumber.java.en.When("I append an entry with content {string} and channel {string}")
-    public void iAppendAnEntryWithContentAndChannel(String content, String channel) {
-        var requestSpec =
-                given().contentType(MediaType.APPLICATION_JSON)
-                        .body(
-                                Map.of(
-                                        "content",
-                                        List.of(Map.of("type", "text", "text", content)),
-                                        "channel",
-                                        channel));
-        requestSpec = authenticateRequest(requestSpec);
-        this.lastResponse =
-                requestSpec.when().post("/v1/conversations/{id}/entries", conversationId);
-    }
-
     @io.cucumber.java.en.When(
             "I append an entry with content {string} and channel {string} and contentType"
                     + " {string}")
     public void iAppendAnEntryWithContentAndChannelAndContentType(
             String content, String channel, String contentType) {
+        trackUsage();
         var requestSpec =
                 given().contentType(MediaType.APPLICATION_JSON)
                         .body(
@@ -791,18 +790,9 @@ public class StepDefinitions {
                 requestSpec.when().post("/v1/conversations/{id}/entries", conversationId);
     }
 
-    @io.cucumber.java.en.When("I try to append an entry with content {string}")
-    public void iTryToAppendAnEntryWithContent(String content) {
-        var requestSpec =
-                given().contentType(MediaType.APPLICATION_JSON)
-                        .body(Map.of("content", List.of(Map.of("type", "text", "text", content))));
-        requestSpec = authenticateRequest(requestSpec);
-        this.lastResponse =
-                requestSpec.when().post("/v1/conversations/{id}/entries", conversationId);
-    }
-
     @io.cucumber.java.en.And("I append an entry to the conversation:")
     public void iAppendAnEntryToTheConversation(String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -812,6 +802,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I sync memory entries with request:")
     public void iSyncMemoryEntriesWithRequest(String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -823,6 +814,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the sync response should contain {int} entries")
     public void theSyncResponseShouldContainEntries(int count) {
+        trackUsage();
         if (lastResponse == null) {
             throw new AssertionError("No response has been received");
         }
@@ -838,6 +830,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I create a summary with request:")
     public void iCreateASummaryWithRequest(String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -847,6 +840,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I search entries with request:")
     public void iSearchEntriesWithRequest(String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -855,11 +849,13 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the search response should contain at least {int} results")
     public void theSearchResponseShouldContainAtLeastResults(int minCount) {
+        trackUsage();
         lastResponse.then().body("data.size()", greaterThan(minCount - 1));
     }
 
     @io.cucumber.java.en.When("I search entries for query {string}")
     public void iSearchEntriesForQuery(String query) {
+        trackUsage();
         var requestSpec =
                 given().contentType(MediaType.APPLICATION_JSON).body(Map.of("query", query));
         requestSpec = authenticateRequest(requestSpec);
@@ -868,6 +864,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I create a conversation with request:")
     public void iCreateAConversationWithRequest(String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -886,21 +883,25 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I list conversations")
     public void iListConversations() {
+        trackUsage();
         iListConversationsWithParams(null, null, null);
     }
 
     @io.cucumber.java.en.When("I list conversations with limit {int}")
     public void iListConversationsWithLimit(int limit) {
+        trackUsage();
         iListConversationsWithParams(null, limit, null);
     }
 
     @io.cucumber.java.en.When("I list conversations with limit {int} and after {string}")
     public void iListConversationsWithLimitAndAfter(int limit, String after) {
+        trackUsage();
         iListConversationsWithParams(after, limit, null);
     }
 
     @io.cucumber.java.en.When("I list conversations with query {string}")
     public void iListConversationsWithQuery(String query) {
+        trackUsage();
         iListConversationsWithParams(null, null, query);
     }
 
@@ -922,11 +923,13 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I get the conversation")
     public void iGetTheConversation() {
+        trackUsage();
         iGetConversation(conversationId);
     }
 
     @io.cucumber.java.en.When("I get conversation {string}")
     public void iGetConversation(String convId) {
+        trackUsage();
         String renderedConvId = renderTemplate(convId);
         // Strip quotes if present (RestAssured path parameters shouldn't have quotes)
         if (renderedConvId.startsWith("\"") && renderedConvId.endsWith("\"")) {
@@ -939,16 +942,19 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I get that conversation")
     public void iGetThatConversation() {
+        trackUsage();
         iGetTheConversation();
     }
 
     @io.cucumber.java.en.When("I delete the conversation")
     public void iDeleteTheConversation() {
+        trackUsage();
         iDeleteConversation(conversationId);
     }
 
     @io.cucumber.java.en.When("I delete conversation {string}")
     public void iDeleteConversation(String convId) {
+        trackUsage();
         // Render template to resolve variables like "${rootConversationId}"
         String renderedConvId = renderTemplate(convId);
         // Remove quotes if present (from template rendering)
@@ -962,12 +968,14 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I delete that conversation")
     public void iDeleteThatConversation() {
+        trackUsage();
         iDeleteTheConversation();
     }
 
     @io.cucumber.java.en.When("I transfer ownership of the conversation to {string} with request:")
     public void iTransferOwnershipOfTheConversationToWithRequest(
             String newOwner, String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -981,6 +989,7 @@ public class StepDefinitions {
             "I transfer ownership of conversation {string} to {string} with request:")
     public void iTransferOwnershipOfConversationToWithRequest(
             String convId, String newOwner, String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -991,26 +1000,31 @@ public class StepDefinitions {
     @io.cucumber.java.en.When("I transfer ownership of that conversation to {string} with request:")
     public void iTransferOwnershipOfThatConversationToWithRequest(
             String newOwner, String requestBody) {
+        trackUsage();
         iTransferOwnershipOfTheConversationToWithRequest(newOwner, requestBody);
     }
 
     @io.cucumber.java.en.Then("the response should contain at least {int} conversations")
     public void theResponseShouldContainAtLeastConversations(int minCount) {
+        trackUsage();
         lastResponse.then().body("data.size()", greaterThan(minCount - 1));
     }
 
     @io.cucumber.java.en.Then("the response should contain at least {int} conversation")
     public void theResponseShouldContainAtLeastConversation(int minCount) {
+        trackUsage();
         theResponseShouldContainAtLeastConversations(minCount);
     }
 
     @io.cucumber.java.en.Then("the response should contain at least {int} memberships")
     public void theResponseShouldContainAtLeastMemberships(int minCount) {
+        trackUsage();
         lastResponse.then().body("data.size()", greaterThan(minCount - 1));
     }
 
     @io.cucumber.java.en.Then("the response should contain at least {int} item(s)")
     public void theResponseShouldContainAtLeastItems(int minCount) {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         List<?> data = jsonPath.getList("data");
         int actualSize = data != null ? data.size() : 0;
@@ -1029,29 +1043,34 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the response should contain {int} conversations")
     public void theResponseShouldContainConversations(int count) {
+        trackUsage();
         lastResponse.then().body("data", hasSize(count));
     }
 
     @io.cucumber.java.en.Then("the response body should contain {string}")
     public void theResponseBodyShouldContain(String text) {
+        trackUsage();
         String body = lastResponse.getBody().asString();
         assertThat("Response body should contain: " + text, body, containsString(text));
     }
 
     @io.cucumber.java.en.Then("the response body should not contain {string}")
     public void theResponseBodyShouldNotContain(String text) {
+        trackUsage();
         String body = lastResponse.getBody().asString();
         assertThat("Response body should not contain: " + text, body, not(containsString(text)));
     }
 
     @io.cucumber.java.en.When("I fork the conversation at entry {string}")
     public void iForkTheConversationAtEntry(String entryId) {
+        trackUsage();
         // Fork without a request body (uses empty JSON object)
         iForkTheConversationAtEntryWithRequest(entryId, "{}");
     }
 
     @io.cucumber.java.en.When("I fork the conversation at entry {string} with request:")
     public void iForkTheConversationAtEntryWithRequest(String entryId, String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -1078,6 +1097,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.When("I fork conversation {string} at entry {string} with request:")
     public void iForkConversationAtEntryWithRequest(
             String convId, String entryId, String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -1094,16 +1114,19 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I fork that conversation at entry {string} with request:")
     public void iForkThatConversationAtEntryWithRequest(String entryId, String requestBody) {
+        trackUsage();
         iForkTheConversationAtEntryWithRequest(entryId, requestBody);
     }
 
     @io.cucumber.java.en.When("I list forks for the conversation")
     public void iListForksForTheConversation() {
+        trackUsage();
         iListForksForConversation(conversationId);
     }
 
     @io.cucumber.java.en.When("I list forks for conversation {string}")
     public void iListForksForConversation(String convId) {
+        trackUsage();
         var requestSpec = given();
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().get("/v1/conversations/{id}/forks", convId);
@@ -1111,16 +1134,13 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I list forks for that conversation")
     public void iListForksForThatConversation() {
+        trackUsage();
         iListForksForTheConversation();
-    }
-
-    @io.cucumber.java.en.Then("the response should contain at least {int} forks")
-    public void theResponseShouldContainAtLeastForks(int minCount) {
-        lastResponse.then().body("data.size()", greaterThan(minCount - 1));
     }
 
     @io.cucumber.java.en.When("I share the conversation with user {string} with request:")
     public void iShareTheConversationWithUserWithRequest(String userId, String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
@@ -1130,6 +1150,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.When("I share conversation {string} with user {string} with request:")
     public void iShareConversationWithUserWithRequest(
             String convId, String userId, String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         String renderedConvId = renderTemplate(convId);
         // Strip quotes if present (RestAssured path parameters shouldn't have quotes)
@@ -1143,12 +1164,14 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I share that conversation with user {string} with request:")
     public void iShareThatConversationWithUserWithRequest(String userId, String requestBody) {
+        trackUsage();
         iShareTheConversationWithUserWithRequest(userId, requestBody);
     }
 
     @io.cucumber.java.en.Given(
             "I share the conversation with user {string} and access level {string}")
     public void iShareTheConversationWithUserAndAccessLevel(String userId, String accessLevel) {
+        trackUsage();
         String requestBody =
                 String.format(
                         """
@@ -1163,16 +1186,19 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I authenticate as user {string}")
     public void iAuthenticateAsUser(String userId) {
+        trackUsage();
         iAmAuthenticatedAsUser(userId);
     }
 
     @io.cucumber.java.en.When("I list memberships for the conversation")
     public void iListMembershipsForTheConversation() {
+        trackUsage();
         iListMembershipsForConversation(conversationId);
     }
 
     @io.cucumber.java.en.When("I list memberships for conversation {string}")
     public void iListMembershipsForConversation(String convId) {
+        trackUsage();
         String renderedConvId = renderTemplate(convId);
         // Strip quotes if present (RestAssured path parameters shouldn't have quotes)
         if (renderedConvId.startsWith("\"") && renderedConvId.endsWith("\"")) {
@@ -1195,11 +1221,13 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I list memberships for that conversation")
     public void iListMembershipsForThatConversation() {
+        trackUsage();
         iListMembershipsForTheConversation();
     }
 
     @io.cucumber.java.en.When("I update membership for user {string} with request:")
     public void iUpdateMembershipForUserWithRequest(String userId, String requestBody) {
+        trackUsage();
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         if (currentUserId != null) {
@@ -1220,6 +1248,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I delete membership for user {string}")
     public void iDeleteMembershipForUser(String userId) {
+        trackUsage();
         var requestSpec = given();
         if (currentUserId != null) {
             String token = keycloakClient.getAccessToken(currentUserId);
@@ -1241,6 +1270,7 @@ public class StepDefinitions {
             "the conversation is shared with user {string} with access level {string}")
     @Transactional
     public void theConversationIsSharedWithUserWithAccessLevel(String userId, String accessLevel) {
+        trackUsage();
         // Use the owner of the conversation to share it, not the current user
         // First try to get owner from context (set when conversation was created)
         String ownerId = (String) contextVariables.get("conversationOwner");
@@ -1287,6 +1317,7 @@ public class StepDefinitions {
             "the response should contain a membership for user {string} with access level {string}")
     public void theResponseShouldContainAMembershipForUserWithAccessLevel(
             String userId, String accessLevel) {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         List<Map<String, Object>> memberships = jsonPath.getList("data");
         boolean found =
@@ -1307,6 +1338,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the response should not contain a membership for user {string}")
     public void theResponseShouldNotContainAMembershipForUser(String userId) {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         List<Map<String, Object>> memberships = jsonPath.getList("data");
         boolean found = memberships.stream().anyMatch(m -> userId.equals(m.get("userId")));
@@ -1315,11 +1347,13 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the response should contain {int} membership")
     public void theResponseShouldContainMembership(int count) {
+        trackUsage();
         lastResponse.then().body("data", hasSize(count));
     }
 
     @io.cucumber.java.en.When("I send gRPC request {string} with body:")
     public void iSendGrpcRequestWithBody(String serviceMethod, String body) {
+        trackUsage();
         if (grpcChannel == null) {
             throw new IllegalStateException("gRPC channel is not initialized");
         }
@@ -1346,11 +1380,13 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the response status should be {int}")
     public void theResponseStatusShouldBe(int statusCode) {
+        trackUsage();
         lastResponse.then().statusCode(statusCode);
     }
 
     @io.cucumber.java.en.Then("the response body {string} should be {string}")
     public void theResponseBodyFieldShouldBe(String path, String expected) {
+        trackUsage();
         String renderedExpected = renderTemplate(expected);
         // Handle null values
         if ("null".equals(renderedExpected)) {
@@ -1396,32 +1432,38 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the response should contain an empty list of entries")
     public void theResponseShouldContainAnEmptyListOfEntries() {
+        trackUsage();
         lastResponse.then().body("data", hasSize(0));
     }
 
     @io.cucumber.java.en.Then("the response should contain {int} entries")
     public void theResponseShouldContainEntries(int count) {
+        trackUsage();
         lastResponse.then().body("data", hasSize(count));
     }
 
     @io.cucumber.java.en.Then("the response should contain {int} entry")
     public void theResponseShouldContainEntry(int count) {
+        trackUsage();
         lastResponse.then().body("data", hasSize(count));
     }
 
     @io.cucumber.java.en.Then("the response body field {string} should be {string}")
     public void theResponseBodyFieldShouldBe2(String path, String expected) {
+        trackUsage();
         // Alias for "the response body {string} should be {string}" to match test feature file
         theResponseBodyFieldShouldBe(path, expected);
     }
 
     @io.cucumber.java.en.Then("the search response should contain {int} results")
     public void theSearchResponseShouldContainResults(int count) {
+        trackUsage();
         lastResponse.then().body("data", hasSize(count));
     }
 
     @io.cucumber.java.en.Then("search result at index {int} should have entry content {string}")
     public void searchResultAtIndexShouldHaveEntryContent(int index, String expectedContent) {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         String actualContent = jsonPath.getString("data[" + index + "].entry.content[0].text");
         assertThat(actualContent, is(expectedContent));
@@ -1429,6 +1471,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("entry at index {int} should have content {string}")
     public void entryAtIndexShouldHaveContent(int index, String expectedContent) {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         String actualContent = jsonPath.getString("data[" + index + "].content[0].text");
         assertThat(actualContent, is(expectedContent));
@@ -1436,36 +1479,43 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the response should have a nextCursor")
     public void theResponseShouldHaveANextCursor() {
+        trackUsage();
         lastResponse.then().body("nextCursor", notNullValue());
     }
 
     @io.cucumber.java.en.Then("the response should contain the created entry")
     public void theResponseShouldContainTheCreatedEntry() {
+        trackUsage();
         lastResponse.then().body("id", notNullValue());
     }
 
     @io.cucumber.java.en.Then("the entry should have content {string}")
     public void theEntryShouldHaveContent(String expectedContent) {
+        trackUsage();
         lastResponse.then().body("content[0].text", is(expectedContent));
     }
 
     @io.cucumber.java.en.Then("the entry should have channel {string}")
     public void theEntryShouldHaveChannel(String expectedChannel) {
+        trackUsage();
         lastResponse.then().body("channel", is(expectedChannel.toLowerCase()));
     }
 
     @io.cucumber.java.en.Then("the entry should have contentType {string}")
     public void theEntryShouldHaveContentType(String expectedContentType) {
+        trackUsage();
         lastResponse.then().body("contentType", is(expectedContentType));
     }
 
     @io.cucumber.java.en.Then("the response should contain error code {string}")
     public void theResponseShouldContainErrorCode(String errorCode) {
+        trackUsage();
         lastResponse.then().body("code", is(errorCode));
     }
 
     @io.cucumber.java.en.And("set {string} to {string}")
     public void setContextVariable(String variableName, String valueTemplate) {
+        trackUsage();
         // Check if the template is a simple variable reference like ${foo}
         Matcher m = PLACEHOLDER_PATTERN.matcher(valueTemplate);
         if (m.matches()) {
@@ -1492,6 +1542,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the response should contain {int} conversation")
     public void theResponseShouldContainConversation(int expectedCount) {
+        trackUsage();
         if (lastResponse == null) {
             throw new AssertionError("No HTTP response has been received");
         }
@@ -1505,6 +1556,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("set {string} to the json response field {string}")
     public void setContextVariableToJsonResponseField(String variableName, String path) {
+        trackUsage();
         if (lastResponse == null) {
             throw new AssertionError("No HTTP response has been received");
         }
@@ -1519,23 +1571,19 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the gRPC response should contain {int} entry")
     public void theGrpcResponseShouldContainEntry(int count) {
+        trackUsage();
         assertGrpcEntryCount(count);
     }
 
     @io.cucumber.java.en.Then("the gRPC response should contain {int} entries")
     public void theGrpcResponseShouldContainEntries(int count) {
+        trackUsage();
         assertGrpcEntryCount(count);
-    }
-
-    @io.cucumber.java.en.Then("gRPC entry at index {int} should have content {string}")
-    public void grpcEntryAtIndexShouldHaveContent(int index, String expectedContent) {
-        JsonPath jsonPath = ensureGrpcJsonPath();
-        String actualContent = jsonPath.getString("data[" + index + "].content[0].text");
-        assertThat(actualContent, is(expectedContent));
     }
 
     @io.cucumber.java.en.Then("the gRPC response field {string} should be {string}")
     public void theGrpcResponseFieldShouldBe(String path, String expected) {
+        trackUsage();
         JsonPath jsonPath = ensureGrpcJsonPath();
         String renderedExpected = renderTemplate(expected);
         // Remove quotes if the rendered expected is a quoted string
@@ -1556,6 +1604,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the gRPC response field {string} should not be null")
     public void theGrpcResponseFieldShouldNotBeNull(String path) {
+        trackUsage();
         JsonPath jsonPath = ensureGrpcJsonPath();
         Object value = jsonPath.get(path);
         assertThat("gRPC response field '" + path + "' should not be null", value, notNullValue());
@@ -1563,6 +1612,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the gRPC response should not contain field {string}")
     public void theGrpcResponseShouldNotContainField(String path) {
+        trackUsage();
         JsonPath jsonPath = ensureGrpcJsonPath();
         try {
             Object value = jsonPath.get(path);
@@ -1579,20 +1629,9 @@ public class StepDefinitions {
         }
     }
 
-    @io.cucumber.java.en.Then("the gRPC response field {string} should be empty")
-    public void theGrpcResponseFieldShouldBeEmpty(String path) {
-        JsonPath jsonPath = ensureGrpcJsonPath();
-        Object value = jsonPath.get(path);
-        if (value == null) {
-            throw new AssertionError(
-                    "gRPC response field '" + path + "' is null or does not exist");
-        }
-        String actual = String.valueOf(value);
-        assertThat("gRPC response field '" + path + "' should be empty", actual, is(""));
-    }
-
     @io.cucumber.java.en.Then("set {string} to the gRPC response field {string}")
     public void setContextVariableToGrpcResponseField(String variableName, String path) {
+        trackUsage();
         JsonPath jsonPath = ensureGrpcJsonPath();
         Object value = jsonPath.get(path);
         if (value == null) {
@@ -1602,24 +1641,9 @@ public class StepDefinitions {
         contextVariables.put(variableName, value);
     }
 
-    @io.cucumber.java.en.Then("the gRPC response text should contain:")
-    public void theGrpcResponseTextShouldContain(String expectedText) {
-        if (lastGrpcResponseText == null) {
-            throw new AssertionError("No gRPC response has been captured yet");
-        }
-        String rendered = renderTemplate(expectedText).trim();
-        String actual = lastGrpcResponseText.trim();
-        if (!actual.contains(rendered)) {
-            throw new AssertionError(
-                    "Expected gRPC response text to contain:\n"
-                            + rendered
-                            + "\nActual response text:\n"
-                            + actual);
-        }
-    }
-
     @io.cucumber.java.en.Then("the gRPC response text should match text proto:")
     public void theGrpcResponseTextShouldMatchTextProto(String expectedText) {
+        trackUsage();
         if (lastGrpcResponseJson == null) {
             throw new AssertionError("No gRPC response has been captured yet");
         }
@@ -1651,6 +1675,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the gRPC response should have status {string}")
     public void theGrpcResponseShouldHaveStatus(String expectedStatus) {
+        trackUsage();
         if (lastGrpcError == null) {
             throw new AssertionError(
                     "Expected gRPC error with status " + expectedStatus + " but no error occurred");
@@ -1666,6 +1691,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the gRPC response should not have an error")
     public void theGrpcResponseShouldNotHaveAnError() {
+        trackUsage();
         if (lastGrpcError != null) {
             throw new AssertionError(
                     "Expected no gRPC error but got: " + lastGrpcError.getMessage(), lastGrpcError);
@@ -1677,6 +1703,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the gRPC response field {string} should be true")
     public void theGrpcResponseFieldShouldBeTrue(String fieldPath) {
+        trackUsage();
         JsonPath jsonPath = ensureGrpcJsonPath();
         Boolean value = jsonPath.get(fieldPath);
         assertThat("gRPC response field " + fieldPath, value, is(true));
@@ -1684,6 +1711,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the gRPC response field {string} should be false")
     public void theGrpcResponseFieldShouldBeFalse(String fieldPath) {
+        trackUsage();
         JsonPath jsonPath = ensureGrpcJsonPath();
         Boolean value = jsonPath.get(fieldPath);
         assertThat("gRPC response field " + fieldPath, value, is(false));
@@ -1691,6 +1719,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the gRPC response field {string} should be {int}")
     public void theGrpcResponseFieldShouldBe(String fieldPath, Integer expectedValue) {
+        trackUsage();
         JsonPath jsonPath = ensureGrpcJsonPath();
         Object value = jsonPath.get(fieldPath);
         // Handle both String and Integer types (JSON path might return String)
@@ -1710,12 +1739,14 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the conversation title should be {string}")
     public void theConversationTitleShouldBe(String expectedTitle) {
+        trackUsage();
         var dto = memoryStoreSelector.getStore().getConversation(currentUserId, conversationId);
         assertThat(dto.getTitle(), is(expectedTitle));
     }
 
     @io.cucumber.java.en.Given("I set context variable {string} to {string}")
     public void iSetContextVariableTo(String name, String value) {
+        trackUsage();
         // Resolve template variables in the value before storing
         String resolvedValue = renderTemplate(value);
         // Remove surrounding quotes if present (from JSON serialization)
@@ -1728,19 +1759,9 @@ public class StepDefinitions {
         contextVariables.put(name, resolvedValue);
     }
 
-    @io.cucumber.java.en.Given("I set context variable {string} to json:")
-    public void iSetContextVariableToJson(String name, String jsonValue) {
-        try {
-            Object parsed = OBJECT_MAPPER.readValue(jsonValue, Object.class);
-            contextVariables.put(name, parsed);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new AssertionError(
-                    "Failed to parse JSON for context variable " + name + ": " + e.getMessage(), e);
-        }
-    }
-
     @io.cucumber.java.en.Then("the response body should be json:")
     public void theResponseBodyShouldBeJson(String expectedJson) {
+        trackUsage();
         // Parse both JSONs
         JsonNode actualNode = null, expectedNode = null;
         String expectedPretty = null, actualPretty = null;
@@ -2481,6 +2502,7 @@ public class StepDefinitions {
             "I resolve the conversation group ID for conversation {string} into {string}")
     public void iResolveTheConversationGroupIdForConversationInto(
             String conversationIdVar, String groupIdVar) {
+        trackUsage();
         // Extract variable name from template string like "${conversationId}" -> "conversationId"
         String varName = conversationIdVar;
         if (conversationIdVar.startsWith("${") && conversationIdVar.endsWith("}")) {
@@ -2499,6 +2521,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I execute SQL query:")
     public void iExecuteSqlQuery(String sql) {
+        trackUsage();
         // Check if we're using PostgreSQL datastore
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
@@ -2590,6 +2613,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the SQL result should have {int} row(s)")
     public void theSqlResultShouldHaveRows(int expectedCount) {
+        trackUsage();
         // Skip SQL assertions for non-PostgreSQL datastores
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
@@ -2602,6 +2626,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the SQL result should match:")
     public void theSqlResultShouldMatch(io.cucumber.datatable.DataTable dataTable) {
+        trackUsage();
         // Skip SQL assertions for non-PostgreSQL datastores
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
@@ -2641,6 +2666,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the SQL result column {string} should be non-null")
     public void theSqlResultColumnShouldBeNonNull(String column) {
+        trackUsage();
         // Skip SQL assertions for non-PostgreSQL datastores
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
@@ -2654,37 +2680,25 @@ public class StepDefinitions {
         }
     }
 
-    @io.cucumber.java.en.Then("the SQL result column {string} should be null")
-    public void theSqlResultColumnShouldBeNull(String column) {
-        // Skip SQL assertions for non-PostgreSQL datastores
-        String datastoreType =
-                config.getOptionalValue("memory-service.datastore.type", String.class)
-                        .orElse("postgres");
-        if (!"postgres".equals(datastoreType)) {
-            return; // Skip assertion for MongoDB
-        }
-        assertThat("SQL result should have at least one row", lastSqlResult.size(), greaterThan(0));
-        for (Map<String, Object> row : lastSqlResult) {
-            assertThat("Column " + column + " should be null", row.get(column), nullValue());
-        }
-    }
-
     // Admin step definitions
 
     @io.cucumber.java.en.Given("I am authenticated as admin user {string}")
     public void iAmAuthenticatedAsAdminUser(String userId) {
+        trackUsage();
         this.currentUserId = userId;
         this.currentApiKey = null;
     }
 
     @io.cucumber.java.en.Given("I am authenticated as auditor user {string}")
     public void iAmAuthenticatedAsAuditorUser(String userId) {
+        trackUsage();
         this.currentUserId = userId;
         this.currentApiKey = null;
     }
 
     @io.cucumber.java.en.Given("there is a conversation owned by {string} with title {string}")
     public void thereIsAConversationOwnedByWithTitle(String ownerId, String title) {
+        trackUsage();
         CreateConversationRequest request = new CreateConversationRequest();
         request.setTitle(title);
         this.conversationId =
@@ -2695,6 +2709,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("the conversation owned by {string} has an entry {string}")
     public void theConversationOwnedByHasAnEntry(String ownerId, String content) {
+        trackUsage();
         // Find the conversation ID for this owner
         String convId = null;
         String ownerVar = ownerId + "ConversationId";
@@ -2715,6 +2730,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("the conversation owned by {string} is deleted")
     public void theConversationOwnedByIsDeleted(String ownerId) {
+        trackUsage();
         // Find a conversation owned by this user - check for owner-specific variable first
         String convId = null;
         String ownerVar = ownerId + "ConversationId";
@@ -2738,6 +2754,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I call GET {string}")
     public void iCallGET(String path) {
+        trackUsage();
         String renderedPath = renderTemplate(path);
         // Check if path contains query string
         int queryIndex = renderedPath.indexOf('?');
@@ -2752,6 +2769,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I call GET {string} with query {string}")
     public void iCallGETWithQuery(String path, String queryString) {
+        trackUsage();
         String renderedPath = renderTemplate(path);
         var requestSpec = given();
         requestSpec = authenticateRequest(requestSpec);
@@ -2771,6 +2789,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I call DELETE {string} with body:")
     public void iCallDELETEWithBody(String path, String body) {
+        trackUsage();
         String renderedPath = renderTemplate(path);
         String renderedBody = renderTemplate(body);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(renderedBody);
@@ -2780,6 +2799,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I call POST {string} with body:")
     public void iCallPOSTWithBody(String path, String body) {
+        trackUsage();
         String renderedPath = renderTemplate(path);
         String renderedBody = renderTemplate(body);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(renderedBody);
@@ -2789,6 +2809,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("all conversations should have ownerUserId {string}")
     public void allConversationsShouldHaveOwnerUserId(String expectedOwner) {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         List<Map<String, Object>> conversations = jsonPath.getList("data");
         for (Map<String, Object> conv : conversations) {
@@ -2802,6 +2823,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Then(
             "the response should contain at least {int} conversation with deletedAt set")
     public void theResponseShouldContainAtLeastConversationWithDeletedAtSet(int minCount) {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         List<Map<String, Object>> conversations = jsonPath.getList("data");
         int deletedCount = 0;
@@ -2818,6 +2840,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("all conversations should have deletedAt set")
     public void allConversationsShouldHaveDeletedAtSet() {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         List<Map<String, Object>> conversations = jsonPath.getList("data");
         for (Map<String, Object> conv : conversations) {
@@ -2830,6 +2853,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the response body should have field {string} that is not null")
     public void theResponseBodyShouldHaveFieldThatIsNotNull(String fieldName) {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         Object value = jsonPath.get(fieldName);
         assertThat("Field " + fieldName + " should not be null", value, notNullValue());
@@ -2837,6 +2861,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the conversation should be soft-deleted")
     public void theConversationShouldBeSoftDeleted() {
+        trackUsage();
         // Verify via admin API that conversation is deleted
         String token = keycloakClient.getAccessToken("alice");
         var requestSpec = given().auth().oauth2(token);
@@ -2851,6 +2876,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the conversation should not be deleted")
     public void theConversationShouldNotBeDeleted() {
+        trackUsage();
         String token = keycloakClient.getAccessToken("alice");
         var requestSpec = given().auth().oauth2(token);
         var response = requestSpec.when().get("/v1/admin/conversations/{id}", conversationId);
@@ -2861,6 +2887,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the admin audit log should contain {string}")
     public void theAdminAuditLogShouldContain(String text) {
+        trackUsage();
         // In a real implementation, we would check the audit log
         // For now, we'll just verify the request succeeded
         // This is a placeholder that can be enhanced with actual log checking
@@ -2869,6 +2896,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Then("all search results should have conversation owned by {string}")
     @SuppressWarnings("unchecked")
     public void allSearchResultsShouldHaveConversationOwnedBy(String expectedOwner) {
+        trackUsage();
         JsonPath jsonPath = lastResponse.jsonPath();
         List<Map<String, Object>> results = jsonPath.getList("data");
         for (Map<String, Object> result : results) {
@@ -2894,6 +2922,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("all tasks are deleted")
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void allTasksAreDeleted() {
+        trackUsage();
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
@@ -2907,6 +2936,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("I create a task with type {string} and body:")
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void iCreateATaskWithTypeAndBody(String taskType, String bodyJson) throws Exception {
+        trackUsage();
         JsonNode body = OBJECT_MAPPER.readTree(bodyJson);
         Map<String, Object> taskBody =
                 OBJECT_MAPPER.convertValue(body, new TypeReference<Map<String, Object>>() {});
@@ -2921,12 +2951,14 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("the task processor runs")
     public void theTaskProcessorRuns() {
+        trackUsage();
         taskProcessor.get().processPendingTasks();
     }
 
     @io.cucumber.java.en.Then("the task should be deleted")
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void theTaskShouldBeDeleted() {
+        trackUsage();
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
@@ -2948,6 +2980,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the vector store should have received a delete call for {string}")
     public void theVectorStoreShouldHaveReceivedADeleteCallFor(String groupId) {
+        trackUsage();
         // This would be verified by a mock/spy vector store
         // For now, we'll just verify the task was processed
         // In a real implementation, we'd use Mockito to spy on VectorStore
@@ -2956,6 +2989,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("the vector store will fail for {string}")
     @Transactional
     public void theVectorStoreWillFailFor(String groupId) {
+        trackUsage();
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
@@ -2973,6 +3007,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the task should still exist")
     public void theTaskShouldStillExist() {
+        trackUsage();
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
@@ -2989,6 +3024,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the task retry_at should be in the future")
     public void theTaskRetryAtShouldBeInTheFuture() {
+        trackUsage();
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
@@ -3021,6 +3057,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the task last_error should contain the failure message")
     public void theTaskLastErrorShouldContainTheFailureMessage() {
+        trackUsage();
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
@@ -3039,6 +3076,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the task retry_count should be {int}")
     public void theTaskRetryCountShouldBe(int expectedCount) {
+        trackUsage();
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
@@ -3060,6 +3098,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("I have a failed task with retry_at in the past")
     @Transactional
     public void iHaveAFailedTaskWithRetryAtInThePast() {
+        trackUsage();
         Map<String, Object> body = Map.of("conversationGroupId", "test-group");
         if (taskRepositorySelector.get().isPostgres()) {
             taskRepository.get().createTask("vector_store_delete", body);
@@ -3080,6 +3119,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the task should be processed again")
     public void theTaskShouldBeProcessedAgain() {
+        trackUsage();
         // Task should be deleted after successful retry
         theTaskShouldBeDeleted();
     }
@@ -3087,6 +3127,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("I have {int} pending tasks")
     @Transactional
     public void iHavePendingTasks(int count) {
+        trackUsage();
         for (int i = 0; i < count; i++) {
             Map<String, Object> body = Map.of("conversationGroupId", "group-" + i);
             if (taskRepositorySelector.get().isPostgres()) {
@@ -3099,6 +3140,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("{int} task processors run concurrently")
     public void taskProcessorsRunConcurrently(int count) throws Exception {
+        trackUsage();
         java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
         java.util.concurrent.ExecutorService executor =
                 java.util.concurrent.Executors.newFixedThreadPool(count);
@@ -3113,6 +3155,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("each task should be processed exactly once")
     public void eachTaskShouldBeProcessedExactlyOnce() {
+        trackUsage();
         // All tasks should be deleted
         theTaskShouldBeDeleted();
     }
@@ -3120,6 +3163,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("the conversation was soft-deleted {int} days ago")
     @Transactional
     public void theConversationWasSoftDeletedDaysAgo(int daysAgo) {
+        trackUsage();
         // First soft-delete the conversation
         if (conversationId != null) {
             try {
@@ -3152,6 +3196,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.When("I call POST {string} with Accept {string} and body:")
     public void iCallPOSTWithAcceptAndBody(String path, String accept, String body) {
+        trackUsage();
         String renderedPath = renderTemplate(path);
         String renderedBody = renderTemplate(body);
         var requestSpec =
@@ -3164,6 +3209,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the response content type should be {string}")
     public void theResponseContentTypeShouldBe(String expectedContentType) {
+        trackUsage();
         String actualContentType = lastResponse.getContentType();
         assertThat(
                 "Response content type should be " + expectedContentType,
@@ -3175,6 +3221,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the SSE stream should contain progress events")
     public void theSseStreamShouldContainProgressEvents() {
+        trackUsage();
         String body = lastResponse.getBody().asString();
         sseProgressValues.clear();
         // Parse SSE events: data: {"progress": N}
@@ -3200,6 +3247,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("the final progress should be {int}")
     public void theFinalProgressShouldBe(int expectedProgress) {
+        trackUsage();
         assertThat(
                 "Final progress should be " + expectedProgress,
                 sseProgressValues.get(sseProgressValues.size() - 1),
@@ -3209,6 +3257,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("I have {int} conversations soft-deleted {int} days ago")
     @Transactional
     public void iHaveConversationsSoftDeletedDaysAgo(int count, int daysAgo) {
+        trackUsage();
         String datastoreType =
                 config.getOptionalValue("memory-service.datastore.type", String.class)
                         .orElse("postgres");
@@ -3253,6 +3302,7 @@ public class StepDefinitions {
                 java.util.concurrent.Executors.newFixedThreadPool(times);
         List<java.util.concurrent.Future<Response>> futures = new ArrayList<>();
         for (int i = 0; i < times; i++) {
+            trackUsage();
             futures.add(
                     executor.submit(
                             () -> {
@@ -3281,6 +3331,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Then("all responses should have status {int}")
     public void allResponsesShouldHaveStatus(int expectedStatus) {
+        trackUsage();
         for (Response response : concurrentResponses) {
             assertThat(
                     "All responses should have status " + expectedStatus,
@@ -3291,6 +3342,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("the conversation has entries")
     public void theConversationHasEntries() {
+        trackUsage();
         if (conversationId == null) {
             throw new IllegalStateException("No conversation available");
         }
@@ -3306,12 +3358,14 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("the conversation is shared with user {string}")
     @Transactional
     public void theConversationIsSharedWithUser(String userId) {
+        trackUsage();
         theConversationIsSharedWithUserWithAccessLevel(userId, "reader");
     }
 
     @io.cucumber.java.en.Given("the membership for user {string} was soft-deleted {int} days ago")
     @Transactional
     public void theMembershipForUserWasSoftDeletedDaysAgo(String userId, int daysAgo) {
+        trackUsage();
         // Soft-delete the membership via the store API
         String ownerId = (String) contextVariables.getOrDefault("conversationOwner", currentUserId);
         memoryStoreSelector.getStore().deleteMembership(ownerId, conversationId, userId);
@@ -3338,6 +3392,7 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("the conversation has a pending ownership transfer to user {string}")
     @Transactional
     public void theConversationHasAPendingOwnershipTransferToUser(String toUserId) {
+        trackUsage();
         String ownerId = (String) contextVariables.getOrDefault("conversationOwner", currentUserId);
         memoryStoreSelector.getStore().requestOwnershipTransfer(ownerId, conversationId, toUserId);
     }
