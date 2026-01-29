@@ -335,7 +335,7 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/memory/entries/sync": {
+  "/v1/conversations/{conversationId}/entries/sync": {
     post: {
       req: {
         conversationId: string;

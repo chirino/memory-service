@@ -271,7 +271,7 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/conversations/{conversationId}/memory/entries/sync:
+  /v1/conversations/{conversationId}/entries/sync:
     post:
       tags: [Conversations]
       summary: Synchronize the agent memory epoch
