@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conversation Detail - Minimal Light Style</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+  <style>
+    :root { font-family: 'Inter', sans-serif; }
+    @supports (font-variation-settings: normal) {
+      :root { font-family: 'Inter var', sans-serif; }
+    }
+  </style>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gray: {
+              50: '#fafafa',
+              100: '#f5f5f5',
+              200: '#e5e5e5',
+              300: '#d4d4d4',
+              400: '#a3a3a3',
+              500: '#737373',
+              600: '#525252',
+              700: '#404040',
+              800: '#262626',
+              900: '#171717',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-50 text-gray-800 antialiased">
+  <!-- Header -->
+  <header class="fixed top-0 left-0 right-0 h-14 bg-white border-b border-gray-200 z-50">
+    <div class="flex items-center justify-between h-full px-6">
+      <div class="flex items-center space-x-8">
+        <span class="text-lg font-semibold text-gray-900">Memory Service</span>
+      </div>
+
+      <!-- Session Justification -->
+      <div class="flex-1 max-w-xl mx-8">
+        <div class="flex items-center space-x-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-md">
+          <svg class="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <input type="text" placeholder="Enter session justification for audit log..." class="flex-1 bg-transparent text-sm text-gray-700 placeholder-gray-400 focus:outline-none">
+        </div>
+      </div>
+
+      <!-- User -->
+      <div class="flex items-center space-x-3">
+        <span class="text-xs font-medium px-2 py-1 bg-indigo-100 text-indigo-700 rounded">Admin</span>
+        <span class="text-sm text-gray-600">admin@example.com</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="fixed top-14 left-0 bottom-0 w-56 bg-white border-r border-gray-200">
+    <nav class="p-4 space-y-1">
+      <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-600 hover:bg-gray-50 rounded-md transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+        </svg>
+        <span class="text-sm font-medium">Dashboard</span>
+      </a>
+      <a href="#" class="flex items-center space-x-3 px-3 py-2 bg-gray-100 text-gray-900 rounded-md">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+        </svg>
+        <span class="text-sm font-medium">Conversations</span>
+      </a>
+      <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-600 hover:bg-gray-50 rounded-md transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+        <span class="text-sm font-medium">Search</span>
+      </a>
+      <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-600 hover:bg-gray-50 rounded-md transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+        <span class="text-sm font-medium">Eviction</span>
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="ml-56 mt-14 min-h-screen">
+    <div class="flex">
+      <!-- Content Area -->
+      <div class="flex-1 p-8">
+        <!-- Breadcrumb -->
+        <nav class="mb-6">
+          <ol class="flex items-center space-x-2 text-sm">
+            <li><a href="#" class="text-gray-500 hover:text-gray-700">Conversations</a></li>
+            <li><span class="text-gray-300">/</span></li>
+            <li class="text-gray-900 font-medium">Project Discussion</li>
+          </ol>
+        </nav>
+
+        <!-- Conversation Header -->
+        <div class="mb-8">
+          <div class="flex items-start justify-between">
+            <div>
+              <h1 class="text-2xl font-semibold text-gray-900 mb-2">Project Discussion</h1>
+              <div class="flex items-center space-x-4 text-sm text-gray-500">
+                <div class="flex items-center space-x-1.5">
+                  <span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">550e8400-e29b-41d4-a716-446655440000</span>
+                  <button class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                  </button>
+                </div>
+                <span>Owner: <span class="text-gray-700">user_456</span></span>
+              </div>
+            </div>
+            <div class="text-right text-sm text-gray-500">
+              <div>Created: Jan 15, 2025 10:30 AM</div>
+              <div>Updated: Jan 20, 2025 2:22 PM</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="border-b border-gray-200 mb-6">
+          <nav class="flex space-x-8">
+            <button class="pb-3 text-sm font-medium text-gray-900 border-b-2 border-gray-900">Entries</button>
+            <button class="pb-3 text-sm font-medium text-gray-500 hover:text-gray-700">Memberships</button>
+          </nav>
+        </div>
+
+        <!-- Channel Filter -->
+        <div class="flex items-center space-x-2 mb-6">
+          <span class="text-sm text-gray-500">Channel:</span>
+          <div class="flex space-x-1">
+            <button class="px-3 py-1 text-sm font-medium bg-gray-900 text-white rounded-md">All</button>
+            <button class="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md">History</button>
+            <button class="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md">Memory</button>
+            <button class="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md">Transcript</button>
+          </div>
+        </div>
+
+        <!-- Entries List -->
+        <div class="space-y-4">
+          <!-- Entry 1 -->
+          <div class="bg-white border border-gray-200 rounded-lg p-5">
+            <div class="flex items-start justify-between mb-3">
+              <div class="flex items-center space-x-3">
+                <span class="text-xs font-medium px-2 py-0.5 bg-blue-50 text-blue-700 rounded">history</span>
+                <span class="text-xs text-gray-400 font-mono">7c9e6679-7425-40de-944b-e07fc1f90ae7</span>
+              </div>
+              <span class="text-xs text-gray-400">Jan 15, 2025 10:31 AM</span>
+            </div>
+            <div class="mb-2 text-sm text-gray-600">
+              <span class="font-medium text-gray-700">user_456</span> · message
+            </div>
+            <div class="bg-gray-50 rounded p-3 font-mono text-xs text-gray-600 overflow-x-auto">
+              [{"type": "text", "text": "Hello, how can I help you today?"}]
+            </div>
+          </div>
+
+          <!-- Entry 2 with Fork Indicator -->
+          <div id="entry-fork-point" class="bg-white border border-gray-200 rounded-lg p-5 ring-2 ring-indigo-100">
+            <div class="flex items-start justify-between mb-3">
+              <div class="flex items-center space-x-3">
+                <span class="text-xs font-medium px-2 py-0.5 bg-blue-50 text-blue-700 rounded">history</span>
+                <span class="text-xs text-gray-400 font-mono">8d0f7780-8536-41e5-b166-f18fd28747f8</span>
+                <span class="text-xs font-medium px-2 py-0.5 bg-purple-50 text-purple-700 rounded flex items-center space-x-1">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                  </svg>
+                  <span>Fork point</span>
+                </span>
+              </div>
+              <span class="text-xs text-gray-400">Jan 15, 2025 10:32 AM</span>
+            </div>
+            <div class="mb-2 text-sm text-gray-600">
+              <span class="font-medium text-gray-700">user_456</span> · message
+            </div>
+            <div class="bg-gray-50 rounded p-3 font-mono text-xs text-gray-600 overflow-x-auto">
+              [{"type": "text", "text": "I'd like to discuss the conversation forking feature."}]
+            </div>
+          </div>
+
+          <!-- Entry 3 -->
+          <div class="bg-white border border-gray-200 rounded-lg p-5">
+            <div class="flex items-start justify-between mb-3">
+              <div class="flex items-center space-x-3">
+                <span class="text-xs font-medium px-2 py-0.5 bg-blue-50 text-blue-700 rounded">history</span>
+                <span class="text-xs text-gray-400 font-mono">9e1g8891-9647-52f6-c277-g29ge39858g9</span>
+              </div>
+              <span class="text-xs text-gray-400">Jan 15, 2025 10:35 AM</span>
+            </div>
+            <div class="mb-2 text-sm text-gray-600">
+              <span class="font-medium text-gray-700">assistant</span> · message
+            </div>
+            <div class="bg-gray-50 rounded p-3 font-mono text-xs text-gray-600 overflow-x-auto">
+              [{"type": "text", "text": "Of course! Conversation forking allows you to branch off from any point in a conversation. Each fork maintains its own independent history while sharing the common ancestor messages."}]
+            </div>
+          </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex items-center justify-between mt-8 pt-6 border-t border-gray-200">
+          <span class="text-sm text-gray-500">Showing 1-3 of 12 entries</span>
+          <div class="flex space-x-2">
+            <button class="px-3 py-1.5 text-sm text-gray-400 bg-gray-100 rounded cursor-not-allowed">Previous</button>
+            <button class="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Forks Panel -->
+      <aside class="w-72 border-l border-gray-200 bg-white p-6">
+        <h3 class="text-sm font-semibold text-gray-900 mb-4">Forks</h3>
+        <div class="space-y-3">
+          <!-- Current (Root) -->
+          <div class="p-3 bg-gray-100 rounded-lg border-2 border-gray-300">
+            <div class="text-sm font-medium text-gray-900 mb-1 truncate">Project Discussion</div>
+            <div class="text-xs text-gray-500 mb-2">Root conversation</div>
+            <div class="text-xs text-gray-400">Updated Jan 20, 2025</div>
+          </div>
+
+          <!-- Fork 1 -->
+          <div class="p-3 bg-white rounded-lg border border-gray-200 hover:border-gray-300 cursor-pointer transition-colors">
+            <div class="text-sm font-medium text-gray-700 mb-1 truncate">Alternative approach</div>
+            <div class="text-xs text-gray-500 mb-2">
+              Forked at <button class="text-indigo-600 hover:underline font-mono">8d0f7780...</button>
+            </div>
+            <div class="text-xs text-gray-400">Updated Jan 18, 2025</div>
+          </div>
+
+          <!-- Fork 2 -->
+          <div class="p-3 bg-white rounded-lg border border-gray-200 hover:border-gray-300 cursor-pointer transition-colors">
+            <div class="text-sm font-medium text-gray-700 mb-1 truncate">Technical deep-dive</div>
+            <div class="text-xs text-gray-500 mb-2">
+              Forked at <button class="text-indigo-600 hover:underline font-mono">8d0f7780...</button>
+            </div>
+            <div class="text-xs text-gray-400">Updated Jan 16, 2025</div>
+          </div>
+        </div>
+        <div class="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
+          3 conversations in this fork tree
+        </div>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
