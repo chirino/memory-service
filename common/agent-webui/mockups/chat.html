@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Chat - Complete Mockup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300;1,9..40,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            serif: ['Instrument Serif', 'Georgia', 'serif'],
+            sans: ['DM Sans', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            cream: '#FDFBF7',
+            ink: '#1a1a1a',
+            mist: '#f5f3ef',
+            stone: '#8a8580',
+            terracotta: '#c67a5c',
+            sage: '#7d9a8c',
+          },
+          animation: {
+            'pulse-subtle': 'pulse-subtle 2s ease-in-out infinite',
+            'fade-in': 'fade-in 0.4s ease-out',
+            'slide-up': 'slide-up 0.5s ease-out',
+          },
+          keyframes: {
+            'pulse-subtle': {
+              '0%, 100%': { opacity: '1' },
+              '50%': { opacity: '0.7' },
+            },
+            'fade-in': {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            'slide-up': {
+              '0%': { opacity: '0', transform: 'translateY(10px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #d4d0c8;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #b8b4ac;
+    }
+
+    /* Elegant underline for links */
+    .elegant-link {
+      text-decoration: none;
+      background-image: linear-gradient(currentColor, currentColor);
+      background-position: 0% 100%;
+      background-repeat: no-repeat;
+      background-size: 0% 1px;
+      transition: background-size 0.3s ease;
+    }
+    .elegant-link:hover {
+      background-size: 100% 1px;
+    }
+
+    /* Code block styling */
+    .code-block {
+      font-family: 'Berkeley Mono', 'SF Mono', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* Typing indicator */
+    .typing-dot {
+      animation: typing 1.4s infinite ease-in-out;
+    }
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+    @keyframes typing {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-4px); }
+    }
+
+    /* Sticky header gradient */
+    .sticky-gradient::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 24px;
+      background: linear-gradient(to bottom, rgba(253, 251, 247, 0), rgba(253, 251, 247, 1));
+      pointer-events: none;
+    }
+
+    /* Action button visibility */
+    .action-btn {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .message-row:hover .action-btn {
+      opacity: 1;
+    }
+
+    /* Spinner */
+    .spinner {
+      border: 2px solid #e5e2dd;
+      border-top-color: #7d9a8c;
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Edit mode glow */
+    .edit-glow {
+      box-shadow: 0 0 0 3px rgba(125, 154, 140, 0.2);
+    }
+  </style>
+</head>
+<body class="h-screen bg-cream text-ink font-sans antialiased">
+
+  <div class="flex h-full">
+
+    <!-- ==================== SIDEBAR ==================== -->
+    <aside class="w-80 flex flex-col border-r border-stone/20 bg-cream">
+
+      <!-- Sidebar Header -->
+      <header class="px-6 py-5 border-b border-stone/10">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="font-serif text-2xl tracking-tight">Conversations</h1>
+            <p class="text-sm text-stone mt-0.5">Your recent chats</p>
+          </div>
+          <button class="group flex items-center gap-2 px-4 py-2 bg-ink text-cream rounded-full text-sm font-medium transition-all hover:bg-ink/90 hover:shadow-lg hover:shadow-ink/10">
+            <svg class="w-4 h-4 transition-transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            New
+          </button>
+        </div>
+      </header>
+
+      <!-- Search -->
+      <div class="px-5 py-4">
+        <div class="relative">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          <input
+            type="search"
+            placeholder="Search conversations..."
+            class="w-full pl-10 pr-4 py-2.5 bg-mist rounded-xl text-sm placeholder:text-stone/60 border border-transparent focus:border-stone/20 focus:outline-none transition-colors"
+          >
+        </div>
+      </div>
+
+      <!-- Conversation List -->
+      <nav class="flex-1 overflow-y-auto px-3 pb-4">
+        <div class="space-y-1">
+
+          <!-- Selected conversation -->
+          <div class="group relative animate-fade-in">
+            <button class="w-full text-left px-4 py-3.5 rounded-xl bg-mist border border-stone/10 transition-all">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex-1 min-w-0">
+                  <h3 class="font-medium text-ink truncate">Help with React hooks</h3>
+                  <p class="text-sm text-stone mt-1 line-clamp-2">Discussing useEffect patterns and best practices...</p>
+                </div>
+                <span class="text-xs text-stone whitespace-nowrap mt-0.5">2m</span>
+              </div>
+            </button>
+            <!-- Hover actions -->
+            <div class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button class="p-1.5 rounded-lg bg-cream/90 border border-stone/10 text-stone hover:text-sage hover:border-sage/30 transition-colors" title="Index">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7M4 7c0-2 1-3 3-3h10c2 0 3 1 3 3M4 7h16M9 11h6M9 15h4"/>
+                </svg>
+              </button>
+              <button class="p-1.5 rounded-lg bg-cream/90 border border-stone/10 text-stone hover:text-terracotta hover:border-terracotta/30 transition-colors" title="Delete">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Regular conversations -->
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.05s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-ink truncate">Python async patterns</h3>
+                <p class="text-sm text-stone mt-1 line-clamp-2">Exploring asyncio and concurrent programming...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">1h</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.1s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-ink truncate">Database schema design</h3>
+                <p class="text-sm text-stone mt-1 line-clamp-2">PostgreSQL normalization and indexing strategies...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">Yesterday</span>
+            </div>
+          </button>
+
+          <!-- Resumable conversation with spinner -->
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.15s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <h3 class="font-medium text-ink truncate">API authentication</h3>
+                  <div class="spinner"></div>
+                </div>
+                <p class="text-sm text-stone mt-1 line-clamp-2">JWT tokens and OAuth2 implementation...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">2d</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.2s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-ink truncate">CSS Grid layout</h3>
+                <p class="text-sm text-stone mt-1 line-clamp-2">Responsive design patterns and grid templates...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">3d</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.25s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-ink truncate">TypeScript generics</h3>
+                <p class="text-sm text-stone mt-1 line-clamp-2">Advanced type patterns and utility types...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">1w</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.3s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-ink truncate">Docker compose setup</h3>
+                <p class="text-sm text-stone mt-1 line-clamp-2">Container orchestration and networking...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">2w</span>
+            </div>
+          </button>
+
+        </div>
+      </nav>
+    </aside>
+
+    <!-- ==================== MAIN CHAT AREA ==================== -->
+    <main class="flex-1 flex flex-col bg-cream">
+
+      <!-- Chat Header -->
+      <header class="px-8 py-5 border-b border-stone/10 bg-cream/80 backdrop-blur-sm">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+          <div>
+            <h2 class="font-serif text-xl">Help with React hooks</h2>
+            <p class="text-sm text-stone mt-0.5">Started today at 2:30 PM</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-stone font-medium">Stream</span>
+            <div class="flex bg-mist rounded-lg p-0.5">
+              <button class="px-3 py-1.5 text-xs font-medium rounded-md bg-cream shadow-sm text-ink">SSE</button>
+              <button class="px-3 py-1.5 text-xs font-medium rounded-md text-stone hover:text-ink transition-colors">WS</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Messages Viewport -->
+      <div class="flex-1 overflow-y-auto px-8">
+        <div class="max-w-3xl mx-auto py-6 space-y-0">
+
+          <!-- ==================== TURN 1 ==================== -->
+          <section class="relative">
+            <!-- Sticky User Message Header -->
+            <div class="sticky top-0 z-20 pb-3">
+              <div class="relative">
+                <!-- Gradient fade background -->
+                <div class="pointer-events-none absolute left-0 top-0 z-0 w-full">
+                  <div class="h-8 bg-cream"></div>
+                  <div class="h-16 bg-gradient-to-b from-cream via-cream/85 to-cream/0"></div>
+                </div>
+                <!-- User message -->
+                <div class="relative z-10 pt-2">
+                  <div class="flex justify-end animate-slide-up message-row">
+                    <div class="max-w-[75%]">
+                      <div class="bg-ink text-cream rounded-2xl rounded-tr-md px-5 py-3.5">
+                        <p class="text-[15px] leading-relaxed">How do I use useEffect for data fetching?</p>
+                      </div>
+                      <div class="flex justify-end mt-1.5 pr-1">
+                        <button class="action-btn text-xs text-stone hover:text-terracotta elegant-link transition-colors">Edit</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Assistant Response -->
+            <div class="pb-6 animate-slide-up" style="animation-delay: 0.1s">
+              <div class="flex justify-start">
+                <div class="max-w-[85%]">
+                  <div class="bg-mist rounded-2xl rounded-tl-md px-5 py-4">
+                    <div class="prose prose-sm max-w-none">
+                      <p class="text-[15px] leading-relaxed text-ink">Here's how to properly fetch data with useEffect:</p>
+
+                      <!-- Code block -->
+                      <div class="mt-4 rounded-xl bg-ink text-cream overflow-hidden">
+                        <div class="flex items-center justify-between px-4 py-2 bg-ink/80 border-b border-cream/10">
+                          <span class="text-xs text-stone font-medium">javascript</span>
+                          <button class="text-xs text-stone hover:text-cream transition-colors">Copy</button>
+                        </div>
+                        <pre class="code-block p-4 overflow-x-auto"><code class="text-cream/90">useEffect(() => {
+  const fetchData = async () => {
+    const response = await fetch('/api/data');
+    const data = await response.json();
+    setData(data);
+  };
+
+  fetchData();
+}, []);</code></pre>
+                      </div>
+
+                      <p class="text-[15px] leading-relaxed text-ink mt-4">Key points to remember:</p>
+                      <ul class="mt-2 space-y-1.5 text-[15px] text-ink/90">
+                        <li class="flex gap-2">
+                          <span class="text-sage mt-1">•</span>
+                          <span>Always handle cleanup for subscriptions</span>
+                        </li>
+                        <li class="flex gap-2">
+                          <span class="text-sage mt-1">•</span>
+                          <span>Consider using a library like React Query for complex cases</span>
+                        </li>
+                        <li class="flex gap-2">
+                          <span class="text-sage mt-1">•</span>
+                          <span>Handle loading and error states</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <!-- Fork indicator -->
+                  <div class="mt-2 pl-2">
+                    <button class="text-xs text-stone hover:text-ink elegant-link transition-colors">
+                      3 forks
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== TURN 2 - WITH FORK MENU OPEN ==================== -->
+          <section class="relative">
+            <!-- Sticky User Message -->
+            <div class="sticky top-0 z-20 pb-3">
+              <div class="relative">
+                <div class="pointer-events-none absolute left-0 top-0 z-0 w-full">
+                  <div class="h-8 bg-cream"></div>
+                  <div class="h-16 bg-gradient-to-b from-cream via-cream/85 to-cream/0"></div>
+                </div>
+                <div class="relative z-10 pt-2">
+                  <div class="flex justify-end animate-slide-up message-row" style="animation-delay: 0.2s">
+                    <div class="max-w-[75%]">
+                      <div class="bg-ink text-cream rounded-2xl rounded-tr-md px-5 py-3.5">
+                        <p class="text-[15px] leading-relaxed">What about error handling?</p>
+                      </div>
+                      <div class="flex justify-end mt-1.5 pr-1">
+                        <button class="action-btn text-xs text-stone hover:text-terracotta elegant-link transition-colors">Edit</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Assistant Response with Fork Menu -->
+            <div class="pb-6 animate-slide-up" style="animation-delay: 0.3s">
+              <div class="flex justify-start">
+                <div class="max-w-[85%]">
+                  <div class="bg-mist rounded-2xl rounded-tl-md px-5 py-4">
+                    <p class="text-[15px] leading-relaxed text-ink">You should wrap your fetch in a try-catch block to handle errors gracefully:</p>
+
+                    <!-- Code block -->
+                    <div class="mt-4 rounded-xl bg-ink text-cream overflow-hidden">
+                      <div class="flex items-center justify-between px-4 py-2 bg-ink/80 border-b border-cream/10">
+                        <span class="text-xs text-stone font-medium">javascript</span>
+                        <button class="text-xs text-stone hover:text-cream transition-colors">Copy</button>
+                      </div>
+                      <pre class="code-block p-4 overflow-x-auto"><code class="text-cream/90">useEffect(() => {
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/data');
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      const data = await response.json();
+      setData(data);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchData();
+}, []);</code></pre>
+                    </div>
+                  </div>
+
+                  <!-- Fork indicator with dropdown OPEN -->
+                  <div class="mt-2 pl-2 relative">
+                    <button class="text-xs text-sage font-medium">
+                      3 forks ▾
+                    </button>
+
+                    <!-- Fork Menu Dropdown -->
+                    <div class="absolute left-0 top-full mt-2 w-72 bg-cream border border-stone/20 rounded-xl shadow-xl z-30 animate-slide-up overflow-hidden">
+                      <div class="px-4 py-2.5 border-b border-stone/10 bg-mist/50">
+                        <span class="text-xs text-stone font-medium">Fork Branches</span>
+                      </div>
+                      <div class="py-1">
+                        <!-- Active fork -->
+                        <button class="w-full px-4 py-3 text-left hover:bg-mist/50 bg-sage/10 border-l-2 border-sage">
+                          <div class="flex items-center justify-between">
+                            <div class="flex-1 min-w-0">
+                              <p class="text-sm text-ink truncate">"What about error handling?"</p>
+                              <span class="text-xs text-stone">Today at 2:33 PM</span>
+                            </div>
+                            <span class="text-[10px] text-sage border border-sage/50 px-2 py-0.5 rounded-full ml-2 font-medium">Active</span>
+                          </div>
+                        </button>
+                        <!-- Other forks -->
+                        <button class="w-full px-4 py-3 text-left hover:bg-mist/50 transition-colors">
+                          <div class="flex-1 min-w-0">
+                            <p class="text-sm text-stone truncate">"Using async/await instead"</p>
+                            <span class="text-xs text-stone/60">Today at 2:33 PM</span>
+                          </div>
+                        </button>
+                        <button class="w-full px-4 py-3 text-left hover:bg-mist/50 transition-colors">
+                          <div class="flex-1 min-w-0">
+                            <p class="text-sm text-stone truncate">"How about with AbortController?"</p>
+                            <span class="text-xs text-stone/60">Today at 2:32 PM</span>
+                          </div>
+                        </button>
+                        <!-- Parent option -->
+                        <div class="border-t border-stone/10 mt-1 pt-1">
+                          <button class="w-full px-4 py-3 text-left hover:bg-mist/50 transition-colors">
+                            <div class="flex items-center gap-2">
+                              <svg class="w-4 h-4 text-stone" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                              </svg>
+                              <p class="text-sm text-stone">Return to parent conversation</p>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== TURN 3 - WITH EDIT MODE ==================== -->
+          <section class="relative">
+            <!-- Sticky User Message in EDIT MODE -->
+            <div class="sticky top-0 z-20 pb-3">
+              <div class="relative">
+                <div class="pointer-events-none absolute left-0 top-0 z-0 w-full">
+                  <div class="h-8 bg-cream"></div>
+                  <div class="h-16 bg-gradient-to-b from-cream via-cream/85 to-cream/0"></div>
+                </div>
+                <div class="relative z-10 pt-2">
+                  <div class="flex justify-end animate-slide-up" style="animation-delay: 0.4s">
+                    <div class="max-w-[75%] w-full">
+                      <!-- Edit mode -->
+                      <div class="bg-cream border-2 border-sage rounded-2xl px-5 py-4 edit-glow">
+                        <textarea
+                          rows="2"
+                          class="w-full bg-transparent text-[15px] resize-none focus:outline-none leading-relaxed text-ink"
+                        >Can you show me how to use React Query instead?</textarea>
+                        <div class="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-stone/10">
+                          <button class="px-4 py-2 text-sm text-stone hover:text-ink transition-colors">
+                            Cancel
+                          </button>
+                          <button class="px-4 py-2 text-sm bg-ink text-cream rounded-full font-medium hover:bg-ink/90 transition-colors">
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                      <p class="text-xs text-terracotta mt-2 text-right">Editing will create a new fork from this point</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== TURN 4 - STREAMING RESPONSE ==================== -->
+          <section class="relative">
+            <!-- User Message -->
+            <div class="sticky top-0 z-20 pb-3">
+              <div class="relative">
+                <div class="pointer-events-none absolute left-0 top-0 z-0 w-full">
+                  <div class="h-8 bg-cream"></div>
+                  <div class="h-16 bg-gradient-to-b from-cream via-cream/85 to-cream/0"></div>
+                </div>
+                <div class="relative z-10 pt-2">
+                  <div class="flex justify-end animate-slide-up message-row" style="animation-delay: 0.5s">
+                    <div class="max-w-[75%]">
+                      <div class="bg-ink text-cream rounded-2xl rounded-tr-md px-5 py-3.5">
+                        <p class="text-[15px] leading-relaxed">What about cleanup functions?</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Streaming Assistant Response -->
+            <div class="pb-6 animate-slide-up" style="animation-delay: 0.6s">
+              <div class="flex justify-start">
+                <div class="max-w-[85%]">
+                  <div class="bg-mist rounded-2xl rounded-tl-md px-5 py-4">
+                    <p class="text-[15px] leading-relaxed text-ink">
+                      Great question! Cleanup functions are essential for preventing memory leaks. You return a function from useEffect that React will call when the component unmounts or before re-running the effect<span class="inline-flex ml-1">
+                        <span class="typing-dot w-1 h-1 rounded-full bg-stone"></span>
+                        <span class="typing-dot w-1 h-1 rounded-full bg-stone ml-0.5"></span>
+                        <span class="typing-dot w-1 h-1 rounded-full bg-stone ml-0.5"></span>
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+      <!-- ==================== COMPOSER ==================== -->
+      <div class="px-8 py-5 border-t border-stone/10 bg-cream">
+        <div class="max-w-3xl mx-auto">
+          <div class="relative">
+            <textarea
+              placeholder="Type a message..."
+              rows="3"
+              class="w-full px-5 py-4 bg-mist rounded-2xl text-[15px] placeholder:text-stone/60 resize-none border border-transparent focus:border-stone/20 focus:outline-none transition-colors"
+            ></textarea>
+            <div class="absolute bottom-3 right-3 flex items-center gap-2">
+              <!-- Stop button (shown during streaming) -->
+              <button class="px-4 py-2 text-sm text-terracotta border border-terracotta/30 rounded-full hover:bg-terracotta/10 transition-colors">
+                Stop
+              </button>
+              <button class="p-2.5 bg-ink text-cream rounded-xl hover:bg-ink/90 transition-colors shadow-lg shadow-ink/10 opacity-50 cursor-not-allowed" disabled>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <p class="text-xs text-stone mt-2 text-center">Press Enter to send, Shift+Enter for new line</p>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+</body>
+</html>

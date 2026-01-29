@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat UI - Terminal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['JetBrains Mono', 'IBM Plex Mono', 'Consolas', 'monospace'],
+          },
+          colors: {
+            terminal: {
+              bg: '#0c0c0c',
+              surface: '#141414',
+              border: '#262626',
+              muted: '#3a3a3a',
+            },
+            mint: '#48d597',
+            cyber: '#00d4ff',
+            amber: '#ffb347',
+            rose: '#ff6b8a',
+            lilac: '#c4b5fd',
+            chalk: '#e8e8e8',
+            dim: '#808080',
+          },
+          animation: {
+            'blink': 'blink 1s step-end infinite',
+            'flicker': 'flicker 0.15s infinite',
+            'type-in': 'type-in 0.3s ease-out',
+            'fade-up': 'fade-up 0.4s ease-out',
+          },
+          keyframes: {
+            'blink': {
+              '0%, 100%': { opacity: '1' },
+              '50%': { opacity: '0' },
+            },
+            'flicker': {
+              '0%': { opacity: '0.97' },
+              '50%': { opacity: '1' },
+              '100%': { opacity: '0.98' },
+            },
+            'type-in': {
+              '0%': { opacity: '0', transform: 'translateX(-5px)' },
+              '100%': { opacity: '1', transform: 'translateX(0)' },
+            },
+            'fade-up': {
+              '0%': { opacity: '0', transform: 'translateY(8px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #141414;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #48d597;
+      border-radius: 0;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #5be0a6;
+    }
+
+    /* Terminal glow */
+    .terminal-glow {
+      text-shadow: 0 0 10px currentColor;
+    }
+
+    /* ASCII borders */
+    .ascii-box {
+      position: relative;
+    }
+    .ascii-box::before {
+      content: '╔══════════════════════════════════════════════════════════════╗';
+      position: absolute;
+      top: -1.2em;
+      left: 0;
+      color: #48d597;
+      opacity: 0.3;
+      font-size: 10px;
+    }
+
+    /* Cursor */
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 16px;
+      background: #48d597;
+      margin-left: 2px;
+      animation: blink 1s step-end infinite;
+    }
+
+    /* Selection */
+    ::selection {
+      background: #48d597;
+      color: #0c0c0c;
+    }
+
+    /* Input caret */
+    textarea {
+      caret-color: #48d597;
+    }
+
+    /* Prompt styling */
+    .prompt::before {
+      content: '>';
+      margin-right: 8px;
+      color: #48d597;
+    }
+
+    /* Code syntax */
+    .syntax-keyword { color: #ff6b8a; }
+    .syntax-function { color: #48d597; }
+    .syntax-string { color: #ffb347; }
+    .syntax-comment { color: #808080; font-style: italic; }
+    .syntax-variable { color: #00d4ff; }
+  </style>
+</head>
+<body class="h-screen bg-terminal-bg text-chalk font-mono antialiased">
+
+  <div class="flex h-full">
+
+    <!-- Sidebar -->
+    <aside class="w-80 flex flex-col border-r border-terminal-border bg-terminal-surface">
+
+      <!-- Header -->
+      <header class="px-4 py-4 border-b border-terminal-border">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-mint terminal-glow">$</span>
+              <h1 class="text-sm font-semibold tracking-wide uppercase">Sessions</h1>
+            </div>
+            <p class="text-xs text-dim mt-1 font-light">~/conversations</p>
+          </div>
+          <button class="group px-3 py-1.5 border border-mint text-mint text-xs font-medium hover:bg-mint hover:text-terminal-bg transition-all">
+            <span class="flex items-center gap-1.5">
+              <span class="text-mint group-hover:text-terminal-bg">+</span>
+              NEW
+            </span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Search -->
+      <div class="px-4 py-3 border-b border-terminal-border">
+        <div class="relative flex items-center">
+          <span class="text-mint text-sm mr-2">grep</span>
+          <input
+            type="search"
+            placeholder="pattern..."
+            class="flex-1 bg-transparent text-sm placeholder:text-dim border-b border-terminal-muted focus:border-mint focus:outline-none py-1 transition-colors"
+          >
+        </div>
+      </div>
+
+      <!-- Conversation List -->
+      <nav class="flex-1 overflow-y-auto px-2 py-3">
+        <div class="space-y-1">
+
+          <!-- Selected conversation -->
+          <div class="animate-type-in">
+            <button class="w-full text-left px-3 py-3 bg-mint/10 border-l-2 border-mint">
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-mint text-xs">●</span>
+                    <span class="text-sm font-medium text-mint truncate">react-hooks.session</span>
+                  </div>
+                  <p class="text-xs text-dim mt-1.5 truncate pl-4">useEffect patterns and best practices...</p>
+                </div>
+                <span class="text-xs text-dim tabular-nums">2m</span>
+              </div>
+            </button>
+          </div>
+
+          <!-- Regular conversations -->
+          <button class="group w-full text-left px-3 py-3 hover:bg-terminal-border/30 border-l-2 border-transparent hover:border-dim transition-all animate-fade-up" style="animation-delay: 0.05s">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-dim text-xs group-hover:text-chalk">○</span>
+                  <span class="text-sm text-dim group-hover:text-chalk truncate transition-colors">python-async.session</span>
+                </div>
+                <p class="text-xs text-dim/60 mt-1.5 truncate pl-4">asyncio and concurrent programming...</p>
+              </div>
+              <span class="text-xs text-dim/60 tabular-nums">1h</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-3 py-3 hover:bg-terminal-border/30 border-l-2 border-transparent hover:border-dim transition-all animate-fade-up" style="animation-delay: 0.1s">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-dim text-xs group-hover:text-chalk">○</span>
+                  <span class="text-sm text-dim group-hover:text-chalk truncate transition-colors">db-schema.session</span>
+                </div>
+                <p class="text-xs text-dim/60 mt-1.5 truncate pl-4">PostgreSQL normalization...</p>
+              </div>
+              <span class="text-xs text-dim/60 tabular-nums">1d</span>
+            </div>
+          </button>
+
+          <!-- Resumable conversation -->
+          <button class="group w-full text-left px-3 py-3 hover:bg-terminal-border/30 border-l-2 border-transparent hover:border-amber transition-all animate-fade-up" style="animation-delay: 0.15s">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-amber text-xs animate-blink">◐</span>
+                  <span class="text-sm text-dim group-hover:text-chalk truncate transition-colors">api-auth.session</span>
+                  <span class="text-[10px] text-amber border border-amber/50 px-1 rounded">PAUSED</span>
+                </div>
+                <p class="text-xs text-dim/60 mt-1.5 truncate pl-4">JWT tokens and OAuth2...</p>
+              </div>
+              <span class="text-xs text-dim/60 tabular-nums">2d</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-3 py-3 hover:bg-terminal-border/30 border-l-2 border-transparent hover:border-dim transition-all animate-fade-up" style="animation-delay: 0.2s">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-dim text-xs group-hover:text-chalk">○</span>
+                  <span class="text-sm text-dim group-hover:text-chalk truncate transition-colors">css-grid.session</span>
+                </div>
+                <p class="text-xs text-dim/60 mt-1.5 truncate pl-4">Responsive design patterns...</p>
+              </div>
+              <span class="text-xs text-dim/60 tabular-nums">3d</span>
+            </div>
+          </button>
+
+        </div>
+      </nav>
+
+      <!-- Footer -->
+      <div class="px-4 py-3 border-t border-terminal-border text-xs text-dim">
+        <div class="flex items-center justify-between">
+          <span>5 sessions</span>
+          <span class="text-mint">v1.0.0</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat Area -->
+    <main class="flex-1 flex flex-col bg-terminal-bg">
+
+      <!-- Chat Header -->
+      <header class="px-6 py-4 border-b border-terminal-border bg-terminal-surface">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+          <div>
+            <div class="flex items-center gap-3">
+              <span class="text-mint terminal-glow">λ</span>
+              <h2 class="text-sm font-semibold">react-hooks.session</h2>
+              <span class="text-xs text-dim">|</span>
+              <span class="text-xs text-dim">PID: 48291</span>
+            </div>
+            <p class="text-xs text-dim mt-1 pl-6">Started: 2025-01-29 14:30:00 UTC</p>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 text-xs">
+              <span class="text-dim">--stream=</span>
+              <div class="flex border border-terminal-border">
+                <button class="px-2 py-1 bg-mint text-terminal-bg font-medium">SSE</button>
+                <button class="px-2 py-1 text-dim hover:text-chalk transition-colors">WS</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Messages -->
+      <div class="flex-1 overflow-y-auto px-6 py-6">
+        <div class="max-w-4xl mx-auto space-y-6">
+
+          <!-- User message -->
+          <div class="animate-fade-up">
+            <div class="flex items-start gap-3">
+              <span class="text-cyber font-semibold text-sm mt-0.5">user@local</span>
+              <span class="text-dim">$</span>
+              <div class="flex-1">
+                <p class="text-sm leading-relaxed">How do I use useEffect for data fetching?</p>
+                <div class="mt-2 flex items-center gap-3">
+                  <span class="text-xs text-dim">14:32:15</span>
+                  <button class="text-xs text-dim hover:text-mint transition-colors">[edit]</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Assistant message -->
+          <div class="animate-fade-up" style="animation-delay: 0.1s">
+            <div class="flex items-start gap-3">
+              <span class="text-mint font-semibold text-sm mt-0.5 terminal-glow">agent</span>
+              <span class="text-dim">→</span>
+              <div class="flex-1">
+                <div class="space-y-4">
+                  <p class="text-sm leading-relaxed">Here's how to properly fetch data with useEffect:</p>
+
+                  <!-- Code block -->
+                  <div class="border border-terminal-border bg-terminal-surface">
+                    <div class="flex items-center justify-between px-3 py-2 border-b border-terminal-border bg-terminal-border/30">
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs text-mint">// javascript</span>
+                      </div>
+                      <button class="text-xs text-dim hover:text-mint transition-colors flex items-center gap-1">
+                        <span>copy</span>
+                        <span class="text-mint">⎘</span>
+                      </button>
+                    </div>
+                    <pre class="p-4 text-sm overflow-x-auto leading-relaxed"><code><span class="syntax-function">useEffect</span>(() => {
+  <span class="syntax-keyword">const</span> <span class="syntax-variable">fetchData</span> = <span class="syntax-keyword">async</span> () => {
+    <span class="syntax-keyword">const</span> response = <span class="syntax-keyword">await</span> <span class="syntax-function">fetch</span>(<span class="syntax-string">'/api/data'</span>);
+    <span class="syntax-keyword">const</span> data = <span class="syntax-keyword">await</span> response.<span class="syntax-function">json</span>();
+    <span class="syntax-function">setData</span>(data);
+  };
+
+  <span class="syntax-function">fetchData</span>();
+}, []);</code></pre>
+                  </div>
+
+                  <p class="text-sm leading-relaxed">Key points to remember:</p>
+                  <ul class="space-y-2 text-sm">
+                    <li class="flex items-start gap-2">
+                      <span class="text-mint">-</span>
+                      <span>Always handle cleanup for subscriptions</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <span class="text-mint">-</span>
+                      <span>Consider using a library like React Query for complex cases</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <span class="text-mint">-</span>
+                      <span>Handle loading and error states</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div class="mt-3 flex items-center gap-4">
+                  <span class="text-xs text-dim">14:32:18</span>
+                  <button class="text-xs text-dim hover:text-lilac transition-colors">[fork:3]</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- User message -->
+          <div class="animate-fade-up" style="animation-delay: 0.2s">
+            <div class="flex items-start gap-3">
+              <span class="text-cyber font-semibold text-sm mt-0.5">user@local</span>
+              <span class="text-dim">$</span>
+              <div class="flex-1">
+                <p class="text-sm leading-relaxed">What about error handling?</p>
+                <div class="mt-2 flex items-center gap-3">
+                  <span class="text-xs text-dim">14:33:42</span>
+                  <button class="text-xs text-dim hover:text-mint transition-colors">[edit]</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Streaming assistant message -->
+          <div class="animate-fade-up" style="animation-delay: 0.3s">
+            <div class="flex items-start gap-3">
+              <span class="text-mint font-semibold text-sm mt-0.5 terminal-glow animate-flicker">agent</span>
+              <span class="text-dim">→</span>
+              <div class="flex-1">
+                <p class="text-sm leading-relaxed">
+                  Great question! You should wrap your fetch in a try-catch block<span class="cursor"></span>
+                </p>
+                <div class="mt-2">
+                  <span class="text-xs text-amber">[streaming...]</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Composer -->
+      <div class="px-6 py-4 border-t border-terminal-border bg-terminal-surface">
+        <div class="max-w-4xl mx-auto">
+          <div class="flex items-start gap-3">
+            <span class="text-cyber font-semibold text-sm mt-2">user@local</span>
+            <span class="text-dim mt-2">$</span>
+            <div class="flex-1">
+              <textarea
+                placeholder="Enter command..."
+                rows="3"
+                class="w-full bg-transparent text-sm placeholder:text-dim/50 resize-none focus:outline-none leading-relaxed"
+              ></textarea>
+              <div class="flex items-center justify-between mt-2">
+                <div class="flex items-center gap-4 text-xs text-dim">
+                  <span>Enter to send</span>
+                  <span>|</span>
+                  <span>Shift+Enter for newline</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button class="px-3 py-1.5 border border-terminal-border text-dim hover:border-rose hover:text-rose text-xs transition-colors">
+                    ^C STOP
+                  </button>
+                  <button class="px-3 py-1.5 bg-mint text-terminal-bg text-xs font-medium hover:bg-mint/90 transition-colors">
+                    SEND →
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status bar -->
+      <div class="px-6 py-1.5 border-t border-terminal-border bg-terminal-border/30 text-xs">
+        <div class="max-w-4xl mx-auto flex items-center justify-between text-dim">
+          <div class="flex items-center gap-4">
+            <span class="text-mint">● CONNECTED</span>
+            <span>|</span>
+            <span>SSE</span>
+            <span>|</span>
+            <span>Latency: 42ms</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <span>Messages: 4</span>
+            <span>|</span>
+            <span>Tokens: 847</span>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>

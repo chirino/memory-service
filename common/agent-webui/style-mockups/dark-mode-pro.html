@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat UI - Dark Mode Pro</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['Syne', 'system-ui', 'sans-serif'],
+            body: ['Outfit', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            void: '#0a0a0b',
+            obsidian: '#111113',
+            graphite: '#1a1a1f',
+            slate: '#252530',
+            ash: '#3a3a48',
+            silver: '#9898a8',
+            pearl: '#e8e8f0',
+            electric: '#6366f1',
+            violet: '#8b5cf6',
+            rose: '#ec4899',
+            amber: '#f59e0b',
+            emerald: '#10b981',
+          },
+          animation: {
+            'glow': 'glow 2s ease-in-out infinite alternate',
+            'float': 'float 6s ease-in-out infinite',
+            'slide-in': 'slide-in 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+            'pulse-ring': 'pulse-ring 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          },
+          keyframes: {
+            'glow': {
+              '0%': { boxShadow: '0 0 20px rgba(99, 102, 241, 0.3)' },
+              '100%': { boxShadow: '0 0 40px rgba(139, 92, 246, 0.4)' },
+            },
+            'float': {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-5px)' },
+            },
+            'slide-in': {
+              '0%': { opacity: '0', transform: 'translateY(20px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+            'pulse-ring': {
+              '0%': { transform: 'scale(0.95)', opacity: '1' },
+              '75%, 100%': { transform: 'scale(1.2)', opacity: '0' },
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, #3a3a48, #252530);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, #4a4a58, #353540);
+    }
+
+    /* Gradient text */
+    .gradient-text {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6, #ec4899);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* Glassmorphism */
+    .glass {
+      background: rgba(26, 26, 31, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    /* Noise texture overlay */
+    .noise::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      opacity: 0.03;
+      pointer-events: none;
+    }
+
+    /* Code block */
+    .code-block {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    /* Glow effects */
+    .glow-electric {
+      box-shadow: 0 0 30px -5px rgba(99, 102, 241, 0.5);
+    }
+    .glow-violet {
+      box-shadow: 0 0 30px -5px rgba(139, 92, 246, 0.5);
+    }
+
+    /* Gradient border */
+    .gradient-border {
+      position: relative;
+    }
+    .gradient-border::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6, #ec4899);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+    }
+
+    /* Streaming cursor */
+    .streaming-cursor::after {
+      content: '▋';
+      animation: blink 1s infinite;
+      margin-left: 2px;
+      color: #8b5cf6;
+    }
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+  </style>
+</head>
+<body class="h-screen bg-void text-pearl font-body antialiased noise relative overflow-hidden">
+
+  <!-- Ambient background gradients -->
+  <div class="fixed inset-0 overflow-hidden pointer-events-none">
+    <div class="absolute -top-1/2 -left-1/2 w-full h-full bg-gradient-radial from-electric/10 via-transparent to-transparent opacity-50 animate-float"></div>
+    <div class="absolute -bottom-1/2 -right-1/2 w-full h-full bg-gradient-radial from-violet/10 via-transparent to-transparent opacity-50 animate-float" style="animation-delay: -3s"></div>
+  </div>
+
+  <div class="relative flex h-full z-10">
+
+    <!-- Sidebar -->
+    <aside class="w-80 flex flex-col border-r border-slate/50 bg-obsidian/90 backdrop-blur-xl">
+
+      <!-- Header -->
+      <header class="px-5 py-5 border-b border-slate/50">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="font-display text-xl font-semibold tracking-tight gradient-text">Conversations</h1>
+            <p class="text-sm text-silver mt-0.5">Your AI sessions</p>
+          </div>
+          <button class="group relative px-4 py-2 bg-gradient-to-r from-electric to-violet rounded-xl text-sm font-medium text-white overflow-hidden transition-all hover:shadow-lg hover:shadow-violet/20">
+            <span class="relative z-10 flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              New
+            </span>
+            <div class="absolute inset-0 bg-gradient-to-r from-violet to-rose opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          </button>
+        </div>
+      </header>
+
+      <!-- Search -->
+      <div class="px-4 py-4">
+        <div class="relative group">
+          <div class="absolute inset-0 bg-gradient-to-r from-electric/20 to-violet/20 rounded-xl blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity"></div>
+          <div class="relative flex items-center">
+            <svg class="absolute left-4 w-4 h-4 text-silver" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <input
+              type="search"
+              placeholder="Search..."
+              class="w-full pl-11 pr-4 py-3 bg-graphite/80 rounded-xl text-sm placeholder:text-silver/50 border border-slate/50 focus:border-electric/50 focus:outline-none focus:ring-2 focus:ring-electric/20 transition-all"
+            >
+          </div>
+        </div>
+      </div>
+
+      <!-- Conversation List -->
+      <nav class="flex-1 overflow-y-auto px-3 pb-4">
+        <div class="space-y-1.5">
+
+          <!-- Selected conversation -->
+          <div class="relative animate-slide-in">
+            <div class="absolute inset-0 bg-gradient-to-r from-electric/20 to-violet/20 rounded-xl blur-sm"></div>
+            <button class="relative w-full text-left px-4 py-4 rounded-xl bg-graphite border border-electric/30 transition-all">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full bg-emerald animate-pulse"></div>
+                    <h3 class="font-medium text-pearl truncate">Help with React hooks</h3>
+                  </div>
+                  <p class="text-sm text-silver mt-1.5 line-clamp-2">Discussing useEffect patterns and data fetching...</p>
+                </div>
+                <span class="text-xs text-silver/70 tabular-nums">2m</span>
+              </div>
+            </button>
+          </div>
+
+          <!-- Regular conversations -->
+          <button class="group w-full text-left px-4 py-4 rounded-xl border border-transparent hover:bg-graphite/60 hover:border-slate/50 transition-all animate-slide-in" style="animation-delay: 0.05s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-pearl/90 group-hover:text-pearl truncate transition-colors">Python async patterns</h3>
+                <p class="text-sm text-silver/70 mt-1.5 line-clamp-2">Asyncio and concurrent programming...</p>
+              </div>
+              <span class="text-xs text-silver/50 tabular-nums">1h</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-4 py-4 rounded-xl border border-transparent hover:bg-graphite/60 hover:border-slate/50 transition-all animate-slide-in" style="animation-delay: 0.1s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-pearl/90 group-hover:text-pearl truncate transition-colors">Database schema design</h3>
+                <p class="text-sm text-silver/70 mt-1.5 line-clamp-2">PostgreSQL normalization and indexing...</p>
+              </div>
+              <span class="text-xs text-silver/50 tabular-nums">Yesterday</span>
+            </div>
+          </button>
+
+          <!-- Resumable conversation -->
+          <button class="group w-full text-left px-4 py-4 rounded-xl border border-transparent hover:bg-graphite/60 hover:border-slate/50 transition-all animate-slide-in" style="animation-delay: 0.15s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <h3 class="font-medium text-pearl/90 group-hover:text-pearl truncate transition-colors">API authentication</h3>
+                  <!-- Resumable indicator -->
+                  <div class="relative">
+                    <div class="w-3 h-3 rounded-full bg-amber/30"></div>
+                    <div class="absolute inset-0 w-3 h-3 rounded-full bg-amber animate-pulse-ring"></div>
+                  </div>
+                </div>
+                <p class="text-sm text-silver/70 mt-1.5 line-clamp-2">JWT tokens and OAuth2 implementation...</p>
+              </div>
+              <span class="text-xs text-silver/50 tabular-nums">2d</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-4 py-4 rounded-xl border border-transparent hover:bg-graphite/60 hover:border-slate/50 transition-all animate-slide-in" style="animation-delay: 0.2s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-pearl/90 group-hover:text-pearl truncate transition-colors">CSS Grid layout</h3>
+                <p class="text-sm text-silver/70 mt-1.5 line-clamp-2">Responsive design patterns...</p>
+              </div>
+              <span class="text-xs text-silver/50 tabular-nums">3d</span>
+            </div>
+          </button>
+
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Chat Area -->
+    <main class="flex-1 flex flex-col bg-void/50">
+
+      <!-- Chat Header -->
+      <header class="px-8 py-5 border-b border-slate/50 glass">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+          <div>
+            <h2 class="font-display text-lg font-semibold">Help with React hooks</h2>
+            <div class="flex items-center gap-2 mt-1">
+              <div class="w-1.5 h-1.5 rounded-full bg-emerald"></div>
+              <span class="text-sm text-silver">Active session</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-silver font-medium uppercase tracking-wide">Stream</span>
+            <div class="flex bg-graphite rounded-lg p-1 border border-slate/50">
+              <button class="px-3 py-1.5 text-xs font-medium rounded-md bg-gradient-to-r from-electric to-violet text-white shadow-lg shadow-electric/20">SSE</button>
+              <button class="px-3 py-1.5 text-xs font-medium rounded-md text-silver hover:text-pearl transition-colors">WS</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Messages -->
+      <div class="flex-1 overflow-y-auto px-8 py-6">
+        <div class="max-w-4xl mx-auto space-y-6">
+
+          <!-- User message -->
+          <div class="flex justify-end animate-slide-in">
+            <div class="max-w-[70%]">
+              <div class="gradient-border rounded-2xl rounded-tr-sm">
+                <div class="bg-graphite rounded-2xl rounded-tr-sm px-5 py-4">
+                  <p class="text-[15px] leading-relaxed">How do I use useEffect for data fetching?</p>
+                </div>
+              </div>
+              <div class="flex justify-end mt-2 pr-2">
+                <button class="text-xs text-silver/60 hover:text-electric transition-colors">Edit</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Assistant message -->
+          <div class="flex justify-start animate-slide-in" style="animation-delay: 0.1s">
+            <div class="max-w-[80%]">
+              <div class="bg-slate/40 rounded-2xl rounded-tl-sm px-5 py-4 border border-slate/50">
+                <p class="text-[15px] leading-relaxed">Here's how to properly fetch data with useEffect:</p>
+
+                <!-- Code block -->
+                <div class="mt-4 rounded-xl bg-obsidian border border-slate/50 overflow-hidden glow-violet">
+                  <div class="flex items-center justify-between px-4 py-2.5 bg-graphite/50 border-b border-slate/50">
+                    <div class="flex items-center gap-2">
+                      <div class="flex gap-1.5">
+                        <div class="w-3 h-3 rounded-full bg-rose/60"></div>
+                        <div class="w-3 h-3 rounded-full bg-amber/60"></div>
+                        <div class="w-3 h-3 rounded-full bg-emerald/60"></div>
+                      </div>
+                      <span class="text-xs text-silver/70 ml-2">javascript</span>
+                    </div>
+                    <button class="text-xs text-silver/60 hover:text-pearl transition-colors flex items-center gap-1">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                      </svg>
+                      Copy
+                    </button>
+                  </div>
+                  <pre class="code-block p-4 overflow-x-auto"><code><span class="text-violet">useEffect</span>(<span class="text-rose">()</span> <span class="text-electric">=></span> {
+  <span class="text-violet">const</span> <span class="text-amber">fetchData</span> = <span class="text-violet">async</span> <span class="text-rose">()</span> <span class="text-electric">=></span> {
+    <span class="text-violet">const</span> response = <span class="text-violet">await</span> <span class="text-amber">fetch</span>(<span class="text-emerald">'/api/data'</span>);
+    <span class="text-violet">const</span> data = <span class="text-violet">await</span> response.<span class="text-amber">json</span>();
+    <span class="text-amber">setData</span>(data);
+  };
+
+  <span class="text-amber">fetchData</span>();
+}, []);</code></pre>
+                </div>
+
+                <p class="text-[15px] leading-relaxed mt-4">Key points to remember:</p>
+                <ul class="mt-3 space-y-2">
+                  <li class="flex items-start gap-3 text-[15px]">
+                    <div class="w-1.5 h-1.5 rounded-full bg-electric mt-2.5 flex-shrink-0"></div>
+                    <span class="text-pearl/90">Always handle cleanup for subscriptions</span>
+                  </li>
+                  <li class="flex items-start gap-3 text-[15px]">
+                    <div class="w-1.5 h-1.5 rounded-full bg-violet mt-2.5 flex-shrink-0"></div>
+                    <span class="text-pearl/90">Consider using a library like React Query for complex cases</span>
+                  </li>
+                  <li class="flex items-start gap-3 text-[15px]">
+                    <div class="w-1.5 h-1.5 rounded-full bg-rose mt-2.5 flex-shrink-0"></div>
+                    <span class="text-pearl/90">Handle loading and error states</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Fork indicator -->
+              <div class="mt-2 pl-3">
+                <button class="inline-flex items-center gap-1.5 text-xs text-silver/60 hover:text-violet transition-colors">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                  </svg>
+                  3 forks
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- User message -->
+          <div class="flex justify-end animate-slide-in" style="animation-delay: 0.2s">
+            <div class="max-w-[70%] group">
+              <div class="gradient-border rounded-2xl rounded-tr-sm">
+                <div class="bg-graphite rounded-2xl rounded-tr-sm px-5 py-4 relative">
+                  <p class="text-[15px] leading-relaxed">What about error handling?</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Streaming assistant message -->
+          <div class="flex justify-start animate-slide-in" style="animation-delay: 0.3s">
+            <div class="max-w-[80%]">
+              <div class="bg-slate/40 rounded-2xl rounded-tl-sm px-5 py-4 border border-violet/30 glow-violet animate-glow">
+                <p class="text-[15px] leading-relaxed streaming-cursor">
+                  Great question! You should wrap your fetch in a try-catch block
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Composer -->
+      <div class="px-8 py-5 border-t border-slate/50 glass">
+        <div class="max-w-4xl mx-auto">
+          <div class="relative group">
+            <div class="absolute -inset-1 bg-gradient-to-r from-electric via-violet to-rose rounded-2xl blur-lg opacity-20 group-focus-within:opacity-40 transition-opacity"></div>
+            <div class="relative">
+              <textarea
+                placeholder="Type a message..."
+                rows="3"
+                class="w-full px-5 py-4 bg-graphite rounded-xl text-[15px] placeholder:text-silver/40 resize-none border border-slate/50 focus:border-electric/50 focus:outline-none focus:ring-2 focus:ring-electric/20 transition-all"
+              ></textarea>
+              <div class="absolute bottom-3 right-3 flex items-center gap-2">
+                <button class="p-3 bg-gradient-to-r from-electric to-violet rounded-xl text-white shadow-lg shadow-electric/30 hover:shadow-violet/40 transition-shadow">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <p class="text-xs text-silver/40 mt-3 text-center">Press <kbd class="px-1.5 py-0.5 bg-slate/50 rounded text-silver/60">Enter</kbd> to send, <kbd class="px-1.5 py-0.5 bg-slate/50 rounded text-silver/60">Shift+Enter</kbd> for new line</p>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>

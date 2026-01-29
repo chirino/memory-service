@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Chat - New Conversation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300;1,9..40,400&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            serif: ['Instrument Serif', 'Georgia', 'serif'],
+            sans: ['DM Sans', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            cream: '#FDFBF7',
+            ink: '#1a1a1a',
+            mist: '#f5f3ef',
+            stone: '#8a8580',
+            terracotta: '#c67a5c',
+            sage: '#7d9a8c',
+          },
+          animation: {
+            'pulse-subtle': 'pulse-subtle 2s ease-in-out infinite',
+            'fade-in': 'fade-in 0.4s ease-out',
+            'slide-up': 'slide-up 0.5s ease-out',
+            'float': 'float 6s ease-in-out infinite',
+          },
+          keyframes: {
+            'pulse-subtle': {
+              '0%, 100%': { opacity: '1' },
+              '50%': { opacity: '0.7' },
+            },
+            'fade-in': {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            'slide-up': {
+              '0%': { opacity: '0', transform: 'translateY(10px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+            'float': {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-8px)' },
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #d4d0c8;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #b8b4ac;
+    }
+
+    /* Spinner */
+    .spinner {
+      border: 2px solid #e5e2dd;
+      border-top-color: #7d9a8c;
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="h-screen bg-cream text-ink font-sans antialiased">
+
+  <div class="flex h-full">
+
+    <!-- ==================== SIDEBAR ==================== -->
+    <aside class="w-80 flex flex-col border-r border-stone/20 bg-cream">
+
+      <!-- Sidebar Header -->
+      <header class="px-6 py-5 border-b border-stone/10">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="font-serif text-2xl tracking-tight">Conversations</h1>
+            <p class="text-sm text-stone mt-0.5">Your recent chats</p>
+          </div>
+          <button class="group flex items-center gap-2 px-4 py-2 bg-ink text-cream rounded-full text-sm font-medium transition-all hover:bg-ink/90 hover:shadow-lg hover:shadow-ink/10 ring-2 ring-sage/30">
+            <svg class="w-4 h-4 transition-transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            New
+          </button>
+        </div>
+      </header>
+
+      <!-- Search -->
+      <div class="px-5 py-4">
+        <div class="relative">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          <input
+            type="search"
+            placeholder="Search conversations..."
+            class="w-full pl-10 pr-4 py-2.5 bg-mist rounded-xl text-sm placeholder:text-stone/60 border border-transparent focus:border-stone/20 focus:outline-none transition-colors"
+          >
+        </div>
+      </div>
+
+      <!-- Conversation List -->
+      <nav class="flex-1 overflow-y-auto px-3 pb-4">
+        <div class="space-y-1">
+
+          <!-- No selection - all items in normal state -->
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-ink truncate">Help with React hooks</h3>
+                <p class="text-sm text-stone mt-1 line-clamp-2">Discussing useEffect patterns and best practices...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">2m</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.05s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-ink truncate">Python async patterns</h3>
+                <p class="text-sm text-stone mt-1 line-clamp-2">Exploring asyncio and concurrent programming...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">1h</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.1s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-ink truncate">Database schema design</h3>
+                <p class="text-sm text-stone mt-1 line-clamp-2">PostgreSQL normalization and indexing strategies...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">Yesterday</span>
+            </div>
+          </button>
+
+          <!-- Resumable conversation with spinner -->
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.15s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <h3 class="font-medium text-ink truncate">API authentication</h3>
+                  <div class="spinner"></div>
+                </div>
+                <p class="text-sm text-stone mt-1 line-clamp-2">JWT tokens and OAuth2 implementation...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">2d</span>
+            </div>
+          </button>
+
+          <button class="group w-full text-left px-4 py-3.5 rounded-xl hover:bg-mist/60 transition-all animate-fade-in" style="animation-delay: 0.2s">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-medium text-ink truncate">CSS Grid layout</h3>
+                <p class="text-sm text-stone mt-1 line-clamp-2">Responsive design patterns and grid templates...</p>
+              </div>
+              <span class="text-xs text-stone whitespace-nowrap mt-0.5">3d</span>
+            </div>
+          </button>
+
+        </div>
+      </nav>
+    </aside>
+
+    <!-- ==================== MAIN CHAT AREA - EMPTY STATE ==================== -->
+    <main class="flex-1 flex flex-col bg-cream">
+
+      <!-- Chat Header -->
+      <header class="px-8 py-5 border-b border-stone/10 bg-cream/80 backdrop-blur-sm">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+          <div>
+            <h2 class="font-serif text-xl text-stone/60">New conversation</h2>
+            <p class="text-sm text-stone mt-0.5">Start chatting with your agent</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-stone font-medium">Stream</span>
+            <div class="flex bg-mist rounded-lg p-0.5">
+              <button class="px-3 py-1.5 text-xs font-medium rounded-md bg-cream shadow-sm text-ink">SSE</button>
+              <button class="px-3 py-1.5 text-xs font-medium rounded-md text-stone hover:text-ink transition-colors">WS</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Empty State Content -->
+      <div class="flex-1 flex items-center justify-center px-8">
+        <div class="max-w-md text-center animate-slide-up">
+
+          <!-- Decorative icon -->
+          <div class="mb-8 animate-float">
+            <div class="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-mist border border-stone/10">
+              <svg class="w-12 h-12 text-sage" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Heading -->
+          <h3 class="font-serif text-3xl tracking-tight mb-3">Start a conversation</h3>
+          <p class="text-stone text-lg leading-relaxed mb-8">
+            Ask a question, explore an idea, or get help with code. Your AI assistant is ready.
+          </p>
+
+          <!-- Suggestion cards -->
+          <div class="space-y-3 mb-8">
+            <p class="text-xs text-stone uppercase tracking-wide font-medium mb-4">Try asking</p>
+
+            <button class="w-full text-left px-5 py-4 bg-mist rounded-xl border border-transparent hover:border-stone/20 transition-all group">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-sage/20 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-4 h-4 text-sage" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+                  </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-ink group-hover:text-ink/80 transition-colors">"How do I implement authentication in React?"</p>
+                </div>
+                <svg class="w-4 h-4 text-stone/40 group-hover:text-stone transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+              </div>
+            </button>
+
+            <button class="w-full text-left px-5 py-4 bg-mist rounded-xl border border-transparent hover:border-stone/20 transition-all group">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-terracotta/20 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-4 h-4 text-terracotta" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                  </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-ink group-hover:text-ink/80 transition-colors">"Explain async/await in JavaScript"</p>
+                </div>
+                <svg class="w-4 h-4 text-stone/40 group-hover:text-stone transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+              </div>
+            </button>
+
+            <button class="w-full text-left px-5 py-4 bg-mist rounded-xl border border-transparent hover:border-stone/20 transition-all group">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-ink/10 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-4 h-4 text-ink/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                  </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-ink group-hover:text-ink/80 transition-colors">"Help me debug this code"</p>
+                </div>
+                <svg class="w-4 h-4 text-stone/40 group-hover:text-stone transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+              </div>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ==================== COMPOSER ==================== -->
+      <div class="px-8 py-5 border-t border-stone/10 bg-cream">
+        <div class="max-w-3xl mx-auto">
+          <div class="relative">
+            <textarea
+              placeholder="Type a message to start..."
+              rows="3"
+              class="w-full px-5 py-4 bg-mist rounded-2xl text-[15px] placeholder:text-stone/60 resize-none border border-transparent focus:border-stone/20 focus:outline-none transition-colors"
+              autofocus
+            ></textarea>
+            <div class="absolute bottom-3 right-3 flex items-center gap-2">
+              <button class="p-2.5 bg-ink text-cream rounded-xl hover:bg-ink/90 transition-colors shadow-lg shadow-ink/10">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <p class="text-xs text-stone mt-2 text-center">Press Enter to send, Shift+Enter for new line</p>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+</body>
+</html>

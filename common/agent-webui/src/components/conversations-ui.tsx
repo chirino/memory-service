@@ -5,8 +5,6 @@
  * This module handles the visual presentation while Conversation handles state management.
  */
 import { forwardRef } from "react";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import {
   Conversation,
   type RenderableConversationMessage,
@@ -15,6 +13,7 @@ import {
 } from "@/components/conversation";
 import { Streamdown } from "streamdown";
 import type React from "react";
+import { MessageCircle, Lightbulb, PenLine, Shuffle, ChevronRight, Send } from "lucide-react";
 
 type ConversationsUIViewportProps = React.ComponentProps<typeof Conversation.Viewport>;
 
@@ -27,7 +26,7 @@ const ConversationsUIViewport = forwardRef<HTMLDivElement, ConversationsUIViewpo
     return (
       <Conversation.Viewport
         ref={ref}
-        className={`flex-1 overflow-x-auto overflow-y-auto px-6 py-4 ${className ?? ""}`}
+        className={`flex-1 overflow-x-auto overflow-y-auto px-8 ${className ?? ""}`}
         {...props}
       />
     );
@@ -47,9 +46,9 @@ const ConversationsUIMessages = forwardRef<HTMLDivElement, ConversationsUIMessag
       <Conversation.Messages ref={ref} {...props}>
         {(items) => {
           if (typeof children === "function") {
-            return <div className={`mx-auto flex max-w-2xl flex-col gap-3 ${className ?? ""}`}>{children(items)}</div>;
+            return <div className={`mx-auto flex max-w-3xl flex-col py-6 ${className ?? ""}`}>{children(items)}</div>;
           }
-          return <div className={`mx-auto flex max-w-2xl flex-col gap-3 ${className ?? ""}`}>{children}</div>;
+          return <div className={`mx-auto flex max-w-3xl flex-col py-6 ${className ?? ""}`}>{children}</div>;
         }}
       </Conversation.Messages>
     );
@@ -79,19 +78,31 @@ function ConversationsUIMessageRow({
   messageRef,
 }: ConversationsUIMessageRowProps) {
   const isUser = message.author === "user";
-  const messageStateClass =
-    message.displayState === "pending" ? "opacity-70" : message.displayState === "streaming" ? "opacity-90" : "";
+  const isStreaming = message.displayState === "streaming";
 
   return (
     <Conversation.Message message={message} asChild>
       <div ref={messageRef} className={`flex ${isUser ? "justify-end" : "justify-start"} ${className ?? ""}`}>
-        <div className={`relative flex max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
+        <div className={`relative flex flex-col gap-1 ${isUser ? "max-w-[75%] items-end" : "max-w-[85%] items-start"}`}>
           <div
-            className={`group relative rounded-lg px-3 py-2 text-sm ${messageStateClass} ${
-              isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+            className={`group relative px-5 py-3.5 text-[15px] leading-relaxed ${
+              isUser
+                ? "rounded-2xl rounded-tr-md bg-ink text-cream"
+                : "rounded-2xl rounded-tl-md bg-mist text-ink"
             }`}
           >
-            {children ?? <Streamdown isAnimating={message.displayState === "streaming"}>{message.content}</Streamdown>}
+            {children ?? (
+              <>
+                <Streamdown isAnimating={isStreaming}>{message.content}</Streamdown>
+                {isStreaming && (
+                  <span className="ml-1 inline-flex">
+                    <span className="typing-dot h-1 w-1 rounded-full bg-stone" />
+                    <span className="typing-dot ml-0.5 h-1 w-1 rounded-full bg-stone" />
+                    <span className="typing-dot ml-0.5 h-1 w-1 rounded-full bg-stone" />
+                  </span>
+                )}
+              </>
+            )}
             {overlay}
           </div>
         </div>
@@ -107,20 +118,80 @@ type ConversationsUIEmptyStateProps = {
 };
 
 /**
- * Empty state card shown when there are no messages.
+ * Empty state shown when there are no messages.
  */
 function ConversationsUIEmptyState({
-  title = "No messages yet",
-  description = "Type a message below to start chatting with your agent.",
+  title = "Start a conversation",
+  description = "Ask a question, explore an idea, or get help with code. Your AI assistant is ready.",
   className,
 }: ConversationsUIEmptyStateProps) {
+  const { sendMessage } = useConversationStreaming();
+
+  const suggestions = [
+    {
+      text: "Write me a 4 paragraph essay on the benefits of AI",
+      icon: PenLine,
+      iconBg: "bg-ink/10",
+      iconColor: "text-ink/60",
+    },
+    {
+      text: "Pick a random number between 1 and 100",
+      icon: Shuffle,
+      iconBg: "bg-sage/20",
+      iconColor: "text-sage",
+    },
+    {
+      text: "Explain async/await in JavaScript",
+      icon: Lightbulb,
+      iconBg: "bg-terracotta/20",
+      iconColor: "text-terracotta",
+    },
+  ];
+
   return (
-    <Card className={`mx-auto max-w-xl border-dashed ${className ?? ""}`}>
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-    </Card>
+    <div className={`flex flex-1 items-center justify-center px-8 ${className ?? ""}`}>
+      <div className="max-w-md animate-slide-up text-center">
+        {/* Decorative icon */}
+        <div className="mb-8 animate-float">
+          <div className="inline-flex h-24 w-24 items-center justify-center rounded-3xl border border-stone/10 bg-mist">
+            <MessageCircle className="h-12 w-12 text-sage" strokeWidth={1.5} />
+          </div>
+        </div>
+
+        {/* Heading */}
+        <h3 className="mb-3 font-serif text-3xl tracking-tight">{title}</h3>
+        <p className="mb-8 text-lg leading-relaxed text-stone">{description}</p>
+
+        {/* Suggestion cards */}
+        <div className="mb-8 space-y-3">
+          <p className="mb-4 text-xs font-medium uppercase tracking-wide text-stone">Try asking</p>
+
+          {suggestions.map((suggestion) => {
+            const Icon = suggestion.icon;
+            return (
+              <button
+                key={suggestion.text}
+                type="button"
+                onClick={() => sendMessage(suggestion.text)}
+                className="group w-full rounded-xl border border-transparent bg-mist px-5 py-4 text-left transition-all hover:border-stone/20"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${suggestion.iconBg}`}>
+                    <Icon className={`h-4 w-4 ${suggestion.iconColor}`} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-ink transition-colors group-hover:text-ink/80">
+                      "{suggestion.text}"
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-stone/40 transition-colors group-hover:text-stone" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -140,7 +211,7 @@ type ConversationsUIComposerProps = {
  * Handles send/stop button logic based on streaming state.
  */
 function ConversationsUIComposer({
-  placeholder = "Type your message…",
+  placeholder = "Type a message...",
   disabled = false,
   cancelDisabled = false,
   onCancel,
@@ -159,26 +230,41 @@ function ConversationsUIComposer({
     onCancel?.();
   };
 
+  const canSend = !disabled && value.trim() && conversationId;
+
   return (
-    <div className={`border-t bg-background px-6 py-3 ${className ?? ""}`}>
-      <div className="mx-auto flex max-w-2xl flex-col gap-2">
-        <Conversation.Input
-          placeholder={placeholder}
-          rows={3}
-          disabled={disabled}
-          className={`w-full resize-none rounded-md border px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 ${inputClassName ?? ""}`}
-        />
-        <div className="flex justify-end gap-2">
-          {isBusy ? (
-            <Button size="sm" variant="outline" onClick={handleCancel} disabled={cancelDisabled || !conversationId}>
-              {stopLabel}
-            </Button>
-          ) : (
-            <Button size="sm" onClick={() => submit()} disabled={disabled || !value.trim() || !conversationId}>
-              {sendLabel}
-            </Button>
-          )}
+    <div className={`border-t border-stone/10 bg-cream px-8 py-5 ${className ?? ""}`}>
+      <div className="mx-auto max-w-3xl">
+        <div className="relative">
+          <Conversation.Input
+            placeholder={placeholder}
+            rows={3}
+            disabled={disabled}
+            className={`w-full resize-none rounded-2xl border border-transparent bg-mist px-5 py-4 pr-24 text-[15px] placeholder:text-stone/60 transition-colors focus:border-stone/20 focus:outline-none disabled:opacity-50 ${inputClassName ?? ""}`}
+          />
+          <div className="absolute bottom-3 right-3 flex items-center gap-2">
+            {isBusy && (
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={cancelDisabled || !conversationId}
+                className="rounded-full border border-terracotta/30 px-4 py-2 text-sm text-terracotta transition-colors hover:bg-terracotta/10 disabled:opacity-50"
+              >
+                {stopLabel}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => submit()}
+              disabled={!canSend || isBusy}
+              className="rounded-xl bg-ink p-2.5 text-cream shadow-lg shadow-ink/10 transition-colors hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send className="h-5 w-5" />
+              <span className="sr-only">{sendLabel}</span>
+            </button>
+          </div>
         </div>
+        <p className="mt-2 text-center text-xs text-stone">Press Enter to send, Shift+Enter for new line</p>
       </div>
     </div>
   );
