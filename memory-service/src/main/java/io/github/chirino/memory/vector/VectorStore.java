@@ -10,7 +10,7 @@ public interface VectorStore {
 
     List<SearchResultDto> search(String userId, SearchEntriesRequest request);
 
-    void upsertSummaryEmbedding(String conversationId, String entryId, float[] embedding);
+    void upsertTranscriptEmbedding(String conversationId, String entryId, float[] embedding);
 
     /**
      * Delete all embeddings for a conversation group.

@@ -14,7 +14,7 @@ Entries are organized into logical channels within a conversation:
 |---------|-------------|
 | `history` | User-visible conversation between users and agents |
 | `memory` | Agent memory entries, scoped to the calling client ID |
-| `summary` | Summarization entries (not visible in user-facing lists) |
+| `transcript` | Transcript index entries (not visible in user-facing lists) |
 
 ## Entry Structure
 
@@ -43,7 +43,7 @@ Each entry contains:
 | `id` | Unique entry identifier |
 | `conversationId` | ID of the parent conversation |
 | `userId` | Human user associated with the entry |
-| `channel` | Logical channel (`history`, `memory`, `summary`) |
+| `channel` | Logical channel (`history`, `memory`, `transcript`) |
 | `contentType` | Type of content (e.g., `message`) |
 | `epoch` | Memory epoch number (for `memory` channel entries) |
 | `content` | Array of content blocks (opaque, agent-defined) |
@@ -109,7 +109,7 @@ Response:
 Query parameters:
 - `limit` - Maximum entries to return (default: 50)
 - `after` - Cursor for pagination (entry ID)
-- `channel` - Filter by channel: `history` (default), `memory`, or `summary`
+- `channel` - Filter by channel: `history` (default), `memory`, or `transcript`
 - `epoch` - For `memory` channel: `latest`, `all`, or a specific epoch number
 
 ## Memory Epochs

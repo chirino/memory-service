@@ -34,13 +34,13 @@ import io.github.chirino.memory.grpc.v1.Conversation;
 import io.github.chirino.memory.grpc.v1.ConversationMembership;
 import io.github.chirino.memory.grpc.v1.ConversationMembershipsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
-import io.github.chirino.memory.grpc.v1.CreateSummaryRequest;
 import io.github.chirino.memory.grpc.v1.DeleteConversationRequest;
 import io.github.chirino.memory.grpc.v1.DeleteMembershipRequest;
 import io.github.chirino.memory.grpc.v1.EntriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.chirino.memory.grpc.v1.HealthResponse;
+import io.github.chirino.memory.grpc.v1.IndexTranscriptRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
 import io.github.chirino.memory.grpc.v1.ListEntriesRequest;
@@ -836,6 +836,15 @@ public class StepDefinitions {
                 requestSpec.when().post("/v1/conversations/{id}/summaries", conversationId);
     }
 
+    @io.cucumber.java.en.When("I index a transcript with request:")
+    public void iIndexATranscriptWithRequest(String requestBody) {
+        trackUsage();
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().post("/v1/conversations/index");
+    }
+
     @io.cucumber.java.en.When("I search entries with request:")
     public void iSearchEntriesWithRequest(String requestBody) {
         trackUsage();
@@ -843,6 +852,15 @@ public class StepDefinitions {
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post("/v1/user/search/entries");
+    }
+
+    @io.cucumber.java.en.When("I search conversations with request:")
+    public void iSearchConversationsWithRequest(String requestBody) {
+        trackUsage();
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().post("/v1/conversations/search");
     }
 
     @io.cucumber.java.en.Then("the search response should contain at least {int} results")
@@ -858,6 +876,15 @@ public class StepDefinitions {
                 given().contentType(MediaType.APPLICATION_JSON).body(Map.of("query", query));
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post("/v1/user/search/entries");
+    }
+
+    @io.cucumber.java.en.When("I search conversations for query {string}")
+    public void iSearchConversationsForQuery(String query) {
+        trackUsage();
+        var requestSpec =
+                given().contentType(MediaType.APPLICATION_JSON).body(Map.of("query", query));
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().post("/v1/conversations/search");
     }
 
     @io.cucumber.java.en.When("I create a conversation with request:")
@@ -2120,21 +2147,21 @@ public class StepDefinitions {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
         switch (method) {
-            case "CreateSummary":
+            case "IndexTranscript":
                 {
-                    var requestBuilder = CreateSummaryRequest.newBuilder();
+                    var requestBuilder = IndexTranscriptRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.createSummary(requestBuilder.build());
+                    return stub.indexTranscript(requestBuilder.build());
                 }
-            case "SearchMessages":
+            case "SearchConversations":
                 {
                     var requestBuilder = SearchEntriesRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.searchEntries(requestBuilder.build());
+                    return stub.searchConversations(requestBuilder.build());
                 }
             default:
                 throw new IllegalArgumentException("Unsupported SearchService method: " + method);

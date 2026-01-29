@@ -1,6 +1,6 @@
 # TODO List
 
-* Getting latest memory of a converstation is likely to be a very frequently accessed operation: cache it.
+* Getting latest memory of a conversation is likely to be a very frequently accessed operation: cache it.
 
 * Improve the langchain4j memory interface: Switch to the langchain4j MemoryChatStore once https://github.com/langchain4j/langchain4j/pull/4416 is released.
 * Figure out how muli-modal content should be handled.

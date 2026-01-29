@@ -32,7 +32,8 @@ public class MongoVectorStore implements VectorStore {
     }
 
     @Override
-    public void upsertSummaryEmbedding(String conversationId, String entryId, float[] embedding) {
+    public void upsertTranscriptEmbedding(
+            String conversationId, String entryId, float[] embedding) {
         // no-op until Mongo vector support is implemented
     }
 

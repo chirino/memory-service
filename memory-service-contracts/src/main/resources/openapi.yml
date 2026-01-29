@@ -586,20 +586,20 @@ paths:
   # Search
   ############################################################
 
-  /v1/user/search/entries:
+  /v1/conversations/search:
     post:
       tags: [Search]
-      summary: Semantic search across user's conversations
+      summary: Semantic search across conversations
       description: |-
         Performs semantic and/or keyword search across all conversations the user has access to.
         Backed by an internal vector store (pgvector, MongoDB, etc.).
-      operationId: searchEntries
+      operationId: searchConversations
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SearchEntriesRequest'
+              $ref: '#/components/schemas/SearchConversationsRequest'
       responses:
         '200':
           description: Search results.
@@ -617,30 +617,30 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/conversations/{conversationId}/summaries:
+  /v1/conversations/index:
     post:
       tags: [Search]
-      summary: Store a summarization of previous entries
+      summary: Index a conversation transcript
       description: |-
-        Stores an internal summarization of previous entries in the conversation.
-        Summary entries are not visible in user-facing entry lists.
+        Indexes conversation transcript content for semantic search. Stores the
+        provided transcript text as searchable content and updates the conversation
+        title. The `untilEntryId` tracks which entries have been indexed.
+
+        This endpoint is typically called by agents after processing recent
+        conversation entries. The transcript text becomes searchable via
+        the `/v1/conversations/search` endpoint.
+
         Requires a valid agent API key.
-      operationId: createConversationSummary
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
+      operationId: indexConversationTranscript
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateSummaryRequest'
+              $ref: '#/components/schemas/IndexTranscriptRequest'
       responses:
         '201':
-          description: The created summary entry.
+          description: The index entry was created.
           content:
             application/json:
               schema:
@@ -822,7 +822,7 @@ components:
       enum:
         - history
         - memory
-        - summary
+        - transcript
 
     Entry:
       type: object
@@ -983,34 +983,33 @@ components:
                 text: "Updated memory after re-sync."
             createdAt: "2025-01-10T14:40:12Z"
 
-    CreateSummaryRequest:
+    IndexTranscriptRequest:
       type: object
       required:
-        - title
-        - summary
+        - conversationId
+        - transcript
         - untilEntryId
-        - summarizedAt
       properties:
+        conversationId:
+          type: string
+          description: The conversation to index.
         title:
           type: string
-          description: Conversation title to store/update.
-        summary:
+          nullable: true
+          description: Optional conversation title to store/update.
+        transcript:
           type: string
-          description: Summary text.
+          description: Transcript text to index for semantic search.
         untilEntryId:
           type: string
-          description: Highest message id covered by the summary (inclusive).
-        summarizedAt:
-          type: string
-          format: date-time
-          description: Timestamp of the last message covered by the summary.
+          description: Highest entry id covered by the index (inclusive).
       example:
+        conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
         title: "Conversation forking design"
-        summary: "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch."
-        untilEntryId: "msg_01HF8XJQWXYZ9876ABCD5431"
-        summarizedAt: "2024-05-01T12:34:56Z"
+        transcript: "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch."
+        untilEntryId: "entry_01HF8XJQWXYZ9876ABCD5431"
 
-    SearchEntriesRequest:
+    SearchConversationsRequest:
       type: object
       required:
         - query

@@ -2,8 +2,8 @@ package io.github.chirino.memory.grpc;
 
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.config.VectorStoreSelector;
-import io.github.chirino.memory.grpc.v1.CreateSummaryRequest;
 import io.github.chirino.memory.grpc.v1.Entry;
+import io.github.chirino.memory.grpc.v1.IndexTranscriptRequest;
 import io.github.chirino.memory.grpc.v1.SearchEntriesRequest;
 import io.github.chirino.memory.grpc.v1.SearchEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SearchService;
@@ -28,7 +28,7 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
     }
 
     @Override
-    public Uni<SearchEntriesResponse> searchEntries(SearchEntriesRequest request) {
+    public Uni<SearchEntriesResponse> searchConversations(SearchEntriesRequest request) {
         return Uni.createFrom()
                 .item(
                         () -> {
@@ -68,17 +68,17 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
     }
 
     @Override
-    public Uni<Entry> createSummary(CreateSummaryRequest request) {
+    public Uni<Entry> indexTranscript(IndexTranscriptRequest request) {
         return Uni.createFrom()
                 .item(
                         () -> {
                             if (!hasValidApiKey()) {
                                 throw Status.PERMISSION_DENIED
                                         .withDescription(
-                                                "Agent API key is required to create summaries")
+                                                "Agent API key is required to index transcripts")
                                         .asRuntimeException();
                             }
-                            StatusRuntimeException validation = validateSummaryRequest(request);
+                            StatusRuntimeException validation = validateIndexRequest(request);
                             if (validation != null) {
                                 throw validation;
                             }
@@ -86,50 +86,37 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                             if (clientId == null || clientId.isBlank()) {
                                 throw Status.PERMISSION_DENIED
                                         .withDescription(
-                                                "Client id is required to create summaries")
+                                                "Client id is required to index transcripts")
                                         .asRuntimeException();
                             }
-                            io.github.chirino.memory.api.dto.CreateSummaryRequest internal =
-                                    new io.github.chirino.memory.api.dto.CreateSummaryRequest();
-                            internal.setTitle(request.getTitle());
-                            internal.setSummary(request.getSummary());
+                            io.github.chirino.memory.api.dto.IndexTranscriptRequest internal =
+                                    new io.github.chirino.memory.api.dto.IndexTranscriptRequest();
+                            internal.setConversationId(request.getConversationId());
+                            internal.setTitle(request.hasTitle() ? request.getTitle() : null);
+                            internal.setTranscript(request.getTranscript());
                             internal.setUntilEntryId(request.getUntilEntryId());
-                            internal.setSummarizedAt(request.getSummarizedAt());
                             io.github.chirino.memory.api.dto.EntryDto dto =
-                                    store().createSummary(
-                                                    request.getConversationId(),
-                                                    internal,
-                                                    clientId);
+                                    store().indexTranscript(internal, clientId);
                             return GrpcDtoMapper.toProto(dto);
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
     }
 
-    private StatusRuntimeException validateSummaryRequest(CreateSummaryRequest request) {
+    private StatusRuntimeException validateIndexRequest(IndexTranscriptRequest request) {
         if (request.getConversationId() == null || request.getConversationId().isBlank()) {
             return Status.INVALID_ARGUMENT
                     .withDescription("conversationId is required")
                     .asRuntimeException();
         }
-        if (request.getTitle() == null || request.getTitle().isBlank()) {
+        if (request.getTranscript() == null || request.getTranscript().isBlank()) {
             return Status.INVALID_ARGUMENT
-                    .withDescription("title is required")
-                    .asRuntimeException();
-        }
-        if (request.getSummary() == null || request.getSummary().isBlank()) {
-            return Status.INVALID_ARGUMENT
-                    .withDescription("summary is required")
+                    .withDescription("transcript is required")
                     .asRuntimeException();
         }
         if (request.getUntilEntryId() == null || request.getUntilEntryId().isBlank()) {
             return Status.INVALID_ARGUMENT
-                    .withDescription("untilMessageId is required")
-                    .asRuntimeException();
-        }
-        if (request.getSummarizedAt() == null || request.getSummarizedAt().isBlank()) {
-            return Status.INVALID_ARGUMENT
-                    .withDescription("summarizedAt is required")
+                    .withDescription("untilEntryId is required")
                     .asRuntimeException();
         }
         return null;

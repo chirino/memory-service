@@ -4,7 +4,7 @@ import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
-import io.github.chirino.memory.client.model.SearchEntriesRequest;
+import io.github.chirino.memory.client.model.SearchConversationsRequest;
 import io.github.chirino.memory.client.model.SearchResult;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.Channel;
@@ -26,7 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@Path("/v1/user/search")
+@Path("/v1")
 @Authenticated
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -47,8 +47,8 @@ public class SearchResource {
     }
 
     @POST
-    @Path("/entries")
-    public Response searchEntries(SearchEntriesRequest request) {
+    @Path("/conversations/search")
+    public Response searchConversations(SearchConversationsRequest request) {
         VectorStore vectorStore = vectorStore();
         if (vectorStore == null || !vectorStore.isEnabled()) {
             return vectorStoreUnavailable();

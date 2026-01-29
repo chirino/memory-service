@@ -12,8 +12,8 @@ import io.github.chirino.memory.client.api.SharingApi;
 import io.github.chirino.memory.client.model.Channel;
 import io.github.chirino.memory.client.model.CreateConversationRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
-import io.github.chirino.memory.client.model.CreateSummaryRequest;
 import io.github.chirino.memory.client.model.ForkFromEntryRequest;
+import io.github.chirino.memory.client.model.IndexTranscriptRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.TransferConversationOwnershipRequest;
 import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest;
@@ -192,17 +192,17 @@ public class MemoryServiceProxy {
         }
     }
 
-    public Response createConversationSummary(String conversationId, String body) {
+    public Response indexConversationTranscript(String body) {
         try {
-            CreateSummaryRequest request =
-                    OBJECT_MAPPER.readValue(body, CreateSummaryRequest.class);
+            IndexTranscriptRequest request =
+                    OBJECT_MAPPER.readValue(body, IndexTranscriptRequest.class);
             return execute(
-                    () -> searchApi().createConversationSummary(conversationId, request),
+                    () -> searchApi().indexConversationTranscript(request),
                     CREATED,
-                    "Error creating summary for history %s",
-                    conversationId);
+                    "Error indexing transcript for conversation %s",
+                    request.getConversationId());
         } catch (Exception e) {
-            LOG.errorf(e, "Error parsing create summary request body");
+            LOG.errorf(e, "Error parsing index transcript request body");
             return handleException(e);
         }
     }

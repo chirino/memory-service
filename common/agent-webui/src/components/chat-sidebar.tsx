@@ -10,7 +10,7 @@ type ChatSidebarProps = {
   selectedConversationId: string | null;
   onSelectConversation: (conversation: ConversationSummary) => void;
   onNewChat: () => void;
-  onSummarizeConversation?: (conversation: ConversationSummary) => void;
+  onIndexConversation?: (conversation: ConversationSummary) => void;
   onDeleteConversation?: (conversation: ConversationSummary) => void;
   statusMessage?: string | null;
   resumableConversationIds?: Set<string>;
@@ -36,7 +36,7 @@ export function ChatSidebar({
   selectedConversationId,
   onSelectConversation,
   onNewChat,
-  onSummarizeConversation,
+  onIndexConversation,
   onDeleteConversation,
   statusMessage,
   resumableConversationIds = new Set(),
@@ -111,7 +111,7 @@ export function ChatSidebar({
                     </div>
                   </button>
                   <ConversationHoverMenu
-                    onSummarize={() => onSummarizeConversation?.(conversation)}
+                    onIndex={() => onIndexConversation?.(conversation)}
                     onDelete={() => onDeleteConversation?.(conversation)}
                   />
                 </div>
