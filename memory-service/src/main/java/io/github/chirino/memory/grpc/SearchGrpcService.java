@@ -1,5 +1,7 @@
 package io.github.chirino.memory.grpc;
 
+import static io.github.chirino.memory.grpc.UuidUtils.byteStringToString;
+
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.grpc.v1.Entry;
@@ -48,11 +50,15 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                             internal.setQuery(request.getQuery());
                             internal.setTopK(request.getTopK() > 0 ? request.getTopK() : 20);
                             if (!request.getConversationIdsList().isEmpty()) {
-                                internal.setConversationIds(
-                                        new ArrayList<>(request.getConversationIdsList()));
+                                List<String> conversationIds =
+                                        request.getConversationIdsList().stream()
+                                                .map(UuidUtils::byteStringToString)
+                                                .collect(Collectors.toList());
+                                internal.setConversationIds(new ArrayList<>(conversationIds));
                             }
-                            if (request.getBefore() != null && !request.getBefore().isBlank()) {
-                                internal.setBefore(request.getBefore());
+                            String before = byteStringToString(request.getBefore());
+                            if (before != null && !before.isBlank()) {
+                                internal.setBefore(before);
                             }
                             List<SearchResultDto> internalResults =
                                     vectorStore.search(currentUserId(), internal);
@@ -89,12 +95,14 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                                                 "Client id is required to index transcripts")
                                         .asRuntimeException();
                             }
+                            String conversationId = byteStringToString(request.getConversationId());
+                            String untilEntryId = byteStringToString(request.getUntilEntryId());
                             io.github.chirino.memory.api.dto.IndexTranscriptRequest internal =
                                     new io.github.chirino.memory.api.dto.IndexTranscriptRequest();
-                            internal.setConversationId(request.getConversationId());
+                            internal.setConversationId(conversationId);
                             internal.setTitle(request.hasTitle() ? request.getTitle() : null);
                             internal.setTranscript(request.getTranscript());
-                            internal.setUntilEntryId(request.getUntilEntryId());
+                            internal.setUntilEntryId(untilEntryId);
                             io.github.chirino.memory.api.dto.EntryDto dto =
                                     store().indexTranscript(internal, clientId);
                             return GrpcDtoMapper.toProto(dto);
@@ -104,7 +112,8 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
     }
 
     private StatusRuntimeException validateIndexRequest(IndexTranscriptRequest request) {
-        if (request.getConversationId() == null || request.getConversationId().isBlank()) {
+        String conversationId = byteStringToString(request.getConversationId());
+        if (conversationId == null || conversationId.isBlank()) {
             return Status.INVALID_ARGUMENT
                     .withDescription("conversationId is required")
                     .asRuntimeException();
@@ -114,7 +123,8 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                     .withDescription("transcript is required")
                     .asRuntimeException();
         }
-        if (request.getUntilEntryId() == null || request.getUntilEntryId().isBlank()) {
+        String untilEntryId = byteStringToString(request.getUntilEntryId());
+        if (untilEntryId == null || untilEntryId.isBlank()) {
             return Status.INVALID_ARGUMENT
                     .withDescription("untilEntryId is required")
                     .asRuntimeException();

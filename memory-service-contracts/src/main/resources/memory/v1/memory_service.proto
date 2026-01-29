@@ -7,6 +7,14 @@ import "google/protobuf/struct.proto";
 option java_multiple_files = true;
 option java_package = "io.github.chirino.memory.grpc.v1";
 
+// UUID fields are represented as 16-byte big-endian binary values.
+// Use the most significant 64 bits first, then least significant 64 bits.
+// Example conversion (Java):
+//   ByteBuffer buffer = ByteBuffer.allocate(16);
+//   buffer.putLong(uuid.getMostSignificantBits());
+//   buffer.putLong(uuid.getLeastSignificantBits());
+//   return buffer.array();
+
 message PageRequest {
   string page_token = 1;
   int32 page_size = 2;
@@ -39,7 +47,8 @@ enum Channel {
 }
 
 message ConversationSummary {
-  string id = 1;
+  // Unique identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
   string title = 2;
   string owner_user_id = 3;
   string created_at = 4;
@@ -49,7 +58,8 @@ message ConversationSummary {
 }
 
 message Conversation {
-  string id = 1;
+  // Unique identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
   string title = 2;
   string owner_user_id = 3;
   string created_at = 4;
@@ -57,12 +67,15 @@ message Conversation {
   string last_message_preview = 6;
   AccessLevel access_level = 7;
   reserved 8; // conversation_group_id removed
-  string forked_at_entry_id = 9;
-  string forked_at_conversation_id = 10;
+  // Entry ID where this conversation forked (empty if root)
+  bytes forked_at_entry_id = 9;
+  // Conversation ID from which this was forked (empty if root)
+  bytes forked_at_conversation_id = 10;
 }
 
 message ConversationMembership {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   string user_id = 2;
   AccessLevel access_level = 3;
   string created_at = 4;
@@ -70,10 +83,13 @@ message ConversationMembership {
 }
 
 message ConversationForkSummary {
-  string conversation_id = 1;
+  // Forked conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   reserved 2; // conversation_group_id removed
-  string forked_at_entry_id = 3;
-  string forked_at_conversation_id = 4;
+  // Entry ID at which this conversation forked
+  bytes forked_at_entry_id = 3;
+  // Conversation ID from which this was forked
+  bytes forked_at_conversation_id = 4;
   string title = 5;
   string created_at = 6;
 }
@@ -95,21 +111,26 @@ message ListConversationsResponse {
 }
 
 message GetConversationRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
 }
 
 message DeleteConversationRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
 }
 
 message ForkConversationRequest {
-  string conversation_id = 1;
-  string entry_id = 2;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  // Entry ID to fork at (UUID as 16-byte big-endian binary)
+  bytes entry_id = 2;
   string title = 3;
 }
 
 message ListForksRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
 }
 
 message ListForksResponse {
@@ -117,7 +138,8 @@ message ListForksResponse {
 }
 
 message TransferOwnershipRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   string new_owner_user_id = 2;
 }
 
@@ -130,7 +152,8 @@ message CreateEntryRequest {
 }
 
 message SyncEntriesRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   repeated CreateEntryRequest entries = 2;
 }
 
@@ -142,12 +165,14 @@ message SyncEntriesResponse {
 }
 
 message AppendEntryRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   CreateEntryRequest entry = 2;
 }
 
 message ListEntriesRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   Channel channel = 2;
   string epoch_filter = 3;
   PageRequest page = 4;
@@ -159,8 +184,10 @@ message ListEntriesResponse {
 }
 
 message Entry {
-  string id = 1;
-  string conversation_id = 2;
+  // Unique identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 2;
   string user_id = 3;
   Channel channel = 4;
   int64 epoch = 5;
@@ -170,7 +197,8 @@ message Entry {
 }
 
 message ListMembershipsRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
 }
 
 message ListMembershipsResponse {
@@ -178,27 +206,32 @@ message ListMembershipsResponse {
 }
 
 message ShareConversationRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   string user_id = 2;
   AccessLevel access_level = 3;
 }
 
 message UpdateMembershipRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   string member_user_id = 2;
   AccessLevel access_level = 3;
 }
 
 message DeleteMembershipRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   string member_user_id = 2;
 }
 
 message SearchEntriesRequest {
   string query = 1;
   int32 top_k = 2;
-  repeated string conversation_ids = 3;
-  string before = 4;
+  // Conversation identifiers to filter (UUID as 16-byte big-endian binary each)
+  repeated bytes conversation_ids = 3;
+  // Upper bound entry ID for temporal filtering (UUID as 16-byte big-endian binary)
+  bytes before = 4;
 }
 
 message SearchEntriesResponse {
@@ -212,10 +245,12 @@ message SearchResult {
 }
 
 message IndexTranscriptRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   optional string title = 2;
   string transcript = 3;
-  string until_entry_id = 4;
+  // Highest entry ID covered by the index (UUID as 16-byte big-endian binary)
+  bytes until_entry_id = 4;
 }
 
 message HealthResponse {
@@ -258,13 +293,13 @@ service SearchService {
 service ResponseResumerService {
   // Stream response tokens for a conversation
   rpc StreamResponseTokens(stream StreamResponseTokenRequest) returns (stream StreamResponseTokenResponse);
-  
+
   // Replay cached response tokens from a resume position
   rpc ReplayResponseTokens(ReplayResponseTokensRequest) returns (stream ReplayResponseTokensResponse);
 
   // Cancel an in-progress response
   rpc CancelResponse(CancelResponseRequest) returns (CancelResponseResponse);
-  
+
   // Check if response resumer is enabled
   rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
 
@@ -273,7 +308,8 @@ service ResponseResumerService {
 }
 
 message StreamResponseTokenRequest {
-  string conversation_id = 1;  // Only in first message
+  // Conversation identifier (UUID as 16-byte big-endian binary, only in first message)
+  bytes conversation_id = 1;
   string token = 2;            // Token content
   bool complete = 3;           // Set to true in final message
 }
@@ -286,7 +322,8 @@ message StreamResponseTokenResponse {
 }
 
 message ReplayResponseTokensRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
   // Field 2 (resume_position) removed - always replays from beginning
 }
 
@@ -296,7 +333,8 @@ message ReplayResponseTokensResponse {
 }
 
 message CancelResponseRequest {
-  string conversation_id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
 }
 
 message CancelResponseResponse {
@@ -308,9 +346,11 @@ message IsEnabledResponse {
 }
 
 message CheckConversationsRequest {
-  repeated string conversation_ids = 1;
+  // Conversation identifiers (UUID as 16-byte big-endian binary each)
+  repeated bytes conversation_ids = 1;
 }
 
 message CheckConversationsResponse {
-  repeated string conversation_ids = 1;  // Only IDs with responses in progress
+  // Conversation IDs with responses in progress (UUID as 16-byte big-endian binary each)
+  repeated bytes conversation_ids = 1;
 }

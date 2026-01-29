@@ -45,9 +45,10 @@ paths:
         - name: after
           in: query
           required: false
-          description: Cursor for pagination; returns items after this conversation id.
+          description: Cursor for pagination; returns items after this conversation id (UUID format).
           schema:
             type: string
+            format: uuid
             nullable: true
         - name: limit
           in: query
@@ -116,9 +117,10 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier.
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       responses:
         '200':
           description: The conversation.
@@ -144,8 +146,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       responses:
         '204':
           description: Conversation deleted.
@@ -176,14 +180,17 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
         - name: after
           in: query
           required: false
-          description: Cursor for pagination; returns entries after this entry id.
+          description: Cursor for pagination; returns entries after this entry id (UUID format).
           schema:
             type: string
+            format: uuid
             nullable: true
         - name: limit
           in: query
@@ -249,8 +256,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -289,8 +298,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -327,13 +338,17 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
         - name: entryId
           in: path
           required: true
+          description: Entry identifier (UUID format).
           schema:
             type: string
+            format: uuid
       requestBody:
         required: false
         content:
@@ -370,8 +385,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       responses:
         '200':
           description: Forked conversations related to this conversation's root.
@@ -403,8 +420,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       responses:
         '200':
           description: Cancel request accepted.
@@ -432,8 +451,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -466,8 +487,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       responses:
         '200':
           description: Memberships for the conversation.
@@ -496,8 +519,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -528,8 +553,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
         - name: userId
           in: path
           required: true
@@ -565,8 +592,10 @@ paths:
         - name: conversationId
           in: path
           required: true
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
         - name: userId
           in: path
           required: true
@@ -699,6 +728,8 @@ components:
       properties:
         id:
           type: string
+          format: uuid
+          description: Unique identifier for the conversation.
         title:
           type: string
           nullable: true
@@ -716,12 +747,12 @@ components:
         accessLevel:
           $ref: '#/components/schemas/AccessLevel'
       example:
-        id: "conv_01HF8XH1XABCD1234EFGH5678"
+        id: "550e8400-e29b-41d4-a716-446655440000"
         title: "Brainstorming UI for memory service"
         ownerUserId: "user_1234"
         createdAt: "2025-01-10T14:32:05Z"
         updatedAt: "2025-01-10T14:45:12Z"
-        lastMessagePreview: "Let’s try modeling forks as separate conversations…"
+        lastMessagePreview: "Let's try modeling forks as separate conversations…"
         accessLevel: "owner"
 
     Conversation:
@@ -731,12 +762,16 @@ components:
           properties:
             forkedAtEntryId:
               type: string
+              format: uuid
               nullable: true
+              description: Entry ID where this conversation forked from its parent.
             forkedAtConversationId:
               type: string
+              format: uuid
               nullable: true
+              description: Conversation ID from which this conversation was forked.
           example:
-            id: "conv_01HF8XH1XABCD1234EFGH5678"
+            id: "550e8400-e29b-41d4-a716-446655440000"
             title: "Brainstorming UI for memory service"
             ownerUserId: "user_1234"
             createdAt: "2025-01-10T14:32:05Z"
@@ -766,6 +801,8 @@ components:
       properties:
         conversationId:
           type: string
+          format: uuid
+          description: Unique identifier for the conversation.
         userId:
           type: string
         accessLevel:
@@ -780,13 +817,17 @@ components:
       properties:
         conversationId:
           type: string
+          format: uuid
+          description: Unique identifier for the forked conversation.
         forkedAtEntryId:
           type: string
-          description: Entry id at which this forked conversation diverged.
+          format: uuid
+          description: Entry ID at which this forked conversation diverged.
         forkedAtConversationId:
           type: string
+          format: uuid
           nullable: true
-          description: Conversation id where the fork occurred.
+          description: Conversation ID where the fork occurred.
         title:
           type: string
           nullable: true
@@ -836,8 +877,12 @@ components:
       properties:
         id:
           type: string
+          format: uuid
+          description: Unique identifier for the entry.
         conversationId:
           type: string
+          format: uuid
+          description: Unique identifier for the conversation this entry belongs to.
         userId:
           type: string
           nullable: true
@@ -871,8 +916,8 @@ components:
           type: string
           format: date-time
       example:
-        id: "entry_01HF8XJQWXYZ9876ABCD5432"
-        conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
+        id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        conversationId: "550e8400-e29b-41d4-a716-446655440000"
         userId: "user_1234"
         channel: "history"
         epoch: null
@@ -972,8 +1017,8 @@ components:
         noOp: false
         epochIncremented: true
         entries:
-          - id: "entry_01HF8XJQWXYZ9876ABCD5432"
-            conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
+          - id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+            conversationId: "550e8400-e29b-41d4-a716-446655440000"
             userId: "agent_memory"
             channel: "memory"
             epoch: 5
@@ -992,6 +1037,7 @@ components:
       properties:
         conversationId:
           type: string
+          format: uuid
           description: The conversation to index.
         title:
           type: string
@@ -1002,12 +1048,13 @@ components:
           description: Transcript text to index for semantic search.
         untilEntryId:
           type: string
-          description: Highest entry id covered by the index (inclusive).
+          format: uuid
+          description: Highest entry ID covered by the index (inclusive).
       example:
-        conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
+        conversationId: "550e8400-e29b-41d4-a716-446655440000"
         title: "Conversation forking design"
         transcript: "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch."
-        untilEntryId: "entry_01HF8XJQWXYZ9876ABCD5431"
+        untilEntryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
     SearchConversationsRequest:
       type: object
@@ -1024,18 +1071,21 @@ components:
           type: array
           items:
             type: string
+            format: uuid
           nullable: true
+          description: Filter search to specific conversations (UUID format).
         before:
           type: string
+          format: uuid
           nullable: true
-          description: Optional upper bound entry id for temporal filtering.
+          description: Optional upper bound entry ID for temporal filtering.
       example:
         query: "summary of memory service design decisions"
         topK: 5
         conversationIds:
-          - "conv_01HF8XH1XABCD1234EFGH5678"
-          - "conv_01HF8XH1XABCD1234EFGH5679"
-        before: "entry_01HF8XJQWXYZ9876ABCD5431"
+          - "550e8400-e29b-41d4-a716-446655440000"
+          - "550e8400-e29b-41d4-a716-446655440001"
+        before: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
     SearchResult:
       type: object
@@ -1050,8 +1100,8 @@ components:
           nullable: true
       example:
         entry:
-          id: "entry_01HF8XJQWXYZ9876ABCD5430"
-          conversationId: "conv_01HF8XH1XABCD1234EFGH5678"
+          id: "6ba7b810-9dad-11d1-80b4-00c04fd430c9"
+          conversationId: "550e8400-e29b-41d4-a716-446655440000"
           userId: "user_1234"
           channel: "history"
           contentType: "message"

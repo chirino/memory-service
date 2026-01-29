@@ -1,5 +1,7 @@
 package io.github.chirino.memory.grpc;
 
+import static io.github.chirino.memory.grpc.UuidUtils.stringToByteString;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,7 +46,7 @@ public final class GrpcDtoMapper {
             return null;
         }
         return ConversationSummary.newBuilder()
-                .setId(dto.getId())
+                .setId(stringToByteString(dto.getId()))
                 .setTitle(dto.getTitle() == null ? "" : dto.getTitle())
                 .setOwnerUserId(dto.getOwnerUserId() == null ? "" : dto.getOwnerUserId())
                 .setCreatedAt(dto.getCreatedAt() == null ? "" : dto.getCreatedAt())
@@ -60,7 +62,7 @@ public final class GrpcDtoMapper {
             return null;
         }
         return Conversation.newBuilder()
-                .setId(dto.getId())
+                .setId(stringToByteString(dto.getId()))
                 .setTitle(dto.getTitle() == null ? "" : dto.getTitle())
                 .setOwnerUserId(dto.getOwnerUserId() == null ? "" : dto.getOwnerUserId())
                 .setCreatedAt(dto.getCreatedAt() == null ? "" : dto.getCreatedAt())
@@ -69,12 +71,8 @@ public final class GrpcDtoMapper {
                         dto.getLastMessagePreview() == null ? "" : dto.getLastMessagePreview())
                 .setAccessLevel(accessLevelToProto(dto.getAccessLevel()))
                 // conversation_group_id is not exposed in API responses
-                .setForkedAtEntryId(
-                        dto.getForkedAtEntryId() == null ? "" : dto.getForkedAtEntryId())
-                .setForkedAtConversationId(
-                        dto.getForkedAtConversationId() == null
-                                ? ""
-                                : dto.getForkedAtConversationId())
+                .setForkedAtEntryId(stringToByteString(dto.getForkedAtEntryId()))
+                .setForkedAtConversationId(stringToByteString(dto.getForkedAtConversationId()))
                 .build();
     }
 
@@ -84,7 +82,7 @@ public final class GrpcDtoMapper {
             return null;
         }
         return ConversationMembership.newBuilder()
-                .setConversationId(conversationId == null ? "" : conversationId)
+                .setConversationId(stringToByteString(conversationId))
                 .setUserId(dto.getUserId() == null ? "" : dto.getUserId())
                 .setAccessLevel(accessLevelToProto(dto.getAccessLevel()))
                 .setCreatedAt(dto.getCreatedAt() == null ? "" : dto.getCreatedAt())
@@ -96,14 +94,10 @@ public final class GrpcDtoMapper {
             return null;
         }
         return ConversationForkSummary.newBuilder()
-                .setConversationId(dto.getConversationId() == null ? "" : dto.getConversationId())
+                .setConversationId(stringToByteString(dto.getConversationId()))
                 // conversation_group_id is not exposed in API responses
-                .setForkedAtEntryId(
-                        dto.getForkedAtEntryId() == null ? "" : dto.getForkedAtEntryId())
-                .setForkedAtConversationId(
-                        dto.getForkedAtConversationId() == null
-                                ? ""
-                                : dto.getForkedAtConversationId())
+                .setForkedAtEntryId(stringToByteString(dto.getForkedAtEntryId()))
+                .setForkedAtConversationId(stringToByteString(dto.getForkedAtConversationId()))
                 .setTitle(dto.getTitle() == null ? "" : dto.getTitle())
                 .setCreatedAt(dto.getCreatedAt() == null ? "" : dto.getCreatedAt())
                 .build();
@@ -115,9 +109,8 @@ public final class GrpcDtoMapper {
         }
         Entry.Builder builder =
                 Entry.newBuilder()
-                        .setId(dto.getId() == null ? "" : dto.getId())
-                        .setConversationId(
-                                dto.getConversationId() == null ? "" : dto.getConversationId())
+                        .setId(stringToByteString(dto.getId()))
+                        .setConversationId(stringToByteString(dto.getConversationId()))
                         .setUserId(dto.getUserId() == null ? "" : dto.getUserId())
                         .setChannel(toProtoChannel(dto.getChannel()))
                         .setContentType(dto.getContentType() == null ? "" : dto.getContentType())

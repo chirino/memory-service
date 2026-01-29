@@ -7,6 +7,7 @@ import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -53,7 +54,7 @@ public class ConversationStore {
             String conversationId, CreateEntryRequest request, @Nullable String bearerToken) {
         try {
             ConversationsApi api = apiFactory.create(bearerToken);
-            api.appendConversationEntry(conversationId, request).block();
+            api.appendConversationEntry(UUID.fromString(conversationId), request).block();
         } catch (Exception e) {
             LOG.warn(
                     "Failed to append conversation entry for conversationId={}, continuing"

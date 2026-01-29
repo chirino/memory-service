@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
 
@@ -62,7 +63,11 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
             context =
                     conversationsApi()
                             .listConversationEntries(
-                                    memoryId.toString(), null, 50, Channel.MEMORY, null);
+                                    UUID.fromString(memoryId.toString()),
+                                    null,
+                                    50,
+                                    Channel.MEMORY,
+                                    null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
             if (status == 404) {
@@ -87,8 +92,9 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                 if (block == null) {
                     continue;
                 }
+                String entryIdStr = entry.getId() != null ? entry.getId().toString() : null;
                 List<ChatMessage> decoded =
-                        decodeContentBlock(block, memoryId.toString(), entry.getId());
+                        decodeContentBlock(block, memoryId.toString(), entryIdStr);
                 if (decoded != null && !decoded.isEmpty()) {
                     result.addAll(decoded);
                 }
@@ -137,7 +143,8 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
             return;
         }
         syncRequest.setEntries(syncEntries);
-        conversationsApi().syncConversationMemory(memoryId.toString(), syncRequest);
+        conversationsApi()
+                .syncConversationMemory(UUID.fromString(memoryId.toString()), syncRequest);
     }
 
     @Override

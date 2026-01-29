@@ -14,6 +14,7 @@ import jakarta.inject.Inject;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @ApplicationScoped
 public class ConversationStore {
@@ -35,7 +36,7 @@ public class ConversationStore {
         block.put("role", "USER");
         request.setContent(List.of(block));
         conversationsApi(bearerToken(securityIdentity))
-                .appendConversationEntry(conversationId, request);
+                .appendConversationEntry(UUID.fromString(conversationId), request);
     }
 
     public void appendAgentMessage(String conversationId, String content, String bearerToken) {
@@ -54,7 +55,8 @@ public class ConversationStore {
         request.setContent(List.of(block));
         String effectiveToken;
         effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
-        conversationsApi(effectiveToken).appendConversationEntry(conversationId, request);
+        conversationsApi(effectiveToken)
+                .appendConversationEntry(UUID.fromString(conversationId), request);
     }
 
     public void appendPartialAgentMessage(String conversationId, String delta) {}

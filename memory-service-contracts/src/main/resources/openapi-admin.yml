@@ -82,9 +82,10 @@ paths:
         - name: after
           in: query
           required: false
-          description: Cursor for pagination.
+          description: Cursor for pagination (UUID format).
           schema:
             type: string
+            format: uuid
         - name: limit
           in: query
           required: false
@@ -127,9 +128,10 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier.
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
         - name: includeDeleted
           in: query
           required: false
@@ -168,9 +170,10 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier.
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       requestBody:
         required: false
         content:
@@ -198,9 +201,10 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier.
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
       requestBody:
         required: false
         content:
@@ -239,15 +243,17 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier.
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
         - name: after
           in: query
           required: false
-          description: Cursor for pagination.
+          description: Cursor for pagination (UUID format).
           schema:
             type: string
+            format: uuid
         - name: limit
           in: query
           required: false
@@ -307,9 +313,10 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier.
+          description: Conversation identifier (UUID format).
           schema:
             type: string
+            format: uuid
         - name: includeDeleted
           in: query
           required: false
@@ -533,6 +540,8 @@ components:
       properties:
         id:
           type: string
+          format: uuid
+          description: Unique identifier for the conversation.
         title:
           type: string
           nullable: true
@@ -562,10 +571,14 @@ components:
           properties:
             forkedAtEntryId:
               type: string
+              format: uuid
               nullable: true
+              description: Entry ID where this conversation forked from its parent.
             forkedAtConversationId:
               type: string
+              format: uuid
               nullable: true
+              description: Conversation ID from which this conversation was forked.
 
     AdminActionRequest:
       type: object
@@ -596,8 +609,12 @@ components:
       properties:
         id:
           type: string
+          format: uuid
+          description: Unique identifier for the entry.
         conversationId:
           type: string
+          format: uuid
+          description: Unique identifier for the conversation this entry belongs to.
         userId:
           type: string
           nullable: true
@@ -624,6 +641,8 @@ components:
       properties:
         conversationId:
           type: string
+          format: uuid
+          description: Unique identifier for the conversation.
         userId:
           type: string
         accessLevel:
@@ -647,14 +666,18 @@ components:
           type: array
           items:
             type: string
+            format: uuid
           nullable: true
+          description: Filter search to specific conversations (UUID format).
         userId:
           type: string
           nullable: true
           description: Filter search to conversations owned by this user.
         before:
           type: string
+          format: uuid
           nullable: true
+          description: Optional upper bound entry ID for temporal filtering.
         includeDeleted:
           type: boolean
           default: false

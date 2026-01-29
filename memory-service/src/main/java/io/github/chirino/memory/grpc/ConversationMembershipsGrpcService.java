@@ -1,5 +1,7 @@
 package io.github.chirino.memory.grpc;
 
+import static io.github.chirino.memory.grpc.UuidUtils.byteStringToString;
+
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
@@ -25,18 +27,16 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
         return Uni.createFrom()
                 .item(
                         () -> {
+                            String conversationId = byteStringToString(request.getConversationId());
                             List<ConversationMembershipDto> internal =
-                                    store().listMemberships(
-                                                    currentUserId(), request.getConversationId());
+                                    store().listMemberships(currentUserId(), conversationId);
                             return ListMembershipsResponse.newBuilder()
                                     .addAllMemberships(
                                             internal.stream()
                                                     .map(
                                                             dto ->
                                                                     GrpcDtoMapper.toProto(
-                                                                            dto,
-                                                                            request
-                                                                                    .getConversationId()))
+                                                                            dto, conversationId))
                                                     .collect(Collectors.toList()))
                                     .build();
                         })
@@ -50,16 +50,15 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
         return Uni.createFrom()
                 .item(
                         () -> {
+                            String conversationId = byteStringToString(request.getConversationId());
                             ShareConversationRequest internal = new ShareConversationRequest();
                             internal.setUserId(request.getUserId());
                             internal.setAccessLevel(
                                     GrpcDtoMapper.accessLevelFromProto(request.getAccessLevel()));
                             ConversationMembershipDto dto =
                                     store().shareConversation(
-                                                    currentUserId(),
-                                                    request.getConversationId(),
-                                                    internal);
-                            return GrpcDtoMapper.toProto(dto, request.getConversationId());
+                                                    currentUserId(), conversationId, internal);
+                            return GrpcDtoMapper.toProto(dto, conversationId);
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
@@ -70,6 +69,7 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
         return Uni.createFrom()
                 .item(
                         () -> {
+                            String conversationId = byteStringToString(request.getConversationId());
                             ShareConversationRequest internal = new ShareConversationRequest();
                             internal.setUserId(request.getMemberUserId());
                             internal.setAccessLevel(
@@ -77,10 +77,10 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
                             ConversationMembershipDto dto =
                                     store().updateMembership(
                                                     currentUserId(),
-                                                    request.getConversationId(),
+                                                    conversationId,
                                                     request.getMemberUserId(),
                                                     internal);
-                            return GrpcDtoMapper.toProto(dto, request.getConversationId());
+                            return GrpcDtoMapper.toProto(dto, conversationId);
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
@@ -91,9 +91,10 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
         return Uni.createFrom()
                 .item(
                         () -> {
+                            String conversationId = byteStringToString(request.getConversationId());
                             store().deleteMembership(
                                             currentUserId(),
-                                            request.getConversationId(),
+                                            conversationId,
                                             request.getMemberUserId());
                             return Empty.getDefaultInstance();
                         })

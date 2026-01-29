@@ -25,6 +25,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Path("/v1")
 @Authenticated
@@ -58,8 +60,13 @@ public class SearchResource {
                     new io.github.chirino.memory.api.dto.SearchEntriesRequest();
             internal.setQuery(request.getQuery());
             internal.setTopK(request.getTopK());
-            internal.setConversationIds(request.getConversationIds());
-            internal.setBefore(request.getBefore());
+            if (request.getConversationIds() != null) {
+                internal.setConversationIds(
+                        request.getConversationIds().stream()
+                                .map(UUID::toString)
+                                .collect(Collectors.toList()));
+            }
+            internal.setBefore(request.getBefore() != null ? request.getBefore().toString() : null);
 
             List<SearchResultDto> internalResults = vectorStore.search(currentUserId(), internal);
             List<SearchResult> data =
@@ -114,8 +121,9 @@ public class SearchResource {
             return null;
         }
         Entry result = new Entry();
-        result.setId(dto.getId());
-        result.setConversationId(dto.getConversationId());
+        result.setId(dto.getId() != null ? UUID.fromString(dto.getId()) : null);
+        result.setConversationId(
+                dto.getConversationId() != null ? UUID.fromString(dto.getConversationId()) : null);
         result.setUserId(dto.getUserId());
         Channel channel = dto.getChannel();
         if (channel != null) {

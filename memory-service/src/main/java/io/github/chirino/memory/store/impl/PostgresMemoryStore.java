@@ -444,7 +444,8 @@ public class PostgresMemoryStore implements MemoryStore {
                 conversationRepository
                         .find(
                                 "conversationGroup.id = ?1 AND deletedAt IS NULL AND"
-                                        + " conversationGroup.deletedAt IS NULL",
+                                        + " conversationGroup.deletedAt IS NULL"
+                                        + " ORDER BY forkedAtEntryId NULLS FIRST, updatedAt DESC",
                                 groupId)
                         .list();
         List<ConversationForkSummaryDto> results = new ArrayList<>();

@@ -442,6 +442,14 @@ public class MongoMemoryStore implements MemoryStore {
         List<MongoConversation> candidates =
                 conversationRepository.find("conversationGroupId", groupId).stream()
                         .filter(c -> c.deletedAt == null)
+                        .sorted(
+                                Comparator.comparing(
+                                                (MongoConversation c) ->
+                                                        c.forkedAtEntryId != null ? 1 : 0)
+                                        .thenComparing(
+                                                Comparator.comparing(
+                                                        (MongoConversation c) -> c.updatedAt,
+                                                        Comparator.reverseOrder())))
                         .collect(Collectors.toList());
         List<ConversationForkSummaryDto> results = new ArrayList<>();
         for (MongoConversation candidate : candidates) {
