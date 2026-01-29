@@ -1094,9 +1094,7 @@ export function ChatPanel({
       return "none";
     }
     return forks
-      .map(
-        (fork) => `${fork.conversationId ?? ""}:${fork.forkedAtConversationId ?? ""}:${fork.forkedAtEntryId ?? ""}`,
-      )
+      .map((fork) => `${fork.conversationId ?? ""}:${fork.forkedAtConversationId ?? ""}:${fork.forkedAtEntryId ?? ""}`)
       .sort()
       .join("|");
   }, [forksQuery.data]);

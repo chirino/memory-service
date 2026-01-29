@@ -286,7 +286,7 @@ public class ConversationsResource {
     }
 
     @POST
-    @Path("/conversations/{conversationId}/memory/entries/sync")
+    @Path("/conversations/{conversationId}/entries/sync")
     public Response syncMemoryEntries(
             @PathParam("conversationId") String conversationId, SyncEntriesRequest request) {
         if (apiKeyContext == null || !apiKeyContext.hasValidApiKey()) {

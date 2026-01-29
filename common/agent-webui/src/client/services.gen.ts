@@ -220,14 +220,14 @@ export class ConversationsService {
    * @throws ApiError
    */
   public static syncConversationMemory(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/memory/entries/sync"]["post"]["req"],
+    data: $OpenApiTs["/v1/conversations/{conversationId}/entries/sync"]["post"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/memory/entries/sync"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/memory/entries/sync"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/entries/sync"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/entries/sync"]["post"]["res"][200]
   > {
     return __request(OpenAPI, {
       method: "POST",
-      url: "/v1/conversations/{conversationId}/memory/entries/sync",
+      url: "/v1/conversations/{conversationId}/entries/sync",
       path: {
         conversationId: data.conversationId,
       },
