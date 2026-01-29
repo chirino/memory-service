@@ -291,24 +291,18 @@ function App() {
     [markResolvedConversation],
   );
 
-  const handleDeleteConversation = useCallback(
-    (conversation: ConversationSummary) => {
-      if (!conversation.id) {
-        return;
-      }
+  const handleDeleteConversationById = useCallback(
+    (conversationId: string) => {
       setStatusMessage(null);
-      deleteConversationMutation.mutate(conversation.id);
+      deleteConversationMutation.mutate(conversationId);
     },
     [deleteConversationMutation],
   );
 
-  const handleIndexConversation = useCallback(
-    (conversation: ConversationSummary) => {
-      if (!conversation.id) {
-        return;
-      }
+  const handleIndexConversationById = useCallback(
+    (conversationId: string) => {
       setStatusMessage(null);
-      indexConversationMutation.mutate(conversation.id);
+      indexConversationMutation.mutate(conversationId);
     },
     [indexConversationMutation],
   );
@@ -348,8 +342,6 @@ function App() {
       selectedConversationId={selectedConversationId}
       onSelectConversation={handleSelectConversation}
       onNewChat={handleNewChat}
-      onIndexConversation={handleIndexConversation}
-      onDeleteConversation={handleDeleteConversation}
       statusMessage={statusMessage}
       resumableConversationIds={resumableConversationIds}
     />
@@ -363,6 +355,8 @@ function App() {
         onSelectConversationId={handleSelectConversationId}
         knownConversationIds={resolvedConversationIds}
         resumableConversationIds={resumableConversationIds}
+        onIndexConversation={handleIndexConversationById}
+        onDeleteConversation={handleDeleteConversationById}
       />
     </div>
   );

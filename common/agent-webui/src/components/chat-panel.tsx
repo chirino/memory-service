@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
 import {
   Conversation,
   type ConversationController,
@@ -14,10 +13,10 @@ import {
 import { ConversationsUI } from "@/components/conversations-ui";
 import type { ApiError, Conversation as ApiConversation, ConversationForkSummary, Entry } from "@/client";
 import { ConversationsService } from "@/client";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useWebSocketStream } from "@/hooks/useWebSocketStream";
 import { useSseStream } from "@/hooks/useSseStream";
 import type { StreamStartParams } from "@/hooks/useStreamTypes";
+import { Check, Copy, CornerUpLeft, Menu, Pencil, Sparkles, Trash2 } from "lucide-react";
 
 type ListUserEntriesResponse = {
   data?: Entry[];
@@ -46,6 +45,8 @@ type ChatPanelProps = {
   onSelectConversationId?: (conversationId: string) => void;
   resumableConversationIds?: Set<string>;
   knownConversationIds?: Set<string>;
+  onIndexConversation?: (conversationId: string) => void;
+  onDeleteConversation?: (conversationId: string) => void;
 };
 
 type PendingFork = {
@@ -68,6 +69,8 @@ type ChatMessageRowProps = {
   onEditStart: (message: ConversationMessage) => void;
   onEditCancel: () => void;
   onForkSend: () => void;
+  onCopy: (content: string) => void;
+  copiedMessageId: string | null;
   composerDisabled: boolean;
   conversationId: string | null;
   forkOptionsCount: number;
@@ -97,6 +100,8 @@ function ChatMessageRow({
   onEditStart,
   onEditCancel,
   onForkSend,
+  onCopy,
+  copiedMessageId,
   composerDisabled,
   conversationId,
   forkOptionsCount,
@@ -119,6 +124,7 @@ function ChatMessageRow({
 }: ChatMessageRowProps) {
   const isUser = message.author === "user";
   const hasForks = forkOptionsCount > 1;
+  const isCopied = copiedMessageId === message.id;
 
   useEffect(() => {
     if (!isForkMenuOpen || !forkPoint) {
@@ -180,23 +186,35 @@ function ChatMessageRow({
   if (isEditing) {
     return (
       <div key={message.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-        <div className={`relative flex max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
-          <div className="w-full rounded-lg border bg-background px-3 py-2 text-sm shadow-sm">
+        <div className={`w-full max-w-[75%] ${isUser ? "" : ""}`}>
+          {/* Edit mode */}
+          <div className="edit-glow rounded-2xl border-2 border-sage bg-cream px-5 py-4">
             <textarea
               value={editingText}
               onChange={(event) => onEditingTextChange(event.target.value)}
               rows={3}
-              className="w-full resize-none rounded-md border px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="w-full resize-none bg-transparent text-[15px] leading-relaxed text-ink focus:outline-none"
             />
-            <div className="mt-2 flex justify-end gap-2">
-              <Button size="sm" variant="outline" onClick={onEditCancel} disabled={composerDisabled}>
+            <div className="mt-3 flex items-center justify-end gap-2 border-t border-stone/10 pt-3">
+              <button
+                type="button"
+                onClick={onEditCancel}
+                disabled={composerDisabled}
+                className="px-4 py-2 text-sm text-stone transition-colors hover:text-ink disabled:opacity-50"
+              >
                 Cancel
-              </Button>
-              <Button size="sm" onClick={onForkSend} disabled={composerDisabled || !editingText.trim()}>
+              </button>
+              <button
+                type="button"
+                onClick={onForkSend}
+                disabled={composerDisabled || !editingText.trim()}
+                className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-ink/90 disabled:opacity-50"
+              >
                 Send
-              </Button>
+              </button>
             </div>
           </div>
+          <p className="mt-2 text-right text-xs text-terracotta">Editing will create a new fork from this point</p>
         </div>
       </div>
     );
@@ -208,25 +226,36 @@ function ChatMessageRow({
         message={message}
         messageRef={messageRef}
         overlay={
-          isUser && message.displayState === "stable" ? (
-            <div className="absolute bottom-0 right-3 z-10 flex translate-y-[50%] opacity-0 transition-opacity group-hover:opacity-100">
+          message.displayState === "stable" ? (
+            <div className="absolute -bottom-6 right-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
               <button
                 type="button"
-                onClick={() => onEditStart(message)}
-                disabled={composerDisabled}
-                className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground shadow-sm disabled:opacity-50"
+                onClick={() => onCopy(message.content)}
+                className="rounded p-1 text-stone transition-colors hover:bg-mist hover:text-ink"
+                title="Copy message"
               >
-                Edit
+                {isCopied ? <Check className="h-3.5 w-3.5 text-sage" /> : <Copy className="h-3.5 w-3.5" />}
               </button>
+              {isUser && (
+                <button
+                  type="button"
+                  onClick={() => onEditStart(message)}
+                  disabled={composerDisabled}
+                  className="rounded p-1 text-stone transition-colors hover:bg-mist hover:text-terracotta disabled:opacity-50"
+                  title="Edit message"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           ) : null
         }
       />
       {hasForks ? (
-        <div className="relative w-full text-right">
+        <div className={`relative mt-2 ${isUser ? "pr-1 text-right" : "pl-2"}`}>
           <button
             type="button"
-            className="pointer-events-auto text-xs font-medium text-muted-foreground hover:text-foreground"
+            className="elegant-link pointer-events-auto text-xs text-stone transition-colors hover:text-ink"
             onClick={() => {
               setActiveForkMenuMessageId(message.id);
               if (openForkMenuMessageId === message.id) {
@@ -237,39 +266,66 @@ function ChatMessageRow({
               }
             }}
           >
-            Forks ({forkOptionsCount})
+            {forkOptionsCount} forks
           </button>
           {isForkMenuOpen && forkPoint ? (
-            <div className="absolute right-0 z-10 mt-2 w-64 rounded-md border bg-background p-2 text-xs shadow-sm">
-              {forkLoading ? (
-                <div className="px-2 py-2 text-sm text-muted-foreground">Loading...</div>
-              ) : forkOptions.length === 0 ? null : (
-                forkOptions.map((fork) => {
-                  const isActive = fork.conversationId === conversationId;
-                  const fallbackLabel = isActive ? message.content : "Loading fork message...";
-                  const label = forkLabels[fork.conversationId] ?? fallbackLabel;
-                  return (
-                    <button
-                      key={fork.conversationId}
-                      type="button"
-                      onClick={() => onForkSelect(fork.conversationId)}
-                      className={`flex w-full items-center justify-between rounded-md px-2 py-2 text-left transition-colors ${
-                        isActive ? "bg-muted text-foreground" : "hover:bg-muted/60"
-                      }`}
-                    >
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium">{formatForkLabel(label)}</span>
-                        <span className="text-xs text-muted-foreground">{formatForkTimestamp(fork.createdAt)}</span>
-                      </div>
-                      {isActive ? (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                          Active
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })
-              )}
+            <div className="absolute left-0 z-30 mt-2 w-72 animate-slide-up overflow-hidden rounded-xl border border-stone/20 bg-cream shadow-xl">
+              <div className="border-b border-stone/10 bg-mist/50 px-4 py-2.5">
+                <span className="text-xs font-medium text-stone">Fork Branches</span>
+              </div>
+              <div className="py-1">
+                {forkLoading ? (
+                  <div className="px-4 py-3 text-sm text-stone">Loading...</div>
+                ) : forkOptions.length === 0 ? null : (
+                  <>
+                    {forkOptions.map((fork) => {
+                      const isActive = fork.conversationId === conversationId;
+                      const fallbackLabel = isActive ? message.content : "Loading fork message...";
+                      const label = forkLabels[fork.conversationId] ?? fallbackLabel;
+                      return (
+                        <button
+                          key={fork.conversationId}
+                          type="button"
+                          onClick={() => onForkSelect(fork.conversationId)}
+                          className={`w-full px-4 py-3 text-left transition-colors ${
+                            isActive ? "border-l-2 border-sage bg-sage/10" : "hover:bg-mist/50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="min-w-0 flex-1">
+                              <p className={`truncate text-sm ${isActive ? "text-ink" : "text-stone"}`}>
+                                "{formatForkLabel(label)}"
+                              </p>
+                              <span className={`text-xs ${isActive ? "text-stone" : "text-stone/60"}`}>
+                                {formatForkTimestamp(fork.createdAt)}
+                              </span>
+                            </div>
+                            {isActive ? (
+                              <span className="ml-2 rounded-full border border-sage/50 px-2 py-0.5 text-[10px] font-medium text-sage">
+                                Active
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {/* Parent option */}
+                    <div className="mt-1 border-t border-stone/10 pt-1">
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-mist/50"
+                        onClick={() => {
+                          setOpenForkMenuMessageId(null);
+                          setActiveForkMenuMessageId(null);
+                        }}
+                      >
+                        <CornerUpLeft className="h-4 w-4 text-stone" />
+                        <p className="text-sm text-stone">Return to parent conversation</p>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           ) : null}
         </div>
@@ -314,7 +370,23 @@ type ChatPanelContentProps = {
   canceling: boolean;
   streamMode: StreamMode;
   setStreamMode: React.Dispatch<React.SetStateAction<StreamMode>>;
+  onIndexConversation?: (conversationId: string) => void;
+  onDeleteConversation?: (conversationId: string) => void;
 };
+
+function formatConversationTime(value?: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+  }).format(date);
+}
 
 function ChatPanelContent({
   conversationId,
@@ -326,20 +398,26 @@ function ChatPanelContent({
   queryClient,
   userMessageIndexById,
   canceling,
-  streamMode,
-  setStreamMode,
+  streamMode: _streamMode,
+  setStreamMode: _setStreamMode,
   forksQuery,
   conversationMetaById,
+  conversationQuery,
+  onIndexConversation,
+  onDeleteConversation,
 }: ChatPanelContentProps & {
   forksQuery: ReturnType<typeof useQuery<ConversationForkSummary[], ApiError, ConversationForkSummary[]>>;
   conversationMetaById: Map<string, ConversationMeta>;
+  conversationQuery: ReturnType<typeof useQuery<ApiConversation, ApiError, ApiConversation>>;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const { messages } = useConversationMessages();
   const { resumeStream, isBusy } = useConversationStreaming();
   const { submit } = useConversationInput();
   const [forking, setForking] = useState(false);
   const [editingMessage, setEditingMessage] = useState<{ id: string; conversationId: string } | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [forkLabels, setForkLabels] = useState<Record<string, string>>({});
   const [activeForkMenuMessageId, setActiveForkMenuMessageId] = useState<string | null>(null);
   const [openForkMenuMessageId, setOpenForkMenuMessageId] = useState<string | null>(null);
@@ -778,6 +856,13 @@ function ChatPanelContent({
     setOpenForkMenuMessageId(null);
   }, []);
 
+  const handleCopy = useCallback((messageId: string, content: string) => {
+    void navigator.clipboard.writeText(content).then(() => {
+      setCopiedMessageId(messageId);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    });
+  }, []);
+
   const handleEditCancel = useCallback(() => {
     setEditingMessage(null);
     setEditingText("");
@@ -820,30 +905,106 @@ function ChatPanelContent({
 
   const composerDisabled = isBusy || forking || canceling;
 
+  // Get conversation title and start time
+  const conversationTitle = conversationQuery.data?.title || "New conversation";
+  const conversationStartTime = conversationQuery.data?.createdAt
+    ? formatConversationTime(conversationQuery.data.createdAt)
+    : "";
+
   return (
-    <main className="flex flex-1 flex-col bg-muted/20">
-      <div className="border-b px-6 py-4">
-        <h2 className="text-lg font-semibold">Chat with your agent</h2>
-        <p className="text-xs text-muted-foreground">
-          Start a new chat or select a conversation from the left to continue.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-semibold text-foreground/70">Stream via</span>
-          <ToggleGroup
-            type="single"
-            value={streamMode}
-            onValueChange={(value) => setStreamMode(value as StreamMode)}
-            variant="outline"
-          >
-            <ToggleGroupItem value="sse" aria-label="Use SSE stream">
-              Server Sent Events
-            </ToggleGroupItem>
-            <ToggleGroupItem value="websocket" aria-label="Use WebSocket stream">
-              WebSocket
-            </ToggleGroupItem>
-          </ToggleGroup>
+    <main className="flex flex-1 flex-col bg-cream">
+      {/* Chat Header */}
+      <header className="relative z-40 border-b border-stone/10 bg-cream/80 px-8 py-5 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-3xl items-center justify-between">
+          <div>
+            <h2 className="font-serif text-xl">
+              {messages.length === 0 ? (
+                <span className="text-stone/60">New conversation</span>
+              ) : (
+                conversationTitle
+              )}
+            </h2>
+            <p className="mt-0.5 text-sm text-stone">
+              {messages.length === 0
+                ? "Start chatting with your agent"
+                : conversationStartTime
+                  ? `Started ${conversationStartTime}`
+                  : ""}
+            </p>
+          </div>
+          {/* Conversation menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="rounded-lg p-2 text-stone transition-colors hover:bg-mist hover:text-ink"
+              aria-label="Conversation menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full z-50 mt-2 w-48 animate-slide-up overflow-hidden rounded-xl border border-stone/20 bg-cream shadow-xl">
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (conversationId) {
+                        onIndexConversation?.(conversationId);
+                      }
+                      setMenuOpen(false);
+                    }}
+                    disabled={!conversationId || messages.length === 0}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink transition-colors hover:bg-mist disabled:opacity-50"
+                  >
+                    <Sparkles className="h-4 w-4 text-sage" />
+                    Index conversation
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (conversationId) {
+                        onDeleteConversation?.(conversationId);
+                      }
+                      setMenuOpen(false);
+                    }}
+                    disabled={!conversationId || messages.length === 0}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink transition-colors hover:bg-mist disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4 text-terracotta" />
+                    Delete conversation
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Stream mode toggle - hidden for now
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-stone">Stream</span>
+            <div className="flex rounded-lg bg-mist p-0.5">
+              <button
+                type="button"
+                onClick={() => setStreamMode("sse")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  streamMode === "sse" ? "bg-cream text-ink shadow-sm" : "text-stone hover:text-ink"
+                }`}
+              >
+                SSE
+              </button>
+              <button
+                type="button"
+                onClick={() => setStreamMode("websocket")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  streamMode === "websocket" ? "bg-cream text-ink shadow-sm" : "text-stone hover:text-ink"
+                }`}
+              >
+                WS
+              </button>
+            </div>
+          </div>
+          */}
         </div>
-      </div>
+      </header>
 
       <ConversationsUI.Viewport ref={viewportRef} className="relative pt-0">
         <ConversationsUI.Messages>
@@ -885,10 +1046,10 @@ function ChatPanelContent({
                 {turn.user ? (
                   <div className="sticky top-0 isolation-auto z-20 pb-3">
                     <div className="relative">
-                      {/* todo: use a flex layout so the first div grows vertically and the second div can remain a fixed height. */}
+                      {/* Gradient fade background */}
                       <div className="pointer-events-none absolute left-0 top-0 z-0 w-full">
-                        <div className="h-8 bg-background" />
-                        <div className="h-16 bg-gradient-to-b from-background via-background/85 to-background/0" />
+                        <div className="h-8 bg-cream" />
+                        <div className="h-16 bg-gradient-to-b from-cream via-cream/85 to-cream/0" />
                       </div>
                       <div className="relative z-10">
                         <div className="pt-2">
@@ -905,6 +1066,8 @@ function ChatPanelContent({
                             onEditStart={handleEditStart}
                             onEditCancel={handleEditCancel}
                             onForkSend={handleForkSend}
+                            onCopy={(content) => handleCopy(turn.user!.id, content)}
+                            copiedMessageId={copiedMessageId}
                             composerDisabled={composerDisabled}
                             conversationId={conversationId}
                             forkOptionsCount={(forkOptionsByMessageId.get(turn.user.id) ?? []).length}
@@ -937,7 +1100,7 @@ function ChatPanelContent({
                   </div>
                 ) : null}
                 {turn.assistants.length > 0 ? (
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-3 pb-6">
                     {turn.assistants.map((message) => {
                       const isEditing =
                         message.displayState === "stable" &&
@@ -954,6 +1117,8 @@ function ChatPanelContent({
                           onEditStart={handleEditStart}
                           onEditCancel={handleEditCancel}
                           onForkSend={handleForkSend}
+                          onCopy={(content) => handleCopy(message.id, content)}
+                          copiedMessageId={copiedMessageId}
                           composerDisabled={composerDisabled}
                           conversationId={conversationId}
                           forkOptionsCount={messageForkOptions.length}
@@ -1005,6 +1170,8 @@ export function ChatPanel({
   onSelectConversationId,
   knownConversationIds,
   resumableConversationIds,
+  onIndexConversation,
+  onDeleteConversation,
 }: ChatPanelProps) {
   const [assistantIdOverrides, setAssistantIdOverrides] = useState<Record<string, string>>({});
   const assistantIdOverridesRef = useRef<Record<string, string>>({});
@@ -1482,8 +1649,11 @@ export function ChatPanel({
         canceling={canceling}
         forksQuery={forksQuery}
         conversationMetaById={conversationMetaById}
+        conversationQuery={conversationQuery}
         streamMode={streamMode}
         setStreamMode={setStreamMode}
+        onIndexConversation={onIndexConversation}
+        onDeleteConversation={onDeleteConversation}
       />
     </Conversation.Root>
   );
