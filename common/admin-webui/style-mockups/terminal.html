@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conversation Detail - Terminal Style</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root { font-family: 'Inter', system-ui, sans-serif; }
+    code, .mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            terminal: {
+              bg: '#101518',
+              bgDark: '#080c0e',
+              surface: '#161b1e',
+              surfaceRaised: '#1c2225',
+              border: '#2b3235',
+              borderSubtle: '#232a2d',
+              text: '#e2e4e5',
+              textMuted: '#9da2a4',
+              textDim: '#6b7072',
+              accent: '#48d597',
+              accentHover: '#5eeaab',
+              accentSubtle: 'rgba(72, 213, 151, 0.1)',
+              accentBorder: 'rgba(72, 213, 151, 0.3)',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-terminal-bgDark text-terminal-text antialiased text-sm">
+  <!-- Header -->
+  <header class="h-14 bg-terminal-surface border-b border-terminal-border flex items-center">
+    <div class="flex items-center h-full">
+      <!-- Logo/Silo -->
+      <div class="flex items-center space-x-3 px-4 h-full border-r border-terminal-border">
+        <div class="w-8 h-8 bg-terminal-accent/20 rounded flex items-center justify-center">
+          <svg class="w-5 h-5 text-terminal-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M9 3v18M3 9h18"/>
+          </svg>
+        </div>
+        <div class="flex items-center space-x-2">
+          <div>
+            <div class="text-[10px] text-terminal-textDim uppercase tracking-wider">Silo</div>
+            <div class="text-sm font-medium text-terminal-text">Memory Service</div>
+          </div>
+          <svg class="w-4 h-4 text-terminal-textDim" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Breadcrumb -->
+      <div class="flex items-center h-full px-4 space-x-2">
+        <div>
+          <div class="text-[10px] text-terminal-textDim uppercase tracking-wider">Conversation</div>
+          <div class="text-sm text-terminal-text">Project Discussion</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex-1"></div>
+
+    <!-- Right side -->
+    <div class="flex items-center space-x-4 px-4">
+      <!-- Session Justification -->
+      <div class="flex items-center space-x-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded">
+        <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+        </svg>
+        <input type="text" placeholder="Session justification" class="bg-transparent text-xs text-terminal-text placeholder-amber-400/60 focus:outline-none w-48 mono">
+      </div>
+
+      <button class="w-8 h-8 rounded-full bg-terminal-surfaceRaised border border-terminal-border flex items-center justify-center text-terminal-textMuted hover:text-terminal-text">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+      </button>
+
+      <div class="flex items-center space-x-2 text-terminal-textMuted">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+        </svg>
+        <span class="text-sm">admin</span>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </div>
+    </div>
+  </header>
+
+  <div class="flex min-h-[calc(100vh-56px)]">
+    <!-- Sidebar -->
+    <aside class="w-60 bg-terminal-surface border-r border-terminal-border">
+      <!-- Jump To -->
+      <div class="p-3 border-b border-terminal-border">
+        <button class="w-full flex items-center justify-between px-3 py-2 text-terminal-textMuted hover:bg-terminal-surfaceRaised rounded transition-colors">
+          <div class="flex items-center space-x-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            <span class="text-xs uppercase tracking-wider">Jump to</span>
+          </div>
+          <span class="text-[10px] text-terminal-textDim bg-terminal-bgDark px-1.5 py-0.5 rounded mono">⌘K</span>
+        </button>
+      </div>
+
+      <!-- Main Nav -->
+      <nav class="p-3 space-y-1">
+        <a href="#" class="flex items-center space-x-3 px-3 py-2 text-terminal-textMuted hover:bg-terminal-surfaceRaised rounded transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          <span>Dashboard</span>
+        </a>
+        <a href="#" class="flex items-center space-x-3 px-3 py-2 text-terminal-textMuted hover:bg-terminal-surfaceRaised rounded transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          <span>Docs</span>
+        </a>
+      </nav>
+
+      <!-- Project Nav -->
+      <div class="px-3 pt-4">
+        <div class="text-[10px] text-terminal-textDim uppercase tracking-wider px-3 mb-2">Conversations</div>
+        <nav class="space-y-1">
+          <a href="#" class="flex items-center space-x-3 px-3 py-2 text-terminal-accent bg-terminal-accentSubtle rounded">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+            </svg>
+            <span>Browse</span>
+          </a>
+          <a href="#" class="flex items-center space-x-3 px-3 py-2 text-terminal-textMuted hover:bg-terminal-surfaceRaised rounded transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <span>Search</span>
+          </a>
+          <a href="#" class="flex items-center space-x-3 px-3 py-2 text-terminal-textMuted hover:bg-terminal-surfaceRaised rounded transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+            </svg>
+            <span>Forks</span>
+          </a>
+          <a href="#" class="flex items-center space-x-3 px-3 py-2 text-terminal-textMuted hover:bg-terminal-surfaceRaised rounded transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+            </svg>
+            <span>Memberships</span>
+          </a>
+          <a href="#" class="flex items-center space-x-3 px-3 py-2 text-terminal-textMuted hover:bg-terminal-surfaceRaised rounded transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            <span>Eviction</span>
+          </a>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 bg-terminal-bg">
+      <div class="max-w-5xl mx-auto p-8">
+        <!-- Title -->
+        <div class="flex items-center space-x-3 mb-8">
+          <svg class="w-6 h-6 text-terminal-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+          </svg>
+          <h1 class="text-2xl font-semibold text-terminal-accent">Project Discussion</h1>
+        </div>
+
+        <!-- Details/Memberships Tabs Section -->
+        <div class="mb-8">
+          <!-- Tabs -->
+          <div class="border-b border-terminal-border mb-4">
+            <nav class="flex space-x-6">
+              <button class="pb-3 text-sm text-terminal-accent border-b-2 border-terminal-accent uppercase tracking-wider">Details</button>
+              <button class="pb-3 text-sm text-terminal-textMuted hover:text-terminal-text uppercase tracking-wider">Memberships</button>
+            </nav>
+          </div>
+
+          <!-- Details Tab Content (active) -->
+          <div class="grid grid-cols-2 gap-px bg-terminal-border rounded-lg overflow-hidden">
+            <div class="bg-terminal-surface p-4">
+              <div class="text-[11px] text-terminal-accent uppercase tracking-wider mb-1">Owner</div>
+              <div class="text-terminal-text">user_456</div>
+            </div>
+            <div class="bg-terminal-surface p-4">
+              <div class="text-[11px] text-terminal-accent uppercase tracking-wider mb-1">ID</div>
+              <div class="text-terminal-text mono text-xs">550e8400-e29b-41d4-a716-446655440000</div>
+            </div>
+            <div class="bg-terminal-surface p-4">
+              <div class="text-[11px] text-terminal-accent uppercase tracking-wider mb-1">Status</div>
+              <div class="text-terminal-accent">ACTIVE</div>
+            </div>
+            <div class="bg-terminal-surface p-4">
+              <div class="text-[11px] text-terminal-accent uppercase tracking-wider mb-1">Created</div>
+              <div class="text-terminal-text">Jan 15, 2025 10:30 AM</div>
+            </div>
+            <div class="bg-terminal-surface p-4">
+              <div class="text-[11px] text-terminal-accent uppercase tracking-wider mb-1">Entries</div>
+              <div class="text-terminal-text">12</div>
+            </div>
+            <div class="bg-terminal-surface p-4">
+              <div class="text-[11px] text-terminal-accent uppercase tracking-wider mb-1">Updated</div>
+              <div class="text-terminal-text">Jan 20, 2025 2:22 PM</div>
+            </div>
+          </div>
+
+          <!-- Memberships Tab Content (hidden) -->
+          <!--
+          <div class="border border-terminal-border rounded-lg overflow-hidden">
+            <table class="w-full">
+              <thead>
+                <tr class="bg-terminal-surface">
+                  <th class="px-4 py-3 text-left text-[11px] text-terminal-textDim uppercase tracking-wider font-medium">User ID</th>
+                  <th class="px-4 py-3 text-left text-[11px] text-terminal-textDim uppercase tracking-wider font-medium">Access Level</th>
+                  <th class="px-4 py-3 text-left text-[11px] text-terminal-textDim uppercase tracking-wider font-medium">Created</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-terminal-border">
+                <tr class="hover:bg-terminal-surface/50 transition-colors">
+                  <td class="px-4 py-4 text-terminal-text">user_456</td>
+                  <td class="px-4 py-4"><span class="text-purple-400">OWNER</span></td>
+                  <td class="px-4 py-4 text-terminal-textMuted">Jan 15, 2025</td>
+                </tr>
+                <tr class="hover:bg-terminal-surface/50 transition-colors">
+                  <td class="px-4 py-4 text-terminal-text">user_789</td>
+                  <td class="px-4 py-4"><span class="text-terminal-textMuted">READER</span></td>
+                  <td class="px-4 py-4 text-terminal-textMuted">Jan 16, 2025</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          -->
+        </div>
+
+        <!-- Forks Section -->
+        <div class="mb-8">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm text-terminal-textDim uppercase tracking-wider">Forks</h2>
+            <span class="text-xs text-terminal-textDim">3 conversations in fork tree</span>
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <!-- Root (selected) -->
+            <div class="bg-terminal-accentSubtle border-2 border-terminal-accent rounded-lg p-4 cursor-pointer">
+              <div class="text-sm font-medium text-terminal-accent mb-1 truncate">Project Discussion</div>
+              <div class="text-[10px] text-terminal-accent uppercase tracking-wider mb-2">Root conversation</div>
+              <div class="text-xs text-terminal-textDim">Updated Jan 20, 2025</div>
+            </div>
+
+            <!-- Fork 1 -->
+            <div class="bg-terminal-surface border border-terminal-border rounded-lg p-4 cursor-pointer hover:border-terminal-textMuted transition-colors">
+              <div class="text-sm font-medium text-terminal-text mb-1 truncate">Alternative approach</div>
+              <div class="text-[10px] text-terminal-textMuted mb-2">
+                Forked at <span class="text-terminal-accent mono">8d0f7780...</span>
+              </div>
+              <div class="text-xs text-terminal-textDim">Updated Jan 18, 2025</div>
+            </div>
+
+            <!-- Fork 2 -->
+            <div class="bg-terminal-surface border border-terminal-border rounded-lg p-4 cursor-pointer hover:border-terminal-textMuted transition-colors">
+              <div class="text-sm font-medium text-terminal-text mb-1 truncate">Technical deep-dive</div>
+              <div class="text-[10px] text-terminal-textMuted mb-2">
+                Forked at <span class="text-terminal-accent mono">8d0f7780...</span>
+              </div>
+              <div class="text-xs text-terminal-textDim">Updated Jan 16, 2025</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Entries Section -->
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm text-terminal-textDim uppercase tracking-wider">Entries</h2>
+            <div class="flex items-center space-x-3">
+              <span class="text-xs text-terminal-textDim">Channel:</span>
+              <select class="bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text focus:border-terminal-accent focus:outline-none">
+                <option>All channels</option>
+                <option>history</option>
+                <option>memory</option>
+                <option>transcript</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Entries List -->
+          <div class="space-y-4">
+            <!-- Entry 1 -->
+            <div class="bg-terminal-surface border border-terminal-border rounded-lg p-5">
+              <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center space-x-3">
+                  <span class="text-[10px] font-medium px-2 py-0.5 bg-terminal-accentSubtle text-terminal-accent rounded uppercase tracking-wider">history</span>
+                  <span class="text-xs text-terminal-textDim mono">7c9e6679-7425-40de-944b-e07fc1f90ae7</span>
+                </div>
+                <span class="text-xs text-terminal-textDim">Jan 15, 2025 10:31 AM</span>
+              </div>
+              <div class="mb-3 text-sm text-terminal-textMuted">
+                <span class="text-terminal-text">user_456</span> · message
+              </div>
+              <div class="bg-terminal-bgDark rounded p-3 mono text-xs text-terminal-textMuted overflow-x-auto">
+[{"type": "text", "text": "Hello, how can I help you today?"}]
+              </div>
+            </div>
+
+            <!-- Entry 2 with Fork Indicator -->
+            <div class="bg-terminal-surface border-2 border-terminal-accent rounded-lg p-5 ring-1 ring-terminal-accentSubtle">
+              <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center space-x-3">
+                  <span class="text-[10px] font-medium px-2 py-0.5 bg-terminal-accentSubtle text-terminal-accent rounded uppercase tracking-wider">history</span>
+                  <span class="text-xs text-terminal-textDim mono">8d0f7780-8536-41e5-b166-f18fd28747f8</span>
+                  <span class="text-[10px] font-medium px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded uppercase tracking-wider flex items-center space-x-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                    </svg>
+                    <span>Fork point</span>
+                  </span>
+                </div>
+                <span class="text-xs text-terminal-textDim">Jan 15, 2025 10:32 AM</span>
+              </div>
+              <div class="mb-3 text-sm text-terminal-textMuted">
+                <span class="text-terminal-text">user_456</span> · message
+              </div>
+              <div class="bg-terminal-bgDark rounded p-3 mono text-xs text-terminal-textMuted overflow-x-auto">
+[{"type": "text", "text": "I'd like to discuss the conversation forking feature."}]
+              </div>
+            </div>
+
+            <!-- Entry 3 -->
+            <div class="bg-terminal-surface border border-terminal-border rounded-lg p-5">
+              <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center space-x-3">
+                  <span class="text-[10px] font-medium px-2 py-0.5 bg-terminal-accentSubtle text-terminal-accent rounded uppercase tracking-wider">history</span>
+                  <span class="text-xs text-terminal-textDim mono">9e1g8891-9647-52f6-c277-g29ge39858g9</span>
+                </div>
+                <span class="text-xs text-terminal-textDim">Jan 15, 2025 10:35 AM</span>
+              </div>
+              <div class="mb-3 text-sm text-terminal-textMuted">
+                <span class="text-terminal-text">assistant</span> · message
+              </div>
+              <div class="bg-terminal-bgDark rounded p-3 mono text-xs text-terminal-textMuted overflow-x-auto">
+[{"type": "text", "text": "Of course! Conversation forking allows you to branch off from any point in a conversation. Each fork maintains its own independent history while sharing the common ancestor messages."}]
+              </div>
+            </div>
+          </div>
+
+          <!-- Pagination & Actions -->
+          <div class="flex items-center justify-between mt-4">
+            <span class="text-xs text-terminal-textDim">Showing 1-3 of 12 entries</span>
+            <div class="flex items-center space-x-3">
+              <button class="px-4 py-2 bg-terminal-surface border border-terminal-border text-terminal-textMuted text-sm rounded hover:text-terminal-text hover:border-terminal-textMuted transition-colors uppercase tracking-wider">
+                Previous
+              </button>
+              <button class="px-4 py-2 bg-terminal-accent text-terminal-bgDark text-sm font-medium rounded hover:bg-terminal-accentHover transition-colors uppercase tracking-wider">
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
