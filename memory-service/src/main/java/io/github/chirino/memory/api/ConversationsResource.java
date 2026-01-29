@@ -539,8 +539,8 @@ public class ConversationsResource {
         }
     }
 
-    @POST
-    @Path("/conversations/{conversationId}/cancel-response")
+    @DELETE
+    @Path("/conversations/{conversationId}/response")
     public Response cancelResponse(@PathParam("conversationId") String conversationId) {
         ResponseResumerBackend backend = resumerSelector.getBackend();
         if (!backend.enabled()) {
@@ -562,7 +562,7 @@ public class ConversationsResource {
             backend.requestCancel(conversationId, resolveAdvertisedAddress());
         } catch (ResponseResumerRedirectException redirect) {
             LOG.infof(
-                    "Redirecting cancel-response for conversationId=%s from %s to %s",
+                    "Redirecting delete-response for conversationId=%s from %s to %s",
                     conversationId, resolveAdvertisedAddress(), redirect.target());
             URI target = buildRedirectLocation(conversationId, redirect.target());
             return forwardCancel(conversationId, target);
@@ -694,7 +694,7 @@ public class ConversationsResource {
         if (target.port() > 0) {
             builder.port(target.port());
         }
-        builder.path("v1/conversations/{conversationId}/cancel-response");
+        builder.path("v1/conversations/{conversationId}/response");
         return builder.build(conversationId);
     }
 

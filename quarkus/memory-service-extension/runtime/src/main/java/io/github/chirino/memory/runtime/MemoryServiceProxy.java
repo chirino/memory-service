@@ -116,7 +116,7 @@ public class MemoryServiceProxy {
 
     public Response cancelResponse(String conversationId) {
         return executeVoid(
-                () -> conversationsApi().cancelConversationResponse(conversationId),
+                () -> conversationsApi().deleteConversationResponse(conversationId),
                 OK,
                 "Error cancelling response for history %s",
                 conversationId);

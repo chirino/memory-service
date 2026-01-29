@@ -114,7 +114,7 @@ public class MemoryServiceProxy {
 
     public ResponseEntity<?> cancelResponse(String conversationId) {
         return execute(
-                api -> api.cancelConversationResponseWithHttpInfo(conversationId), HttpStatus.OK);
+                api -> api.deleteConversationResponseWithHttpInfo(conversationId), HttpStatus.OK);
     }
 
     public ResponseEntity<?> transferConversationOwnership(String conversationId, String body) {

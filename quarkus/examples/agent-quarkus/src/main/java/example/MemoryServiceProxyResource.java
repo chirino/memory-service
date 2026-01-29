@@ -87,8 +87,8 @@ public class MemoryServiceProxyResource {
         return proxy.shareConversation(conversationId, body);
     }
 
-    @POST
-    @Path("/{conversationId}/cancel-response")
+    @DELETE
+    @Path("/{conversationId}/response")
     public Response cancelResponse(@PathParam("conversationId") String conversationId) {
         return proxy.cancelResponse(conversationId);
     }

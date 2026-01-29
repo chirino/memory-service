@@ -53,7 +53,7 @@ used for token streaming.
 ## API Design
 ### REST (user/agent)
 1) **Cancel an in-progress response**
-   - `POST /v1/conversations/{conversationId}/cancel-response`
+   - `DELETE /v1/conversations/{conversationId}/response`
    - Request: `{ }`
    - Implementation:
      - XADD cancel signal into `conversation:response-x:{conversationId}`.
@@ -95,7 +95,7 @@ Add RPCs to `ResponseResumerService`:
 - No request body fields.
 
 ## Error Semantics
-- `POST /v1/conversations/{conversationId}/cancel-response` returns 200 even if no response is active (idempotent).
+- `DELETE /v1/conversations/{conversationId}/response` returns 200 even if no response is active (idempotent).
 - 404 only if the conversation is not found or caller lacks access.
 - 409 if the response resumer is disabled.
 

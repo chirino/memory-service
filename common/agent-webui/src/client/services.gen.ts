@@ -348,15 +348,15 @@ export class ConversationsService {
    * @returns ErrorResponse Error response
    * @throws ApiError
    */
-  public static cancelConversationResponse(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["req"],
+  public static deleteConversationResponse(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/response"]["delete"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/cancel-response"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/response"]["delete"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/response"]["delete"]["res"][200]
   > {
     return __request(OpenAPI, {
-      method: "POST",
-      url: "/v1/conversations/{conversationId}/cancel-response",
+      method: "DELETE",
+      url: "/v1/conversations/{conversationId}/response",
       path: {
         conversationId: data.conversationId,
       },
