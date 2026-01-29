@@ -1169,7 +1169,8 @@ public class StepDefinitions {
         String rendered = renderTemplate(requestBody);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
-        this.lastResponse = requestSpec.when().post("/v1/conversations/{id}/forks", conversationId);
+        this.lastResponse =
+                requestSpec.when().post("/v1/conversations/{id}/memberships", conversationId);
     }
 
     @io.cucumber.java.en.When("I share conversation {string} with user {string} with request:")
@@ -1184,7 +1185,8 @@ public class StepDefinitions {
         }
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
-        this.lastResponse = requestSpec.when().post("/v1/conversations/{id}/forks", renderedConvId);
+        this.lastResponse =
+                requestSpec.when().post("/v1/conversations/{id}/memberships", renderedConvId);
     }
 
     @io.cucumber.java.en.When("I share that conversation with user {string} with request:")

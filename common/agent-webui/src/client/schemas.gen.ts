@@ -192,7 +192,7 @@ export const $ForkFromEntryRequest = {
 export const $Channel = {
   type: "string",
   description: "Logical channel of the entry within the conversation.",
-  enum: ["history", "memory", "summary"],
+  enum: ["history", "memory", "transcript"],
 } as const;
 
 export const $Entry = {
@@ -392,38 +392,38 @@ export const $SyncEntriesResponse = {
   },
 } as const;
 
-export const $CreateSummaryRequest = {
+export const $IndexTranscriptRequest = {
   type: "object",
-  required: ["title", "summary", "untilEntryId", "summarizedAt"],
+  required: ["conversationId", "transcript", "untilEntryId"],
   properties: {
+    conversationId: {
+      type: "string",
+      description: "The conversation to index.",
+    },
     title: {
       type: "string",
-      description: "Conversation title to store/update.",
+      nullable: true,
+      description: "Optional conversation title to store/update.",
     },
-    summary: {
+    transcript: {
       type: "string",
-      description: "Summary text.",
+      description: "Transcript text to index for semantic search.",
     },
     untilEntryId: {
       type: "string",
-      description: "Highest message id covered by the summary (inclusive).",
-    },
-    summarizedAt: {
-      type: "string",
-      format: "date-time",
-      description: "Timestamp of the last message covered by the summary.",
+      description: "Highest entry id covered by the index (inclusive).",
     },
   },
   example: {
+    conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
     title: "Conversation forking design",
-    summary:
+    transcript:
       "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch.",
-    untilEntryId: "msg_01HF8XJQWXYZ9876ABCD5431",
-    summarizedAt: "2024-05-01T12:34:56Z",
+    untilEntryId: "entry_01HF8XJQWXYZ9876ABCD5431",
   },
 } as const;
 
-export const $SearchEntriesRequest = {
+export const $SearchConversationsRequest = {
   type: "object",
   required: ["query"],
   properties: {

@@ -102,7 +102,7 @@ public class MemoryServiceProxy {
         try {
             ShareConversationRequest request =
                     OBJECT_MAPPER.readValue(body, ShareConversationRequest.class);
-            return execute(
+            return executeSharingApi(
                     api -> api.shareConversationWithHttpInfo(conversationId, request),
                     HttpStatus.CREATED);
         } catch (Exception e) {

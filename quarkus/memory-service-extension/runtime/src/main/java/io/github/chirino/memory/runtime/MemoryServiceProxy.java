@@ -104,7 +104,7 @@ public class MemoryServiceProxy {
             ShareConversationRequest request =
                     OBJECT_MAPPER.readValue(body, ShareConversationRequest.class);
             return execute(
-                    () -> conversationsApi().shareConversation(conversationId, request),
+                    () -> sharingApi().shareConversation(conversationId, request),
                     CREATED,
                     "Error sharing history %s",
                     conversationId);

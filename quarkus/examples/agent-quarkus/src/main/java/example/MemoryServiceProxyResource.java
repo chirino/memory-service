@@ -79,7 +79,7 @@ public class MemoryServiceProxyResource {
     }
 
     @POST
-    @Path("/{conversationId}/forks")
+    @Path("/{conversationId}/memberships")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response shareConversation(

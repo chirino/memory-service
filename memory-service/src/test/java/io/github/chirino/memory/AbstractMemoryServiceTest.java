@@ -191,7 +191,7 @@ abstract class AbstractMemoryServiceTest {
         given().contentType(MediaType.APPLICATION_JSON)
                 .body(shareRequest)
                 .when()
-                .post("/v1/conversations/{id}/forks", conversationId)
+                .post("/v1/conversations/{id}/memberships", conversationId)
                 .then()
                 .statusCode(201)
                 .body("userId", is("writer"))
@@ -232,7 +232,7 @@ abstract class AbstractMemoryServiceTest {
         given().contentType(MediaType.APPLICATION_JSON)
                 .body(shareRequest)
                 .when()
-                .post("/v1/conversations/{id}/forks", conversationId)
+                .post("/v1/conversations/{id}/memberships", conversationId)
                 .then()
                 .statusCode(403)
                 .body("code", is("forbidden"));

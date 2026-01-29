@@ -342,14 +342,14 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/admin/search/entries:
+  /v1/admin/conversations/search:
     post:
       tags: [Admin]
       summary: System-wide semantic search (admin/auditor)
       description: |-
         Performs semantic search across all conversations, optionally filtered
         by userId. Requires auditor or admin role.
-      operationId: adminSearchEntries
+      operationId: adminSearchConversations
       requestBody:
         required: true
         content:

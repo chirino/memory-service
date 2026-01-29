@@ -75,7 +75,7 @@ export type ForkFromEntryRequest = {
 /**
  * Logical channel of the entry within the conversation.
  */
-export type Channel = "history" | "memory" | "summary";
+export type Channel = "history" | "memory" | "transcript";
 
 export type Entry = {
   id: string;
@@ -156,26 +156,26 @@ export type SyncEntriesResponse = {
   entries?: Array<Entry>;
 };
 
-export type CreateSummaryRequest = {
+export type IndexTranscriptRequest = {
   /**
-   * Conversation title to store/update.
+   * The conversation to index.
    */
-  title: string;
+  conversationId: string;
   /**
-   * Summary text.
+   * Optional conversation title to store/update.
    */
-  summary: string;
+  title?: string | null;
   /**
-   * Highest message id covered by the summary (inclusive).
+   * Transcript text to index for semantic search.
+   */
+  transcript: string;
+  /**
+   * Highest entry id covered by the index (inclusive).
    */
   untilEntryId: string;
-  /**
-   * Timestamp of the last message covered by the summary.
-   */
-  summarizedAt: string;
 };
 
-export type SearchEntriesRequest = {
+export type SearchConversationsRequest = {
   /**
    * Natural language query.
    */
@@ -392,26 +392,6 @@ export type $OpenApiTs = {
         404: ErrorResponse;
       };
     };
-    post: {
-      req: {
-        conversationId: string;
-        requestBody: ShareConversationRequest;
-      };
-      res: {
-        /**
-         * Error response
-         */
-        200: ErrorResponse;
-        /**
-         * Created membership.
-         */
-        201: ConversationMembership;
-        /**
-         * Resource not found
-         */
-        404: ErrorResponse;
-      };
-    };
   };
   "/v1/conversations/{conversationId}/response": {
     delete: {
@@ -474,6 +454,26 @@ export type $OpenApiTs = {
         404: ErrorResponse;
       };
     };
+    post: {
+      req: {
+        conversationId: string;
+        requestBody: ShareConversationRequest;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Created membership.
+         */
+        201: ConversationMembership;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
   };
   "/v1/conversations/{conversationId}/memberships/{userId}": {
     patch: {
@@ -516,10 +516,10 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/user/search/entries": {
+  "/v1/conversations/search": {
     post: {
       req: {
-        requestBody: SearchEntriesRequest;
+        requestBody: SearchConversationsRequest;
       };
       res: {
         /**
@@ -529,11 +529,10 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/summaries": {
+  "/v1/conversations/index": {
     post: {
       req: {
-        conversationId: string;
-        requestBody: CreateSummaryRequest;
+        requestBody: IndexTranscriptRequest;
       };
       res: {
         /**
@@ -541,7 +540,7 @@ export type $OpenApiTs = {
          */
         200: ErrorResponse;
         /**
-         * The created summary entry.
+         * The index entry was created.
          */
         201: Entry;
         /**
