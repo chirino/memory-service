@@ -413,8 +413,8 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/cancel-response": {
-    post: {
+  "/v1/conversations/{conversationId}/response": {
+    delete: {
       req: {
         conversationId: string;
       };

@@ -67,7 +67,7 @@ class MemoryServiceProxyController {
         return proxy.shareConversation(conversationId, body);
     }
 
-    @PostMapping("/{conversationId}/cancel-response")
+    @DeleteMapping("/{conversationId}/response")
     public ResponseEntity<?> cancelResponse(@PathVariable String conversationId) {
         return proxy.cancelResponse(conversationId);
     }

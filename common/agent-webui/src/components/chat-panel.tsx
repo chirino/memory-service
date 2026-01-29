@@ -1446,7 +1446,7 @@ export function ChatPanel({
         }
         setCanceling(true);
         try {
-          await ConversationsService.cancelConversationResponse({ conversationId: targetConversationId });
+          await ConversationsService.deleteConversationResponse({ conversationId: targetConversationId });
         } catch (error) {
           void error;
         } finally {

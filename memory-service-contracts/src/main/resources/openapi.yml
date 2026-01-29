@@ -422,14 +422,14 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/conversations/{conversationId}/cancel-response:
-    post:
+  /v1/conversations/{conversationId}/response:
+    delete:
       tags: [Conversations]
       summary: Cancel an in-progress response
       description: |-
         Requests cancellation of an in-progress response stream for the conversation.
         Requires WRITER access and an authenticated user session.
-      operationId: cancelConversationResponse
+      operationId: deleteConversationResponse
       parameters:
         - name: conversationId
           in: path
