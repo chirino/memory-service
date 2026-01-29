@@ -6,10 +6,10 @@ import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
-import io.github.chirino.memory.api.dto.CreateSummaryRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
+import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
@@ -78,7 +78,7 @@ public interface MemoryStore {
             List<CreateEntryRequest> entries,
             String clientId);
 
-    EntryDto createSummary(String conversationId, CreateSummaryRequest request, String clientId);
+    EntryDto indexTranscript(IndexTranscriptRequest request, String clientId);
 
     List<SearchResultDto> searchEntries(String userId, SearchEntriesRequest request);
 

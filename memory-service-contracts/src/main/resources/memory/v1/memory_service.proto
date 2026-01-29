@@ -35,7 +35,7 @@ enum Channel {
   CHANNEL_UNSPECIFIED = 0;
   HISTORY = 1;
   MEMORY = 2;
-  SUMMARY = 3;
+  TRANSCRIPT = 3;
 }
 
 message ConversationSummary {
@@ -211,12 +211,11 @@ message SearchResult {
   string highlights = 3;
 }
 
-message CreateSummaryRequest {
+message IndexTranscriptRequest {
   string conversation_id = 1;
-  string title = 2;
-  string summary = 3;
+  optional string title = 2;
+  string transcript = 3;
   string until_entry_id = 4;
-  string summarized_at = 5;
 }
 
 message HealthResponse {
@@ -252,8 +251,8 @@ service EntriesService {
 }
 
 service SearchService {
-  rpc SearchEntries(SearchEntriesRequest) returns (SearchEntriesResponse);
-  rpc CreateSummary(CreateSummaryRequest) returns (Entry);
+  rpc SearchConversations(SearchEntriesRequest) returns (SearchEntriesResponse);
+  rpc IndexTranscript(IndexTranscriptRequest) returns (Entry);
 }
 
 service ResponseResumerService {

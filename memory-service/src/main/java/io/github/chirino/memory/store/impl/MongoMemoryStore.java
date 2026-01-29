@@ -10,10 +10,10 @@ import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
-import io.github.chirino.memory.api.dto.CreateSummaryRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
+import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
@@ -698,25 +698,25 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public EntryDto createSummary(
-            String conversationId, CreateSummaryRequest request, String clientId) {
+    public EntryDto indexTranscript(IndexTranscriptRequest request, String clientId) {
+        String conversationId = request.getConversationId();
         MongoConversation c = conversationRepository.findById(conversationId);
         if (c == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
-        MongoEntry summary = new MongoEntry();
-        summary.id = UUID.randomUUID().toString();
-        summary.conversationId = conversationId;
-        summary.userId = null;
-        summary.clientId = clientId;
-        summary.channel = Channel.SUMMARY;
-        summary.epoch = null;
-        summary.contentType = "summary";
-        summary.decodedContent = buildSummaryContent(request);
-        summary.content = encryptContent(summary.decodedContent);
-        summary.conversationGroupId = c.conversationGroupId;
-        summary.createdAt = Instant.now();
-        entryRepository.persist(summary);
+        MongoEntry transcriptEntry = new MongoEntry();
+        transcriptEntry.id = UUID.randomUUID().toString();
+        transcriptEntry.conversationId = conversationId;
+        transcriptEntry.userId = null;
+        transcriptEntry.clientId = clientId;
+        transcriptEntry.channel = Channel.TRANSCRIPT;
+        transcriptEntry.epoch = null;
+        transcriptEntry.contentType = "transcript";
+        transcriptEntry.decodedContent = buildTranscriptContent(request);
+        transcriptEntry.content = encryptContent(transcriptEntry.decodedContent);
+        transcriptEntry.conversationGroupId = c.conversationGroupId;
+        transcriptEntry.createdAt = Instant.now();
+        entryRepository.persist(transcriptEntry);
 
         boolean conversationUpdated = false;
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
@@ -724,26 +724,23 @@ public class MongoMemoryStore implements MemoryStore {
             conversationUpdated = true;
         }
         if (shouldVectorize()) {
-            vectorizeSummary(c, summary, request);
+            vectorizeTranscript(c, transcriptEntry, request);
         } else if (conversationUpdated) {
             conversationRepository.persistOrUpdate(c);
         }
 
-        return toEntryDto(summary);
+        return toEntryDto(transcriptEntry);
     }
 
-    private List<Object> buildSummaryContent(CreateSummaryRequest request) {
+    private List<Object> buildTranscriptContent(IndexTranscriptRequest request) {
         if (request == null) {
             return Collections.emptyList();
         }
         Map<String, Object> block = new HashMap<>();
-        block.put("type", "summary");
-        block.put("text", request.getSummary());
+        block.put("type", "transcript");
+        block.put("text", request.getTranscript());
         if (request.getUntilEntryId() != null) {
             block.put("untilEntryId", request.getUntilEntryId());
-        }
-        if (request.getSummarizedAt() != null) {
-            block.put("summarizedAt", request.getSummarizedAt());
         }
         return List.of(block);
     }
@@ -753,22 +750,26 @@ public class MongoMemoryStore implements MemoryStore {
         return store != null && store.isEnabled() && embeddingService.isEnabled();
     }
 
-    private void vectorizeSummary(
-            MongoConversation conversation, MongoEntry summary, CreateSummaryRequest request) {
-        if (request == null || request.getSummary() == null || request.getSummary().isBlank()) {
+    private void vectorizeTranscript(
+            MongoConversation conversation,
+            MongoEntry transcriptEntry,
+            IndexTranscriptRequest request) {
+        if (request == null
+                || request.getTranscript() == null
+                || request.getTranscript().isBlank()) {
             return;
         }
         VectorStore store = vectorStoreSelector.getVectorStore();
         try {
-            float[] embedding = embeddingService.embed(request.getSummary());
+            float[] embedding = embeddingService.embed(request.getTranscript());
             if (embedding == null || embedding.length == 0) {
                 return;
             }
-            store.upsertSummaryEmbedding(conversation.id, summary.id, embedding);
-            conversation.vectorizedAt = parseInstant(request.getSummarizedAt());
+            store.upsertTranscriptEmbedding(conversation.id, transcriptEntry.id, embedding);
+            conversation.vectorizedAt = Instant.now();
             conversationRepository.persistOrUpdate(conversation);
         } catch (Exception e) {
-            LOG.warnf(e, "Failed to vectorize summary for conversationId=%s", conversation.id);
+            LOG.warnf(e, "Failed to vectorize transcript for conversationId=%s", conversation.id);
         }
     }
 

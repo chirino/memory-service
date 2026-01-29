@@ -7,10 +7,10 @@ import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
-import io.github.chirino.memory.api.dto.CreateSummaryRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
+import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
@@ -705,8 +705,8 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public EntryDto createSummary(
-            String conversationId, CreateSummaryRequest request, String clientId) {
+    public EntryDto indexTranscript(IndexTranscriptRequest request, String clientId) {
+        String conversationId = request.getConversationId();
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation =
                 conversationRepository
@@ -716,26 +716,26 @@ public class PostgresMemoryStore implements MemoryStore {
                                         new ResourceNotFoundException(
                                                 "conversation", conversationId));
 
-        EntryEntity summaryMessage = new EntryEntity();
-        summaryMessage.setConversation(conversation);
-        summaryMessage.setUserId(null);
-        summaryMessage.setClientId(clientId);
-        summaryMessage.setChannel(io.github.chirino.memory.model.Channel.SUMMARY);
-        summaryMessage.setEpoch(null);
-        summaryMessage.setContentType("summary");
-        summaryMessage.setContent(encryptContentFromSummary(request));
-        summaryMessage.setConversationGroupId(conversation.getConversationGroup().getId());
-        entryRepository.persist(summaryMessage);
+        EntryEntity transcriptEntry = new EntryEntity();
+        transcriptEntry.setConversation(conversation);
+        transcriptEntry.setUserId(null);
+        transcriptEntry.setClientId(clientId);
+        transcriptEntry.setChannel(io.github.chirino.memory.model.Channel.TRANSCRIPT);
+        transcriptEntry.setEpoch(null);
+        transcriptEntry.setContentType("transcript");
+        transcriptEntry.setContent(encryptContentFromTranscript(request));
+        transcriptEntry.setConversationGroupId(conversation.getConversationGroup().getId());
+        entryRepository.persist(transcriptEntry);
 
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             conversation.setTitle(encryptTitle(request.getTitle()));
         }
 
         if (shouldVectorize()) {
-            vectorizeSummary(conversation, summaryMessage, request);
+            vectorizeTranscript(conversation, transcriptEntry, request);
         }
 
-        return toEntryDto(summaryMessage);
+        return toEntryDto(transcriptEntry);
     }
 
     @Override
@@ -832,18 +832,15 @@ public class PostgresMemoryStore implements MemoryStore {
         }
     }
 
-    private byte[] encryptContentFromSummary(CreateSummaryRequest request) {
-        if (request == null || request.getSummary() == null) {
+    private byte[] encryptContentFromTranscript(IndexTranscriptRequest request) {
+        if (request == null || request.getTranscript() == null) {
             return null;
         }
         Map<String, Object> block = new HashMap<>();
-        block.put("type", "summary");
-        block.put("text", request.getSummary());
+        block.put("type", "transcript");
+        block.put("text", request.getTranscript());
         if (request.getUntilEntryId() != null) {
             block.put("untilEntryId", request.getUntilEntryId());
-        }
-        if (request.getSummarizedAt() != null) {
-            block.put("summarizedAt", request.getSummarizedAt());
         }
         return encryptContent(Collections.singletonList(block));
     }
@@ -853,25 +850,30 @@ public class PostgresMemoryStore implements MemoryStore {
         return store != null && store.isEnabled() && embeddingService.isEnabled();
     }
 
-    private void vectorizeSummary(
+    private void vectorizeTranscript(
             ConversationEntity conversation,
-            EntryEntity summaryMessage,
-            CreateSummaryRequest request) {
-        if (request == null || request.getSummary() == null || request.getSummary().isBlank()) {
+            EntryEntity transcriptEntry,
+            IndexTranscriptRequest request) {
+        if (request == null
+                || request.getTranscript() == null
+                || request.getTranscript().isBlank()) {
             return;
         }
         VectorStore store = vectorStoreSelector.getVectorStore();
         try {
-            float[] embedding = embeddingService.embed(request.getSummary());
+            float[] embedding = embeddingService.embed(request.getTranscript());
             if (embedding == null || embedding.length == 0) {
                 return;
             }
-            store.upsertSummaryEmbedding(
-                    conversation.getId().toString(), summaryMessage.getId().toString(), embedding);
-            conversation.setVectorizedAt(parseOffsetDateTime(request.getSummarizedAt()));
+            store.upsertTranscriptEmbedding(
+                    conversation.getId().toString(), transcriptEntry.getId().toString(), embedding);
+            conversation.setVectorizedAt(OffsetDateTime.now());
             conversationRepository.persist(conversation);
         } catch (Exception e) {
-            LOG.warnf(e, "Failed to vectorize summary for conversationId=%s", conversation.getId());
+            LOG.warnf(
+                    e,
+                    "Failed to vectorize transcript for conversationId=%s",
+                    conversation.getId());
         }
     }
 

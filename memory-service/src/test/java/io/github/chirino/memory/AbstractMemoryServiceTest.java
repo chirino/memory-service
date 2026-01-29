@@ -161,7 +161,7 @@ abstract class AbstractMemoryServiceTest {
         given().contentType(MediaType.APPLICATION_JSON)
                 .body(searchRequest)
                 .when()
-                .post("/v1/user/search/entries")
+                .post("/v1/conversations/search")
                 .then()
                 .statusCode(200)
                 .body("data", hasSize(1))

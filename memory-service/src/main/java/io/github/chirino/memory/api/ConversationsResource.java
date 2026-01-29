@@ -14,10 +14,10 @@ import io.github.chirino.memory.client.model.ConversationMembership;
 import io.github.chirino.memory.client.model.ConversationSummary;
 import io.github.chirino.memory.client.model.CreateConversationRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
-import io.github.chirino.memory.client.model.CreateSummaryRequest;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
 import io.github.chirino.memory.client.model.ForkFromEntryRequest;
+import io.github.chirino.memory.client.model.IndexTranscriptRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.SyncEntriesRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
@@ -472,37 +472,36 @@ public class ConversationsResource {
     }
 
     @POST
-    @Path("/conversations/{conversationId}/summaries")
-    public Response createSummary(
-            @PathParam("conversationId") String conversationId, CreateSummaryRequest request) {
+    @Path("/conversations/index")
+    public Response indexConversationTranscript(IndexTranscriptRequest request) {
         if (apiKeyContext == null || !apiKeyContext.hasValidApiKey()) {
             return forbidden(
-                    new AccessDeniedException("Agent API key is required to create summaries"));
+                    new AccessDeniedException("Agent API key is required to index transcripts"));
         }
         String clientId = apiKeyContext.getClientId();
         if (clientId == null || clientId.isBlank()) {
             return forbidden(
-                    new AccessDeniedException("Client id is required to create summaries"));
+                    new AccessDeniedException("Client id is required to index transcripts"));
         }
         if (request == null) {
             ErrorResponse error = new ErrorResponse();
             error.setError("Invalid request");
             error.setCode("bad_request");
-            error.setDetails(Map.of("message", "Summary request body is required"));
+            error.setDetails(Map.of("message", "Index request body is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
-        if (request.getSummary() == null || request.getSummary().isBlank()) {
+        if (request.getConversationId() == null || request.getConversationId().isBlank()) {
             ErrorResponse error = new ErrorResponse();
             error.setError("Invalid request");
             error.setCode("bad_request");
-            error.setDetails(Map.of("message", "Summary text is required"));
+            error.setDetails(Map.of("message", "conversationId is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
-        if (request.getTitle() == null || request.getTitle().isBlank()) {
+        if (request.getTranscript() == null || request.getTranscript().isBlank()) {
             ErrorResponse error = new ErrorResponse();
             error.setError("Invalid request");
             error.setCode("bad_request");
-            error.setDetails(Map.of("message", "Title is required"));
+            error.setDetails(Map.of("message", "Transcript text is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
         if (request.getUntilEntryId() == null || request.getUntilEntryId().isBlank()) {
@@ -512,28 +511,22 @@ public class ConversationsResource {
             error.setDetails(Map.of("message", "untilEntryId is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
-        if (request.getSummarizedAt() == null) {
-            ErrorResponse error = new ErrorResponse();
-            error.setError("Invalid request");
-            error.setCode("bad_request");
-            error.setDetails(Map.of("message", "summarizedAt is required"));
-            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
-        }
+        String conversationId = request.getConversationId();
         String untilEntryId = request.getUntilEntryId();
         LOG.infof(
-                "Creating summary for conversationId=%s, untilEntryId=%s",
+                "Indexing transcript for conversationId=%s, untilEntryId=%s",
                 conversationId, untilEntryId);
         try {
-            io.github.chirino.memory.api.dto.CreateSummaryRequest internal =
-                    new io.github.chirino.memory.api.dto.CreateSummaryRequest();
+            io.github.chirino.memory.api.dto.IndexTranscriptRequest internal =
+                    new io.github.chirino.memory.api.dto.IndexTranscriptRequest();
+            internal.setConversationId(request.getConversationId());
             internal.setTitle(request.getTitle());
-            internal.setSummary(request.getSummary());
+            internal.setTranscript(request.getTranscript());
             internal.setUntilEntryId(request.getUntilEntryId());
-            internal.setSummarizedAt(request.getSummarizedAt().format(ISO_FORMATTER));
 
-            EntryDto dto = store().createSummary(conversationId, internal, clientId);
+            EntryDto dto = store().indexTranscript(internal, clientId);
             LOG.infof(
-                    "Successfully created summary for conversationId=%s, summaryId=%s",
+                    "Successfully indexed transcript for conversationId=%s, entryId=%s",
                     conversationId, dto.getId());
             Entry result = toClientEntry(dto);
             return Response.status(Response.Status.CREATED).entity(result).build();

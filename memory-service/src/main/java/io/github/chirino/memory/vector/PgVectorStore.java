@@ -37,7 +37,8 @@ public class PgVectorStore implements VectorStore {
     }
 
     @Override
-    public void upsertSummaryEmbedding(String conversationId, String entryId, float[] embedding) {
+    public void upsertTranscriptEmbedding(
+            String conversationId, String entryId, float[] embedding) {
         if (embedding == null || embedding.length == 0) {
             return;
         }

@@ -45,7 +45,6 @@ Memory Service is currently in active development and has not yet reached versio
 
 - Spring Boot starter support
 - Additional vector store integrations
-- Enhanced summarization capabilities
 - Multi-agent conversation support
 
 ---

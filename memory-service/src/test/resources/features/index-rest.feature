@@ -1,6 +1,6 @@
-Feature: Summaries REST API
+Feature: Index Transcript REST API
   As an agent
-  I want to create summaries for conversations via REST API
+  I want to index transcripts for conversations via REST API
   So that they can be searched by users
 
   Background:
@@ -8,42 +8,41 @@ Feature: Summaries REST API
     And I have a conversation with title "Test Conversation"
     And the conversation has an entry "Order status question"
 
-  Scenario: Agent can create a summary and user can search it
+  Scenario: Agent can index a transcript and user can search it
     Given I am authenticated as agent with API key "test-agent-key"
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
-    When I create a summary with request:
+    When I index a transcript with request:
     """
     {
-      "title": "Order summary",
-      "summary": "Customer asked about refund policy.",
-      "untilEntryId": "${firstEntryId}",
-      "summarizedAt": "2024-01-01T00:00:00Z"
+      "conversationId": "${conversationId}",
+      "title": "Order transcript",
+      "transcript": "Customer asked about refund policy.",
+      "untilEntryId": "${firstEntryId}"
     }
     """
     Then the response status should be 201
-    And the entry should have channel "SUMMARY"
+    And the entry should have channel "TRANSCRIPT"
     And the entry should have content "Customer asked about refund policy."
     And the response body should be json:
     """
     {
       "id": "${response.body.id}",
       "conversationId": "${conversationId}",
-      "channel": "summary",
-      "contentType": "summary",
+      "channel": "transcript",
+      "contentType": "transcript",
       "content": [
         {
-          "type": "summary",
+          "type": "transcript",
           "text": "Customer asked about refund policy.",
-          "untilEntryId": "${firstEntryId}",
-          "summarizedAt": "2024-01-01T00:00:00Z"
+          "untilEntryId": "${firstEntryId}"
         }
       ],
       "createdAt": "${response.body.createdAt}"
     }
     """
     Given I am authenticated as user "alice"
-    When I search entries for query "refund policy"
+    When I search conversations for query "refund policy"
     Then the response status should be 200
     And the search response should contain 1 results
     And search result at index 0 should have entry content "Customer asked about refund policy."
@@ -66,17 +65,17 @@ Feature: Summaries REST API
     }
     """
 
-  Scenario: Summary creation requires agent API key
+  Scenario: Transcript indexing requires agent API key
     Given I am authenticated as user "alice"
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
-    When I create a summary with request:
+    When I index a transcript with request:
     """
     {
-      "title": "Blocked summary",
-      "summary": "Should not be created.",
-      "untilEntryId": "${firstEntryId}",
-      "summarizedAt": "2024-01-01T00:00:00Z"
+      "conversationId": "${conversationId}",
+      "title": "Blocked transcript",
+      "transcript": "Should not be created.",
+      "untilEntryId": "${firstEntryId}"
     }
     """
     Then the response status should be 403
@@ -92,22 +91,22 @@ Feature: Summaries REST API
     }
     """
 
-  Scenario: Search entries with query
+  Scenario: Search conversations with query
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has an entry "Customer wants to return item"
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
-    When I create a summary with request:
+    When I index a transcript with request:
     """
     {
+      "conversationId": "${conversationId}",
       "title": "Return request",
-      "summary": "Customer wants to return an item and get a refund.",
-      "untilEntryId": "${firstEntryId}",
-      "summarizedAt": "2024-01-01T00:00:00Z"
+      "transcript": "Customer wants to return an item and get a refund.",
+      "untilEntryId": "${firstEntryId}"
     }
     """
     Given I am authenticated as user "alice"
-    When I search entries with request:
+    When I search conversations with request:
     """
     {
       "query": "return item",

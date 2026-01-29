@@ -6,8 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.api.SearchApi;
 import io.github.chirino.memory.client.model.Channel;
-import io.github.chirino.memory.client.model.CreateSummaryRequest;
 import io.github.chirino.memory.client.model.Entry;
+import io.github.chirino.memory.client.model.IndexTranscriptRequest;
 import io.github.chirino.memory.client.model.ListConversationEntries200Response;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -17,7 +17,6 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.core.Response;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,16 +27,16 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 /**
- * Summerizes and Redacts a conversation.
- * <p>
- * This will update the conversation title and redact the conversation transcript so it can be vectorized
- * stored safely in the vector store.
+ * Redacts and Indexes and a conversation transcript.
+ *
+ * <p>This will update the conversation title and redact the conversation transcript so it can be
+ * indexed by the memory-service.
  */
-@Path("/v1/conversations/{conversationId}/summerize")
+@Path("/v1/conversations/{conversationId}/index")
 @ApplicationScoped
-public class SummerizationResource {
+public class TranscriptIndexingResource {
 
-    private static final Logger LOG = Logger.getLogger(SummerizationResource.class);
+    private static final Logger LOG = Logger.getLogger(TranscriptIndexingResource.class);
     private static final int PAGE_SIZE = 200;
 
     @Inject MemoryServiceApiBuilder memoryServiceApiBuilder;
@@ -48,16 +47,14 @@ public class SummerizationResource {
 
     @Inject SecurityIdentity securityIdentity;
 
-    @ConfigProperty(name = "agent.summarization.title-max-chars", defaultValue = "20000")
+    @ConfigProperty(name = "agent.indexing.title-max-chars", defaultValue = "20000")
     int titleMaxChars;
 
-    @ConfigProperty(
-            name = "agent.summarization.input-context-size",
-            defaultValue = "" + (200 * 1204))
+    @ConfigProperty(name = "agent.indexing.input-context-size", defaultValue = "" + (200 * 1204))
     int inputContextSize;
 
     @POST
-    public Response summerize(@PathParam("conversationId") String conversationId) {
+    public Response indexTranscript(@PathParam("conversationId") String conversationId) {
         try {
 
             List<Entry> historyEntries = fetchHistoryEntries(conversationId);
@@ -71,27 +68,25 @@ public class SummerizationResource {
             }
 
             Entry last = historyEntries.get(historyEntries.size() - 1);
-            OffsetDateTime summarizedAt =
-                    last.getCreatedAt() != null ? last.getCreatedAt() : OffsetDateTime.now();
 
             RedactionPayload redactionPayload = analyzeRedactionsInChunks(transcript);
             LOG.infof(
                     "redactionPayload, title: %s, redactions: %d",
                     redactionPayload.title, redactionPayload.redact.size());
 
-            // Apply redactions to the transcript to create the summary
+            // Apply redactions to the transcript
             String redactedTranscript = applyRedactions(transcript, redactionPayload.redact);
             LOG.infof("redactedTranscript: %s", redactedTranscript);
 
-            CreateSummaryRequest request = new CreateSummaryRequest();
+            IndexTranscriptRequest request = new IndexTranscriptRequest();
+            request.setConversationId(conversationId);
             request.setTitle(redactionPayload.title());
-            request.setSummary(redactedTranscript);
+            request.setTranscript(redactedTranscript);
             request.setUntilEntryId(last.getId());
-            request.setSummarizedAt(summarizedAt);
-            searchApi().createConversationSummary(conversationId, request);
+            searchApi().indexConversationTranscript(request);
             return Response.status(Response.Status.CREATED).build();
         } catch (Exception e) {
-            LOG.errorf(e, "Failed to summarize conversationId=%s", conversationId);
+            LOG.errorf(e, "Failed to index transcript for conversationId=%s", conversationId);
             return Response.serverError().build();
         }
     }
@@ -119,13 +114,13 @@ public class SummerizationResource {
 
     private RedactionPayload analyzeRedactions(String transcript) throws Exception {
         String raw = extractJson(redactionAssistant.redact("", transcript, titleMaxChars));
-        LOG.infof("summaryGenerator returned: %s", raw);
+        LOG.infof("redactionAssistant returned: %s", raw);
         RedactionPayload payload = objectMapper.readValue(raw, RedactionPayload.class);
         if (payload == null || payload.title() == null || payload.title().isBlank()) {
-            throw new IllegalStateException("Summary generator returned an empty title");
+            throw new IllegalStateException("Redaction assistant returned an empty title");
         }
         if (payload.redact() == null) {
-            throw new IllegalStateException("Summary generator returned null redact map");
+            throw new IllegalStateException("Redaction assistant returned null redact map");
         }
         return payload;
     }

@@ -20,7 +20,8 @@ public class NoopVectorStore implements VectorStore {
     }
 
     @Override
-    public void upsertSummaryEmbedding(String conversationId, String entryId, float[] embedding) {
+    public void upsertTranscriptEmbedding(
+            String conversationId, String entryId, float[] embedding) {
         // no-op
     }
 

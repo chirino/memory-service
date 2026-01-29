@@ -244,14 +244,14 @@ function App() {
     },
   });
 
-  const summarizeConversationMutation = useMutation({
+  const indexConversationMutation = useMutation({
     mutationFn: async (conversationId: string) => {
-      const response = await fetch(`/v1/conversations/${conversationId}/summerize`, {
+      const response = await fetch(`/v1/conversations/${conversationId}/index`, {
         method: "POST",
         credentials: "include",
       });
       if (!response.ok) {
-        throw new Error("Summarization failed");
+        throw new Error("Indexing failed");
       }
     },
     onSuccess: (_, conversationId) => {
@@ -260,7 +260,7 @@ function App() {
       setStatusMessage(null);
     },
     onError: () => {
-      setStatusMessage("Failed to summarize conversation. Please try again.");
+      setStatusMessage("Failed to index conversation. Please try again.");
     },
   });
 
@@ -302,15 +302,15 @@ function App() {
     [deleteConversationMutation],
   );
 
-  const handleSummarizeConversation = useCallback(
+  const handleIndexConversation = useCallback(
     (conversation: ConversationSummary) => {
       if (!conversation.id) {
         return;
       }
       setStatusMessage(null);
-      summarizeConversationMutation.mutate(conversation.id);
+      indexConversationMutation.mutate(conversation.id);
     },
-    [summarizeConversationMutation],
+    [indexConversationMutation],
   );
 
   useEffect(() => {
@@ -348,7 +348,7 @@ function App() {
       selectedConversationId={selectedConversationId}
       onSelectConversation={handleSelectConversation}
       onNewChat={handleNewChat}
-      onSummarizeConversation={handleSummarizeConversation}
+      onIndexConversation={handleIndexConversation}
       onDeleteConversation={handleDeleteConversation}
       statusMessage={statusMessage}
       resumableConversationIds={resumableConversationIds}
