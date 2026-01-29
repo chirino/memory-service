@@ -61,7 +61,7 @@ class MemoryServiceProxyController {
         return proxy.listConversationForks(conversationId);
     }
 
-    @PostMapping("/{conversationId}/forks")
+    @PostMapping("/{conversationId}/memberships")
     public ResponseEntity<?> shareConversation(
             @PathVariable String conversationId, @RequestBody String body) {
         return proxy.shareConversation(conversationId, body);

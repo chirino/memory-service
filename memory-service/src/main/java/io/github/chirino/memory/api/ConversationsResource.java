@@ -350,7 +350,7 @@ public class ConversationsResource {
     }
 
     @POST
-    @Path("/conversations/{conversationId}/forks")
+    @Path("/conversations/{conversationId}/memberships")
     public Response shareConversation(
             @PathParam("conversationId") String conversationId, ShareConversationRequest request) {
         try {

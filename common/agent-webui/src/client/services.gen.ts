@@ -309,36 +309,6 @@ export class ConversationsService {
   }
 
   /**
-   * Share conversation with another user
-   * Grants another user access to the conversation with the specified access level.
-   * @param data The data for the request.
-   * @param data.conversationId
-   * @param data.requestBody
-   * @returns ErrorResponse Error response
-   * @returns ConversationMembership Created membership.
-   * @throws ApiError
-   */
-  public static shareConversation(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/forks"]["post"]["req"],
-  ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/forks"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/forks"]["post"]["res"][201]
-  > {
-    return __request(OpenAPI, {
-      method: "POST",
-      url: "/v1/conversations/{conversationId}/forks",
-      path: {
-        conversationId: data.conversationId,
-      },
-      body: data.requestBody,
-      mediaType: "application/json",
-      errors: {
-        404: "Resource not found",
-      },
-    });
-  }
-
-  /**
    * Cancel an in-progress response
    * Requests cancellation of an in-progress response stream for the conversation.
    * Requires WRITER access and an authenticated user session.
@@ -428,6 +398,36 @@ export class SharingService {
   }
 
   /**
+   * Share conversation with another user
+   * Grants another user access to the conversation with the specified access level.
+   * @param data The data for the request.
+   * @param data.conversationId
+   * @param data.requestBody
+   * @returns ErrorResponse Error response
+   * @returns ConversationMembership Created membership.
+   * @throws ApiError
+   */
+  public static shareConversation(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/memberships"]["post"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/conversations/{conversationId}/memberships"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/memberships"]["post"]["res"][201]
+  > {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/v1/conversations/{conversationId}/memberships",
+      path: {
+        conversationId: data.conversationId,
+      },
+      body: data.requestBody,
+      mediaType: "application/json",
+      errors: {
+        404: "Resource not found",
+      },
+    });
+  }
+
+  /**
    * Update a member's access level
    * @param data The data for the request.
    * @param data.conversationId
@@ -489,7 +489,7 @@ export class SharingService {
 
 export class SearchService {
   /**
-   * Semantic search across user's conversations
+   * Semantic search across conversations
    * Performs semantic and/or keyword search across all conversations the user has access to.
    * Backed by an internal vector store (pgvector, MongoDB, etc.).
    * @param data The data for the request.
@@ -498,44 +498,46 @@ export class SearchService {
    * @returns ErrorResponse Error response
    * @throws ApiError
    */
-  public static searchEntries(
-    data: $OpenApiTs["/v1/user/search/entries"]["post"]["req"],
+  public static searchConversations(
+    data: $OpenApiTs["/v1/conversations/search"]["post"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/user/search/entries"]["post"]["res"][200]
-    | $OpenApiTs["/v1/user/search/entries"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/search"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/search"]["post"]["res"][200]
   > {
     return __request(OpenAPI, {
       method: "POST",
-      url: "/v1/user/search/entries",
+      url: "/v1/conversations/search",
       body: data.requestBody,
       mediaType: "application/json",
     });
   }
 
   /**
-   * Store a summarization of previous entries
-   * Stores an internal summarization of previous entries in the conversation.
-   * Summary entries are not visible in user-facing entry lists.
+   * Index a conversation transcript
+   * Indexes conversation transcript content for semantic search. Stores the
+   * provided transcript text as searchable content and updates the conversation
+   * title. The `untilEntryId` tracks which entries have been indexed.
+   *
+   * This endpoint is typically called by agents after processing recent
+   * conversation entries. The transcript text becomes searchable via
+   * the `/v1/conversations/search` endpoint.
+   *
    * Requires a valid agent API key.
    * @param data The data for the request.
-   * @param data.conversationId
    * @param data.requestBody
    * @returns ErrorResponse Error response
-   * @returns Entry The created summary entry.
+   * @returns Entry The index entry was created.
    * @throws ApiError
    */
-  public static createConversationSummary(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/summaries"]["post"]["req"],
+  public static indexConversationTranscript(
+    data: $OpenApiTs["/v1/conversations/index"]["post"]["req"],
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/summaries"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/summaries"]["post"]["res"][201]
+    | $OpenApiTs["/v1/conversations/index"]["post"]["res"][200]
+    | $OpenApiTs["/v1/conversations/index"]["post"]["res"][201]
   > {
     return __request(OpenAPI, {
       method: "POST",
-      url: "/v1/conversations/{conversationId}/summaries",
-      path: {
-        conversationId: data.conversationId,
-      },
+      url: "/v1/conversations/index",
       body: data.requestBody,
       mediaType: "application/json",
       errors: {

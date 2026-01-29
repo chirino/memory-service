@@ -390,37 +390,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-    post:
-      tags: [Conversations]
-      summary: Share conversation with another user
-      description: |-
-        Grants another user access to the conversation with the specified access level.
-      operationId: shareConversation
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ShareConversationRequest'
-      responses:
-        '201':
-          description: Created membership.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ConversationMembership'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-      security:
-        - BearerAuth: []
 
   /v1/conversations/{conversationId}/response:
     delete:
@@ -511,6 +480,37 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ConversationMembership'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    post:
+      tags: [Sharing]
+      summary: Share conversation with another user
+      description: |-
+        Grants another user access to the conversation with the specified access level.
+      operationId: shareConversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareConversationRequest'
+      responses:
+        '201':
+          description: Created membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationMembership'
         '404':
           $ref: '#/components/responses/NotFound'
         default:

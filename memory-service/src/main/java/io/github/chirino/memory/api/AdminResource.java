@@ -293,8 +293,8 @@ public class AdminResource {
     }
 
     @POST
-    @Path("/search/entries")
-    public Response searchEntries(
+    @Path("/conversations/search")
+    public Response searchConversations(
             AdminSearchQuery request, @QueryParam("justification") String justification) {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);

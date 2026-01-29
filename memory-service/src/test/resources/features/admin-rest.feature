@@ -127,7 +127,7 @@ Feature: Admin REST API
 
   Scenario: Admin can perform system-wide semantic search
     Given the conversation owned by "bob" has an entry "Searchable content"
-    When I call POST "/v1/admin/search/entries" with body:
+    When I call POST "/v1/admin/conversations/search" with body:
     """
     {
       "query": "Searchable"
@@ -139,7 +139,7 @@ Feature: Admin REST API
   Scenario: Admin search can filter by userId
     Given the conversation owned by "bob" has an entry "Bob's entry"
     Given the conversation owned by "alice" has an entry "Alice's entry"
-    When I call POST "/v1/admin/search/entries" with body:
+    When I call POST "/v1/admin/conversations/search" with body:
     """
     {
       "query": "entry",
