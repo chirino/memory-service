@@ -1,5 +1,7 @@
 package io.github.chirino.memory.grpc;
 
+import static io.github.chirino.memory.grpc.UuidUtils.byteStringToString;
+
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
@@ -29,8 +31,8 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
         return Uni.createFrom()
                 .item(
                         () -> {
-                            if (request.getConversationId() == null
-                                    || request.getConversationId().isBlank()) {
+                            String conversationId = byteStringToString(request.getConversationId());
+                            if (conversationId == null || conversationId.isBlank()) {
                                 throw Status.INVALID_ARGUMENT
                                         .withDescription("conversationId is required")
                                         .asRuntimeException();
@@ -67,7 +69,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                             PagedEntries paged =
                                     store().getEntries(
                                                     currentUserId(),
-                                                    request.getConversationId(),
+                                                    conversationId,
                                                     token,
                                                     pageSize,
                                                     channel,
@@ -102,8 +104,8 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                                 "Agent API key is required to append entries")
                                         .asRuntimeException();
                             }
-                            if (request.getConversationId() == null
-                                    || request.getConversationId().isBlank()) {
+                            String conversationId = byteStringToString(request.getConversationId());
+                            if (conversationId == null || conversationId.isBlank()) {
                                 throw Status.INVALID_ARGUMENT
                                         .withDescription("conversationId is required")
                                         .asRuntimeException();
@@ -131,7 +133,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                             List<io.github.chirino.memory.api.dto.EntryDto> appended =
                                     store().appendAgentEntries(
                                                     currentUserId(),
-                                                    request.getConversationId(),
+                                                    conversationId,
                                                     List.of(internal),
                                                     clientId);
                             io.github.chirino.memory.api.dto.EntryDto latest =
@@ -157,8 +159,8 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                                 "Agent API key is required to sync memory entries")
                                         .asRuntimeException();
                             }
-                            if (request.getConversationId() == null
-                                    || request.getConversationId().isBlank()) {
+                            String conversationId = byteStringToString(request.getConversationId());
+                            if (conversationId == null || conversationId.isBlank()) {
                                 throw Status.INVALID_ARGUMENT
                                         .withDescription("conversationId is required")
                                         .asRuntimeException();
@@ -194,7 +196,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                             SyncResult result =
                                     store().syncAgentEntries(
                                                     currentUserId(),
-                                                    request.getConversationId(),
+                                                    conversationId,
                                                     internal,
                                                     clientId);
                             SyncEntriesResponse.Builder builder =

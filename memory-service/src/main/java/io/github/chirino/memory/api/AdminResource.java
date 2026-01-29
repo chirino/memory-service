@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.jboss.logging.Logger;
 
 @Path("/v1/admin")
@@ -264,7 +265,8 @@ public class AdminResource {
                                     dto -> {
                                         ConversationMembership result =
                                                 new ConversationMembership();
-                                        result.setConversationId(id);
+                                        result.setConversationId(
+                                                id != null ? UUID.fromString(id) : null);
                                         result.setUserId(dto.getUserId());
                                         if (dto.getAccessLevel() != null) {
                                             result.setAccessLevel(
@@ -522,8 +524,9 @@ public class AdminResource {
             return null;
         }
         Entry result = new Entry();
-        result.setId(dto.getId());
-        result.setConversationId(dto.getConversationId());
+        result.setId(dto.getId() != null ? UUID.fromString(dto.getId()) : null);
+        result.setConversationId(
+                dto.getConversationId() != null ? UUID.fromString(dto.getConversationId()) : null);
         result.setUserId(dto.getUserId());
         if (dto.getChannel() != null) {
             result.setChannel(Entry.ChannelEnum.fromString(dto.getChannel().toValue()));

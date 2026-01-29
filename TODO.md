@@ -16,6 +16,8 @@
 * protect against huge api requests.
 * Brand the project and move it to an org/foundation.
 * Look into partitioning the messages table to improve pref.
+* Expose Metrics
+* Support OpenTracing
 
 # Need Dev Feedback for:
 

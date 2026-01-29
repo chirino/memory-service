@@ -20,6 +20,7 @@ import jakarta.ws.rs.WebApplicationException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import org.jboss.logging.Logger;
 
 /**
@@ -68,7 +69,7 @@ public class MemoryServiceChatMemory implements ChatMemory {
         // LOG.infof("Encoding content block: [%s]", json);
         request.setContent(List.of(new RawValue(json)));
 
-        conversationsApi().appendConversationEntry(conversationId, request);
+        conversationsApi().appendConversationEntry(UUID.fromString(conversationId), request);
     }
 
     @Override
@@ -78,7 +79,11 @@ public class MemoryServiceChatMemory implements ChatMemory {
             context =
                     conversationsApi()
                             .listConversationEntries(
-                                    conversationId, null, 50, Channel.MEMORY, null);
+                                    UUID.fromString(conversationId),
+                                    null,
+                                    50,
+                                    Channel.MEMORY,
+                                    null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
             if (status == 404) {
@@ -106,7 +111,8 @@ public class MemoryServiceChatMemory implements ChatMemory {
                 if (block == null) {
                     continue;
                 }
-                var decoded = decodeContentBlock(block, entry.getId());
+                String entryIdStr = entry.getId() != null ? entry.getId().toString() : null;
+                var decoded = decodeContentBlock(block, entryIdStr);
                 result.addAll(decoded);
             }
         }

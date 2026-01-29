@@ -10,6 +10,7 @@ import io.github.chirino.memoryservice.client.model.ShareConversationRequest;
 import io.github.chirino.memoryservice.client.model.TransferConversationOwnershipRequest;
 import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -38,6 +39,10 @@ public class MemoryServiceProxy {
     private static final Logger LOG = LoggerFactory.getLogger(MemoryServiceProxy.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    private static UUID toUuid(String s) {
+        return s == null || s.isBlank() ? null : UUID.fromString(s);
+    }
+
     private final MemoryServiceClientProperties properties;
     private final WebClient.Builder webClientBuilder;
     private final OAuth2AuthorizedClientService authorizedClientService;
@@ -54,16 +59,19 @@ public class MemoryServiceProxy {
     public ResponseEntity<?> listConversations(
             String mode, String after, Integer limit, String query) {
         return execute(
-                api -> api.listConversationsWithHttpInfo(mode, after, limit, query), HttpStatus.OK);
+                api -> api.listConversationsWithHttpInfo(mode, toUuid(after), limit, query),
+                HttpStatus.OK);
     }
 
     public ResponseEntity<?> getConversation(String conversationId) {
-        return execute(api -> api.getConversationWithHttpInfo(conversationId), HttpStatus.OK);
+        return execute(
+                api -> api.getConversationWithHttpInfo(toUuid(conversationId)), HttpStatus.OK);
     }
 
     public ResponseEntity<?> deleteConversation(String conversationId) {
         return execute(
-                api -> api.deleteConversationWithHttpInfo(conversationId), HttpStatus.NO_CONTENT);
+                api -> api.deleteConversationWithHttpInfo(toUuid(conversationId)),
+                HttpStatus.NO_CONTENT);
     }
 
     public ResponseEntity<?> listConversationEntries(
@@ -71,12 +79,18 @@ public class MemoryServiceProxy {
         return execute(
                 api ->
                         api.listConversationEntriesWithHttpInfo(
-                                conversationId, after, limit, Channel.HISTORY, null),
+                                toUuid(conversationId),
+                                toUuid(after),
+                                limit,
+                                Channel.HISTORY,
+                                null),
                 HttpStatus.OK);
     }
 
     public ResponseEntity<?> listConversationForks(String conversationId) {
-        return execute(api -> api.listConversationForksWithHttpInfo(conversationId), HttpStatus.OK);
+        return execute(
+                api -> api.listConversationForksWithHttpInfo(toUuid(conversationId)),
+                HttpStatus.OK);
     }
 
     public ResponseEntity<?> forkConversationAtEntry(
@@ -89,7 +103,7 @@ public class MemoryServiceProxy {
             return execute(
                     api ->
                             api.forkConversationAtEntryWithHttpInfo(
-                                    conversationId, entryId, request),
+                                    toUuid(conversationId), toUuid(entryId), request),
                     HttpStatus.OK);
         } catch (Exception e) {
             LOG.error("Error parsing fork request body", e);
@@ -103,7 +117,7 @@ public class MemoryServiceProxy {
             ShareConversationRequest request =
                     OBJECT_MAPPER.readValue(body, ShareConversationRequest.class);
             return executeSharingApi(
-                    api -> api.shareConversationWithHttpInfo(conversationId, request),
+                    api -> api.shareConversationWithHttpInfo(toUuid(conversationId), request),
                     HttpStatus.CREATED);
         } catch (Exception e) {
             LOG.error("Error parsing share request body", e);
@@ -114,7 +128,8 @@ public class MemoryServiceProxy {
 
     public ResponseEntity<?> cancelResponse(String conversationId) {
         return execute(
-                api -> api.deleteConversationResponseWithHttpInfo(conversationId), HttpStatus.OK);
+                api -> api.deleteConversationResponseWithHttpInfo(toUuid(conversationId)),
+                HttpStatus.OK);
     }
 
     public ResponseEntity<?> transferConversationOwnership(String conversationId, String body) {
@@ -122,7 +137,9 @@ public class MemoryServiceProxy {
             TransferConversationOwnershipRequest request =
                     OBJECT_MAPPER.readValue(body, TransferConversationOwnershipRequest.class);
             return executeSharingApi(
-                    api -> api.transferConversationOwnershipWithHttpInfo(conversationId, request),
+                    api ->
+                            api.transferConversationOwnershipWithHttpInfo(
+                                    toUuid(conversationId), request),
                     HttpStatus.ACCEPTED);
         } catch (Exception e) {
             LOG.error("Error parsing transfer ownership request", e);

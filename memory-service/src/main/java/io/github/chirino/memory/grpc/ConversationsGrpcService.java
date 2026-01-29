@@ -1,5 +1,7 @@
 package io.github.chirino.memory.grpc;
 
+import static io.github.chirino.memory.grpc.UuidUtils.byteStringToString;
+
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.api.ConversationListMode;
 import io.github.chirino.memory.api.dto.ConversationDto;
@@ -85,9 +87,9 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
         return Uni.createFrom()
                 .item(
                         () -> {
+                            String conversationId = byteStringToString(request.getConversationId());
                             ConversationDto dto =
-                                    store().getConversation(
-                                                    currentUserId(), request.getConversationId());
+                                    store().getConversation(currentUserId(), conversationId);
                             return GrpcDtoMapper.toProto(dto);
                         })
                 .onFailure()
@@ -99,8 +101,8 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
         return Uni.createFrom()
                 .item(
                         () -> {
-                            store().deleteConversation(
-                                            currentUserId(), request.getConversationId());
+                            String conversationId = byteStringToString(request.getConversationId());
+                            store().deleteConversation(currentUserId(), conversationId);
                             return Empty.getDefaultInstance();
                         })
                 .onFailure()
@@ -112,6 +114,8 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
         return Uni.createFrom()
                 .item(
                         () -> {
+                            String conversationId = byteStringToString(request.getConversationId());
+                            String entryId = byteStringToString(request.getEntryId());
                             ForkFromEntryRequest internal = new ForkFromEntryRequest();
                             if (request.getTitle() != null) {
                                 internal.setTitle(request.getTitle());
@@ -119,8 +123,8 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
                             ConversationDto forked =
                                     store().forkConversationAtEntry(
                                                     currentUserId(),
-                                                    request.getConversationId(),
-                                                    request.getEntryId(),
+                                                    conversationId,
+                                                    entryId,
                                                     internal);
                             return GrpcDtoMapper.toProto(forked);
                         })
@@ -133,8 +137,9 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
         return Uni.createFrom()
                 .item(
                         () -> {
+                            String conversationId = byteStringToString(request.getConversationId());
                             List<ConversationForkSummaryDto> forks =
-                                    store().listForks(currentUserId(), request.getConversationId());
+                                    store().listForks(currentUserId(), conversationId);
                             return ListForksResponse.newBuilder()
                                     .addAllForks(
                                             forks.stream()
@@ -151,9 +156,10 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
         return Uni.createFrom()
                 .item(
                         () -> {
+                            String conversationId = byteStringToString(request.getConversationId());
                             store().requestOwnershipTransfer(
                                             currentUserId(),
-                                            request.getConversationId(),
+                                            conversationId,
                                             request.getNewOwnerUserId());
                             return Empty.getDefaultInstance();
                         })

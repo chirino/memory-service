@@ -37,6 +37,12 @@ A memory service for AI agents that stores messages exchanged with LLMs and user
 - Java: `./mvnw compile`
 - TypeScript: `npm run lint && npm run build` from `common/agent-webui/`
 
+**Test output strategy**: When running tests, redirect output to a file and search for errors instead of using `| tail`. This ensures you see all relevant error context:
+```bash
+./mvnw test > test.log 2>&1
+# Then search for errors using Grep tool on test.log
+```
+
 **Pre-release**: Changes do not need backward compatibility.
 
 ## Skills

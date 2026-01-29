@@ -21,6 +21,7 @@ import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Supplier;
 import org.jboss.logging.Logger;
 
@@ -32,20 +33,24 @@ public class MemoryServiceProxy {
     private static final Logger LOG = Logger.getLogger(MemoryServiceProxy.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    private static UUID toUuid(String s) {
+        return s == null || s.isBlank() ? null : UUID.fromString(s);
+    }
+
     @Inject MemoryServiceApiBuilder memoryServiceApiBuilder;
 
     @Inject SecurityIdentity securityIdentity;
 
     public Response listConversations(String mode, String after, Integer limit, String query) {
         return execute(
-                () -> conversationsApi().listConversations(mode, after, limit, query),
+                () -> conversationsApi().listConversations(mode, toUuid(after), limit, query),
                 OK,
                 "Error listing conversations");
     }
 
     public Response getConversation(String conversationId) {
         return execute(
-                () -> conversationsApi().getConversation(conversationId),
+                () -> conversationsApi().getConversation(toUuid(conversationId)),
                 OK,
                 "Error getting history %s",
                 conversationId);
@@ -53,7 +58,7 @@ public class MemoryServiceProxy {
 
     public Response deleteConversation(String conversationId) {
         return executeVoid(
-                () -> conversationsApi().deleteConversation(conversationId),
+                () -> conversationsApi().deleteConversation(toUuid(conversationId)),
                 NO_CONTENT,
                 "Error deleting history %s",
                 conversationId);
@@ -65,7 +70,11 @@ public class MemoryServiceProxy {
                 () ->
                         conversationsApi()
                                 .listConversationEntries(
-                                        conversationId, after, limit, channel, epoch),
+                                        toUuid(conversationId),
+                                        toUuid(after),
+                                        limit,
+                                        channel,
+                                        epoch),
                 OK,
                 "Error listing entries for history %s",
                 conversationId);
@@ -80,7 +89,8 @@ public class MemoryServiceProxy {
             return execute(
                     () ->
                             conversationsApi()
-                                    .forkConversationAtEntry(conversationId, entryId, request),
+                                    .forkConversationAtEntry(
+                                            toUuid(conversationId), toUuid(entryId), request),
                     OK,
                     "Error forking history %s at entry %s",
                     conversationId,
@@ -93,7 +103,7 @@ public class MemoryServiceProxy {
 
     public Response listConversationForks(String conversationId) {
         return execute(
-                () -> conversationsApi().listConversationForks(conversationId),
+                () -> conversationsApi().listConversationForks(toUuid(conversationId)),
                 OK,
                 "Error listing forks for history %s",
                 conversationId);
@@ -104,7 +114,7 @@ public class MemoryServiceProxy {
             ShareConversationRequest request =
                     OBJECT_MAPPER.readValue(body, ShareConversationRequest.class);
             return execute(
-                    () -> sharingApi().shareConversation(conversationId, request),
+                    () -> sharingApi().shareConversation(toUuid(conversationId), request),
                     CREATED,
                     "Error sharing history %s",
                     conversationId);
@@ -116,7 +126,7 @@ public class MemoryServiceProxy {
 
     public Response cancelResponse(String conversationId) {
         return executeVoid(
-                () -> conversationsApi().deleteConversationResponse(conversationId),
+                () -> conversationsApi().deleteConversationResponse(toUuid(conversationId)),
                 OK,
                 "Error cancelling response for history %s",
                 conversationId);
@@ -140,7 +150,9 @@ public class MemoryServiceProxy {
         try {
             CreateEntryRequest request = OBJECT_MAPPER.readValue(body, CreateEntryRequest.class);
             return execute(
-                    () -> conversationsApi().appendConversationEntry(conversationId, request),
+                    () ->
+                            conversationsApi()
+                                    .appendConversationEntry(toUuid(conversationId), request),
                     CREATED,
                     "Error appending entry to history %s",
                     conversationId);
@@ -152,7 +164,7 @@ public class MemoryServiceProxy {
 
     public Response listConversationMemberships(String conversationId) {
         return execute(
-                () -> sharingApi().listConversationMemberships(conversationId),
+                () -> sharingApi().listConversationMemberships(toUuid(conversationId)),
                 OK,
                 "Error listing memberships for history %s",
                 conversationId);
@@ -166,7 +178,8 @@ public class MemoryServiceProxy {
             return execute(
                     () ->
                             sharingApi()
-                                    .updateConversationMembership(conversationId, userId, request),
+                                    .updateConversationMembership(
+                                            toUuid(conversationId), userId, request),
                     OK,
                     "Error updating membership for history %s, user %s",
                     conversationId,
@@ -182,7 +195,9 @@ public class MemoryServiceProxy {
             TransferConversationOwnershipRequest request =
                     OBJECT_MAPPER.readValue(body, TransferConversationOwnershipRequest.class);
             return executeVoid(
-                    () -> sharingApi().transferConversationOwnership(conversationId, request),
+                    () ->
+                            sharingApi()
+                                    .transferConversationOwnership(toUuid(conversationId), request),
                     Response.Status.ACCEPTED,
                     "Error transferring ownership of history %s",
                     conversationId);

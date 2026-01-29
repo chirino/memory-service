@@ -64,6 +64,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -490,7 +491,7 @@ public class ConversationsResource {
             error.setDetails(Map.of("message", "Index request body is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
-        if (request.getConversationId() == null || request.getConversationId().isBlank()) {
+        if (request.getConversationId() == null) {
             ErrorResponse error = new ErrorResponse();
             error.setError("Invalid request");
             error.setCode("bad_request");
@@ -504,25 +505,25 @@ public class ConversationsResource {
             error.setDetails(Map.of("message", "Transcript text is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
-        if (request.getUntilEntryId() == null || request.getUntilEntryId().isBlank()) {
+        if (request.getUntilEntryId() == null) {
             ErrorResponse error = new ErrorResponse();
             error.setError("Invalid request");
             error.setCode("bad_request");
             error.setDetails(Map.of("message", "untilEntryId is required"));
             return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         }
-        String conversationId = request.getConversationId();
-        String untilEntryId = request.getUntilEntryId();
+        String conversationId = request.getConversationId().toString();
+        String untilEntryId = request.getUntilEntryId().toString();
         LOG.infof(
                 "Indexing transcript for conversationId=%s, untilEntryId=%s",
                 conversationId, untilEntryId);
         try {
             io.github.chirino.memory.api.dto.IndexTranscriptRequest internal =
                     new io.github.chirino.memory.api.dto.IndexTranscriptRequest();
-            internal.setConversationId(request.getConversationId());
+            internal.setConversationId(conversationId);
             internal.setTitle(request.getTitle());
             internal.setTranscript(request.getTranscript());
-            internal.setUntilEntryId(request.getUntilEntryId());
+            internal.setUntilEntryId(untilEntryId);
 
             EntryDto dto = store().indexTranscript(internal, clientId);
             LOG.infof(
@@ -754,7 +755,7 @@ public class ConversationsResource {
             return null;
         }
         ConversationSummary result = new ConversationSummary();
-        result.setId(dto.getId());
+        result.setId(dto.getId() != null ? UUID.fromString(dto.getId()) : null);
         result.setTitle(dto.getTitle());
         result.setOwnerUserId(dto.getOwnerUserId());
         result.setCreatedAt(parseDate(dto.getCreatedAt()));
@@ -773,7 +774,7 @@ public class ConversationsResource {
             return null;
         }
         Conversation result = new Conversation();
-        result.setId(dto.getId());
+        result.setId(dto.getId() != null ? UUID.fromString(dto.getId()) : null);
         result.setTitle(dto.getTitle());
         result.setOwnerUserId(dto.getOwnerUserId());
         result.setCreatedAt(parseDate(dto.getCreatedAt()));
@@ -785,8 +786,14 @@ public class ConversationsResource {
                             dto.getAccessLevel().name().toLowerCase()));
         }
         // conversationGroupId is not exposed in API responses
-        result.setForkedAtEntryId(dto.getForkedAtEntryId());
-        result.setForkedAtConversationId(dto.getForkedAtConversationId());
+        result.setForkedAtEntryId(
+                dto.getForkedAtEntryId() != null
+                        ? UUID.fromString(dto.getForkedAtEntryId())
+                        : null);
+        result.setForkedAtConversationId(
+                dto.getForkedAtConversationId() != null
+                        ? UUID.fromString(dto.getForkedAtConversationId())
+                        : null);
         return result;
     }
 
@@ -796,7 +803,7 @@ public class ConversationsResource {
             return null;
         }
         ConversationMembership result = new ConversationMembership();
-        result.setConversationId(conversationId);
+        result.setConversationId(conversationId != null ? UUID.fromString(conversationId) : null);
         result.setUserId(dto.getUserId());
         if (dto.getAccessLevel() != null) {
             result.setAccessLevel(
@@ -813,10 +820,17 @@ public class ConversationsResource {
             return null;
         }
         ConversationForkSummary result = new ConversationForkSummary();
-        result.setConversationId(dto.getConversationId());
+        result.setConversationId(
+                dto.getConversationId() != null ? UUID.fromString(dto.getConversationId()) : null);
         // conversationGroupId is not exposed in API responses
-        result.setForkedAtEntryId(dto.getForkedAtEntryId());
-        result.setForkedAtConversationId(dto.getForkedAtConversationId());
+        result.setForkedAtEntryId(
+                dto.getForkedAtEntryId() != null
+                        ? UUID.fromString(dto.getForkedAtEntryId())
+                        : null);
+        result.setForkedAtConversationId(
+                dto.getForkedAtConversationId() != null
+                        ? UUID.fromString(dto.getForkedAtConversationId())
+                        : null);
         result.setTitle(dto.getTitle());
         result.setCreatedAt(parseDate(dto.getCreatedAt()));
         return result;
@@ -827,8 +841,9 @@ public class ConversationsResource {
             return null;
         }
         Entry result = new Entry();
-        result.setId(dto.getId());
-        result.setConversationId(dto.getConversationId());
+        result.setId(dto.getId() != null ? UUID.fromString(dto.getId()) : null);
+        result.setConversationId(
+                dto.getConversationId() != null ? UUID.fromString(dto.getConversationId()) : null);
         result.setUserId(dto.getUserId());
         if (dto.getChannel() != null) {
             result.setChannel(Entry.ChannelEnum.fromString(dto.getChannel().toValue()));

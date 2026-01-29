@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
@@ -72,7 +73,11 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
             response =
                     conversationsApi()
                             .listConversationEntries(
-                                    conversationId, null, 1000, Channel.MEMORY, null)
+                                    UUID.fromString(conversationId),
+                                    null,
+                                    1000,
+                                    Channel.MEMORY,
+                                    null)
                             .block();
         } catch (WebClientResponseException e) {
             int status = e.getStatusCode().value();
@@ -95,7 +100,8 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
                 continue;
             }
             for (Object contentBlock : entry.getContent()) {
-                Message decoded = decodeContentBlock(contentBlock, conversationId, entry.getId());
+                String entryId = entry.getId() != null ? entry.getId().toString() : null;
+                Message decoded = decodeContentBlock(contentBlock, conversationId, entryId);
                 if (decoded != null) {
                     result.add(decoded);
                 }
@@ -140,7 +146,9 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         syncRequest.setEntries(syncEntries);
 
         try {
-            conversationsApi().syncConversationMemory(conversationId, syncRequest).block();
+            conversationsApi()
+                    .syncConversationMemory(UUID.fromString(conversationId), syncRequest)
+                    .block();
             LOG.debug(
                     "Successfully synced {} entries for conversationId={}",
                     syncEntries.size(),

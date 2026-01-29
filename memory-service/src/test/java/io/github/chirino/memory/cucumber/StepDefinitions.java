@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.UnifiedDiffUtils;
 import com.github.difflib.patch.Patch;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Empty;
 import com.google.protobuf.Message;
 import com.google.protobuf.TextFormat;
@@ -94,6 +95,7 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.core.MediaType;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -101,6 +103,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -122,6 +125,175 @@ public class StepDefinitions {
             Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> API_KEY_METADATA =
             Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER);
+
+    private static ByteString stringToByteString(String uuidString) {
+        if (uuidString == null || uuidString.isEmpty()) {
+            return ByteString.EMPTY;
+        }
+        UUID uuid = UUID.fromString(uuidString);
+        ByteBuffer buffer = ByteBuffer.allocate(16);
+        buffer.putLong(uuid.getMostSignificantBits());
+        buffer.putLong(uuid.getLeastSignificantBits());
+        return ByteString.copyFrom(buffer.array());
+    }
+
+    private static String byteStringToString(ByteString bytes) {
+        if (bytes == null || bytes.isEmpty()) {
+            return null;
+        }
+        ByteBuffer buffer = ByteBuffer.wrap(bytes.toByteArray());
+        long mostSig = buffer.getLong();
+        long leastSig = buffer.getLong();
+        return new UUID(mostSig, leastSig).toString();
+    }
+
+    // UUID regex pattern: 8-4-4-4-12 hex digits
+    private static final Pattern UUID_PATTERN =
+            Pattern.compile(
+                    "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+
+    // Known UUID field names in proto messages (bytes fields that hold UUIDs)
+    private static final java.util.Set<String> UUID_BYTES_FIELDS =
+            java.util.Set.of(
+                    "id",
+                    "conversation_id",
+                    "conversation_ids",
+                    "entry_id",
+                    "after",
+                    "until_entry_id",
+                    "forked_at_entry_id",
+                    "forked_at_conversation_id");
+
+    /**
+     * Preprocesses proto text format body to convert UUID strings and base64 values to proper
+     * bytes escape sequences. This is needed because bytes fields in proto text format interpret
+     * string literals as raw bytes, but we want to convert UUID strings (36 chars) or base64
+     * (from previous gRPC responses) to their 16-byte binary form.
+     */
+    private static String convertUuidStringsToProtoBytes(String protoText) {
+        if (protoText == null || protoText.isEmpty()) {
+            return protoText;
+        }
+        // Pattern to match field assignments like: field_name: "value"
+        Pattern fieldPattern = Pattern.compile("(\\w+):\\s*\"([^\"]+)\"");
+        java.util.regex.Matcher matcher = fieldPattern.matcher(protoText);
+        StringBuilder result = new StringBuilder();
+        int lastEnd = 0;
+        while (matcher.find()) {
+            String fieldName = matcher.group(1);
+            String fieldValue = matcher.group(2);
+            result.append(protoText, lastEnd, matcher.start());
+            if (UUID_BYTES_FIELDS.contains(fieldName)) {
+                String escapedBytes = null;
+                if (UUID_PATTERN.matcher(fieldValue).matches()) {
+                    // Convert UUID string to proto bytes escape sequence
+                    escapedBytes = uuidToProtoEscapedBytes(fieldValue);
+                } else if (looksLikeBase64(fieldValue)) {
+                    // Convert base64 (from previous gRPC response) to proto bytes escape sequence
+                    escapedBytes = base64ToProtoEscapedBytes(fieldValue);
+                }
+                if (escapedBytes != null) {
+                    result.append(fieldName).append(": \"").append(escapedBytes).append("\"");
+                } else {
+                    result.append(matcher.group());
+                }
+            } else {
+                result.append(matcher.group());
+            }
+            lastEnd = matcher.end();
+        }
+        result.append(protoText.substring(lastEnd));
+        return result.toString();
+    }
+
+    /**
+     * Converts a UUID string to proto text format escaped bytes representation.
+     */
+    private static String uuidToProtoEscapedBytes(String uuidString) {
+        UUID uuid = UUID.fromString(uuidString);
+        ByteBuffer buffer = ByteBuffer.allocate(16);
+        buffer.putLong(uuid.getMostSignificantBits());
+        buffer.putLong(uuid.getLeastSignificantBits());
+        byte[] bytes = buffer.array();
+        return bytesToProtoEscapedString(bytes);
+    }
+
+    /**
+     * Converts raw bytes to proto text format escaped string representation.
+     */
+    private static String bytesToProtoEscapedString(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("\\x%02x", b & 0xFF));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Checks if a string looks like base64-encoded data (for proto bytes fields in JSON).
+     */
+    private static boolean looksLikeBase64(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        // Base64 uses A-Z, a-z, 0-9, +, /, and = for padding
+        // Check length is reasonable for 16-byte UUID (should be ~24 chars with padding)
+        if (value.length() < 20 || value.length() > 30) {
+            return false;
+        }
+        return value.matches("^[A-Za-z0-9+/]+=*$");
+    }
+
+    /**
+     * Converts base64-encoded bytes to proto text format escaped bytes representation.
+     */
+    private static String base64ToProtoEscapedBytes(String base64Value) {
+        byte[] bytes = java.util.Base64.getDecoder().decode(base64Value);
+        return bytesToProtoEscapedString(bytes);
+    }
+
+    /**
+     * Converts base64-encoded UUID bytes back to a UUID string.
+     */
+    private static String base64ToUuidString(String base64Value) {
+        byte[] bytes = java.util.Base64.getDecoder().decode(base64Value);
+        if (bytes.length != 16) {
+            return base64Value; // Not a UUID, return original
+        }
+        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        long mostSig = buffer.getLong();
+        long leastSig = buffer.getLong();
+        return new UUID(mostSig, leastSig).toString();
+    }
+
+    /**
+     * Preprocesses proto text format body to convert base64 strings (from JSON responses)
+     * to proper bytes escape sequences for bytes fields.
+     */
+    private static String convertBase64StringsToProtoBytes(String protoText) {
+        if (protoText == null || protoText.isEmpty()) {
+            return protoText;
+        }
+        Pattern fieldPattern = Pattern.compile("(\\w+):\\s*\"([^\"]+)\"");
+        java.util.regex.Matcher matcher = fieldPattern.matcher(protoText);
+        StringBuilder result = new StringBuilder();
+        int lastEnd = 0;
+        while (matcher.find()) {
+            String fieldName = matcher.group(1);
+            String fieldValue = matcher.group(2);
+            result.append(protoText, lastEnd, matcher.start());
+            if (UUID_BYTES_FIELDS.contains(fieldName) && looksLikeBase64(fieldValue)) {
+                // Convert base64 string to proto bytes escape sequence
+                String escapedBytes = base64ToProtoEscapedBytes(fieldValue);
+                result.append(fieldName).append(": \"").append(escapedBytes).append("\"");
+            } else {
+                result.append(matcher.group());
+            }
+            lastEnd = matcher.end();
+        }
+        result.append(protoText.substring(lastEnd));
+        return result.toString();
+    }
 
     @Inject MemoryStoreSelector memoryStoreSelector;
     @Inject ApiKeyManager apiKeyManager;
@@ -358,7 +530,7 @@ public class StepDefinitions {
             String token = String.valueOf(tokens.charAt(i));
             var requestBuilder = StreamResponseTokenRequest.newBuilder();
             if (i == 0) {
-                requestBuilder.setConversationId(conversationId);
+                requestBuilder.setConversationId(stringToByteString(conversationId));
             }
             requestBuilder.setToken(token);
             requestBuilder.setComplete(i == tokens.length() - 1);
@@ -423,7 +595,8 @@ public class StepDefinitions {
                                                                 if (i == 0) {
                                                                     requestBuilder
                                                                             .setConversationId(
-                                                                                    conversationId);
+                                                                                    stringToByteString(
+                                                                                            conversationId));
                                                                 }
                                                                 requestBuilder.setToken(token);
                                                                 requestBuilder.setComplete(false);
@@ -527,7 +700,8 @@ public class StepDefinitions {
                                                                 if (i == 0) {
                                                                     requestBuilder
                                                                             .setConversationId(
-                                                                                    conversationId);
+                                                                                    stringToByteString(
+                                                                                            conversationId));
                                                                 }
                                                                 requestBuilder.setToken(token);
                                                                 requestBuilder.setComplete(false);
@@ -634,7 +808,9 @@ public class StepDefinitions {
         }
 
         var request =
-                ReplayResponseTokensRequest.newBuilder().setConversationId(conversationId).build();
+                ReplayResponseTokensRequest.newBuilder()
+                        .setConversationId(stringToByteString(conversationId))
+                        .build();
 
         int expectedCount = expectedTokens.length();
         List<ReplayResponseTokensResponse> responses;
@@ -1389,6 +1565,8 @@ public class StepDefinitions {
         lastGrpcError = null;
         try {
             String renderedBody = renderTemplate(body);
+            // Convert UUID strings to proper proto bytes format for bytes fields
+            renderedBody = convertUuidStringsToProtoBytes(renderedBody);
             Message response = callGrpcService(serviceMethod, renderedBody);
             StringBuilder textBuilder = new StringBuilder();
             TextFormat.printer().print(response, textBuilder);
@@ -1626,6 +1804,10 @@ public class StepDefinitions {
                             + lastGrpcResponseJson);
         }
         String actual = String.valueOf(value);
+        // If expected is a UUID and actual looks like base64, convert actual to UUID string
+        if (UUID_PATTERN.matcher(renderedExpected).matches() && looksLikeBase64(actual)) {
+            actual = base64ToUuidString(actual);
+        }
         assertThat(actual, is(renderedExpected));
     }
 
@@ -1680,6 +1862,9 @@ public class StepDefinitions {
         Message.Builder expectedBuilder = createGrpcResponseBuilder(lastGrpcServiceMethod);
         try {
             String rendered = renderTemplate(expectedText).trim();
+            // Convert UUID strings and base64 values to proper proto bytes format
+            rendered = convertUuidStringsToProtoBytes(rendered);
+            rendered = convertBase64StringsToProtoBytes(rendered);
             TextFormat.merge(rendered, expectedBuilder);
         } catch (TextFormat.ParseException e) {
             throw new AssertionError(
@@ -2196,7 +2381,7 @@ public class StepDefinitions {
                     if (response instanceof Conversation) {
                         Conversation conv = (Conversation) response;
                         if (conv.getId() != null && !conv.getId().isEmpty()) {
-                            conversationId = conv.getId();
+                            conversationId = byteStringToString(conv.getId());
                             contextVariables.put("conversationId", conversationId);
                         }
                     }

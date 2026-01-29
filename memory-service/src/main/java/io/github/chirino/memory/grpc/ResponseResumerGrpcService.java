@@ -1,5 +1,7 @@
 package io.github.chirino.memory.grpc;
 
+import static io.github.chirino.memory.grpc.UuidUtils.byteStringToString;
+
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
@@ -35,6 +37,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -95,7 +98,9 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                                         if (initialized.compareAndSet(
                                                                 false, true)) {
                                                             String conversationId =
-                                                                    request.getConversationId();
+                                                                    byteStringToString(
+                                                                            request
+                                                                                    .getConversationId());
                                                             if (conversationId == null
                                                                     || conversationId.isBlank()) {
                                                                 failStream(
@@ -322,7 +327,7 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
             return Multi.createFrom().empty();
         }
 
-        String conversationId = request.getConversationId();
+        String conversationId = byteStringToString(request.getConversationId());
         if (conversationId == null || conversationId.isBlank()) {
             return Multi.createFrom()
                     .failure(
@@ -350,8 +355,9 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
         }
 
         AtomicLong currentOffset = new AtomicLong(0);
+        String finalConversationId = conversationId;
 
-        return backend.replay(conversationId, resolveAdvertisedAddress())
+        return backend.replay(finalConversationId, resolveAdvertisedAddress())
                 .onItem()
                 .transform(
                         token -> {
@@ -373,7 +379,7 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                             LOG.warnf(
                                     e,
                                     "Failed to replay response tokens for conversation %s",
-                                    conversationId);
+                                    finalConversationId);
                             return Status.INTERNAL
                                     .withDescription(
                                             "Failed to replay response tokens: " + e.getMessage())
@@ -392,7 +398,7 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                     .asRuntimeException());
         }
 
-        String conversationId = request.getConversationId();
+        String conversationId = byteStringToString(request.getConversationId());
         if (conversationId == null || conversationId.isBlank()) {
             return Uni.createFrom()
                     .failure(
@@ -443,8 +449,11 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
             return Uni.createFrom().item(CheckConversationsResponse.newBuilder().build());
         }
 
-        List<String> conversationIds = request.getConversationIdsList();
-        if (conversationIds == null || conversationIds.isEmpty()) {
+        List<String> conversationIds =
+                request.getConversationIdsList().stream()
+                        .map(UuidUtils::byteStringToString)
+                        .collect(Collectors.toList());
+        if (conversationIds.isEmpty()) {
             return Uni.createFrom().item(CheckConversationsResponse.newBuilder().build());
         }
 
@@ -466,7 +475,10 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
         return Uni.createFrom()
                 .item(
                         CheckConversationsResponse.newBuilder()
-                                .addAllConversationIds(inProgress)
+                                .addAllConversationIds(
+                                        inProgress.stream()
+                                                .map(UuidUtils::stringToByteString)
+                                                .collect(Collectors.toList()))
                                 .build());
     }
 

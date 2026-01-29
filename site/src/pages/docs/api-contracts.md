@@ -32,7 +32,55 @@ The gRPC API provides:
 - Bi-directional streaming for real-time updates
 - Strong typing with generated stubs
 
-<!-- 
+## ID Formats
+
+All resource identifiers in the Memory Service API are UUIDs (Universally Unique Identifiers). This applies to:
+- Conversation IDs
+- Entry IDs
+- Fork reference IDs
+
+**Note:** User IDs and client IDs are external identifiers and do not follow UUID format.
+
+### REST API (JSON)
+
+UUIDs are represented as strings in standard format:
+
+```
+xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+Example: `"550e8400-e29b-41d4-a716-446655440000"`
+
+The OpenAPI specification uses `format: uuid` for these fields, which enables type-safe UUID handling in generated clients.
+
+### gRPC API (Protocol Buffers)
+
+UUIDs are represented as 16-byte binary values (big-endian). The most significant 64 bits come first, followed by the least significant 64 bits.
+
+**Java example:**
+```java
+// UUID to bytes
+ByteBuffer buffer = ByteBuffer.allocate(16);
+buffer.putLong(uuid.getMostSignificantBits());
+buffer.putLong(uuid.getLeastSignificantBits());
+byte[] bytes = buffer.array();
+
+// Bytes to UUID
+ByteBuffer buffer = ByteBuffer.wrap(bytes);
+UUID uuid = new UUID(buffer.getLong(), buffer.getLong());
+```
+
+**Go example:**
+```go
+// UUID to bytes - google/uuid package stores as [16]byte
+id := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+bytes := id[:] // id is already [16]byte
+
+// Bytes to UUID
+id, err := uuid.FromBytes(bytes)
+```
+
+<!--
 ## Framework-Specific Clients
 
 For Quarkus and Spring applications, pre-built clients are available:

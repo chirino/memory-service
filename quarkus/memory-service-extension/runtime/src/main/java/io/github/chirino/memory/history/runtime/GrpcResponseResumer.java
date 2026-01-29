@@ -2,6 +2,7 @@ package io.github.chirino.memory.history.runtime;
 
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
 import io.github.chirino.memory.grpc.v1.CancelResponseResponse;
@@ -26,9 +27,12 @@ import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
@@ -44,6 +48,27 @@ public class GrpcResponseResumer implements ResponseResumer {
             Metadata.Key.of("x-resumer-redirect-host", Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> REDIRECT_PORT_HEADER =
             Metadata.Key.of("x-resumer-redirect-port", Metadata.ASCII_STRING_MARSHALLER);
+
+    private static ByteString toByteString(String uuidStr) {
+        if (uuidStr == null || uuidStr.isBlank()) {
+            return ByteString.EMPTY;
+        }
+        UUID uuid = UUID.fromString(uuidStr);
+        ByteBuffer buffer = ByteBuffer.allocate(16);
+        buffer.putLong(uuid.getMostSignificantBits());
+        buffer.putLong(uuid.getLeastSignificantBits());
+        return ByteString.copyFrom(buffer.array());
+    }
+
+    private static String fromByteString(ByteString bytes) {
+        if (bytes == null || bytes.isEmpty()) {
+            return null;
+        }
+        ByteBuffer buffer = ByteBuffer.wrap(bytes.toByteArray());
+        long mostSig = buffer.getLong();
+        long leastSig = buffer.getLong();
+        return new UUID(mostSig, leastSig).toString();
+    }
 
     @Inject Instance<SecurityIdentityAssociation> securityIdentityAssociationInstance;
 
@@ -73,7 +98,9 @@ public class GrpcResponseResumer implements ResponseResumer {
     @Override
     public Multi<String> replay(String conversationId, String bearerToken) {
         ReplayResponseTokensRequest request =
-                ReplayResponseTokensRequest.newBuilder().setConversationId(conversationId).build();
+                ReplayResponseTokensRequest.newBuilder()
+                        .setConversationId(toByteString(conversationId))
+                        .build();
 
         return replayWithRedirect(request, bearerToken, 1)
                 .onFailure()
@@ -104,7 +131,9 @@ public class GrpcResponseResumer implements ResponseResumer {
         }
         try {
             CancelResponseRequest request =
-                    CancelResponseRequest.newBuilder().setConversationId(conversationId).build();
+                    CancelResponseRequest.newBuilder()
+                            .setConversationId(toByteString(conversationId))
+                            .build();
             CancelResponseResponse response =
                     cancelWithRedirect(request, bearerToken, 1).await().indefinitely();
             if (!response.getAccepted()) {
@@ -124,13 +153,17 @@ public class GrpcResponseResumer implements ResponseResumer {
         }
 
         try {
+            List<ByteString> byteIds =
+                    conversationIds.stream()
+                            .map(GrpcResponseResumer::toByteString)
+                            .collect(Collectors.toList());
             CheckConversationsRequest request =
-                    CheckConversationsRequest.newBuilder()
-                            .addAllConversationIds(conversationIds)
-                            .build();
+                    CheckConversationsRequest.newBuilder().addAllConversationIds(byteIds).build();
             CheckConversationsResponse response =
                     stub(bearerToken).checkConversations(request).await().indefinitely();
-            return response.getConversationIdsList();
+            return response.getConversationIdsList().stream()
+                    .map(GrpcResponseResumer::fromByteString)
+                    .collect(Collectors.toList());
         } catch (Exception e) {
             return handleCheckConversationsFailure(e);
         }
@@ -315,6 +348,7 @@ public class GrpcResponseResumer implements ResponseResumer {
     private static final class GrpcResponseRecorder implements ResponseRecorder {
         private final MutinyResponseResumerServiceGrpc.MutinyResponseResumerServiceStub
                 resumerService;
+        private final ByteString conversationIdBytes;
         private final String conversationId;
         private final List<StreamResponseTokenRequest> pendingRequests = new ArrayList<>();
         private MultiEmitter<? super StreamResponseTokenRequest> emitter;
@@ -328,6 +362,7 @@ public class GrpcResponseResumer implements ResponseResumer {
                 String conversationId) {
             this.resumerService = resumerService;
             this.conversationId = conversationId;
+            this.conversationIdBytes = toByteString(conversationId);
             startStream();
         }
 
@@ -341,7 +376,7 @@ public class GrpcResponseResumer implements ResponseResumer {
                     StreamResponseTokenRequest.newBuilder().setToken(token);
 
             if (firstMessage) {
-                builder.setConversationId(conversationId);
+                builder.setConversationId(conversationIdBytes);
                 firstMessage = false;
             }
 
@@ -358,7 +393,7 @@ public class GrpcResponseResumer implements ResponseResumer {
             StreamResponseTokenRequest.Builder builder =
                     StreamResponseTokenRequest.newBuilder().setComplete(true);
             if (firstMessage) {
-                builder.setConversationId(conversationId);
+                builder.setConversationId(conversationIdBytes);
                 firstMessage = false;
             }
             emit(builder.build());

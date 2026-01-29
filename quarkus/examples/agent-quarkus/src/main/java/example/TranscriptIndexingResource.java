@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -79,7 +80,7 @@ public class TranscriptIndexingResource {
             LOG.infof("redactedTranscript: %s", redactedTranscript);
 
             IndexTranscriptRequest request = new IndexTranscriptRequest();
-            request.setConversationId(conversationId);
+            request.setConversationId(UUID.fromString(conversationId));
             request.setTitle(redactionPayload.title());
             request.setTranscript(redactedTranscript);
             request.setUntilEntryId(last.getId());
@@ -93,12 +94,16 @@ public class TranscriptIndexingResource {
 
     private List<Entry> fetchHistoryEntries(String conversationId) {
         List<Entry> all = new ArrayList<>();
-        String cursor = null;
+        UUID cursor = null;
         while (true) {
             ListConversationEntries200Response response =
                     conversationsApi()
                             .listConversationEntries(
-                                    conversationId, cursor, PAGE_SIZE, Channel.HISTORY, null);
+                                    UUID.fromString(conversationId),
+                                    cursor,
+                                    PAGE_SIZE,
+                                    Channel.HISTORY,
+                                    null);
             List<Entry> data = response != null ? response.getData() : null;
             if (data != null && !data.isEmpty()) {
                 all.addAll(data);
@@ -107,7 +112,7 @@ public class TranscriptIndexingResource {
             if (next == null || next.isBlank()) {
                 break;
             }
-            cursor = next;
+            cursor = UUID.fromString(next);
         }
         return all;
     }
