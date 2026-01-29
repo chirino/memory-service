@@ -807,9 +807,7 @@ public class StepDefinitions {
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
-                requestSpec
-                        .when()
-                        .post("/v1/conversations/{id}/memory/entries/sync", conversationId);
+                requestSpec.when().post("/v1/conversations/{id}/entries/sync", conversationId);
     }
 
     @io.cucumber.java.en.Then("the sync response should contain {int} entries")

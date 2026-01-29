@@ -198,7 +198,7 @@ CreateEntryRequest:
 | `GET /v1/conversations/{conversationId}/messages` | `GET /v1/conversations/{conversationId}/entries` |
 | `POST /v1/conversations/{conversationId}/messages` | `POST /v1/conversations/{conversationId}/entries` |
 | `POST /v1/conversations/{conversationId}/messages/{messageId}/fork` | `POST /v1/conversations/{conversationId}/entries/{entryId}/fork` |
-| `POST /v1/conversations/{conversationId}/memory/messages/sync` | `POST /v1/conversations/{conversationId}/memory/entries/sync` |
+| `POST /v1/conversations/{conversationId}/memory/messages/sync` | `POST /v1/conversations/{conversationId}/entries/sync` |
 | `POST /v1/user/search/messages` | `POST /v1/user/search/entries` |
 
 #### SearchResult Schema Update
