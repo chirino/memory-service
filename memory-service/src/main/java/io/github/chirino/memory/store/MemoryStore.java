@@ -85,7 +85,7 @@ public interface MemoryStore {
     // Admin methods — no userId scoping, configurable deleted-resource visibility
     List<ConversationSummaryDto> adminListConversations(AdminConversationQuery query);
 
-    Optional<ConversationDto> adminGetConversation(String conversationId, boolean includeDeleted);
+    Optional<ConversationDto> adminGetConversation(String conversationId);
 
     void adminDeleteConversation(String conversationId);
 
@@ -93,8 +93,7 @@ public interface MemoryStore {
 
     PagedEntries adminGetEntries(String conversationId, AdminMessageQuery query);
 
-    List<ConversationMembershipDto> adminListMemberships(
-            String conversationId, boolean includeDeleted);
+    List<ConversationMembershipDto> adminListMemberships(String conversationId);
 
     List<SearchResultDto> adminSearchEntries(AdminSearchQuery query);
 

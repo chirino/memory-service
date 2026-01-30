@@ -5,7 +5,6 @@ public class AdminMessageQuery {
     private String afterEntryId;
     private int limit;
     private Channel channel;
-    private boolean includeDeleted;
 
     public String getAfterEntryId() {
         return afterEntryId;
@@ -29,13 +28,5 @@ public class AdminMessageQuery {
 
     public void setChannel(Channel channel) {
         this.channel = channel;
-    }
-
-    public boolean isIncludeDeleted() {
-        return includeDeleted;
-    }
-
-    public void setIncludeDeleted(boolean includeDeleted) {
-        this.includeDeleted = includeDeleted;
     }
 }

@@ -132,18 +132,14 @@ public class AdminResource {
     @GET
     @Path("/conversations/{id}")
     public Response getConversation(
-            @PathParam("id") String id,
-            @QueryParam("includeDeleted") @jakarta.ws.rs.DefaultValue("false")
-                    boolean includeDeleted,
-            @QueryParam("justification") String justification) {
+            @PathParam("id") String id, @QueryParam("justification") String justification) {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
             params.put("id", id);
-            params.put("includeDeleted", includeDeleted);
             auditLogger.logRead("getConversation", params, justification, identity, apiKeyContext);
 
-            Optional<ConversationDto> dto = store().adminGetConversation(id, includeDeleted);
+            Optional<ConversationDto> dto = store().adminGetConversation(id);
             if (dto.isEmpty()) {
                 return notFound(new ResourceNotFoundException("conversation", id));
             }
@@ -187,7 +183,7 @@ public class AdminResource {
             auditLogger.logWrite("restoreConversation", id, justification, identity, apiKeyContext);
 
             store().adminRestoreConversation(id);
-            Optional<ConversationDto> dto = store().adminGetConversation(id, true);
+            Optional<ConversationDto> dto = store().adminGetConversation(id);
             return Response.ok(dto.orElse(null)).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);
@@ -209,14 +205,11 @@ public class AdminResource {
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit,
             @QueryParam("channel") String channel,
-            @QueryParam("includeDeleted") @jakarta.ws.rs.DefaultValue("false")
-                    boolean includeDeleted,
             @QueryParam("justification") String justification) {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
             params.put("id", id);
-            params.put("includeDeleted", includeDeleted);
             auditLogger.logRead("getMessages", params, justification, identity, apiKeyContext);
 
             AdminMessageQuery query = new AdminMessageQuery();
@@ -225,7 +218,6 @@ public class AdminResource {
             if (channel != null && !channel.isBlank()) {
                 query.setChannel(Channel.fromString(channel));
             }
-            query.setIncludeDeleted(includeDeleted);
 
             PagedEntries result = store().adminGetEntries(id, query);
             Map<String, Object> response = new HashMap<>();
@@ -246,19 +238,14 @@ public class AdminResource {
     @GET
     @Path("/conversations/{id}/memberships")
     public Response getMemberships(
-            @PathParam("id") String id,
-            @QueryParam("includeDeleted") @jakarta.ws.rs.DefaultValue("false")
-                    boolean includeDeleted,
-            @QueryParam("justification") String justification) {
+            @PathParam("id") String id, @QueryParam("justification") String justification) {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
             params.put("id", id);
-            params.put("includeDeleted", includeDeleted);
             auditLogger.logRead("getMemberships", params, justification, identity, apiKeyContext);
 
-            List<ConversationMembershipDto> memberships =
-                    store().adminListMemberships(id, includeDeleted);
+            List<ConversationMembershipDto> memberships = store().adminListMemberships(id);
             List<ConversationMembership> data =
                     memberships.stream()
                             .map(

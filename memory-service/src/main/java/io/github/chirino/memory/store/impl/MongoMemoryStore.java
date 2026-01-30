@@ -1176,13 +1176,9 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public Optional<ConversationDto> adminGetConversation(
-            String conversationId, boolean includeDeleted) {
+    public Optional<ConversationDto> adminGetConversation(String conversationId) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
         if (conversation == null) {
-            return Optional.empty();
-        }
-        if (!includeDeleted && conversation.deletedAt != null) {
             return Optional.empty();
         }
         return Optional.of(toConversationDto(conversation, AccessLevel.OWNER, null));
@@ -1239,15 +1235,7 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     public PagedEntries adminGetEntries(String conversationId, AdminMessageQuery query) {
-        MongoConversation conversation;
-        if (query.isIncludeDeleted()) {
-            conversation = conversationRepository.findById(conversationId);
-        } else {
-            conversation = conversationRepository.findById(conversationId);
-            if (conversation != null && conversation.deletedAt != null) {
-                conversation = null;
-            }
-        }
+        MongoConversation conversation = conversationRepository.findById(conversationId);
         if (conversation == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
@@ -1306,29 +1294,14 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationMembershipDto> adminListMemberships(
-            String conversationId, boolean includeDeleted) {
-        MongoConversation conversation;
-        if (includeDeleted) {
-            conversation = conversationRepository.findById(conversationId);
-        } else {
-            conversation = conversationRepository.findById(conversationId);
-            if (conversation != null && conversation.deletedAt != null) {
-                conversation = null;
-            }
-        }
+    public List<ConversationMembershipDto> adminListMemberships(String conversationId) {
+        MongoConversation conversation = conversationRepository.findById(conversationId);
         if (conversation == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         String groupId = conversation.conversationGroupId;
         List<MongoConversationMembership> memberships =
                 membershipRepository.listForConversationGroup(groupId);
-        if (!includeDeleted) {
-            memberships =
-                    memberships.stream()
-                            .filter(m -> m.deletedAt == null)
-                            .collect(Collectors.toList());
-        }
         return memberships.stream().map(this::toMembershipDto).collect(Collectors.toList());
     }
 
