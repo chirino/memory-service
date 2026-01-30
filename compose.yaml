@@ -79,6 +79,9 @@ services:
       KEYCLOAK_CLIENT_SECRET: change-me
       MEMORY_SERVICE_CACHE_TYPE: redis
       QUARKUS_REDIS_HOSTS: redis://redis:6379
+      # CORS configuration for SPA access
+      QUARKUS_HTTP_CORS: "true"
+      QUARKUS_HTTP_CORS_ORIGINS: http://localhost:3000
     depends_on:
       postgres:
         condition: service_healthy
