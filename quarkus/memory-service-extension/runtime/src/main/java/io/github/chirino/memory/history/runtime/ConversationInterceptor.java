@@ -1,12 +1,8 @@
 package io.github.chirino.memory.history.runtime;
 
-import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
-
 import io.github.chirino.memory.history.annotations.ConversationId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
-import io.quarkus.security.identity.SecurityIdentity;
-import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import io.smallrye.mutiny.Multi;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.inject.Instance;
@@ -25,9 +21,6 @@ public class ConversationInterceptor {
     private static final Logger LOG = Logger.getLogger(ConversationInterceptor.class);
 
     @Inject Instance<ConversationStore> storeInstance;
-    @Inject ResponseResumer resumer;
-    @Inject SecurityIdentity identity;
-    @Inject SecurityIdentityAssociation identityAssociation;
 
     @AroundInvoke
     public Object around(InvocationContext ctx) throws Exception {
@@ -51,45 +44,13 @@ public class ConversationInterceptor {
         Object result = ctx.proceed();
 
         if (result instanceof Multi<?> multi) {
-            SecurityIdentity resolvedIdentity = resolveIdentity();
-            String bearerToken = bearerToken(resolvedIdentity);
-            @SuppressWarnings("unchecked")
             Multi<String> stringMulti = (Multi<String>) multi;
-            return ConversationStreamAdapter.wrap(
-                    invocation.conversationId(),
-                    stringMulti,
-                    store,
-                    resumer,
-                    resolvedIdentity,
-                    identityAssociation,
-                    bearerToken);
+            return store.appendAgentMessage(invocation.conversationId(), stringMulti);
         }
 
-        String bearerToken = bearerToken(resolveIdentity());
-        store.appendAgentMessage(invocation.conversationId(), String.valueOf(result), bearerToken);
+        store.appendAgentMessage(invocation.conversationId(), String.valueOf(result));
         store.markCompleted(invocation.conversationId());
-
         return result;
-    }
-
-    private SecurityIdentity resolveIdentity() {
-        if (identityAssociation != null) {
-            SecurityIdentity resolved = identityAssociation.getIdentity();
-            if (resolved != null && !resolved.isAnonymous()) {
-                LOG.infof(
-                        "Resolved identity from association: type=%s",
-                        resolved.getClass().getName());
-                return resolved;
-            }
-        }
-        if (identity != null) {
-            LOG.infof(
-                    "Resolved identity from injected identity: type=%s",
-                    identity.getClass().getName());
-        } else {
-            LOG.info("Resolved identity from injected identity: <none>");
-        }
-        return identity;
     }
 
     private ConversationInvocation resolveInvocation(InvocationContext ctx) {

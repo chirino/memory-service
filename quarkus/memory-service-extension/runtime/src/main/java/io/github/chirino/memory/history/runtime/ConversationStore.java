@@ -9,19 +9,45 @@ import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.arc.Arc;
 import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.runtime.SecurityIdentityAssociation;
+import io.smallrye.mutiny.Multi;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class ConversationStore {
+    private static final Logger LOG = Logger.getLogger(ConversationStore.class);
 
     @Inject MemoryServiceApiBuilder conversationsApiBuilder;
 
     @Inject SecurityIdentity securityIdentity;
+    @Inject SecurityIdentityAssociation identityAssociation;
+    @Inject ResponseResumer resumer;
+
+    private SecurityIdentity resolveIdentity() {
+        if (identityAssociation != null) {
+            SecurityIdentity resolved = identityAssociation.getIdentity();
+            if (resolved != null && !resolved.isAnonymous()) {
+                LOG.infof(
+                        "Resolved identity from association: type=%s",
+                        resolved.getClass().getName());
+                return resolved;
+            }
+        }
+        if (securityIdentity != null) {
+            LOG.infof(
+                    "Resolved identity from injected identity: type=%s",
+                    securityIdentity.getClass().getName());
+        } else {
+            LOG.info("Resolved identity from injected identity: <none>");
+        }
+        return securityIdentity;
+    }
 
     public void appendUserMessage(String conversationId, String content) {
         CreateEntryRequest request = new CreateEntryRequest();
@@ -39,9 +65,13 @@ public class ConversationStore {
                 .appendConversationEntry(UUID.fromString(conversationId), request);
     }
 
+    public void appendAgentMessage(String conversationId, String content) {
+        String bearerToken = bearerToken(resolveIdentity());
+        appendAgentMessage(conversationId, content, bearerToken);
+    }
+
     public void appendAgentMessage(String conversationId, String content, String bearerToken) {
-        // For now, agent messages use the same append endpoint; the backend
-        // determines the role (user vs agent) from authentication context.
+
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
         request.setContentType("message");
@@ -57,6 +87,19 @@ public class ConversationStore {
         effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
         conversationsApi(effectiveToken)
                 .appendConversationEntry(UUID.fromString(conversationId), request);
+    }
+
+    public Multi<String> appendAgentMessage(String conversationId, Multi<String> stringMulti) {
+        SecurityIdentity resolvedIdentity = resolveIdentity();
+        String bearerToken = bearerToken(resolvedIdentity);
+        return ConversationStreamAdapter.wrap(
+                conversationId,
+                stringMulti,
+                this,
+                resumer,
+                resolvedIdentity,
+                identityAssociation,
+                bearerToken);
     }
 
     public void appendPartialAgentMessage(String conversationId, String delta) {}
