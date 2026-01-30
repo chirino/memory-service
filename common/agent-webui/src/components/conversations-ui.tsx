@@ -8,6 +8,7 @@ import { forwardRef } from "react";
 import {
   Conversation,
   type RenderableConversationMessage,
+  useConversationContext,
   useConversationInput,
   useConversationStreaming,
 } from "@/components/conversation";
@@ -66,6 +67,36 @@ type ConversationsUIMessageRowProps = {
 };
 
 /**
+ * Formats a timestamp for display above messages.
+ * Shows time only (e.g., "10:04 AM") for today, or date and time for older messages.
+ */
+function formatMessageTime(createdAt?: string): string {
+  if (!createdAt) return "";
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
  * Basic message row component with bubble styling.
  * Renders user/assistant messages with appropriate alignment and colors.
  * Does not include fork/edit UI - those should be added by consumers via the overlay prop.
@@ -77,13 +108,31 @@ function ConversationsUIMessageRow({
   overlay,
   messageRef,
 }: ConversationsUIMessageRowProps) {
+  const { currentUserId } = useConversationContext();
   const isUser = message.author === "user";
   const isStreaming = message.displayState === "streaming";
+
+  // Determine the display name for the message author (only for user messages)
+  const authorName = isUser
+    ? message.userId === currentUserId
+      ? "You"
+      : message.userId || "User"
+    : null;
+
+  const timestamp = formatMessageTime(message.createdAt);
 
   return (
     <Conversation.Message message={message} asChild>
       <div ref={messageRef} className={`flex ${isUser ? "justify-end" : "justify-start"} ${className ?? ""}`}>
         <div className={`relative flex flex-col gap-1 ${isUser ? "max-w-[75%] items-end" : "max-w-[85%] items-start"}`}>
+          {/* Author and timestamp */}
+          {(authorName || timestamp) && (
+            <div className={`flex items-center gap-1.5 text-xs text-stone ${isUser ? "pr-1" : "pl-1"}`}>
+              {authorName && <span className="font-medium">{authorName}</span>}
+              {authorName && timestamp && <span className="text-stone/50">·</span>}
+              {timestamp && <span>{timestamp}</span>}
+            </div>
+          )}
           <div
             className={`group relative px-5 py-3.5 text-[15px] leading-relaxed ${
               isUser ? "rounded-2xl rounded-tr-md bg-ink text-cream" : "rounded-2xl rounded-tl-md bg-mist text-ink"

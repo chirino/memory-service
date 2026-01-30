@@ -50,6 +50,8 @@ export type ConversationMessage = {
   author: ConversationAuthor;
   content: string;
   createdAt?: string;
+  // The user ID of who sent this message (for user messages in shared conversations)
+  userId?: string | null;
   // Optional explicit lineage hints; useful for the first message of a forked conversation.
   previousMessageId?: string | null;
   forkedFrom?: {
@@ -119,6 +121,7 @@ type ConversationAction =
 type ConversationContextValue = {
   state: ConversationState;
   controller: ConversationController;
+  currentUserId: string | null | undefined;
   sendMessage: (text: string) => void;
   resumeStream: (options?: { replaceMessageId?: string | null; conversationId?: string | null }) => void;
   cancelStream: () => void;
@@ -133,6 +136,8 @@ type ConversationRootProps = {
   messages?: ConversationMessage[];
   initialInputValue?: string;
   children: ReactNode;
+  // Current user ID for optimistic message attribution
+  currentUserId?: string | null;
 };
 
 type AsChildProps = {
@@ -308,7 +313,7 @@ function conversationReducer(state: ConversationState, action: ConversationActio
 }
 
 function useConversationProviderValue(props: ConversationRootProps): ConversationContextValue {
-  const { controller, conversationId, conversationGroupId, messages = [], initialInputValue = "" } = props;
+  const { controller, conversationId, conversationGroupId, messages = [], initialInputValue = "", currentUserId } = props;
 
   // Track whether component has mounted to skip prop-sync effects on initial render.
   // The reducer already receives initial props, so we only need to sync on updates.
@@ -427,6 +432,8 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
         conversationId: state.conversationId,
         author: "user",
         content: trimmed,
+        createdAt: new Date().toISOString(),
+        userId: currentUserId,
       };
       dispatch({ type: "SEND_START", userMessage, streamId, pendingAssistantId });
       const callbacks = handleStreamCallbacks(streamId);
@@ -439,7 +446,7 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
         callbacks.onError?.(error);
       }
     },
-    [controller, handleStreamCallbacks, state.conversationId, state.streaming.phase],
+    [controller, currentUserId, handleStreamCallbacks, state.conversationId, state.streaming.phase],
   );
 
   // Helper function to resume after state update - uses dispatch directly to avoid closure issues
@@ -585,13 +592,14 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
     () => ({
       state,
       controller,
+      currentUserId,
       sendMessage,
       resumeStream,
       cancelStream,
       selectConversation,
       setInputValue,
     }),
-    [state, controller, sendMessage, resumeStream, cancelStream, selectConversation, setInputValue],
+    [state, controller, currentUserId, sendMessage, resumeStream, cancelStream, selectConversation, setInputValue],
   );
 }
 
