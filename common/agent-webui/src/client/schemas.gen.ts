@@ -27,6 +27,8 @@ export const $ConversationSummary = {
   properties: {
     id: {
       type: "string",
+      format: "uuid",
+      description: "Unique identifier for the conversation.",
     },
     title: {
       type: "string",
@@ -52,12 +54,12 @@ export const $ConversationSummary = {
     },
   },
   example: {
-    id: "conv_01HF8XH1XABCD1234EFGH5678",
+    id: "550e8400-e29b-41d4-a716-446655440000",
     title: "Brainstorming UI for memory service",
     ownerUserId: "user_1234",
     createdAt: "2025-01-10T14:32:05Z",
     updatedAt: "2025-01-10T14:45:12Z",
-    lastMessagePreview: "Let’s try modeling forks as separate conversations…",
+    lastMessagePreview: "Let's try modeling forks as separate conversations…",
     accessLevel: "owner",
   },
 } as const;
@@ -72,15 +74,19 @@ export const $Conversation = {
       properties: {
         forkedAtEntryId: {
           type: "string",
+          format: "uuid",
           nullable: true,
+          description: "Entry ID where this conversation forked from its parent.",
         },
         forkedAtConversationId: {
           type: "string",
+          format: "uuid",
           nullable: true,
+          description: "Conversation ID from which this conversation was forked.",
         },
       },
       example: {
-        id: "conv_01HF8XH1XABCD1234EFGH5678",
+        id: "550e8400-e29b-41d4-a716-446655440000",
         title: "Brainstorming UI for memory service",
         ownerUserId: "user_1234",
         createdAt: "2025-01-10T14:32:05Z",
@@ -120,6 +126,8 @@ export const $ConversationMembership = {
   properties: {
     conversationId: {
       type: "string",
+      format: "uuid",
+      description: "Unique identifier for the conversation.",
     },
     userId: {
       type: "string",
@@ -140,15 +148,19 @@ export const $ConversationForkSummary = {
   properties: {
     conversationId: {
       type: "string",
+      format: "uuid",
+      description: "Unique identifier for the forked conversation.",
     },
     forkedAtEntryId: {
       type: "string",
-      description: "Entry id at which this forked conversation diverged.",
+      format: "uuid",
+      description: "Entry ID at which this forked conversation diverged.",
     },
     forkedAtConversationId: {
       type: "string",
+      format: "uuid",
       nullable: true,
-      description: "Conversation id where the fork occurred.",
+      description: "Conversation ID where the fork occurred.",
     },
     title: {
       type: "string",
@@ -201,9 +213,13 @@ export const $Entry = {
   properties: {
     id: {
       type: "string",
+      format: "uuid",
+      description: "Unique identifier for the entry.",
     },
     conversationId: {
       type: "string",
+      format: "uuid",
+      description: "Unique identifier for the conversation this entry belongs to.",
     },
     userId: {
       type: "string",
@@ -241,8 +257,8 @@ stores and returns them without interpretation.`,
     },
   },
   example: {
-    id: "entry_01HF8XJQWXYZ9876ABCD5432",
-    conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
+    id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    conversationId: "550e8400-e29b-41d4-a716-446655440000",
     userId: "user_1234",
     channel: "history",
     epoch: null,
@@ -374,8 +390,8 @@ export const $SyncEntriesResponse = {
     epochIncremented: true,
     entries: [
       {
-        id: "entry_01HF8XJQWXYZ9876ABCD5432",
-        conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
+        id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+        conversationId: "550e8400-e29b-41d4-a716-446655440000",
         userId: "agent_memory",
         channel: "memory",
         epoch: 5,
@@ -398,6 +414,7 @@ export const $IndexTranscriptRequest = {
   properties: {
     conversationId: {
       type: "string",
+      format: "uuid",
       description: "The conversation to index.",
     },
     title: {
@@ -411,15 +428,16 @@ export const $IndexTranscriptRequest = {
     },
     untilEntryId: {
       type: "string",
-      description: "Highest entry id covered by the index (inclusive).",
+      format: "uuid",
+      description: "Highest entry ID covered by the index (inclusive).",
     },
   },
   example: {
-    conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
+    conversationId: "550e8400-e29b-41d4-a716-446655440000",
     title: "Conversation forking design",
     transcript:
       "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch.",
-    untilEntryId: "entry_01HF8XJQWXYZ9876ABCD5431",
+    untilEntryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
   },
 } as const;
 
@@ -439,20 +457,23 @@ export const $SearchConversationsRequest = {
       type: "array",
       items: {
         type: "string",
+        format: "uuid",
       },
       nullable: true,
+      description: "Filter search to specific conversations (UUID format).",
     },
     before: {
       type: "string",
+      format: "uuid",
       nullable: true,
-      description: "Optional upper bound entry id for temporal filtering.",
+      description: "Optional upper bound entry ID for temporal filtering.",
     },
   },
   example: {
     query: "summary of memory service design decisions",
     topK: 5,
-    conversationIds: ["conv_01HF8XH1XABCD1234EFGH5678", "conv_01HF8XH1XABCD1234EFGH5679"],
-    before: "entry_01HF8XJQWXYZ9876ABCD5431",
+    conversationIds: ["550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440001"],
+    before: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
   },
 } as const;
 
@@ -473,8 +494,8 @@ export const $SearchResult = {
   },
   example: {
     entry: {
-      id: "entry_01HF8XJQWXYZ9876ABCD5430",
-      conversationId: "conv_01HF8XH1XABCD1234EFGH5678",
+      id: "6ba7b810-9dad-11d1-80b4-00c04fd430c9",
+      conversationId: "550e8400-e29b-41d4-a716-446655440000",
       userId: "user_1234",
       channel: "history",
       contentType: "message",
@@ -488,5 +509,71 @@ export const $SearchResult = {
     },
     score: 0.93,
     highlights: "design a memory service for my agent",
+  },
+} as const;
+
+export const $OwnershipTransfer = {
+  type: "object",
+  description: `Represents a pending ownership transfer request.
+Transfers are always "pending" while they exist; accepted/rejected transfers
+are hard deleted from the database.`,
+  required: ["id", "conversationId", "fromUserId", "toUserId", "createdAt"],
+  properties: {
+    id: {
+      type: "string",
+      format: "uuid",
+      description: "Unique identifier for the transfer.",
+    },
+    conversationId: {
+      type: "string",
+      format: "uuid",
+      description: "The conversation being transferred.",
+    },
+    conversationTitle: {
+      type: "string",
+      nullable: true,
+      description: "Title of the conversation (for display purposes).",
+    },
+    fromUserId: {
+      type: "string",
+      description: "Current owner initiating the transfer.",
+    },
+    toUserId: {
+      type: "string",
+      description: "Proposed new owner (recipient).",
+    },
+    createdAt: {
+      type: "string",
+      format: "date-time",
+      description: "When the transfer was initiated.",
+    },
+  },
+  example: {
+    id: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    conversationId: "550e8400-e29b-41d4-a716-446655440000",
+    conversationTitle: "Help with React hooks",
+    fromUserId: "user_john_doe",
+    toUserId: "user_jane_smith",
+    createdAt: "2025-01-28T10:30:00Z",
+  },
+} as const;
+
+export const $CreateOwnershipTransferRequest = {
+  type: "object",
+  required: ["conversationId", "newOwnerUserId"],
+  properties: {
+    conversationId: {
+      type: "string",
+      format: "uuid",
+      description: "The conversation to transfer ownership of.",
+    },
+    newOwnerUserId: {
+      type: "string",
+      description: "User ID of the proposed new owner. Must be an existing member.",
+    },
+  },
+  example: {
+    conversationId: "550e8400-e29b-41d4-a716-446655440000",
+    newOwnerUserId: "user_jane_smith",
   },
 } as const;

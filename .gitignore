@@ -49,3 +49,4 @@ nb-configuration.xml
 /*.log
 vendor
 .claude
+.playwright-mcp

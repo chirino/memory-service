@@ -137,19 +137,17 @@ Owners and managers see the full sharing controls:
 │  └───────────────────────────────────────────────────────────┘  │
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │ 👤 user_bob_wilson                      [Reader ▾]   🗑   │  │
+│  │ 👤 user_bob_wilson                      [Reader ▾]   ⋮   │  │
 │  │    Added Jan 22, 2025                                     │  │
 │  └───────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│  ─────────────────────────────────────────────────────────────  │
-│                                                                 │
-│  ⚙️ Advanced                          (Owner only)              │
-│     Transfer ownership →                                        │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Note**: Managers see dropdowns and remove buttons for writers/readers only. They cannot modify other managers or the owner. The "Advanced" section with ownership transfer is only visible to owners.
+**Notes**:
+- Managers see dropdowns and overflow menus (⋮) for writers/readers only. They cannot modify other managers or the owner.
+- The overflow menu contains "Remove" and (for owners only) "Transfer ownership".
+- Owners see the overflow menu on all members.
 
 #### Writer/Reader View (Read-Only)
 
@@ -249,20 +247,33 @@ Writers and readers see a simplified view without editing controls:
 
 #### Initiating a Transfer (Owner)
 
-Triggered from the "Advanced" section. Opens a confirmation modal.
+Since transfers can only be made to existing members, the "Transfer ownership" action appears as a menu option on each member row (visible only to the owner). This is more intuitive than a separate section with a member dropdown.
+
+**Member Row with Transfer Option** (Owner view):
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│ 👤 user_jane_smith                     [Manager ▾]   ⋮       │
+│    Added Jan 20, 2025                              ┌───────┐ │
+│                                                    │ Remove│ │
+│                                                    │ ───── │ │
+│                                                    │ 👑 Transfer │
+│                                                    │ ownership   │
+│                                                    └───────┘ │
+└───────────────────────────────────────────────────────────────┘
+```
+
+When the owner clicks "Transfer ownership" on a member, a confirmation modal opens:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                                                              ✕  │
 │  Transfer ownership                                             │
 │                                                                 │
-│  The new owner will need to accept the transfer.                │
-│  You will become a Manager after they accept.                   │
+│  Transfer ownership to user_jane_smith?                         │
 │                                                                 │
-│  Transfer to:                                                   │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ Select a member...                                     ▾  │  │
-│  └───────────────────────────────────────────────────────────┘  │
+│  They will need to accept the transfer.                         │
+│  You will become a Manager after they accept.                   │
 │                                                                 │
 │                            [ Cancel ]  [ Request Transfer ]     │
 │                                                                 │
@@ -270,26 +281,32 @@ Triggered from the "Advanced" section. Opens a confirmation modal.
 ```
 
 **Interaction Flow (Owner)**:
-1. User clicks "Transfer ownership" in advanced section
-2. Confirmation modal opens
-3. User selects new owner from dropdown (existing members only)
-4. User confirms with "Request Transfer" button
-5. On success: Transfer created as "pending", UI shows pending state
+1. Owner clicks the overflow menu (⋮) on a member row
+2. Owner selects "Transfer ownership" from the menu
+3. Confirmation modal opens showing the selected member
+4. Owner confirms with "Request Transfer" button
+5. On success: Transfer created as "pending", UI shows pending state on that member row
 
 #### Pending Transfer State (Owner View)
 
-When a pending transfer exists, the Advanced section shows:
+When a pending transfer exists, the member row shows the pending state:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  ⚙️ Advanced                                                    │
-│                                                                 │
-│  ⏳ Transfer pending                                            │
-│     Waiting for user_jane_smith to accept                       │
-│                                    [ Cancel Transfer ]          │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│ 👤 user_jane_smith                          Manager  🔧       │
+│    Added Jan 20, 2025                                         │
+│    ┌─────────────────────────────────────────────────────┐    │
+│    │ ⏳ Transfer pending · Waiting for acceptance        │    │
+│    │                              [ Cancel Transfer ]    │    │
+│    └─────────────────────────────────────────────────────┘    │
+└───────────────────────────────────────────────────────────────┘
 ```
+
+**Notes:**
+- The pending transfer banner is shown inline on the recipient's member row
+- Access level dropdown and remove button are hidden while transfer is pending
+- Only one pending transfer can exist per conversation
+- Owner can cancel the transfer from this inline banner
 
 #### Incoming Transfer (Recipient View)
 
@@ -370,8 +387,9 @@ When conversation has no shared members:
 | `MemberListItem` | `member-list-item.tsx` | Individual member row |
 | `AddMemberForm` | `add-member-form.tsx` | Input for adding new members |
 | `AccessLevelSelect` | `access-level-select.tsx` | Dropdown for access levels |
-| `TransferRequestModal` | `transfer-request-modal.tsx` | Request ownership transfer (owner) |
-| `TransferPendingBanner` | `transfer-pending-banner.tsx` | Shows pending transfer status |
+| `MemberOverflowMenu` | `member-overflow-menu.tsx` | Overflow menu with Remove/Transfer actions |
+| `TransferConfirmModal` | `transfer-confirm-modal.tsx` | Confirm ownership transfer (owner) |
+| `TransferPendingBanner` | `transfer-pending-banner.tsx` | Inline pending transfer status on member row |
 | `IncomingTransferBanner` | `incoming-transfer-banner.tsx` | Accept/decline transfer (recipient) |
 
 ### Component Hierarchy
@@ -384,12 +402,12 @@ ChatPanel
 │           ├── IncomingTransferBanner (if recipient of pending transfer)
 │           ├── AddMemberForm (owner/manager only)
 │           │   └── AccessLevelSelect
-│           ├── MemberList
-│           │   └── MemberListItem
-│           │       └── AccessLevelSelect
-│           └── Advanced Section (owner only)
-│               ├── TransferPendingBanner (if pending transfer exists)
-│               └── TransferRequestModal (if no pending transfer)
+│           └── MemberList
+│               └── MemberListItem
+│                   ├── AccessLevelSelect
+│                   ├── MemberOverflowMenu (owner/manager only)
+│                   │   └── TransferConfirmModal (owner only, on "Transfer" click)
+│                   └── TransferPendingBanner (if this member has pending transfer)
 ```
 
 ### State Management
@@ -419,7 +437,7 @@ isTransferSender: boolean           // Is current user the sender?
 
 // Local state
 isShareModalOpen: boolean
-isTransferModalOpen: boolean
+transferTargetUserId: string | null // User ID when transfer confirm modal is open
 pendingMemberId: string | null      // For optimistic updates
 ```
 
@@ -542,11 +560,12 @@ For smaller screens:
 
 ### Phase 5: Ownership Transfer
 1. Fetch pending transfer when opening share modal
-2. TransferRequestModal (owner only, if no pending transfer)
-3. Pending transfer state UI (owner view with cancel option)
-4. Incoming transfer banner (recipient view with accept/decline)
-5. Handle accept/reject/cancel actions
-6. Post-acceptance: UI updates to reflect new owner
+2. Add overflow menu to member rows with "Remove" and "Transfer ownership" options
+3. TransferConfirmModal when owner clicks "Transfer ownership" on a member
+4. Inline pending transfer banner on recipient's member row (with cancel option)
+5. Incoming transfer banner at top of modal (recipient view with accept/decline)
+6. Handle accept/decline/cancel actions
+7. Post-acceptance: UI updates to reflect new owner
 
 ### Phase 6: Polish
 1. Animations and transitions
@@ -572,15 +591,18 @@ For smaller screens:
 - [ ] Writer/reader can view all members
 
 ### Transfer Flow
-- [ ] Owner can request transfer (transfer option hidden for non-owners)
-- [ ] Cannot request transfer if one is already pending
-- [ ] Owner sees pending transfer state with cancel option
-- [ ] Owner can cancel (delete) pending transfer
-- [ ] Recipient sees incoming transfer banner
-- [ ] Recipient can accept transfer
+- [ ] Owner sees "Transfer ownership" in member overflow menu
+- [ ] Non-owners do not see "Transfer ownership" option
+- [ ] Clicking "Transfer ownership" opens confirmation modal with member name
+- [ ] Cannot request transfer if one is already pending (option disabled or hidden)
+- [ ] Pending transfer shows inline banner on recipient's member row
+- [ ] Owner can cancel pending transfer from inline banner
+- [ ] Recipient sees incoming transfer banner at top of share modal
+- [ ] Recipient can accept transfer (becomes owner)
 - [ ] Recipient can decline (delete) transfer
 - [ ] After acceptance: recipient is owner, former owner is manager
 - [ ] Deleted transfers are hard deleted (not visible after delete)
+- [ ] UI correctly refetches memberships after transfer acceptance
 
 ### Edge Cases
 - [ ] Empty state displays correctly
@@ -601,13 +623,21 @@ For smaller screens:
 The generated TypeScript client needs these services:
 
 ```typescript
-// From OpenAPI spec
+// Membership operations
 SharingService.listConversationMemberships({ conversationId })
 SharingService.shareConversation({ conversationId, requestBody })
 SharingService.updateConversationMembership({ conversationId, userId, requestBody })
 SharingService.deleteConversationMembership({ conversationId, userId })
-SharingService.transferConversationOwnership({ conversationId, requestBody })
+
+// Ownership transfer operations
+SharingService.listPendingTransfers({ role? })        // GET /v1/ownership-transfers
+SharingService.createOwnershipTransfer({ requestBody }) // POST /v1/ownership-transfers
+SharingService.getTransfer({ transferId })            // GET /v1/ownership-transfers/{id}
+SharingService.acceptTransfer({ transferId })         // POST /v1/ownership-transfers/{id}/accept (returns 204)
+SharingService.deleteTransfer({ transferId })         // DELETE /v1/ownership-transfers/{id} (returns 204)
 ```
+
+**Note**: `acceptTransfer` returns `204 No Content` on success (the transfer is deleted after ownership changes). The UI should refetch memberships after acceptance to reflect the new owner.
 
 Verify the client is regenerated with sharing endpoints included.
 

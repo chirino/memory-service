@@ -159,13 +159,13 @@ Feature: Conversation Sharing REST API
     Then the response status should be 403
     And the response should contain error code "forbidden"
 
-  Scenario: List memberships without manager access
+  Scenario: List memberships as a reader
     Given there is a conversation owned by "bob"
     And I am authenticated as user "charlie"
     And the conversation is shared with user "charlie" with access level "reader"
     When I list memberships for that conversation
-    Then the response status should be 403
-    And the response should contain error code "forbidden"
+    Then the response status should be 200
+    And the response should contain at least 2 memberships
 
   Scenario: Update membership without manager access
     Given there is a conversation owned by "bob"

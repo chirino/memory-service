@@ -304,7 +304,8 @@ public class PostgresMemoryStore implements MemoryStore {
     public List<ConversationMembershipDto> listMemberships(String userId, String conversationId) {
         UUID cid = UUID.fromString(conversationId);
         UUID groupId = resolveGroupId(cid);
-        ensureHasAccess(groupId, userId, AccessLevel.MANAGER);
+        // Any member can view the membership list
+        ensureHasAccess(groupId, userId, AccessLevel.READER);
         return membershipRepository.listForConversationGroup(groupId).stream()
                 .map(this::toMembershipDto)
                 .collect(Collectors.toList());

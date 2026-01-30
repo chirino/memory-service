@@ -14,7 +14,7 @@ export class ConversationsService {
    * - `all`: include all conversations the user can access (roots and forks).
    * - `roots`: only include root conversations.
    * - `latest-fork`: include the most recently updated conversation per root tree.
-   * @param data.after Cursor for pagination; returns items after this conversation id.
+   * @param data.after Cursor for pagination; returns items after this conversation id (UUID format).
    * @param data.limit Maximum number of conversations to return.
    * @param data.query Optional text query for basic title/metadata search.
    * @returns unknown A list of conversations.
@@ -64,7 +64,7 @@ export class ConversationsService {
    * Get a conversation
    * Retrieve a conversation the user has access to.
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier.
+   * @param data.conversationId Conversation identifier (UUID format).
    * @returns Conversation The conversation.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -93,7 +93,7 @@ export class ConversationsService {
    *
    * **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
    * @param data The data for the request.
-   * @param data.conversationId
+   * @param data.conversationId Conversation identifier (UUID format).
    * @returns ErrorResponse Error response
    * @returns void Conversation deleted.
    * @throws ApiError
@@ -129,8 +129,8 @@ export class ConversationsService {
    * shown directly to end users. Memory entries are scoped to the
    * calling client id derived from the API key.
    * @param data The data for the request.
-   * @param data.conversationId
-   * @param data.after Cursor for pagination; returns entries after this entry id.
+   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.after Cursor for pagination; returns entries after this entry id (UUID format).
    * @param data.limit
    * @param data.channel Channel of entries to return. Defaults to `history` for the
    * user-visible conversation; `memory` returns agent memory entries
@@ -176,7 +176,7 @@ export class ConversationsService {
    * based on authentication (for example, API keys or tokens) and
    * stores the entry with the appropriate internal role and visibility.
    * @param data The data for the request.
-   * @param data.conversationId
+   * @param data.conversationId Conversation identifier (UUID format).
    * @param data.requestBody
    * @returns ErrorResponse Error response
    * @returns Entry The created entry.
@@ -213,7 +213,7 @@ export class ConversationsService {
    * sync is scoped to the calling client id (from the API key). Requires a
    * valid agent API key.
    * @param data The data for the request.
-   * @param data.conversationId
+   * @param data.conversationId Conversation identifier (UUID format).
    * @param data.requestBody
    * @returns SyncEntriesResponse Result of the sync operation.
    * @returns ErrorResponse Error response
@@ -248,8 +248,8 @@ export class ConversationsService {
    * conversation that original entry is not present and the next user entry
    * is supplied by the caller in a follow-up request.
    * @param data The data for the request.
-   * @param data.conversationId
-   * @param data.entryId
+   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.entryId Entry identifier (UUID format).
    * @param data.requestBody
    * @returns ErrorResponse Error response
    * @returns Conversation The newly created forked conversation.
@@ -285,7 +285,7 @@ export class ConversationsService {
    * This is intended for UIs that want to fetch all fork points once per conversation
    * and then decide how to render branch navigation (e.g., which is the oldest fork).
    * @param data The data for the request.
-   * @param data.conversationId
+   * @param data.conversationId Conversation identifier (UUID format).
    * @returns unknown Forked conversations related to this conversation's root.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -313,7 +313,7 @@ export class ConversationsService {
    * Requests cancellation of an in-progress response stream for the conversation.
    * Requires WRITER access and an authenticated user session.
    * @param data The data for the request.
-   * @param data.conversationId
+   * @param data.conversationId Conversation identifier (UUID format).
    * @returns unknown Cancel request accepted.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -340,31 +340,155 @@ export class ConversationsService {
 
 export class SharingService {
   /**
-   * Request ownership transfer
-   * Initiates a transfer of conversation ownership to another user. The other
-   * user must accept the transfer via a separate API or out-of-band process.
+   * List pending ownership transfers
+   * Returns all pending ownership transfers where the current user is either
+   * the current owner (sender) or the proposed new owner (recipient).
    * @param data The data for the request.
-   * @param data.conversationId
-   * @param data.requestBody
+   * @param data.role Filter by user's role in the transfer.
+   * @returns unknown List of pending transfers.
    * @returns ErrorResponse Error response
-   * @returns unknown Ownership transfer requested.
    * @throws ApiError
    */
-  public static transferConversationOwnership(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/transfer-ownership"]["post"]["req"],
+  public static listPendingTransfers(
+    data: $OpenApiTs["/v1/ownership-transfers"]["get"]["req"] = {},
   ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/transfer-ownership"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/transfer-ownership"]["post"]["res"][202]
+    $OpenApiTs["/v1/ownership-transfers"]["get"]["res"][200] | $OpenApiTs["/v1/ownership-transfers"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/ownership-transfers",
+      query: {
+        role: data.role,
+      },
+    });
+  }
+
+  /**
+   * Request ownership transfer
+   * Initiates a transfer of conversation ownership to another user.
+   *
+   * **Constraints**:
+   * - Only the current owner can initiate a transfer
+   * - The recipient must be an existing member of the conversation
+   * - Only one pending transfer can exist per conversation at a time
+   * - If a pending transfer already exists, returns 409 Conflict
+   *
+   * The recipient must accept the transfer via `POST /v1/ownership-transfers/{transferId}/accept`
+   * for the transfer to complete. Either party can delete the pending transfer
+   * via `DELETE /v1/ownership-transfers/{transferId}`.
+   * @param data The data for the request.
+   * @param data.requestBody
+   * @returns ErrorResponse Error response
+   * @returns OwnershipTransfer Transfer initiated successfully.
+   * @throws ApiError
+   */
+  public static createOwnershipTransfer(
+    data: $OpenApiTs["/v1/ownership-transfers"]["post"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/ownership-transfers"]["post"]["res"][200]
+    | $OpenApiTs["/v1/ownership-transfers"]["post"]["res"][201]
   > {
     return __request(OpenAPI, {
       method: "POST",
-      url: "/v1/conversations/{conversationId}/transfer-ownership",
-      path: {
-        conversationId: data.conversationId,
-      },
+      url: "/v1/ownership-transfers",
       body: data.requestBody,
       mediaType: "application/json",
       errors: {
+        400: "Error response",
+        403: "Error response",
+        404: "Resource not found",
+        409: "A pending transfer already exists for this conversation.",
+      },
+    });
+  }
+
+  /**
+   * Get transfer details
+   * Returns details of a specific ownership transfer. Only accessible to
+   * the current owner (sender) or proposed new owner (recipient).
+   * @param data The data for the request.
+   * @param data.transferId Transfer identifier (UUID format).
+   * @returns OwnershipTransfer Transfer details.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static getTransfer(
+    data: $OpenApiTs["/v1/ownership-transfers/{transferId}"]["get"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/ownership-transfers/{transferId}"]["get"]["res"][200]
+    | $OpenApiTs["/v1/ownership-transfers/{transferId}"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/ownership-transfers/{transferId}",
+      path: {
+        transferId: data.transferId,
+      },
+      errors: {
+        404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * Cancel or reject ownership transfer
+   * Deletes a pending ownership transfer. Can be called by either:
+   * - The current owner (sender) to cancel the transfer
+   * - The proposed new owner (recipient) to reject the transfer
+   *
+   * The transfer record is **hard deleted** from the database.
+   * @param data The data for the request.
+   * @param data.transferId Transfer identifier (UUID format).
+   * @returns ErrorResponse Error response
+   * @returns void Transfer deleted successfully.
+   * @throws ApiError
+   */
+  public static deleteTransfer(
+    data: $OpenApiTs["/v1/ownership-transfers/{transferId}"]["delete"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/ownership-transfers/{transferId}"]["delete"]["res"][200]
+    | $OpenApiTs["/v1/ownership-transfers/{transferId}"]["delete"]["res"][204]
+  > {
+    return __request(OpenAPI, {
+      method: "DELETE",
+      url: "/v1/ownership-transfers/{transferId}",
+      path: {
+        transferId: data.transferId,
+      },
+      errors: {
+        403: "Error response",
+        404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * Accept ownership transfer
+   * Accepts a pending ownership transfer. Only the proposed new owner
+   * (recipient) can accept. Upon acceptance:
+   * - The recipient becomes the new owner
+   * - The previous owner becomes a manager
+   * - The transfer record is deleted (transfers are always pending while they exist)
+   * @param data The data for the request.
+   * @param data.transferId Transfer identifier (UUID format).
+   * @returns ErrorResponse Error response
+   * @returns void Transfer accepted successfully. Ownership has been transferred.
+   * @throws ApiError
+   */
+  public static acceptTransfer(
+    data: $OpenApiTs["/v1/ownership-transfers/{transferId}/accept"]["post"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/ownership-transfers/{transferId}/accept"]["post"]["res"][200]
+    | $OpenApiTs["/v1/ownership-transfers/{transferId}/accept"]["post"]["res"][204]
+  > {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/v1/ownership-transfers/{transferId}/accept",
+      path: {
+        transferId: data.transferId,
+      },
+      errors: {
+        403: "Error response",
         404: "Resource not found",
       },
     });
@@ -374,7 +498,7 @@ export class SharingService {
    * List conversation memberships
    * Lists all users that have access to the conversation and their access levels.
    * @param data The data for the request.
-   * @param data.conversationId
+   * @param data.conversationId Conversation identifier (UUID format).
    * @returns unknown Memberships for the conversation.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -401,7 +525,7 @@ export class SharingService {
    * Share conversation with another user
    * Grants another user access to the conversation with the specified access level.
    * @param data The data for the request.
-   * @param data.conversationId
+   * @param data.conversationId Conversation identifier (UUID format).
    * @param data.requestBody
    * @returns ErrorResponse Error response
    * @returns ConversationMembership Created membership.
@@ -430,7 +554,7 @@ export class SharingService {
   /**
    * Update a member's access level
    * @param data The data for the request.
-   * @param data.conversationId
+   * @param data.conversationId Conversation identifier (UUID format).
    * @param data.userId
    * @param data.requestBody
    * @returns ConversationMembership Updated membership.
@@ -461,7 +585,7 @@ export class SharingService {
   /**
    * Remove a member from the conversation
    * @param data The data for the request.
-   * @param data.conversationId
+   * @param data.conversationId Conversation identifier (UUID format).
    * @param data.userId
    * @returns ErrorResponse Error response
    * @returns void Membership removed.

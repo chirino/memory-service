@@ -8,6 +8,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -78,6 +79,14 @@ public class MemoryServiceProxyResource {
         return proxy.listConversationForks(conversationId);
     }
 
+    @GET
+    @Path("/{conversationId}/memberships")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listConversationMemberships(
+            @PathParam("conversationId") String conversationId) {
+        return proxy.listConversationMemberships(conversationId);
+    }
+
     @POST
     @Path("/{conversationId}/memberships")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -87,60 +96,28 @@ public class MemoryServiceProxyResource {
         return proxy.shareConversation(conversationId, body);
     }
 
+    @PATCH
+    @Path("/{conversationId}/memberships/{userId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updateConversationMembership(
+            @PathParam("conversationId") String conversationId,
+            @PathParam("userId") String userId,
+            String body) {
+        return proxy.updateConversationMembership(conversationId, userId, body);
+    }
+
+    @DELETE
+    @Path("/{conversationId}/memberships/{userId}")
+    public Response deleteConversationMembership(
+            @PathParam("conversationId") String conversationId,
+            @PathParam("userId") String userId) {
+        return proxy.deleteConversationMembership(conversationId, userId);
+    }
+
     @DELETE
     @Path("/{conversationId}/response")
     public Response cancelResponse(@PathParam("conversationId") String conversationId) {
         return proxy.cancelResponse(conversationId);
     }
-
-    //
-    // These are addtional APIs we could expose, but our frontend does not need them yet.
-    //
-    // @POST
-    // @Consumes(MediaType.APPLICATION_JSON)
-    // @Produces(MediaType.APPLICATION_JSON)
-    // public Response createConversation(String body) {
-    //     return proxy.createConversation(body);
-    // }
-    // @POST
-    // @Path("/{conversationId}/entries")
-    // @Consumes(MediaType.APPLICATION_JSON)
-    // @Produces(MediaType.APPLICATION_JSON)
-    // public Response appendConversationEntry(
-    //         @PathParam("conversationId") String conversationId, String body) {
-    //     return proxy.appendConversationEntry(conversationId, body);
-    // }
-    // @GET
-    // @Path("/{conversationId}/memberships")
-    // @Produces(MediaType.APPLICATION_JSON)
-    // public Response listConversationMemberships(
-    //         @PathParam("conversationId") String conversationId) {
-    //     return proxy.listConversationMemberships(conversationId);
-    // }
-    // @PATCH
-    // @Path("/{conversationId}/memberships/{userId}")
-    // @Consumes(MediaType.APPLICATION_JSON)
-    // @Produces(MediaType.APPLICATION_JSON)
-    // public Response updateConversationMembership(
-    //         @PathParam("conversationId") String conversationId,
-    //         @PathParam("userId") String userId,
-    //         String body) {
-    //     return proxy.updateConversationMembership(conversationId, userId, body);
-    // }
-    // @POST
-    // @Path("/{conversationId}/transfer-ownership")
-    // @Consumes(MediaType.APPLICATION_JSON)
-    // public Response transferConversationOwnership(
-    //         @PathParam("conversationId") String conversationId, String body) {
-    //     return proxy.transferConversationOwnership(conversationId, body);
-    // }
-    // @POST
-    // @Path("/{conversationId}/summaries")
-    // @Consumes(MediaType.APPLICATION_JSON)
-    // @Produces(MediaType.APPLICATION_JSON)
-    // public Response createConversationSummary(
-    //         @PathParam("conversationId") String conversationId, String body) {
-    //     return proxy.createConversationSummary(conversationId, body);
-    // }
-
 }

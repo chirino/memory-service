@@ -5,8 +5,10 @@ import io.github.chirino.memoryservice.client.api.ConversationsApi;
 import io.github.chirino.memoryservice.client.api.SharingApi;
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
 import io.github.chirino.memoryservice.client.model.Channel;
+import io.github.chirino.memoryservice.client.model.CreateOwnershipTransferRequest;
 import io.github.chirino.memoryservice.client.model.ForkFromEntryRequest;
 import io.github.chirino.memoryservice.client.model.ShareConversationRequest;
+import io.github.chirino.memoryservice.client.model.UpdateConversationMembershipRequest;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
@@ -131,6 +133,67 @@ public class MemoryServiceProxy {
                 HttpStatus.OK);
     }
 
+    public ResponseEntity<?> listConversationMemberships(String conversationId) {
+        return executeSharingApi(
+                api -> api.listConversationMembershipsWithHttpInfo(toUuid(conversationId)),
+                HttpStatus.OK);
+    }
+
+    public ResponseEntity<?> updateConversationMembership(
+            String conversationId, String userId, String body) {
+        try {
+            UpdateConversationMembershipRequest request =
+                    OBJECT_MAPPER.readValue(body, UpdateConversationMembershipRequest.class);
+            return executeSharingApi(
+                    api ->
+                            api.updateConversationMembershipWithHttpInfo(
+                                    toUuid(conversationId), userId, request),
+                    HttpStatus.OK);
+        } catch (Exception e) {
+            LOG.error("Error parsing update membership request body", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "Invalid request body"));
+        }
+    }
+
+    public ResponseEntity<?> deleteConversationMembership(String conversationId, String userId) {
+        return executeSharingApiVoid(
+                api -> api.deleteConversationMembershipWithHttpInfo(toUuid(conversationId), userId),
+                HttpStatus.NO_CONTENT);
+    }
+
+    public ResponseEntity<?> listPendingTransfers(String role) {
+        return executeSharingApi(api -> api.listPendingTransfersWithHttpInfo(role), HttpStatus.OK);
+    }
+
+    public ResponseEntity<?> createOwnershipTransfer(String body) {
+        try {
+            CreateOwnershipTransferRequest request =
+                    OBJECT_MAPPER.readValue(body, CreateOwnershipTransferRequest.class);
+            return executeSharingApi(
+                    api -> api.createOwnershipTransferWithHttpInfo(request), HttpStatus.CREATED);
+        } catch (Exception e) {
+            LOG.error("Error parsing create transfer request body", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "Invalid request body"));
+        }
+    }
+
+    public ResponseEntity<?> getTransfer(String transferId) {
+        return executeSharingApi(
+                api -> api.getTransferWithHttpInfo(toUuid(transferId)), HttpStatus.OK);
+    }
+
+    public ResponseEntity<?> acceptTransfer(String transferId) {
+        return executeSharingApi(
+                api -> api.acceptTransferWithHttpInfo(toUuid(transferId)), HttpStatus.OK);
+    }
+
+    public ResponseEntity<?> deleteTransfer(String transferId) {
+        return executeSharingApiVoid(
+                api -> api.deleteTransferWithHttpInfo(toUuid(transferId)), HttpStatus.NO_CONTENT);
+    }
+
     private ConversationsApi conversationsApi(@Nullable String explicitBearerToken) {
         return new ConversationsApi(createConfiguredApiClient(explicitBearerToken));
     }
@@ -174,6 +237,25 @@ public class MemoryServiceProxy {
         try {
             ResponseEntity<T> upstream = action.apply(sharingApi(null)).block(resolveTimeout());
             return handleUpstreamResponse(upstream);
+        } catch (WebClientResponseException e) {
+            LOG.warn("memory-service call failed: {}", e.getMessage());
+            return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
+        } catch (Exception e) {
+            LOG.error("Unexpected error calling memory-service", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Internal server error"));
+        }
+    }
+
+    private ResponseEntity<?> executeSharingApiVoid(
+            ThrowingFunction<SharingApi, Mono<ResponseEntity<Void>>> action,
+            HttpStatus expectedStatus) {
+        try {
+            ResponseEntity<Void> upstream = action.apply(sharingApi(null)).block(resolveTimeout());
+            if (upstream == null) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            }
+            return ResponseEntity.status(upstream.getStatusCode()).build();
         } catch (WebClientResponseException e) {
             LOG.warn("memory-service call failed: {}", e.getMessage());
             return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());

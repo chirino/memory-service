@@ -313,7 +313,8 @@ public class MongoMemoryStore implements MemoryStore {
     @Override
     public List<ConversationMembershipDto> listMemberships(String userId, String conversationId) {
         String groupId = resolveGroupId(conversationId);
-        ensureHasAccess(groupId, userId, AccessLevel.MANAGER);
+        // Any member can view the membership list
+        ensureHasAccess(groupId, userId, AccessLevel.READER);
         return membershipRepository.listForConversationGroup(groupId).stream()
                 .map(this::toMembershipDto)
                 .collect(Collectors.toList());

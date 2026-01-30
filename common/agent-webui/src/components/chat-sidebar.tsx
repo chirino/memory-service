@@ -91,20 +91,16 @@ export function ChatSidebar({
             placeholder="Search conversations..."
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
-            className="w-full rounded-xl border border-transparent bg-mist py-2.5 pl-10 pr-4 text-sm placeholder:text-stone/60 transition-colors focus:border-stone/20 focus:outline-none"
+            className="w-full rounded-xl border border-transparent bg-mist py-2.5 pl-10 pr-4 text-sm transition-colors placeholder:text-stone/60 focus:border-stone/20 focus:outline-none"
           />
         </div>
       </div>
 
-      {statusMessage && (
-        <div className="px-5 py-2 text-xs text-terracotta">{statusMessage}</div>
-      )}
+      {statusMessage && <div className="px-5 py-2 text-xs text-terracotta">{statusMessage}</div>}
 
       {/* Conversation List */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        {filteredConversations.length === 0 && (
-          <p className="px-4 text-sm text-stone">No conversations yet.</p>
-        )}
+        {filteredConversations.length === 0 && <p className="px-4 text-sm text-stone">No conversations yet.</p>}
 
         <div className="space-y-1">
           {filteredConversations.map((conversation, index) => {
@@ -113,29 +109,19 @@ export function ChatSidebar({
             const animationDelay = `${index * 0.05}s`;
 
             return (
-              <div
-                key={conversation.id}
-                className="animate-fade-in"
-                style={{ animationDelay }}
-              >
+              <div key={conversation.id} className="animate-fade-in" style={{ animationDelay }}>
                 <button
                   type="button"
                   onClick={() => onSelectConversation(conversation)}
                   className={`w-full rounded-xl px-4 py-3.5 text-left transition-all ${
-                    isSelected
-                      ? "border border-stone/10 bg-mist"
-                      : "border border-transparent hover:bg-mist/60"
+                    isSelected ? "border border-stone/10 bg-mist" : "border border-transparent hover:bg-mist/60"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <h3 className="truncate font-medium text-ink">
-                        {conversation.title || "Untitled conversation"}
-                      </h3>
+                      <h3 className="truncate font-medium text-ink">{conversation.title || "Untitled conversation"}</h3>
                       {conversation.lastMessagePreview && (
-                        <p className="mt-1 line-clamp-2 text-sm text-stone">
-                          {conversation.lastMessagePreview}
-                        </p>
+                        <p className="mt-1 line-clamp-2 text-sm text-stone">{conversation.lastMessagePreview}</p>
                       )}
                     </div>
                     {isResumable ? (

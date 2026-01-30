@@ -5,7 +5,9 @@ import type { ConversationSummary } from "@/client";
 import { ApiError, ConversationsService, OpenAPI } from "@/client";
 import { ChatPanel } from "@/components/chat-panel";
 import { ChatSidebar } from "@/components/chat-sidebar";
+import { PendingTransfersPanel } from "@/components/sharing";
 import { useResumeCheck } from "@/hooks/useResumeCheck";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type ListUserConversationsResponse = {
   data?: ConversationSummary[];
@@ -116,6 +118,10 @@ function App() {
   const conversationIds = conversations.map((conv) => conv.id).filter((id): id is string => !!id);
   const resumeCheckQuery = useResumeCheck(conversationIds);
   const resumableConversationIds = new Set(resumeCheckQuery.data ?? []);
+
+  // Get current user ID from the backend
+  const currentUserQuery = useCurrentUser();
+  const currentUserId = currentUserQuery.data ?? null;
 
   useEffect(() => {
     const interceptor = (response: Response) => {
@@ -350,14 +356,20 @@ function App() {
   return (
     <div className="flex h-screen">
       {sidebarContent}
-      <ChatPanel
-        conversationId={selectedConversationId}
-        onSelectConversationId={handleSelectConversationId}
-        knownConversationIds={resolvedConversationIds}
-        resumableConversationIds={resumableConversationIds}
-        onIndexConversation={handleIndexConversationById}
-        onDeleteConversation={handleDeleteConversationById}
-      />
+      <div className="flex flex-1 flex-col">
+        <PendingTransfersPanel
+          onNavigateToConversation={handleSelectConversationId}
+        />
+        <ChatPanel
+          conversationId={selectedConversationId}
+          onSelectConversationId={handleSelectConversationId}
+          knownConversationIds={resolvedConversationIds}
+          resumableConversationIds={resumableConversationIds}
+          onIndexConversation={handleIndexConversationById}
+          onDeleteConversation={handleDeleteConversationById}
+          currentUserId={currentUserId}
+        />
+      </div>
     </div>
   );
 }
