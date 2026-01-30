@@ -629,6 +629,7 @@ paths:
       summary: List conversation memberships
       description: |-
         Lists all users that have access to the conversation and their access levels.
+        Any conversation member (owner, manager, writer, or reader) can list memberships.
       operationId: listConversationMemberships
       parameters:
         - name: conversationId

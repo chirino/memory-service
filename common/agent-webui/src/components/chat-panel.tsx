@@ -17,6 +17,7 @@ import { useWebSocketStream } from "@/hooks/useWebSocketStream";
 import { useSseStream } from "@/hooks/useSseStream";
 import type { StreamStartParams } from "@/hooks/useStreamTypes";
 import { Check, Copy, CornerUpLeft, Menu, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { ShareButton } from "@/components/sharing";
 
 type ListUserEntriesResponse = {
   data?: Entry[];
@@ -47,6 +48,7 @@ type ChatPanelProps = {
   knownConversationIds?: Set<string>;
   onIndexConversation?: (conversationId: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
+  currentUserId?: string | null;
 };
 
 type PendingFork = {
@@ -72,6 +74,7 @@ type ChatMessageRowProps = {
   onCopy: (content: string) => void;
   copiedMessageId: string | null;
   composerDisabled: boolean;
+  isReader: boolean;
   conversationId: string | null;
   forkOptionsCount: number;
   forkLabels: Record<string, string>;
@@ -103,6 +106,7 @@ function ChatMessageRow({
   onCopy,
   copiedMessageId,
   composerDisabled,
+  isReader,
   conversationId,
   forkOptionsCount,
   forkLabels,
@@ -236,7 +240,7 @@ function ChatMessageRow({
               >
                 {isCopied ? <Check className="h-3.5 w-3.5 text-sage" /> : <Copy className="h-3.5 w-3.5" />}
               </button>
-              {isUser && (
+              {isUser && !isReader && (
                 <button
                   type="button"
                   onClick={() => onEditStart(message)}
@@ -372,6 +376,7 @@ type ChatPanelContentProps = {
   setStreamMode: React.Dispatch<React.SetStateAction<StreamMode>>;
   onIndexConversation?: (conversationId: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
+  currentUserId?: string | null;
 };
 
 function formatConversationTime(value?: string): string {
@@ -405,6 +410,7 @@ function ChatPanelContent({
   conversationQuery,
   onIndexConversation,
   onDeleteConversation,
+  currentUserId,
 }: ChatPanelContentProps & {
   forksQuery: ReturnType<typeof useQuery<ConversationForkSummary[], ApiError, ConversationForkSummary[]>>;
   conversationMetaById: Map<string, ConversationMeta>;
@@ -903,7 +909,9 @@ function ChatPanelContent({
     }
   }, [editingMessage, editingText, onSelectConversationId, pendingForkRef, queryClient]);
 
-  const composerDisabled = isBusy || forking || canceling;
+  // Readers can only view conversations, not send messages or edit
+  const isReader = conversationQuery.data?.accessLevel === "reader";
+  const composerDisabled = isBusy || forking || canceling || isReader;
 
   // Get conversation title and start time
   const conversationTitle = conversationQuery.data?.title || "New conversation";
@@ -918,11 +926,7 @@ function ChatPanelContent({
         <div className="mx-auto flex max-w-3xl items-center justify-between">
           <div>
             <h2 className="font-serif text-xl">
-              {messages.length === 0 ? (
-                <span className="text-stone/60">New conversation</span>
-              ) : (
-                conversationTitle
-              )}
+              {messages.length === 0 ? <span className="text-stone/60">New conversation</span> : conversationTitle}
             </h2>
             <p className="mt-0.5 text-sm text-stone">
               {messages.length === 0
@@ -932,50 +936,63 @@ function ChatPanelContent({
                   : ""}
             </p>
           </div>
-          {/* Conversation menu */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="rounded-lg p-2 text-stone transition-colors hover:bg-mist hover:text-ink"
-              aria-label="Conversation menu"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-full z-50 mt-2 w-48 animate-slide-up overflow-hidden rounded-xl border border-stone/20 bg-cream shadow-xl">
-                <div className="py-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (conversationId) {
-                        onIndexConversation?.(conversationId);
-                      }
-                      setMenuOpen(false);
-                    }}
-                    disabled={!conversationId || messages.length === 0}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink transition-colors hover:bg-mist disabled:opacity-50"
-                  >
-                    <Sparkles className="h-4 w-4 text-sage" />
-                    Index conversation
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (conversationId) {
-                        onDeleteConversation?.(conversationId);
-                      }
-                      setMenuOpen(false);
-                    }}
-                    disabled={!conversationId || messages.length === 0}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink transition-colors hover:bg-mist disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4 text-terracotta" />
-                    Delete conversation
-                  </button>
-                </div>
-              </div>
+          {/* Header actions */}
+          <div className="flex items-center gap-2">
+            {/* Share button */}
+            {messages.length > 0 && currentUserId && (
+              <ShareButton
+                conversationId={conversationId}
+                conversationTitle={conversationTitle}
+                currentUserId={currentUserId}
+                disabled={!conversationId}
+              />
             )}
+
+            {/* Conversation menu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="rounded-lg p-2 text-stone transition-colors hover:bg-mist hover:text-ink"
+                aria-label="Conversation menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-full z-50 mt-2 w-48 animate-slide-up overflow-hidden rounded-xl border border-stone/20 bg-cream shadow-xl">
+                  <div className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (conversationId) {
+                          onIndexConversation?.(conversationId);
+                        }
+                        setMenuOpen(false);
+                      }}
+                      disabled={!conversationId || messages.length === 0}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink transition-colors hover:bg-mist disabled:opacity-50"
+                    >
+                      <Sparkles className="h-4 w-4 text-sage" />
+                      Index conversation
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (conversationId) {
+                          onDeleteConversation?.(conversationId);
+                        }
+                        setMenuOpen(false);
+                      }}
+                      disabled={!conversationId || messages.length === 0}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink transition-colors hover:bg-mist disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4 text-terracotta" />
+                      Delete conversation
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Stream mode toggle - hidden for now
@@ -1069,6 +1086,7 @@ function ChatPanelContent({
                             onCopy={(content) => handleCopy(turn.user!.id, content)}
                             copiedMessageId={copiedMessageId}
                             composerDisabled={composerDisabled}
+                            isReader={isReader}
                             conversationId={conversationId}
                             forkOptionsCount={(forkOptionsByMessageId.get(turn.user.id) ?? []).length}
                             forkLabels={forkLabels}
@@ -1120,6 +1138,7 @@ function ChatPanelContent({
                           onCopy={(content) => handleCopy(message.id, content)}
                           copiedMessageId={copiedMessageId}
                           composerDisabled={composerDisabled}
+                          isReader={isReader}
                           conversationId={conversationId}
                           forkOptionsCount={messageForkOptions.length}
                           forkLabels={forkLabels}
@@ -1155,12 +1174,22 @@ function ChatPanelContent({
         </ConversationsUI.Messages>
       </ConversationsUI.Viewport>
 
-      <ConversationsUI.Composer
-        disabled={!conversationId || composerDisabled || Boolean(editingMessage)}
-        cancelDisabled={canceling}
-        sendLabel="Send"
-        stopLabel="Stop"
-      />
+      {isReader ? (
+        <div className="border-t border-stone/10 bg-cream px-8 py-5">
+          <div className="mx-auto max-w-3xl">
+            <div className="rounded-2xl bg-mist px-5 py-4 text-center text-sm text-stone">
+              You have read-only access to this conversation
+            </div>
+          </div>
+        </div>
+      ) : (
+        <ConversationsUI.Composer
+          disabled={!conversationId || composerDisabled || Boolean(editingMessage)}
+          cancelDisabled={canceling}
+          sendLabel="Send"
+          stopLabel="Stop"
+        />
+      )}
     </main>
   );
 }
@@ -1172,6 +1201,7 @@ export function ChatPanel({
   resumableConversationIds,
   onIndexConversation,
   onDeleteConversation,
+  currentUserId,
 }: ChatPanelProps) {
   const [assistantIdOverrides, setAssistantIdOverrides] = useState<Record<string, string>>({});
   const assistantIdOverridesRef = useRef<Record<string, string>>({});
@@ -1654,6 +1684,7 @@ export function ChatPanel({
         setStreamMode={setStreamMode}
         onIndexConversation={onIndexConversation}
         onDeleteConversation={onDeleteConversation}
+        currentUserId={currentUserId}
       />
     </Conversation.Root>
   );

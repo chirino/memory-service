@@ -126,7 +126,7 @@ Feature: Conversation Sharing gRPC API
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
-  Scenario: List memberships without manager access via gRPC
+  Scenario: List memberships as a reader via gRPC
     Given there is a conversation owned by "bob"
     And I am authenticated as user "charlie"
     And the conversation is shared with user "charlie" with access level "reader"
@@ -134,7 +134,7 @@ Feature: Conversation Sharing gRPC API
     """
     conversation_id: "${conversationId}"
     """
-    Then the gRPC response should have status "PERMISSION_DENIED"
+    Then the gRPC response should not have an error
 
   Scenario: Update membership without manager access via gRPC
     Given there is a conversation owned by "bob"

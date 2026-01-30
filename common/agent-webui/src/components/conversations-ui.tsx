@@ -86,9 +86,7 @@ function ConversationsUIMessageRow({
         <div className={`relative flex flex-col gap-1 ${isUser ? "max-w-[75%] items-end" : "max-w-[85%] items-start"}`}>
           <div
             className={`group relative px-5 py-3.5 text-[15px] leading-relaxed ${
-              isUser
-                ? "rounded-2xl rounded-tr-md bg-ink text-cream"
-                : "rounded-2xl rounded-tl-md bg-mist text-ink"
+              isUser ? "rounded-2xl rounded-tr-md bg-ink text-cream" : "rounded-2xl rounded-tl-md bg-mist text-ink"
             }`}
           >
             {children ?? (
@@ -176,7 +174,9 @@ function ConversationsUIEmptyState({
                 className="group w-full rounded-xl border border-transparent bg-mist px-5 py-4 text-left transition-all hover:border-stone/20"
               >
                 <div className="flex items-center gap-3">
-                  <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${suggestion.iconBg}`}>
+                  <div
+                    className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${suggestion.iconBg}`}
+                  >
                     <Icon className={`h-4 w-4 ${suggestion.iconColor}`} />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -240,7 +240,7 @@ function ConversationsUIComposer({
             placeholder={placeholder}
             rows={3}
             disabled={disabled}
-            className={`w-full resize-none rounded-2xl border border-transparent bg-mist px-5 py-4 pr-24 text-[15px] placeholder:text-stone/60 transition-colors focus:border-stone/20 focus:outline-none disabled:opacity-50 ${inputClassName ?? ""}`}
+            className={`w-full resize-none rounded-2xl border border-transparent bg-mist px-5 py-4 pr-24 text-[15px] transition-colors placeholder:text-stone/60 focus:border-stone/20 focus:outline-none disabled:opacity-50 ${inputClassName ?? ""}`}
           />
           <div className="absolute bottom-3 right-3 flex items-center gap-2">
             {isBusy && (

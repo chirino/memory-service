@@ -12,6 +12,7 @@ import io.github.chirino.memory.client.api.SharingApi;
 import io.github.chirino.memory.client.model.Channel;
 import io.github.chirino.memory.client.model.CreateConversationRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
+import io.github.chirino.memory.client.model.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.client.model.ForkFromEntryRequest;
 import io.github.chirino.memory.client.model.IndexTranscriptRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
@@ -187,6 +188,60 @@ public class MemoryServiceProxy {
             LOG.errorf(e, "Error parsing update membership request body");
             return handleException(e);
         }
+    }
+
+    public Response deleteConversationMembership(String conversationId, String userId) {
+        return executeVoid(
+                () -> sharingApi().deleteConversationMembership(toUuid(conversationId), userId),
+                NO_CONTENT,
+                "Error deleting membership for history %s, user %s",
+                conversationId,
+                userId);
+    }
+
+    public Response listPendingTransfers(String role) {
+        return execute(
+                () -> sharingApi().listPendingTransfers(role),
+                OK,
+                "Error listing pending transfers");
+    }
+
+    public Response createOwnershipTransfer(String body) {
+        try {
+            CreateOwnershipTransferRequest request =
+                    OBJECT_MAPPER.readValue(body, CreateOwnershipTransferRequest.class);
+            return execute(
+                    () -> sharingApi().createOwnershipTransfer(request),
+                    CREATED,
+                    "Error creating ownership transfer");
+        } catch (Exception e) {
+            LOG.errorf(e, "Error parsing create transfer request body");
+            return handleException(e);
+        }
+    }
+
+    public Response getTransfer(String transferId) {
+        return execute(
+                () -> sharingApi().getTransfer(toUuid(transferId)),
+                OK,
+                "Error getting transfer %s",
+                transferId);
+    }
+
+    public Response acceptTransfer(String transferId) {
+        return execute(
+                () -> sharingApi().acceptTransfer(toUuid(transferId)),
+                OK,
+                "Error accepting transfer %s",
+                transferId);
+    }
+
+    public Response deleteTransfer(String transferId) {
+        return executeVoid(
+                () -> sharingApi().deleteTransfer(toUuid(transferId)),
+                NO_CONTENT,
+                "Error deleting transfer %s",
+                transferId);
     }
 
     public Response indexConversationTranscript(String body) {

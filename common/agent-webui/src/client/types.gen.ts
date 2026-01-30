@@ -14,6 +14,9 @@ export type ErrorResponse = {
 export type AccessLevel = "owner" | "manager" | "writer" | "reader";
 
 export type ConversationSummary = {
+  /**
+   * Unique identifier for the conversation.
+   */
   id?: string;
   title?: string | null;
   ownerUserId?: string;
@@ -24,7 +27,13 @@ export type ConversationSummary = {
 };
 
 export type Conversation = ConversationSummary & {
+  /**
+   * Entry ID where this conversation forked from its parent.
+   */
   forkedAtEntryId?: string | null;
+  /**
+   * Conversation ID from which this conversation was forked.
+   */
   forkedAtConversationId?: string | null;
 };
 
@@ -36,6 +45,9 @@ export type CreateConversationRequest = {
 };
 
 export type ConversationMembership = {
+  /**
+   * Unique identifier for the conversation.
+   */
   conversationId?: string;
   userId?: string;
   accessLevel?: AccessLevel;
@@ -46,13 +58,16 @@ export type ConversationMembership = {
  * Summary of a forked conversation originating at a given entry.
  */
 export type ConversationForkSummary = {
+  /**
+   * Unique identifier for the forked conversation.
+   */
   conversationId?: string;
   /**
-   * Entry id at which this forked conversation diverged.
+   * Entry ID at which this forked conversation diverged.
    */
   forkedAtEntryId?: string;
   /**
-   * Conversation id where the fork occurred.
+   * Conversation ID where the fork occurred.
    */
   forkedAtConversationId?: string | null;
   title?: string | null;
@@ -78,7 +93,13 @@ export type ForkFromEntryRequest = {
 export type Channel = "history" | "memory" | "transcript";
 
 export type Entry = {
+  /**
+   * Unique identifier for the entry.
+   */
   id: string;
+  /**
+   * Unique identifier for the conversation this entry belongs to.
+   */
   conversationId: string;
   /**
    * Human user this entry is associated with.
@@ -170,7 +191,7 @@ export type IndexTranscriptRequest = {
    */
   transcript: string;
   /**
-   * Highest entry id covered by the index (inclusive).
+   * Highest entry ID covered by the index (inclusive).
    */
   untilEntryId: string;
 };
@@ -181,9 +202,12 @@ export type SearchConversationsRequest = {
    */
   query: string;
   topK?: number;
+  /**
+   * Filter search to specific conversations (UUID format).
+   */
   conversationIds?: Array<string> | null;
   /**
-   * Optional upper bound entry id for temporal filtering.
+   * Optional upper bound entry ID for temporal filtering.
    */
   before?: string | null;
 };
@@ -194,12 +218,55 @@ export type SearchResult = {
   highlights?: string | null;
 };
 
+/**
+ * Represents a pending ownership transfer request.
+ * Transfers are always "pending" while they exist; accepted/rejected transfers
+ * are hard deleted from the database.
+ */
+export type OwnershipTransfer = {
+  /**
+   * Unique identifier for the transfer.
+   */
+  id: string;
+  /**
+   * The conversation being transferred.
+   */
+  conversationId: string;
+  /**
+   * Title of the conversation (for display purposes).
+   */
+  conversationTitle?: string | null;
+  /**
+   * Current owner initiating the transfer.
+   */
+  fromUserId: string;
+  /**
+   * Proposed new owner (recipient).
+   */
+  toUserId: string;
+  /**
+   * When the transfer was initiated.
+   */
+  createdAt: string;
+};
+
+export type CreateOwnershipTransferRequest = {
+  /**
+   * The conversation to transfer ownership of.
+   */
+  conversationId: string;
+  /**
+   * User ID of the proposed new owner. Must be an existing member.
+   */
+  newOwnerUserId: string;
+};
+
 export type $OpenApiTs = {
   "/v1/conversations": {
     get: {
       req: {
         /**
-         * Cursor for pagination; returns items after this conversation id.
+         * Cursor for pagination; returns items after this conversation id (UUID format).
          */
         after?: string | null;
         /**
@@ -245,7 +312,7 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
-         * Conversation identifier.
+         * Conversation identifier (UUID format).
          */
         conversationId: string;
       };
@@ -262,6 +329,9 @@ export type $OpenApiTs = {
     };
     delete: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
       };
       res: {
@@ -284,7 +354,7 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
-         * Cursor for pagination; returns entries after this entry id.
+         * Cursor for pagination; returns entries after this entry id (UUID format).
          */
         after?: string | null;
         /**
@@ -293,6 +363,9 @@ export type $OpenApiTs = {
          * scoped to the calling client id.
          */
         channel?: Channel;
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
         /**
          * Optional epoch filter when listing the `memory` channel. Valid values
@@ -316,6 +389,9 @@ export type $OpenApiTs = {
     };
     post: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
         requestBody: CreateEntryRequest;
       };
@@ -338,6 +414,9 @@ export type $OpenApiTs = {
   "/v1/conversations/{conversationId}/entries/sync": {
     post: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
         requestBody: SyncEntriesRequest;
       };
@@ -356,7 +435,13 @@ export type $OpenApiTs = {
   "/v1/conversations/{conversationId}/entries/{entryId}/fork": {
     post: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
+        /**
+         * Entry identifier (UUID format).
+         */
         entryId: string;
         requestBody?: ForkFromEntryRequest;
       };
@@ -379,6 +464,9 @@ export type $OpenApiTs = {
   "/v1/conversations/{conversationId}/forks": {
     get: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
       };
       res: {
@@ -396,6 +484,9 @@ export type $OpenApiTs = {
   "/v1/conversations/{conversationId}/response": {
     delete: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
       };
       res: {
@@ -414,13 +505,24 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/transfer-ownership": {
+  "/v1/ownership-transfers": {
+    get: {
+      req: {
+        /**
+         * Filter by user's role in the transfer.
+         */
+        role?: "sender" | "recipient" | "all";
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+      };
+    };
     post: {
       req: {
-        conversationId: string;
-        requestBody: {
-          newOwnerUserId: string;
-        };
+        requestBody: CreateOwnershipTransferRequest;
       };
       res: {
         /**
@@ -428,9 +530,102 @@ export type $OpenApiTs = {
          */
         200: ErrorResponse;
         /**
-         * Ownership transfer requested.
+         * Transfer initiated successfully.
          */
-        202: unknown;
+        201: OwnershipTransfer;
+        /**
+         * Error response
+         */
+        400: ErrorResponse;
+        /**
+         * Error response
+         */
+        403: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+        /**
+         * A pending transfer already exists for this conversation.
+         */
+        409: {
+          error?: string;
+          code?: string;
+          /**
+           * ID of the existing pending transfer
+           */
+          existingTransferId?: string;
+        };
+      };
+    };
+  };
+  "/v1/ownership-transfers/{transferId}": {
+    get: {
+      req: {
+        /**
+         * Transfer identifier (UUID format).
+         */
+        transferId: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
+    delete: {
+      req: {
+        /**
+         * Transfer identifier (UUID format).
+         */
+        transferId: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Transfer deleted successfully.
+         */
+        204: void;
+        /**
+         * Error response
+         */
+        403: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
+  };
+  "/v1/ownership-transfers/{transferId}/accept": {
+    post: {
+      req: {
+        /**
+         * Transfer identifier (UUID format).
+         */
+        transferId: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Transfer accepted successfully. Ownership has been transferred.
+         */
+        204: void;
+        /**
+         * Error response
+         */
+        403: ErrorResponse;
         /**
          * Resource not found
          */
@@ -441,6 +636,9 @@ export type $OpenApiTs = {
   "/v1/conversations/{conversationId}/memberships": {
     get: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
       };
       res: {
@@ -456,6 +654,9 @@ export type $OpenApiTs = {
     };
     post: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
         requestBody: ShareConversationRequest;
       };
@@ -478,6 +679,9 @@ export type $OpenApiTs = {
   "/v1/conversations/{conversationId}/memberships/{userId}": {
     patch: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
         requestBody: {
           accessLevel?: AccessLevel;
@@ -497,6 +701,9 @@ export type $OpenApiTs = {
     };
     delete: {
       req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
         conversationId: string;
         userId: string;
       };

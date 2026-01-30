@@ -4,6 +4,7 @@ import io.github.chirino.memoryservice.client.MemoryServiceProxy;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -61,10 +62,29 @@ class MemoryServiceProxyController {
         return proxy.listConversationForks(conversationId);
     }
 
+    @GetMapping("/{conversationId}/memberships")
+    public ResponseEntity<?> listConversationMemberships(@PathVariable String conversationId) {
+        return proxy.listConversationMemberships(conversationId);
+    }
+
     @PostMapping("/{conversationId}/memberships")
     public ResponseEntity<?> shareConversation(
             @PathVariable String conversationId, @RequestBody String body) {
         return proxy.shareConversation(conversationId, body);
+    }
+
+    @PatchMapping("/{conversationId}/memberships/{userId}")
+    public ResponseEntity<?> updateConversationMembership(
+            @PathVariable String conversationId,
+            @PathVariable String userId,
+            @RequestBody String body) {
+        return proxy.updateConversationMembership(conversationId, userId, body);
+    }
+
+    @DeleteMapping("/{conversationId}/memberships/{userId}")
+    public ResponseEntity<?> deleteConversationMembership(
+            @PathVariable String conversationId, @PathVariable String userId) {
+        return proxy.deleteConversationMembership(conversationId, userId);
     }
 
     @DeleteMapping("/{conversationId}/response")
