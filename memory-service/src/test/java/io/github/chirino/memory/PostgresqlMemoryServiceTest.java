@@ -37,10 +37,7 @@ class PostgresqlMemoryServiceTest extends AbstractMemoryServiceTest {
                                                         .toString()
                                                         .equals(conversationId)
                                                 && t.getFromUserId().equals(fromUserId)
-                                                && t.getToUserId().equals(toUserId)
-                                                && t.getStatus()
-                                                        == ConversationOwnershipTransferEntity
-                                                                .TransferStatus.PENDING);
+                                                && t.getToUserId().equals(toUserId));
         assertThat(found, is(true));
     }
 

@@ -439,36 +439,183 @@ paths:
   ############################################################
   # Sharing
   ############################################################
-  /v1/conversations/{conversationId}/transfer-ownership:
+  /v1/ownership-transfers:
+    get:
+      tags: [Sharing]
+      summary: List pending ownership transfers
+      description: |-
+        Returns all pending ownership transfers where the current user is either
+        the current owner (sender) or the proposed new owner (recipient).
+      operationId: listPendingTransfers
+      parameters:
+        - name: role
+          in: query
+          required: false
+          description: Filter by user's role in the transfer.
+          schema:
+            type: string
+            enum: [sender, recipient, all]
+            default: all
+      responses:
+        '200':
+          description: List of pending transfers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OwnershipTransfer'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
     post:
       tags: [Sharing]
       summary: Request ownership transfer
       description: |-
-        Initiates a transfer of conversation ownership to another user. The other
-        user must accept the transfer via a separate API or out-of-band process.
-      operationId: transferConversationOwnership
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          description: Conversation identifier (UUID format).
-          schema:
-            type: string
-            format: uuid
+        Initiates a transfer of conversation ownership to another user.
+
+        **Constraints**:
+        - Only the current owner can initiate a transfer
+        - The recipient must be an existing member of the conversation
+        - Only one pending transfer can exist per conversation at a time
+        - If a pending transfer already exists, returns 409 Conflict
+
+        The recipient must accept the transfer via `POST /v1/ownership-transfers/{transferId}/accept`
+        for the transfer to complete. Either party can delete the pending transfer
+        via `DELETE /v1/ownership-transfers/{transferId}`.
+      operationId: createOwnershipTransfer
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - newOwnerUserId
-              properties:
-                newOwnerUserId:
-                  type: string
+              $ref: '#/components/schemas/CreateOwnershipTransferRequest'
       responses:
-        '202':
-          description: Ownership transfer requested.
+        '201':
+          description: Transfer initiated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnershipTransfer'
+        '400':
+          description: Invalid request (recipient not a member, transfer to self).
+          $ref: '#/components/responses/Error'
+        '403':
+          description: Not authorized (not the owner).
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: A pending transfer already exists for this conversation.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "A pending ownership transfer already exists for this conversation"
+                  code:
+                    type: string
+                    example: "TRANSFER_ALREADY_PENDING"
+                  existingTransferId:
+                    type: string
+                    format: uuid
+                    description: ID of the existing pending transfer
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/ownership-transfers/{transferId}:
+    get:
+      tags: [Sharing]
+      summary: Get transfer details
+      description: |-
+        Returns details of a specific ownership transfer. Only accessible to
+        the current owner (sender) or proposed new owner (recipient).
+      operationId: getTransfer
+      parameters:
+        - name: transferId
+          in: path
+          required: true
+          description: Transfer identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Transfer details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnershipTransfer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    delete:
+      tags: [Sharing]
+      summary: Cancel or reject ownership transfer
+      description: |-
+        Deletes a pending ownership transfer. Can be called by either:
+        - The current owner (sender) to cancel the transfer
+        - The proposed new owner (recipient) to reject the transfer
+
+        The transfer record is **hard deleted** from the database.
+      operationId: deleteTransfer
+      parameters:
+        - name: transferId
+          in: path
+          required: true
+          description: Transfer identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Transfer deleted successfully.
+        '403':
+          description: Not authorized (not the sender or recipient).
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/ownership-transfers/{transferId}/accept:
+    post:
+      tags: [Sharing]
+      summary: Accept ownership transfer
+      description: |-
+        Accepts a pending ownership transfer. Only the proposed new owner
+        (recipient) can accept. Upon acceptance:
+        - The recipient becomes the new owner
+        - The previous owner becomes a manager
+        - The transfer record is deleted (transfers are always pending while they exist)
+      operationId: acceptTransfer
+      parameters:
+        - name: transferId
+          in: path
+          required: true
+          description: Transfer identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Transfer accepted successfully. Ownership has been transferred.
+        '403':
+          description: Not authorized (not the recipient).
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -1111,3 +1258,63 @@ components:
           createdAt: "2025-01-10T14:32:05Z"
         score: 0.93
         highlights: "design a memory service for my agent"
+
+    OwnershipTransfer:
+      type: object
+      description: |-
+        Represents a pending ownership transfer request.
+        Transfers are always "pending" while they exist; accepted/rejected transfers
+        are hard deleted from the database.
+      required:
+        - id
+        - conversationId
+        - fromUserId
+        - toUserId
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the transfer.
+        conversationId:
+          type: string
+          format: uuid
+          description: The conversation being transferred.
+        conversationTitle:
+          type: string
+          nullable: true
+          description: Title of the conversation (for display purposes).
+        fromUserId:
+          type: string
+          description: Current owner initiating the transfer.
+        toUserId:
+          type: string
+          description: Proposed new owner (recipient).
+        createdAt:
+          type: string
+          format: date-time
+          description: When the transfer was initiated.
+      example:
+        id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        conversationId: "550e8400-e29b-41d4-a716-446655440000"
+        conversationTitle: "Help with React hooks"
+        fromUserId: "user_john_doe"
+        toUserId: "user_jane_smith"
+        createdAt: "2025-01-28T10:30:00Z"
+
+    CreateOwnershipTransferRequest:
+      type: object
+      required:
+        - conversationId
+        - newOwnerUserId
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+          description: The conversation to transfer ownership of.
+        newOwnerUserId:
+          type: string
+          description: User ID of the proposed new owner. Must be an existing member.
+      example:
+        conversationId: "550e8400-e29b-41d4-a716-446655440000"
+        newOwnerUserId: "user_jane_smith"

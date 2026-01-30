@@ -19,6 +19,7 @@ import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.EntryDto;
+import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.grpc.v1.Conversation;
@@ -26,7 +27,9 @@ import io.github.chirino.memory.grpc.v1.ConversationForkSummary;
 import io.github.chirino.memory.grpc.v1.ConversationMembership;
 import io.github.chirino.memory.grpc.v1.ConversationSummary;
 import io.github.chirino.memory.grpc.v1.Entry;
+import io.github.chirino.memory.grpc.v1.OwnershipTransfer;
 import io.github.chirino.memory.grpc.v1.SearchResult;
+import io.github.chirino.memory.grpc.v1.TransferRole;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.Channel;
 import java.util.Collections;
@@ -131,6 +134,32 @@ public final class GrpcDtoMapper {
                 .setScore((float) dto.getScore())
                 .setHighlights(dto.getHighlights() == null ? "" : dto.getHighlights())
                 .build();
+    }
+
+    public static OwnershipTransfer toProto(OwnershipTransferDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        return OwnershipTransfer.newBuilder()
+                .setId(stringToByteString(dto.getId()))
+                .setConversationId(stringToByteString(dto.getConversationId()))
+                .setConversationTitle(
+                        dto.getConversationTitle() == null ? "" : dto.getConversationTitle())
+                .setFromUserId(dto.getFromUserId() == null ? "" : dto.getFromUserId())
+                .setToUserId(dto.getToUserId() == null ? "" : dto.getToUserId())
+                .setCreatedAt(dto.getCreatedAt() == null ? "" : dto.getCreatedAt())
+                .build();
+    }
+
+    public static String transferRoleFromProto(TransferRole role) {
+        if (role == null) {
+            return "all";
+        }
+        return switch (role) {
+            case SENDER -> "sender";
+            case RECIPIENT -> "recipient";
+            default -> "all";
+        };
     }
 
     public static List<Value> toValues(List<Object> objects) {

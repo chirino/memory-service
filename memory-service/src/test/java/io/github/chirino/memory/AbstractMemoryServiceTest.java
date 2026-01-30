@@ -303,14 +303,29 @@ abstract class AbstractMemoryServiceTest {
                         .extract()
                         .path("id");
 
-        Map<String, Object> body = Map.of("newOwnerUserId", "new-owner");
+        // Share conversation with new-owner (required before transfer)
+        Map<String, Object> shareRequest =
+                Map.of(
+                        "userId", "new-owner",
+                        "accessLevel", "MANAGER");
+
+        given().contentType(MediaType.APPLICATION_JSON)
+                .body(shareRequest)
+                .when()
+                .post("/v1/conversations/{id}/memberships", conversationId)
+                .then()
+                .statusCode(201);
+
+        // Now create ownership transfer
+        Map<String, Object> body =
+                Map.of("conversationId", conversationId, "newOwnerUserId", "new-owner");
 
         given().contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .when()
-                .post("/v1/conversations/{id}/transfer-ownership", conversationId)
+                .post("/v1/ownership-transfers")
                 .then()
-                .statusCode(202);
+                .statusCode(201);
 
         verifyOwnershipTransferPersisted(conversationId, "owner-transfer", "new-owner");
     }

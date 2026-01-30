@@ -7,10 +7,12 @@ import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
+import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
+import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
@@ -362,6 +364,8 @@ public class PostgresMemoryStore implements MemoryStore {
                 OffsetDateTime.now(),
                 groupId,
                 memberUserId);
+        // Delete any pending ownership transfer to the removed member
+        ownershipTransferRepository.deleteByConversationGroupAndToUser(groupId, memberUserId);
     }
 
     @Override
@@ -469,11 +473,37 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
+    public List<OwnershipTransferDto> listPendingTransfers(String userId, String role) {
+        List<ConversationOwnershipTransferEntity> transfers;
+        switch (role) {
+            case "sender":
+                transfers = ownershipTransferRepository.listByFromUser(userId);
+                break;
+            case "recipient":
+                transfers = ownershipTransferRepository.listByToUser(userId);
+                break;
+            default: // "all"
+                transfers = ownershipTransferRepository.listByUser(userId);
+        }
+        return transfers.stream().map(this::toOwnershipTransferDto).collect(Collectors.toList());
+    }
+
+    @Override
+    public Optional<OwnershipTransferDto> getTransfer(String userId, String transferId) {
+        UUID id = UUID.fromString(transferId);
+        return ownershipTransferRepository
+                .findByIdAndParticipant(id, userId)
+                .map(this::toOwnershipTransferDto);
+    }
+
+    @Override
     @Transactional
-    public void requestOwnershipTransfer(
-            String userId, String conversationId, String newOwnerUserId) {
-        UUID cid = UUID.fromString(conversationId);
-        UUID groupId = resolveGroupId(cid);
+    public OwnershipTransferDto createOwnershipTransfer(
+            String userId, CreateOwnershipTransferRequest request) {
+        UUID conversationId = UUID.fromString(request.getConversationId());
+        UUID groupId = resolveGroupId(conversationId);
+
+        // Verify user is owner
         ConversationMembershipEntity membership =
                 membershipRepository
                         .findMembership(groupId, userId)
@@ -481,11 +511,119 @@ public class PostgresMemoryStore implements MemoryStore {
         if (membership.getAccessLevel() != AccessLevel.OWNER) {
             throw new AccessDeniedException("Only owner may transfer ownership");
         }
+
+        // Verify not transferring to self
+        String newOwnerUserId = request.getNewOwnerUserId();
+        if (userId.equals(newOwnerUserId)) {
+            throw new IllegalArgumentException("Cannot transfer ownership to yourself");
+        }
+
+        // Verify recipient is a member
+        membershipRepository
+                .findMembership(groupId, newOwnerUserId)
+                .orElseThrow(
+                        () ->
+                                new IllegalArgumentException(
+                                        "Proposed owner must be a member of the conversation"));
+
+        // Check for existing transfer (only one can exist at a time)
+        Optional<ConversationOwnershipTransferEntity> existing =
+                ownershipTransferRepository.findByConversationGroup(groupId);
+        if (existing.isPresent()) {
+            throw new ResourceConflictException(
+                    "transfer",
+                    existing.get().getId().toString(),
+                    "A pending ownership transfer already exists for this conversation");
+        }
+
+        // Create transfer
         ConversationOwnershipTransferEntity transfer = new ConversationOwnershipTransferEntity();
         transfer.setConversationGroup(membership.getConversationGroup());
         transfer.setFromUserId(userId);
         transfer.setToUserId(newOwnerUserId);
         ownershipTransferRepository.persist(transfer);
+
+        return toOwnershipTransferDto(transfer);
+    }
+
+    @Override
+    @Transactional
+    public void acceptTransfer(String userId, String transferId) {
+        UUID id = UUID.fromString(transferId);
+        ConversationOwnershipTransferEntity transfer =
+                ownershipTransferRepository
+                        .findByIdOptional(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("transfer", transferId));
+
+        // Verify user is recipient
+        if (!userId.equals(transfer.getToUserId())) {
+            throw new AccessDeniedException("Only the recipient can accept a transfer");
+        }
+
+        UUID groupId = transfer.getConversationGroup().getId();
+
+        // Update new owner's membership to OWNER
+        membershipRepository.update(
+                "accessLevel = ?1 WHERE id.conversationGroupId = ?2 AND id.userId = ?3",
+                AccessLevel.OWNER,
+                groupId,
+                transfer.getToUserId());
+
+        // Update old owner's membership to MANAGER
+        membershipRepository.update(
+                "accessLevel = ?1 WHERE id.conversationGroupId = ?2 AND id.userId = ?3",
+                AccessLevel.MANAGER,
+                groupId,
+                transfer.getFromUserId());
+
+        // Update conversation owner_user_id for all conversations in the group
+        conversationRepository.update(
+                "ownerUserId = ?1 WHERE conversationGroup.id = ?2",
+                transfer.getToUserId(),
+                groupId);
+
+        // Delete the transfer (transfers are always pending while they exist)
+        ownershipTransferRepository.delete(transfer);
+    }
+
+    @Override
+    @Transactional
+    public void deleteTransfer(String userId, String transferId) {
+        UUID id = UUID.fromString(transferId);
+        ConversationOwnershipTransferEntity transfer =
+                ownershipTransferRepository
+                        .findByIdOptional(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("transfer", transferId));
+
+        // Verify user is sender or recipient
+        if (!userId.equals(transfer.getFromUserId()) && !userId.equals(transfer.getToUserId())) {
+            throw new AccessDeniedException("Only the sender or recipient can delete a transfer");
+        }
+
+        // Hard delete the transfer
+        ownershipTransferRepository.delete(transfer);
+    }
+
+    private OwnershipTransferDto toOwnershipTransferDto(
+            ConversationOwnershipTransferEntity entity) {
+        OwnershipTransferDto dto = new OwnershipTransferDto();
+        dto.setId(entity.getId().toString());
+
+        // Get conversation ID from group (first non-deleted conversation)
+        UUID groupId = entity.getConversationGroup().getId();
+        conversationRepository
+                .find("conversationGroup.id = ?1 AND deletedAt IS NULL", groupId)
+                .firstResultOptional()
+                .ifPresent(
+                        conv -> {
+                            dto.setConversationId(conv.getId().toString());
+                            dto.setConversationTitle(decryptTitle(conv.getTitle()));
+                        });
+
+        dto.setFromUserId(entity.getFromUserId());
+        dto.setToUserId(entity.getToUserId());
+        dto.setCreatedAt(ISO_FORMATTER.format(entity.getCreatedAt()));
+        return dto;
     }
 
     @Override
@@ -1017,13 +1155,8 @@ public class PostgresMemoryStore implements MemoryStore {
                 now,
                 conversationGroupId);
 
-        // Expire pending ownership transfers
-        ownershipTransferRepository.update(
-                "status = ?1, updatedAt = ?2 WHERE conversationGroup.id = ?3 AND status = ?4",
-                ConversationOwnershipTransferEntity.TransferStatus.EXPIRED,
-                now,
-                conversationGroupId,
-                ConversationOwnershipTransferEntity.TransferStatus.PENDING);
+        // Hard delete ownership transfers
+        ownershipTransferRepository.deleteByConversationGroup(conversationGroupId);
     }
 
     private UUID resolveGroupId(UUID conversationId) {

@@ -1,6 +1,7 @@
 package io.github.chirino.memory.grpc;
 
 import io.github.chirino.memory.store.AccessDeniedException;
+import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
@@ -19,6 +20,11 @@ public final class GrpcStatusMapper {
         if (throwable instanceof AccessDeniedException accessDenied) {
             return Status.PERMISSION_DENIED
                     .withDescription(accessDenied.getMessage())
+                    .asRuntimeException();
+        }
+        if (throwable instanceof ResourceConflictException conflict) {
+            return Status.ALREADY_EXISTS
+                    .withDescription(conflict.getMessage())
                     .asRuntimeException();
         }
         if (throwable instanceof IllegalArgumentException illegalArgument) {

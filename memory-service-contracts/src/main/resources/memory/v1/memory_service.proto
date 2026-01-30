@@ -137,12 +137,6 @@ message ListForksResponse {
   repeated ConversationForkSummary forks = 1;
 }
 
-message TransferOwnershipRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
-  string new_owner_user_id = 2;
-}
-
 message CreateEntryRequest {
   string user_id = 1;
   Channel channel = 2;
@@ -225,6 +219,53 @@ message DeleteMembershipRequest {
   string member_user_id = 2;
 }
 
+// Ownership Transfer messages
+message OwnershipTransfer {
+  // Transfer identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 2;
+  string conversation_title = 3;
+  string from_user_id = 4;
+  string to_user_id = 5;
+  string created_at = 6;
+}
+
+enum TransferRole {
+  TRANSFER_ROLE_UNSPECIFIED = 0;
+  SENDER = 1;
+  RECIPIENT = 2;
+}
+
+message ListOwnershipTransfersRequest {
+  TransferRole role = 1;
+}
+
+message ListOwnershipTransfersResponse {
+  repeated OwnershipTransfer transfers = 1;
+}
+
+message GetOwnershipTransferRequest {
+  // Transfer identifier (UUID as 16-byte big-endian binary)
+  bytes transfer_id = 1;
+}
+
+message CreateOwnershipTransferRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  string new_owner_user_id = 2;
+}
+
+message AcceptOwnershipTransferRequest {
+  // Transfer identifier (UUID as 16-byte big-endian binary)
+  bytes transfer_id = 1;
+}
+
+message DeleteOwnershipTransferRequest {
+  // Transfer identifier (UUID as 16-byte big-endian binary)
+  bytes transfer_id = 1;
+}
+
 message SearchEntriesRequest {
   string query = 1;
   int32 top_k = 2;
@@ -269,7 +310,6 @@ service ConversationsService {
   rpc DeleteConversation(DeleteConversationRequest) returns (google.protobuf.Empty);
   rpc ForkConversation(ForkConversationRequest) returns (Conversation);
   rpc ListForks(ListForksRequest) returns (ListForksResponse);
-  rpc TransferOwnership(TransferOwnershipRequest) returns (google.protobuf.Empty);
 }
 
 service ConversationMembershipsService {
@@ -277,6 +317,19 @@ service ConversationMembershipsService {
   rpc ShareConversation(ShareConversationRequest) returns (ConversationMembership);
   rpc UpdateMembership(UpdateMembershipRequest) returns (ConversationMembership);
   rpc DeleteMembership(DeleteMembershipRequest) returns (google.protobuf.Empty);
+}
+
+service OwnershipTransfersService {
+  // List pending ownership transfers for the current user
+  rpc ListOwnershipTransfers(ListOwnershipTransfersRequest) returns (ListOwnershipTransfersResponse);
+  // Get a specific ownership transfer
+  rpc GetOwnershipTransfer(GetOwnershipTransferRequest) returns (OwnershipTransfer);
+  // Create a new ownership transfer (initiates transfer to another user)
+  rpc CreateOwnershipTransfer(CreateOwnershipTransferRequest) returns (OwnershipTransfer);
+  // Accept an ownership transfer (recipient becomes owner, sender becomes manager)
+  rpc AcceptOwnershipTransfer(AcceptOwnershipTransferRequest) returns (google.protobuf.Empty);
+  // Delete/cancel an ownership transfer
+  rpc DeleteOwnershipTransfer(DeleteOwnershipTransferRequest) returns (google.protobuf.Empty);
 }
 
 service EntriesService {

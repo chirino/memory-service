@@ -18,7 +18,6 @@ import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
 import io.github.chirino.memory.grpc.v1.ListForksRequest;
 import io.github.chirino.memory.grpc.v1.ListForksResponse;
-import io.github.chirino.memory.grpc.v1.TransferOwnershipRequest;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
@@ -146,22 +145,6 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
                                                     .map(GrpcDtoMapper::toProto)
                                                     .collect(Collectors.toList()))
                                     .build();
-                        })
-                .onFailure()
-                .transform(GrpcStatusMapper::map);
-    }
-
-    @Override
-    public Uni<Empty> transferOwnership(TransferOwnershipRequest request) {
-        return Uni.createFrom()
-                .item(
-                        () -> {
-                            String conversationId = byteStringToString(request.getConversationId());
-                            store().requestOwnershipTransfer(
-                                            currentUserId(),
-                                            conversationId,
-                                            request.getNewOwnerUserId());
-                            return Empty.getDefaultInstance();
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);

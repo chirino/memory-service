@@ -458,21 +458,6 @@ public class ConversationsResource {
     }
 
     @POST
-    @Path("/conversations/{conversationId}/transfer-ownership")
-    public Response transferOwnership(
-            @PathParam("conversationId") String conversationId, Map<String, String> body) {
-        try {
-            String newOwnerUserId = body.get("newOwnerUserId");
-            store().requestOwnershipTransfer(currentUserId(), conversationId, newOwnerUserId);
-            return Response.status(Response.Status.ACCEPTED).build();
-        } catch (ResourceNotFoundException e) {
-            return notFound(e);
-        } catch (AccessDeniedException e) {
-            return forbidden(e);
-        }
-    }
-
-    @POST
     @Path("/conversations/index")
     public Response indexConversationTranscript(IndexTranscriptRequest request) {
         if (apiKeyContext == null || !apiKeyContext.hasValidApiKey()) {

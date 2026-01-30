@@ -1,10 +1,13 @@
 package io.github.chirino.memory.mongo.model;
 
-import io.github.chirino.memory.persistence.entity.ConversationOwnershipTransferEntity.TransferStatus;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import java.time.Instant;
 import org.bson.codecs.pojo.annotations.BsonId;
 
+/**
+ * Represents a pending ownership transfer request.
+ * Transfers are always "pending" while they exist; accepted/rejected transfers are hard deleted.
+ */
 @MongoEntity(collection = "conversation_ownership_transfers")
 public class MongoConversationOwnershipTransfer {
 
@@ -13,7 +16,5 @@ public class MongoConversationOwnershipTransfer {
     public String conversationGroupId;
     public String fromUserId;
     public String toUserId;
-    public TransferStatus status;
     public Instant createdAt;
-    public Instant updatedAt;
 }

@@ -10,10 +10,12 @@ import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
+import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
+import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
@@ -365,6 +367,8 @@ public class MongoMemoryStore implements MemoryStore {
             membership.deletedAt = Instant.now();
             membershipRepository.update(membership);
         }
+        // Delete any pending ownership transfer to the removed member
+        ownershipTransferRepository.deleteByConversationGroupAndToUser(groupId, memberUserId);
     }
 
     @Override
@@ -466,10 +470,35 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
+    public List<OwnershipTransferDto> listPendingTransfers(String userId, String role) {
+        List<MongoConversationOwnershipTransfer> transfers;
+        switch (role) {
+            case "sender":
+                transfers = ownershipTransferRepository.listByFromUser(userId);
+                break;
+            case "recipient":
+                transfers = ownershipTransferRepository.listByToUser(userId);
+                break;
+            default: // "all"
+                transfers = ownershipTransferRepository.listByUser(userId);
+        }
+        return transfers.stream().map(this::toOwnershipTransferDto).collect(Collectors.toList());
+    }
+
+    @Override
+    public Optional<OwnershipTransferDto> getTransfer(String userId, String transferId) {
+        return ownershipTransferRepository
+                .findByIdAndParticipant(transferId, userId)
+                .map(this::toOwnershipTransferDto);
+    }
+
+    @Override
     @Transactional
-    public void requestOwnershipTransfer(
-            String userId, String conversationId, String newOwnerUserId) {
-        String groupId = resolveGroupId(conversationId);
+    public OwnershipTransferDto createOwnershipTransfer(
+            String userId, CreateOwnershipTransferRequest request) {
+        String groupId = resolveGroupId(request.getConversationId());
+
+        // Verify user is owner
         MongoConversationMembership membership =
                 membershipRepository
                         .findMembership(groupId, userId)
@@ -477,18 +506,122 @@ public class MongoMemoryStore implements MemoryStore {
         if (membership.accessLevel != AccessLevel.OWNER) {
             throw new AccessDeniedException("Only owner may transfer ownership");
         }
+
+        // Verify not transferring to self
+        String newOwnerUserId = request.getNewOwnerUserId();
+        if (userId.equals(newOwnerUserId)) {
+            throw new IllegalArgumentException("Cannot transfer ownership to yourself");
+        }
+
+        // Verify recipient is a member
+        membershipRepository
+                .findMembership(groupId, newOwnerUserId)
+                .orElseThrow(
+                        () ->
+                                new IllegalArgumentException(
+                                        "Proposed owner must be a member of the conversation"));
+
+        // Check for existing transfer (only one can exist at a time)
+        Optional<MongoConversationOwnershipTransfer> existing =
+                ownershipTransferRepository.findByConversationGroup(groupId);
+        if (existing.isPresent()) {
+            throw new ResourceConflictException(
+                    "transfer",
+                    existing.get().id,
+                    "A pending ownership transfer already exists for this conversation");
+        }
+
+        // Create transfer
         MongoConversationOwnershipTransfer transfer = new MongoConversationOwnershipTransfer();
         transfer.id = UUID.randomUUID().toString();
         transfer.conversationGroupId = groupId;
         transfer.fromUserId = userId;
         transfer.toUserId = newOwnerUserId;
-        transfer.status =
-                io.github.chirino.memory.persistence.entity.ConversationOwnershipTransferEntity
-                        .TransferStatus.PENDING;
-        Instant now = Instant.now();
-        transfer.createdAt = now;
-        transfer.updatedAt = now;
+        transfer.createdAt = Instant.now();
         ownershipTransferRepository.persist(transfer);
+
+        return toOwnershipTransferDto(transfer);
+    }
+
+    @Override
+    @Transactional
+    public void acceptTransfer(String userId, String transferId) {
+        MongoConversationOwnershipTransfer transfer =
+                ownershipTransferRepository
+                        .findByIdOptional(transferId)
+                        .orElseThrow(() -> new ResourceNotFoundException("transfer", transferId));
+
+        // Verify user is recipient
+        if (!userId.equals(transfer.toUserId)) {
+            throw new AccessDeniedException("Only the recipient can accept a transfer");
+        }
+
+        String groupId = transfer.conversationGroupId;
+
+        // Update new owner's membership to OWNER
+        MongoConversationMembership newOwnerMembership =
+                membershipRepository.findMembership(groupId, transfer.toUserId).orElse(null);
+        if (newOwnerMembership != null) {
+            newOwnerMembership.accessLevel = AccessLevel.OWNER;
+            membershipRepository.update(newOwnerMembership);
+        }
+
+        // Update old owner's membership to MANAGER
+        MongoConversationMembership oldOwnerMembership =
+                membershipRepository.findMembership(groupId, transfer.fromUserId).orElse(null);
+        if (oldOwnerMembership != null) {
+            oldOwnerMembership.accessLevel = AccessLevel.MANAGER;
+            membershipRepository.update(oldOwnerMembership);
+        }
+
+        // Update conversation owner_user_id for all conversations in the group
+        List<MongoConversation> conversations =
+                conversationRepository.find("conversationGroupId", groupId).list();
+        for (MongoConversation c : conversations) {
+            c.ownerUserId = transfer.toUserId;
+            conversationRepository.update(c);
+        }
+
+        // Delete the transfer (transfers are always pending while they exist)
+        ownershipTransferRepository.delete(transfer);
+    }
+
+    @Override
+    @Transactional
+    public void deleteTransfer(String userId, String transferId) {
+        MongoConversationOwnershipTransfer transfer =
+                ownershipTransferRepository
+                        .findByIdOptional(transferId)
+                        .orElseThrow(() -> new ResourceNotFoundException("transfer", transferId));
+
+        // Verify user is sender or recipient
+        if (!userId.equals(transfer.fromUserId) && !userId.equals(transfer.toUserId)) {
+            throw new AccessDeniedException("Only the sender or recipient can delete a transfer");
+        }
+
+        // Hard delete the transfer
+        ownershipTransferRepository.delete(transfer);
+    }
+
+    private OwnershipTransferDto toOwnershipTransferDto(MongoConversationOwnershipTransfer entity) {
+        OwnershipTransferDto dto = new OwnershipTransferDto();
+        dto.setId(entity.id);
+
+        // Get conversation ID from group (first non-deleted conversation)
+        String groupId = entity.conversationGroupId;
+        conversationRepository
+                .find("conversationGroupId = ?1 and deletedAt is null", groupId)
+                .firstResultOptional()
+                .ifPresent(
+                        conv -> {
+                            dto.setConversationId(conv.id);
+                            dto.setConversationTitle(decryptTitle(conv.title));
+                        });
+
+        dto.setFromUserId(entity.fromUserId);
+        dto.setToUserId(entity.toUserId);
+        dto.setCreatedAt(formatInstant(entity.createdAt));
+        return dto;
     }
 
     @Override
@@ -1065,20 +1198,8 @@ public class MongoMemoryStore implements MemoryStore {
             membershipRepository.update(m);
         }
 
-        // Expire pending ownership transfers
-        List<MongoConversationOwnershipTransfer> transfers =
-                ownershipTransferRepository.find("conversationGroupId", conversationGroupId).list();
-        for (MongoConversationOwnershipTransfer transfer : transfers) {
-            if (transfer.status
-                    == io.github.chirino.memory.persistence.entity
-                            .ConversationOwnershipTransferEntity.TransferStatus.PENDING) {
-                transfer.status =
-                        io.github.chirino.memory.persistence.entity
-                                .ConversationOwnershipTransferEntity.TransferStatus.EXPIRED;
-                transfer.updatedAt = now;
-                ownershipTransferRepository.update(transfer);
-            }
-        }
+        // Hard delete ownership transfers
+        ownershipTransferRepository.deleteByConversationGroup(conversationGroupId);
     }
 
     private byte[] encryptTitle(String title) {

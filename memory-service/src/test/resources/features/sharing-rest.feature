@@ -188,37 +188,6 @@ Feature: Conversation Sharing REST API
     Then the response status should be 403
     And the response should contain error code "forbidden"
 
-  Scenario: Transfer conversation ownership
-    Given I have a conversation with title "Ownership Transfer Test"
-    When I transfer ownership of the conversation to "bob" with request:
-    """
-    {
-      "newOwnerUserId": "bob"
-    }
-    """
-    Then the response status should be 202
-
-  Scenario: Transfer ownership of non-existent conversation
-    When I transfer ownership of conversation "00000000-0000-0000-0000-000000000000" to "bob" with request:
-    """
-    {
-      "newOwnerUserId": "bob"
-    }
-    """
-    Then the response status should be 404
-    And the response should contain error code "not_found"
-
-  Scenario: Transfer ownership without access
-    Given there is a conversation owned by "bob"
-    When I transfer ownership of that conversation to "charlie" with request:
-    """
-    {
-      "newOwnerUserId": "charlie"
-    }
-    """
-    Then the response status should be 403
-    And the response should contain error code "forbidden"
-
   Scenario: Membership response contains conversationId instead of conversationGroupId
     When I share the conversation with user "bob" with request:
     """

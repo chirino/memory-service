@@ -15,7 +15,6 @@ import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.ForkFromEntryRequest;
 import io.github.chirino.memory.client.model.IndexTranscriptRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
-import io.github.chirino.memory.client.model.TransferConversationOwnershipRequest;
 import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -186,23 +185,6 @@ public class MemoryServiceProxy {
                     userId);
         } catch (Exception e) {
             LOG.errorf(e, "Error parsing update membership request body");
-            return handleException(e);
-        }
-    }
-
-    public Response transferConversationOwnership(String conversationId, String body) {
-        try {
-            TransferConversationOwnershipRequest request =
-                    OBJECT_MAPPER.readValue(body, TransferConversationOwnershipRequest.class);
-            return executeVoid(
-                    () ->
-                            sharingApi()
-                                    .transferConversationOwnership(toUuid(conversationId), request),
-                    Response.Status.ACCEPTED,
-                    "Error transferring ownership of history %s",
-                    conversationId);
-        } catch (Exception e) {
-            LOG.errorf(e, "Error parsing transfer ownership request body");
             return handleException(e);
         }
     }
