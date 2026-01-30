@@ -186,6 +186,23 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
                                             failure -> {
                                                 cancelRef.get().dispose();
                                                 if (finalized.compareAndSet(false, true)) {
+                                                    // Persist partial response if any content was
+                                                    // buffered
+                                                    if (buffer.length() > 0) {
+                                                        try {
+                                                            conversationStore.appendAgentMessage(
+                                                                    conversationId,
+                                                                    buffer.toString(),
+                                                                    bearerToken);
+                                                            conversationStore.markCompleted(
+                                                                    conversationId);
+                                                        } catch (Exception e) {
+                                                            LOG.debug(
+                                                                    "Failed to append partial agent"
+                                                                            + " message on failure",
+                                                                    e);
+                                                        }
+                                                    }
                                                     recorder.complete();
                                                     sink.error(failure);
                                                 }
