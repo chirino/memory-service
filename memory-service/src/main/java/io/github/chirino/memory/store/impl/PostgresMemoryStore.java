@@ -1164,15 +1164,9 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public Optional<ConversationDto> adminGetConversation(
-            String conversationId, boolean includeDeleted) {
+    public Optional<ConversationDto> adminGetConversation(String conversationId) {
         UUID id = UUID.fromString(conversationId);
-        ConversationEntity entity;
-        if (includeDeleted) {
-            entity = conversationRepository.findByIdOptional(id).orElse(null);
-        } else {
-            entity = conversationRepository.findActiveById(id).orElse(null);
-        }
+        ConversationEntity entity = conversationRepository.findByIdOptional(id).orElse(null);
         if (entity == null) {
             return Optional.empty();
         }
@@ -1223,12 +1217,7 @@ public class PostgresMemoryStore implements MemoryStore {
     @Override
     public PagedEntries adminGetEntries(String conversationId, AdminMessageQuery query) {
         UUID cid = UUID.fromString(conversationId);
-        ConversationEntity conversation;
-        if (query.isIncludeDeleted()) {
-            conversation = conversationRepository.findByIdOptional(cid).orElse(null);
-        } else {
-            conversation = conversationRepository.findActiveById(cid).orElse(null);
-        }
+        ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
         if (conversation == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
@@ -1237,11 +1226,6 @@ public class PostgresMemoryStore implements MemoryStore {
         List<Object> params = new ArrayList<>();
         params.add(cid);
         int paramIndex = 2;
-
-        if (!query.isIncludeDeleted()) {
-            jpql.append(" AND m.conversation.deletedAt IS NULL");
-            jpql.append(" AND m.conversation.conversationGroup.deletedAt IS NULL");
-        }
 
         if (query.getChannel() != null) {
             jpql.append(" AND m.channel = ?").append(paramIndex++);
@@ -1292,25 +1276,15 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationMembershipDto> adminListMemberships(
-            String conversationId, boolean includeDeleted) {
+    public List<ConversationMembershipDto> adminListMemberships(String conversationId) {
         UUID cid = UUID.fromString(conversationId);
-        ConversationEntity conversation;
-        if (includeDeleted) {
-            conversation = conversationRepository.findByIdOptional(cid).orElse(null);
-        } else {
-            conversation = conversationRepository.findActiveById(cid).orElse(null);
-        }
+        ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
         if (conversation == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         UUID groupId = conversation.getConversationGroup().getId();
-        List<ConversationMembershipEntity> memberships;
-        if (includeDeleted) {
-            memberships = membershipRepository.find("id.conversationGroupId", groupId).list();
-        } else {
-            memberships = membershipRepository.listForConversationGroup(groupId);
-        }
+        List<ConversationMembershipEntity> memberships =
+                membershipRepository.find("id.conversationGroupId", groupId).list();
         return memberships.stream().map(this::toMembershipDto).collect(Collectors.toList());
     }
 

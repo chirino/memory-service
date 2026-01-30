@@ -121,8 +121,8 @@ paths:
       tags: [Admin]
       summary: Get any conversation (admin/auditor)
       description: |-
-        Retrieves a conversation by ID, including soft-deleted conversations
-        if includeDeleted=true. Requires auditor or admin role.
+        Retrieves a conversation by ID, including soft-deleted conversations.
+        Requires auditor or admin role.
       operationId: adminGetConversation
       parameters:
         - name: id
@@ -132,13 +132,6 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: includeDeleted
-          in: query
-          required: false
-          description: Include soft-deleted conversations.
-          schema:
-            type: boolean
-            default: false
         - name: justification
           in: query
           required: false
@@ -237,7 +230,7 @@ paths:
       summary: Get entries from any conversation (admin/auditor)
       description: |-
         Retrieves entries from a conversation, including soft-deleted
-        conversations if includeDeleted=true. Requires auditor or admin role.
+        conversations. Requires auditor or admin role.
       operationId: adminGetEntries
       parameters:
         - name: id
@@ -267,13 +260,6 @@ paths:
           description: Filter by entry channel.
           schema:
             $ref: '#/components/schemas/Channel'
-        - name: includeDeleted
-          in: query
-          required: false
-          description: Include entries from soft-deleted conversations.
-          schema:
-            type: boolean
-            default: false
         - name: justification
           in: query
           required: false
@@ -317,13 +303,6 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: includeDeleted
-          in: query
-          required: false
-          description: Include memberships from soft-deleted conversations.
-          schema:
-            type: boolean
-            default: false
         - name: justification
           in: query
           required: false
