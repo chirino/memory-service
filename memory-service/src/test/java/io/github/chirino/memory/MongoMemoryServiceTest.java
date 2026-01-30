@@ -34,12 +34,7 @@ class MongoMemoryServiceTest extends AbstractMemoryServiceTest {
                                 t ->
                                         t.conversationGroupId.equals(conversationId)
                                                 && t.fromUserId.equals(fromUserId)
-                                                && t.toUserId.equals(toUserId)
-                                                && t.status
-                                                        == io.github.chirino.memory.persistence
-                                                                .entity
-                                                                .ConversationOwnershipTransferEntity
-                                                                .TransferStatus.PENDING);
+                                                && t.toUserId.equals(toUserId));
         assertThat(found, is(true));
     }
 

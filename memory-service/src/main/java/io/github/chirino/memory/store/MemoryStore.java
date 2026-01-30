@@ -6,10 +6,12 @@ import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
+import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
+import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
@@ -55,7 +57,18 @@ public interface MemoryStore {
 
     List<ConversationForkSummaryDto> listForks(String userId, String conversationId);
 
-    void requestOwnershipTransfer(String userId, String conversationId, String newOwnerUserId);
+    // Ownership transfer methods (transfers are always "pending" while they exist)
+    List<OwnershipTransferDto> listPendingTransfers(String userId, String role);
+
+    Optional<OwnershipTransferDto> getTransfer(String userId, String transferId);
+
+    OwnershipTransferDto createOwnershipTransfer(
+            String userId, CreateOwnershipTransferRequest request);
+
+    /** Accept transfer - performs ownership swap and deletes the transfer record. */
+    void acceptTransfer(String userId, String transferId);
+
+    void deleteTransfer(String userId, String transferId);
 
     PagedEntries getEntries(
             String userId,

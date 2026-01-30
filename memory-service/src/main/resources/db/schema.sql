@@ -121,6 +121,7 @@ CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_entry
 
 ------------------------------------------------------------
 -- Ownership transfer tracking
+-- Transfers are always "pending" while they exist; accepted/rejected transfers are hard deleted.
 ------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS conversation_ownership_transfers (
@@ -129,13 +130,19 @@ CREATE TABLE IF NOT EXISTS conversation_ownership_transfers (
     -- External user identifiers (e.g., OAuth subjects).
     from_user_id      TEXT NOT NULL,
     to_user_id        TEXT NOT NULL,
-    status            TEXT NOT NULL DEFAULT 'pending',
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    -- Only one pending transfer per conversation (transfer is deleted when accepted/rejected)
+    CONSTRAINT unique_transfer_per_conversation UNIQUE (conversation_group_id),
+    CONSTRAINT different_users CHECK (from_user_id != to_user_id)
 );
 
+-- Index for listing user's transfers as recipient
 CREATE INDEX IF NOT EXISTS idx_ownership_transfers_to_user
-    ON conversation_ownership_transfers (to_user_id, status);
+    ON conversation_ownership_transfers (to_user_id);
+
+-- Index for listing user's transfers as sender
+CREATE INDEX IF NOT EXISTS idx_ownership_transfers_from_user
+    ON conversation_ownership_transfers (from_user_id);
 
 ------------------------------------------------------------
 -- Background task queue

@@ -25,9 +25,11 @@ import com.google.protobuf.util.JsonFormat;
 import com.jayway.jsonpath.InvalidPathException;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
+import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
+import io.github.chirino.memory.grpc.v1.AcceptOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.AppendEntryRequest;
 import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
 import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
@@ -37,9 +39,11 @@ import io.github.chirino.memory.grpc.v1.ConversationMembershipsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.DeleteConversationRequest;
 import io.github.chirino.memory.grpc.v1.DeleteMembershipRequest;
+import io.github.chirino.memory.grpc.v1.DeleteOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.EntriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
+import io.github.chirino.memory.grpc.v1.GetOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.HealthResponse;
 import io.github.chirino.memory.grpc.v1.IndexTranscriptRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
@@ -50,7 +54,9 @@ import io.github.chirino.memory.grpc.v1.ListForksRequest;
 import io.github.chirino.memory.grpc.v1.ListForksResponse;
 import io.github.chirino.memory.grpc.v1.ListMembershipsRequest;
 import io.github.chirino.memory.grpc.v1.ListMembershipsResponse;
+import io.github.chirino.memory.grpc.v1.ListOwnershipTransfersRequest;
 import io.github.chirino.memory.grpc.v1.MutinyResponseResumerServiceGrpc;
+import io.github.chirino.memory.grpc.v1.OwnershipTransfersServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensResponse;
 import io.github.chirino.memory.grpc.v1.ResponseResumerServiceGrpc;
@@ -63,7 +69,6 @@ import io.github.chirino.memory.grpc.v1.StreamResponseTokenResponse;
 import io.github.chirino.memory.grpc.v1.SyncEntriesRequest;
 import io.github.chirino.memory.grpc.v1.SyncEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
-import io.github.chirino.memory.grpc.v1.TransferOwnershipRequest;
 import io.github.chirino.memory.grpc.v1.UpdateMembershipRequest;
 import io.github.chirino.memory.mongo.repo.MongoConversationGroupRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
@@ -162,7 +167,8 @@ public class StepDefinitions {
                     "after",
                     "until_entry_id",
                     "forked_at_entry_id",
-                    "forked_at_conversation_id");
+                    "forked_at_conversation_id",
+                    "transfer_id");
 
     /**
      * Preprocesses proto text format body to convert UUID strings and base64 values to proper
@@ -1173,38 +1179,6 @@ public class StepDefinitions {
         iDeleteTheConversation();
     }
 
-    @io.cucumber.java.en.When("I transfer ownership of the conversation to {string} with request:")
-    public void iTransferOwnershipOfTheConversationToWithRequest(
-            String newOwner, String requestBody) {
-        trackUsage();
-        String rendered = renderTemplate(requestBody);
-        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        requestSpec = authenticateRequest(requestSpec);
-        this.lastResponse =
-                requestSpec
-                        .when()
-                        .post("/v1/conversations/{id}/transfer-ownership", conversationId);
-    }
-
-    @io.cucumber.java.en.When(
-            "I transfer ownership of conversation {string} to {string} with request:")
-    public void iTransferOwnershipOfConversationToWithRequest(
-            String convId, String newOwner, String requestBody) {
-        trackUsage();
-        String rendered = renderTemplate(requestBody);
-        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        requestSpec = authenticateRequest(requestSpec);
-        this.lastResponse =
-                requestSpec.when().post("/v1/conversations/{id}/transfer-ownership", convId);
-    }
-
-    @io.cucumber.java.en.When("I transfer ownership of that conversation to {string} with request:")
-    public void iTransferOwnershipOfThatConversationToWithRequest(
-            String newOwner, String requestBody) {
-        trackUsage();
-        iTransferOwnershipOfTheConversationToWithRequest(newOwner, requestBody);
-    }
-
     @io.cucumber.java.en.Then("the response should contain at least {int} conversations")
     public void theResponseShouldContainAtLeastConversations(int minCount) {
         trackUsage();
@@ -1233,6 +1207,27 @@ public class StepDefinitions {
                 "Expected at least "
                         + minCount
                         + " item(s) but got "
+                        + actualSize
+                        + ". Response status: "
+                        + lastResponse.statusCode()
+                        + ". Response body: "
+                        + lastResponse.getBody().asString(),
+                actualSize,
+                greaterThan(minCount - 1));
+    }
+
+    @io.cucumber.java.en.Then("the response body {string} should have at least {int} item")
+    public void theResponseBodyShouldHaveAtLeastItem(String jsonPath, int minCount) {
+        trackUsage();
+        JsonPath path = lastResponse.jsonPath();
+        List<?> data = path.getList(jsonPath);
+        int actualSize = data != null ? data.size() : 0;
+        assertThat(
+                "Expected at least "
+                        + minCount
+                        + " item(s) at '"
+                        + jsonPath
+                        + "' but got "
                         + actualSize
                         + ". Response status: "
                         + lastResponse.statusCode()
@@ -2272,6 +2267,8 @@ public class StepDefinitions {
             case "ConversationsService" -> callConversationsService(method, metadata, body);
             case "ConversationMembershipsService" ->
                     callConversationMembershipsService(method, metadata, body);
+            case "OwnershipTransfersService" ->
+                    callOwnershipTransfersService(method, metadata, body);
             case "ResponseResumerService" -> callResponseResumerService(method, metadata, body);
             default ->
                     throw new IllegalArgumentException(
@@ -2426,14 +2423,6 @@ public class StepDefinitions {
                     }
                     return stub.listForks(requestBuilder.build());
                 }
-            case "TransferOwnership":
-                {
-                    var requestBuilder = TransferOwnershipRequest.newBuilder();
-                    if (body != null && !body.isBlank()) {
-                        TextFormat.merge(body, requestBuilder);
-                    }
-                    return stub.transferOwnership(requestBuilder.build());
-                }
             default:
                 throw new IllegalArgumentException(
                         "Unsupported ConversationsService method: " + method);
@@ -2482,6 +2471,61 @@ public class StepDefinitions {
             default:
                 throw new IllegalArgumentException(
                         "Unsupported ConversationMembershipsService method: " + method);
+        }
+    }
+
+    private Message callOwnershipTransfersService(String method, Metadata metadata, String body)
+            throws Exception {
+        var stub = OwnershipTransfersServiceGrpc.newBlockingStub(grpcChannel);
+        if (metadata != null) {
+            stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+        }
+        switch (method) {
+            case "ListOwnershipTransfers":
+                {
+                    var requestBuilder = ListOwnershipTransfersRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.listOwnershipTransfers(requestBuilder.build());
+                }
+            case "GetOwnershipTransfer":
+                {
+                    var requestBuilder = GetOwnershipTransferRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.getOwnershipTransfer(requestBuilder.build());
+                }
+            case "CreateOwnershipTransfer":
+                {
+                    var requestBuilder =
+                            io.github.chirino.memory.grpc.v1.CreateOwnershipTransferRequest
+                                    .newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.createOwnershipTransfer(requestBuilder.build());
+                }
+            case "AcceptOwnershipTransfer":
+                {
+                    var requestBuilder = AcceptOwnershipTransferRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.acceptOwnershipTransfer(requestBuilder.build());
+                }
+            case "DeleteOwnershipTransfer":
+                {
+                    var requestBuilder = DeleteOwnershipTransferRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.deleteOwnershipTransfer(requestBuilder.build());
+                }
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported OwnershipTransfersService method: " + method);
         }
     }
 
@@ -3009,12 +3053,30 @@ public class StepDefinitions {
         this.lastResponse = requestSpec.when().delete(renderedPath);
     }
 
+    @io.cucumber.java.en.When("I call DELETE {string}")
+    public void iCallDELETE(String path) {
+        trackUsage();
+        String renderedPath = renderTemplate(path);
+        var requestSpec = given();
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().delete(renderedPath);
+    }
+
     @io.cucumber.java.en.When("I call POST {string} with body:")
     public void iCallPOSTWithBody(String path, String body) {
         trackUsage();
         String renderedPath = renderTemplate(path);
         String renderedBody = renderTemplate(body);
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(renderedBody);
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().post(renderedPath);
+    }
+
+    @io.cucumber.java.en.When("I call POST {string}")
+    public void iCallPOST(String path) {
+        trackUsage();
+        String renderedPath = renderTemplate(path);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON);
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post(renderedPath);
     }
@@ -3606,6 +3668,9 @@ public class StepDefinitions {
     public void theConversationHasAPendingOwnershipTransferToUser(String toUserId) {
         trackUsage();
         String ownerId = (String) contextVariables.getOrDefault("conversationOwner", currentUserId);
-        memoryStoreSelector.getStore().requestOwnershipTransfer(ownerId, conversationId, toUserId);
+        CreateOwnershipTransferRequest request = new CreateOwnershipTransferRequest();
+        request.setConversationId(conversationId);
+        request.setNewOwnerUserId(toUserId);
+        memoryStoreSelector.getStore().createOwnershipTransfer(ownerId, request);
     }
 }

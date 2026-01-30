@@ -159,32 +159,6 @@ Feature: Conversation Sharing gRPC API
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
-  Scenario: Transfer conversation ownership via gRPC
-    Given I have a conversation with title "Ownership Transfer Test"
-    When I send gRPC request "ConversationsService/TransferOwnership" with body:
-    """
-    conversation_id: "${conversationId}"
-    new_owner_user_id: "bob"
-    """
-    Then the gRPC response should not have an error
-
-  Scenario: Transfer ownership of non-existent conversation via gRPC
-    When I send gRPC request "ConversationsService/TransferOwnership" with body:
-    """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
-    new_owner_user_id: "bob"
-    """
-    Then the gRPC response should have status "NOT_FOUND"
-
-  Scenario: Transfer ownership without access via gRPC
-    Given there is a conversation owned by "bob"
-    When I send gRPC request "ConversationsService/TransferOwnership" with body:
-    """
-    conversation_id: "${conversationId}"
-    new_owner_user_id: "charlie"
-    """
-    Then the gRPC response should have status "PERMISSION_DENIED"
-
   Scenario: Membership response contains conversation_id instead of conversation_group_id via gRPC
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """

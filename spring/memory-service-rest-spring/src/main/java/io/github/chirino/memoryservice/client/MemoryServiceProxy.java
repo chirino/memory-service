@@ -7,7 +7,6 @@ import io.github.chirino.memoryservice.client.invoker.ApiClient;
 import io.github.chirino.memoryservice.client.model.Channel;
 import io.github.chirino.memoryservice.client.model.ForkFromEntryRequest;
 import io.github.chirino.memoryservice.client.model.ShareConversationRequest;
-import io.github.chirino.memoryservice.client.model.TransferConversationOwnershipRequest;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
@@ -130,22 +129,6 @@ public class MemoryServiceProxy {
         return execute(
                 api -> api.deleteConversationResponseWithHttpInfo(toUuid(conversationId)),
                 HttpStatus.OK);
-    }
-
-    public ResponseEntity<?> transferConversationOwnership(String conversationId, String body) {
-        try {
-            TransferConversationOwnershipRequest request =
-                    OBJECT_MAPPER.readValue(body, TransferConversationOwnershipRequest.class);
-            return executeSharingApi(
-                    api ->
-                            api.transferConversationOwnershipWithHttpInfo(
-                                    toUuid(conversationId), request),
-                    HttpStatus.ACCEPTED);
-        } catch (Exception e) {
-            LOG.error("Error parsing transfer ownership request", e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "Invalid request body"));
-        }
     }
 
     private ConversationsApi conversationsApi(@Nullable String explicitBearerToken) {
