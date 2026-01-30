@@ -920,7 +920,7 @@ function ChatPanelContent({
     : "";
 
   return (
-    <main className="flex flex-1 flex-col bg-cream">
+    <main className="flex flex-1 flex-col overflow-hidden bg-cream">
       {/* Chat Header */}
       <header className="relative z-40 border-b border-stone/10 bg-cream/80 px-8 py-5 backdrop-blur-sm">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
@@ -1457,6 +1457,7 @@ export function ChatPanel({
         author,
         content: entryText(entry),
         createdAt: entry.createdAt,
+        userId: entry.userId,
       });
     });
 
@@ -1666,6 +1667,7 @@ export function ChatPanel({
       conversationId={conversationId}
       conversationGroupId={conversationGroupId}
       messages={conversationMessages}
+      currentUserId={currentUserId}
     >
       <ChatPanelContent
         conversationId={conversationId}
