@@ -1,6 +1,5 @@
 # TODO List
 
-* Make sure we record partial response in history if connection to LLM fails
 * Figure out how muli-modal content should be handled.
 * Expose Metrics
 * Support OpenTracing

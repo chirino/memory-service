@@ -130,7 +130,14 @@ public final class ConversationStreamAdapter {
                                     if (canceled.get()) {
                                         completeCancel.run();
                                     } else {
-                                        finishFailure(recorder, emitter, failure);
+                                        finishFailure(
+                                                conversationId,
+                                                store,
+                                                buffer,
+                                                recorder,
+                                                emitter,
+                                                failure,
+                                                bearerToken);
                                         cancelWatcherStop.run();
                                     }
                                 },
@@ -183,9 +190,22 @@ public final class ConversationStreamAdapter {
     }
 
     private static void finishFailure(
+            String conversationId,
+            ConversationStore store,
+            StringBuilder buffer,
             ResponseResumer.ResponseRecorder recorder,
             MultiEmitter<? super String> emitter,
-            Throwable failure) {
+            Throwable failure,
+            String bearerToken) {
+        // Persist partial response if any content was buffered
+        if (buffer.length() > 0) {
+            try {
+                store.appendAgentMessage(conversationId, buffer.toString(), bearerToken);
+                store.markCompleted(conversationId);
+            } catch (RuntimeException e) {
+                // Ignore persistence failures to avoid masking the original error
+            }
+        }
         recorder.complete();
         if (!emitter.isCancelled()) {
             emitter.fail(failure);
