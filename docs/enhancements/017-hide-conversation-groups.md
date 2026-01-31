@@ -98,7 +98,7 @@ No changes needed. The store layer continues to use `conversationGroupId` intern
 
 ### 7. Frontend impact
 
-The frontend (`agent-webui`) currently receives `conversationGroupId` from the `Conversation` response and threads it through component state (`ConversationState`, `ConversationRootProps`). However, it **never sends it back to any API endpoint**. It is only used for:
+The frontend (`chat-frontend`) currently receives `conversationGroupId` from the `Conversation` response and threads it through component state (`ConversationState`, `ConversationRootProps`). However, it **never sends it back to any API endpoint**. It is only used for:
 
 - State identity checks (detecting when the conversation changes)
 - Being passed through context to child components

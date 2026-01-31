@@ -20,8 +20,8 @@ A memory service for AI agents that stores messages exchanged with LLMs and user
 **Key paths**:
 - `memory-service-contracts/` - OpenAPI + proto sources of truth
 - `memory-service/` - core implementation
-- `quarkus/examples/agent-quarkus/` - Quarkus agent example
-- `common/agent-webui/` - React frontend
+- `quarkus/examples/chat-quarkus/` - Demo chat app (Quarkus)
+- `common/chat-frontend/` - Demo chat app frontend (React)
 
 ## Development Guidelines
 
@@ -35,7 +35,7 @@ A memory service for AI agents that stores messages exchanged with LLMs and user
 
 **ALWAYS compile after changes**:
 - Java: `./mvnw compile`
-- TypeScript: `npm run lint && npm run build` from `common/agent-webui/`
+- TypeScript: `npm run lint && npm run build` from `common/chat-frontend/`
 
 **Test output strategy**: When running tests, redirect output to a file and search for errors instead of using `| tail`. This ensures you see all relevant error context:
 ```bash

@@ -130,7 +130,7 @@ Update to match new interface signatures:
 
 ### 9. Example Agent Endpoints
 
-**Quarkus SSE Resource:** `quarkus/examples/agent-quarkus/src/main/java/example/AgentSseResource.java`
+**Quarkus SSE Resource:** `quarkus/examples/chat-quarkus/src/main/java/example/AgentSseResource.java`
 
 Change endpoint from:
 ```java
@@ -153,7 +153,7 @@ public Multi<TokenFrame> resume(
 }
 ```
 
-**Quarkus WebSocket Resource:** `quarkus/examples/agent-quarkus/src/main/java/example/ResumeWebSocket.java`
+**Quarkus WebSocket Resource:** `quarkus/examples/chat-quarkus/src/main/java/example/ResumeWebSocket.java`
 
 Change endpoint from:
 ```java
@@ -175,7 +175,7 @@ public class ResumeWebSocket {
 }
 ```
 
-**Spring Agent Controller:** `spring/examples/agent-spring/src/main/java/example/agent/AgentStreamController.java`
+**Spring Agent Controller:** `spring/examples/chat-spring/src/main/java/example/agent/AgentStreamController.java`
 
 Change endpoint from:
 ```java
@@ -196,7 +196,7 @@ public SseEmitter resume(@PathVariable String conversationId) {
 
 ### 10. Frontend Changes
 
-**Stream Types:** `common/agent-webui/src/hooks/useStreamTypes.ts`
+**Stream Types:** `common/chat-frontend/src/hooks/useStreamTypes.ts`
 
 ```typescript
 // BEFORE
@@ -218,16 +218,16 @@ export type StreamStartParams = {
 };
 ```
 
-**SSE Hook:** `common/agent-webui/src/hooks/useSseStream.ts`
+**SSE Hook:** `common/chat-frontend/src/hooks/useSseStream.ts`
 
 - Change resume URL from `/resume/${params.resumePosition}` to `/resume`
 - Remove `resumePosition` references in resume detection logic
 
-**WebSocket Hook:** `common/agent-webui/src/hooks/useWebSocketStream.ts`
+**WebSocket Hook:** `common/chat-frontend/src/hooks/useWebSocketStream.ts`
 
 - Similar changes for WebSocket resume endpoint
 
-**Chat Panel:** `common/agent-webui/src/components/chat-panel.tsx`
+**Chat Panel:** `common/chat-frontend/src/components/chat-panel.tsx`
 
 - Remove `resumePosition` from stream start calls
 
@@ -270,7 +270,7 @@ After implementation:
 ./mvnw test
 
 # Verify frontend builds
-cd common/agent-webui && npm run lint && npm run build
+cd common/chat-frontend && npm run lint && npm run build
 ```
 
 ## Files to Modify (Complete List)
@@ -287,13 +287,13 @@ cd common/agent-webui && npm run lint && npm run build
 | `spring/memory-service-spring-boot-autoconfigure/src/main/java/io/github/chirino/memoryservice/history/ResponseResumer.java` | Simplify interface |
 | `spring/memory-service-spring-boot-autoconfigure/src/main/java/io/github/chirino/memoryservice/history/GrpcResponseResumer.java` | Remove param |
 | `spring/memory-service-spring-boot-autoconfigure/src/main/java/io/github/chirino/memoryservice/history/NoopResponseResumer.java` | Update signature |
-| `quarkus/examples/agent-quarkus/src/main/java/example/AgentSseResource.java` | Simplify endpoint |
-| `quarkus/examples/agent-quarkus/src/main/java/example/ResumeWebSocket.java` | Simplify endpoint |
-| `spring/examples/agent-spring/src/main/java/example/agent/AgentStreamController.java` | Simplify endpoint |
-| `common/agent-webui/src/hooks/useStreamTypes.ts` | Remove field |
-| `common/agent-webui/src/hooks/useSseStream.ts` | Update URL |
-| `common/agent-webui/src/hooks/useWebSocketStream.ts` | Update URL |
-| `common/agent-webui/src/components/chat-panel.tsx` | Remove param |
+| `quarkus/examples/chat-quarkus/src/main/java/example/AgentSseResource.java` | Simplify endpoint |
+| `quarkus/examples/chat-quarkus/src/main/java/example/ResumeWebSocket.java` | Simplify endpoint |
+| `spring/examples/chat-spring/src/main/java/example/agent/AgentStreamController.java` | Simplify endpoint |
+| `common/chat-frontend/src/hooks/useStreamTypes.ts` | Remove field |
+| `common/chat-frontend/src/hooks/useSseStream.ts` | Update URL |
+| `common/chat-frontend/src/hooks/useWebSocketStream.ts` | Update URL |
+| `common/chat-frontend/src/components/chat-panel.tsx` | Remove param |
 | `memory-service/src/test/resources/features/response-resumer-grpc.feature` | Update scenarios |
 
 ## Notes

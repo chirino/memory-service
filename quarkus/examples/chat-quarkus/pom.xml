@@ -9,9 +9,9 @@
     <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>agent-quarkus</artifactId>
+  <artifactId>chat-quarkus</artifactId>
   <packaging>jar</packaging>
-  <name>Memory Service - Quarkus - Examples - Agent</name>
+  <name>Memory Service - Demo Chat App - Quarkus</name>
 
   <dependencies>
 

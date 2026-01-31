@@ -48,4 +48,4 @@ nb-configuration.xml
 
 memory-service-extension/src
 agent/src
-agent-webui
+chat-frontend

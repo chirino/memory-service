@@ -14,13 +14,13 @@
     - `memory-service-proto-quarkus` (current proto codegen behavior).
     - `memory-service-extension` (Quarkus extension).
     - `quarkus-data-encryption/*` moved under this parent.
-    - `examples/agent-quarkus` (current `agent`).
+    - `examples/chat-quarkus` (current `agent`).
   - `spring/` parent containing Spring-facing modules:
     - `memory-service-rest-spring` (generated client + support).
     - `memory-service-proto-spring` (Spring-friendly gRPC stubs/helpers).
     - `memory-service-spring-boot-autoconfigure` and `memory-service-spring-boot-starter`.
-    - `examples/agent-spring` (Spring Boot agent example).
-- Keep the SPA as `examples/agent-webui` (shared by both agents).
+    - `examples/chat-spring` (Spring Boot agent example).
+- Keep the SPA as `examples/chat-frontend` (shared by both agents).
 
 ## REST client (Spring Boot) plan
 - Generation: use OpenAPI Generator `spring` client with WebClient (reactive) as the default transport; enable `useSpringBoot3`, `dateLibrary=java8`, and `useOptional`.
@@ -51,11 +51,11 @@
 - Include sample `application.yml` snippets in README.
 
 ## Spring Boot agent example
-- Module: `agent-spring` (Spring Boot 3, Java 21).
+- Module: `chat-spring` (Spring Boot 3, Java 21).
 - Responsibilities:
   - Expose the same proxy endpoints as the Quarkus agent (`/v1/user/*`), SSE/WebSocket streaming, and summarization hooks.
   - Use `memory-service-rest-spring` (and optional gRPC) clients.
-  - Serve the existing SPA build from `agent-webui` (static resources), or proxy Vite dev server in dev profile.
+  - Serve the existing SPA build from `chat-frontend` (static resources), or proxy Vite dev server in dev profile.
 - Tests: minimal WebTestClient or MockMvc smoke tests for auth and proxy wiring.
 
 ## Execution phases
@@ -70,7 +70,7 @@
 4) **Spring Boot starter**
    - Implement autoconfigure + starter; document properties; tests for property binding and auth header propagation.
 5) **Agent Spring**
-   - Build feature-parity proxy and streaming; hook SPA assets; add smoke tests under `examples/agent-spring`.
+   - Build feature-parity proxy and streaming; hook SPA assets; add smoke tests under `examples/chat-spring`.
 6) **Docs and migration**
    - Update README, module references, and release notes; deprecate old artifactId references.
    - Run a rebuild + user acceptance pass after the module reorg and before creating the new Spring modules; repeat after Spring additions.
