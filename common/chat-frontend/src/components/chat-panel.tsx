@@ -15,7 +15,7 @@ import type { ApiError, Conversation as ApiConversation, ConversationForkSummary
 import { ConversationsService } from "@/client";
 import { useSseStream } from "@/hooks/useSseStream";
 import type { StreamStartParams } from "@/hooks/useStreamTypes";
-import { Check, Copy, CornerUpLeft, Menu, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { Check, Copy, Menu, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { ShareButton } from "@/components/sharing";
 import { UserAvatar } from "@/components/user-avatar";
 import type { AuthUser } from "@/lib/auth";
@@ -226,37 +226,8 @@ function ChatMessageRow({
 
   return (
     <div key={message.id}>
-      <ConversationsUI.MessageRow
-        message={message}
-        messageRef={messageRef}
-        overlay={
-          message.displayState === "stable" ? (
-            <div className="absolute -bottom-6 right-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <button
-                type="button"
-                onClick={() => onCopy(message.content)}
-                className="rounded p-1 text-stone transition-colors hover:bg-mist hover:text-ink"
-                title="Copy message"
-              >
-                {isCopied ? <Check className="h-3.5 w-3.5 text-sage" /> : <Copy className="h-3.5 w-3.5" />}
-              </button>
-              {isUser && !isReader && (
-                <button
-                  type="button"
-                  onClick={() => onEditStart(message)}
-                  disabled={composerDisabled}
-                  className="rounded p-1 text-stone transition-colors hover:bg-mist hover:text-terracotta disabled:opacity-50"
-                  title="Edit message"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          ) : null
-        }
-      />
       {hasForks ? (
-        <div className={`relative mt-2 ${isUser ? "pr-1 text-right" : "pl-2"}`}>
+        <div className={`relative mb-1 ${isUser ? "pr-1 text-right" : "pl-1"}`}>
           <button
             type="button"
             className="elegant-link pointer-events-auto text-xs text-stone transition-colors hover:text-ink"
@@ -273,7 +244,11 @@ function ChatMessageRow({
             {forkOptionsCount} forks
           </button>
           {isForkMenuOpen && forkPoint ? (
-            <div className="absolute left-0 z-30 mt-2 w-72 animate-slide-up overflow-hidden rounded-xl border border-stone/20 bg-cream shadow-xl">
+            <div
+              className={`absolute z-30 mt-1 w-72 animate-slide-up overflow-hidden rounded-xl border border-stone/20 bg-cream shadow-xl ${
+                isUser ? "right-0" : "left-0"
+              }`}
+            >
               <div className="border-b border-stone/10 bg-mist/50 px-4 py-2.5">
                 <span className="text-xs font-medium text-stone">Fork Branches</span>
               </div>
@@ -313,20 +288,6 @@ function ChatMessageRow({
                         </button>
                       );
                     })}
-                    {/* Parent option */}
-                    <div className="mt-1 border-t border-stone/10 pt-1">
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-mist/50"
-                        onClick={() => {
-                          setOpenForkMenuMessageId(null);
-                          setActiveForkMenuMessageId(null);
-                        }}
-                      >
-                        <CornerUpLeft className="h-4 w-4 text-stone" />
-                        <p className="text-sm text-stone">Return to parent conversation</p>
-                      </button>
-                    </div>
                   </>
                 )}
               </div>
@@ -334,6 +295,35 @@ function ChatMessageRow({
           ) : null}
         </div>
       ) : null}
+      <ConversationsUI.MessageRow
+        message={message}
+        messageRef={messageRef}
+        overlay={
+          message.displayState === "stable" ? (
+            <div className="absolute -bottom-6 right-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <button
+                type="button"
+                onClick={() => onCopy(message.content)}
+                className="rounded p-1 text-stone transition-colors hover:bg-mist hover:text-ink"
+                title="Copy message"
+              >
+                {isCopied ? <Check className="h-3.5 w-3.5 text-sage" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+              {isUser && !isReader && (
+                <button
+                  type="button"
+                  onClick={() => onEditStart(message)}
+                  disabled={composerDisabled}
+                  className="rounded p-1 text-stone transition-colors hover:bg-mist hover:text-terracotta disabled:opacity-50"
+                  title="Edit message"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          ) : null
+        }
+      />
     </div>
   );
 }
