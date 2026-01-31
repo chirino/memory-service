@@ -4,7 +4,7 @@
 
 ## Overview
 
-This document outlines the design and implementation plan for creating polished, high-quality mockups of the AI chat application. The current implementation in `common/agent-webui/` is functional but lacks visual polish. This effort will explore distinctive design directions through style mockups, then produce a final single-page HTML mockup using the chosen style.
+This document outlines the design and implementation plan for creating polished, high-quality mockups of the AI chat application. The current implementation in `common/chat-frontend/` is functional but lacks visual polish. This effort will explore distinctive design directions through style mockups, then produce a final single-page HTML mockup using the chosen style.
 
 ## Outcome
 
@@ -18,11 +18,11 @@ The Minimal Light style was selected for its clean, warm aesthetic that emphasiz
 - Elegant animations and hover states
 
 **Deliverables**:
-- `common/agent-webui/style-mockups/minimal-light.html` - Chosen style
-- `common/agent-webui/style-mockups/dark-mode-pro.html` - Alternative dark theme
-- `common/agent-webui/style-mockups/terminal.html` - Alternative terminal theme
-- `common/agent-webui/mockups/chat.html` - Complete mockup with all UI states
-- `common/agent-webui/mockups/chat-empty.html` - New conversation/empty state
+- `common/chat-frontend/style-mockups/minimal-light.html` - Chosen style
+- `common/chat-frontend/style-mockups/dark-mode-pro.html` - Alternative dark theme
+- `common/chat-frontend/style-mockups/terminal.html` - Alternative terminal theme
+- `common/chat-frontend/mockups/chat.html` - Complete mockup with all UI states
+- `common/chat-frontend/mockups/chat-empty.html` - New conversation/empty state
 
 **Next Steps**: See [Enhancement 023: Chat App Implementation](./023-chat-app-implementation.md)
 
@@ -136,7 +136,7 @@ Before building the full mockup, we explore different visual styles using the ch
 
 ### Style Mockups
 
-All style mockups are placed in `common/agent-webui/style-mockups/` and implement the same chat interface with different aesthetics:
+All style mockups are placed in `common/chat-frontend/style-mockups/` and implement the same chat interface with different aesthetics:
 
 | Style | File | Description |
 |-------|------|-------------|
@@ -177,7 +177,7 @@ When reviewing style mockups, consider:
 
 ### File Structure
 ```
-common/agent-webui/
+common/chat-frontend/
 ├── style-mockups/                    # Phase 0.5: Style exploration
 │   ├── minimal-light.html            # Clean, whitespace-focused (chosen)
 │   ├── dark-mode-pro.html            # Dark theme, gradients
@@ -343,7 +343,7 @@ See [Enhancement 023: Chat App Implementation](./023-chat-app-implementation.md)
 
 ## References
 
-- Current implementation: `common/agent-webui/src/`
+- Current implementation: `common/chat-frontend/src/`
 - API Spec: `memory-service-contracts/src/main/resources/openapi.yml`
 - Tailwind CSS 4.0: https://tailwindcss.com/docs
 - Admin Frontend Design: `docs/enhancements/020-admin-frontend.md`

@@ -208,7 +208,7 @@ Admin APIs are defined in a **separate OpenAPI specification** to avoid clutteri
 **File:** `memory-service-contracts/src/main/resources/openapi-admin.yml`
 
 Rationale:
-- The main spec (`openapi.yml`) generates the Java REST client (`memory-service-rest-quarkus`) and the TypeScript client (`agent-webui`). Neither consumer needs admin endpoints.
+- The main spec (`openapi.yml`) generates the Java REST client (`memory-service-rest-quarkus`) and the TypeScript client (`chat-frontend`). Neither consumer needs admin endpoints.
 - A separate spec keeps generated clients clean — no admin methods appear in user/agent SDKs.
 - Admin tooling (CLI scripts, internal dashboards) generates its own client from `openapi-admin.yml`.
 - Shared schemas (e.g., `Conversation`, `Message`) are duplicated in the admin spec with the additional `deletedAt` field. Since we are pre-release and the admin spec is small, this duplication is acceptable and avoids `$ref` cross-file complexity.
@@ -620,7 +620,7 @@ The admin spec generates a separate client. The main user/agent clients are unaf
 # TBD: may be a new Maven module or generated alongside
 
 # Main TypeScript client (unchanged)
-cd examples/agent-webui && npm run generate
+cd examples/chat-frontend && npm run generate
 ```
 
 ## Implementation Order

@@ -9,9 +9,9 @@
     <relativePath>../../pom.xml</relativePath>
   </parent>
 
-  <artifactId>agent-webui</artifactId>
+  <artifactId>chat-frontend</artifactId>
   <packaging>jar</packaging>
-  <name>Memory Service - Agent Web UI</name>
+  <name>Memory Service - Demo Chat App - Frontend</name>
 
   <properties>
     <frontend-maven-plugin.version>2.0.0</frontend-maven-plugin.version>

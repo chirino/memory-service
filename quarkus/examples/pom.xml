@@ -14,7 +14,7 @@
   <name>Memory Service - Quarkus - Examples - Parent</name>
 
   <modules>
-    <module>agent-quarkus</module>
+    <module>chat-quarkus</module>
   </modules>
 
 </project>

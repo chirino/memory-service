@@ -97,11 +97,11 @@ services:
     ports:
       - "8082:8080"
 
-  demo-agent:
-    image: ghcr.io/chirino/memory-service-demo-agent:latest
+  demo-chat:
+    image: ghcr.io/chirino/memory-service-demo-chat:latest
     build:
       context: .
-      dockerfile: ./quarkus/examples/agent-quarkus/Dockerfile
+      dockerfile: ./quarkus/examples/chat-quarkus/Dockerfile
     environment:
       # Unified config - gRPC client settings are auto-derived from this URL
       MEMORY_SERVICE_CLIENT_URL: http://memory-service:8080

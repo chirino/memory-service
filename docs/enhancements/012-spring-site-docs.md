@@ -9,7 +9,7 @@
 
 ## Reference Implementation
 
-The `spring/examples/agent-spring` directory contains a complete working example that demonstrates all integration patterns. The documentation will reference this example extensively:
+The `spring/examples/chat-spring` directory contains a complete working example that demonstrates all integration patterns. The documentation will reference this example extensively:
 
 | File | Purpose |
 |------|---------|
@@ -52,7 +52,7 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
 
 3. **Step 1: Create a Simple Spring AI App**
    - Use Spring Initializr or manual setup
-   - Add `spring-ai-starter-model-openai` dependency (as shown in `agent-spring/pom.xml`)
+   - Add `spring-ai-starter-model-openai` dependency (as shown in `chat-spring/pom.xml`)
    - Create a simple `ChatClient` based controller:
      ```java
      @RestController
@@ -69,7 +69,7 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
          }
      }
      ```
-   - Configure OpenAI credentials in `application.properties` (ref: `agent-spring/src/main/resources/application.properties`):
+   - Configure OpenAI credentials in `application.properties` (ref: `chat-spring/src/main/resources/application.properties`):
      ```properties
      spring.ai.openai.api-key=${OPENAI_API_KEY:}
      spring.ai.openai.base-url=${OPENAI_BASE_URL:https://api.openai.com}
@@ -77,7 +77,7 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
    - Test with curl - note that there's no memory between requests
 
 4. **Step 2: Add Memory Service Starter**
-   - Add dependencies (ref: `agent-spring/pom.xml`):
+   - Add dependencies (ref: `chat-spring/pom.xml`):
      ```xml
      <dependency>
        <groupId>io.github.chirino.memory-service</groupId>
@@ -85,14 +85,14 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
        <version>${project.version}</version>
      </dependency>
      ```
-   - Start Memory Service via Docker Compose (ref: `agent-spring/compose.yaml`)
+   - Start Memory Service via Docker Compose (ref: `chat-spring/compose.yaml`)
    - Configure connection in `application.properties`:
      ```properties
      memory-service.client.base-url=${MEMORY_SERVICE_URL:http://localhost:8082}
      memory-service.client.api-key=${MEMORY_SERVICE_API_KEY:}
      memory-service.client.log-requests=true
      ```
-   - Configure OAuth2 login (ref: `agent-spring/src/main/resources/application.properties`):
+   - Configure OAuth2 login (ref: `chat-spring/src/main/resources/application.properties`):
      ```properties
      spring.security.oauth2.client.registration.memory-service-client.client-id=memory-service-client
      spring.security.oauth2.client.registration.memory-service-client.client-secret=change-me
@@ -101,7 +101,7 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
      spring.security.oauth2.client.registration.memory-service-client.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}
      spring.security.oauth2.client.provider.memory-service-client.issuer-uri=http://localhost:8081/realms/memory-service
      ```
-   - Configure security (ref: `agent-spring/src/main/java/example/agent/SecurityConfig.java`):
+   - Configure security (ref: `chat-spring/src/main/java/example/agent/SecurityConfig.java`):
      ```java
      @Configuration
      class SecurityConfig {
@@ -327,7 +327,7 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
      ```
    - Implement cancel endpoint via `MemoryServiceProxy.cancelResponse()`
 
-5. **Complete Example** - Reference `spring/examples/agent-spring`
+5. **Complete Example** - Reference `spring/examples/chat-spring`
 
 ### 4. REST Client (`rest-client.mdx`)
 
@@ -396,7 +396,7 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
    - Automatic service discovery and configuration
 
 2. **Setup**
-   - Add `spring-boot-docker-compose` dependency (ref: `agent-spring/pom.xml`):
+   - Add `spring-boot-docker-compose` dependency (ref: `chat-spring/pom.xml`):
      ```xml
      <dependency>
        <groupId>org.springframework.boot</groupId>
@@ -405,7 +405,7 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
      ```
    - Place `compose.yaml` in project root (Spring Boot auto-detects it)
 
-3. **Complete compose.yaml Example** (ref: `agent-spring/compose.yaml`)
+3. **Complete compose.yaml Example** (ref: `chat-spring/compose.yaml`)
    ```yaml
    services:
      postgres:
@@ -505,11 +505,11 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
 ### Phase 4: Navigation and Polish
 8. Update site navigation to include Spring section (parallel to Quarkus)
 9. Add cross-links between Spring and Quarkus docs where appropriate
-10. Review and test all code examples against `examples/agent-spring`
+10. Review and test all code examples against `examples/chat-spring`
 
 ## Dependencies
 
-- Existing `examples/agent-spring` as reference implementation
+- Existing `examples/chat-spring` as reference implementation
 - Memory Service running via Docker Compose for testing examples
 - Spring Boot 3.x with Spring AI
 
@@ -529,6 +529,6 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
 ## Success Criteria
 
 1. A Spring Boot developer can follow the getting-started guide and have a working memory-backed agent
-2. All code examples compile and work with the current `examples/agent-spring` implementation
+2. All code examples compile and work with the current `examples/chat-spring` implementation
 3. Documentation covers the same feature set as the Quarkus documentation
 4. Navigation is intuitive with clear progression from basic to advanced topics

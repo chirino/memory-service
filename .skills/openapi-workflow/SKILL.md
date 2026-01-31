@@ -14,11 +14,11 @@ description: Use when making changes to the OpenAPI contract. Workflow for updat
 
 3. **Regenerate TypeScript client**:
    ```bash
-   cd common/agent-webui && npm run generate
+   cd common/chat-frontend && npm run generate
    ```
 
 4. **Verify**:
    ```bash
    ./mvnw compile
-   cd common/agent-webui && npm run lint && npm run build
+   cd common/chat-frontend && npm run lint && npm run build
    ```

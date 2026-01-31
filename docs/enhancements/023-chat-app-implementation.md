@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the implementation plan for applying the Minimal Light design (from [Enhancement 022](./022-chat-app-design.md)) to the existing React chat application in `common/agent-webui/`.
+This document outlines the implementation plan for applying the Minimal Light design (from [Enhancement 022](./022-chat-app-design.md)) to the existing React chat application in `common/chat-frontend/`.
 
 ## Goals
 
@@ -14,8 +14,8 @@ This document outlines the implementation plan for applying the Minimal Light de
 ## Design Reference
 
 The implementation should match the mockups created in Enhancement 022:
-- `common/agent-webui/mockups/chat.html` - Complete chat interface
-- `common/agent-webui/mockups/chat-empty.html` - Empty/new conversation state
+- `common/chat-frontend/mockups/chat.html` - Complete chat interface
+- `common/chat-frontend/mockups/chat-empty.html` - Empty/new conversation state
 
 ## Design Tokens
 
@@ -324,7 +324,7 @@ If issues arise:
 
 ## References
 
-- Design mockups: `common/agent-webui/mockups/`
-- Style exploration: `common/agent-webui/style-mockups/`
-- Current implementation: `common/agent-webui/src/`
+- Design mockups: `common/chat-frontend/mockups/`
+- Style exploration: `common/chat-frontend/style-mockups/`
+- Current implementation: `common/chat-frontend/src/`
 - Design document: [Enhancement 022](./022-chat-app-design.md)

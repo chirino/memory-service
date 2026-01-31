@@ -8,7 +8,7 @@ description: Use when you need build or dev mode commands for memory-service.
 ## Dev Mode (with live reload)
 ```bash
 ./mvnw quarkus:dev -pl memory-service          # backend on :8080
-./mvnw quarkus:dev -pl quarkus/examples/agent-quarkus  # agent+SPA on :8081
+./mvnw quarkus:dev -pl quarkus/examples/chat-quarkus  # demo chat app on :8081
 ```
 
 Dev Services auto-starts dependencies (Postgres, Keycloak, Redis) when Docker is available.

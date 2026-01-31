@@ -14,7 +14,7 @@
   <name>Memory Service - Spring - Examples - Parent</name>
 
   <modules>
-    <module>agent-spring</module>
+    <module>chat-spring</module>
   </modules>
 
 </project>

@@ -114,7 +114,7 @@
 - Regenerate Java client:
   - `./mvnw -pl quarkus/memory-service-rest-quarkus clean compile`.
 - Regenerate frontend client:
-  - `cd agent-webui && npm install && npm run generate`.
+  - `cd chat-frontend && npm install && npm run generate`.
 - Update any agent/frontend code using the summary API.
 
 ### 9) Tests

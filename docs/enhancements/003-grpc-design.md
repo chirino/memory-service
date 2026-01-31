@@ -104,7 +104,7 @@ Most endpoints are unary. If any endpoint returns large message lists, consider 
 1. Add Quarkus gRPC client dependencies to `memory-service-extension` module.
 2. Configure gRPC client stub generation in `memory-service-extension` by scanning the proto dependency from `memory-service-contracts`.
 3. Ensure `memory-service-contracts` publishes proto files as resources alongside REST (OpenAPI) definitions.
-4. Add example usage in `examples/agent-quarkus` (gRPC client optional; REST remains default).
+4. Add example usage in `examples/chat-quarkus` (gRPC client optional; REST remains default).
 5. Document gRPC CLI usage for smoke testing.
 
 ### Phase 4: Operational hardening

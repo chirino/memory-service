@@ -9,14 +9,14 @@
     <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>agent-spring</artifactId>
+  <artifactId>chat-spring</artifactId>
   <packaging>jar</packaging>
-  <name>Memory Service - Spring - Examples - Agent</name>
+  <name>Memory Service - Demo Chat App - Spring</name>
 
   <dependencies>
     <dependency>
       <groupId>io.github.chirino.memory-service</groupId>
-      <artifactId>agent-webui</artifactId>
+      <artifactId>chat-frontend</artifactId>
       <version>${project.parent.version}</version>
     </dependency>
     <dependency>
