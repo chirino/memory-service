@@ -93,12 +93,6 @@
       <artifactId>quarkus-smallrye-openapi</artifactId>
     </dependency>
 
-    <!-- WebSockets for SSE or streaming if needed -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-websockets-next</artifactId>
-    </dependency>
-
     <!-- Testing -->
     <dependency>
       <groupId>io.quarkus</groupId>

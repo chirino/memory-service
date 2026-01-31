@@ -7,7 +7,7 @@ import { ChatPanel } from "@/components/chat-panel";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { PendingTransfersPanel } from "@/components/sharing";
 import { useResumeCheck } from "@/hooks/useResumeCheck";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useAuth, getAccessToken } from "@/lib/auth";
 
 type ListUserConversationsResponse = {
   data?: ConversationSummary[];
@@ -119,9 +119,10 @@ function App() {
   const resumeCheckQuery = useResumeCheck(conversationIds);
   const resumableConversationIds = new Set(resumeCheckQuery.data ?? []);
 
-  // Get current user ID from the backend
-  const currentUserQuery = useCurrentUser();
-  const currentUserId = currentUserQuery.data ?? null;
+  // Get current user info from auth context (frontend OIDC)
+  const auth = useAuth();
+  const currentUser = auth.user;
+  const currentUserId = currentUser?.userId ?? null;
 
   useEffect(() => {
     const interceptor = (response: Response) => {
@@ -252,9 +253,14 @@ function App() {
 
   const indexConversationMutation = useMutation({
     mutationFn: async (conversationId: string) => {
+      const headers: Record<string, string> = {};
+      const token = getAccessToken();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       const response = await fetch(`/v1/conversations/${conversationId}/index`, {
         method: "POST",
-        credentials: "include",
+        headers,
       });
       if (!response.ok) {
         throw new Error("Indexing failed");
@@ -368,6 +374,7 @@ function App() {
           onIndexConversation={handleIndexConversationById}
           onDeleteConversation={handleDeleteConversationById}
           currentUserId={currentUserId}
+          currentUser={currentUser}
         />
       </div>
     </div>
