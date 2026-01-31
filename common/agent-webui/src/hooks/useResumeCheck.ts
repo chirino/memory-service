@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { OpenAPI } from "@/client";
 import type { ApiError } from "@/client";
+import { getAccessToken } from "@/lib/auth";
 
 /**
  * Hook to check which conversations can be resumed.
@@ -15,12 +15,16 @@ export function useResumeCheck(conversationIds: string[]) {
         return [];
       }
       // Use relative URL since ResumeResource is in the agent app
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      const token = getAccessToken();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       const response = await fetch("/v1/conversations/resume-check", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: OpenAPI.CREDENTIALS,
+        headers,
         body: JSON.stringify(conversationIds),
       });
 

@@ -13,11 +13,12 @@ import {
 import { ConversationsUI } from "@/components/conversations-ui";
 import type { ApiError, Conversation as ApiConversation, ConversationForkSummary, Entry } from "@/client";
 import { ConversationsService } from "@/client";
-import { useWebSocketStream } from "@/hooks/useWebSocketStream";
 import { useSseStream } from "@/hooks/useSseStream";
 import type { StreamStartParams } from "@/hooks/useStreamTypes";
 import { Check, Copy, CornerUpLeft, Menu, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { ShareButton } from "@/components/sharing";
+import { UserAvatar } from "@/components/user-avatar";
+import type { AuthUser } from "@/lib/auth";
 
 type ListUserEntriesResponse = {
   data?: Entry[];
@@ -49,6 +50,7 @@ type ChatPanelProps = {
   onIndexConversation?: (conversationId: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
   currentUserId?: string | null;
+  currentUser?: AuthUser | null;
 };
 
 type PendingFork = {
@@ -60,8 +62,6 @@ type ConversationMeta = {
   forkedAtConversationId: string | null;
   forkedAtEntryId: string | null;
 };
-
-type StreamMode = "websocket" | "sse";
 
 type ChatMessageRowProps = {
   message: RenderableConversationMessage;
@@ -372,11 +372,10 @@ type ChatPanelContentProps = {
   queryClient: ReturnType<typeof useQueryClient>;
   userMessageIndexById: Map<string, number>;
   canceling: boolean;
-  streamMode: StreamMode;
-  setStreamMode: React.Dispatch<React.SetStateAction<StreamMode>>;
   onIndexConversation?: (conversationId: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
   currentUserId?: string | null;
+  currentUser?: AuthUser | null;
 };
 
 function formatConversationTime(value?: string): string {
@@ -403,14 +402,13 @@ function ChatPanelContent({
   queryClient,
   userMessageIndexById,
   canceling,
-  streamMode: _streamMode,
-  setStreamMode: _setStreamMode,
   forksQuery,
   conversationMetaById,
   conversationQuery,
   onIndexConversation,
   onDeleteConversation,
   currentUserId,
+  currentUser,
 }: ChatPanelContentProps & {
   forksQuery: ReturnType<typeof useQuery<ConversationForkSummary[], ApiError, ConversationForkSummary[]>>;
   conversationMetaById: Map<string, ConversationMeta>;
@@ -993,6 +991,9 @@ function ChatPanelContent({
                 </div>
               )}
             </div>
+
+            {/* User avatar */}
+            {currentUser && <UserAvatar user={currentUser} />}
           </div>
 
           {/* Stream mode toggle - hidden for now
@@ -1202,11 +1203,11 @@ export function ChatPanel({
   onIndexConversation,
   onDeleteConversation,
   currentUserId,
+  currentUser,
 }: ChatPanelProps) {
   const [assistantIdOverrides, setAssistantIdOverrides] = useState<Record<string, string>>({});
   const assistantIdOverridesRef = useRef<Record<string, string>>({});
   const [canceling, setCanceling] = useState(false);
-  const [streamMode, setStreamMode] = useState<StreamMode>("sse");
   // Track pending IDs per conversation to prevent desync across concurrent streams
   // The queue stores pairs: [assistantId, userId] for each stream start
   const pendingIdQueueRef = useRef<Map<string, string[]>>(new Map());
@@ -1224,7 +1225,6 @@ export function ChatPanel({
   useEffect(() => {
     assistantIdOverridesRef.current = assistantIdOverrides;
   }, [assistantIdOverrides]);
-  const webSocketStream = useWebSocketStream();
   const queryClient = useQueryClient();
 
   // Reset resume tracking and pending IDs when switching conversations
@@ -1243,10 +1243,9 @@ export function ChatPanel({
         // Reset resume flag when switching TO a conversation to allow resume on switch back
         delete hasResumedRef.current[conversationId];
       }
-      webSocketStream.close();
       sseStream.close();
     }
-  }, [conversationId, webSocketStream, sseStream]);
+  }, [conversationId, sseStream]);
 
   // Reset hasResumed flag when resumableConversationIds changes to allow retry
   // This handles the case where the resume check query completes after the effect first runs
@@ -1256,10 +1255,9 @@ export function ChatPanel({
 
   useEffect(() => {
     return () => {
-      webSocketStream.close();
       sseStream.close();
     };
-  }, [webSocketStream, sseStream]);
+  }, [sseStream]);
 
   const isResolvedConversation = Boolean(conversationId && knownConversationIds?.has(conversationId));
   const forksQuery = useQuery<ConversationForkSummary[], ApiError, ConversationForkSummary[]>({
@@ -1540,29 +1538,14 @@ export function ChatPanel({
         },
       };
 
-      const useSse = streamMode === "sse";
-
-      if (useSse) {
-        sseStream.close();
-        webSocketStream.close();
-        try {
-          sseStream.start(params);
-        } catch (error) {
-          callbacks.onError?.(error);
-        }
-        return;
-      }
-
       sseStream.close();
-      webSocketStream.close();
-      // Wrap in try/catch to handle synchronous errors from webSocketStream.start()
       try {
-        webSocketStream.start(params);
+        sseStream.start(params);
       } catch (error) {
         callbacks.onError?.(error);
       }
     },
-    [queryClient, sseStream, streamMode, webSocketStream],
+    [queryClient, sseStream],
   );
 
   const idFactory = useCallback(() => {
@@ -1650,7 +1633,7 @@ export function ChatPanel({
         } finally {
           setCanceling(false);
         }
-        webSocketStream.close();
+        sseStream.close();
         void queryClient.invalidateQueries({ queryKey: ["conversation-path-messages", targetConversationId] });
         void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
       },
@@ -1658,7 +1641,7 @@ export function ChatPanel({
         onSelectConversationId?.(id);
       },
     }),
-    [idFactory, onSelectConversationId, queryClient, startEventStream, webSocketStream],
+    [idFactory, onSelectConversationId, queryClient, sseStream, startEventStream],
   );
 
   return (
@@ -1682,11 +1665,10 @@ export function ChatPanel({
         forksQuery={forksQuery}
         conversationMetaById={conversationMetaById}
         conversationQuery={conversationQuery}
-        streamMode={streamMode}
-        setStreamMode={setStreamMode}
         onIndexConversation={onIndexConversation}
         onDeleteConversation={onDeleteConversation}
         currentUserId={currentUserId}
+        currentUser={currentUser}
       />
     </Conversation.Root>
   );

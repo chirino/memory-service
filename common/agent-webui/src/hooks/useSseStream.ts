@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef } from "react";
 import type { StreamClient, StreamStartParams } from "./useStreamTypes";
+import { getAccessToken } from "@/lib/auth";
 
 function normalizeEventChunk(chunk: string): string {
   return chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -49,12 +50,21 @@ export function useSseStream(): StreamClient {
           let url: string;
           let fetchOptions: RequestInit;
 
+          // Build headers with optional Authorization
+          const baseHeaders: Record<string, string> = {
+            Accept: "text/event-stream",
+          };
+          const token = getAccessToken();
+          if (token) {
+            baseHeaders["Authorization"] = `Bearer ${token}`;
+          }
+
           if (isResume) {
             // Resume SSE: GET /customer-support-agent/{conversationId}/resume
             url = `/customer-support-agent/${encodeURIComponent(params.sessionId)}/resume`;
             fetchOptions = {
               method: "GET",
-              headers: { Accept: "text/event-stream" },
+              headers: baseHeaders,
               signal: controller.signal,
             };
           } else {
@@ -63,8 +73,8 @@ export function useSseStream(): StreamClient {
             fetchOptions = {
               method: "POST",
               headers: {
+                ...baseHeaders,
                 "Content-Type": "application/json",
-                Accept: "text/event-stream",
               },
               body: JSON.stringify({ message: trimmedMessage }),
               signal: controller.signal,
