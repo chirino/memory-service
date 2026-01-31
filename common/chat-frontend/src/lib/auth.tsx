@@ -10,7 +10,7 @@ import { OpenAPI } from "@/client";
 // OIDC Configuration with sensible defaults for local development
 const keycloakUrl = import.meta.env.VITE_KEYCLOAK_URL || "http://localhost:8081";
 const keycloakRealm = import.meta.env.VITE_KEYCLOAK_REALM || "memory-service";
-const keycloakClientId = import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "agent-frontend";
+const keycloakClientId = import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "frontend";
 
 const oidcConfig = {
   authority: `${keycloakUrl}/realms/${keycloakRealm}`,
