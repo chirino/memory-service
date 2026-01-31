@@ -678,16 +678,10 @@ public class PostgresMemoryStore implements MemoryStore {
             case ALL ->
                     entryRepository.listByChannel(
                             conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
-            case LATEST -> {
-                Long latestEpoch = entryRepository.findLatestMemoryEpoch(conversationId, clientId);
-                // If no entries with epochs exist, list all memory entries
-                if (latestEpoch == null) {
-                    yield entryRepository.listByChannel(
-                            conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
-                }
-                yield entryRepository.listMemoryEntriesByEpoch(
-                        conversationId, afterEntryId, limit, latestEpoch, clientId);
-            }
+            case LATEST ->
+                    // Combined query: finds max epoch and lists entries in single round-trip
+                    entryRepository.listMemoryEntriesAtLatestEpoch(
+                            conversationId, afterEntryId, limit, clientId);
             case EPOCH ->
                     entryRepository.listMemoryEntriesByEpoch(
                             conversationId, afterEntryId, limit, filter.getEpoch(), clientId);
@@ -771,15 +765,14 @@ public class PostgresMemoryStore implements MemoryStore {
             String userId, String conversationId, CreateEntryRequest entry, String clientId) {
         validateSyncEntry(entry);
         UUID cid = UUID.fromString(conversationId);
-        Long latestEpoch = entryRepository.findLatestMemoryEpoch(cid, clientId);
+        // Combined query: finds max epoch and lists entries in single round-trip
+        List<EntryEntity> latestEpochEntityList =
+                entryRepository.listMemoryEntriesAtLatestEpoch(cid, clientId);
         List<EntryDto> latestEpochEntries =
-                latestEpoch != null
-                        ? entryRepository
-                                .listMemoryEntriesByEpoch(cid, latestEpoch, clientId)
-                                .stream()
-                                .map(this::toEntryDto)
-                                .collect(Collectors.toList())
-                        : Collections.emptyList();
+                latestEpochEntityList.stream().map(this::toEntryDto).collect(Collectors.toList());
+        // Extract epoch from entries (all entries in the list share the same epoch)
+        Long latestEpoch =
+                latestEpochEntityList.isEmpty() ? null : latestEpochEntityList.get(0).getEpoch();
 
         // Flatten content from all existing entries and get incoming content
         List<Object> existingContent = MemorySyncHelper.flattenContent(latestEpochEntries);

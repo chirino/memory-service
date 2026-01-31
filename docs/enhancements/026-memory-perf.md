@@ -616,11 +616,155 @@ The flattening logic works uniformly across both formats.
 
 ---
 
+# Phase 2: Combine Epoch Lookup with Entry Fetch
+
+## Motivation
+
+Every GET and SYNC operation on the memory channel requires two sequential queries:
+
+1. `SELECT max(epoch)` - Find the latest epoch for this agent
+2. `SELECT * FROM entries WHERE epoch = ?` - Fetch entries from that epoch
+
+This two-query pattern adds latency to every memory operation. By combining these into a single query, we eliminate one database round-trip per operation.
+
+## Optimization Options Considered
+
+### Option 1: Combine into Single Query (Selected)
+
+Use a subquery to get max epoch and entries in one query:
+
+```sql
+SELECT e.*
+FROM entries e
+JOIN conversations c ON e.conversation_id = c.id
+JOIN conversation_groups g ON c.conversation_group_id = g.id
+WHERE e.conversation_id = :conversationId
+  AND e.channel = 'MEMORY'
+  AND e.client_id = :clientId
+  AND e.epoch = (
+    SELECT max(epoch) FROM entries
+    WHERE conversation_id = :conversationId
+      AND channel = 'MEMORY'
+      AND client_id = :clientId
+  )
+  AND c.deleted_at IS NULL
+  AND g.deleted_at IS NULL
+ORDER BY e.created_at, e.id
+LIMIT :limit
+```
+
+**Pros**:
+- Eliminates one round-trip per operation
+- No schema changes required
+- No additional infrastructure
+- Simple to implement
+
+**Cons**:
+- Subquery still computes `max()`, just within same query execution
+
+### Option 2: Lightweight Lookup Table
+
+Create a dedicated table to track latest epoch per agent:
+
+```sql
+CREATE TABLE memory_epochs (
+    conversation_id UUID,
+    client_id TEXT,
+    latest_epoch BIGINT NOT NULL,
+    PRIMARY KEY (conversation_id, client_id)
+);
+```
+
+**Pros**:
+- Single-row lookup O(1) vs aggregate O(log n)
+- Very small table, likely stays in memory
+- Updated atomically when epochs change
+
+**Cons**:
+- Schema change required
+- Must maintain consistency on every sync
+- Migration needed for existing data
+
+### Option 3: Redis Cache
+
+Store `memory:{conversationId}:{clientId}:latest_epoch` in Redis.
+
+**Pros**:
+- Sub-millisecond lookup
+- No database load for epoch lookup
+
+**Cons**:
+- Cache invalidation complexity
+- Additional infrastructure dependency
+- Consistency challenges on cache miss
+
+## Selected Approach: Option 1
+
+Option 1 provides immediate benefit with minimal implementation risk. The combined query eliminates the round-trip latency while the database optimizer can efficiently execute the subquery using the existing index.
+
+## SQL Changes
+
+### New Query: List Memory Entries at Latest Epoch
+
+**Repository Method**: `EntryRepository.listMemoryEntriesAtLatestEpoch()`
+
+```sql
+SELECT e.*
+FROM entries e
+JOIN conversations c ON e.conversation_id = c.id
+JOIN conversation_groups g ON c.conversation_group_id = g.id
+WHERE e.conversation_id = :conversationId
+  AND e.channel = 'MEMORY'
+  AND e.client_id = :clientId
+  AND e.epoch = (
+    SELECT max(epoch) FROM entries
+    WHERE conversation_id = :conversationId
+      AND channel = 'MEMORY'
+      AND client_id = :clientId
+  )
+  AND c.deleted_at IS NULL
+  AND g.deleted_at IS NULL
+ORDER BY e.created_at, e.id
+LIMIT :limit
+```
+
+**Pagination Variant** (when `afterEntryId` is provided):
+```sql
+-- First: lookup cursor entry to get its created_at
+SELECT * FROM entries WHERE id = :afterEntryId
+
+-- Then: add filter to main query
+AND e.created_at > :cursorCreatedAt
+```
+
+**Index Used**: `idx_entries_conversation_channel_client_epoch_created_at` (existing)
+
+### Query Count Reduction
+
+| Operation | Before | After | Savings |
+|-----------|--------|-------|---------|
+| Get Messages (first page) | 2 queries | 1 query | 50% |
+| Get Messages (pagination) | 3 queries | 2 queries | 33% |
+| Sync (read phase) | 2 queries | 1 query | 50% |
+
+## Implementation Checklist
+
+- [x] Add `EntryRepository.listMemoryEntriesAtLatestEpoch()` method
+  - [x] Basic query with subquery for max epoch
+  - [x] Pagination variant with cursor support
+  - [x] Handle NULL epoch case (no entries exist)
+- [x] Update `PostgresMemoryStore.fetchMemoryEntries()` to use new method
+- [x] Update `PostgresMemoryStore.syncAgentEntry()` read phase
+- [x] Update `MongoMemoryStore` with equivalent optimization
+- [ ] Add integration tests for combined query behavior
+- [ ] Benchmark before/after query performance
+
+---
+
 ## Future Optimization Opportunities
 
 *(To be analyzed in follow-up phases)*
 
-- Combine max(epoch) + list into single query
 - Add content hash for quick no-op detection without full fetch
-- Consider materialized view for latest epoch per conversation/client
+- Consider Option 2 (lookup table) if subquery proves to be a bottleneck
 - Evaluate if soft-delete joins can be eliminated for memory-only queries

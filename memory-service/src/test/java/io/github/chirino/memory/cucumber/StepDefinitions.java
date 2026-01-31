@@ -475,15 +475,7 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("the conversation has an entry {string} in channel {string}")
     public void theConversationHasAnEntryInChannel(String content, String channel) {
-        trackUsage();
-        CreateEntryRequest request = new CreateEntryRequest();
-        request.setContent(List.of(Map.of("type", "text", "text", content)));
-        request.setChannel(CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase()));
-        request.setContentType("test.v1");
-        memoryStoreSelector
-                .getStore()
-                .appendAgentEntries(
-                        currentUserId, conversationId, List.of(request), resolveClientId());
+        theConversationHasAnEntryInChannelWithContentType(content, channel, "test.v1");
     }
 
     @io.cucumber.java.en.Given(
@@ -493,8 +485,14 @@ public class StepDefinitions {
         trackUsage();
         CreateEntryRequest request = new CreateEntryRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
-        request.setChannel(CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase()));
+        CreateEntryRequest.ChannelEnum channelEnum =
+                CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase());
+        request.setChannel(channelEnum);
         request.setContentType(contentType);
+        // Memory entries must always have an epoch (invariant)
+        if (channelEnum == CreateEntryRequest.ChannelEnum.MEMORY) {
+            request.setEpoch(1L);
+        }
         memoryStoreSelector
                 .getStore()
                 .appendAgentEntries(
@@ -957,16 +955,15 @@ public class StepDefinitions {
     public void iAppendAnEntryWithContentAndChannelAndContentType(
             String content, String channel, String contentType) {
         trackUsage();
-        var requestSpec =
-                given().contentType(MediaType.APPLICATION_JSON)
-                        .body(
-                                Map.of(
-                                        "content",
-                                        List.of(Map.of("type", "text", "text", content)),
-                                        "channel",
-                                        channel,
-                                        "contentType",
-                                        contentType));
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("content", List.of(Map.of("type", "text", "text", content)));
+        body.put("channel", channel);
+        body.put("contentType", contentType);
+        // Memory entries must always have an epoch (invariant)
+        if ("MEMORY".equalsIgnoreCase(channel)) {
+            body.put("epoch", 1L);
+        }
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(body);
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse =
                 requestSpec.when().post("/v1/conversations/{id}/entries", conversationId);
