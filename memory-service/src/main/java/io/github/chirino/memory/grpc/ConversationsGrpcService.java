@@ -160,12 +160,12 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
     private static ConversationListMode toConversationListMode(
             io.github.chirino.memory.grpc.v1.ConversationListMode mode) {
         if (mode == null) {
-            return ConversationListMode.ALL;
+            return ConversationListMode.LATEST_FORK;
         }
         return switch (mode) {
             case ROOTS -> ConversationListMode.ROOTS;
-            case LATEST_FORK -> ConversationListMode.LATEST_FORK;
-            default -> ConversationListMode.ALL;
+            case ALL -> ConversationListMode.ALL;
+            default -> ConversationListMode.LATEST_FORK;
         };
     }
 }

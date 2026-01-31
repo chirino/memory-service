@@ -1,14 +1,11 @@
 package io.github.chirino.memory.api.dto;
 
-import java.util.Collections;
-import java.util.List;
-
 public class SyncResult {
 
     private Long epoch;
     private boolean noOp;
     private boolean epochIncremented;
-    private List<EntryDto> entries = Collections.emptyList();
+    private EntryDto entry;
 
     public Long getEpoch() {
         return epoch;
@@ -34,11 +31,11 @@ public class SyncResult {
         this.epochIncremented = epochIncremented;
     }
 
-    public List<EntryDto> getEntries() {
-        return entries;
+    public EntryDto getEntry() {
+        return entry;
     }
 
-    public void setEntries(List<EntryDto> entries) {
-        this.entries = entries != null ? entries : Collections.emptyList();
+    public void setEntry(EntryDto entry) {
+        this.entry = entry;
     }
 }

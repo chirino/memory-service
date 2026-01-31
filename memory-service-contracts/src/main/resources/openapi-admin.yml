@@ -43,8 +43,26 @@ paths:
       description: |-
         Lists conversations across all users. Supports filtering by userId,
         deleted status, and date ranges. Requires auditor or admin role.
+
+        **Fork Tree Behavior**: Conversations can be forked to create branches. All forks
+        share the same "conversation group" (fork tree). The `mode` parameter controls
+        which conversations from each fork tree are returned.
       operationId: adminListConversations
       parameters:
+        - name: mode
+          in: query
+          required: false
+          description: |-
+            Listing mode for conversations. Controls which conversations are returned
+            from each fork tree (conversation group).
+            - `all`: include all conversations (roots and forks).
+            - `roots`: only include root conversations (conversations that are not forks).
+            - `latest-fork`: include only the most recently updated conversation per fork tree.
+              This is useful for showing a single representative conversation from each tree.
+          schema:
+            type: string
+            enum: [all, roots, latest-fork]
+            default: latest-fork
         - name: userId
           in: query
           required: false

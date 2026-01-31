@@ -19,7 +19,6 @@ import io.github.chirino.memory.client.model.ErrorResponse;
 import io.github.chirino.memory.client.model.ForkFromEntryRequest;
 import io.github.chirino.memory.client.model.IndexTranscriptRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
-import io.github.chirino.memory.client.model.SyncEntriesRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.Channel;
@@ -289,7 +288,7 @@ public class ConversationsResource {
     @POST
     @Path("/conversations/{conversationId}/entries/sync")
     public Response syncMemoryEntries(
-            @PathParam("conversationId") String conversationId, SyncEntriesRequest request) {
+            @PathParam("conversationId") String conversationId, CreateEntryRequest request) {
         if (apiKeyContext == null || !apiKeyContext.hasValidApiKey()) {
             return forbidden(
                     new AccessDeniedException("Agent API key is required to sync memory messages"));
@@ -299,29 +298,22 @@ public class ConversationsResource {
             return forbidden(
                     new AccessDeniedException("Client id is required to sync memory messages"));
         }
-        if (request == null || request.getEntries() == null || request.getEntries().isEmpty()) {
-            return badRequest("messages are required");
+        if (request == null) {
+            return badRequest("entry request is required");
         }
-        for (CreateEntryRequest message : request.getEntries()) {
-            if (message == null
-                    || message.getChannel() == null
-                    || message.getChannel() != CreateEntryRequest.ChannelEnum.MEMORY) {
-                return badRequest("all sync messages must target the memory channel");
-            }
+        if (request.getChannel() == null
+                || request.getChannel() != CreateEntryRequest.ChannelEnum.MEMORY) {
+            return badRequest("sync entry must target the memory channel");
         }
         try {
             SyncResult result =
-                    store().syncAgentEntries(
-                                    currentUserId(),
-                                    conversationId,
-                                    request.getEntries(),
-                                    clientId);
+                    store().syncAgentEntry(currentUserId(), conversationId, request, clientId);
             Map<String, Object> response = new HashMap<>();
             response.put("epoch", result.getEpoch());
             response.put("noOp", result.isNoOp());
             response.put("epochIncremented", result.isEpochIncremented());
-            List<Entry> data = result.getEntries().stream().map(this::toClientEntry).toList();
-            response.put("entries", data);
+            response.put(
+                    "entry", result.getEntry() != null ? toClientEntry(result.getEntry()) : null);
             return Response.ok(response).build();
         } catch (ResourceNotFoundException e) {
             return notFound(e);

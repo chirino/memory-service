@@ -1,9 +1,11 @@
 package io.github.chirino.memory.model;
 
+import io.github.chirino.memory.api.ConversationListMode;
 import java.time.OffsetDateTime;
 
 public class AdminConversationQuery {
 
+    private ConversationListMode mode = ConversationListMode.LATEST_FORK;
     private String userId;
     private boolean includeDeleted;
     private boolean onlyDeleted;
@@ -11,6 +13,14 @@ public class AdminConversationQuery {
     private OffsetDateTime deletedBefore;
     private String after;
     private int limit;
+
+    public ConversationListMode getMode() {
+        return mode;
+    }
+
+    public void setMode(ConversationListMode mode) {
+        this.mode = mode != null ? mode : ConversationListMode.LATEST_FORK;
+    }
 
     public String getUserId() {
         return userId;

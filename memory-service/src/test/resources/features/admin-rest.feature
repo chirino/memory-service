@@ -160,3 +160,61 @@ Feature: Admin REST API
     And the response should contain at least 1 memberships
     And the response body "data[0].conversationId" should be "${bobConversationId}"
     And the response body should not contain "conversationGroupId"
+
+  Scenario: Admin can list conversations with mode=latest-fork
+    # First authenticate as bob to create an entry
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
+    }
+    """
+    And set "firstEntryId" to "${response.body.id}"
+    And I call POST "/v1/conversations/${bobConversationId}/entries/${firstEntryId}/fork" with body:
+    """
+    {
+      "title": "Bob's Fork"
+    }
+    """
+    And set "forkConversationId" to "${response.body.id}"
+    # Add an entry to the fork to make it the most recently updated
+    And I call POST "/v1/conversations/${forkConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Fork entry"}]
+    }
+    """
+    # Now switch back to admin to test the admin API
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob"
+    Then the response status should be 200
+    # Should return only one conversation per fork tree (the most recently updated)
+    And the response body "data[0].id" should be "${forkConversationId}"
+
+  Scenario: Admin can list conversations with mode=roots
+    # First authenticate as bob to create an entry and fork
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
+    }
+    """
+    And set "firstEntryId" to "${response.body.id}"
+    And I call POST "/v1/conversations/${bobConversationId}/entries/${firstEntryId}/fork" with body:
+    """
+    {
+      "title": "Bob's Fork"
+    }
+    """
+    And set "forkConversationId" to "${response.body.id}"
+    # Now switch back to admin to test the admin API
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations?mode=roots&userId=bob"
+    Then the response status should be 200
+    # Should return only root conversations (not forks)
+    And the response body "data[0].id" should be "${bobConversationId}"

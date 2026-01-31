@@ -1008,6 +1008,44 @@ public class StepDefinitions {
         assertThat("Sync response should contain " + count + " entries", entries.size(), is(count));
     }
 
+    @io.cucumber.java.en.Then("the sync response entry should be null")
+    public void theSyncResponseEntryShouldBeNull() {
+        trackUsage();
+        if (lastResponse == null) {
+            throw new AssertionError("No response has been received");
+        }
+        JsonPath jsonPath = lastResponse.jsonPath();
+        Object entry = jsonPath.get("entry");
+        assertThat("Sync response entry should be null", entry, is(nullValue()));
+    }
+
+    @io.cucumber.java.en.Then("the sync response entry should not be null")
+    public void theSyncResponseEntryShouldNotBeNull() {
+        trackUsage();
+        if (lastResponse == null) {
+            throw new AssertionError("No response has been received");
+        }
+        JsonPath jsonPath = lastResponse.jsonPath();
+        Object entry = jsonPath.get("entry");
+        assertThat("Sync response entry should not be null", entry, is(notNullValue()));
+    }
+
+    @io.cucumber.java.en.Then("the sync response entry content should be empty")
+    public void theSyncResponseEntryContentShouldBeEmpty() {
+        trackUsage();
+        if (lastResponse == null) {
+            throw new AssertionError("No response has been received");
+        }
+        JsonPath jsonPath = lastResponse.jsonPath();
+        Object entry = jsonPath.get("entry");
+        assertThat("Sync response entry should not be null", entry, is(notNullValue()));
+        List<?> content = jsonPath.getList("entry.content");
+        assertThat(
+                "Sync response entry content should be empty",
+                content == null || content.isEmpty(),
+                is(true));
+    }
+
     @io.cucumber.java.en.When("I create a summary with request:")
     public void iCreateASummaryWithRequest(String requestBody) {
         trackUsage();
@@ -1091,28 +1129,35 @@ public class StepDefinitions {
     @io.cucumber.java.en.When("I list conversations")
     public void iListConversations() {
         trackUsage();
-        iListConversationsWithParams(null, null, null);
+        iListConversationsWithParams(null, null, null, null);
     }
 
     @io.cucumber.java.en.When("I list conversations with limit {int}")
     public void iListConversationsWithLimit(int limit) {
         trackUsage();
-        iListConversationsWithParams(null, limit, null);
+        iListConversationsWithParams(null, limit, null, null);
     }
 
     @io.cucumber.java.en.When("I list conversations with limit {int} and after {string}")
     public void iListConversationsWithLimitAndAfter(int limit, String after) {
         trackUsage();
-        iListConversationsWithParams(after, limit, null);
+        iListConversationsWithParams(after, limit, null, null);
     }
 
     @io.cucumber.java.en.When("I list conversations with query {string}")
     public void iListConversationsWithQuery(String query) {
         trackUsage();
-        iListConversationsWithParams(null, null, query);
+        iListConversationsWithParams(null, null, query, null);
     }
 
-    private void iListConversationsWithParams(String after, Integer limit, String query) {
+    @io.cucumber.java.en.When("I list conversations with mode {string}")
+    public void iListConversationsWithMode(String mode) {
+        trackUsage();
+        iListConversationsWithParams(null, null, null, mode);
+    }
+
+    private void iListConversationsWithParams(
+            String after, Integer limit, String query, String mode) {
         var requestSpec = given();
         requestSpec = authenticateRequest(requestSpec);
         var request = requestSpec.when();
@@ -1124,6 +1169,9 @@ public class StepDefinitions {
         }
         if (query != null) {
             request = request.queryParam("query", query);
+        }
+        if (mode != null) {
+            request = request.queryParam("mode", mode);
         }
         this.lastResponse = request.get("/v1/conversations");
     }
@@ -1779,6 +1827,35 @@ public class StepDefinitions {
     public void theGrpcResponseShouldContainEntries(int count) {
         trackUsage();
         assertGrpcEntryCount(count);
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response should have entry")
+    public void theGrpcResponseShouldHaveEntry() {
+        trackUsage();
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Object entry = jsonPath.get("entry");
+        assertThat("gRPC response should have entry", entry, is(notNullValue()));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response should not have entry")
+    public void theGrpcResponseShouldNotHaveEntry() {
+        trackUsage();
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Object entry = jsonPath.get("entry");
+        assertThat("gRPC response should not have entry", entry, is(nullValue()));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response entry content should be empty")
+    public void theGrpcResponseEntryContentShouldBeEmpty() {
+        trackUsage();
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Object entry = jsonPath.get("entry");
+        assertThat("gRPC response should have entry", entry, is(notNullValue()));
+        List<?> content = jsonPath.getList("entry.content");
+        assertThat(
+                "gRPC response entry content should be empty",
+                content == null || content.isEmpty(),
+                is(true));
     }
 
     @io.cucumber.java.en.Then("the gRPC response field {string} should be {string}")

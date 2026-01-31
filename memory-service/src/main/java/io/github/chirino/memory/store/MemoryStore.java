@@ -85,11 +85,8 @@ public interface MemoryStore {
             List<CreateEntryRequest> entries,
             String clientId);
 
-    SyncResult syncAgentEntries(
-            String userId,
-            String conversationId,
-            List<CreateEntryRequest> entries,
-            String clientId);
+    SyncResult syncAgentEntry(
+            String userId, String conversationId, CreateEntryRequest entry, String clientId);
 
     EntryDto indexTranscript(IndexTranscriptRequest request, String clientId);
 

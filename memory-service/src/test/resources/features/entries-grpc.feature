@@ -101,7 +101,7 @@ Feature: Entries gRPC API
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
     conversation_id: "${conversationId}"
-    entries {
+    entry {
       channel: MEMORY
       content_type: "test.v1"
       content {
@@ -126,7 +126,7 @@ Feature: Entries gRPC API
     And the gRPC response field "epoch" should be "1"
     And the gRPC response field "noOp" should be true
     And the gRPC response field "epochIncremented" should be false
-    And the gRPC response should contain 0 entries
+    And the gRPC response should not have entry
 
   Scenario: Sync memory entries via gRPC creates a new epoch when history diverges
     Given I am authenticated as agent with API key "test-agent-key"
@@ -134,7 +134,7 @@ Feature: Entries gRPC API
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
     conversation_id: "${conversationId}"
-    entries {
+    entry {
       channel: MEMORY
       content_type: "test.v1"
       content {
@@ -146,8 +146,42 @@ Feature: Entries gRPC API
     And the gRPC response field "epoch" should be "2"
     And the gRPC response field "noOp" should be false
     And the gRPC response field "epochIncremented" should be true
-    And the gRPC response should contain 1 entry
-    And the gRPC response field "entries[0].content[0]" should be "Updated epoch entry"
+    And the gRPC response should have entry
+    And the gRPC response field "entry.content[0]" should be "Updated epoch entry"
+
+  Scenario: Sync memory entries via gRPC with empty content clears memory
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a memory entry "Memory to clear" with epoch 1 and contentType "test.v1"
+    When I send gRPC request "EntriesService/SyncEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      channel: MEMORY
+      content_type: "test.v1"
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "epoch" should be "2"
+    And the gRPC response field "noOp" should be false
+    And the gRPC response field "epochIncremented" should be true
+    And the gRPC response should have entry
+    And the gRPC response entry content should be empty
+
+  Scenario: Sync memory entries via gRPC with empty content is no-op when no existing memory
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I send gRPC request "EntriesService/SyncEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      channel: MEMORY
+      content_type: "test.v1"
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "noOp" should be true
+    And the gRPC response field "epochIncremented" should be false
+    And the gRPC response should not have entry
 
   Scenario: Append entry requires API key via gRPC
     Given I am authenticated as user "alice"

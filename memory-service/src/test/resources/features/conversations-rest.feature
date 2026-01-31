@@ -249,3 +249,58 @@ Feature: Conversations REST API
     Then the response status should be 404
     When I get conversation "${forkConversationId}"
     Then the response status should be 404
+
+  Scenario: List conversations with mode=latest-fork returns only the most recently updated fork
+    Given I have a conversation with title "Root Conversation"
+    And set "rootConversationId" to "${conversationId}"
+    And I append an entry to the conversation:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
+    }
+    """
+    And set "firstEntryId" to "${response.body.id}"
+    And I append an entry to the conversation:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Second entry"}]
+    }
+    """
+    And set "secondEntryId" to "${response.body.id}"
+    # Create a fork from the root conversation
+    When I fork the conversation at entry "${secondEntryId}"
+    And set "forkConversationId" to "${response.body.id}"
+    # Update the fork by adding an entry (this makes it the most recently updated)
+    And set "conversationId" to "${forkConversationId}"
+    And I append an entry to the conversation:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Fork entry"}]
+    }
+    """
+    # List with mode=latest-fork should return only the forked conversation (most recently updated)
+    When I list conversations with mode "latest-fork"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${forkConversationId}"
+
+  Scenario: List conversations with mode=roots returns only root conversations
+    Given I have a conversation with title "Root Conversation"
+    And set "rootConversationId" to "${conversationId}"
+    And I append an entry to the conversation:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
+    }
+    """
+    And set "entryId" to "${response.body.id}"
+    When I fork the conversation at entry "${entryId}"
+    And set "forkConversationId" to "${response.body.id}"
+    When I list conversations with mode "roots"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${rootConversationId}"

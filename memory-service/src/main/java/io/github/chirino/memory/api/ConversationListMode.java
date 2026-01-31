@@ -20,7 +20,7 @@ public enum ConversationListMode {
 
     public static ConversationListMode fromQuery(String value) {
         if (value == null || value.isBlank()) {
-            return ALL;
+            return LATEST_FORK;
         }
         for (ConversationListMode mode : values()) {
             if (mode.queryValue.equals(value)) {
