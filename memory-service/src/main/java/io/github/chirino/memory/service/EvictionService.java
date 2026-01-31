@@ -2,20 +2,11 @@ package io.github.chirino.memory.service;
 
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.store.MemoryStore;
-import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
@@ -25,9 +16,6 @@ public class EvictionService {
 
     private static final Logger LOG = Logger.getLogger(EvictionService.class);
 
-    // Keep completed jobs for 1 hour before cleanup
-    private static final Duration JOB_RETENTION = Duration.ofHours(1);
-
     @Inject MemoryStoreSelector storeSelector;
 
     @ConfigProperty(name = "memory-service.eviction.batch-size", defaultValue = "1000")
@@ -35,74 +23,6 @@ public class EvictionService {
 
     @ConfigProperty(name = "memory-service.eviction.batch-delay-ms", defaultValue = "100")
     long batchDelayMs;
-
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final Map<String, EvictionJob> jobs = new ConcurrentHashMap<>();
-
-    @PreDestroy
-    void shutdown() {
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    /**
-     * Start an async eviction job.
-     *
-     * @param retentionPeriod resources deleted longer than this are hard-deleted
-     * @param resourceTypes which resource types to evict
-     * @return the job ID that can be used to query status
-     */
-    public String evictAsync(Duration retentionPeriod, Set<String> resourceTypes) {
-        cleanupOldJobs();
-
-        String jobId = UUID.randomUUID().toString();
-        EvictionJob job = new EvictionJob(jobId, retentionPeriod, resourceTypes);
-        jobs.put(jobId, job);
-
-        executor.submit(
-                () -> {
-                    try {
-                        job.setStatus(EvictionJob.Status.RUNNING);
-                        evict(retentionPeriod, resourceTypes, job::setProgress);
-                        job.setStatus(EvictionJob.Status.COMPLETED);
-                        LOG.infof("Eviction job %s completed successfully", jobId);
-                    } catch (Exception e) {
-                        LOG.errorf(e, "Eviction job %s failed", jobId);
-                        job.setError(e.getMessage());
-                        job.setStatus(EvictionJob.Status.FAILED);
-                    }
-                });
-
-        return jobId;
-    }
-
-    /**
-     * Get the status of an eviction job.
-     *
-     * @param jobId the job ID
-     * @return the job if found
-     */
-    public Optional<EvictionJob> getJob(String jobId) {
-        return Optional.ofNullable(jobs.get(jobId));
-    }
-
-    private void cleanupOldJobs() {
-        Instant cutoff = Instant.now().minus(JOB_RETENTION);
-        jobs.entrySet()
-                .removeIf(
-                        entry -> {
-                            EvictionJob job = entry.getValue();
-                            Instant completedAt = job.getCompletedAt();
-                            return completedAt != null && completedAt.isBefore(cutoff);
-                        });
-    }
 
     /**
      * Evict soft-deleted resources older than the cutoff.
@@ -122,6 +42,10 @@ public class EvictionService {
         long totalEstimate = estimateTotalRecords(store, cutoff, resourceTypes);
         long processed = 0;
 
+        LOG.infof(
+                "Starting eviction: retentionPeriod=%s, resourceTypes=%s, estimatedRecords=%d",
+                retentionPeriod, resourceTypes, totalEstimate);
+
         if (resourceTypes.contains("conversation_groups")) {
             processed =
                     evictConversationGroups(
@@ -136,6 +60,8 @@ public class EvictionService {
         if (progressCallback != null) {
             progressCallback.accept(100);
         }
+
+        LOG.infof("Eviction completed: processed %d records", processed);
     }
 
     private long evictConversationGroups(

@@ -44,10 +44,25 @@ Feature: Data Eviction
       | count |
       | 1     |
 
-  Scenario: Evict with SSE progress stream
+  Scenario: Evict with SSE progress stream via Accept header
     Given I have a conversation with title "To Evict"
     And the conversation was soft-deleted 100 days ago
     When I call POST "/v1/admin/evict" with Accept "text/event-stream" and body:
+      """
+      {
+        "retentionPeriod": "P90D",
+        "resourceTypes": ["conversation_groups"]
+      }
+      """
+    Then the response status should be 200
+    And the response content type should be "text/event-stream"
+    And the SSE stream should contain progress events
+    And the final progress should be 100
+
+  Scenario: Evict with SSE progress stream via async=true
+    Given I have a conversation with title "To Evict Async"
+    And the conversation was soft-deleted 100 days ago
+    When I call POST "/v1/admin/evict?async=true" with body:
       """
       {
         "retentionPeriod": "P90D",
