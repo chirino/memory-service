@@ -412,7 +412,8 @@ public class AdminResource {
             // Validate resource types
             for (String type : resourceTypes) {
                 if (!"conversation_groups".equals(type)
-                        && !"conversation_memberships".equals(type)) {
+                        && !"conversation_memberships".equals(type)
+                        && !"memory_epochs".equals(type)) {
                     return badRequest("Unknown resource type: " + type);
                 }
             }

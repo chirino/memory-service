@@ -119,4 +119,26 @@ public interface MemoryStore {
     long countEvictableMemberships(OffsetDateTime cutoff);
 
     int hardDeleteMembershipsBatch(OffsetDateTime cutoff, int limit);
+
+    // Memory epoch eviction support
+
+    /**
+     * Find epochs eligible for eviction (not latest, past retention).
+     *
+     * @param cutoff epochs with max(created_at) before this are eligible
+     * @param limit maximum epochs to return
+     * @return list of (conversationId, clientId, epoch) tuples
+     */
+    List<EpochKey> findEvictableEpochs(OffsetDateTime cutoff, int limit);
+
+    /** Count entries in evictable epochs for progress estimation. */
+    long countEvictableEpochEntries(OffsetDateTime cutoff);
+
+    /**
+     * Delete entries for the specified epochs. Also queues vector store cleanup tasks for affected
+     * entries.
+     *
+     * @return number of entries deleted
+     */
+    int deleteEntriesForEpochs(List<EpochKey> epochs);
 }

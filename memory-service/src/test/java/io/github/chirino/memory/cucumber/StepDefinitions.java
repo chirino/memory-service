@@ -3750,4 +3750,53 @@ public class StepDefinitions {
         request.setNewOwnerUserId(toUserId);
         memoryStoreSelector.getStore().createOwnershipTransfer(ownerId, request);
     }
+
+    @io.cucumber.java.en.Given("the conversation has memory entries for client {string}:")
+    @Transactional
+    public void theConversationHasMemoryEntriesForClient(
+            String clientId, io.cucumber.datatable.DataTable dataTable) {
+        trackUsage();
+        if (conversationId == null) {
+            throw new IllegalStateException("No conversation available");
+        }
+
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class)
+                        .orElse("postgres");
+
+        List<Map<String, String>> rows = dataTable.asMaps();
+        for (Map<String, String> row : rows) {
+            long epoch = Long.parseLong(row.get("epoch"));
+            int createdDaysAgo = Integer.parseInt(row.get("created_days_ago"));
+            String content = row.get("content");
+
+            // Create the memory entry
+            CreateEntryRequest request = new CreateEntryRequest();
+            request.setContent(List.of(Map.of("type", "text", "text", content)));
+            request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
+            request.setEpoch(epoch);
+            request.setContentType("message");
+
+            var entries =
+                    memoryStoreSelector
+                            .getStore()
+                            .appendAgentEntries(
+                                    currentUserId, conversationId, List.of(request), clientId);
+
+            // Back-date the created_at timestamp
+            if (!entries.isEmpty()) {
+                String entryId = entries.get(0).getId();
+                if ("postgres".equals(datastoreType)) {
+                    entityManager
+                            .get()
+                            .createNativeQuery(
+                                    "UPDATE entries SET created_at = NOW() - INTERVAL '"
+                                            + createdDaysAgo
+                                            + " days' WHERE id = :entryId")
+                            .setParameter("entryId", java.util.UUID.fromString(entryId))
+                            .executeUpdate();
+                }
+            }
+        }
+    }
 }
