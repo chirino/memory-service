@@ -1574,6 +1574,7 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
+    @Transactional
     public long countEvictableGroups(OffsetDateTime cutoff) {
         return ((Number)
                         entityManager
@@ -1607,6 +1608,7 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
+    @Transactional
     public long countEvictableMemberships(OffsetDateTime cutoff) {
         return ((Number)
                         entityManager

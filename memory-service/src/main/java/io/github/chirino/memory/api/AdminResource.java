@@ -23,7 +23,6 @@ import io.github.chirino.memory.security.AdminAuditLogger;
 import io.github.chirino.memory.security.AdminRoleResolver;
 import io.github.chirino.memory.security.ApiKeyContext;
 import io.github.chirino.memory.security.JustificationRequiredException;
-import io.github.chirino.memory.service.EvictionJob;
 import io.github.chirino.memory.service.EvictionService;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryStore;
@@ -418,16 +417,8 @@ public class AdminResource {
                 }
             }
 
-            // Async mode: start job and return job ID
-            if (async) {
-                String jobId = evictionService.evictAsync(retention, resourceTypes);
-                Map<String, Object> response = new HashMap<>();
-                response.put("jobId", jobId);
-                response.put("status", "PENDING");
-                return Response.accepted(response).build();
-            }
-
-            boolean wantsSSE = accept.contains("text/event-stream");
+            // Async mode or SSE header: stream progress via SSE
+            boolean wantsSSE = async || accept.contains("text/event-stream");
 
             if (wantsSSE) {
                 // Return SSE stream with progress updates
@@ -485,36 +476,6 @@ public class AdminResource {
             return badRequest(e.getMessage());
         } catch (java.time.format.DateTimeParseException e) {
             return badRequest("Invalid retention period format: " + e.getMessage());
-        }
-    }
-
-    @GET
-    @Path("/evict/jobs/{jobId}")
-    public Response getEvictionJobStatus(@PathParam("jobId") String jobId) {
-        try {
-            roleResolver.requireAdmin(identity, apiKeyContext);
-
-            Optional<EvictionJob> jobOpt = evictionService.getJob(jobId);
-            if (jobOpt.isEmpty()) {
-                return notFound(new ResourceNotFoundException("eviction_job", jobId));
-            }
-
-            EvictionJob job = jobOpt.get();
-            Map<String, Object> response = new HashMap<>();
-            response.put("jobId", job.getId());
-            response.put("status", job.getStatus().name());
-            response.put("progress", job.getProgress());
-            response.put("createdAt", job.getCreatedAt().toString());
-            if (job.getCompletedAt() != null) {
-                response.put("completedAt", job.getCompletedAt().toString());
-            }
-            if (job.getError() != null) {
-                response.put("error", job.getError());
-            }
-
-            return Response.ok(response).build();
-        } catch (AccessDeniedException e) {
-            return forbidden(e);
         }
     }
 
