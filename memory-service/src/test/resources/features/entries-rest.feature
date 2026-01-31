@@ -78,6 +78,7 @@ Feature: Entries REST API
       "id": "${response.body.id}",
       "conversationId": "${conversationId}",
       "channel": "memory",
+      "epoch": 1,
       "contentType": "test.v1",
       "content": [
         {

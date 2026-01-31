@@ -106,19 +106,43 @@ public class MongoEntryRepository implements PanacheMongoRepositoryBase<MongoEnt
         return find("conversationId = ?1", sort, conversationId).page(0, limit).list();
     }
 
-    public Long findLatestMemoryEpoch(String conversationId, String clientId) {
-        Sort sort = Sort.by("epoch").descending();
+    /**
+     * Lists memory entries at the latest epoch. For API consistency with PostgreSQL implementation.
+     * MongoDB doesn't support subqueries, so this uses a two-step approach internally.
+     *
+     * @return entries at latest epoch, or empty list if no memory entries exist
+     */
+    public List<MongoEntry> listMemoryEntriesAtLatestEpoch(String conversationId, String clientId) {
+        return listMemoryEntriesAtLatestEpoch(conversationId, null, Integer.MAX_VALUE, clientId);
+    }
+
+    /**
+     * Lists memory entries at the latest epoch with pagination support.
+     *
+     * @return entries at latest epoch, or empty list if no memory entries exist
+     */
+    public List<MongoEntry> listMemoryEntriesAtLatestEpoch(
+            String conversationId, String afterEntryId, int limit, String clientId) {
+        // Find max epoch first (efficient: uses descending sort + limit 1)
+        Sort epochSort = Sort.by("epoch").descending();
         MongoEntry latest =
                 find(
                                 "conversationId = ?1 and channel = ?2 and clientId = ?3 and"
                                         + " epoch != null",
-                                sort,
+                                epochSort,
                                 conversationId,
                                 Channel.MEMORY,
                                 clientId)
                         .page(0, 1)
                         .firstResult();
-        return latest != null ? latest.epoch : null;
+
+        if (latest == null) {
+            return List.of();
+        }
+
+        // Then query entries at that epoch
+        return listMemoryEntriesByEpoch(
+                conversationId, afterEntryId, limit, latest.epoch, clientId);
     }
 
     public List<MongoEntry> listMemoryEntriesByEpoch(
