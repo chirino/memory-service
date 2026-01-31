@@ -761,10 +761,864 @@ AND e.created_at > :cursorCreatedAt
 
 ---
 
+# Phase 3: Pluggable Cache for Memory Entries
+
+## Motivation
+
+While Phase 2's combined query eliminates a database round-trip for the epoch lookup, every GET and SYNC operation still requires a database query to fetch the actual entries. For high-frequency agent interactions, this adds latency even with proper indexing.
+
+By caching the **full list of memory entries** (in their encrypted form), we can:
+
+1. **Eliminate database round-trips entirely** - Cache hit returns entries directly
+2. **Reduce database load** - Read-heavy workloads served from cache
+3. **Enable read scaling** - Distributed cache naturally handles high read throughput
+4. **Maintain security** - Cached data remains encrypted (same as database storage)
+
+## Security: Encrypted Data in Cache
+
+**IMPORTANT**: The cache stores entries in their **encrypted form**, exactly as stored in the database:
+
+```
+Database: entries.content = BYTEA (encrypted blob)
+Cache:    same encrypted bytes
+```
+
+The encryption/decryption happens at the application layer (in the memory store), not at the storage layer. This means:
+
+- Cache contents are unreadable without the encryption key
+- No additional security risk from caching
+- Same security posture as database storage
+
+## Existing Cache Infrastructure
+
+The memory-service already has a pluggable cache strategy supporting **Redis** and **Infinispan**, currently used for tracking in-progress stream responses. We will follow the same pattern:
+
+### Current Pattern: ResponseResumerLocatorStore
+
+```
+ResponseResumerLocatorStore (interface)
+    ├── RedisResponseResumerLocatorStore
+    ├── InfinispanResponseResumerLocatorStore
+    └── NoopResponseResumerLocatorStore
+
+ResponseResumerLocatorStoreSelector (selects based on config)
+```
+
+**Key files**:
+- Interface: [ResponseResumerLocatorStore.java](memory-service/src/main/java/io/github/chirino/memory/resumer/ResponseResumerLocatorStore.java)
+- Redis impl: [RedisResponseResumerLocatorStore.java](memory-service/src/main/java/io/github/chirino/memory/resumer/RedisResponseResumerLocatorStore.java)
+- Infinispan impl: [InfinispanResponseResumerLocatorStore.java](memory-service/src/main/java/io/github/chirino/memory/resumer/InfinispanResponseResumerLocatorStore.java)
+- Selector: [ResponseResumerLocatorStoreSelector.java](memory-service/src/main/java/io/github/chirino/memory/config/ResponseResumerLocatorStoreSelector.java)
+
+**Configuration**: Uses existing `memory-service.cache.type` property:
+```properties
+memory-service.cache.type=none|redis|infinispan
+```
+
+## Cache Design
+
+### Key Structure
+
+```
+memory:entries:{conversationId}:{clientId} → CachedMemoryEntries
+```
+
+**Example**:
+```
+memory:entries:550e8400-e29b-41d4-a716-446655440000:agent-1 → {epoch: 42, entries: [...]}
+```
+
+### Value Format: CachedMemoryEntries
+
+```java
+/**
+ * Cached memory entries for a conversation/client pair.
+ * Contains the current epoch and all entries in their encrypted form.
+ */
+public record CachedMemoryEntries(
+    long epoch,
+    List<CachedEntry> entries
+) {
+    /**
+     * Individual cached entry. Stores encrypted content as-is from database.
+     */
+    public record CachedEntry(
+        UUID id,
+        String contentType,
+        byte[] encryptedContent,  // Same bytes as entries.content in DB
+        Instant createdAt
+    ) {}
+}
+```
+
+**Serialization**: JSON with Base64-encoded encrypted content bytes.
+
+### Cache Size Considerations
+
+Memory channel entries are bounded by:
+- LLM context window limits (typically <100 messages per agent)
+- Single entry per sync (Phase 1 consolidation)
+
+Estimated cache size per conversation/client:
+- ~50-100 messages × ~1-2 KB per message = **50-200 KB typical**
+- Bounded by agent context window, not unbounded growth
+
+### TTL Strategy
+
+**Configurable TTL with refresh on access**:
+
+```properties
+# Default: 10 minutes
+memory-service.cache.epoch.ttl=PT10M
+```
+
+- **TTL refreshed on every access**: Both `get()` and `set()` operations reset the TTL
+- **Automatic cleanup**: Inactive conversations are evicted from cache after TTL expires
+- **Memory bounded**: Prevents unbounded growth from abandoned conversations
+- **Graceful degradation**: Cache miss simply triggers a database fetch and re-caches
+
+**Why refresh on get?** Agent workflows typically involve frequent get/sync cycles. Refreshing TTL on reads keeps actively-used conversations cached while allowing inactive ones to expire naturally.
+
+**Implementation by backend**:
+- **Redis**: Uses `GETEX` with `EX` option to atomically get and refresh TTL
+- **Infinispan**: Uses `maxIdle` parameter which natively refreshes on access (no extra operations needed)
+
+## Architecture: Interface and Implementations
+
+### MemoryEntriesCache Interface
+
+```java
+package io.github.chirino.memory.cache;
+
+/**
+ * Cache for storing memory entries per conversation/client pair.
+ * Entries are stored in their encrypted form for security.
+ * Implementations must handle unavailability gracefully.
+ */
+public interface MemoryEntriesCache {
+
+    /**
+     * Returns true if the cache backend is available and configured.
+     */
+    boolean available();
+
+    /**
+     * Get cached memory entries for a conversation/client pair.
+     * Refreshes the TTL on cache hit.
+     * @return Optional.empty() if not cached or cache unavailable
+     */
+    Optional<CachedMemoryEntries> get(UUID conversationId, String clientId);
+
+    /**
+     * Store memory entries for a conversation/client pair.
+     * The entries should contain encrypted content (not decrypted).
+     * Sets/refreshes the TTL based on memory-service.cache.epoch.ttl config.
+     */
+    void set(UUID conversationId, String clientId, CachedMemoryEntries entries);
+
+    /**
+     * Remove cached entries (e.g., on conversation delete or eviction).
+     */
+    void remove(UUID conversationId, String clientId);
+}
+```
+
+### Redis Implementation
+
+```java
+package io.github.chirino.memory.cache;
+
+@ApplicationScoped
+public class RedisMemoryEntriesCache implements MemoryEntriesCache {
+
+    private static final Logger log = Logger.getLogger(RedisMemoryEntriesCache.class);
+    private static final String KEY_PREFIX = "memory:entries:";
+    private static final Duration REDIS_TIMEOUT = Duration.ofSeconds(5);
+
+    @Inject
+    ReactiveRedisDataSource redis;
+
+    @Inject
+    ObjectMapper objectMapper;
+
+    @ConfigProperty(name = "memory-service.cache.type", defaultValue = "none")
+    String cacheType;
+
+    @ConfigProperty(name = "memory-service.cache.epoch.ttl", defaultValue = "PT10M")
+    Duration ttl;
+
+    @Override
+    public boolean available() {
+        if (!"redis".equalsIgnoreCase(cacheType)) {
+            return false;
+        }
+        try {
+            redis.execute("PING").await().atMost(REDIS_TIMEOUT);
+            return true;
+        } catch (Exception e) {
+            log.warn("Redis not available for memory entries cache", e);
+            return false;
+        }
+    }
+
+    @Override
+    public Optional<CachedMemoryEntries> get(UUID conversationId, String clientId) {
+        if (!available()) return Optional.empty();
+
+        try {
+            String key = buildKey(conversationId, clientId);
+            String json = redis.value(String.class).getex(key, new GetExArgs().ex(ttl))
+                .await().atMost(REDIS_TIMEOUT);
+
+            if (json == null) return Optional.empty();
+
+            return Optional.of(objectMapper.readValue(json, CachedMemoryEntries.class));
+        } catch (Exception e) {
+            log.warn("Failed to get entries from Redis cache", e);
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public void set(UUID conversationId, String clientId, CachedMemoryEntries entries) {
+        if (!available()) return;
+
+        try {
+            String key = buildKey(conversationId, clientId);
+            String json = objectMapper.writeValueAsString(entries);
+
+            redis.value(String.class).setex(key, ttl.toSeconds(), json)
+                .subscribe().with(
+                    success -> {},
+                    failure -> log.warn("Failed to set entries in Redis cache", failure)
+                );
+        } catch (Exception e) {
+            log.warn("Failed to set entries in Redis cache", e);
+        }
+    }
+
+    @Override
+    public void remove(UUID conversationId, String clientId) {
+        if (!available()) return;
+
+        try {
+            String key = buildKey(conversationId, clientId);
+            redis.key().del(key)
+                .subscribe().with(
+                    success -> {},
+                    failure -> log.warn("Failed to remove entries from Redis cache", failure)
+                );
+        } catch (Exception e) {
+            log.warn("Failed to remove entries from Redis cache", e);
+        }
+    }
+
+    private String buildKey(UUID conversationId, String clientId) {
+        return KEY_PREFIX + conversationId + ":" + clientId;
+    }
+}
+```
+
+### Infinispan Implementation
+
+```java
+package io.github.chirino.memory.cache;
+
+@ApplicationScoped
+public class InfinispanMemoryEntriesCache implements MemoryEntriesCache {
+
+    private static final Logger log = Logger.getLogger(InfinispanMemoryEntriesCache.class);
+    private static final String CACHE_NAME = "memory-entries";
+
+    @Inject
+    RemoteCacheManager cacheManager;
+
+    @ConfigProperty(name = "memory-service.cache.type", defaultValue = "none")
+    String cacheType;
+
+    @ConfigProperty(name = "memory-service.cache.infinispan.startup-timeout", defaultValue = "PT30S")
+    Duration startupTimeout;
+
+    @ConfigProperty(name = "memory-service.cache.epoch.ttl", defaultValue = "PT10M")
+    Duration ttl;
+
+    private volatile RemoteCache<String, CachedMemoryEntries> cache;
+    private volatile long startupDeadline;
+
+    @PostConstruct
+    void init() {
+        startupDeadline = System.nanoTime() + startupTimeout.toNanos();
+    }
+
+    @Override
+    public boolean available() {
+        if (!"infinispan".equalsIgnoreCase(cacheType)) {
+            return false;
+        }
+        return getCache() != null;
+    }
+
+    @Override
+    public Optional<CachedMemoryEntries> get(UUID conversationId, String clientId) {
+        RemoteCache<String, CachedMemoryEntries> c = getCache();
+        if (c == null) return Optional.empty();
+
+        return withRetry("get", () -> {
+            String key = buildKey(conversationId, clientId);
+            // maxIdle automatically refreshes TTL on access - no manual re-put needed
+            return Optional.ofNullable(c.get(key));
+        });
+    }
+
+    @Override
+    public void set(UUID conversationId, String clientId, CachedMemoryEntries entries) {
+        RemoteCache<String, CachedMemoryEntries> c = getCache();
+        if (c == null) return;
+
+        withRetry("set", () -> {
+            String key = buildKey(conversationId, clientId);
+            // Use maxIdle for sliding TTL that refreshes on access
+            // lifespan=-1 means no hard expiration, only idle-based expiration
+            c.put(key, entries, -1, TimeUnit.MILLISECONDS, ttl.toMillis(), TimeUnit.MILLISECONDS);
+            return null;
+        });
+    }
+
+    @Override
+    public void remove(UUID conversationId, String clientId) {
+        RemoteCache<String, CachedMemoryEntries> c = getCache();
+        if (c == null) return;
+
+        withRetry("remove", () -> {
+            String key = buildKey(conversationId, clientId);
+            c.remove(key);
+            return null;
+        });
+    }
+
+    private RemoteCache<String, CachedMemoryEntries> getCache() {
+        if (cache != null) return cache;
+
+        try {
+            cache = cacheManager.getCache(CACHE_NAME);
+            return cache;
+        } catch (Exception e) {
+            log.warn("Infinispan cache not available", e);
+            return null;
+        }
+    }
+
+    private <T> T withRetry(String operation, Supplier<T> action) {
+        while (System.nanoTime() < startupDeadline) {
+            try {
+                return action.get();
+            } catch (RuntimeException e) {
+                if (!isRetryable(e)) {
+                    log.warn("Non-retryable error in " + operation, e);
+                    return null;
+                }
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isRetryable(Exception e) {
+        return e instanceof TransportException || e instanceof HotRodClientException;
+    }
+
+    private String buildKey(UUID conversationId, String clientId) {
+        return conversationId + ":" + clientId;
+    }
+}
+```
+
+### Noop Implementation
+
+```java
+package io.github.chirino.memory.cache;
+
+@ApplicationScoped
+public class NoopMemoryEntriesCache implements MemoryEntriesCache {
+
+    @Override
+    public boolean available() {
+        return false;
+    }
+
+    @Override
+    public Optional<CachedMemoryEntries> get(UUID conversationId, String clientId) {
+        return Optional.empty();
+    }
+
+    @Override
+    public void set(UUID conversationId, String clientId, CachedMemoryEntries entries) {
+        // No-op
+    }
+
+    @Override
+    public void remove(UUID conversationId, String clientId) {
+        // No-op
+    }
+}
+```
+
+### Selector
+
+```java
+package io.github.chirino.memory.config;
+
+@ApplicationScoped
+public class MemoryEntriesCacheSelector {
+
+    @Inject
+    RedisMemoryEntriesCache redisCache;
+
+    @Inject
+    InfinispanMemoryEntriesCache infinispanCache;
+
+    @Inject
+    NoopMemoryEntriesCache noopCache;
+
+    @ConfigProperty(name = "memory-service.cache.type", defaultValue = "none")
+    String cacheType;
+
+    public MemoryEntriesCache select() {
+        String type = cacheType == null ? "none" : cacheType.trim().toLowerCase();
+
+        return switch (type) {
+            case "redis" -> redisCache.available() ? redisCache : noopCache;
+            case "infinispan" -> infinispanCache.available() ? infinispanCache : noopCache;
+            default -> noopCache;
+        };
+    }
+}
+```
+
+## Configuration
+
+Uses existing cache infrastructure with one new property for TTL:
+
+```properties
+# Already configured in application.properties
+memory-service.cache.type=none|redis|infinispan
+
+# NEW: TTL for cached memory entries (default: 10 minutes)
+# TTL is refreshed on both get and set operations
+memory-service.cache.epoch.ttl=PT10M
+
+# Redis connection (already configured)
+quarkus.redis.hosts=redis://localhost:6379
+
+# Infinispan connection (already configured)
+quarkus.infinispan-client.server-list=localhost:11222
+```
+
+**Dev/Test profiles** already enable Redis:
+```properties
+%dev.memory-service.cache.type=redis
+%test.memory-service.cache.type=redis
+```
+
+## Cache Operations
+
+### Read with Fallback (GET entries)
+
+```java
+Optional<CachedMemoryEntries> cached = entriesCache.get(conversationId, clientId);
+
+if (cached.isPresent()) {
+    // Cache hit - convert cached entries to Entry objects
+    return cached.get().entries().stream()
+        .map(this::toEntry)
+        .toList();
+}
+
+// Cache miss - fetch from database and populate cache
+List<Entry> entries = entryRepository.listMemoryEntriesAtLatestEpoch(
+    conversationId, clientId, limit);
+
+if (!entries.isEmpty()) {
+    entriesCache.set(conversationId, clientId, toCachedEntries(entries));
+}
+
+return entries;
+```
+
+### Cache Update on Sync
+
+When a sync operation modifies entries, the cache is **updated** with the new complete list (not invalidated). This ensures the next read is a cache hit:
+
+```java
+// After sync persists entries, update cache with complete latest epoch list
+private void updateCacheWithLatestEntries(UUID conversationId, String clientId) {
+    List<Entry> allEntries = entryRepository.listMemoryEntriesAtLatestEpoch(
+        conversationId, clientId);
+    if (!allEntries.isEmpty()) {
+        entriesCache.set(conversationId, clientId, toCachedEntries(allEntries));
+    }
+}
+
+// Called at end of syncAgentEntry() when entries are modified:
+// - Case 1: New epoch (diverged) - cache updated with new epoch's entries
+// - Case 2: Append to current epoch - cache updated with all entries including delta
+// - Case 3: No-op (exact match) - no cache change needed
+```
+
+### Cache Update Scenarios
+
+| Event | Action |
+|-------|--------|
+| Sync creates new epoch | Update cache with new epoch's complete entry list |
+| Sync appends to current epoch | Update cache with all entries including new delta |
+| No-op sync (exact match) | No cache change |
+| Conversation deleted | Remove cache key |
+| Eviction removes entries | Remove cache key (force re-query) |
+
+## PostgresMemoryStore Changes
+
+### Conversion Helpers
+
+```java
+private CachedMemoryEntries toCachedEntries(List<Entry> entries) {
+    if (entries.isEmpty()) {
+        return null;
+    }
+    long epoch = entries.get(0).getEpoch();
+    List<CachedEntry> cachedEntries = entries.stream()
+        .map(this::toCachedEntry)
+        .toList();
+    return new CachedMemoryEntries(epoch, cachedEntries);
+}
+
+private CachedEntry toCachedEntry(Entry entry) {
+    return new CachedEntry(
+        entry.getId(),
+        entry.getContentType(),
+        entry.getContent(),  // Already encrypted bytes
+        entry.getCreatedAt()
+    );
+}
+
+private Entry toEntry(CachedEntry cached, UUID conversationId,
+                      UUID groupId, String clientId, long epoch) {
+    Entry entry = new Entry();
+    entry.setId(cached.id());
+    entry.setConversationId(conversationId);
+    entry.setConversationGroupId(groupId);
+    entry.setClientId(clientId);
+    entry.setChannel(Channel.MEMORY);
+    entry.setEpoch(epoch);
+    entry.setContentType(cached.contentType());
+    entry.setContent(cached.encryptedContent());  // Still encrypted
+    entry.setCreatedAt(cached.createdAt());
+    return entry;
+}
+```
+
+### fetchMemoryEntries() Update
+
+The cache stores the **complete list** of entries at the latest epoch. Pagination (limit and afterEntryId cursor) is applied in-memory from the cached data, eliminating database queries for all paginated requests after the first cache population.
+
+```java
+@Inject
+MemoryEntriesCacheSelector entriesCacheSelector;
+
+private MemoryEntriesCache entriesCache;
+
+@PostConstruct
+void init() {
+    entriesCache = entriesCacheSelector.select();
+}
+
+public List<Entry> fetchMemoryEntries(UUID conversationId, String clientId,
+                                       String afterEntryId, int limit) {
+    // Try cache first - cache stores the complete list, pagination is applied in-memory
+    Optional<CachedMemoryEntries> cached = entriesCache.get(conversationId, clientId);
+    if (cached.isPresent()) {
+        return paginateCachedEntries(cached.get(), conversationId, clientId, afterEntryId, limit);
+    }
+
+    // Cache miss - fetch ALL entries from database to populate cache
+    List<Entry> allEntries = entryRepository.listMemoryEntriesAtLatestEpoch(
+        conversationId, clientId);
+
+    // Populate cache with complete list
+    if (!allEntries.isEmpty()) {
+        entriesCache.set(conversationId, clientId, toCachedEntries(allEntries));
+    }
+
+    // Apply pagination in-memory
+    return paginateEntries(allEntries, afterEntryId, limit);
+}
+
+private List<Entry> paginateCachedEntries(CachedMemoryEntries cached,
+        UUID conversationId, String clientId, String afterEntryId, int limit) {
+    List<CachedEntry> entries = cached.entries();
+
+    // Find starting index based on afterEntryId cursor
+    int startIndex = 0;
+    if (afterEntryId != null) {
+        UUID afterId = UUID.fromString(afterEntryId);
+        for (int i = 0; i < entries.size(); i++) {
+            if (entries.get(i).id().equals(afterId)) {
+                startIndex = i + 1;  // Start after the cursor entry
+                break;
+            }
+        }
+    }
+
+    // Apply pagination and convert to Entry
+    return entries.stream()
+            .skip(startIndex)
+            .limit(limit)
+            .map(e -> toEntry(e, conversationId, getGroupId(conversationId), clientId, cached.epoch()))
+            .toList();
+}
+```
+
+### syncAgentEntry() Update
+
+```java
+public Entry syncAgentEntry(UUID conversationId, String clientId,
+                            CreateEntryRequest request) {
+    // ... existing comparison logic to determine isDiverged, hasNewContent ...
+
+    if (isDiverged) {
+        long newEpoch = currentEpoch + 1;
+        Entry entry = createEntry(conversationId, clientId, newEpoch, request);
+        entryRepository.persist(entry);
+
+        // Update cache with new epoch's complete list
+        updateCacheWithLatestEntries(conversationId, clientId);
+
+        return entry;
+    }
+
+    if (hasNewContent) {
+        Entry deltaEntry = createEntry(conversationId, clientId, currentEpoch, deltaRequest);
+        entryRepository.persist(deltaEntry);
+
+        // Update cache with all entries including new delta
+        updateCacheWithLatestEntries(conversationId, clientId);
+
+        return deltaEntry;
+    }
+
+    // No-op - no cache change
+    return null;
+}
+
+private void updateCacheWithLatestEntries(UUID conversationId, String clientId) {
+    List<Entry> allEntries = entryRepository.listMemoryEntriesAtLatestEpoch(
+        conversationId, clientId);
+    if (!allEntries.isEmpty()) {
+        entriesCache.set(conversationId, clientId, toCachedEntries(allEntries));
+    }
+}
+```
+
+### Conversation Deletion
+
+```java
+public void deleteConversation(UUID conversationId, String clientId) {
+    // ... existing deletion logic ...
+
+    // Invalidate cache
+    entriesCache.remove(conversationId, clientId);
+}
+```
+
+## Query Count Impact
+
+### Before (Phase 2)
+
+```
+GET /entries?channel=memory (no cache):
+  Query 1: SELECT * FROM entries WHERE epoch = (SELECT max(epoch)...) LIMIT 50
+
+Sync (no cache):
+  Query 1: SELECT * FROM entries WHERE epoch = (SELECT max(epoch)...)
+  Insert 1: INSERT INTO entries ...
+  Update 1: UPDATE conversations ...
+```
+
+### After (Phase 3 with cache hit)
+
+```
+GET /entries?channel=memory (cache hit):
+  Cache GET: memory:entries:{id}:{client}
+  (no database query - pagination applied in-memory!)
+
+GET /entries?channel=memory&afterEntryId=... (cache hit, paginated):
+  Cache GET: memory:entries:{id}:{client}
+  (no database query - cursor pagination applied in-memory!)
+
+Sync (cache hit):
+  Cache GET: memory:entries:{id}:{client}
+  (comparison done with cached data)
+  Insert 1: INSERT INTO entries ...
+  Update 1: UPDATE conversations ...
+  Query 1: SELECT * FROM entries WHERE epoch=... (fetch complete list)
+  Cache SET: memory:entries:{id}:{client} (update with complete list)
+```
+
+**Note**: After sync, the cache is updated with the complete latest epoch list. This ensures subsequent reads are cache hits, avoiding a database query on the next GET.
+
+### Performance Comparison
+
+| Operation | Phase 2 | Phase 3 (hit) | Improvement |
+|-----------|---------|---------------|-------------|
+| GET latency (first page) | ~5-10ms | ~1-2ms | 80-90% |
+| GET latency (paginated) | ~5-10ms | ~1-2ms | 80-90% |
+| Sync read phase | ~5-10ms | ~1-2ms | 80-90% |
+| Database queries (GET) | 1 per request | 0 (cache hit) | 100% reduction |
+| Post-sync read | 1 query | 0 (cache hit) | 100% reduction |
+
+*Note: Actual numbers depend on cache latency and payload size. Paginated requests now use the cache (pagination applied in-memory) instead of bypassing it.*
+
+## Error Handling
+
+### Cache Unavailable
+
+All implementations handle unavailability gracefully - fall back to database:
+
+```java
+public Optional<CachedMemoryEntries> get(UUID conversationId, String clientId) {
+    if (!available()) return Optional.empty();  // Graceful degradation
+
+    try {
+        // ... cache lookup ...
+    } catch (Exception e) {
+        log.warn("Failed to get entries from cache", e);
+        return Optional.empty();  // Fall back to database
+    }
+}
+```
+
+### Stale Cache Detection
+
+If cached epoch doesn't match database (rare edge case):
+
+```java
+// During sync, verify epoch matches
+Optional<CachedMemoryEntries> cached = entriesCache.get(conversationId, clientId);
+if (cached.isPresent()) {
+    Long dbEpoch = entryRepository.findLatestMemoryEpoch(conversationId, clientId);
+    if (dbEpoch != null && !dbEpoch.equals(cached.get().epoch())) {
+        // Stale cache - invalidate and re-fetch
+        entriesCache.remove(conversationId, clientId);
+        // Continue with database query...
+    }
+}
+```
+
+## Testing Strategy
+
+### Unit Tests
+
+- `RedisMemoryEntriesCacheTest` - Redis operations with mocked client
+- `InfinispanMemoryEntriesCacheTest` - Infinispan operations with mocked cache
+- `MemoryEntriesCacheSelectorTest` - Selector logic for each cache type
+- Test serialization/deserialization of `CachedMemoryEntries`
+- Verify encrypted content bytes are preserved exactly
+
+### Integration Tests
+
+- Cucumber scenarios for cache behavior (uses DevServices Redis)
+- Test cache population on first access
+- Test cache update on sync (append and new epoch)
+- Test cache invalidation on delete/eviction
+- Test fallback when cache unavailable
+- **Security test**: Verify cached content is encrypted
+
+### Chaos Testing
+
+- Cache failure during operation (verify graceful degradation)
+- Stale cache detection and recovery
+- Network partition between app and cache
+- Large payload handling (verify no truncation)
+
+## Metrics to Monitor
+
+```java
+@Inject
+MeterRegistry registry;
+
+private Counter cacheHits;
+private Counter cacheMisses;
+private Counter cacheErrors;
+private DistributionSummary cachePayloadSize;
+
+@PostConstruct
+void initMetrics() {
+    cacheHits = registry.counter("memory.entries.cache.hits");
+    cacheMisses = registry.counter("memory.entries.cache.misses");
+    cacheErrors = registry.counter("memory.entries.cache.errors");
+    cachePayloadSize = registry.summary("memory.entries.cache.payload.bytes");
+}
+```
+
+- `memory_entries_cache_hits_total` - Cache hits
+- `memory_entries_cache_misses_total` - Cache misses
+- `memory_entries_cache_errors_total` - Cache errors (by type)
+- `memory_entries_cache_payload_bytes` - Payload size distribution
+
+## Implementation Checklist
+
+- [x] Create `CachedMemoryEntries` record
+  - [x] `epoch` field
+  - [x] `entries` list with `CachedEntry` records
+  - [x] Jackson annotations for JSON serialization
+  - [x] Base64 encoding for `encryptedContent` bytes
+- [x] Create `MemoryEntriesCache` interface
+  - [x] `available()`, `get()`, `set()`, `remove()` methods
+- [x] Create `RedisMemoryEntriesCache` implementation
+  - [x] JSON serialization with ObjectMapper
+  - [x] Async operations with fire-and-forget writes
+  - [x] Timeout handling (5 second default)
+  - [x] Error handling with graceful degradation
+  - [x] TTL support with `memory-service.cache.epoch.ttl` config
+  - [x] TTL refresh on get (using GETEX with EX option)
+- [x] Create `InfinispanMemoryEntriesCache` implementation
+  - [x] JSON serialization for CachedMemoryEntries
+  - [x] Retry logic for transient failures
+  - [x] Startup timeout support
+  - [x] Cache name: `memory-entries`
+  - [x] TTL support with `memory-service.cache.epoch.ttl` config
+  - [x] Use `maxIdle` for sliding TTL (auto-refreshes on access)
+- [x] Create `NoopMemoryEntriesCache` implementation
+- [x] Create `MemoryEntriesCacheSelector`
+  - [x] Use existing `memory-service.cache.type` config
+  - [x] Fall back to noop if cache unavailable
+- [x] Update `PostgresMemoryStore`
+  - [x] Add conversion helpers (`toCachedEntries`, `toEntry`, `paginateCachedEntries`)
+  - [x] Update `fetchMemoryEntries()` with cache lookup
+  - [x] Update `syncAgentEntry()` with cache update (not invalidation)
+  - [x] Cache stores full list, pagination applied in-memory
+- [x] Update `MongoMemoryStore` with equivalent changes
+- [x] Sync operations update cache with latest entries (not invalidate)
+- [x] Add Micrometer metrics for cache operations
+  - [x] `memory.entries.cache.hits` counter
+  - [x] `memory.entries.cache.misses` counter
+  - [x] `memory.entries.cache.errors` counter
+- [x] Add Infinispan cache configuration for `memory-entries`
+- [ ] Write unit tests for each implementation
+- [x] Write integration tests for cache behavior
+  - [x] `memory-cache-rest.feature` - cache hit/miss and update after sync
+- [ ] Add security test verifying encrypted content in cache
+
+---
+
 ## Future Optimization Opportunities
 
 *(To be analyzed in follow-up phases)*
 
-- Add content hash for quick no-op detection without full fetch
-- Consider Option 2 (lookup table) if subquery proves to be a bottleneck
+- Add content hash for quick no-op detection without full comparison
 - Evaluate if soft-delete joins can be eliminated for memory-only queries
+- Consider cache warming strategies for predictable access patterns

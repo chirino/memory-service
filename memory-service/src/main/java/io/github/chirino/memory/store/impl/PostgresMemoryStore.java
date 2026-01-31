@@ -18,6 +18,9 @@ import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.cache.CachedMemoryEntries;
+import io.github.chirino.memory.cache.MemoryEntriesCache;
+import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
@@ -44,6 +47,7 @@ import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
 import io.github.chirino.memory.vector.VectorStore;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -91,6 +95,15 @@ public class PostgresMemoryStore implements MemoryStore {
     @Inject EntityManager entityManager;
 
     @Inject TaskRepository taskRepository;
+
+    @Inject MemoryEntriesCacheSelector memoryCacheSelector;
+
+    private MemoryEntriesCache memoryEntriesCache;
+
+    @PostConstruct
+    void init() {
+        memoryEntriesCache = memoryCacheSelector.select();
+    }
 
     @Override
     @Transactional
@@ -678,14 +691,135 @@ public class PostgresMemoryStore implements MemoryStore {
             case ALL ->
                     entryRepository.listByChannel(
                             conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
-            case LATEST ->
-                    // Combined query: finds max epoch and lists entries in single round-trip
-                    entryRepository.listMemoryEntriesAtLatestEpoch(
-                            conversationId, afterEntryId, limit, clientId);
+            case LATEST -> fetchLatestMemoryEntries(conversationId, afterEntryId, limit, clientId);
             case EPOCH ->
                     entryRepository.listMemoryEntriesByEpoch(
                             conversationId, afterEntryId, limit, filter.getEpoch(), clientId);
         };
+    }
+
+    private List<EntryEntity> fetchLatestMemoryEntries(
+            UUID conversationId, String afterEntryId, int limit, String clientId) {
+        // Try cache first - cache stores the complete list, pagination is applied in-memory
+        Optional<CachedMemoryEntries> cached = memoryEntriesCache.get(conversationId, clientId);
+        if (cached.isPresent()) {
+            return paginateCachedEntries(
+                    cached.get(), conversationId, clientId, afterEntryId, limit);
+        }
+
+        // Cache miss - fetch ALL entries from database to populate cache
+        List<EntryEntity> allEntries =
+                entryRepository.listMemoryEntriesAtLatestEpoch(conversationId, clientId);
+
+        // Populate cache with complete list
+        if (!allEntries.isEmpty()) {
+            CachedMemoryEntries toCache = toCachedMemoryEntries(allEntries);
+            memoryEntriesCache.set(conversationId, clientId, toCache);
+        }
+
+        // Apply pagination in-memory
+        return paginateEntries(allEntries, afterEntryId, limit);
+    }
+
+    private List<EntryEntity> paginateCachedEntries(
+            CachedMemoryEntries cached,
+            UUID conversationId,
+            String clientId,
+            String afterEntryId,
+            int limit) {
+        List<CachedMemoryEntries.CachedEntry> entries = cached.entries();
+        long epoch = cached.epoch();
+
+        // Find starting index based on afterEntryId cursor
+        int startIndex = 0;
+        if (afterEntryId != null) {
+            UUID afterId = UUID.fromString(afterEntryId);
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).id().equals(afterId)) {
+                    startIndex = i + 1; // Start after the cursor entry
+                    break;
+                }
+            }
+        }
+
+        // Apply pagination and convert to EntryEntity
+        return entries.stream()
+                .skip(startIndex)
+                .limit(limit)
+                .map(ce -> toCachedEntryEntity(ce, conversationId, clientId, epoch))
+                .toList();
+    }
+
+    private List<EntryEntity> paginateEntries(
+            List<EntryEntity> entries, String afterEntryId, int limit) {
+        // Find starting index based on afterEntryId cursor
+        int startIndex = 0;
+        if (afterEntryId != null) {
+            UUID afterId = UUID.fromString(afterEntryId);
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).getId().equals(afterId)) {
+                    startIndex = i + 1; // Start after the cursor entry
+                    break;
+                }
+            }
+        }
+
+        // Apply pagination
+        return entries.stream().skip(startIndex).limit(limit).toList();
+    }
+
+    private CachedMemoryEntries toCachedMemoryEntries(List<EntryEntity> entries) {
+        if (entries.isEmpty()) {
+            return null;
+        }
+        long epoch = entries.get(0).getEpoch() != null ? entries.get(0).getEpoch() : 0L;
+        List<CachedMemoryEntries.CachedEntry> cachedEntries =
+                entries.stream()
+                        .map(
+                                e ->
+                                        new CachedMemoryEntries.CachedEntry(
+                                                e.getId(),
+                                                e.getContentType(),
+                                                e.getContent(), // Already encrypted bytes
+                                                e.getCreatedAt().toInstant()))
+                        .toList();
+        return new CachedMemoryEntries(epoch, cachedEntries);
+    }
+
+    /**
+     * Updates the cache with the current latest epoch entries. Called after sync modifications to
+     * keep the cache warm instead of invalidating it.
+     */
+    private void updateCacheWithLatestEntries(UUID conversationId, String clientId) {
+        List<EntryEntity> entries =
+                entryRepository.listMemoryEntriesAtLatestEpoch(conversationId, clientId);
+        if (!entries.isEmpty()) {
+            CachedMemoryEntries cached = toCachedMemoryEntries(entries);
+            memoryEntriesCache.set(conversationId, clientId, cached);
+        } else {
+            // No entries at latest epoch - remove stale cache entry
+            memoryEntriesCache.remove(conversationId, clientId);
+        }
+    }
+
+    private EntryEntity toCachedEntryEntity(
+            CachedMemoryEntries.CachedEntry cached,
+            UUID conversationId,
+            String clientId,
+            long epoch) {
+        EntryEntity entity = new EntryEntity();
+        entity.setId(cached.id());
+        // Create a minimal ConversationEntity with just the ID for toEntryDto
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setId(conversationId);
+        entity.setConversation(conversation);
+        entity.setClientId(clientId);
+        entity.setChannel(Channel.MEMORY);
+        entity.setEpoch(epoch);
+        entity.setContentType(cached.contentType());
+        entity.setContent(cached.encryptedContent()); // Still encrypted
+        entity.setCreatedAt(cached.createdAt().atOffset(java.time.ZoneOffset.UTC));
+        return entity;
     }
 
     @Override
@@ -791,6 +925,8 @@ public class PostgresMemoryStore implements MemoryStore {
                     MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
             List<EntryDto> appended =
                     appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+            // Update cache with new epoch entries
+            updateCacheWithLatestEntries(cid, clientId);
             result.setEpoch(nextEpoch);
             result.setEntry(appended.isEmpty() ? null : appended.get(0));
             result.setEpochIncremented(true);
@@ -817,6 +953,8 @@ public class PostgresMemoryStore implements MemoryStore {
                     MemorySyncHelper.withEpochAndContent(entry, latestEpoch, deltaContent);
             List<EntryDto> appended =
                     appendAgentEntries(userId, conversationId, List.of(deltaEntry), clientId);
+            // Update cache with appended entry
+            updateCacheWithLatestEntries(cid, clientId);
             result.setEntry(appended.isEmpty() ? null : appended.get(0));
             result.setEpochIncremented(false);
             result.setNoOp(false);
@@ -829,6 +967,8 @@ public class PostgresMemoryStore implements MemoryStore {
                 MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
         List<EntryDto> appended =
                 appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+        // Update cache with new epoch entries
+        updateCacheWithLatestEntries(cid, clientId);
         result.setEpoch(nextEpoch);
         result.setEntry(appended.isEmpty() ? null : appended.get(0));
         result.setEpochIncremented(true);
