@@ -12,26 +12,17 @@ public class MongoConversationMembershipRepository
         implements PanacheMongoRepositoryBase<MongoConversationMembership, String> {
 
     public List<MongoConversationMembership> listForConversationGroup(String conversationGroupId) {
-        return find("conversationGroupId", conversationGroupId).stream()
-                .filter(m -> m.deletedAt == null)
-                .collect(java.util.stream.Collectors.toList());
+        return find("conversationGroupId", conversationGroupId).list();
     }
 
     public List<MongoConversationMembership> listForUser(String userId, int limit) {
-        return find("userId", userId).stream()
-                .filter(m -> m.deletedAt == null)
-                .limit(limit)
-                .collect(java.util.stream.Collectors.toList());
+        return find("userId", userId).page(0, limit).list();
     }
 
     public Optional<MongoConversationMembership> findMembership(
             String conversationId, String userId) {
         String id = conversationId + ":" + userId;
-        MongoConversationMembership membership = findById(id);
-        if (membership != null && membership.deletedAt != null) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(membership);
+        return Optional.ofNullable(findById(id));
     }
 
     public boolean hasAtLeastAccess(String conversationId, String userId, AccessLevel required) {

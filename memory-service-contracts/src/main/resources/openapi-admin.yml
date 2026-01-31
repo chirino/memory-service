@@ -734,16 +734,14 @@ components:
           items:
             type: string
             enum:
-              - conversation_groups
-              - conversation_memberships
+              - conversations
               - memory_epochs
           description: |-
             Which resource types to evict.
-            - conversation_groups: Soft-deleted conversation groups past retention.
-            - conversation_memberships: Soft-deleted memberships past retention.
+            - conversations: Soft-deleted conversations past retention.
             - memory_epochs: Entries from non-latest memory epochs past retention.
               The latest epoch per (conversation, client) is always preserved.
-          example: ["conversation_groups"]
+          example: ["conversations"]
         justification:
           type: string
           description: Reason for the eviction (for audit log).

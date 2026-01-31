@@ -46,14 +46,10 @@ public class EvictionService {
                 "Starting eviction: retentionPeriod=%s, resourceTypes=%s, estimatedRecords=%d",
                 retentionPeriod, resourceTypes, totalEstimate);
 
-        if (resourceTypes.contains("conversation_groups")) {
+        if (resourceTypes.contains("conversations")) {
             processed =
                     evictConversationGroups(
                             store, cutoff, processed, totalEstimate, progressCallback);
-        }
-
-        if (resourceTypes.contains("conversation_memberships")) {
-            processed = evictMemberships(store, cutoff, processed, totalEstimate, progressCallback);
         }
 
         if (resourceTypes.contains("memory_epochs")) {
@@ -85,26 +81,6 @@ public class EvictionService {
             store.hardDeleteConversationGroups(batch);
 
             processed += batch.size();
-            reportProgress(processed, totalEstimate, progressCallback);
-
-            sleepBetweenBatches();
-        }
-        return processed;
-    }
-
-    private long evictMemberships(
-            MemoryStore store,
-            OffsetDateTime cutoff,
-            long processed,
-            long totalEstimate,
-            Consumer<Integer> progressCallback) {
-        while (true) {
-            int deleted = store.hardDeleteMembershipsBatch(cutoff, batchSize);
-            if (deleted == 0) {
-                break;
-            }
-
-            processed += deleted;
             reportProgress(processed, totalEstimate, progressCallback);
 
             sleepBetweenBatches();
@@ -146,11 +122,8 @@ public class EvictionService {
     private long estimateTotalRecords(
             MemoryStore store, OffsetDateTime cutoff, Set<String> resourceTypes) {
         long total = 0;
-        if (resourceTypes.contains("conversation_groups")) {
+        if (resourceTypes.contains("conversations")) {
             total += store.countEvictableGroups(cutoff);
-        }
-        if (resourceTypes.contains("conversation_memberships")) {
-            total += store.countEvictableMemberships(cutoff);
         }
         if (resourceTypes.contains("memory_epochs")) {
             total += store.countEvictableEpochEntries(cutoff);
