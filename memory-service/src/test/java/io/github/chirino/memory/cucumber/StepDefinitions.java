@@ -3711,32 +3711,8 @@ public class StepDefinitions {
         theConversationIsSharedWithUserWithAccessLevel(userId, "reader");
     }
 
-    @io.cucumber.java.en.Given("the membership for user {string} was soft-deleted {int} days ago")
-    @Transactional
-    public void theMembershipForUserWasSoftDeletedDaysAgo(String userId, int daysAgo) {
-        trackUsage();
-        // Soft-delete the membership via the store API
-        String ownerId = (String) contextVariables.getOrDefault("conversationOwner", currentUserId);
-        memoryStoreSelector.getStore().deleteMembership(ownerId, conversationId, userId);
-
-        // Backdate the deleted_at timestamp
-        String datastoreType =
-                config.getOptionalValue("memory-service.datastore.type", String.class)
-                        .orElse("postgres");
-        if ("postgres".equals(datastoreType)) {
-            String groupId = (String) contextVariables.get("conversationGroupId");
-            entityManager
-                    .get()
-                    .createNativeQuery(
-                            "UPDATE conversation_memberships SET deleted_at = NOW() - INTERVAL '"
-                                    + daysAgo
-                                    + " days' WHERE conversation_group_id = :groupId"
-                                    + " AND user_id = :userId")
-                    .setParameter("groupId", java.util.UUID.fromString(groupId))
-                    .setParameter("userId", userId)
-                    .executeUpdate();
-        }
-    }
+    // Note: Removed "the membership for user X was soft-deleted Y days ago" step
+    // Memberships are now hard-deleted immediately (see enhancement 028-membership-hard-delete.md)
 
     @io.cucumber.java.en.Given("the conversation has a pending ownership transfer to user {string}")
     @Transactional

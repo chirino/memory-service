@@ -19,17 +19,13 @@ public class ConversationMembershipRepository
 
     public List<ConversationMembershipEntity> listForConversationGroup(UUID conversationGroupId) {
         return find(
-                        "id.conversationGroupId = ?1 AND deletedAt IS NULL AND"
-                                + " conversationGroup.deletedAt IS NULL",
+                        "id.conversationGroupId = ?1 AND conversationGroup.deletedAt IS NULL",
                         conversationGroupId)
                 .list();
     }
 
     public List<ConversationMembershipEntity> listForUser(String userId, int limit) {
-        return find(
-                        "id.userId = ?1 AND deletedAt IS NULL AND conversationGroup.deletedAt IS"
-                                + " NULL",
-                        userId)
+        return find("id.userId = ?1 AND conversationGroup.deletedAt IS NULL", userId)
                 .page(0, limit)
                 .list();
     }
@@ -37,7 +33,7 @@ public class ConversationMembershipRepository
     public Optional<ConversationMembershipEntity> findMembership(
             UUID conversationGroupId, String userId) {
         return find(
-                        "id.conversationGroupId = ?1 AND id.userId = ?2 AND deletedAt IS NULL AND"
+                        "id.conversationGroupId = ?1 AND id.userId = ?2 AND"
                                 + " conversationGroup.deletedAt IS NULL",
                         conversationGroupId,
                         userId)
@@ -49,8 +45,7 @@ public class ConversationMembershipRepository
                 .createQuery(
                         "select m.accessLevel from ConversationMembershipEntity m where"
                             + " m.id.conversationGroupId = :conversationGroupId and m.id.userId ="
-                            + " :userId and m.deletedAt IS NULL and m.conversationGroup.deletedAt"
-                            + " IS NULL",
+                            + " :userId and m.conversationGroup.deletedAt IS NULL",
                         AccessLevel.class)
                 .setParameter("conversationGroupId", conversationGroupId)
                 .setParameter("userId", userId)

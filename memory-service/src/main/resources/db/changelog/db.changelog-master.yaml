@@ -35,33 +35,3 @@ databaseChangeLog:
                   ON entry_embeddings
                   USING ivfflat (embedding vector_cosine_ops)
                   WITH (lists = 100);
-  - changeSet:
-      id: 3-eviction-indexes
-      author: memory-service
-      changes:
-        - sql:
-            splitStatements: true
-            sql: |
-              CREATE INDEX IF NOT EXISTS idx_conversation_groups_deleted
-                  ON conversation_groups (deleted_at) WHERE deleted_at IS NOT NULL;
-              CREATE INDEX IF NOT EXISTS idx_conversation_memberships_deleted
-                  ON conversation_memberships (deleted_at) WHERE deleted_at IS NOT NULL;
-  - changeSet:
-      id: 4-rename-memory-epoch-to-epoch
-      author: memory-service
-      preConditions:
-        - onFail: MARK_RAN
-        - columnExists:
-            tableName: entries
-            columnName: memory_epoch
-      changes:
-        - renameColumn:
-            tableName: entries
-            oldColumnName: memory_epoch
-            newColumnName: epoch
-            columnDataType: BIGINT
-        - sql:
-            sql: |
-              DROP INDEX IF EXISTS idx_entries_conversation_channel_client_epoch_created_at;
-              CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_epoch_created_at
-                  ON entries (conversation_id, channel, client_id, epoch, created_at);

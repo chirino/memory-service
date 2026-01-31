@@ -159,7 +159,7 @@ Feature: Conversations REST API
     """
     Then the SQL result should have 2 rows
 
-  Scenario: Soft delete cascades to conversation group and memberships
+  Scenario: Soft delete cascades to conversation group, hard deletes memberships
     Given I have a conversation with title "Test Conversation"
     And I resolve the conversation group ID for conversation "${conversationId}" into "groupId"
     When I delete the conversation
@@ -171,16 +171,15 @@ Feature: Conversations REST API
     """
     Then the SQL result should have 1 row
     And the SQL result column "deleted_at" should be non-null
-    # Verify membership is soft deleted
+    # Verify membership is hard deleted (not soft deleted)
     When I execute SQL query:
     """
-    SELECT conversation_group_id, user_id, deleted_at
-    FROM conversation_memberships
-    WHERE conversation_group_id = '${groupId}'
+    SELECT COUNT(*) as count FROM conversation_memberships WHERE conversation_group_id = '${groupId}'
     """
-    Then the SQL result should have 1 row
-    And the SQL result column "deleted_at" should be non-null
-    # Verify entries still exist (not soft deleted, just orphaned by parent)
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    # Verify entries were cascade deleted (foreign key ON DELETE CASCADE)
     When I execute SQL query:
     """
     SELECT COUNT(*) as count FROM entries WHERE conversation_group_id = '${groupId}'

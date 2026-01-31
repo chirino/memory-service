@@ -98,6 +98,8 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Inject MemoryEntriesCacheSelector memoryCacheSelector;
 
+    @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
+
     private MemoryEntriesCache memoryEntriesCache;
 
     @PostConstruct
@@ -261,7 +263,7 @@ public class PostgresMemoryStore implements MemoryStore {
         if (accessLevel != AccessLevel.OWNER && accessLevel != AccessLevel.MANAGER) {
             throw new AccessDeniedException("Only owner or manager can delete conversation");
         }
-        softDeleteConversationGroup(groupId);
+        softDeleteConversationGroup(groupId, userId);
     }
 
     @Override
@@ -343,6 +345,11 @@ public class PostgresMemoryStore implements MemoryStore {
         ConversationMembershipEntity membership =
                 membershipRepository.createMembership(
                         conversationGroup, request.getUserId(), request.getAccessLevel());
+
+        // Audit log the addition
+        membershipAuditLogger.logAdd(
+                userId, conversationId, request.getUserId(), request.getAccessLevel());
+
         return toMembershipDto(membership);
     }
 
@@ -362,7 +369,12 @@ public class PostgresMemoryStore implements MemoryStore {
                         .orElseThrow(
                                 () -> new ResourceNotFoundException("membership", memberUserId));
         if (request.getAccessLevel() != null) {
+            AccessLevel oldLevel = membership.getAccessLevel();
             membership.setAccessLevel(request.getAccessLevel());
+
+            // Audit log the update
+            membershipAuditLogger.logUpdate(
+                    userId, conversationId, memberUserId, oldLevel, request.getAccessLevel());
         }
         return toMembershipDto(membership);
     }
@@ -373,12 +385,22 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID cid = UUID.fromString(conversationId);
         UUID groupId = resolveGroupId(cid);
         ensureHasAccess(groupId, userId, AccessLevel.MANAGER);
-        membershipRepository.update(
-                "deletedAt = ?1 WHERE id.conversationGroupId = ?2 AND id.userId = ?3 AND deletedAt"
-                        + " IS NULL",
-                OffsetDateTime.now(),
-                groupId,
-                memberUserId);
+
+        // Get the membership before deletion for audit logging
+        Optional<ConversationMembershipEntity> membership =
+                membershipRepository.findMembership(groupId, memberUserId);
+
+        if (membership.isPresent()) {
+            AccessLevel level = membership.get().getAccessLevel();
+
+            // Hard delete the membership
+            membershipRepository.delete(
+                    "id.conversationGroupId = ?1 AND id.userId = ?2", groupId, memberUserId);
+
+            // Audit log the removal
+            membershipAuditLogger.logRemove(userId, conversationId, memberUserId, level);
+        }
+
         // Delete any pending ownership transfer to the removed member
         ownershipTransferRepository.deleteByConversationGroupAndToUser(groupId, memberUserId);
     }
@@ -1281,8 +1303,20 @@ public class PostgresMemoryStore implements MemoryStore {
         }
     }
 
-    private void softDeleteConversationGroup(UUID conversationGroupId) {
+    private void softDeleteConversationGroup(UUID conversationGroupId, String actorUserId) {
         OffsetDateTime now = OffsetDateTime.now();
+
+        // Log and hard delete memberships BEFORE soft-deleting the group
+        List<ConversationMembershipEntity> memberships =
+                membershipRepository.listForConversationGroup(conversationGroupId);
+        for (ConversationMembershipEntity m : memberships) {
+            membershipAuditLogger.logRemove(
+                    actorUserId,
+                    conversationGroupId.toString(),
+                    m.getId().getUserId(),
+                    m.getAccessLevel());
+        }
+        membershipRepository.delete("id.conversationGroupId", conversationGroupId);
 
         // Mark conversation group as deleted
         conversationGroupRepository.update(
@@ -1291,12 +1325,6 @@ public class PostgresMemoryStore implements MemoryStore {
         // Mark all conversations in the group as deleted
         conversationRepository.update(
                 "deletedAt = ?1 WHERE conversationGroup.id = ?2 AND deletedAt IS NULL",
-                now,
-                conversationGroupId);
-
-        // Mark all memberships as deleted
-        membershipRepository.update(
-                "deletedAt = ?1 WHERE id.conversationGroupId = ?2 AND deletedAt IS NULL",
                 now,
                 conversationGroupId);
 
@@ -1485,7 +1513,7 @@ public class PostgresMemoryStore implements MemoryStore {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         UUID groupId = conversation.getConversationGroup().getId();
-        softDeleteConversationGroup(groupId);
+        softDeleteConversationGroup(groupId, "admin");
     }
 
     @Override
@@ -1513,8 +1541,8 @@ public class PostgresMemoryStore implements MemoryStore {
         // Restore all conversations in the group
         conversationRepository.update("deletedAt = NULL WHERE conversationGroup.id = ?1", groupId);
 
-        // Restore all memberships
-        membershipRepository.update("deletedAt = NULL WHERE id.conversationGroupId = ?1", groupId);
+        // Note: Memberships are hard-deleted when a conversation is deleted,
+        // so they cannot be restored. The owner must re-share with other users.
     }
 
     @Override
@@ -1738,37 +1766,6 @@ public class PostgresMemoryStore implements MemoryStore {
         entityManager
                 .createNativeQuery("DELETE FROM conversation_groups WHERE id = ANY(:ids)")
                 .setParameter("ids", uuids)
-                .executeUpdate();
-    }
-
-    @Override
-    @Transactional
-    public long countEvictableMemberships(OffsetDateTime cutoff) {
-        return ((Number)
-                        entityManager
-                                .createNativeQuery(
-                                        "SELECT COUNT(*) FROM conversation_memberships WHERE"
-                                            + " deleted_at IS NOT NULL AND deleted_at < :cutoff")
-                                .setParameter("cutoff", cutoff)
-                                .getSingleResult())
-                .longValue();
-    }
-
-    @Override
-    @Transactional
-    public int hardDeleteMembershipsBatch(OffsetDateTime cutoff, int limit) {
-        // Single statement: select and delete in one CTE
-        // FOR UPDATE SKIP LOCKED ensures concurrent safety
-        return entityManager
-                .createNativeQuery(
-                        "WITH batch AS (  SELECT conversation_group_id, user_id FROM"
-                            + " conversation_memberships   WHERE deleted_at IS NOT NULL AND"
-                            + " deleted_at < :cutoff   LIMIT :limit   FOR UPDATE SKIP LOCKED)"
-                            + " DELETE FROM conversation_memberships m USING batch b WHERE"
-                            + " m.conversation_group_id = b.conversation_group_id   AND m.user_id ="
-                            + " b.user_id")
-                .setParameter("cutoff", cutoff)
-                .setParameter("limit", limit)
                 .executeUpdate();
     }
 

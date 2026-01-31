@@ -116,10 +116,6 @@ public interface MemoryStore {
 
     void hardDeleteConversationGroups(List<String> groupIds);
 
-    long countEvictableMemberships(OffsetDateTime cutoff);
-
-    int hardDeleteMembershipsBatch(OffsetDateTime cutoff, int limit);
-
     // Memory epoch eviction support
 
     /**

@@ -33,18 +33,21 @@ CREATE TABLE IF NOT EXISTS conversations (
 
 -- Per-user access to conversations.
 -- Exactly one row per conversation with access_level = 'owner'.
+-- Memberships are hard-deleted (not soft-deleted) with audit logging.
 CREATE TABLE IF NOT EXISTS conversation_memberships (
     conversation_group_id   UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
     -- External user identifier (e.g., OAuth subject); no local users table.
     user_id           TEXT NOT NULL,
     access_level      TEXT NOT NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at        TIMESTAMPTZ,
     PRIMARY KEY (conversation_group_id, user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversation_memberships_user
     ON conversation_memberships (user_id, conversation_group_id);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_memberships_group
+    ON conversation_memberships (conversation_group_id);
 
 CREATE INDEX IF NOT EXISTS idx_conversation_groups_not_deleted
     ON conversation_groups (deleted_at) WHERE deleted_at IS NULL;
@@ -52,15 +55,9 @@ CREATE INDEX IF NOT EXISTS idx_conversation_groups_not_deleted
 CREATE INDEX IF NOT EXISTS idx_conversations_not_deleted
     ON conversations (deleted_at) WHERE deleted_at IS NULL;
 
-CREATE INDEX IF NOT EXISTS idx_conversation_memberships_not_deleted
-    ON conversation_memberships (deleted_at) WHERE deleted_at IS NULL;
-
--- Indexes for eviction queries (deleted records past retention)
+-- Index for eviction queries (deleted records past retention)
 CREATE INDEX IF NOT EXISTS idx_conversation_groups_deleted
     ON conversation_groups (deleted_at) WHERE deleted_at IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_conversation_memberships_deleted
-    ON conversation_memberships (deleted_at) WHERE deleted_at IS NOT NULL;
 
 ------------------------------------------------------------
 -- Entries & summaries

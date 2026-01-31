@@ -104,6 +104,8 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Inject MemoryEntriesCacheSelector memoryCacheSelector;
 
+    @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
+
     private MemoryEntriesCache memoryEntriesCache;
 
     @PostConstruct
@@ -267,7 +269,7 @@ public class MongoMemoryStore implements MemoryStore {
                 && membership.accessLevel != AccessLevel.MANAGER) {
             throw new AccessDeniedException("Only owner or manager can delete conversation");
         }
-        softDeleteConversationGroup(groupId);
+        softDeleteConversationGroup(groupId, userId);
     }
 
     @Override
@@ -347,6 +349,11 @@ public class MongoMemoryStore implements MemoryStore {
         MongoConversationMembership m =
                 membershipRepository.createMembership(
                         groupId, request.getUserId(), request.getAccessLevel());
+
+        // Audit log the addition
+        membershipAuditLogger.logAdd(
+                userId, conversationId, request.getUserId(), request.getAccessLevel());
+
         return toMembershipDto(m);
     }
 
@@ -365,8 +372,13 @@ public class MongoMemoryStore implements MemoryStore {
                         .orElseThrow(
                                 () -> new ResourceNotFoundException("membership", memberUserId));
         if (request.getAccessLevel() != null) {
+            AccessLevel oldLevel = m.accessLevel;
             m.accessLevel = request.getAccessLevel();
             membershipRepository.update(m);
+
+            // Audit log the update
+            membershipAuditLogger.logUpdate(
+                    userId, conversationId, memberUserId, oldLevel, request.getAccessLevel());
         }
         return toMembershipDto(m);
     }
@@ -376,12 +388,21 @@ public class MongoMemoryStore implements MemoryStore {
     public void deleteMembership(String userId, String conversationId, String memberUserId) {
         String groupId = resolveGroupId(conversationId);
         ensureHasAccess(groupId, userId, AccessLevel.MANAGER);
-        MongoConversationMembership membership =
-                membershipRepository.findMembership(groupId, memberUserId).orElse(null);
-        if (membership != null) {
-            membership.deletedAt = Instant.now();
-            membershipRepository.update(membership);
+
+        // Get the membership before deletion for audit logging
+        Optional<MongoConversationMembership> membership =
+                membershipRepository.findMembership(groupId, memberUserId);
+
+        if (membership.isPresent()) {
+            AccessLevel level = membership.get().accessLevel;
+
+            // Hard delete the membership
+            membershipRepository.deleteById(membership.get().id);
+
+            // Audit log the removal
+            membershipAuditLogger.logRemove(userId, conversationId, memberUserId, level);
         }
+
         // Delete any pending ownership transfer to the removed member
         ownershipTransferRepository.deleteByConversationGroupAndToUser(groupId, memberUserId);
     }
@@ -1316,8 +1337,17 @@ public class MongoMemoryStore implements MemoryStore {
         return conversation.conversationGroupId;
     }
 
-    private void softDeleteConversationGroup(String conversationGroupId) {
+    private void softDeleteConversationGroup(String conversationGroupId, String actorUserId) {
         Instant now = Instant.now();
+
+        // Log and hard delete memberships BEFORE soft-deleting the group
+        List<MongoConversationMembership> memberships =
+                membershipRepository.listForConversationGroup(conversationGroupId);
+        for (MongoConversationMembership m : memberships) {
+            membershipAuditLogger.logRemove(
+                    actorUserId, conversationGroupId, m.userId, m.accessLevel);
+            membershipRepository.deleteById(m.id);
+        }
 
         // Mark conversation group as deleted
         MongoConversationGroup group = conversationGroupRepository.findById(conversationGroupId);
@@ -1334,14 +1364,6 @@ public class MongoMemoryStore implements MemoryStore {
         for (MongoConversation c : conversations) {
             c.deletedAt = now;
             conversationRepository.update(c);
-        }
-
-        // Mark all memberships as deleted
-        List<MongoConversationMembership> memberships =
-                membershipRepository.listForConversationGroup(conversationGroupId);
-        for (MongoConversationMembership m : memberships) {
-            m.deletedAt = now;
-            membershipRepository.update(m);
         }
 
         // Hard delete ownership transfers
@@ -1484,7 +1506,7 @@ public class MongoMemoryStore implements MemoryStore {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         String groupId = conversation.conversationGroupId;
-        softDeleteConversationGroup(groupId);
+        softDeleteConversationGroup(groupId, "admin");
     }
 
     @Override
@@ -1516,13 +1538,8 @@ public class MongoMemoryStore implements MemoryStore {
             conversationRepository.update(c);
         }
 
-        // Restore all memberships
-        List<MongoConversationMembership> memberships =
-                membershipRepository.listForConversationGroup(groupId);
-        for (MongoConversationMembership m : memberships) {
-            m.deletedAt = null;
-            membershipRepository.update(m);
-        }
+        // Note: Memberships are hard-deleted when a conversation is deleted,
+        // so they cannot be restored. The owner must re-share with other users.
     }
 
     @Override
@@ -1741,50 +1758,6 @@ public class MongoMemoryStore implements MemoryStore {
         getMembershipCollection().deleteMany(filter);
         getOwnershipTransferCollection().deleteMany(filter);
         getConversationGroupCollection().deleteMany(groupFilter);
-    }
-
-    @Override
-    public long countEvictableMemberships(OffsetDateTime cutoff) {
-        Instant cutoffInstant = cutoff.toInstant();
-        return getMembershipCollection()
-                .countDocuments(
-                        Filters.and(
-                                Filters.ne("deletedAt", null),
-                                Filters.lt("deletedAt", cutoffInstant)));
-    }
-
-    @Override
-    @Transactional
-    public int hardDeleteMembershipsBatch(OffsetDateTime cutoff, int limit) {
-        Instant cutoffInstant = cutoff.toInstant();
-        Bson filter =
-                Filters.and(Filters.ne("deletedAt", null), Filters.lt("deletedAt", cutoffInstant));
-
-        // Find and delete in batches - MongoDB doesn't have FOR UPDATE SKIP LOCKED,
-        // but deleteMany is idempotent (deleting already-deleted is a no-op)
-        List<Document> batch =
-                getMembershipCollection().find(filter).limit(limit).into(new ArrayList<>());
-
-        if (batch.isEmpty()) {
-            return 0;
-        }
-
-        // Collect the _id values (which are strings like "conversationId:userId")
-        List<String> ids = new ArrayList<>();
-        for (Document doc : batch) {
-            Object id = doc.get("_id");
-            if (id != null) {
-                ids.add(id.toString());
-            }
-        }
-
-        if (ids.isEmpty()) {
-            return 0;
-        }
-
-        // Delete by exact _id match to avoid cross-product issues
-        Bson deleteFilter = Filters.in("_id", ids);
-        return (int) getMembershipCollection().deleteMany(deleteFilter).getDeletedCount();
     }
 
     @Override
