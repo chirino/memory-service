@@ -18,7 +18,6 @@ import io.grpc.Status;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -165,9 +164,18 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                         .withDescription("conversationId is required")
                                         .asRuntimeException();
                             }
-                            if (request.getEntriesCount() == 0) {
+                            if (!request.hasEntry()) {
                                 throw Status.INVALID_ARGUMENT
-                                        .withDescription("at least one entry is required")
+                                        .withDescription("entry is required")
+                                        .asRuntimeException();
+                            }
+                            io.github.chirino.memory.grpc.v1.CreateEntryRequest grpcEntry =
+                                    request.getEntry();
+                            if (grpcEntry.getChannel()
+                                    != io.github.chirino.memory.grpc.v1.Channel.MEMORY) {
+                                throw Status.INVALID_ARGUMENT
+                                        .withDescription(
+                                                "sync entry must target the memory channel")
                                         .asRuntimeException();
                             }
                             String clientId = currentClientId();
@@ -177,24 +185,9 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                                 "Client id is required to sync memory entries")
                                         .asRuntimeException();
                             }
-                            List<CreateEntryRequest> internal =
-                                    new ArrayList<>(request.getEntriesCount());
-                            for (io.github.chirino.memory.grpc.v1.CreateEntryRequest entry :
-                                    request.getEntriesList()) {
-                                if (entry == null
-                                        || entry.getChannel()
-                                                != io.github.chirino.memory.grpc.v1.Channel
-                                                        .MEMORY) {
-                                    throw Status.INVALID_ARGUMENT
-                                            .withDescription(
-                                                    "all sync entries must target the memory"
-                                                            + " channel")
-                                            .asRuntimeException();
-                                }
-                                internal.add(toClientCreateEntry(entry));
-                            }
+                            CreateEntryRequest internal = toClientCreateEntry(grpcEntry);
                             SyncResult result =
-                                    store().syncAgentEntries(
+                                    store().syncAgentEntry(
                                                     currentUserId(),
                                                     conversationId,
                                                     internal,
@@ -206,10 +199,9 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                             if (result.getEpoch() != null) {
                                 builder.setEpoch(result.getEpoch());
                             }
-                            builder.addAllEntries(
-                                    result.getEntries().stream()
-                                            .map(GrpcDtoMapper::toProto)
-                                            .collect(Collectors.toList()));
+                            if (result.getEntry() != null) {
+                                builder.setEntry(GrpcDtoMapper.toProto(result.getEntry()));
+                            }
                             return builder.build();
                         })
                 .onFailure()

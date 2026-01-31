@@ -14,7 +14,6 @@ import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ListConversationEntries200Response;
-import io.github.chirino.memory.client.model.SyncEntriesRequest;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.inject.Instance;
@@ -130,33 +129,38 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                 messages.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")),
                 stackTrace());
 
-        SyncEntriesRequest syncRequest = new SyncEntriesRequest();
-        List<CreateEntryRequest> syncEntries = new ArrayList<>();
-        for (ChatMessage chatMessage : messages) {
-            if (chatMessage == null) {
-                continue;
-            }
-            syncEntries.add(toCreateEntryRequest(chatMessage));
-        }
-        if (syncEntries.isEmpty()) {
+        // Build a single entry with all messages in the content array
+        CreateEntryRequest syncEntry = toSyncEntryRequest(messages);
+        if (syncEntry.getContent() == null || syncEntry.getContent().isEmpty()) {
             LOG.infof("Skipping sync for empty memory update on conversationId=%s", memoryId);
             return;
         }
-        syncRequest.setEntries(syncEntries);
-        conversationsApi()
-                .syncConversationMemory(UUID.fromString(memoryId.toString()), syncRequest);
+        conversationsApi().syncConversationMemory(UUID.fromString(memoryId.toString()), syncEntry);
     }
 
     @Override
     public void deleteMessages(Object memoryId) {
         Objects.requireNonNull(memoryId, "memoryId");
-        LOG.infof(
-                "Memory service does not support empty sync requests; delete is a no-op for"
-                        + " conversationId=%s\nat: %s",
-                memoryId, stackTrace());
+        LOG.infof("deleteMessages(%s)\nat: %s", memoryId, stackTrace());
+
+        // Sync with empty content to clear memory by creating an empty epoch
+        CreateEntryRequest syncEntry = new CreateEntryRequest();
+        SecurityIdentity identity = resolveSecurityIdentity();
+        String userId = principalName(identity);
+        if (userId != null) {
+            syncEntry.setUserId(userId);
+        }
+        syncEntry.setChannel(ChannelEnum.MEMORY);
+        syncEntry.setContentType("LC4J");
+        syncEntry.setContent(new ArrayList<>());
+        conversationsApi().syncConversationMemory(UUID.fromString(memoryId.toString()), syncEntry);
     }
 
-    private CreateEntryRequest toCreateEntryRequest(ChatMessage chatMessage) {
+    /**
+     * Creates a single CreateEntryRequest with all messages encoded in the content array. This is
+     * used for sync operations where all messages are sent as a single entry.
+     */
+    private CreateEntryRequest toSyncEntryRequest(List<ChatMessage> messages) {
         CreateEntryRequest request = new CreateEntryRequest();
         SecurityIdentity identity = resolveSecurityIdentity();
         String userId = principalName(identity);
@@ -166,9 +170,14 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         request.setChannel(ChannelEnum.MEMORY);
         request.setContentType("LC4J");
 
-        String json = CODEC.messageToJson(chatMessage);
-        // LOG.infof("Encoding content block: [%s]", json);
-        request.setContent(List.of(new RawValue(json)));
+        List<Object> contentBlocks = new ArrayList<>();
+        for (ChatMessage chatMessage : messages) {
+            if (chatMessage != null) {
+                String json = CODEC.messageToJson(chatMessage);
+                contentBlocks.add(new RawValue(json));
+            }
+        }
+        request.setContent(contentBlocks);
         return request;
     }
 

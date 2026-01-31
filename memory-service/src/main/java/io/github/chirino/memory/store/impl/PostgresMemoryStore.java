@@ -766,12 +766,9 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public SyncResult syncAgentEntries(
-            String userId,
-            String conversationId,
-            List<CreateEntryRequest> entries,
-            String clientId) {
-        validateSyncEntries(entries);
+    public SyncResult syncAgentEntry(
+            String userId, String conversationId, CreateEntryRequest entry, String clientId) {
+        validateSyncEntry(entry);
         UUID cid = UUID.fromString(conversationId);
         Long latestEpoch = entryRepository.findLatestMemoryEpoch(cid, clientId);
         List<EntryDto> latestEpochEntries =
@@ -783,64 +780,77 @@ public class PostgresMemoryStore implements MemoryStore {
                                 .collect(Collectors.toList())
                         : Collections.emptyList();
 
-        List<MemorySyncHelper.MessageContent> existing =
-                MemorySyncHelper.fromDtos(latestEpochEntries);
-        List<MemorySyncHelper.MessageContent> incoming = MemorySyncHelper.fromRequests(entries);
+        // Flatten content from all existing entries and get incoming content
+        List<Object> existingContent = MemorySyncHelper.flattenContent(latestEpochEntries);
+        List<Object> incomingContent =
+                entry.getContent() != null ? entry.getContent() : Collections.emptyList();
 
         SyncResult result = new SyncResult();
-        result.setEntries(Collections.emptyList());
+        result.setEntry(null);
         result.setEpoch(latestEpoch);
 
-        // If no existing entries and incoming is empty, that's a no-op (shouldn't happen due to
-        // validation)
-        if (existing.isEmpty() && incoming.isEmpty()) {
+        // Check for contentType mismatch - if any existing entry has different contentType, diverge
+        if (MemorySyncHelper.hasContentTypeMismatch(latestEpochEntries, entry.getContentType())) {
+            // ContentType changed - create new epoch with all incoming content
+            Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
+            CreateEntryRequest toAppend =
+                    MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
+            List<EntryDto> appended =
+                    appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+            result.setEpoch(nextEpoch);
+            result.setEntry(appended.isEmpty() ? null : appended.get(0));
+            result.setEpochIncremented(true);
+            result.setNoOp(false);
+            return result;
+        }
+
+        // If existing content matches incoming exactly, it's a no-op
+        if (MemorySyncHelper.contentEquals(existingContent, incomingContent)) {
             result.setNoOp(true);
             return result;
         }
 
-        // If existing entries match incoming exactly, it's a no-op
-        if (!existing.isEmpty() && existing.equals(incoming)) {
-            result.setNoOp(true);
-            return result;
-        }
-
-        // If incoming is a prefix extension of existing (only adding more entries), append to
-        // current epoch
-        if (!existing.isEmpty()
-                && incoming.size() > existing.size()
-                && MemorySyncHelper.isPrefix(existing, incoming)) {
-            List<CreateEntryRequest> delta =
-                    MemorySyncHelper.withEpoch(
-                            entries.subList(existing.size(), entries.size()), latestEpoch);
-            List<EntryDto> appended = appendAgentEntries(userId, conversationId, delta, clientId);
-            result.setEntries(appended);
+        // If incoming is a prefix extension of existing (only adding more content), append delta
+        if (MemorySyncHelper.isContentPrefix(existingContent, incomingContent)) {
+            List<Object> deltaContent =
+                    MemorySyncHelper.extractDelta(existingContent, incomingContent);
+            if (deltaContent.isEmpty()) {
+                // No new content - this is a no-op
+                result.setNoOp(true);
+                return result;
+            }
+            CreateEntryRequest deltaEntry =
+                    MemorySyncHelper.withEpochAndContent(entry, latestEpoch, deltaContent);
+            List<EntryDto> appended =
+                    appendAgentEntries(userId, conversationId, List.of(deltaEntry), clientId);
+            result.setEntry(appended.isEmpty() ? null : appended.get(0));
             result.setEpochIncremented(false);
             result.setNoOp(false);
             return result;
         }
 
-        // Otherwise, create a new epoch with all incoming entries
+        // Content diverged - create new epoch with all incoming content
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
-        List<CreateEntryRequest> toAppend = MemorySyncHelper.withEpoch(entries, nextEpoch);
-        List<EntryDto> appended = appendAgentEntries(userId, conversationId, toAppend, clientId);
+        CreateEntryRequest toAppend =
+                MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
+        List<EntryDto> appended =
+                appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
         result.setEpoch(nextEpoch);
-        result.setEntries(appended);
+        result.setEntry(appended.isEmpty() ? null : appended.get(0));
         result.setEpochIncremented(true);
         result.setNoOp(false);
         return result;
     }
 
-    private void validateSyncEntries(List<CreateEntryRequest> entries) {
-        if (entries == null || entries.isEmpty()) {
-            throw new IllegalArgumentException("entries are required");
+    private void validateSyncEntry(CreateEntryRequest entry) {
+        if (entry == null) {
+            throw new IllegalArgumentException("entry is required");
         }
-        for (CreateEntryRequest entry : entries) {
-            if (entry == null
-                    || entry.getChannel() == null
-                    || entry.getChannel() != CreateEntryRequest.ChannelEnum.MEMORY) {
-                throw new IllegalArgumentException("all sync entries must target memory channel");
-            }
+        if (entry.getChannel() == null
+                || entry.getChannel() != CreateEntryRequest.ChannelEnum.MEMORY) {
+            throw new IllegalArgumentException("sync entry must target memory channel");
         }
+        // Empty content is allowed - it creates an empty epoch to clear memory
     }
 
     @Override
@@ -1258,6 +1268,13 @@ public class PostgresMemoryStore implements MemoryStore {
             params.add(query.getUserId());
         }
 
+        // Handle mode-specific filtering
+        ConversationListMode mode =
+                query.getMode() != null ? query.getMode() : ConversationListMode.LATEST_FORK;
+        if (mode == ConversationListMode.ROOTS) {
+            jpql.append(" AND c.forkedAtEntryId IS NULL AND c.forkedAtConversationId IS NULL");
+        }
+
         if (query.isOnlyDeleted()) {
             jpql.append(" AND c.deletedAt IS NOT NULL");
             if (query.getDeletedAfter() != null) {
@@ -1292,6 +1309,24 @@ public class PostgresMemoryStore implements MemoryStore {
                         .find(jpql.toString(), params.toArray())
                         .page(0, limit)
                         .list();
+
+        // For LATEST_FORK mode, filter to only the most recently updated conversation per group
+        if (mode == ConversationListMode.LATEST_FORK) {
+            Map<UUID, ConversationEntity> latestByGroup = new HashMap<>();
+            for (ConversationEntity candidate : entities) {
+                UUID groupId = candidate.getConversationGroup().getId();
+                ConversationEntity current = latestByGroup.get(groupId);
+                if (current == null || candidate.getUpdatedAt().isAfter(current.getUpdatedAt())) {
+                    latestByGroup.put(groupId, candidate);
+                }
+            }
+            return latestByGroup.values().stream()
+                    .map(entity -> toConversationSummaryDto(entity, AccessLevel.OWNER, null))
+                    .sorted(Comparator.comparing(ConversationSummaryDto::getUpdatedAt).reversed())
+                    .limit(limit)
+                    .collect(Collectors.toList());
+        }
+
         return entities.stream()
                 .map(entity -> toConversationSummaryDto(entity, AccessLevel.OWNER, null))
                 .collect(Collectors.toList());

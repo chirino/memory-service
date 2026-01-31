@@ -6,7 +6,6 @@ import io.github.chirino.memoryservice.client.model.Channel;
 import io.github.chirino.memoryservice.client.model.CreateEntryRequest;
 import io.github.chirino.memoryservice.client.model.Entry;
 import io.github.chirino.memoryservice.client.model.ListConversationEntries200Response;
-import io.github.chirino.memoryservice.client.model.SyncEntriesRequest;
 import io.github.chirino.memoryservice.history.ConversationsApiFactory;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.util.ArrayList;
@@ -125,33 +124,21 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
             return;
         }
 
-        SyncEntriesRequest syncRequest = new SyncEntriesRequest();
-        List<CreateEntryRequest> syncEntries = new ArrayList<>();
+        // Build a single entry with all messages in the content array
+        CreateEntryRequest syncEntry = toSyncEntryRequest(messages);
 
-        for (Message message : messages) {
-            if (message == null) {
-                continue;
-            }
-            CreateEntryRequest request = toCreateEntryRequest(message);
-            if (request != null) {
-                syncEntries.add(request);
-            }
-        }
-
-        if (syncEntries.isEmpty()) {
-            LOG.debug("No valid entries to sync for conversationId={}", conversationId);
+        if (syncEntry.getContent() == null || syncEntry.getContent().isEmpty()) {
+            LOG.debug("No valid content to sync for conversationId={}", conversationId);
             return;
         }
 
-        syncRequest.setEntries(syncEntries);
-
         try {
             conversationsApi()
-                    .syncConversationMemory(UUID.fromString(conversationId), syncRequest)
+                    .syncConversationMemory(UUID.fromString(conversationId), syncEntry)
                     .block();
             LOG.debug(
-                    "Successfully synced {} entries for conversationId={}",
-                    syncEntries.size(),
+                    "Successfully synced {} messages for conversationId={}",
+                    syncEntry.getContent().size(),
                     conversationId);
         } catch (Exception e) {
             LOG.warn("Failed to sync entries for conversationId={}", conversationId, e);
@@ -163,20 +150,37 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
     public void deleteByConversationId(String conversationId) {
         Objects.requireNonNull(conversationId, "conversationId");
         LOG.debug("deleteByConversationId called for conversationId={}", conversationId);
-        // The memory-service doesn't support deleting just the memory channel messages.
-        // Sync with an empty list is not supported either.
-        // For now, this is a no-op with a warning.
-        LOG.warn(
-                "deleteByConversationId is not fully supported by memory-service; "
-                        + "memory for conversationId={} will not be cleared",
-                conversationId);
+
+        // Sync with empty content to clear memory by creating an empty epoch
+        CreateEntryRequest syncEntry = new CreateEntryRequest();
+        syncEntry.setChannel(Channel.MEMORY);
+        syncEntry.setContentType("SpringAI");
+        String userId = SecurityHelper.principalName();
+        if (userId != null) {
+            syncEntry.setUserId(userId);
+        }
+        syncEntry.setContent(new ArrayList<>());
+
+        try {
+            conversationsApi()
+                    .syncConversationMemory(UUID.fromString(conversationId), syncEntry)
+                    .block();
+            LOG.debug("Successfully cleared memory for conversationId={}", conversationId);
+        } catch (Exception e) {
+            LOG.warn("Failed to clear memory for conversationId={}", conversationId, e);
+            throw e;
+        }
     }
 
     private ConversationsApi conversationsApi() {
         return apiFactory.create(bearerToken);
     }
 
-    private CreateEntryRequest toCreateEntryRequest(Message message) {
+    /**
+     * Creates a single CreateEntryRequest with all messages encoded in the content array. This is
+     * used for sync operations where all messages are sent as a single entry.
+     */
+    private CreateEntryRequest toSyncEntryRequest(List<Message> messages) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(Channel.MEMORY);
         request.setContentType("SpringAI");
@@ -186,10 +190,16 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
             request.setUserId(userId);
         }
 
-        Map<String, Object> contentBlock = new HashMap<>();
-        contentBlock.put("role", message.getMessageType().getValue());
-        contentBlock.put("text", message.getText());
-        request.setContent(List.of(contentBlock));
+        List<Object> contentBlocks = new ArrayList<>();
+        for (Message message : messages) {
+            if (message != null) {
+                Map<String, Object> contentBlock = new HashMap<>();
+                contentBlock.put("role", message.getMessageType().getValue());
+                contentBlock.put("text", message.getText());
+                contentBlocks.add(contentBlock);
+            }
+        }
+        request.setContent(contentBlocks);
         return request;
     }
 

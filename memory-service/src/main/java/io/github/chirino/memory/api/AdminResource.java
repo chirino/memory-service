@@ -85,6 +85,7 @@ public class AdminResource {
     @GET
     @Path("/conversations")
     public Response listConversations(
+            @QueryParam("mode") String mode,
             @QueryParam("userId") String userId,
             @QueryParam("includeDeleted") @jakarta.ws.rs.DefaultValue("false")
                     boolean includeDeleted,
@@ -97,6 +98,7 @@ public class AdminResource {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
+            params.put("mode", mode);
             params.put("userId", userId);
             params.put("includeDeleted", includeDeleted);
             params.put("onlyDeleted", onlyDeleted);
@@ -104,6 +106,7 @@ public class AdminResource {
                     "listConversations", params, justification, identity, apiKeyContext);
 
             AdminConversationQuery query = new AdminConversationQuery();
+            query.setMode(ConversationListMode.fromQuery(mode));
             query.setUserId(userId);
             query.setIncludeDeleted(includeDeleted);
             query.setOnlyDeleted(onlyDeleted);

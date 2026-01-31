@@ -24,10 +24,19 @@ message PageInfo {
   string next_page_token = 1;
 }
 
+// ConversationListMode controls which conversations are returned from each fork tree.
+// Conversations can be forked to create branches. All forks share the same
+// "conversation group" (fork tree). This mode determines which conversations
+// from each fork tree are included in list results.
 enum ConversationListMode {
+  // Unspecified defaults to LATEST_FORK.
   CONVERSATION_LIST_MODE_UNSPECIFIED = 0;
+  // Include all conversations the user can access (roots and forks).
   ALL = 1;
+  // Only include root conversations (conversations that are not forks).
   ROOTS = 2;
+  // Include only the most recently updated conversation per fork tree (default).
+  // This is useful for showing a single representative conversation from each tree.
   LATEST_FORK = 3;
 }
 
@@ -100,7 +109,10 @@ message CreateConversationRequest {
 }
 
 message ListConversationsRequest {
+  // Controls which conversations are returned from each fork tree.
+  // See ConversationListMode for details on each mode.
   ConversationListMode mode = 1;
+  // Optional text query for basic title/metadata search.
   string query = 2;
   PageRequest page = 3;
 }
@@ -148,14 +160,18 @@ message CreateEntryRequest {
 message SyncEntriesRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
-  repeated CreateEntryRequest entries = 2;
+  // Single entry containing all messages in the agent's memory.
+  // The content array holds all messages; comparison is done against
+  // the flattened content of existing entries in the latest epoch.
+  CreateEntryRequest entry = 2;
 }
 
 message SyncEntriesResponse {
   optional int64 epoch = 1;
   bool no_op = 2;
   bool epoch_incremented = 3;
-  repeated Entry entries = 4;
+  // The entry that was appended during this sync, or empty if no-op.
+  optional Entry entry = 4;
 }
 
 message AppendEntryRequest {
@@ -303,6 +319,9 @@ service SystemService {
 }
 
 service ConversationsService {
+  // ListConversations returns conversations the user has access to.
+  // The mode parameter controls which conversations from each fork tree are returned.
+  // See ConversationListMode for available modes.
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
   rpc CreateConversation(CreateConversationRequest) returns (Conversation);
   rpc GetConversation(GetConversationRequest) returns (Conversation);

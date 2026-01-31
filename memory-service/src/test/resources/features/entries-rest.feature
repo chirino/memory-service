@@ -129,16 +129,12 @@ Feature: Entries REST API
     When I sync memory entries with request:
     """
     {
-      "entries": [
+      "channel": "MEMORY",
+      "contentType": "test.v1",
+      "content": [
         {
-          "channel": "MEMORY",
-          "contentType": "test.v1",
-          "content": [
-            {
-              "type": "text",
-              "text": "Stable epoch entry"
-            }
-          ]
+          "type": "text",
+          "text": "Stable epoch entry"
         }
       ]
     }
@@ -147,7 +143,7 @@ Feature: Entries REST API
     And the response body field "epoch" should be "1"
     And the response body field "noOp" should be "true"
     And the response body field "epochIncremented" should be "false"
-    And the sync response should contain 0 entries
+    And the sync response entry should be null
 
   Scenario: Sync memory entries appends new items within the current epoch
     Given I am authenticated as agent with API key "test-agent-key"
@@ -155,26 +151,16 @@ Feature: Entries REST API
     When I sync memory entries with request:
     """
     {
-      "entries": [
+      "channel": "MEMORY",
+      "contentType": "test.v1",
+      "content": [
         {
-          "channel": "MEMORY",
-          "contentType": "test.v1",
-          "content": [
-            {
-              "type": "text",
-              "text": "Epoch delta entry"
-            }
-          ]
+          "type": "text",
+          "text": "Epoch delta entry"
         },
         {
-          "channel": "MEMORY",
-          "contentType": "test.v1",
-          "content": [
-            {
-              "type": "text",
-              "text": "Appended via sync"
-            }
-          ]
+          "type": "text",
+          "text": "Appended via sync"
         }
       ]
     }
@@ -183,8 +169,8 @@ Feature: Entries REST API
     And the response body field "epoch" should be "1"
     And the response body field "noOp" should be "false"
     And the response body field "epochIncremented" should be "false"
-    And the response body field "entries[0].content[0].text" should be "Appended via sync"
-    And the sync response should contain 1 entries
+    And the response body field "entry.content[0].text" should be "Appended via sync"
+    And the sync response entry should not be null
 
   Scenario: Sync memory entries creates a new epoch when history diverges
     Given I am authenticated as agent with API key "test-agent-key"
@@ -192,16 +178,12 @@ Feature: Entries REST API
     When I sync memory entries with request:
     """
     {
-      "entries": [
+      "channel": "MEMORY",
+      "contentType": "test.v1",
+      "content": [
         {
-          "channel": "MEMORY",
-          "contentType": "test.v1",
-          "content": [
-            {
-              "type": "text",
-              "text": "New epoch entry"
-            }
-          ]
+          "type": "text",
+          "text": "New epoch entry"
         }
       ]
     }
@@ -210,7 +192,41 @@ Feature: Entries REST API
     And the response body field "epoch" should be "2"
     And the response body field "noOp" should be "false"
     And the response body field "epochIncremented" should be "true"
-    And the sync response should contain 1 entries
+    And the sync response entry should not be null
+
+  Scenario: Sync memory entries with empty content clears memory by creating an empty epoch
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a memory entry "Memory to clear" with epoch 1 and contentType "test.v1"
+    When I sync memory entries with request:
+    """
+    {
+      "channel": "MEMORY",
+      "contentType": "test.v1",
+      "content": []
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epoch" should be "2"
+    And the response body field "noOp" should be "false"
+    And the response body field "epochIncremented" should be "true"
+    And the sync response entry should not be null
+    And the sync response entry content should be empty
+
+  Scenario: Sync memory entries with empty content is no-op when no existing memory
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I sync memory entries with request:
+    """
+    {
+      "channel": "MEMORY",
+      "contentType": "test.v1",
+      "content": []
+    }
+    """
+    Then the response status should be 200
+    And the response body field "noOp" should be "true"
+    And the response body field "epochIncremented" should be "false"
+    And the sync response entry should be null
 
   Scenario: User can only see history channel entries
     Given I am authenticated as user "alice"
