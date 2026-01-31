@@ -1458,6 +1458,43 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
+    public List<ConversationForkSummaryDto> adminListForks(String conversationId) {
+        UUID cid = UUID.fromString(conversationId);
+        ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        UUID groupId = conversation.getConversationGroup().getId();
+
+        // Admin can see all forks including deleted ones
+        List<ConversationEntity> candidates =
+                conversationRepository
+                        .find(
+                                "conversationGroup.id = ?1"
+                                        + " ORDER BY forkedAtEntryId NULLS FIRST, updatedAt DESC",
+                                groupId)
+                        .list();
+        List<ConversationForkSummaryDto> results = new ArrayList<>();
+        for (ConversationEntity candidate : candidates) {
+            ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
+            dto.setConversationId(candidate.getId().toString());
+            dto.setConversationGroupId(groupId.toString());
+            dto.setForkedAtEntryId(
+                    candidate.getForkedAtEntryId() != null
+                            ? candidate.getForkedAtEntryId().toString()
+                            : null);
+            dto.setForkedAtConversationId(
+                    candidate.getForkedAtConversationId() != null
+                            ? candidate.getForkedAtConversationId().toString()
+                            : null);
+            dto.setTitle(decryptTitle(candidate.getTitle()));
+            dto.setCreatedAt(ISO_FORMATTER.format(candidate.getCreatedAt()));
+            results.add(dto);
+        }
+        return results;
+    }
+
+    @Override
     public List<SearchResultDto> adminSearchEntries(AdminSearchQuery query) {
         if (query.getQuery() == null || query.getQuery().isBlank()) {
             return Collections.emptyList();

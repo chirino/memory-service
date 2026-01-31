@@ -105,6 +105,8 @@ public interface MemoryStore {
 
     List<ConversationMembershipDto> adminListMemberships(String conversationId);
 
+    List<ConversationForkSummaryDto> adminListForks(String conversationId);
+
     List<SearchResultDto> adminSearchEntries(AdminSearchQuery query);
 
     // Eviction support
