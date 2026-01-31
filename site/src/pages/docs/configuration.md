@@ -48,13 +48,28 @@ QUARKUS_MONGODB_DATABASE=memoryservice
 
 ## Cache Configuration
 
-Memory Service uses a unified cache configuration for all cache-dependent features, including the response resumer. Configure the cache backend once, and all features will use it automatically.
+Memory Service uses a unified cache configuration for all cache-dependent features, including the response resumer and memory entries cache. Configure the cache backend once, and all features will use it automatically.
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `memory-service.cache.type` | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching |
 | `memory-service.cache.redis.client` | client name | default | Optional: specify a named Redis client |
 | `memory-service.cache.infinispan.startup-timeout` | duration | `PT30S` | Startup timeout for Infinispan connection |
+
+### Memory Entries Cache
+
+When a cache backend is configured, Memory Service caches memory entries to reduce database load and improve GET/sync latency. The cache stores the complete list of memory entries at the latest epoch for each conversation/client pair.
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory-service.cache.epoch.ttl` | duration | `PT10M` | TTL for cached memory entries (sliding window - refreshed on access) |
+
+Features of the memory entries cache:
+
+- **Automatic population**: Cache is populated on first read and updated after sync operations
+- **Sliding TTL**: TTL is refreshed on every cache access (get or set)
+- **In-memory pagination**: Cache stores complete entry list; pagination is applied in-memory
+- **Graceful degradation**: Falls back to database queries if cache is unavailable
 
 ### Response Resumer Settings
 
@@ -282,6 +297,14 @@ QUARKUS_HEALTH_EXTENSIONS_ENABLED=true
 QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED=true
 ```
 
+When cache is enabled, the following metrics are available:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `memory_entries_cache_hits_total` | Counter | Number of cache hits for memory entries |
+| `memory_entries_cache_misses_total` | Counter | Number of cache misses for memory entries |
+| `memory_entries_cache_errors_total` | Counter | Number of cache errors for memory entries |
+
 ### Logging
 
 ```bash
@@ -306,9 +329,11 @@ services:
       QUARKUS_DATASOURCE_USERNAME: postgres
       QUARKUS_DATASOURCE_PASSWORD: postgres
 
-      # Cache with Redis (response resumer automatically enabled)
+      # Cache with Redis (response resumer and memory entries cache automatically enabled)
       MEMORY_SERVICE_CACHE_TYPE: redis
       QUARKUS_REDIS_HOSTS: redis://redis:6379
+      # Optional: memory entries cache TTL (default: 10 minutes)
+      # MEMORY_SERVICE_CACHE_EPOCH_TTL: PT10M
 
       # Authentication
       QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8180/realms/memory-service

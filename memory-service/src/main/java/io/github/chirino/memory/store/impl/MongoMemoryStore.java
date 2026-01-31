@@ -21,6 +21,9 @@ import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.cache.CachedMemoryEntries;
+import io.github.chirino.memory.cache.MemoryEntriesCache;
+import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
@@ -47,6 +50,7 @@ import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
 import io.github.chirino.memory.vector.VectorStore;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -97,6 +101,15 @@ public class MongoMemoryStore implements MemoryStore {
     @Inject MongoClient mongoClient;
 
     @Inject MongoTaskRepository taskRepository;
+
+    @Inject MemoryEntriesCacheSelector memoryCacheSelector;
+
+    private MemoryEntriesCache memoryEntriesCache;
+
+    @PostConstruct
+    void init() {
+        memoryEntriesCache = memoryCacheSelector.select();
+    }
 
     private MongoCollection<Document> getConversationGroupCollection() {
         return mongoClient.getDatabase("memory").getCollection("conversationGroups");
@@ -674,14 +687,134 @@ public class MongoMemoryStore implements MemoryStore {
             case ALL ->
                     entryRepository.listByChannel(
                             conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
-            case LATEST ->
-                    // Combined method: finds max epoch and lists entries
-                    entryRepository.listMemoryEntriesAtLatestEpoch(
-                            conversationId, afterEntryId, limit, clientId);
+            case LATEST -> fetchLatestMemoryEntries(conversationId, afterEntryId, limit, clientId);
             case EPOCH ->
                     entryRepository.listMemoryEntriesByEpoch(
                             conversationId, afterEntryId, limit, filter.getEpoch(), clientId);
         };
+    }
+
+    private List<MongoEntry> fetchLatestMemoryEntries(
+            String conversationId, String afterEntryId, int limit, String clientId) {
+        UUID cid = UUID.fromString(conversationId);
+
+        // Try cache first - cache stores the complete list, pagination is applied in-memory
+        Optional<CachedMemoryEntries> cached = memoryEntriesCache.get(cid, clientId);
+        if (cached.isPresent()) {
+            return paginateCachedEntries(
+                    cached.get(), conversationId, clientId, afterEntryId, limit);
+        }
+
+        // Cache miss - fetch ALL entries from database to populate cache
+        List<MongoEntry> allEntries =
+                entryRepository.listMemoryEntriesAtLatestEpoch(conversationId, clientId);
+
+        // Populate cache with complete list
+        if (!allEntries.isEmpty()) {
+            CachedMemoryEntries toCache = toCachedMemoryEntries(allEntries);
+            memoryEntriesCache.set(cid, clientId, toCache);
+        }
+
+        // Apply pagination in-memory
+        return paginateEntries(allEntries, afterEntryId, limit);
+    }
+
+    private List<MongoEntry> paginateCachedEntries(
+            CachedMemoryEntries cached,
+            String conversationId,
+            String clientId,
+            String afterEntryId,
+            int limit) {
+        List<CachedMemoryEntries.CachedEntry> entries = cached.entries();
+        long epoch = cached.epoch();
+
+        // Find starting index based on afterEntryId cursor
+        int startIndex = 0;
+        if (afterEntryId != null) {
+            UUID afterId = UUID.fromString(afterEntryId);
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).id().equals(afterId)) {
+                    startIndex = i + 1; // Start after the cursor entry
+                    break;
+                }
+            }
+        }
+
+        // Apply pagination and convert to MongoEntry
+        return entries.stream()
+                .skip(startIndex)
+                .limit(limit)
+                .map(ce -> toCachedMongoEntry(ce, conversationId, clientId, epoch))
+                .toList();
+    }
+
+    private List<MongoEntry> paginateEntries(
+            List<MongoEntry> entries, String afterEntryId, int limit) {
+        // Find starting index based on afterEntryId cursor
+        int startIndex = 0;
+        if (afterEntryId != null) {
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).id.equals(afterEntryId)) {
+                    startIndex = i + 1; // Start after the cursor entry
+                    break;
+                }
+            }
+        }
+
+        // Apply pagination
+        return entries.stream().skip(startIndex).limit(limit).toList();
+    }
+
+    private CachedMemoryEntries toCachedMemoryEntries(List<MongoEntry> entries) {
+        if (entries.isEmpty()) {
+            return null;
+        }
+        long epoch = entries.get(0).epoch != null ? entries.get(0).epoch : 0L;
+        List<CachedMemoryEntries.CachedEntry> cachedEntries =
+                entries.stream()
+                        .map(
+                                e ->
+                                        new CachedMemoryEntries.CachedEntry(
+                                                UUID.fromString(e.id),
+                                                e.contentType,
+                                                e.content, // Already encrypted bytes
+                                                e.createdAt))
+                        .toList();
+        return new CachedMemoryEntries(epoch, cachedEntries);
+    }
+
+    /**
+     * Updates the cache with the current latest epoch entries. Called after sync modifications to
+     * keep the cache warm instead of invalidating it.
+     */
+    private void updateCacheWithLatestEntries(String conversationId, String clientId) {
+        UUID cid = UUID.fromString(conversationId);
+        List<MongoEntry> entries =
+                entryRepository.listMemoryEntriesAtLatestEpoch(conversationId, clientId);
+        if (!entries.isEmpty()) {
+            CachedMemoryEntries cached = toCachedMemoryEntries(entries);
+            memoryEntriesCache.set(cid, clientId, cached);
+        } else {
+            // No entries at latest epoch - remove stale cache entry
+            memoryEntriesCache.remove(cid, clientId);
+        }
+    }
+
+    private MongoEntry toCachedMongoEntry(
+            CachedMemoryEntries.CachedEntry cached,
+            String conversationId,
+            String clientId,
+            long epoch) {
+        MongoEntry entry = new MongoEntry();
+        entry.id = cached.id().toString();
+        entry.conversationId = conversationId;
+        entry.clientId = clientId;
+        entry.channel = Channel.MEMORY;
+        entry.epoch = epoch;
+        entry.contentType = cached.contentType();
+        entry.content = cached.encryptedContent(); // Still encrypted
+        entry.createdAt = cached.createdAt();
+        return entry;
     }
 
     @Override
@@ -778,6 +911,8 @@ public class MongoMemoryStore implements MemoryStore {
         result.setEntry(null);
         result.setEpoch(latestEpoch);
 
+        UUID cid = UUID.fromString(conversationId);
+
         // Check for contentType mismatch - if any existing entry has different contentType, diverge
         if (MemorySyncHelper.hasContentTypeMismatch(latestEpochEntries, entry.getContentType())) {
             // ContentType changed - create new epoch with all incoming content
@@ -786,6 +921,8 @@ public class MongoMemoryStore implements MemoryStore {
                     MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
             List<EntryDto> appended =
                     appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+            // Update cache with new epoch entries
+            updateCacheWithLatestEntries(conversationId, clientId);
             result.setEpoch(nextEpoch);
             result.setEntry(appended.isEmpty() ? null : appended.get(0));
             result.setEpochIncremented(true);
@@ -812,6 +949,8 @@ public class MongoMemoryStore implements MemoryStore {
                     MemorySyncHelper.withEpochAndContent(entry, latestEpoch, deltaContent);
             List<EntryDto> appended =
                     appendAgentEntries(userId, conversationId, List.of(deltaEntry), clientId);
+            // Update cache with appended entry
+            updateCacheWithLatestEntries(conversationId, clientId);
             result.setEntry(appended.isEmpty() ? null : appended.get(0));
             result.setEpochIncremented(false);
             result.setNoOp(false);
@@ -824,6 +963,8 @@ public class MongoMemoryStore implements MemoryStore {
                 MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
         List<EntryDto> appended =
                 appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+        // Update cache with new epoch entries
+        updateCacheWithLatestEntries(conversationId, clientId);
         result.setEpoch(nextEpoch);
         result.setEntry(appended.isEmpty() ? null : appended.get(0));
         result.setEpochIncremented(true);

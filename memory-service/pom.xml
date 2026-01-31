@@ -84,6 +84,12 @@
       <artifactId>quarkus-liquibase-mongodb</artifactId>
     </dependency>
 
+    <!-- Metrics -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+    </dependency>
+
     <!-- MongoDB -->
     <dependency>
       <groupId>io.quarkus</groupId>

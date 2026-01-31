@@ -323,6 +323,7 @@ public class StepDefinitions {
     @Inject Instance<io.github.chirino.memory.mongo.repo.MongoTaskRepository> mongoTaskRepository;
     @Inject Instance<io.github.chirino.memory.config.TaskRepositorySelector> taskRepositorySelector;
     @Inject Instance<io.github.chirino.memory.service.TaskProcessor> taskProcessor;
+    @Inject io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     private final KeycloakTestClient keycloakClient = new KeycloakTestClient();
 
@@ -3795,5 +3796,69 @@ public class StepDefinitions {
                 }
             }
         }
+    }
+
+    // Cache metrics step definitions
+
+    @io.cucumber.java.en.Given("I record the current cache metrics")
+    public void iRecordTheCurrentCacheMetrics() {
+        trackUsage();
+        contextVariables.put("cache.hits.before", getCacheMetricValue("memory.entries.cache.hits"));
+        contextVariables.put(
+                "cache.misses.before", getCacheMetricValue("memory.entries.cache.misses"));
+        contextVariables.put(
+                "cache.errors.before", getCacheMetricValue("memory.entries.cache.errors"));
+    }
+
+    @io.cucumber.java.en.Then("the cache hit count should have increased by at least {int}")
+    public void theCacheHitCountShouldHaveIncreasedByAtLeast(int expected) {
+        trackUsage();
+        double before = (double) contextVariables.getOrDefault("cache.hits.before", 0.0);
+        double after = getCacheMetricValue("memory.entries.cache.hits");
+        double increase = after - before;
+        assertThat(
+                "Cache hits should have increased by at least " + expected,
+                increase,
+                greaterThan((double) expected - 0.5));
+    }
+
+    @io.cucumber.java.en.Then("the cache miss count should have increased by at least {int}")
+    public void theCacheMissCountShouldHaveIncreasedByAtLeast(int expected) {
+        trackUsage();
+        double before = (double) contextVariables.getOrDefault("cache.misses.before", 0.0);
+        double after = getCacheMetricValue("memory.entries.cache.misses");
+        double increase = after - before;
+        assertThat(
+                "Cache misses should have increased by at least " + expected,
+                increase,
+                greaterThan((double) expected - 0.5));
+    }
+
+    @io.cucumber.java.en.Then("the cache hit count should be at least {int}")
+    public void theCacheHitCountShouldBeAtLeast(int expected) {
+        trackUsage();
+        double actual = getCacheMetricValue("memory.entries.cache.hits");
+        assertThat(
+                "Cache hits should be at least " + expected,
+                actual,
+                greaterThan((double) expected - 0.5));
+    }
+
+    @io.cucumber.java.en.Then("the cache miss count should be at least {int}")
+    public void theCacheMissCountShouldBeAtLeast(int expected) {
+        trackUsage();
+        double actual = getCacheMetricValue("memory.entries.cache.misses");
+        assertThat(
+                "Cache misses should be at least " + expected,
+                actual,
+                greaterThan((double) expected - 0.5));
+    }
+
+    private double getCacheMetricValue(String metricName) {
+        io.micrometer.core.instrument.Counter counter = meterRegistry.find(metricName).counter();
+        if (counter == null) {
+            return 0.0;
+        }
+        return counter.count();
     }
 }
