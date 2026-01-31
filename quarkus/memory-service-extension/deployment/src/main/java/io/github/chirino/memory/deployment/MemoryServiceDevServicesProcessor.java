@@ -22,6 +22,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
+import org.testcontainers.containers.FixedHostPortGenericContainer;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
@@ -144,6 +145,12 @@ public class MemoryServiceDevServicesProcessor {
         // Read response resumer configuration if set
         final String responseResumerConfig = getResponseResumerConfig();
 
+        // Read optional fixed port configuration
+        final Integer fixedPort = getFixedPortConfig();
+
+        // Read additional environment variables to pass to the container
+        final Map<String, String> additionalEnvVars = getAdditionalEnvVars();
+
         LOG.info("Starting memory-service dev service...");
 
         Map<String, Function<Startable, String>> configProviders = new HashMap<>();
@@ -175,20 +182,39 @@ public class MemoryServiceDevServicesProcessor {
                                 new Supplier<Startable>() {
                                     @Override
                                     public Startable get() {
-                                        GenericContainer<?> container =
-                                                new GenericContainer<>(
-                                                                DockerImageName.parse(
-                                                                        "ghcr.io/chirino/memory-service:latest"))
-                                                        .withEnv(
-                                                                "MEMORY_SERVICE_API_KEYS_AGENT",
-                                                                effectiveApiKey)
-                                                        .withEnv(
-                                                                "MEMORY_SERVICE_VECTOR_TYPE",
-                                                                "pgvector")
-                                                        .withExposedPorts(MEMORY_SERVICE_PORT)
-                                                        .withLabel(
-                                                                DEV_SERVICE_LABEL,
-                                                                "memory-service");
+                                        GenericContainer<?> container;
+                                        if (fixedPort != null) {
+                                            container =
+                                                    new FixedHostPortGenericContainer<>(
+                                                                    "ghcr.io/chirino/memory-service:latest")
+                                                            .withFixedExposedPort(
+                                                                    fixedPort, MEMORY_SERVICE_PORT);
+                                            LOG.infof(
+                                                    "Configuring memory-service dev service with"
+                                                            + " fixed port: %d",
+                                                    fixedPort);
+                                        } else {
+                                            container =
+                                                    new GenericContainer<>(
+                                                                    DockerImageName.parse(
+                                                                            "ghcr.io/chirino/memory-service:latest"))
+                                                            .withExposedPorts(MEMORY_SERVICE_PORT);
+                                        }
+                                        container
+                                                .withEnv(
+                                                        "MEMORY_SERVICE_API_KEYS_AGENT",
+                                                        effectiveApiKey)
+                                                .withEnv("MEMORY_SERVICE_VECTOR_TYPE", "pgvector")
+                                                .withLabel(DEV_SERVICE_LABEL, "memory-service");
+
+                                        // Apply additional environment variables from config
+                                        for (Map.Entry<String, String> entry :
+                                                additionalEnvVars.entrySet()) {
+                                            container.withEnv(entry.getKey(), entry.getValue());
+                                            LOG.debugf(
+                                                    "Setting container env: %s=%s",
+                                                    entry.getKey(), entry.getValue());
+                                        }
 
                                         // Pass cache configuration if set (for response resumer)
                                         if (responseResumerConfig != null
@@ -417,6 +443,51 @@ public class MemoryServiceDevServicesProcessor {
             LOG.debug("Unable to read cache configuration from config, using default.", e);
             return null;
         }
+    }
+
+    private Integer getFixedPortConfig() {
+        try {
+            return ConfigProvider.getConfig()
+                    .getOptionalValue("memory-service.devservices.port", Integer.class)
+                    .orElse(null);
+        } catch (IllegalStateException e) {
+            LOG.debug("Unable to read port configuration from config.", e);
+            return null;
+        }
+    }
+
+    /**
+     * Reads additional environment variables from config properties with the prefix
+     * "memory-service.devservices.env.". For example:
+     * <pre>
+     * memory-service.devservices.env."QUARKUS_HTTP_CORS"=true
+     * memory-service.devservices.env."QUARKUS_HTTP_CORS_ORIGINS"=http://localhost:3000
+     * </pre>
+     *
+     * @return a map of environment variable names to values
+     */
+    private Map<String, String> getAdditionalEnvVars() {
+        Map<String, String> envVars = new HashMap<>();
+        String prefix = "memory-service.devservices.env.";
+        try {
+            var config = ConfigProvider.getConfig();
+            for (String propertyName : config.getPropertyNames()) {
+                if (propertyName.startsWith(prefix)) {
+                    String envVarName = propertyName.substring(prefix.length());
+                    // Remove surrounding quotes if present
+                    if (envVarName.startsWith("\"") && envVarName.endsWith("\"")) {
+                        envVarName = envVarName.substring(1, envVarName.length() - 1);
+                    }
+                    String value = config.getOptionalValue(propertyName, String.class).orElse(null);
+                    if (value != null) {
+                        envVars.put(envVarName, value);
+                    }
+                }
+            }
+        } catch (IllegalStateException e) {
+            LOG.debug("Unable to read additional env vars from config.", e);
+        }
+        return envVars;
     }
 
     private String getConnectionInfo(Startable startable) {
