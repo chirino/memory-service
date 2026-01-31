@@ -1463,6 +1463,40 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
+    public List<ConversationForkSummaryDto> adminListForks(String conversationId) {
+        MongoConversation conversation = conversationRepository.findById(conversationId);
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        String groupId = conversation.conversationGroupId;
+
+        // Admin can see all forks including deleted ones
+        List<MongoConversation> candidates =
+                conversationRepository.find("conversationGroupId", groupId).stream()
+                        .sorted(
+                                Comparator.comparing(
+                                                (MongoConversation c) ->
+                                                        c.forkedAtEntryId != null ? 1 : 0)
+                                        .thenComparing(
+                                                Comparator.comparing(
+                                                        (MongoConversation c) -> c.updatedAt,
+                                                        Comparator.reverseOrder())))
+                        .collect(Collectors.toList());
+        List<ConversationForkSummaryDto> results = new ArrayList<>();
+        for (MongoConversation candidate : candidates) {
+            ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
+            dto.setConversationId(candidate.id);
+            dto.setConversationGroupId(groupId);
+            dto.setForkedAtEntryId(candidate.forkedAtEntryId);
+            dto.setForkedAtConversationId(candidate.forkedAtConversationId);
+            dto.setTitle(decryptTitle(candidate.title));
+            dto.setCreatedAt(formatInstant(candidate.createdAt));
+            results.add(dto);
+        }
+        return results;
+    }
+
+    @Override
     public List<SearchResultDto> adminSearchEntries(AdminSearchQuery query) {
         if (query.getQuery() == null || query.getQuery().isBlank()) {
             return Collections.emptyList();

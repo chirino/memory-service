@@ -1,12 +1,14 @@
 package io.github.chirino.memory.api;
 
 import io.github.chirino.memory.api.dto.ConversationDto;
+import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.EvictRequest;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.client.model.ConversationForkSummary;
 import io.github.chirino.memory.client.model.ConversationMembership;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
@@ -266,6 +268,55 @@ public class AdminResource {
                                                                             .name()
                                                                             .toLowerCase()));
                                         }
+                                        result.setCreatedAt(parseDate(dto.getCreatedAt()));
+                                        return result;
+                                    })
+                            .toList();
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", data);
+            return Response.ok(response).build();
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        } catch (JustificationRequiredException e) {
+            return justificationRequired();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/conversations/{id}/forks")
+    public Response listForks(
+            @PathParam("id") String id, @QueryParam("justification") String justification) {
+        try {
+            roleResolver.requireAuditor(identity, apiKeyContext);
+            Map<String, Object> params = new HashMap<>();
+            params.put("id", id);
+            auditLogger.logRead("listForks", params, justification, identity, apiKeyContext);
+
+            List<ConversationForkSummaryDto> forks = store().adminListForks(id);
+            List<ConversationForkSummary> data =
+                    forks.stream()
+                            .map(
+                                    dto -> {
+                                        ConversationForkSummary result =
+                                                new ConversationForkSummary();
+                                        result.setConversationId(
+                                                dto.getConversationId() != null
+                                                        ? UUID.fromString(dto.getConversationId())
+                                                        : null);
+                                        result.setForkedAtEntryId(
+                                                dto.getForkedAtEntryId() != null
+                                                        ? UUID.fromString(dto.getForkedAtEntryId())
+                                                        : null);
+                                        result.setForkedAtConversationId(
+                                                dto.getForkedAtConversationId() != null
+                                                        ? UUID.fromString(
+                                                                dto.getForkedAtConversationId())
+                                                        : null);
+                                        result.setTitle(dto.getTitle());
                                         result.setCreatedAt(parseDate(dto.getCreatedAt()));
                                         return result;
                                     })

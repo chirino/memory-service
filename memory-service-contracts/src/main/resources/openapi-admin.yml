@@ -346,6 +346,51 @@ paths:
       security:
         - BearerAuth: []
 
+  /v1/admin/conversations/{id}/forks:
+    get:
+      tags: [Admin]
+      summary: List forks for any conversation (admin/auditor)
+      description: |-
+        Returns all forked conversations that share the same root conversation as the
+        given conversation. Each fork entry includes the message id at which it forked
+        and the timestamp when the forked conversation was created.
+
+        This endpoint provides admin access to fork information for any conversation,
+        regardless of ownership. Requires auditor or admin role.
+      operationId: adminListForks
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Forked conversations related to this conversation's root.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConversationForkSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
   /v1/admin/conversations/search:
     post:
       tags: [Admin]
@@ -644,6 +689,30 @@ components:
           type: string
         accessLevel:
           $ref: '#/components/schemas/AccessLevel'
+        createdAt:
+          type: string
+          format: date-time
+
+    ConversationForkSummary:
+      type: object
+      description: Summary of a forked conversation originating at a given entry.
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+          description: Unique identifier for the forked conversation.
+        forkedAtEntryId:
+          type: string
+          format: uuid
+          description: Entry ID at which this forked conversation diverged.
+        forkedAtConversationId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Conversation ID where the fork occurred.
+        title:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time

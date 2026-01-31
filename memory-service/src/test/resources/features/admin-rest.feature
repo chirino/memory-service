@@ -218,3 +218,80 @@ Feature: Admin REST API
     Then the response status should be 200
     # Should return only root conversations (not forks)
     And the response body "data[0].id" should be "${bobConversationId}"
+
+  Scenario: Admin can list forks for any conversation
+    # First authenticate as bob to create entries and forks
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
+    }
+    """
+    And set "firstEntryId" to "${response.body.id}"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Second entry"}]
+    }
+    """
+    And set "secondEntryId" to "${response.body.id}"
+    And I call POST "/v1/conversations/${bobConversationId}/entries/${secondEntryId}/fork" with body:
+    """
+    {
+      "title": "Bob's Fork 1"
+    }
+    """
+    And set "fork1Id" to "${response.body.id}"
+    And I call POST "/v1/conversations/${bobConversationId}/entries/${secondEntryId}/fork" with body:
+    """
+    {
+      "title": "Bob's Fork 2"
+    }
+    """
+    And set "fork2Id" to "${response.body.id}"
+    # Now switch back to admin to test the admin API
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations/${bobConversationId}/forks"
+    Then the response status should be 200
+    # Should return the original conversation plus the 2 forks
+    And the response should contain at least 3 conversations
+    # Root conversation (forkedAtEntryId=null) should be first due to NULLS FIRST ordering
+    And the response body "data[0].conversationId" should be "${bobConversationId}"
+    And the response body "data[0].forkedAtEntryId" should be "null"
+
+  Scenario: Auditor can list forks for any conversation
+    # First authenticate as bob to create an entry and fork
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry for auditor test"}]
+    }
+    """
+    And set "entryId" to "${response.body.id}"
+    And I call POST "/v1/conversations/${bobConversationId}/entries/${entryId}/fork" with body:
+    """
+    {
+      "title": "Fork for auditor test"
+    }
+    """
+    # Now switch to auditor to test access
+    Given I am authenticated as auditor user "charlie"
+    When I call GET "/v1/admin/conversations/${bobConversationId}/forks"
+    Then the response status should be 200
+    And the response should contain at least 2 conversations
+
+  Scenario: Non-admin user receives 403 Forbidden on admin forks endpoint
+    Given I am authenticated as user "bob"
+    When I call GET "/v1/admin/conversations/${bobConversationId}/forks"
+    Then the response status should be 403
+
+  Scenario: Admin forks justification is logged
+    When I call GET "/v1/admin/conversations/${bobConversationId}/forks?justification=Investigating+fork+history"
+    Then the response status should be 200
+    And the admin audit log should contain "listForks"
+    And the admin audit log should contain "Investigating fork history"
