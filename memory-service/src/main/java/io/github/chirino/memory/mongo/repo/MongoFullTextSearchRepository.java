@@ -199,6 +199,117 @@ public class MongoFullTextSearchRepository {
         return highlight;
     }
 
+    /**
+     * Admin full-text search on indexedContent without membership filtering.
+     *
+     * @param query the search query
+     * @param limit maximum results
+     * @param groupByConversation when true, returns best match per conversation
+     * @param userId optional filter by conversation owner
+     * @param includeDeleted whether to include soft-deleted conversations
+     * @return search results with scores
+     */
+    public List<FullTextSearchResult> adminSearch(
+            String query,
+            int limit,
+            boolean groupByConversation,
+            String userId,
+            boolean includeDeleted) {
+
+        // Get all conversation IDs matching the filters
+        Set<String> conversationIds = getConversationIdsForAdmin(userId, includeDeleted);
+        if (conversationIds.isEmpty()) {
+            return List.of();
+        }
+
+        // Build text search query
+        Bson textSearch = Filters.text(query);
+        Bson accessFilter = Filters.in("conversationId", conversationIds);
+        Bson combinedFilter = Filters.and(textSearch, accessFilter);
+
+        List<Bson> pipeline = new ArrayList<>();
+
+        // Match with text search and conversation filter
+        pipeline.add(Aggregates.match(combinedFilter));
+
+        // Project text score
+        pipeline.add(
+                Aggregates.project(
+                        Projections.fields(
+                                Projections.include("_id", "conversationId", "indexedContent"),
+                                Projections.metaTextScore("score"))));
+
+        if (groupByConversation) {
+            // Group by conversation, keep best match
+            pipeline.add(
+                    Aggregates.sort(
+                            Sorts.orderBy(Sorts.metaTextScore("score"), Sorts.descending("_id"))));
+            pipeline.add(
+                    new Document(
+                            "$group",
+                            new Document("_id", "$conversationId")
+                                    .append("entryId", new Document("$first", "$_id"))
+                                    .append("score", new Document("$first", "$score"))
+                                    .append(
+                                            "indexedContent",
+                                            new Document("$first", "$indexedContent"))));
+            pipeline.add(Aggregates.sort(Sorts.descending("score")));
+        } else {
+            // Sort by score descending
+            pipeline.add(Aggregates.sort(Sorts.metaTextScore("score")));
+        }
+
+        pipeline.add(Aggregates.limit(limit));
+
+        List<FullTextSearchResult> results = new ArrayList<>();
+        for (Document doc : getEntriesCollection().aggregate(pipeline)) {
+            String entryId;
+            String conversationId;
+            double score;
+            String indexedContent;
+
+            if (groupByConversation) {
+                entryId = doc.getString("entryId");
+                conversationId = doc.getString("_id");
+                score = doc.getDouble("score");
+                indexedContent = doc.getString("indexedContent");
+            } else {
+                entryId = doc.getString("_id");
+                conversationId = doc.getString("conversationId");
+                score = doc.getDouble("score");
+                indexedContent = doc.getString("indexedContent");
+            }
+
+            // Generate highlight from indexed content
+            String highlight = extractHighlight(indexedContent, query);
+
+            results.add(new FullTextSearchResult(entryId, conversationId, score, highlight));
+        }
+
+        return results;
+    }
+
+    private Set<String> getConversationIdsForAdmin(String userId, boolean includeDeleted) {
+        Set<String> conversationIds = new java.util.HashSet<>();
+
+        List<Bson> filters = new ArrayList<>();
+        if (userId != null && !userId.isBlank()) {
+            filters.add(Filters.eq("ownerUserId", userId));
+        }
+        if (!includeDeleted) {
+            filters.add(Filters.eq("deletedAt", null));
+        }
+
+        Bson filter = filters.isEmpty() ? new Document() : Filters.and(filters);
+        for (Document doc : getConversationsCollection().find(filter)) {
+            String conversationId = doc.getString("_id");
+            if (conversationId != null) {
+                conversationIds.add(conversationId);
+            }
+        }
+        return conversationIds;
+    }
+
     /** Result from full-text search. */
     public record FullTextSearchResult(
             String entryId, String conversationId, double score, String highlight) {}

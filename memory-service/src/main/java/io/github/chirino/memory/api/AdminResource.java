@@ -13,6 +13,7 @@ import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
 import io.github.chirino.memory.client.model.SearchResult;
 import io.github.chirino.memory.config.MemoryStoreSelector;
+import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.AdminActionRequest;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
@@ -27,6 +28,8 @@ import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryStore;
 import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
+import io.github.chirino.memory.store.SearchTypeUnavailableException;
+import io.github.chirino.memory.vector.VectorStore;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -67,6 +70,8 @@ public class AdminResource {
     private static final Logger LOG = Logger.getLogger(AdminResource.class);
 
     @Inject MemoryStoreSelector storeSelector;
+
+    @Inject VectorStoreSelector vectorStoreSelector;
 
     @Inject SecurityIdentity identity;
 
@@ -341,6 +346,7 @@ public class AdminResource {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
             params.put("query", request != null ? request.getQuery() : null);
+            params.put("searchType", request != null ? request.getSearchType() : null);
             params.put("userId", request != null ? request.getUserId() : null);
             params.put("includeDeleted", request != null && request.isIncludeDeleted());
             auditLogger.logRead("searchMessages", params, justification, identity, apiKeyContext);
@@ -349,9 +355,14 @@ public class AdminResource {
                 return badRequest("query is required");
             }
 
+            VectorStore vectorStore = vectorStoreSelector.getVectorStore();
+            if (vectorStore == null || !vectorStore.isEnabled()) {
+                return vectorStoreUnavailable();
+            }
+
             boolean includeEntry = request.getIncludeEntry() == null || request.getIncludeEntry();
             io.github.chirino.memory.api.dto.SearchResultsDto internalResults =
-                    store().adminSearchEntries(request);
+                    vectorStore.adminSearch(request);
             List<SearchResult> data =
                     internalResults.getResults().stream()
                             .map(
@@ -362,6 +373,10 @@ public class AdminResource {
                                                         ? UUID.fromString(dto.getConversationId())
                                                         : null);
                                         result.setConversationTitle(dto.getConversationTitle());
+                                        result.setEntryId(
+                                                dto.getEntryId() != null
+                                                        ? UUID.fromString(dto.getEntryId())
+                                                        : null);
                                         if (includeEntry) {
                                             result.setEntry(toClientEntry(dto.getEntry()));
                                         }
@@ -380,9 +395,27 @@ public class AdminResource {
             return forbidden(e);
         } catch (JustificationRequiredException e) {
             return justificationRequired();
+        } catch (SearchTypeUnavailableException e) {
+            return searchTypeUnavailable(e);
         } catch (IllegalArgumentException e) {
             return badRequest(e.getMessage());
         }
+    }
+
+    private Response vectorStoreUnavailable() {
+        ErrorResponse error = new ErrorResponse();
+        error.setError("Vector search not available");
+        error.setCode("vector_store_disabled");
+        error.setDetails(Map.of("message", "Enable a vector store to use semantic search."));
+        return Response.status(Response.Status.NOT_IMPLEMENTED).entity(error).build();
+    }
+
+    private Response searchTypeUnavailable(SearchTypeUnavailableException e) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("error", "search_type_unavailable");
+        body.put("message", e.getMessage());
+        body.put("availableTypes", e.getAvailableTypes());
+        return Response.status(501).entity(body).build();
     }
 
     @POST

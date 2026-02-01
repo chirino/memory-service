@@ -133,6 +133,107 @@ public class PgVectorEmbeddingRepository {
                 .toList();
     }
 
+    /**
+     * Admin search for similar entries without membership filtering.
+     *
+     * @param embeddingLiteral the query embedding in pgvector literal format
+     * @param limit maximum number of results to return
+     * @param groupByConversation when true, returns only the highest-scoring entry per conversation
+     * @param userId optional filter by conversation owner
+     * @param includeDeleted whether to include soft-deleted conversations
+     * @return list of search results ordered by similarity score (descending)
+     */
+    @Transactional
+    public List<VectorSearchResult> adminSearchSimilar(
+            String embeddingLiteral,
+            int limit,
+            boolean groupByConversation,
+            String userId,
+            boolean includeDeleted) {
+
+        // Build dynamic WHERE clauses
+        StringBuilder deletedFilter = new StringBuilder();
+        if (!includeDeleted) {
+            deletedFilter.append(" AND c.deleted_at IS NULL AND cg.deleted_at IS NULL");
+        }
+
+        StringBuilder userFilter = new StringBuilder();
+        if (userId != null && !userId.isBlank()) {
+            userFilter.append(" AND c.owner_user_id = ?3");
+        }
+
+        String sql;
+        if (groupByConversation) {
+            sql =
+                    """
+                    WITH ranked AS (
+                        SELECT
+                            ee.entry_id,
+                            ee.conversation_id,
+                            1 - (ee.embedding <=> CAST(?1 AS vector)) AS score,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY ee.conversation_id
+                                ORDER BY ee.embedding <=> CAST(?1 AS vector)
+                            ) AS rank_in_conversation
+                        FROM entry_embeddings ee
+                        JOIN conversations c ON c.id = ee.conversation_id
+                        JOIN conversation_groups cg ON cg.id = ee.conversation_group_id
+                        WHERE 1=1
+                    """
+                            + deletedFilter
+                            + userFilter
+                            + """
+                            )
+                            SELECT entry_id, conversation_id, score
+                            FROM ranked
+                            WHERE rank_in_conversation = 1
+                            ORDER BY score DESC
+                            LIMIT ?2
+                            """;
+        } else {
+            sql =
+                    """
+                    SELECT
+                        ee.entry_id,
+                        ee.conversation_id,
+                        1 - (ee.embedding <=> CAST(?1 AS vector)) AS score
+                    FROM entry_embeddings ee
+                    JOIN conversations c ON c.id = ee.conversation_id
+                    JOIN conversation_groups cg ON cg.id = ee.conversation_group_id
+                    WHERE 1=1
+                    """
+                            + deletedFilter
+                            + userFilter
+                            + """
+                            ORDER BY ee.embedding <=> CAST(?1 AS vector)
+                            LIMIT ?2
+                            """;
+        }
+
+        var nativeQuery =
+                entityManager
+                        .createNativeQuery(sql)
+                        .setParameter(1, embeddingLiteral)
+                        .setParameter(2, limit);
+
+        if (userId != null && !userId.isBlank()) {
+            nativeQuery.setParameter(3, userId);
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = nativeQuery.getResultList();
+
+        return rows.stream()
+                .map(
+                        row ->
+                                new VectorSearchResult(
+                                        row[0].toString(), // entry_id
+                                        row[1].toString(), // conversation_id
+                                        ((Number) row[2]).doubleValue() // score
+                                        ))
+                .toList();
+    }
+
     /** Result from vector similarity search. */
     public record VectorSearchResult(String entryId, String conversationId, double score) {}
 }

@@ -3,11 +3,13 @@ package io.github.chirino.memory.model;
 public class AdminSearchQuery {
 
     private String query;
+    private String searchType;
     private Integer limit;
     private String after;
     private String userId;
     private boolean includeDeleted;
     private Boolean includeEntry;
+    private Boolean groupByConversation;
 
     public String getQuery() {
         return query;
@@ -55,5 +57,21 @@ public class AdminSearchQuery {
 
     public void setIncludeEntry(Boolean includeEntry) {
         this.includeEntry = includeEntry;
+    }
+
+    public String getSearchType() {
+        return searchType;
+    }
+
+    public void setSearchType(String searchType) {
+        this.searchType = searchType;
+    }
+
+    public Boolean getGroupByConversation() {
+        return groupByConversation;
+    }
+
+    public void setGroupByConversation(Boolean groupByConversation) {
+        this.groupByConversation = groupByConversation;
     }
 }

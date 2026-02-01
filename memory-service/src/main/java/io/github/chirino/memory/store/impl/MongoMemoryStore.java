@@ -18,7 +18,6 @@ import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
-import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
@@ -322,6 +321,7 @@ public class MongoMemoryStore implements MemoryStore {
         m.conversationGroupId = c.conversationGroupId;
         m.decodedContent = List.of(Map.of("text", request.getContent(), "role", "USER"));
         m.content = encryptContent(m.decodedContent);
+        m.indexedContent = request.getContent();
         Instant createdAt = Instant.now();
         m.createdAt = createdAt;
         entryRepository.persist(m);
@@ -1160,113 +1160,6 @@ public class MongoMemoryStore implements MemoryStore {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    /**
-     * @deprecated Use {@link io.github.chirino.memory.vector.MongoVectorStore#search(String,
-     *     SearchEntriesRequest)} instead. This method uses inefficient in-memory filtering. The new
-     *     implementation uses MongoDB full-text search with text indexes.
-     */
-    @Deprecated(forRemoval = true)
-    @Override
-    public SearchResultsDto searchEntries(String userId, SearchEntriesRequest request) {
-        SearchResultsDto result = new SearchResultsDto();
-        result.setResults(Collections.emptyList());
-        result.setNextCursor(null);
-
-        if (request.getQuery() == null || request.getQuery().isBlank()) {
-            return result;
-        }
-
-        Set<String> groupIds =
-                membershipRepository.list("userId", userId).stream()
-                        .map(m -> m.conversationGroupId)
-                        .collect(Collectors.toSet());
-        if (groupIds.isEmpty()) {
-            return result;
-        }
-
-        List<MongoConversation> conversations =
-                conversationRepository.find("conversationGroupId in ?1", groupIds).stream()
-                        .filter(c -> c.deletedAt == null)
-                        .collect(Collectors.toList());
-        Map<String, MongoConversation> conversationMap =
-                conversations.stream().collect(Collectors.toMap(c -> c.id, c -> c));
-        Set<String> userConversationIds = conversationMap.keySet();
-
-        if (userConversationIds.isEmpty()) {
-            return result;
-        }
-
-        String query = request.getQuery().toLowerCase();
-        int limit = request.getLimit() != null ? request.getLimit() : 20;
-
-        // Parse after cursor if present
-        String afterEntryId = request.getAfter();
-
-        List<MongoEntry> candidates =
-                entryRepository.find("conversationId in ?1", userConversationIds).list().stream()
-                        .sorted(
-                                (a, b) -> {
-                                    // Sort by createdAt desc, then id desc
-                                    int cmp = b.createdAt.compareTo(a.createdAt);
-                                    if (cmp != 0) return cmp;
-                                    return b.id.compareTo(a.id);
-                                })
-                        .collect(Collectors.toList());
-
-        // Skip entries until we find the cursor
-        boolean skipMode = afterEntryId != null && !afterEntryId.isBlank();
-        List<SearchResultDto> resultsList = new ArrayList<>();
-
-        for (MongoEntry m : candidates) {
-            if (skipMode) {
-                if (m.id.equals(afterEntryId)) {
-                    skipMode = false;
-                }
-                continue;
-            }
-
-            List<Object> content = decryptContent(m.content);
-            if (content == null || content.isEmpty()) {
-                continue;
-            }
-            String text = extractSearchText(content);
-            String indexedContent = m.indexedContent;
-            boolean matchesContent = text != null && text.toLowerCase().contains(query);
-            boolean matchesIndexed =
-                    indexedContent != null && indexedContent.toLowerCase().contains(query);
-            if (!matchesContent && !matchesIndexed) {
-                continue;
-            }
-            // Prefer indexed content for highlights if it matched
-            String highlightSource = matchesIndexed ? indexedContent : text;
-
-            SearchResultDto dto = new SearchResultDto();
-            dto.setConversationId(m.conversationId);
-            MongoConversation conv = conversationMap.get(m.conversationId);
-            dto.setConversationTitle(conv != null ? decryptTitle(conv.title) : null);
-            dto.setEntryId(m.id);
-            dto.setEntry(toEntryDto(m, content));
-            dto.setScore(1.0);
-            dto.setHighlights(extractHighlight(highlightSource, query));
-            resultsList.add(dto);
-
-            // Fetch one extra to determine if there's a next page
-            if (resultsList.size() > limit) {
-                break;
-            }
-        }
-
-        // Determine next cursor
-        if (resultsList.size() > limit) {
-            SearchResultDto last = resultsList.get(limit - 1);
-            result.setNextCursor(last.getEntry().getId());
-            resultsList = resultsList.subList(0, limit);
-        }
-
-        result.setResults(resultsList);
-        return result;
     }
 
     private void ensureHasAccess(String conversationId, String userId, AccessLevel level) {

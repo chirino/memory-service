@@ -14,7 +14,6 @@ import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
-import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
@@ -125,8 +124,6 @@ public interface MemoryStore {
      * @param indexedAt the timestamp when the entry was indexed
      */
     void setIndexedAt(String entryId, OffsetDateTime indexedAt);
-
-    SearchResultsDto searchEntries(String userId, SearchEntriesRequest request);
 
     // Admin methods — no userId scoping, configurable deleted-resource visibility
     List<ConversationSummaryDto> adminListConversations(AdminConversationQuery query);
