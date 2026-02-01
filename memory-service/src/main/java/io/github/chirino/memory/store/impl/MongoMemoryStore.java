@@ -1162,6 +1162,12 @@ public class MongoMemoryStore implements MemoryStore {
         }
     }
 
+    /**
+     * @deprecated Use {@link io.github.chirino.memory.vector.MongoVectorStore#search(String,
+     *     SearchEntriesRequest)} instead. This method uses inefficient in-memory filtering. The new
+     *     implementation uses MongoDB full-text search with text indexes.
+     */
+    @Deprecated(forRemoval = true)
     @Override
     public SearchResultsDto searchEntries(String userId, SearchEntriesRequest request) {
         SearchResultsDto result = new SearchResultsDto();

@@ -1180,6 +1180,12 @@ public class PostgresMemoryStore implements MemoryStore {
         }
     }
 
+    /**
+     * @deprecated Use {@link io.github.chirino.memory.vector.PgVectorStore#search(String,
+     *     SearchEntriesRequest)} instead. This method uses inefficient in-memory filtering. The new
+     *     implementation uses PostgreSQL full-text search with GIN indexes.
+     */
+    @Deprecated(forRemoval = true)
     @Override
     public SearchResultsDto searchEntries(String userId, SearchEntriesRequest request) {
         SearchResultsDto result = new SearchResultsDto();

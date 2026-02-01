@@ -11,6 +11,7 @@ import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.Channel;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
+import io.github.chirino.memory.store.SearchTypeUnavailableException;
 import io.github.chirino.memory.vector.VectorStore;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -59,6 +60,8 @@ public class SearchResource {
             io.github.chirino.memory.api.dto.SearchEntriesRequest internal =
                     new io.github.chirino.memory.api.dto.SearchEntriesRequest();
             internal.setQuery(request.getQuery());
+            internal.setSearchType(
+                    request.getSearchType() != null ? request.getSearchType().value() : "auto");
             internal.setLimit(request.getLimit());
             internal.setAfter(request.getAfter());
             internal.setIncludeEntry(request.getIncludeEntry());
@@ -73,6 +76,8 @@ public class SearchResource {
             response.put("data", data);
             response.put("nextCursor", internalResults.getNextCursor());
             return Response.ok(response).build();
+        } catch (SearchTypeUnavailableException e) {
+            return searchTypeUnavailable(e);
         } catch (ResourceNotFoundException e) {
             return notFound(e);
         } catch (AccessDeniedException e) {
@@ -86,6 +91,14 @@ public class SearchResource {
         error.setCode("vector_store_disabled");
         error.setDetails(Map.of("message", "Enable a vector store to use semantic search."));
         return Response.status(Response.Status.NOT_IMPLEMENTED).entity(error).build();
+    }
+
+    private Response searchTypeUnavailable(SearchTypeUnavailableException e) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("error", "search_type_unavailable");
+        body.put("message", e.getMessage());
+        body.put("availableTypes", e.getAvailableTypes());
+        return Response.status(501).entity(body).build();
     }
 
     private Response notFound(ResourceNotFoundException e) {

@@ -3,6 +3,7 @@ package io.github.chirino.memory.api.dto;
 public class SearchEntriesRequest {
 
     private String query;
+    private String searchType;
     private Integer limit;
     private String after;
     private Boolean includeEntry;
@@ -14,6 +15,14 @@ public class SearchEntriesRequest {
 
     public void setQuery(String query) {
         this.query = query;
+    }
+
+    public String getSearchType() {
+        return searchType;
+    }
+
+    public void setSearchType(String searchType) {
+        this.searchType = searchType;
     }
 
     public Integer getLimit() {

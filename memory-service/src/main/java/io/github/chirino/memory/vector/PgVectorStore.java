@@ -9,7 +9,9 @@ import io.github.chirino.memory.persistence.entity.ConversationEntity;
 import io.github.chirino.memory.persistence.entity.EntryEntity;
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
 import io.github.chirino.memory.persistence.repo.EntryRepository;
+import io.github.chirino.memory.store.SearchTypeUnavailableException;
 import io.github.chirino.memory.store.impl.PostgresMemoryStore;
+import io.github.chirino.memory.vector.FullTextSearchRepository.FullTextSearchResult;
 import io.github.chirino.memory.vector.PgVectorEmbeddingRepository.VectorSearchResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -21,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import memory.service.io.github.chirino.dataencryption.DataEncryptionService;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 /**
@@ -35,8 +38,15 @@ public class PgVectorStore implements VectorStore {
     private static final Logger LOG = Logger.getLogger(PgVectorStore.class);
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
+    @ConfigProperty(name = "memory-service.search.semantic.enabled", defaultValue = "true")
+    boolean semanticSearchEnabled;
+
+    @ConfigProperty(name = "memory-service.search.fulltext.enabled", defaultValue = "true")
+    boolean fullTextSearchEnabled;
+
     @Inject PostgresMemoryStore postgresMemoryStore;
     @Inject PgVectorEmbeddingRepository embeddingRepository;
+    @Inject FullTextSearchRepository fullTextSearchRepository;
     @Inject EmbeddingService embeddingService;
     @Inject EntryRepository entryRepository;
     @Inject ConversationRepository conversationRepository;
@@ -51,19 +61,81 @@ public class PgVectorStore implements VectorStore {
 
     @Override
     public SearchResultsDto search(String userId, SearchEntriesRequest request) {
-        SearchResultsDto result = new SearchResultsDto();
-        result.setResults(Collections.emptyList());
-        result.setNextCursor(null);
-
         if (request.getQuery() == null || request.getQuery().isBlank()) {
-            return result;
+            return emptyResults();
         }
 
+        String searchType = request.getSearchType() != null ? request.getSearchType() : "auto";
+
+        return switch (searchType) {
+            case "semantic" -> {
+                validateSemanticSearchAvailable();
+                yield semanticSearch(userId, request);
+            }
+            case "fulltext" -> {
+                validateFullTextSearchAvailable();
+                yield fullTextSearch(userId, request);
+            }
+            case "auto" -> autoSearch(userId, request);
+            default ->
+                    throw new IllegalArgumentException(
+                            "Invalid searchType: "
+                                    + searchType
+                                    + ". Valid values: auto, semantic, fulltext");
+        };
+    }
+
+    private void validateSemanticSearchAvailable() {
+        if (!semanticSearchEnabled || !embeddingService.isEnabled()) {
+            List<String> available = fullTextSearchEnabled ? List.of("fulltext") : List.of();
+            throw new SearchTypeUnavailableException(
+                    "Semantic search is not available. The embedding service is disabled on this"
+                            + " server.",
+                    available);
+        }
+    }
+
+    private void validateFullTextSearchAvailable() {
+        if (!fullTextSearchEnabled) {
+            List<String> available =
+                    (semanticSearchEnabled && embeddingService.isEnabled())
+                            ? List.of("semantic")
+                            : List.of();
+            throw new SearchTypeUnavailableException(
+                    "Full-text search is not available. The server is not configured with"
+                            + " PostgreSQL full-text search support.",
+                    available);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private SearchResultsDto autoSearch(String userId, SearchEntriesRequest request) {
+        // Try semantic first if available
+        if (semanticSearchEnabled && embeddingService.isEnabled()) {
+            SearchResultsDto results = semanticSearch(userId, request);
+            if (!results.getResults().isEmpty()) {
+                return results;
+            }
+        }
+
+        // Fall back to full-text if available
+        if (fullTextSearchEnabled) {
+            SearchResultsDto results = fullTextSearch(userId, request);
+            if (!results.getResults().isEmpty()) {
+                return results;
+            }
+        }
+
+        // Fall back to deprecated in-memory search for entries without indexed content
+        return postgresMemoryStore.searchEntries(userId, request);
+    }
+
+    private SearchResultsDto semanticSearch(String userId, SearchEntriesRequest request) {
         // Embed the query
         float[] queryEmbedding = embeddingService.embed(request.getQuery());
         if (queryEmbedding == null || queryEmbedding.length == 0) {
-            LOG.warn("Failed to embed query, falling back to keyword search");
-            return postgresMemoryStore.searchEntries(userId, request);
+            LOG.warn("Failed to embed query");
+            return emptyResults();
         }
 
         int limit = request.getLimit() != null ? request.getLimit() : 20;
@@ -81,15 +153,12 @@ public class PgVectorStore implements VectorStore {
                             limit + 1,
                             groupByConversation);
         } catch (Exception e) {
-            LOG.warnf("Vector search failed, falling back to keyword search: %s", e.getMessage());
-            return postgresMemoryStore.searchEntries(userId, request);
+            LOG.warnf("Vector search failed: %s", e.getMessage());
+            return emptyResults();
         }
 
-        // Fall back to keyword search if vector search returns no results
-        // This handles cases where embeddings haven't been stored yet (e.g., inline indexedContent)
         if (vectorResults.isEmpty()) {
-            LOG.debug("Vector search returned no results, falling back to keyword search");
-            return postgresMemoryStore.searchEntries(userId, request);
+            return emptyResults();
         }
 
         // Build result DTOs with entry details
@@ -105,12 +174,63 @@ public class PgVectorStore implements VectorStore {
             }
         }
 
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(resultsList);
+
         // Determine next cursor
         if (vectorResults.size() > limit && !resultsList.isEmpty()) {
             result.setNextCursor(resultsList.get(resultsList.size() - 1).getEntryId());
         }
 
+        return result;
+    }
+
+    private SearchResultsDto fullTextSearch(String userId, SearchEntriesRequest request) {
+        int limit = request.getLimit() != null ? request.getLimit() : 20;
+        boolean groupByConversation =
+                request.getGroupByConversation() == null || request.getGroupByConversation();
+        boolean includeEntry = request.getIncludeEntry() == null || request.getIncludeEntry();
+
+        List<FullTextSearchResult> ftsResults;
+        try {
+            ftsResults =
+                    fullTextSearchRepository.search(
+                            userId, request.getQuery(), limit + 1, groupByConversation);
+        } catch (Exception e) {
+            LOG.warnf("Full-text search failed: %s", e.getMessage());
+            return emptyResults();
+        }
+
+        if (ftsResults.isEmpty()) {
+            return emptyResults();
+        }
+
+        List<SearchResultDto> resultsList = new ArrayList<>();
+        for (FullTextSearchResult fts : ftsResults) {
+            if (resultsList.size() >= limit) {
+                break;
+            }
+
+            SearchResultDto dto = buildSearchResultDtoFromFts(fts, includeEntry);
+            if (dto != null) {
+                resultsList.add(dto);
+            }
+        }
+
+        SearchResultsDto result = new SearchResultsDto();
         result.setResults(resultsList);
+
+        if (ftsResults.size() > limit && !resultsList.isEmpty()) {
+            result.setNextCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+        }
+
+        return result;
+    }
+
+    private SearchResultsDto emptyResults() {
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(Collections.emptyList());
+        result.setNextCursor(null);
         return result;
     }
 
@@ -139,6 +259,41 @@ public class PgVectorStore implements VectorStore {
         String indexedContent = entry.getIndexedContent();
         if (indexedContent != null && !indexedContent.isBlank()) {
             dto.setHighlights(extractHighlight(indexedContent));
+        }
+
+        // Include full entry if requested
+        if (includeEntry) {
+            dto.setEntry(toEntryDto(entry));
+        }
+
+        return dto;
+    }
+
+    private SearchResultDto buildSearchResultDtoFromFts(
+            FullTextSearchResult fts, boolean includeEntry) {
+        // Fetch entry
+        EntryEntity entry = entryRepository.findById(UUID.fromString(fts.entryId()));
+        if (entry == null) {
+            return null;
+        }
+
+        // Fetch conversation for title
+        ConversationEntity conversation =
+                conversationRepository.findById(UUID.fromString(fts.conversationId()));
+
+        SearchResultDto dto = new SearchResultDto();
+        dto.setEntryId(fts.entryId());
+        dto.setConversationId(fts.conversationId());
+        dto.setScore(fts.score());
+
+        // Decrypt and set conversation title
+        if (conversation != null && conversation.getTitle() != null) {
+            dto.setConversationTitle(decryptTitle(conversation.getTitle()));
+        }
+
+        // Use ts_headline highlight from full-text search
+        if (fts.highlight() != null && !fts.highlight().isBlank()) {
+            dto.setHighlights(fts.highlight());
         }
 
         // Include full entry if requested

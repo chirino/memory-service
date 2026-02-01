@@ -802,6 +802,8 @@ paths:
                   nextCursor:
                     type: string
                     nullable: true
+        '501':
+          $ref: '#/components/responses/SearchTypeUnavailable'
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -920,6 +922,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    SearchTypeUnavailable:
+      description: Requested search type is not available on this server
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SearchTypeUnavailableError'
 
   schemas:
     ErrorResponse:
@@ -932,6 +940,25 @@ components:
         details:
           type: object
           additionalProperties: true
+
+    SearchTypeUnavailableError:
+      type: object
+      description: Error response when the requested search type is not available on the server.
+      properties:
+        error:
+          type: string
+          description: Error code.
+          example: search_type_unavailable
+        message:
+          type: string
+          description: Human-readable error message.
+          example: Semantic search is not available. The embedding service is disabled on this server.
+        availableTypes:
+          type: array
+          items:
+            type: string
+          description: List of search types that are available on this server.
+          example: [fulltext]
 
     AccessLevel:
       type: string
@@ -1324,6 +1351,18 @@ components:
         query:
           type: string
           description: Natural language query.
+        searchType:
+          type: string
+          enum: [auto, semantic, fulltext]
+          default: auto
+          description: |
+            The search method to use:
+            - `auto` (default): Try semantic (vector) search first, fall back to full-text if no results or unavailable
+            - `semantic`: Use only vector/embedding-based semantic search
+            - `fulltext`: Use only PostgreSQL full-text search with GIN index
+
+            If the requested search type is not available on the server, a 501 (Not Implemented)
+            error is returned with details about which search types are available.
         after:
           type: string
           nullable: true
@@ -1345,6 +1384,7 @@ components:
             matching entries ordered by score.
       example:
         query: "summary of memory service design decisions"
+        searchType: auto
         limit: 20
         includeEntry: true
         groupByConversation: true

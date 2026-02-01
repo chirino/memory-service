@@ -88,6 +88,15 @@ CREATE INDEX IF NOT EXISTS idx_entries_pending_vector_indexing
     ON entries (indexed_at)
     WHERE indexed_content IS NOT NULL AND indexed_at IS NULL;
 
+-- Full-text search support: generated tsvector column for GIN index
+-- Automatically maintained when indexed_content changes
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS indexed_content_tsv tsvector
+    GENERATED ALWAYS AS (to_tsvector('english', COALESCE(indexed_content, ''))) STORED;
+
+-- GIN index for fast full-text search
+CREATE INDEX IF NOT EXISTS idx_entries_indexed_content_fts
+    ON entries USING GIN (indexed_content_tsv);
+
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_created_at
     ON entries (conversation_id, created_at);
 
