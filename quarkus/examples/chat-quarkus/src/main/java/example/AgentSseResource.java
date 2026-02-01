@@ -18,7 +18,7 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
-@Path("/customer-support-agent")
+@Path("/v1/conversations")
 @ApplicationScoped
 public class AgentSseResource {
 
@@ -32,7 +32,7 @@ public class AgentSseResource {
     }
 
     @POST
-    @Path("/{conversationId}/sse")
+    @Path("/{conversationId}/chat")
     @Blocking
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.SERVER_SENT_EVENTS)

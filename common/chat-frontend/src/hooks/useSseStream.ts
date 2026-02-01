@@ -60,16 +60,16 @@ export function useSseStream(): StreamClient {
           }
 
           if (isResume) {
-            // Resume SSE: GET /customer-support-agent/{conversationId}/resume
-            url = `/customer-support-agent/${encodeURIComponent(params.sessionId)}/resume`;
+            // Resume SSE: GET /v1/conversations/{conversationId}/resume
+            url = `/v1/conversations/${encodeURIComponent(params.sessionId)}/resume`;
             fetchOptions = {
               method: "GET",
               headers: baseHeaders,
               signal: controller.signal,
             };
           } else {
-            // Normal chat SSE: POST /customer-support-agent/{conversationId}/sse
-            url = `/customer-support-agent/${encodeURIComponent(params.sessionId)}/sse`;
+            // Normal chat SSE: POST /v1/conversations/{conversationId}/chat
+            url = `/v1/conversations/${encodeURIComponent(params.sessionId)}/chat`;
             fetchOptions = {
               method: "POST",
               headers: {
