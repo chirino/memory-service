@@ -1075,7 +1075,10 @@ public class PostgresMemoryStore implements MemoryStore {
             return;
         }
         store.upsertTranscriptEmbedding(
-                entry.getConversation().getId().toString(), entry.getId().toString(), embedding);
+                entry.getConversationGroupId().toString(),
+                entry.getConversation().getId().toString(),
+                entry.getId().toString(),
+                embedding);
     }
 
     @Override

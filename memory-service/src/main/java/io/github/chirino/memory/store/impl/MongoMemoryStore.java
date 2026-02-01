@@ -1069,7 +1069,8 @@ public class MongoMemoryStore implements MemoryStore {
         if (embedding == null || embedding.length == 0) {
             return;
         }
-        store.upsertTranscriptEmbedding(entry.conversationId, entry.id, embedding);
+        store.upsertTranscriptEmbedding(
+                entry.conversationGroupId, entry.conversationId, entry.id, embedding);
     }
 
     private boolean shouldVectorize() {

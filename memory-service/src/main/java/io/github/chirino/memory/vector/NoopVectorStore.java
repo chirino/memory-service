@@ -23,7 +23,7 @@ public class NoopVectorStore implements VectorStore {
 
     @Override
     public void upsertTranscriptEmbedding(
-            String conversationId, String entryId, float[] embedding) {
+            String conversationGroupId, String conversationId, String entryId, float[] embedding) {
         // no-op
     }
 

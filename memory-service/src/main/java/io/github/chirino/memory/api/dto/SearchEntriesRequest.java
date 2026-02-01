@@ -6,6 +6,7 @@ public class SearchEntriesRequest {
     private Integer limit;
     private String after;
     private Boolean includeEntry;
+    private Boolean groupByConversation;
 
     public String getQuery() {
         return query;
@@ -37,5 +38,13 @@ public class SearchEntriesRequest {
 
     public void setIncludeEntry(Boolean includeEntry) {
         this.includeEntry = includeEntry;
+    }
+
+    public Boolean getGroupByConversation() {
+        return groupByConversation;
+    }
+
+    public void setGroupByConversation(Boolean groupByConversation) {
+        this.groupByConversation = groupByConversation;
     }
 }

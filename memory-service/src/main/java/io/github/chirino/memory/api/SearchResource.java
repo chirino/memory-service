@@ -62,6 +62,7 @@ public class SearchResource {
             internal.setLimit(request.getLimit());
             internal.setAfter(request.getAfter());
             internal.setIncludeEntry(request.getIncludeEntry());
+            internal.setGroupByConversation(request.getGroupByConversation());
 
             SearchResultsDto internalResults = vectorStore.search(currentUserId(), internal);
             List<SearchResult> data =

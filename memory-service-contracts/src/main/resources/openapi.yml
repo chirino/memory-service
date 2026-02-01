@@ -1336,10 +1336,18 @@ components:
           type: boolean
           default: true
           description: Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.
+        groupByConversation:
+          type: boolean
+          default: true
+          description: |
+            When true (default), groups results by conversation and returns only
+            the highest-scoring entry per conversation. When false, returns all
+            matching entries ordered by score.
       example:
         query: "summary of memory service design decisions"
         limit: 20
         includeEntry: true
+        groupByConversation: true
 
     SearchResult:
       type: object

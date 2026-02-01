@@ -163,6 +163,9 @@
         <version>${surefire-plugin.version}</version>
         <configuration>
           <argLine>--add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+          <!-- Fork new JVM per test class to avoid native library classloader conflicts -->
+          <forkCount>1</forkCount>
+          <reuseForks>false</reuseForks>
           <systemPropertyVariables>
             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
             <maven.home>${maven.home}</maven.home>
