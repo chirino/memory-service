@@ -20,6 +20,7 @@ A robust task queue provides:
 ```sql
 CREATE TABLE tasks (
     id              UUID PRIMARY KEY,
+    task_name       TEXT UNIQUE,  -- Optional unique name for singleton tasks
     task_type       TEXT NOT NULL,
     task_body       JSONB NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -29,11 +30,13 @@ CREATE TABLE tasks (
 );
 
 CREATE INDEX idx_tasks_ready ON tasks (task_type, retry_at);
+CREATE UNIQUE INDEX idx_tasks_name ON tasks (task_name) WHERE task_name IS NOT NULL;
 ```
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | UUID | Primary key |
+| `task_name` | TEXT | Optional unique name for singleton/idempotent tasks |
 | `task_type` | TEXT | Type identifier (e.g., `vector_store_delete`) |
 | `task_body` | JSONB | Task-specific parameters |
 | `created_at` | TIMESTAMPTZ | When the task was created |
@@ -41,16 +44,21 @@ CREATE INDEX idx_tasks_ready ON tasks (task_type, retry_at);
 | `last_error` | TEXT | Error message from last failed attempt |
 | `retry_count` | INT | Number of failed attempts |
 
+The `task_name` column enables **singleton tasks** - tasks where only one instance should exist. When creating a task with a name, if a task with that name already exists, the creation is a no-op (idempotent).
+
 The index on `(task_type, retry_at)` optimizes finding ready tasks. Note: PostgreSQL doesn't allow `NOW()` in partial index predicates (functions must be IMMUTABLE), so the query filters by `retry_at <= NOW()` at query time rather than in the index predicate.
 
 ### Task Types
 
-| Task Type | Task Body | Description |
-|-----------|-----------|-------------|
-| `vector_store_delete` | `{"conversationGroupId": "uuid"}` | Delete embeddings for a conversation group |
+| Task Type | Task Name | Task Body | Description |
+|-----------|-----------|-----------|-------------|
+| `vector_store_delete` | (none) | `{"conversationGroupId": "uuid"}` | Delete embeddings for a conversation group |
+| `vector_store_index_retry` | `vector_store_index_retry` | `{}` | Retry indexing entries where vector store failed |
+
+**Singleton Tasks**: Tasks with a `task_name` are singleton tasks. The `vector_store_index_retry` task is a singleton - only one instance exists regardless of how many indexing failures occur. When the task runs, it queries for all entries needing retry (`indexedContent IS NOT NULL AND indexedAt IS NULL`) and processes them in batch.
 
 New task types can be added by:
-1. Defining the task type string and body schema
+1. Defining the task type string, optional task name, and body schema
 2. Adding a handler in the `TaskProcessor`
 
 ### Task Lifecycle
@@ -107,6 +115,7 @@ The lock is held for the duration of the transaction. If a replica crashes mid-p
 // tasks collection
 {
   "_id": "uuid-string",
+  "taskName": null,  // Optional unique name for singleton tasks
   "taskType": "vector_store_delete",
   "taskBody": { "conversationGroupId": "uuid-string" },
   "createdAt": ISODate("2026-01-27T10:00:00Z"),
@@ -118,9 +127,12 @@ The lock is held for the duration of the transaction. If a replica crashes mid-p
 
 // Index for finding ready tasks
 db.tasks.createIndex({ "retryAt": 1, "processingAt": 1 })
+// Unique index for singleton tasks (sparse to allow null)
+db.tasks.createIndex({ "taskName": 1 }, { unique: true, sparse: true })
 ```
 
 The `processingAt` field is additional for MongoDB (not needed in PostgreSQL) to handle concurrent safety.
+The `taskName` field enables singleton tasks with idempotent creation.
 
 ### Concurrent Replica Safety (MongoDB)
 
@@ -212,6 +224,9 @@ public class TaskEntity {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "task_name", unique = true)
+    private String taskName;
+
     @Column(name = "task_type", nullable = false)
     private String taskType;
 
@@ -247,6 +262,9 @@ public class TaskEntity {
     // Getters and setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
+
+    public String getTaskName() { return taskName; }
+    public void setTaskName(String taskName) { this.taskName = taskName; }
 
     public String getTaskType() { return taskType; }
     public void setTaskType(String taskType) { this.taskType = taskType; }
@@ -313,13 +331,32 @@ public class TaskRepository implements PanacheRepositoryBase<TaskEntity, UUID> {
      * Create a new task for background processing.
      */
     public void createTask(String taskType, Map<String, Object> body) {
+        createTask(null, taskType, body);
+    }
+
+    /**
+     * Create a named task (singleton/idempotent).
+     * If a task with the given name already exists, this is a no-op.
+     */
+    public void createTask(String taskName, String taskType, Map<String, Object> body) {
+        if (taskName != null && findByName(taskName) != null) {
+            return; // Task already exists, idempotent no-op
+        }
         TaskEntity task = new TaskEntity();
         task.setId(UUID.randomUUID());
+        task.setTaskName(taskName);
         task.setTaskType(taskType);
         task.setTaskBody(body);
         task.setCreatedAt(OffsetDateTime.now());
         task.setRetryAt(OffsetDateTime.now());
         persist(task);
+    }
+
+    /**
+     * Find a task by its unique name.
+     */
+    public TaskEntity findByName(String taskName) {
+        return find("taskName", taskName).firstResult();
     }
 
     /**
@@ -410,8 +447,20 @@ public class MongoTaskRepository {
      * Create a new task for background processing.
      */
     public void createTask(String taskType, Map<String, Object> body) {
+        createTask(null, taskType, body);
+    }
+
+    /**
+     * Create a named task (singleton/idempotent).
+     * If a task with the given name already exists, this is a no-op.
+     */
+    public void createTask(String taskName, String taskType, Map<String, Object> body) {
+        if (taskName != null && findByName(taskName) != null) {
+            return; // Task already exists, idempotent no-op
+        }
         Document task = new Document()
             .append("_id", UUID.randomUUID().toString())
+            .append("taskName", taskName)
             .append("taskType", taskType)
             .append("taskBody", new Document(body))
             .append("createdAt", Instant.now())
@@ -420,6 +469,13 @@ public class MongoTaskRepository {
             .append("lastError", null)
             .append("retryCount", 0);
         getCollection().insertOne(task);
+    }
+
+    /**
+     * Find a task by its unique name.
+     */
+    public Document findByName(String taskName) {
+        return getCollection().find(Filters.eq("taskName", taskName)).first();
     }
 
     /**
@@ -504,11 +560,33 @@ public class TaskProcessor {
         }
     }
 
+    @Inject
+    MemoryStore memoryStore;
+
     private void executeTask(TaskEntity task) {
         switch (task.getTaskType()) {
             case "vector_store_delete" -> {
                 String groupId = (String) task.getTaskBody().get("conversationGroupId");
                 vectorStore.deleteByConversationGroupId(groupId);
+            }
+            case "vector_store_index_retry" -> {
+                // Query entries where indexedContent IS NOT NULL AND indexedAt IS NULL
+                // These are entries that have index content but failed vector store indexing
+                List<Entry> pendingEntries = memoryStore.findEntriesPendingVectorIndexing(batchSize);
+                boolean allSucceeded = true;
+                for (Entry entry : pendingEntries) {
+                    try {
+                        vectorStore.index(entry.getConversationId(), entry.getId(), entry.getIndexedContent());
+                        memoryStore.setIndexedAt(entry.getId(), OffsetDateTime.now());
+                    } catch (Exception e) {
+                        LOG.warnf(e, "Failed to index entry %s in vector store", entry.getId());
+                        allSucceeded = false;
+                    }
+                }
+                if (!allSucceeded || pendingEntries.size() == batchSize) {
+                    // More entries to process or some failed - reschedule task
+                    throw new RuntimeException("Retry needed - some entries pending or failed");
+                }
             }
             default -> throw new IllegalArgumentException("Unknown task type: " + task.getTaskType());
         }

@@ -19,6 +19,9 @@ public class TaskEntity {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "task_name", unique = true)
+    private String taskName;
+
     @Column(name = "task_type", nullable = false)
     private String taskType;
 
@@ -58,6 +61,14 @@ public class TaskEntity {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public String getTaskName() {
+        return taskName;
+    }
+
+    public void setTaskName(String taskName) {
+        this.taskName = taskName;
     }
 
     public String getTaskType() {

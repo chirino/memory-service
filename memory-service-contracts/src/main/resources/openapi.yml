@@ -810,33 +810,91 @@ paths:
   /v1/conversations/index:
     post:
       tags: [Search]
-      summary: Index a conversation transcript
+      summary: Index conversation entries
       description: |-
-        Indexes conversation transcript content for semantic search. Stores the
-        provided transcript text as searchable content and updates the conversation
-        title. The `untilEntryId` tracks which entries have been indexed.
+        Indexes searchable text for conversation entries. Each item in the request
+        array specifies a single entry with the text that should be searchable.
 
-        This endpoint is typically called by agents after processing recent
-        conversation entries. The transcript text becomes searchable via
-        the `/v1/conversations/search` endpoint.
+        This endpoint is called by batch indexing services after processing
+        conversation entries. The indexed text becomes searchable via
+        `/v1/conversations/search`.
 
-        Requires a valid agent API key.
-      operationId: indexConversationTranscript
+        If an entry has already been indexed, its text is replaced with the new value.
+        The entry's `indexedAt` timestamp is updated when successfully indexed.
+
+        **Note:** This endpoint may return successfully even if vector store indexing
+        fails. In that case, the indexed content is stored and a background retry task
+        is created to complete the indexing asynchronously. Entries will become
+        searchable once the retry task succeeds.
+
+        Requires indexer or admin role.
+      operationId: indexConversations
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IndexTranscriptRequest'
+              type: array
+              items:
+                $ref: '#/components/schemas/IndexEntryRequest'
       responses:
-        '201':
-          description: The index entry was created.
+        '200':
+          description: Entries indexed successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Entry'
+                $ref: '#/components/schemas/IndexConversationsResponse'
+        '403':
+          description: Indexer or admin role required.
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/unindexed:
+    get:
+      tags: [Search]
+      summary: List entries needing indexing
+      description: |-
+        Returns entries from the history channel that have not yet had their
+        index content generated (where `indexedContent` is null). This endpoint
+        is used by batch indexing jobs to discover entries that need processing.
+
+        Entries are returned with their full content so that callers can
+        process the content before submitting index text. Results are sorted
+        by `createdAt` for consistent ordering.
+
+        Uses cursor-based pagination.
+
+        Requires indexer or admin role.
+      operationId: listUnindexedEntries
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of entries to return.
+          schema:
+            type: integer
+            default: 100
+        - name: cursor
+          in: query
+          required: false
+          description: Pagination cursor from previous response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated list of unindexed entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnindexedEntriesResponse'
+        '403':
+          description: Indexer or admin role required.
+          $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -1118,6 +1176,13 @@ components:
         content:
           type: array
           items: {}
+        indexedContent:
+          type: string
+          nullable: true
+          description: |-
+            Optional text to index for search. Only valid for entries in the history
+            channel. If provided, the entry will be indexed for search immediately
+            after creation. Returns 400 Bad Request if specified for non-history channels.
       example:
         userId: "user_1234"
         channel: "history"
@@ -1162,33 +1227,73 @@ components:
               text: "Second message added during sync."
           createdAt: "2025-01-10T14:40:12Z"
 
-    IndexTranscriptRequest:
+    IndexEntryRequest:
       type: object
       required:
         - conversationId
-        - transcript
-        - untilEntryId
+        - entryId
+        - indexedContent
       properties:
         conversationId:
           type: string
           format: uuid
-          description: The conversation to index.
-        title:
-          type: string
-          nullable: true
-          description: Optional conversation title to store/update.
-        transcript:
-          type: string
-          description: Transcript text to index for semantic search.
-        untilEntryId:
+          description: The conversation containing the entry.
+        entryId:
           type: string
           format: uuid
-          description: Highest entry ID covered by the index (inclusive).
+          description: The entry ID to index.
+        indexedContent:
+          type: string
+          description: The searchable text for this entry.
       example:
         conversationId: "550e8400-e29b-41d4-a716-446655440000"
-        title: "Conversation forking design"
-        transcript: "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch."
-        untilEntryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        entryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        indexedContent: "User asked about conversation forking and branching strategies"
+
+    IndexConversationsResponse:
+      type: object
+      properties:
+        indexed:
+          type: integer
+          description: |-
+            Number of entries processed. These entries have their indexed content
+            stored and will be searchable. If vector store indexing failed for some
+            entries, they will become searchable asynchronously via background retry.
+      example:
+        indexed: 3
+
+    UnindexedEntriesResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnindexedEntry'
+        cursor:
+          type: string
+          nullable: true
+          description: Cursor for fetching next page. Null when no more results.
+      example:
+        data:
+          - conversationId: "550e8400-e29b-41d4-a716-446655440000"
+            entry:
+              id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+              channel: "history"
+              contentType: "message"
+              content:
+                - type: "text"
+                  text: "Help me design a memory service"
+              createdAt: "2025-01-10T14:40:12Z"
+        cursor: "eyJjcmVhdGVkQXQiOiIyMDI1LTAxLTEwVDE0OjQwOjEyWiJ9"
+
+    UnindexedEntry:
+      type: object
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        entry:
+          $ref: '#/components/schemas/Entry'
 
     SearchConversationsRequest:
       type: object
@@ -1225,6 +1330,10 @@ components:
         conversationTitle:
           type: string
           description: Title of the conversation containing this entry.
+        entryId:
+          type: string
+          format: uuid
+          description: ID of the matched entry. Always present for deep-linking.
         score:
           type: number
           format: float

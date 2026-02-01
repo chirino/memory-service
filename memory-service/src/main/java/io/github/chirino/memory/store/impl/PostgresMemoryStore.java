@@ -11,7 +11,8 @@ import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
-import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
+import io.github.chirino.memory.api.dto.IndexConversationsResponse;
+import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
@@ -19,6 +20,8 @@ import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
+import io.github.chirino.memory.api.dto.UnindexedEntry;
 import io.github.chirino.memory.cache.CachedMemoryEntries;
 import io.github.chirino.memory.cache.MemoryEntriesCache;
 import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
@@ -900,6 +903,7 @@ public class PostgresMemoryStore implements MemoryStore {
             entity.setEpoch(req.getEpoch());
             entity.setContentType(req.getContentType() != null ? req.getContentType() : "message");
             entity.setContent(encryptContent(req.getContent()));
+            entity.setIndexedContent(req.getIndexedContent());
             entity.setConversationGroupId(conversation.getConversationGroup().getId());
             OffsetDateTime createdAt = OffsetDateTime.now();
             entity.setCreatedAt(createdAt);
@@ -1012,37 +1016,165 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public EntryDto indexTranscript(IndexTranscriptRequest request, String clientId) {
-        String conversationId = request.getConversationId();
-        UUID cid = UUID.fromString(conversationId);
-        ConversationEntity conversation =
-                conversationRepository
-                        .findActiveById(cid)
-                        .orElseThrow(
-                                () ->
-                                        new ResourceNotFoundException(
-                                                "conversation", conversationId));
+    public IndexConversationsResponse indexEntries(List<IndexEntryRequest> entries) {
+        int indexed = 0;
+        List<EntryEntity> entitiesToVectorize = new ArrayList<>();
 
-        EntryEntity transcriptEntry = new EntryEntity();
-        transcriptEntry.setConversation(conversation);
-        transcriptEntry.setUserId(null);
-        transcriptEntry.setClientId(clientId);
-        transcriptEntry.setChannel(io.github.chirino.memory.model.Channel.TRANSCRIPT);
-        transcriptEntry.setEpoch(null);
-        transcriptEntry.setContentType("transcript");
-        transcriptEntry.setContent(encryptContentFromTranscript(request));
-        transcriptEntry.setConversationGroupId(conversation.getConversationGroup().getId());
-        entryRepository.persist(transcriptEntry);
+        for (IndexEntryRequest req : entries) {
+            UUID conversationId = UUID.fromString(req.getConversationId());
+            UUID entryId = UUID.fromString(req.getEntryId());
 
-        if (request.getTitle() != null && !request.getTitle().isBlank()) {
-            conversation.setTitle(encryptTitle(request.getTitle()));
+            EntryEntity entry = entryRepository.findById(entryId);
+            if (entry == null) {
+                throw new ResourceNotFoundException("entry", req.getEntryId());
+            }
+            if (!entry.getConversation().getId().equals(conversationId)) {
+                throw new ResourceNotFoundException("entry", req.getEntryId());
+            }
+            if (entry.getChannel() != Channel.HISTORY) {
+                throw new IllegalArgumentException("Only history channel entries can be indexed");
+            }
+
+            entry.setIndexedContent(req.getIndexedContent());
+            entryRepository.persist(entry);
+            entitiesToVectorize.add(entry);
+            indexed++;
         }
 
+        // Attempt synchronous vector store indexing
         if (shouldVectorize()) {
-            vectorizeTranscript(conversation, transcriptEntry, request);
+            boolean anyFailed = false;
+            for (EntryEntity entry : entitiesToVectorize) {
+                try {
+                    vectorizeEntry(entry);
+                    entry.setIndexedAt(OffsetDateTime.now());
+                    entryRepository.persist(entry);
+                } catch (Exception e) {
+                    LOG.warnf(e, "Failed to vectorize entry %s", entry.getId());
+                    anyFailed = true;
+                }
+            }
+            if (anyFailed) {
+                // Create singleton retry task
+                taskRepository.createTask(
+                        "vector_store_index_retry", "vector_store_index_retry", Map.of());
+            }
         }
 
-        return toEntryDto(transcriptEntry);
+        return new IndexConversationsResponse(indexed);
+    }
+
+    private void vectorizeEntry(EntryEntity entry) {
+        String text = entry.getIndexedContent();
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        VectorStore store = vectorStoreSelector.getVectorStore();
+        float[] embedding = embeddingService.embed(text);
+        if (embedding == null || embedding.length == 0) {
+            return;
+        }
+        store.upsertTranscriptEmbedding(
+                entry.getConversation().getId().toString(), entry.getId().toString(), embedding);
+    }
+
+    @Override
+    public UnindexedEntriesResponse listUnindexedEntries(int limit, String cursor) {
+        // Query entries where channel = HISTORY AND indexed_content IS NULL
+        // Order by created_at for consistent pagination
+
+        StringBuilder queryBuilder =
+                new StringBuilder(
+                        "SELECT e FROM EntryEntity e WHERE e.channel = :channel AND"
+                                + " e.indexedContent IS NULL");
+
+        // Handle cursor-based pagination
+        if (cursor != null && !cursor.isBlank()) {
+            try {
+                // Cursor is base64 encoded createdAt timestamp
+                String decoded =
+                        new String(
+                                java.util.Base64.getDecoder().decode(cursor),
+                                StandardCharsets.UTF_8);
+                queryBuilder.append(" AND e.createdAt > :cursorTime");
+            } catch (Exception e) {
+                // Invalid cursor, ignore
+            }
+        }
+
+        queryBuilder.append(" ORDER BY e.createdAt ASC");
+
+        var query =
+                entityManager
+                        .createQuery(queryBuilder.toString(), EntryEntity.class)
+                        .setParameter("channel", Channel.HISTORY)
+                        .setMaxResults(limit + 1); // Fetch one extra to check for next page
+
+        if (cursor != null && !cursor.isBlank()) {
+            try {
+                String decoded =
+                        new String(
+                                java.util.Base64.getDecoder().decode(cursor),
+                                StandardCharsets.UTF_8);
+                OffsetDateTime cursorTime = OffsetDateTime.parse(decoded, ISO_FORMATTER);
+                query.setParameter("cursorTime", cursorTime);
+            } catch (Exception e) {
+                // Invalid cursor, ignore
+            }
+        }
+
+        List<EntryEntity> results = query.getResultList();
+
+        // Determine next cursor
+        String nextCursor = null;
+        if (results.size() > limit) {
+            results = results.subList(0, limit);
+            if (!results.isEmpty()) {
+                EntryEntity last = results.get(results.size() - 1);
+                String timestamp = last.getCreatedAt().format(ISO_FORMATTER);
+                nextCursor =
+                        java.util.Base64.getEncoder()
+                                .encodeToString(timestamp.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+
+        // Convert to DTOs
+        List<UnindexedEntry> data =
+                results.stream()
+                        .map(
+                                e ->
+                                        new UnindexedEntry(
+                                                e.getConversation().getId().toString(),
+                                                toEntryDto(e)))
+                        .collect(Collectors.toList());
+
+        return new UnindexedEntriesResponse(data, nextCursor);
+    }
+
+    @Override
+    public List<EntryDto> findEntriesPendingVectorIndexing(int limit) {
+        // Query entries where indexed_content IS NOT NULL AND indexed_at IS NULL
+        List<EntryEntity> entries =
+                entityManager
+                        .createQuery(
+                                "SELECT e FROM EntryEntity e WHERE e.indexedContent IS NOT NULL AND"
+                                        + " e.indexedAt IS NULL ORDER BY e.createdAt ASC",
+                                EntryEntity.class)
+                        .setMaxResults(limit)
+                        .getResultList();
+
+        return entries.stream().map(this::toEntryDto).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public void setIndexedAt(String entryId, OffsetDateTime indexedAt) {
+        UUID id = UUID.fromString(entryId);
+        EntryEntity entry = entryRepository.findById(id);
+        if (entry != null) {
+            entry.setIndexedAt(indexedAt);
+            entryRepository.persist(entry);
+        }
     }
 
     @Override
@@ -1116,17 +1248,24 @@ public class PostgresMemoryStore implements MemoryStore {
                 continue;
             }
             String text = extractSearchText(content);
-            if (text == null || !text.toLowerCase().contains(query)) {
+            String indexedContent = m.getIndexedContent();
+            boolean matchesContent = text != null && text.toLowerCase().contains(query);
+            boolean matchesIndexed =
+                    indexedContent != null && indexedContent.toLowerCase().contains(query);
+            if (!matchesContent && !matchesIndexed) {
                 continue;
             }
+            // Prefer indexed content for highlights if it matched
+            String highlightSource = matchesIndexed ? indexedContent : text;
 
             SearchResultDto dto = new SearchResultDto();
             dto.setConversationId(m.getConversation().getId().toString());
             ConversationEntity conv = conversationMap.get(m.getConversation().getId());
             dto.setConversationTitle(conv != null ? decryptTitle(conv.getTitle()) : null);
+            dto.setEntryId(m.getId().toString());
             dto.setEntry(toEntryDto(m, content));
             dto.setScore(1.0);
-            dto.setHighlights(extractHighlight(text, query));
+            dto.setHighlights(extractHighlight(highlightSource, query));
             resultsList.add(dto);
 
             // Fetch one extra to determine if there's a next page
@@ -1171,49 +1310,9 @@ public class PostgresMemoryStore implements MemoryStore {
         }
     }
 
-    private byte[] encryptContentFromTranscript(IndexTranscriptRequest request) {
-        if (request == null || request.getTranscript() == null) {
-            return null;
-        }
-        Map<String, Object> block = new HashMap<>();
-        block.put("type", "transcript");
-        block.put("text", request.getTranscript());
-        if (request.getUntilEntryId() != null) {
-            block.put("untilEntryId", request.getUntilEntryId());
-        }
-        return encryptContent(Collections.singletonList(block));
-    }
-
     private boolean shouldVectorize() {
         VectorStore store = vectorStoreSelector.getVectorStore();
         return store != null && store.isEnabled() && embeddingService.isEnabled();
-    }
-
-    private void vectorizeTranscript(
-            ConversationEntity conversation,
-            EntryEntity transcriptEntry,
-            IndexTranscriptRequest request) {
-        if (request == null
-                || request.getTranscript() == null
-                || request.getTranscript().isBlank()) {
-            return;
-        }
-        VectorStore store = vectorStoreSelector.getVectorStore();
-        try {
-            float[] embedding = embeddingService.embed(request.getTranscript());
-            if (embedding == null || embedding.length == 0) {
-                return;
-            }
-            store.upsertTranscriptEmbedding(
-                    conversation.getId().toString(), transcriptEntry.getId().toString(), embedding);
-            conversation.setVectorizedAt(OffsetDateTime.now());
-            conversationRepository.persist(conversation);
-        } catch (Exception e) {
-            LOG.warnf(
-                    e,
-                    "Failed to vectorize transcript for conversationId=%s",
-                    conversation.getId());
-        }
     }
 
     private OffsetDateTime parseOffsetDateTime(String value) {
@@ -1802,6 +1901,7 @@ public class PostgresMemoryStore implements MemoryStore {
             dto.setConversationId(m.getConversation().getId().toString());
             ConversationEntity conv = conversationMap.get(m.getConversation().getId());
             dto.setConversationTitle(conv != null ? decryptTitle(conv.getTitle()) : null);
+            dto.setEntryId(m.getId().toString());
             dto.setEntry(toEntryDto(m, content));
             dto.setScore(1.0);
             dto.setHighlights(null);

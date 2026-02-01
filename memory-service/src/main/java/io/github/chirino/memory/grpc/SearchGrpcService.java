@@ -1,20 +1,31 @@
 package io.github.chirino.memory.grpc;
 
 import static io.github.chirino.memory.grpc.UuidUtils.byteStringToString;
+import static io.github.chirino.memory.grpc.UuidUtils.stringToByteString;
 
+import io.github.chirino.memory.api.dto.IndexConversationsResponse;
+import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
+import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
 import io.github.chirino.memory.config.VectorStoreSelector;
-import io.github.chirino.memory.grpc.v1.Entry;
-import io.github.chirino.memory.grpc.v1.IndexTranscriptRequest;
+import io.github.chirino.memory.grpc.v1.IndexConversationsRequest;
+import io.github.chirino.memory.grpc.v1.ListUnindexedEntriesRequest;
+import io.github.chirino.memory.grpc.v1.ListUnindexedEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SearchEntriesRequest;
 import io.github.chirino.memory.grpc.v1.SearchEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SearchService;
+import io.github.chirino.memory.grpc.v1.UnindexedEntry;
+import io.github.chirino.memory.security.AdminRoleResolver;
+import io.github.chirino.memory.security.ApiKeyContext;
+import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.vector.VectorStore;
 import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
 import io.quarkus.grpc.GrpcService;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @GrpcService
@@ -22,6 +33,12 @@ import java.util.stream.Collectors;
 public class SearchGrpcService extends AbstractGrpcService implements SearchService {
 
     private final VectorStoreSelector vectorStoreSelector;
+
+    @Inject SecurityIdentity identity;
+
+    @Inject ApiKeyContext apiKeyContext;
+
+    @Inject AdminRoleResolver roleResolver;
 
     public SearchGrpcService(VectorStoreSelector vectorStoreSelector) {
         this.vectorStoreSelector = vectorStoreSelector;
@@ -77,61 +94,133 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
     }
 
     @Override
-    public Uni<Entry> indexTranscript(IndexTranscriptRequest request) {
+    public Uni<io.github.chirino.memory.grpc.v1.IndexConversationsResponse> indexConversations(
+            IndexConversationsRequest request) {
         return Uni.createFrom()
                 .item(
                         () -> {
-                            if (!hasValidApiKey()) {
+                            try {
+                                roleResolver.requireIndexer(identity, apiKeyContext);
+                            } catch (AccessDeniedException e) {
                                 throw Status.PERMISSION_DENIED
-                                        .withDescription(
-                                                "Agent API key is required to index transcripts")
+                                        .withDescription(e.getMessage())
                                         .asRuntimeException();
                             }
-                            StatusRuntimeException validation = validateIndexRequest(request);
-                            if (validation != null) {
-                                throw validation;
-                            }
-                            String clientId = currentClientId();
-                            if (clientId == null || clientId.isBlank()) {
-                                throw Status.PERMISSION_DENIED
-                                        .withDescription(
-                                                "Client id is required to index transcripts")
+
+                            if (request.getEntriesCount() == 0) {
+                                throw Status.INVALID_ARGUMENT
+                                        .withDescription("At least one entry is required")
                                         .asRuntimeException();
                             }
-                            String conversationId = byteStringToString(request.getConversationId());
-                            String untilEntryId = byteStringToString(request.getUntilEntryId());
-                            io.github.chirino.memory.api.dto.IndexTranscriptRequest internal =
-                                    new io.github.chirino.memory.api.dto.IndexTranscriptRequest();
-                            internal.setConversationId(conversationId);
-                            internal.setTitle(request.hasTitle() ? request.getTitle() : null);
-                            internal.setTranscript(request.getTranscript());
-                            internal.setUntilEntryId(untilEntryId);
-                            io.github.chirino.memory.api.dto.EntryDto dto =
-                                    store().indexTranscript(internal, clientId);
-                            return GrpcDtoMapper.toProto(dto);
+
+                            // Validate each entry
+                            for (int i = 0; i < request.getEntriesCount(); i++) {
+                                io.github.chirino.memory.grpc.v1.IndexEntryRequest entry =
+                                        request.getEntries(i);
+                                String conversationId =
+                                        byteStringToString(entry.getConversationId());
+                                if (conversationId == null || conversationId.isBlank()) {
+                                    throw Status.INVALID_ARGUMENT
+                                            .withDescription(
+                                                    "conversationId is required for entry " + i)
+                                            .asRuntimeException();
+                                }
+                                String entryId = byteStringToString(entry.getEntryId());
+                                if (entryId == null || entryId.isBlank()) {
+                                    throw Status.INVALID_ARGUMENT
+                                            .withDescription("entryId is required for entry " + i)
+                                            .asRuntimeException();
+                                }
+                                if (entry.getIndexedContent() == null
+                                        || entry.getIndexedContent().isBlank()) {
+                                    throw Status.INVALID_ARGUMENT
+                                            .withDescription(
+                                                    "indexedContent is required for entry " + i)
+                                            .asRuntimeException();
+                                }
+                            }
+
+                            // Convert to internal DTO
+                            List<IndexEntryRequest> internalEntries =
+                                    request.getEntriesList().stream()
+                                            .map(
+                                                    e -> {
+                                                        IndexEntryRequest internal =
+                                                                new IndexEntryRequest();
+                                                        internal.setConversationId(
+                                                                byteStringToString(
+                                                                        e.getConversationId()));
+                                                        internal.setEntryId(
+                                                                byteStringToString(e.getEntryId()));
+                                                        internal.setIndexedContent(
+                                                                e.getIndexedContent());
+                                                        return internal;
+                                                    })
+                                            .toList();
+
+                            IndexConversationsResponse dto = store().indexEntries(internalEntries);
+
+                            return io.github.chirino.memory.grpc.v1.IndexConversationsResponse
+                                    .newBuilder()
+                                    .setIndexed(dto.getIndexed())
+                                    .build();
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
     }
 
-    private StatusRuntimeException validateIndexRequest(IndexTranscriptRequest request) {
-        String conversationId = byteStringToString(request.getConversationId());
-        if (conversationId == null || conversationId.isBlank()) {
-            return Status.INVALID_ARGUMENT
-                    .withDescription("conversationId is required")
-                    .asRuntimeException();
-        }
-        if (request.getTranscript() == null || request.getTranscript().isBlank()) {
-            return Status.INVALID_ARGUMENT
-                    .withDescription("transcript is required")
-                    .asRuntimeException();
-        }
-        String untilEntryId = byteStringToString(request.getUntilEntryId());
-        if (untilEntryId == null || untilEntryId.isBlank()) {
-            return Status.INVALID_ARGUMENT
-                    .withDescription("untilEntryId is required")
-                    .asRuntimeException();
-        }
-        return null;
+    @Override
+    public Uni<ListUnindexedEntriesResponse> listUnindexedEntries(
+            ListUnindexedEntriesRequest request) {
+        return Uni.createFrom()
+                .item(
+                        () -> {
+                            try {
+                                roleResolver.requireIndexer(identity, apiKeyContext);
+                            } catch (AccessDeniedException e) {
+                                throw Status.PERMISSION_DENIED
+                                        .withDescription(e.getMessage())
+                                        .asRuntimeException();
+                            }
+
+                            int limit = request.getLimit() > 0 ? request.getLimit() : 100;
+                            String cursor =
+                                    request.hasCursor() && !request.getCursor().isBlank()
+                                            ? request.getCursor()
+                                            : null;
+
+                            UnindexedEntriesResponse dto =
+                                    store().listUnindexedEntries(limit, cursor);
+
+                            ListUnindexedEntriesResponse.Builder builder =
+                                    ListUnindexedEntriesResponse.newBuilder();
+
+                            if (dto.getData() != null) {
+                                builder.addAllEntries(
+                                        dto.getData().stream()
+                                                .map(
+                                                        e ->
+                                                                UnindexedEntry.newBuilder()
+                                                                        .setConversationId(
+                                                                                stringToByteString(
+                                                                                        e
+                                                                                                .getConversationId()))
+                                                                        .setEntry(
+                                                                                GrpcDtoMapper
+                                                                                        .toProto(
+                                                                                                e
+                                                                                                        .getEntry()))
+                                                                        .build())
+                                                .collect(Collectors.toList()));
+                            }
+
+                            if (dto.getCursor() != null) {
+                                builder.setCursor(dto.getCursor());
+                            }
+
+                            return builder.build();
+                        })
+                .onFailure()
+                .transform(GrpcStatusMapper::map);
     }
 }

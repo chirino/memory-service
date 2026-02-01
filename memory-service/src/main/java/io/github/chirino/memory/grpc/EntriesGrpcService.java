@@ -120,6 +120,16 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                         .withDescription("Client id is required for agent entries")
                                         .asRuntimeException();
                             }
+                            // indexedContent is only allowed on history channel
+                            if (request.getEntry().hasIndexedContent()
+                                    && !request.getEntry().getIndexedContent().isBlank()
+                                    && request.getEntry().getChannel()
+                                            != io.github.chirino.memory.grpc.v1.Channel.HISTORY) {
+                                throw Status.INVALID_ARGUMENT
+                                        .withDescription(
+                                                "indexedContent is only allowed on history channel")
+                                        .asRuntimeException();
+                            }
                             CreateEntryRequest internal = new CreateEntryRequest();
                             internal.setUserId(request.getEntry().getUserId());
                             io.github.chirino.memory.model.Channel requestChannel =
@@ -129,6 +139,9 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                             internal.setContentType(request.getEntry().getContentType());
                             internal.setContent(
                                     GrpcDtoMapper.fromValues(request.getEntry().getContentList()));
+                            if (request.getEntry().hasIndexedContent()) {
+                                internal.setIndexedContent(request.getEntry().getIndexedContent());
+                            }
                             List<io.github.chirino.memory.api.dto.EntryDto> appended =
                                     store().appendAgentEntries(
                                                     currentUserId(),
@@ -229,6 +242,9 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
         internal.setEpoch(request.getEpoch());
         internal.setContentType(request.getContentType());
         internal.setContent(GrpcDtoMapper.fromValues(request.getContentList()));
+        if (request.hasIndexedContent()) {
+            internal.setIndexedContent(request.getIndexedContent());
+        }
         return internal;
     }
 

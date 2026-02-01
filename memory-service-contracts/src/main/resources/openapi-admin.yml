@@ -432,40 +432,6 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/admin/conversations/index:
-    post:
-      tags: [Admin]
-      summary: Index a conversation transcript (indexer role)
-      description: |-
-        Indexes conversation transcript content for semantic search. Stores the
-        provided transcript text as searchable content and updates the conversation
-        title. The `untilEntryId` tracks which entries have been indexed.
-
-        This endpoint provides access to index any conversation, regardless
-        of ownership. Requires indexer or admin role.
-
-        Unlike other admin endpoints, this operation is not audit logged.
-      operationId: adminIndexConversationTranscript
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/IndexTranscriptRequest'
-      responses:
-        '201':
-          description: The index entry was created.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Entry'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-      security:
-        - BearerAuth: []
-
   /v1/admin/evict:
     post:
       tags: [Admin]
@@ -749,6 +715,10 @@ components:
         conversationTitle:
           type: string
           description: Title of the conversation containing this entry.
+        entryId:
+          type: string
+          format: uuid
+          description: ID of the matched entry. Always present for deep-linking.
         score:
           type: number
           format: float
@@ -810,30 +780,3 @@ components:
           description: Error message describing what went wrong.
           example: "Database connection failed"
 
-    IndexTranscriptRequest:
-      type: object
-      required:
-        - conversationId
-        - transcript
-        - untilEntryId
-      properties:
-        conversationId:
-          type: string
-          format: uuid
-          description: The conversation to index.
-        title:
-          type: string
-          nullable: true
-          description: Optional conversation title to store/update.
-        transcript:
-          type: string
-          description: Transcript text to index for semantic search.
-        untilEntryId:
-          type: string
-          format: uuid
-          description: Highest entry ID covered by the index (inclusive).
-      example:
-        conversationId: "550e8400-e29b-41d4-a716-446655440000"
-        title: "Conversation forking design"
-        transcript: "User asked several questions about conversation forking."
-        untilEntryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"

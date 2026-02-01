@@ -49,6 +49,12 @@ public class EntryEntity {
     @Column(name = "content", nullable = false, columnDefinition = "bytea")
     private byte[] content;
 
+    @Column(name = "indexed_content")
+    private String indexedContent;
+
+    @Column(name = "indexed_at")
+    private OffsetDateTime indexedAt;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -130,6 +136,22 @@ public class EntryEntity {
 
     public void setCreatedAt(OffsetDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getIndexedContent() {
+        return indexedContent;
+    }
+
+    public void setIndexedContent(String indexedContent) {
+        this.indexedContent = indexedContent;
+    }
+
+    public OffsetDateTime getIndexedAt() {
+        return indexedAt;
+    }
+
+    public void setIndexedAt(OffsetDateTime indexedAt) {
+        this.indexedAt = indexedAt;
     }
 
     @PrePersist

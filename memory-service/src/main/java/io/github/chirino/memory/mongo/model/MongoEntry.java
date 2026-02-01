@@ -21,5 +21,7 @@ public class MongoEntry {
     public String contentType;
     public byte[] content;
     @BsonIgnore public List<Object> decodedContent;
+    public String indexedContent;
+    public Instant indexedAt;
     public Instant createdAt;
 }

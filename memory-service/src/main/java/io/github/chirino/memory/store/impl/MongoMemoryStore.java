@@ -14,7 +14,8 @@ import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
-import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
+import io.github.chirino.memory.api.dto.IndexConversationsResponse;
+import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
@@ -22,6 +23,8 @@ import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
+import io.github.chirino.memory.api.dto.UnindexedEntry;
 import io.github.chirino.memory.cache.CachedMemoryEntries;
 import io.github.chirino.memory.cache.MemoryEntriesCache;
 import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
@@ -894,6 +897,7 @@ public class MongoMemoryStore implements MemoryStore {
             m.contentType = req.getContentType() != null ? req.getContentType() : "message";
             m.decodedContent = req.getContent();
             m.content = encryptContent(m.decodedContent);
+            m.indexedContent = req.getIndexedContent();
             m.conversationGroupId = c.conversationGroupId;
             Instant createdAt = Instant.now();
             m.createdAt = createdAt;
@@ -1007,51 +1011,65 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public EntryDto indexTranscript(IndexTranscriptRequest request, String clientId) {
-        String conversationId = request.getConversationId();
-        MongoConversation c = conversationRepository.findById(conversationId);
-        if (c == null) {
-            throw new ResourceNotFoundException("conversation", conversationId);
-        }
-        MongoEntry transcriptEntry = new MongoEntry();
-        transcriptEntry.id = UUID.randomUUID().toString();
-        transcriptEntry.conversationId = conversationId;
-        transcriptEntry.userId = null;
-        transcriptEntry.clientId = clientId;
-        transcriptEntry.channel = Channel.TRANSCRIPT;
-        transcriptEntry.epoch = null;
-        transcriptEntry.contentType = "transcript";
-        transcriptEntry.decodedContent = buildTranscriptContent(request);
-        transcriptEntry.content = encryptContent(transcriptEntry.decodedContent);
-        transcriptEntry.conversationGroupId = c.conversationGroupId;
-        transcriptEntry.createdAt = Instant.now();
-        entryRepository.persist(transcriptEntry);
+    public IndexConversationsResponse indexEntries(List<IndexEntryRequest> entries) {
+        int indexed = 0;
+        List<MongoEntry> entriesToVectorize = new ArrayList<>();
 
-        boolean conversationUpdated = false;
-        if (request.getTitle() != null && !request.getTitle().isBlank()) {
-            c.title = encryptTitle(request.getTitle());
-            conversationUpdated = true;
+        for (IndexEntryRequest req : entries) {
+            String conversationId = req.getConversationId();
+            String entryId = req.getEntryId();
+
+            MongoEntry entry = entryRepository.findById(entryId);
+            if (entry == null) {
+                throw new ResourceNotFoundException("entry", entryId);
+            }
+            if (!entry.conversationId.equals(conversationId)) {
+                throw new ResourceNotFoundException("entry", entryId);
+            }
+            if (entry.channel != Channel.HISTORY) {
+                throw new IllegalArgumentException("Only history channel entries can be indexed");
+            }
+
+            entry.indexedContent = req.getIndexedContent();
+            entryRepository.persistOrUpdate(entry);
+            entriesToVectorize.add(entry);
+            indexed++;
         }
+
+        // Attempt synchronous vector store indexing
         if (shouldVectorize()) {
-            vectorizeTranscript(c, transcriptEntry, request);
-        } else if (conversationUpdated) {
-            conversationRepository.persistOrUpdate(c);
+            boolean anyFailed = false;
+            for (MongoEntry entry : entriesToVectorize) {
+                try {
+                    vectorizeEntry(entry);
+                    entry.indexedAt = Instant.now();
+                    entryRepository.persistOrUpdate(entry);
+                } catch (Exception e) {
+                    LOG.warnf(e, "Failed to vectorize entry %s", entry.id);
+                    anyFailed = true;
+                }
+            }
+            if (anyFailed) {
+                // Create singleton retry task
+                taskRepository.createTask(
+                        "vector_store_index_retry", "vector_store_index_retry", Map.of());
+            }
         }
 
-        return toEntryDto(transcriptEntry);
+        return new IndexConversationsResponse(indexed);
     }
 
-    private List<Object> buildTranscriptContent(IndexTranscriptRequest request) {
-        if (request == null) {
-            return Collections.emptyList();
+    private void vectorizeEntry(MongoEntry entry) {
+        String text = entry.indexedContent;
+        if (text == null || text.isBlank()) {
+            return;
         }
-        Map<String, Object> block = new HashMap<>();
-        block.put("type", "transcript");
-        block.put("text", request.getTranscript());
-        if (request.getUntilEntryId() != null) {
-            block.put("untilEntryId", request.getUntilEntryId());
+        VectorStore store = vectorStoreSelector.getVectorStore();
+        float[] embedding = embeddingService.embed(text);
+        if (embedding == null || embedding.length == 0) {
+            return;
         }
-        return List.of(block);
+        store.upsertTranscriptEmbedding(entry.conversationId, entry.id, embedding);
     }
 
     private boolean shouldVectorize() {
@@ -1059,26 +1077,76 @@ public class MongoMemoryStore implements MemoryStore {
         return store != null && store.isEnabled() && embeddingService.isEnabled();
     }
 
-    private void vectorizeTranscript(
-            MongoConversation conversation,
-            MongoEntry transcriptEntry,
-            IndexTranscriptRequest request) {
-        if (request == null
-                || request.getTranscript() == null
-                || request.getTranscript().isBlank()) {
-            return;
-        }
-        VectorStore store = vectorStoreSelector.getVectorStore();
-        try {
-            float[] embedding = embeddingService.embed(request.getTranscript());
-            if (embedding == null || embedding.length == 0) {
-                return;
+    @Override
+    public UnindexedEntriesResponse listUnindexedEntries(int limit, String cursor) {
+        // Query entries where channel = HISTORY AND indexed_content IS NULL
+        Bson filter =
+                Filters.and(
+                        Filters.eq("channel", Channel.HISTORY.name()),
+                        Filters.eq("indexedContent", null));
+
+        // Handle cursor-based pagination
+        if (cursor != null && !cursor.isBlank()) {
+            try {
+                String decoded =
+                        new String(
+                                java.util.Base64.getDecoder().decode(cursor),
+                                StandardCharsets.UTF_8);
+                Instant cursorTime = Instant.from(ISO_FORMATTER.parse(decoded));
+                filter = Filters.and(filter, Filters.gt("createdAt", cursorTime));
+            } catch (Exception e) {
+                // Invalid cursor, ignore
             }
-            store.upsertTranscriptEmbedding(conversation.id, transcriptEntry.id, embedding);
-            conversation.vectorizedAt = Instant.now();
-            conversationRepository.persistOrUpdate(conversation);
-        } catch (Exception e) {
-            LOG.warnf(e, "Failed to vectorize transcript for conversationId=%s", conversation.id);
+        }
+
+        List<MongoEntry> results =
+                entryRepository.find(filter).stream()
+                        .sorted(Comparator.comparing(e -> e.createdAt))
+                        .limit(limit + 1)
+                        .collect(Collectors.toList());
+
+        // Determine next cursor
+        String nextCursor = null;
+        if (results.size() > limit) {
+            results = results.subList(0, limit);
+            if (!results.isEmpty()) {
+                MongoEntry last = results.get(results.size() - 1);
+                String timestamp = ISO_FORMATTER.format(last.createdAt.atOffset(ZoneOffset.UTC));
+                nextCursor =
+                        java.util.Base64.getEncoder()
+                                .encodeToString(timestamp.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+
+        // Convert to DTOs
+        List<UnindexedEntry> data =
+                results.stream()
+                        .map(e -> new UnindexedEntry(e.conversationId, toEntryDto(e)))
+                        .collect(Collectors.toList());
+
+        return new UnindexedEntriesResponse(data, nextCursor);
+    }
+
+    @Override
+    public List<EntryDto> findEntriesPendingVectorIndexing(int limit) {
+        // Query entries where indexed_content IS NOT NULL AND indexed_at IS NULL
+        Bson filter =
+                Filters.and(Filters.ne("indexedContent", null), Filters.eq("indexedAt", null));
+
+        return entryRepository.find(filter).stream()
+                .sorted(Comparator.comparing(e -> e.createdAt))
+                .limit(limit)
+                .map(this::toEntryDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public void setIndexedAt(String entryId, OffsetDateTime indexedAt) {
+        MongoEntry entry = entryRepository.findById(entryId);
+        if (entry != null) {
+            entry.indexedAt = indexedAt.toInstant();
+            entryRepository.persistOrUpdate(entry);
         }
     }
 
@@ -1157,17 +1225,24 @@ public class MongoMemoryStore implements MemoryStore {
                 continue;
             }
             String text = extractSearchText(content);
-            if (text == null || !text.toLowerCase().contains(query)) {
+            String indexedContent = m.indexedContent;
+            boolean matchesContent = text != null && text.toLowerCase().contains(query);
+            boolean matchesIndexed =
+                    indexedContent != null && indexedContent.toLowerCase().contains(query);
+            if (!matchesContent && !matchesIndexed) {
                 continue;
             }
+            // Prefer indexed content for highlights if it matched
+            String highlightSource = matchesIndexed ? indexedContent : text;
 
             SearchResultDto dto = new SearchResultDto();
             dto.setConversationId(m.conversationId);
             MongoConversation conv = conversationMap.get(m.conversationId);
             dto.setConversationTitle(conv != null ? decryptTitle(conv.title) : null);
+            dto.setEntryId(m.id);
             dto.setEntry(toEntryDto(m, content));
             dto.setScore(1.0);
-            dto.setHighlights(extractHighlight(text, query));
+            dto.setHighlights(extractHighlight(highlightSource, query));
             resultsList.add(dto);
 
             // Fetch one extra to determine if there's a next page
@@ -1792,6 +1867,7 @@ public class MongoMemoryStore implements MemoryStore {
             dto.setConversationId(m.conversationId);
             MongoConversation conv = conversationMap.get(m.conversationId);
             dto.setConversationTitle(conv != null ? decryptTitle(conv.title) : null);
+            dto.setEntryId(m.id);
             dto.setEntry(toEntryDto(m, content));
             dto.setScore(1.0);
             dto.setHighlights(extractHighlight(text, searchQuery));

@@ -4,6 +4,7 @@ public class SearchResultDto {
 
     private String conversationId;
     private String conversationTitle;
+    private String entryId;
     private EntryDto entry;
     private double score;
     private String highlights;
@@ -22,6 +23,14 @@ public class SearchResultDto {
 
     public void setConversationTitle(String conversationTitle) {
         this.conversationTitle = conversationTitle;
+    }
+
+    public String getEntryId() {
+        return entryId;
+    }
+
+    public void setEntryId(String entryId) {
+        this.entryId = entryId;
     }
 
     public EntryDto getEntry() {

@@ -1,6 +1,6 @@
-Feature: Index Transcript REST API
-  As an agent
-  I want to index transcripts for conversations via REST API
+Feature: Index Entries REST API
+  As an indexer
+  I want to index entries for conversations via REST API
   So that they can be searched by users
 
   Background:
@@ -8,162 +8,201 @@ Feature: Index Transcript REST API
     And I have a conversation with title "Test Conversation"
     And the conversation has an entry "Order status question"
 
-  Scenario: Agent can index a transcript and user can search it
-    Given I am authenticated as agent with API key "test-agent-key"
+  Scenario: Indexer can index entries and user can search them
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
-    When I index a transcript with request:
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
     """
-    {
-      "conversationId": "${conversationId}",
-      "title": "Order transcript",
-      "transcript": "Customer asked about refund policy.",
-      "untilEntryId": "${firstEntryId}"
-    }
+    [
+      {
+        "conversationId": "${conversationId}",
+        "entryId": "${firstEntryId}",
+        "indexedContent": "Customer asked about refund policy."
+      }
+    ]
     """
-    Then the response status should be 201
-    And the entry should have channel "TRANSCRIPT"
-    And the entry should have content "Customer asked about refund policy."
-    And the response body should be json:
-    """
-    {
-      "id": "${response.body.id}",
-      "conversationId": "${conversationId}",
-      "channel": "transcript",
-      "contentType": "transcript",
-      "content": [
-        {
-          "type": "transcript",
-          "text": "Customer asked about refund policy.",
-          "untilEntryId": "${firstEntryId}"
-        }
-      ],
-      "createdAt": "${response.body.createdAt}"
-    }
-    """
+    Then the response status should be 200
+    And the response body "indexed" should be "1"
     Given I am authenticated as user "alice"
     When I search conversations for query "refund policy"
     Then the response status should be 200
     And the search response should contain 1 results
-    And search result at index 0 should have entry content "Customer asked about refund policy."
     And search result at index 0 should have conversationId "${conversationId}"
-    And search result at index 0 should have conversationTitle "Order transcript"
-    And the response body should be json:
-    """
-    {
-      "nextCursor": null,
-      "data": [
-        {
-          "conversationId": "${conversationId}",
-          "conversationTitle": "Order transcript",
-          "score": ${response.body.data[0].score},
-          "entry": {
-            "id": "${response.body.data[0].entry.id}",
-            "conversationId": "${response.body.data[0].entry.conversationId}",
-            "channel": "${response.body.data[0].entry.channel}",
-            "contentType": "${response.body.data[0].entry.contentType}",
-            "content": ${response.body.data[0].entry.content},
-            "createdAt": "${response.body.data[0].entry.createdAt}"
-          }
-        }
-      ]
-    }
-    """
+    And the response body "data[0].entryId" should be "${firstEntryId}"
 
-  Scenario: Transcript indexing requires agent API key
+  Scenario: Admin can index entries
+    When I list entries for the conversation
+    And set "firstEntryId" to the json response field "data[0].id"
+    Given I am authenticated as admin user "alice"
+    When I call POST "/v1/conversations/index" with body:
+    """
+    [
+      {
+        "conversationId": "${conversationId}",
+        "entryId": "${firstEntryId}",
+        "indexedContent": "Admin indexed content."
+      }
+    ]
+    """
+    Then the response status should be 200
+    And the response body "indexed" should be "1"
+
+  Scenario: Indexing requires indexer or admin role
     Given I am authenticated as user "alice"
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
-    When I index a transcript with request:
+    Given I am authenticated as user "bob"
+    When I call POST "/v1/conversations/index" with body:
     """
-    {
-      "conversationId": "${conversationId}",
-      "title": "Blocked transcript",
-      "transcript": "Should not be created.",
-      "untilEntryId": "${firstEntryId}"
-    }
+    [
+      {
+        "conversationId": "${conversationId}",
+        "entryId": "${firstEntryId}",
+        "indexedContent": "Should not be allowed."
+      }
+    ]
     """
     Then the response status should be 403
     And the response should contain error code "forbidden"
-    And the response body should be json:
-    """
-    {
-      "code": "forbidden",
-      "error": "${response.body.error}",
-      "details": {
-        "message": "${response.body.details.message}"
-      }
-    }
-    """
 
-  Scenario: Search conversations with query
-    Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has an entry "Customer wants to return item"
+  Scenario: Index with non-existent entryId returns 404
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
+    """
+    [
+      {
+        "conversationId": "${conversationId}",
+        "entryId": "00000000-0000-0000-0000-000000000099",
+        "indexedContent": "This should fail."
+      }
+    ]
+    """
+    Then the response status should be 404
+
+  Scenario: Index with mismatched conversationId returns 404
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
-    When I index a transcript with request:
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
     """
-    {
-      "conversationId": "${conversationId}",
-      "title": "Return request",
-      "transcript": "Customer wants to return an item and get a refund.",
-      "untilEntryId": "${firstEntryId}"
-    }
+    [
+      {
+        "conversationId": "00000000-0000-0000-0000-000000000099",
+        "entryId": "${firstEntryId}",
+        "indexedContent": "This should fail."
+      }
+    ]
     """
-    Given I am authenticated as user "alice"
-    When I search conversations with request:
+    Then the response status should be 404
+
+  Scenario: Index multiple entries at once
+    Given the conversation has an entry "Second entry"
+    When I list entries for the conversation
+    And set "firstEntryId" to the json response field "data[0].id"
+    And set "secondEntryId" to the json response field "data[1].id"
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
     """
-    {
-      "query": "return item",
-      "limit": 10
-    }
+    [
+      {
+        "conversationId": "${conversationId}",
+        "entryId": "${firstEntryId}",
+        "indexedContent": "First entry indexed content."
+      },
+      {
+        "conversationId": "${conversationId}",
+        "entryId": "${secondEntryId}",
+        "indexedContent": "Second entry indexed content."
+      }
+    ]
     """
     Then the response status should be 200
-    And the search response should contain at least 1 results
+    And the response body "indexed" should be "2"
+
+  Scenario: Index requires at least one entry
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
+    """
+    []
+    """
+    Then the response status should be 400
+
+  Scenario: Index validates required fields
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
+    """
+    [
+      {
+        "conversationId": "${conversationId}",
+        "indexedContent": "Missing entryId"
+      }
+    ]
+    """
+    Then the response status should be 400
+
+  Scenario: List unindexed entries
+    Given I am authenticated as indexer user "dave"
+    When I call GET "/v1/conversations/unindexed?limit=10"
+    Then the response status should be 200
+    And the response body should have field "data" that is not null
+
+  Scenario: List unindexed entries requires indexer role
+    Given I am authenticated as user "bob"
+    When I call GET "/v1/conversations/unindexed"
+    Then the response status should be 403
 
   Scenario: Search conversations with pagination
-    Given I am authenticated as agent with API key "test-agent-key"
+    Given I am authenticated as user "alice"
     And I have a conversation with title "Conversation A"
     And set "conversationA" to "${conversationId}"
     And the conversation has an entry "First topic discussion"
     When I list entries for the conversation
     And set "entryA" to the json response field "data[0].id"
-    When I index a transcript with request:
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
     """
-    {
-      "conversationId": "${conversationA}",
-      "title": "Conversation A",
-      "transcript": "Discussion about apples and oranges.",
-      "untilEntryId": "${entryA}"
-    }
+    [
+      {
+        "conversationId": "${conversationA}",
+        "entryId": "${entryA}",
+        "indexedContent": "Discussion about apples and oranges."
+      }
+    ]
     """
+    Given I am authenticated as user "alice"
     And I have a conversation with title "Conversation B"
     And set "conversationB" to "${conversationId}"
     And the conversation has an entry "Second topic discussion"
     When I list entries for the conversation
     And set "entryB" to the json response field "data[0].id"
-    When I index a transcript with request:
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
     """
-    {
-      "conversationId": "${conversationB}",
-      "title": "Conversation B",
-      "transcript": "Discussion about apples and bananas.",
-      "untilEntryId": "${entryB}"
-    }
+    [
+      {
+        "conversationId": "${conversationB}",
+        "entryId": "${entryB}",
+        "indexedContent": "Discussion about apples and bananas."
+      }
+    ]
     """
+    Given I am authenticated as user "alice"
     And I have a conversation with title "Conversation C"
     And set "conversationC" to "${conversationId}"
     And the conversation has an entry "Third topic discussion"
     When I list entries for the conversation
     And set "entryC" to the json response field "data[0].id"
-    When I index a transcript with request:
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
     """
-    {
-      "conversationId": "${conversationC}",
-      "title": "Conversation C",
-      "transcript": "Discussion about apples and grapes.",
-      "untilEntryId": "${entryC}"
-    }
+    [
+      {
+        "conversationId": "${conversationC}",
+        "entryId": "${entryC}",
+        "indexedContent": "Discussion about apples and grapes."
+      }
+    ]
     """
     Given I am authenticated as user "alice"
     When I search conversations with request:
@@ -176,32 +215,40 @@ Feature: Index Transcript REST API
     Then the response status should be 200
     And the search response should contain 2 results
     And the response should have a nextCursor
-    And set "searchCursor" to the json response field "nextCursor"
-    When I search conversations with request:
-    """
-    {
-      "query": "apples",
-      "limit": 2,
-      "after": "${searchCursor}"
-    }
-    """
-    Then the response status should be 200
-    And the search response should contain at least 1 results
 
-  Scenario: Search conversations without entry content
-    Given I am authenticated as agent with API key "test-agent-key"
-    And I have a conversation with title "Lightweight Search Test"
-    And the conversation has an entry "Test entry content"
+  Scenario: Search result includes entryId at top level
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
-    When I index a transcript with request:
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
     """
-    {
-      "conversationId": "${conversationId}",
-      "title": "Lightweight Search Test",
-      "transcript": "This is searchable content for lightweight test.",
-      "untilEntryId": "${firstEntryId}"
-    }
+    [
+      {
+        "conversationId": "${conversationId}",
+        "entryId": "${firstEntryId}",
+        "indexedContent": "Searchable content for entryId test."
+      }
+    ]
+    """
+    Given I am authenticated as user "alice"
+    When I search conversations for query "entryId test"
+    Then the response status should be 200
+    And the search response should contain 1 results
+    And the response body "data[0].entryId" should be "${firstEntryId}"
+
+  Scenario: Search conversations without entry content
+    When I list entries for the conversation
+    And set "firstEntryId" to the json response field "data[0].id"
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/conversations/index" with body:
+    """
+    [
+      {
+        "conversationId": "${conversationId}",
+        "entryId": "${firstEntryId}",
+        "indexedContent": "This is searchable content for lightweight test."
+      }
+    ]
     """
     Given I am authenticated as user "alice"
     When I search conversations with request:
@@ -213,5 +260,4 @@ Feature: Index Transcript REST API
     """
     Then the response status should be 200
     And the search response should contain 1 results
-    And search result at index 0 should have conversationTitle "Lightweight Search Test"
     And search result at index 0 should not have entry

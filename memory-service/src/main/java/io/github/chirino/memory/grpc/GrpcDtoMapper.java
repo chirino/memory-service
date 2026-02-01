@@ -136,6 +136,7 @@ public final class GrpcDtoMapper {
                                 dto.getConversationTitle() == null
                                         ? ""
                                         : dto.getConversationTitle())
+                        .setEntryId(stringToByteString(dto.getEntryId()))
                         .setScore((float) dto.getScore())
                         .setHighlights(dto.getHighlights() == null ? "" : dto.getHighlights());
         if (includeEntry && dto.getEntry() != null) {

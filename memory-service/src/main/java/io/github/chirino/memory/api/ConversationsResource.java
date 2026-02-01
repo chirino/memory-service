@@ -17,8 +17,10 @@ import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
 import io.github.chirino.memory.client.model.ForkFromEntryRequest;
-import io.github.chirino.memory.client.model.IndexTranscriptRequest;
+import io.github.chirino.memory.client.model.IndexConversationsResponse;
+import io.github.chirino.memory.client.model.IndexEntryRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
+import io.github.chirino.memory.client.model.UnindexedEntriesResponse;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.Channel;
@@ -26,6 +28,7 @@ import io.github.chirino.memory.resumer.AdvertisedAddress;
 import io.github.chirino.memory.resumer.ResponseResumerBackend;
 import io.github.chirino.memory.resumer.ResponseResumerRedirectException;
 import io.github.chirino.memory.resumer.ResponseResumerSelector;
+import io.github.chirino.memory.security.AdminRoleResolver;
 import io.github.chirino.memory.security.ApiKeyContext;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
@@ -84,6 +87,8 @@ public class ConversationsResource {
     @Inject SecurityIdentity identity;
 
     @Inject ApiKeyContext apiKeyContext;
+
+    @Inject AdminRoleResolver roleResolver;
 
     @Inject ResponseResumerSelector resumerSelector;
 
@@ -243,6 +248,12 @@ public class ConversationsResource {
                 if (clientId == null || clientId.isBlank()) {
                     return forbidden(
                             new AccessDeniedException("Client id is required for agent messages"));
+                }
+                // indexedContent is only allowed on history channel
+                if (request.getIndexedContent() != null
+                        && !request.getIndexedContent().isBlank()
+                        && request.getChannel() != CreateEntryRequest.ChannelEnum.HISTORY) {
+                    return badRequest("indexedContent is only allowed on history channel");
                 }
                 // Agents provide fully-typed content and channel/epoch directly
                 List<CreateEntryRequest> messages = List.of(request);
@@ -451,70 +462,109 @@ public class ConversationsResource {
 
     @POST
     @Path("/conversations/index")
-    public Response indexConversationTranscript(IndexTranscriptRequest request) {
-        if (apiKeyContext == null || !apiKeyContext.hasValidApiKey()) {
-            return forbidden(
-                    new AccessDeniedException("Agent API key is required to index transcripts"));
-        }
-        String clientId = apiKeyContext.getClientId();
-        if (clientId == null || clientId.isBlank()) {
-            return forbidden(
-                    new AccessDeniedException("Client id is required to index transcripts"));
-        }
-        if (request == null) {
-            ErrorResponse error = new ErrorResponse();
-            error.setError("Invalid request");
-            error.setCode("bad_request");
-            error.setDetails(Map.of("message", "Index request body is required"));
-            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
-        }
-        if (request.getConversationId() == null) {
-            ErrorResponse error = new ErrorResponse();
-            error.setError("Invalid request");
-            error.setCode("bad_request");
-            error.setDetails(Map.of("message", "conversationId is required"));
-            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
-        }
-        if (request.getTranscript() == null || request.getTranscript().isBlank()) {
-            ErrorResponse error = new ErrorResponse();
-            error.setError("Invalid request");
-            error.setCode("bad_request");
-            error.setDetails(Map.of("message", "Transcript text is required"));
-            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
-        }
-        if (request.getUntilEntryId() == null) {
-            ErrorResponse error = new ErrorResponse();
-            error.setError("Invalid request");
-            error.setCode("bad_request");
-            error.setDetails(Map.of("message", "untilEntryId is required"));
-            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
-        }
-        String conversationId = request.getConversationId().toString();
-        String untilEntryId = request.getUntilEntryId().toString();
-        LOG.infof(
-                "Indexing transcript for conversationId=%s, untilEntryId=%s",
-                conversationId, untilEntryId);
+    public Response indexConversations(List<IndexEntryRequest> request) {
         try {
-            io.github.chirino.memory.api.dto.IndexTranscriptRequest internal =
-                    new io.github.chirino.memory.api.dto.IndexTranscriptRequest();
-            internal.setConversationId(conversationId);
-            internal.setTitle(request.getTitle());
-            internal.setTranscript(request.getTranscript());
-            internal.setUntilEntryId(untilEntryId);
-
-            EntryDto dto = store().indexTranscript(internal, clientId);
-            LOG.infof(
-                    "Successfully indexed transcript for conversationId=%s, entryId=%s",
-                    conversationId, dto.getId());
-            Entry result = toClientEntry(dto);
-            return Response.status(Response.Status.CREATED).entity(result).build();
-        } catch (ResourceNotFoundException e) {
-            LOG.infof("Conversation not found: conversationId=%s", conversationId);
-            return notFound(e);
+            roleResolver.requireIndexer(identity, apiKeyContext);
         } catch (AccessDeniedException e) {
-            LOG.infof("Access denied for conversationId=%s", conversationId);
             return forbidden(e);
         }
+
+        if (request == null || request.isEmpty()) {
+            ErrorResponse error = new ErrorResponse();
+            error.setError("Invalid request");
+            error.setCode("bad_request");
+            error.setDetails(Map.of("message", "At least one entry is required"));
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+        }
+
+        // Validate each entry
+        for (int i = 0; i < request.size(); i++) {
+            IndexEntryRequest entry = request.get(i);
+            if (entry.getConversationId() == null) {
+                return badRequest("conversationId is required for entry " + i);
+            }
+            if (entry.getEntryId() == null) {
+                return badRequest("entryId is required for entry " + i);
+            }
+            if (entry.getIndexedContent() == null || entry.getIndexedContent().isBlank()) {
+                return badRequest("indexedContent is required for entry " + i);
+            }
+        }
+
+        try {
+            // Convert client model to internal DTO
+            List<io.github.chirino.memory.api.dto.IndexEntryRequest> internalEntries =
+                    request.stream()
+                            .map(
+                                    e -> {
+                                        var internal =
+                                                new io.github.chirino.memory.api.dto
+                                                        .IndexEntryRequest();
+                                        internal.setConversationId(
+                                                e.getConversationId().toString());
+                                        internal.setEntryId(e.getEntryId().toString());
+                                        internal.setIndexedContent(e.getIndexedContent());
+                                        return internal;
+                                    })
+                            .toList();
+
+            io.github.chirino.memory.api.dto.IndexConversationsResponse dto =
+                    store().indexEntries(internalEntries);
+
+            LOG.infof("Indexed %d entries", dto.getIndexed());
+
+            IndexConversationsResponse result = new IndexConversationsResponse();
+            result.setIndexed(dto.getIndexed());
+            return Response.ok(result).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/conversations/unindexed")
+    public Response listUnindexedEntries(
+            @QueryParam("limit") Integer limit, @QueryParam("cursor") String cursor) {
+        try {
+            roleResolver.requireIndexer(identity, apiKeyContext);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+
+        int effectiveLimit = limit != null && limit > 0 ? limit : 100;
+
+        io.github.chirino.memory.api.dto.UnindexedEntriesResponse dto =
+                store().listUnindexedEntries(effectiveLimit, cursor);
+
+        // Convert to client model
+        UnindexedEntriesResponse result = new UnindexedEntriesResponse();
+        result.setCursor(dto.getCursor());
+        if (dto.getData() != null) {
+            result.setData(
+                    dto.getData().stream()
+                            .map(
+                                    e -> {
+                                        var ue =
+                                                new io.github.chirino.memory.client.model
+                                                        .UnindexedEntriesResponseDataInner();
+                                        ue.setConversationId(
+                                                UUID.fromString(e.getConversationId()));
+                                        ue.setEntry(toClientEntry(e.getEntry()));
+                                        return ue;
+                                    })
+                            .toList());
+        }
+        return Response.ok(result).build();
+    }
+
+    private Response badRequest(String message) {
+        ErrorResponse error = new ErrorResponse();
+        error.setError("Invalid request");
+        error.setCode("bad_request");
+        error.setDetails(Map.of("message", message));
+        return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
     }
 
     @DELETE
@@ -572,14 +622,6 @@ public class ConversationsResource {
         error.setCode("conflict");
         error.setDetails(Map.of("message", message));
         return Response.status(Response.Status.CONFLICT).entity(error).build();
-    }
-
-    private Response badRequest(String message) {
-        ErrorResponse error = new ErrorResponse();
-        error.setError("Bad request");
-        error.setCode("bad_request");
-        error.setDetails(Map.of("message", message));
-        return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
     }
 
     private boolean hasWriterAccess(ConversationDto conversation) {

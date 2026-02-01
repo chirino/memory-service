@@ -45,7 +45,7 @@ import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.HealthResponse;
-import io.github.chirino.memory.grpc.v1.IndexTranscriptRequest;
+import io.github.chirino.memory.grpc.v1.IndexConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
 import io.github.chirino.memory.grpc.v1.ListEntriesRequest;
@@ -55,6 +55,7 @@ import io.github.chirino.memory.grpc.v1.ListForksResponse;
 import io.github.chirino.memory.grpc.v1.ListMembershipsRequest;
 import io.github.chirino.memory.grpc.v1.ListMembershipsResponse;
 import io.github.chirino.memory.grpc.v1.ListOwnershipTransfersRequest;
+import io.github.chirino.memory.grpc.v1.ListUnindexedEntriesRequest;
 import io.github.chirino.memory.grpc.v1.MutinyResponseResumerServiceGrpc;
 import io.github.chirino.memory.grpc.v1.OwnershipTransfersServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
@@ -2451,13 +2452,21 @@ public class StepDefinitions {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
         switch (method) {
-            case "IndexTranscript":
+            case "IndexConversations":
                 {
-                    var requestBuilder = IndexTranscriptRequest.newBuilder();
+                    var requestBuilder = IndexConversationsRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.indexTranscript(requestBuilder.build());
+                    return stub.indexConversations(requestBuilder.build());
+                }
+            case "ListUnindexedEntries":
+                {
+                    var requestBuilder = ListUnindexedEntriesRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.listUnindexedEntries(requestBuilder.build());
                 }
             case "SearchConversations":
                 {

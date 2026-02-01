@@ -155,6 +155,8 @@ message CreateEntryRequest {
   int64 epoch = 3;
   string content_type = 4;
   repeated google.protobuf.Value content = 5;
+  // Optional text to index for search (history channel only)
+  optional string indexed_content = 6;
 }
 
 message SyncEntriesRequest {
@@ -302,19 +304,49 @@ message SearchResult {
   bytes conversation_id = 1;
   // Title of the conversation containing this entry
   string conversation_title = 2;
-  float score = 3;
-  string highlights = 4;
+  // Entry identifier (UUID as 16-byte big-endian binary). Always present for deep-linking.
+  bytes entry_id = 3;
+  float score = 4;
+  string highlights = 5;
   // The matched entry. Only included when include_entry is true in the request.
-  Entry entry = 5;
+  Entry entry = 6;
 }
 
-message IndexTranscriptRequest {
+// Index entries request - flat array of entries to index
+message IndexConversationsRequest {
+  repeated IndexEntryRequest entries = 1;
+}
+
+message IndexEntryRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
-  optional string title = 2;
-  string transcript = 3;
-  // Highest entry ID covered by the index (UUID as 16-byte big-endian binary)
-  bytes until_entry_id = 4;
+  // Entry identifier (UUID as 16-byte big-endian binary)
+  bytes entry_id = 2;
+  // The searchable text for this entry
+  string indexed_content = 3;
+}
+
+message IndexConversationsResponse {
+  // Number of entries processed
+  int32 indexed = 1;
+}
+
+// List unindexed entries - for batch indexing discovery
+message ListUnindexedEntriesRequest {
+  int32 limit = 1;
+  optional string cursor = 2;
+}
+
+message ListUnindexedEntriesResponse {
+  repeated UnindexedEntry entries = 1;
+  // Cursor for next page, absent when no more results
+  optional string cursor = 2;
+}
+
+message UnindexedEntry {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  Entry entry = 2;
 }
 
 message HealthResponse {
@@ -366,7 +398,10 @@ service EntriesService {
 
 service SearchService {
   rpc SearchConversations(SearchEntriesRequest) returns (SearchEntriesResponse);
-  rpc IndexTranscript(IndexTranscriptRequest) returns (Entry);
+  // Index conversation entries for search. Requires indexer or admin role.
+  rpc IndexConversations(IndexConversationsRequest) returns (IndexConversationsResponse);
+  // List entries needing indexing. Requires indexer or admin role.
+  rpc ListUnindexedEntries(ListUnindexedEntriesRequest) returns (ListUnindexedEntriesResponse);
 }
 
 service ResponseResumerService {

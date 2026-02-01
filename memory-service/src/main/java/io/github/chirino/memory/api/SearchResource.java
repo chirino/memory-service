@@ -111,6 +111,7 @@ public class SearchResource {
         result.setConversationId(
                 dto.getConversationId() != null ? UUID.fromString(dto.getConversationId()) : null);
         result.setConversationTitle(dto.getConversationTitle());
+        result.setEntryId(dto.getEntryId() != null ? UUID.fromString(dto.getEntryId()) : null);
         result.setScore((float) dto.getScore());
         result.setHighlights(dto.getHighlights());
         if (includeEntry == null || includeEntry) {

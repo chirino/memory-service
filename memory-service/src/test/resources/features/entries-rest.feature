@@ -264,3 +264,36 @@ Feature: Entries REST API
     When I list entries for that conversation
     Then the response status should be 403
     And the response should contain error code "forbidden"
+
+  Scenario: Agent can append entry with inline indexed content
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry with inline index"}],
+      "indexedContent": "Searchable inline content for testing"
+    }
+    """
+    Then the response status should be 201
+    Given I am authenticated as user "alice"
+    When I search conversations for query "inline content"
+    Then the response status should be 200
+    And the search response should contain 1 results
+    And search result at index 0 should have conversationId "${conversationId}"
+
+  Scenario: Inline indexedContent only allowed on history channel
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "MEMORY",
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Memory entry"}],
+      "indexedContent": "This should fail"
+    }
+    """
+    Then the response status should be 400

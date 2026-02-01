@@ -14,13 +14,14 @@ import io.github.chirino.memory.client.model.CreateConversationRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.client.model.ForkFromEntryRequest;
-import io.github.chirino.memory.client.model.IndexTranscriptRequest;
+import io.github.chirino.memory.client.model.IndexEntryRequest;
 import io.github.chirino.memory.client.model.SearchConversationsRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -245,17 +246,18 @@ public class MemoryServiceProxy {
                 transferId);
     }
 
-    public Response indexConversationTranscript(String body) {
+    public Response indexConversations(String body) {
         try {
-            IndexTranscriptRequest request =
-                    OBJECT_MAPPER.readValue(body, IndexTranscriptRequest.class);
+            List<IndexEntryRequest> request =
+                    OBJECT_MAPPER.readValue(
+                            body,
+                            OBJECT_MAPPER
+                                    .getTypeFactory()
+                                    .constructCollectionType(List.class, IndexEntryRequest.class));
             return execute(
-                    () -> searchApi().indexConversationTranscript(request),
-                    CREATED,
-                    "Error indexing transcript for conversation %s",
-                    request.getConversationId());
+                    () -> searchApi().indexConversations(request), OK, "Error indexing entries");
         } catch (Exception e) {
-            LOG.errorf(e, "Error parsing index transcript request body");
+            LOG.errorf(e, "Error parsing index entries request body");
             return handleException(e);
         }
     }
