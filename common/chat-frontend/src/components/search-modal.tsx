@@ -175,7 +175,7 @@ export function SearchModal({ isOpen, onClose, onSelectConversation }: SearchMod
           <Search className="h-5 w-5 flex-shrink-0 text-stone" />
           <input
             ref={inputRef}
-            type="search"
+            type="text"
             placeholder="Search conversations..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -209,7 +209,7 @@ export function SearchModal({ isOpen, onClose, onSelectConversation }: SearchMod
               No results found for "{debouncedQuery}"
             </p>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-1" key={debouncedQuery}>
               {results.map((result, index) => (
                 <SearchResultItem
                   key={result.conversationId ?? index}

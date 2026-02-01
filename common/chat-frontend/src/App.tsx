@@ -153,7 +153,6 @@ function App() {
   // Note: This effect syncs UI state (status message) with external data (React Query)
   useEffect(() => {
     if (conversationsQuery.data && statusMessage !== null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStatusMessage(null);
     }
   }, [conversationsQuery.data, statusMessage]);
@@ -191,7 +190,7 @@ function App() {
             setSelectedConversationId(urlConversationId);
             updateConversationInUrl(urlConversationId, true);
             markResolvedConversation(urlConversationId);
-          } catch (error) {
+          } catch {
             const candidate = (conversationsQuery.data ?? []).find((conversation) => conversation.id)?.id ?? null;
             const nextSelected = candidate ?? generateConversationId();
             setSelectedConversationId(nextSelected);
@@ -212,10 +211,10 @@ function App() {
     if (nextSelected !== selectedConversationId) {
       // Note: This effect syncs selected conversation with URL and available conversations
       // We need setState here to initialize selection from URL/available conversations
-      setSelectedConversationId(nextSelected); // eslint-disable-line react-hooks/set-state-in-effect
+      setSelectedConversationId(nextSelected);
       updateConversationInUrl(nextSelected, true);
     }
-  }, [selectedConversationId, conversationsQuery.data]);
+  }, [selectedConversationId, conversationsQuery.data, markResolvedConversation]);
 
   const deleteConversationMutation = useMutation({
     mutationFn: async (conversationId: string) => {

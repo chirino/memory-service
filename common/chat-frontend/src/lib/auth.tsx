@@ -1,6 +1,6 @@
 import * as React from "react";
 import { AuthProvider as OidcAuthProvider, useAuth as useOidcAuth, hasAuthParams } from "react-oidc-context";
-import type { User } from "oidc-client-ts";
+import { WebStorageStateStore, type User } from "oidc-client-ts";
 import { OpenAPI } from "@/client";
 
 // OIDC Configuration with sensible defaults for local development
@@ -14,6 +14,11 @@ const oidcConfig = {
   redirect_uri: typeof window !== "undefined" ? window.location.origin : "",
   post_logout_redirect_uri: typeof window !== "undefined" ? window.location.origin : "",
   scope: "openid profile email",
+  // Use localStorage to persist tokens across browser sessions
+  userStore: typeof window !== "undefined" ? new WebStorageStateStore({ store: window.localStorage }) : undefined,
+  // Disable automatic silent renewal - we handle renewal on-demand when API calls are made
+  // This ensures tokens are only renewed when the user is actively using the app
+  automaticSilentRenew: false,
   onSigninCallback: () => {
     // Remove OIDC query params from URL after login
     window.history.replaceState({}, document.title, window.location.pathname);
@@ -59,19 +64,76 @@ function extractUser(user: User | null | undefined): AuthUser | null {
   };
 }
 
-// Store the current access token in a module-level variable for the resolver
+// Module-level state for token management
 let currentAccessToken: string | undefined;
+let tokenExpiresAt: number | undefined; // Unix timestamp in seconds
+let silentRenewFn: (() => Promise<User | null>) | undefined;
+let onAuthFailureFn: (() => void) | undefined;
 
-// Token resolver function - always returns the current token
-// This is used by the OpenAPI client to get the token at request time
+// Buffer time before expiration to trigger renewal (60 seconds)
+const TOKEN_EXPIRY_BUFFER_SECONDS = 60;
+
+// Flag to prevent concurrent renewal attempts
+let isRenewing = false;
+
+// Token resolver function - checks expiration and renews on-demand
+// This is called by the OpenAPI client before each API request
 const tokenResolver = async (): Promise<string> => {
+  const now = Math.floor(Date.now() / 1000);
+
+  // Check if token is expired or about to expire
+  if (tokenExpiresAt && now >= tokenExpiresAt - TOKEN_EXPIRY_BUFFER_SECONDS) {
+    // Token expired or expiring soon - attempt silent renewal
+    if (silentRenewFn && !isRenewing) {
+      isRenewing = true;
+      try {
+        console.info("[Auth] Token expiring, attempting silent renewal...");
+        const user = await silentRenewFn();
+        if (user?.access_token) {
+          currentAccessToken = user.access_token;
+          tokenExpiresAt = user.expires_at;
+          console.info("[Auth] Token renewed successfully");
+          return user.access_token;
+        }
+        // Renewal returned no user - auth failed
+        console.warn("[Auth] Silent renewal returned no user");
+        clearAuthState();
+        onAuthFailureFn?.();
+        return "";
+      } catch (error) {
+        console.error("[Auth] Silent renewal failed:", error);
+        clearAuthState();
+        onAuthFailureFn?.();
+        return "";
+      } finally {
+        isRenewing = false;
+      }
+    } else if (isRenewing) {
+      // Another renewal is in progress, return current token and let that complete
+      return currentAccessToken ?? "";
+    } else {
+      // No renewal function available and token expired
+      console.warn("[Auth] Token expired and no renewal function available");
+      clearAuthState();
+      onAuthFailureFn?.();
+      return "";
+    }
+  }
+
   return currentAccessToken ?? "";
 };
+
+// Clear all auth state
+function clearAuthState() {
+  currentAccessToken = undefined;
+  tokenExpiresAt = undefined;
+}
 
 /**
  * Get the current access token for direct fetch calls.
  * Returns undefined if no token is available.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function getAccessToken(): string | undefined {
   return currentAccessToken;
 }
@@ -79,14 +141,36 @@ export function getAccessToken(): string | undefined {
 // Internal provider that uses OIDC
 function OidcAuthContextProvider({ children }: { children: React.ReactNode }) {
   const auth = useOidcAuth();
+  const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
 
   // Auto sign-in if we have auth params (returning from IdP)
-  const { signinRedirect, isAuthenticated, isLoading, activeNavigator } = auth;
+  const { signinRedirect, signinSilent, removeUser, isAuthenticated, isLoading, activeNavigator } = auth;
   React.useEffect(() => {
     if (!isAuthenticated && !isLoading && !activeNavigator && hasAuthParams()) {
       signinRedirect();
     }
   }, [isAuthenticated, isLoading, activeNavigator, signinRedirect]);
+
+  // Store the silent renewal function for on-demand token refresh
+  React.useEffect(() => {
+    silentRenewFn = signinSilent;
+    // Store the auth failure handler - removes user and forces re-render to show login
+    onAuthFailureFn = () => {
+      removeUser();
+      forceUpdate();
+    };
+    return () => {
+      silentRenewFn = undefined;
+      onAuthFailureFn = undefined;
+    };
+  }, [signinSilent, removeUser]);
+
+  // Track token expiration time for on-demand renewal
+  React.useEffect(() => {
+    if (auth.user?.expires_at) {
+      tokenExpiresAt = auth.user.expires_at;
+    }
+  }, [auth.user?.expires_at]);
 
   const value: AuthContextValue = {
     isAuthenticated: auth.isAuthenticated,
@@ -131,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 // Hook to use auth context
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const context = React.useContext(AuthContext);
   if (!context) {
@@ -158,7 +243,7 @@ export function RequireAuth({ children, fallback }: RequireAuthProps) {
       setTokenConfigured(true);
     } else {
       // Clear token on logout or when not authenticated
-      currentAccessToken = undefined;
+      clearAuthState();
       OpenAPI.TOKEN = undefined;
       setTokenConfigured(false);
     }

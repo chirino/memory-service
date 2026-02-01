@@ -1,10 +1,11 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * Conversations UI - Tailwind-styled wrapper components for Conversation primitives
  *
  * Provides a shadcn-style UI layer over the headless Conversation components.
  * This module handles the visual presentation while Conversation handles state management.
  */
-import { forwardRef } from "react";
+import { forwardRef, useState, useRef, useEffect } from "react";
 import {
   Conversation,
   type RenderableConversationMessage,
@@ -14,7 +15,7 @@ import {
 } from "@/components/conversation";
 import { Streamdown } from "streamdown";
 import type React from "react";
-import { MessageCircle, Lightbulb, PenLine, Shuffle, ChevronRight, Send } from "lucide-react";
+import { MessageCircle, PenLine, Shuffle, ChevronRight, Send, MoreHorizontal, X } from "lucide-react";
 
 type ConversationsUIViewportProps = React.ComponentProps<typeof Conversation.Viewport>;
 
@@ -158,6 +159,29 @@ type ConversationsUIEmptyStateProps = {
   className?: string;
 };
 
+const morePrompts = [
+  "Explain a big idea using only 7 words.",
+  "Invent a new holiday in one sentence.",
+  "Write a fortune cookie that feels too accurate.",
+  "Describe today's mood as a weather report.",
+  "Give me a two-line bedtime story for kids.",
+  "Pitch a movie that shouldn't exist (one line).",
+  "Create a new slang word and define it.",
+  "Write an apology from a villain (one sentence).",
+  "Summarize your life philosophy in 10 words.",
+  "Tell me a secret a lighthouse would keep.",
+  "Make a motivational quote… then ruin it with a footnote.",
+  "Describe a city where emotions are currency.",
+  "Write a text message that starts a mystery.",
+  'Give a "recipe" for courage (3 ingredients).',
+  "Explain love like you're a robot with one bug.",
+  "Write a one-sentence plot twist.",
+  "Give me a tiny poem about unfinished things.",
+  "Create a rule for a game nobody has played.",
+  "Describe a futuristic product that backfires instantly.",
+  "Answer a question I didn't ask (but should have).",
+];
+
 /**
  * Empty state shown when there are no messages.
  */
@@ -167,6 +191,38 @@ function ConversationsUIEmptyState({
   className,
 }: ConversationsUIEmptyStateProps) {
   const { sendMessage } = useConversationStreaming();
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    if (!isPopupOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        popupRef.current &&
+        !popupRef.current.contains(event.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        setIsPopupOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsPopupOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isPopupOpen]);
 
   const suggestions = [
     {
@@ -181,13 +237,12 @@ function ConversationsUIEmptyState({
       iconBg: "bg-sage/20",
       iconColor: "text-sage",
     },
-    {
-      text: "Explain async/await in JavaScript",
-      icon: Lightbulb,
-      iconBg: "bg-terracotta/20",
-      iconColor: "text-terracotta",
-    },
   ];
+
+  const handlePromptSelect = (prompt: string) => {
+    setIsPopupOpen(false);
+    sendMessage(prompt);
+  };
 
   return (
     <div className={`flex flex-1 items-center justify-center px-8 ${className ?? ""}`}>
@@ -232,6 +287,59 @@ function ConversationsUIEmptyState({
               </button>
             );
           })}
+
+          {/* More prompts button */}
+          <div className="relative">
+            <button
+              ref={buttonRef}
+              type="button"
+              onClick={() => setIsPopupOpen(!isPopupOpen)}
+              className="group w-full rounded-xl border border-transparent bg-mist px-5 py-4 text-left transition-all hover:border-stone/20"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-terracotta/20">
+                  <MoreHorizontal className="h-4 w-4 text-terracotta" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-ink transition-colors group-hover:text-ink/80">More ...</p>
+                </div>
+                <ChevronRight
+                  className={`h-4 w-4 text-stone/40 transition-all group-hover:text-stone ${isPopupOpen ? "rotate-90" : ""}`}
+                />
+              </div>
+            </button>
+
+            {/* Popup menu */}
+            {isPopupOpen && (
+              <div
+                ref={popupRef}
+                className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto rounded-xl border border-stone/20 bg-cream shadow-lg"
+              >
+                <div className="sticky top-0 flex items-center justify-between border-b border-stone/10 bg-cream px-4 py-3">
+                  <span className="text-xs font-medium uppercase tracking-wide text-stone">Choose a prompt</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsPopupOpen(false)}
+                    className="rounded-full p-1 text-stone hover:bg-mist hover:text-ink"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="p-2">
+                  {morePrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => handlePromptSelect(prompt)}
+                      className="w-full rounded-lg px-3 py-2.5 text-left text-sm text-ink transition-colors hover:bg-mist"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
