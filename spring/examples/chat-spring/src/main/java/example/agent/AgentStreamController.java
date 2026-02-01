@@ -30,7 +30,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
 @RestController
-@RequestMapping("/customer-support-agent")
+@RequestMapping("/v1/conversations")
 class AgentStreamController {
 
     private final ChatClient.Builder chatClientBuilder;
@@ -53,7 +53,7 @@ class AgentStreamController {
     }
 
     @PostMapping(
-            path = "/{conversationId}/sse",
+            path = "/{conversationId}/chat",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(
