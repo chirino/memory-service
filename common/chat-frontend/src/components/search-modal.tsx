@@ -31,13 +31,7 @@ function SearchResultSkeleton() {
   );
 }
 
-function SearchResultItem({
-  result,
-  onClick,
-}: {
-  result: SearchResult;
-  onClick: () => void;
-}) {
+function SearchResultItem({ result, onClick }: { result: SearchResult; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -47,14 +41,8 @@ function SearchResultItem({
       <div className="flex items-start gap-3">
         <MessageSquare className="mt-0.5 h-5 w-5 flex-shrink-0 text-stone" />
         <div className="min-w-0 flex-1">
-          <h3 className="truncate font-medium text-ink">
-            {result.conversationTitle || "Untitled conversation"}
-          </h3>
-          {result.highlights && (
-            <p className="mt-1 line-clamp-2 text-sm text-stone">
-              {result.highlights}
-            </p>
-          )}
+          <h3 className="truncate font-medium text-ink">{result.conversationTitle || "Untitled conversation"}</h3>
+          {result.highlights && <p className="mt-1 line-clamp-2 text-sm text-stone">{result.highlights}</p>}
         </div>
       </div>
     </button>
@@ -195,9 +183,7 @@ export function SearchModal({ isOpen, onClose, onSelectConversation }: SearchMod
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-2 py-2">
           {!hasQuery ? (
-            <p className="px-4 py-8 text-center text-sm text-stone">
-              Type to search across all conversations
-            </p>
+            <p className="px-4 py-8 text-center text-sm text-stone">Type to search across all conversations</p>
           ) : isSearching ? (
             <div className="space-y-1">
               {[1, 2, 3, 4].map((i) => (
@@ -205,9 +191,7 @@ export function SearchModal({ isOpen, onClose, onSelectConversation }: SearchMod
               ))}
             </div>
           ) : results.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-stone">
-              No results found for "{debouncedQuery}"
-            </p>
+            <p className="px-4 py-8 text-center text-sm text-stone">No results found for "{debouncedQuery}"</p>
           ) : (
             <div className="space-y-1" key={debouncedQuery}>
               {results.map((result, index) => (

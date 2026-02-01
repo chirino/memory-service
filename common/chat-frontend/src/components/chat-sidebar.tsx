@@ -49,7 +49,6 @@ export function ChatSidebar({
   statusMessage,
   resumableConversationIds = new Set(),
 }: ChatSidebarProps) {
-
   return (
     <aside className="flex w-80 flex-col border-r border-stone/20 bg-cream">
       {/* Sidebar Header */}

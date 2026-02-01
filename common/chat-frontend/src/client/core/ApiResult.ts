@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 export type ApiResult<TData = any> = {
   readonly body: TData;
   readonly ok: boolean;

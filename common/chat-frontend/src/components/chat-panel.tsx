@@ -129,6 +129,24 @@ function ChatMessageRow({
   const isUser = message.author === "user";
   const hasForks = forkOptionsCount > 1;
   const isCopied = copiedMessageId === message.id;
+  const forkMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close fork menu when clicking outside
+  useEffect(() => {
+    if (!isForkMenuOpen) {
+      return;
+    }
+    const handleClickOutside = (event: MouseEvent) => {
+      if (forkMenuRef.current && !forkMenuRef.current.contains(event.target as Node)) {
+        setOpenForkMenuMessageId(null);
+        setActiveForkMenuMessageId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isForkMenuOpen, setOpenForkMenuMessageId, setActiveForkMenuMessageId]);
 
   useEffect(() => {
     if (!isForkMenuOpen || !forkPoint) {
@@ -245,6 +263,7 @@ function ChatMessageRow({
           </button>
           {isForkMenuOpen && forkPoint ? (
             <div
+              ref={forkMenuRef}
               className={`absolute z-30 mt-1 w-72 animate-slide-up overflow-hidden rounded-xl border border-stone/20 bg-cream shadow-xl ${
                 isUser ? "right-0" : "left-0"
               }`}

@@ -239,7 +239,6 @@ public final class GrpcDtoMapper {
         return switch (channel) {
             case HISTORY -> io.github.chirino.memory.grpc.v1.Channel.HISTORY;
             case MEMORY -> io.github.chirino.memory.grpc.v1.Channel.MEMORY;
-            case TRANSCRIPT -> io.github.chirino.memory.grpc.v1.Channel.TRANSCRIPT;
         };
     }
 
@@ -250,7 +249,6 @@ public final class GrpcDtoMapper {
         return switch (channel) {
             case HISTORY -> Channel.HISTORY;
             case MEMORY -> Channel.MEMORY;
-            case TRANSCRIPT -> Channel.TRANSCRIPT;
             default -> null;
         };
     }
@@ -262,7 +260,6 @@ public final class GrpcDtoMapper {
         return switch (channel) {
             case HISTORY -> CreateEntryRequest.ChannelEnum.HISTORY;
             case MEMORY -> CreateEntryRequest.ChannelEnum.MEMORY;
-            case TRANSCRIPT -> CreateEntryRequest.ChannelEnum.TRANSCRIPT;
         };
     }
 

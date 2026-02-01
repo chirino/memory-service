@@ -644,31 +644,41 @@ export class SearchService {
       url: "/v1/conversations/search",
       body: data.requestBody,
       mediaType: "application/json",
+      errors: {
+        501: "Requested search type is not available on this server",
+      },
     });
   }
 
   /**
-   * Index a conversation transcript
-   * Indexes conversation transcript content for semantic search. Stores the
-   * provided transcript text as searchable content and updates the conversation
-   * title. The `untilEntryId` tracks which entries have been indexed.
+   * Index conversation entries
+   * Indexes searchable text for conversation entries. Each item in the request
+   * array specifies a single entry with the text that should be searchable.
    *
-   * This endpoint is typically called by agents after processing recent
-   * conversation entries. The transcript text becomes searchable via
-   * the `/v1/conversations/search` endpoint.
+   * This endpoint is called by batch indexing services after processing
+   * conversation entries. The indexed text becomes searchable via
+   * `/v1/conversations/search`.
    *
-   * Requires a valid agent API key.
+   * If an entry has already been indexed, its text is replaced with the new value.
+   * The entry's `indexedAt` timestamp is updated when successfully indexed.
+   *
+   * **Note:** This endpoint may return successfully even if vector store indexing
+   * fails. In that case, the indexed content is stored and a background retry task
+   * is created to complete the indexing asynchronously. Entries will become
+   * searchable once the retry task succeeds.
+   *
+   * Requires indexer or admin role.
    * @param data The data for the request.
    * @param data.requestBody
+   * @returns IndexConversationsResponse Entries indexed successfully.
    * @returns ErrorResponse Error response
-   * @returns Entry The index entry was created.
    * @throws ApiError
    */
-  public static indexConversationTranscript(
+  public static indexConversations(
     data: $OpenApiTs["/v1/conversations/index"]["post"]["req"],
   ): CancelablePromise<
     | $OpenApiTs["/v1/conversations/index"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/index"]["post"]["res"][201]
+    | $OpenApiTs["/v1/conversations/index"]["post"]["res"][200]
   > {
     return __request(OpenAPI, {
       method: "POST",
@@ -676,7 +686,47 @@ export class SearchService {
       body: data.requestBody,
       mediaType: "application/json",
       errors: {
+        403: "Error response",
         404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * List entries needing indexing
+   * Returns entries from the history channel that have not yet had their
+   * index content generated (where `indexedContent` is null). This endpoint
+   * is used by batch indexing jobs to discover entries that need processing.
+   *
+   * Entries are returned with their full content so that callers can
+   * process the content before submitting index text. Results are sorted
+   * by `createdAt` for consistent ordering.
+   *
+   * Uses cursor-based pagination.
+   *
+   * Requires indexer or admin role.
+   * @param data The data for the request.
+   * @param data.limit Maximum number of entries to return.
+   * @param data.cursor Pagination cursor from previous response.
+   * @returns UnindexedEntriesResponse Paginated list of unindexed entries.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static listUnindexedEntries(
+    data: $OpenApiTs["/v1/conversations/unindexed"]["get"]["req"] = {},
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/conversations/unindexed"]["get"]["res"][200]
+    | $OpenApiTs["/v1/conversations/unindexed"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/conversations/unindexed",
+      query: {
+        limit: data.limit,
+        cursor: data.cursor,
+      },
+      errors: {
+        403: "Error response",
       },
     });
   }

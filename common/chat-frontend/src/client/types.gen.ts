@@ -9,6 +9,24 @@ export type ErrorResponse = {
 };
 
 /**
+ * Error response when the requested search type is not available on the server.
+ */
+export type SearchTypeUnavailableError = {
+  /**
+   * Error code.
+   */
+  error?: string;
+  /**
+   * Human-readable error message.
+   */
+  message?: string;
+  /**
+   * List of search types that are available on this server.
+   */
+  availableTypes?: Array<string>;
+};
+
+/**
  * Access level of a user for a conversation.
  */
 export type AccessLevel = "owner" | "manager" | "writer" | "reader";
@@ -90,7 +108,7 @@ export type ForkFromEntryRequest = {
 /**
  * Logical channel of the entry within the conversation.
  */
-export type Channel = "history" | "memory" | "transcript";
+export type Channel = "history" | "memory";
 
 export type Entry = {
   /**
@@ -116,13 +134,24 @@ export type Entry = {
   epoch?: number | null;
   /**
    * Describes the schema/format of the content array.
-   * Examples: "message", "LC4J", "SpringAI"
+   *
+   * **History channel entries must use `"history"` as the contentType.**
+   * The content array for history entries contains objects with:
+   * - `text` (string): The message text.
+   * - `role` (string): Either `"USER"` or `"AI"`.
+   *
+   *
+   * Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
+   * agent memory entries.
    */
   contentType: string;
   /**
    * Opaque, agent-defined content blocks.
    * Different agents may use different schemas; the memory-service
    * stores and returns them without interpretation.
+   *
+   * For history channel entries (contentType: `"history"`), each block
+   * contains `text` and `role` fields.
    */
   content: Array<unknown>;
   createdAt: string;
@@ -143,10 +172,27 @@ export type CreateEntryRequest = {
   epoch?: number | null;
   /**
    * Describes the schema/format of the content array.
-   * Examples: "message", "LC4J", "SpringAI"
+   *
+   * **History channel entries must use `"history"` as the contentType.**
+   * The content array for history entries must contain exactly 1 object with:
+   * - `text` (string): The message text.
+   * - `role` (string): Either `"USER"` or `"AI"`.
+   *
+   * Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
+   * agent memory entries.
    */
   contentType: string;
+  /**
+   * For history channel entries (contentType: `"history"`), each block
+   * contains `text` and `role` fields.
+   */
   content: Array<unknown>;
+  /**
+   * Optional text to index for search. Only valid for entries in the history
+   * channel. If provided, the entry will be indexed for search immediately
+   * after creation. Returns 400 Bad Request if specified for non-history channels.
+   */
+  indexedContent?: string | null;
 };
 
 export type SyncEntryResponse = {
@@ -168,23 +214,41 @@ export type SyncEntryResponse = {
   entry?: Entry | null;
 };
 
-export type IndexTranscriptRequest = {
+export type IndexEntryRequest = {
   /**
-   * The conversation to index.
+   * The conversation containing the entry.
    */
   conversationId: string;
   /**
-   * Optional conversation title to store/update.
+   * The entry ID to index.
    */
-  title?: string | null;
+  entryId: string;
   /**
-   * Transcript text to index for semantic search.
+   * The searchable text for this entry.
    */
-  transcript: string;
+  indexedContent: string;
+};
+
+export type IndexConversationsResponse = {
   /**
-   * Highest entry ID covered by the index (inclusive).
+   * Number of entries processed. These entries have their indexed content
+   * stored and will be searchable. If vector store indexing failed for some
+   * entries, they will become searchable asynchronously via background retry.
    */
-  untilEntryId: string;
+  indexed?: number;
+};
+
+export type UnindexedEntriesResponse = {
+  data?: Array<UnindexedEntry>;
+  /**
+   * Cursor for fetching next page. Null when no more results.
+   */
+  cursor?: string | null;
+};
+
+export type UnindexedEntry = {
+  conversationId?: string;
+  entry?: Entry;
 };
 
 export type SearchConversationsRequest = {
@@ -192,6 +256,17 @@ export type SearchConversationsRequest = {
    * Natural language query.
    */
   query: string;
+  /**
+   * The search method to use:
+   * - `auto` (default): Try semantic (vector) search first, fall back to full-text if no results or unavailable
+   * - `semantic`: Use only vector/embedding-based semantic search
+   * - `fulltext`: Use only PostgreSQL full-text search with GIN index
+   *
+   * If the requested search type is not available on the server, a 501 (Not Implemented)
+   * error is returned with details about which search types are available.
+   *
+   */
+  searchType?: "auto" | "semantic" | "fulltext";
   /**
    * Cursor for pagination; returns items after this result.
    */
@@ -204,6 +279,13 @@ export type SearchConversationsRequest = {
    * Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.
    */
   includeEntry?: boolean;
+  /**
+   * When true (default), groups results by conversation and returns only
+   * the highest-scoring entry per conversation. When false, returns all
+   * matching entries ordered by score.
+   *
+   */
+  groupByConversation?: boolean;
 };
 
 export type SearchResult = {
@@ -215,6 +297,10 @@ export type SearchResult = {
    * Title of the conversation containing this entry.
    */
   conversationTitle?: string;
+  /**
+   * ID of the matched entry. Always present for deep-linking.
+   */
+  entryId?: string;
   score?: number;
   highlights?: string | null;
   /**
@@ -740,13 +826,17 @@ export type $OpenApiTs = {
          * Error response
          */
         200: ErrorResponse;
+        /**
+         * Requested search type is not available on this server
+         */
+        501: SearchTypeUnavailableError;
       };
     };
   };
   "/v1/conversations/index": {
     post: {
       req: {
-        requestBody: IndexTranscriptRequest;
+        requestBody: Array<IndexEntryRequest>;
       };
       res: {
         /**
@@ -754,13 +844,37 @@ export type $OpenApiTs = {
          */
         200: ErrorResponse;
         /**
-         * The index entry was created.
+         * Error response
          */
-        201: Entry;
+        403: ErrorResponse;
         /**
          * Resource not found
          */
         404: ErrorResponse;
+      };
+    };
+  };
+  "/v1/conversations/unindexed": {
+    get: {
+      req: {
+        /**
+         * Pagination cursor from previous response.
+         */
+        cursor?: string;
+        /**
+         * Maximum number of entries to return.
+         */
+        limit?: number;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Error response
+         */
+        403: ErrorResponse;
       };
     };
   };
