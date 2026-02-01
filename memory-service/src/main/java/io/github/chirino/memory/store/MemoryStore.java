@@ -14,7 +14,7 @@ import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
-import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
@@ -90,7 +90,7 @@ public interface MemoryStore {
 
     EntryDto indexTranscript(IndexTranscriptRequest request, String clientId);
 
-    List<SearchResultDto> searchEntries(String userId, SearchEntriesRequest request);
+    SearchResultsDto searchEntries(String userId, SearchEntriesRequest request);
 
     // Admin methods — no userId scoping, configurable deleted-resource visibility
     List<ConversationSummaryDto> adminListConversations(AdminConversationQuery query);
@@ -107,7 +107,7 @@ public interface MemoryStore {
 
     List<ConversationForkSummaryDto> adminListForks(String conversationId);
 
-    List<SearchResultDto> adminSearchEntries(AdminSearchQuery query);
+    SearchResultsDto adminSearchEntries(AdminSearchQuery query);
 
     // Eviction support
     List<String> findEvictableGroupIds(OffsetDateTime cutoff, int limit);

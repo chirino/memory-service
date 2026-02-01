@@ -1,13 +1,11 @@
 package io.github.chirino.memory.api.dto;
 
-import java.util.List;
-
 public class SearchEntriesRequest {
 
     private String query;
-    private Integer topK;
-    private List<String> conversationIds;
-    private String before;
+    private Integer limit;
+    private String after;
+    private Boolean includeEntry;
 
     public String getQuery() {
         return query;
@@ -17,27 +15,27 @@ public class SearchEntriesRequest {
         this.query = query;
     }
 
-    public Integer getTopK() {
-        return topK;
+    public Integer getLimit() {
+        return limit;
     }
 
-    public void setTopK(Integer topK) {
-        this.topK = topK;
+    public void setLimit(Integer limit) {
+        this.limit = limit;
     }
 
-    public List<String> getConversationIds() {
-        return conversationIds;
+    public String getAfter() {
+        return after;
     }
 
-    public void setConversationIds(List<String> conversationIds) {
-        this.conversationIds = conversationIds;
+    public void setAfter(String after) {
+        this.after = after;
     }
 
-    public String getBefore() {
-        return before;
+    public Boolean getIncludeEntry() {
+        return includeEntry;
     }
 
-    public void setBefore(String before) {
-        this.before = before;
+    public void setIncludeEntry(Boolean includeEntry) {
+        this.includeEntry = includeEntry;
     }
 }

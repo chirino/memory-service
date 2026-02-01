@@ -317,49 +317,7 @@ Examples: "message", "LC4J", "SpringAI"`,
   },
 } as const;
 
-export const $SyncEntriesRequest = {
-  type: "object",
-  required: ["entries"],
-  properties: {
-    entries: {
-      type: "array",
-      description: `The desired memory epoch contents. Each entry must include the
-\`memory\` channel and should match the ordering that the agent expects to
-see replayed; only the agent may call this endpoint.`,
-      items: {
-        $ref: "#/components/schemas/CreateEntryRequest",
-      },
-    },
-  },
-  example: {
-    entries: [
-      {
-        userId: "user_1234",
-        channel: "memory",
-        contentType: "LC4J",
-        content: [
-          {
-            type: "text",
-            text: "The user asked about memory sync.",
-          },
-        ],
-      },
-      {
-        userId: "user_1234",
-        channel: "memory",
-        contentType: "LC4J",
-        content: [
-          {
-            type: "text",
-            text: "I learned that child steps matter.",
-          },
-        ],
-      },
-    ],
-  },
-} as const;
-
-export const $SyncEntriesResponse = {
+export const $SyncEntryResponse = {
   type: "object",
   properties: {
     epoch: {
@@ -376,35 +334,35 @@ export const $SyncEntriesResponse = {
       type: "boolean",
       description: "True when the provided list diverged and a new epoch was started.",
     },
-    entries: {
-      type: "array",
-      description: "List of entries that were appended during this sync.",
-      items: {
-        $ref: "#/components/schemas/Entry",
-      },
+    entry: {
+      $ref: "#/components/schemas/Entry",
+      nullable: true,
+      description: "The entry that was appended during this sync, or null if no-op.",
     },
   },
   example: {
     epoch: 5,
     noOp: false,
     epochIncremented: true,
-    entries: [
-      {
-        id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
-        conversationId: "550e8400-e29b-41d4-a716-446655440000",
-        userId: "agent_memory",
-        channel: "memory",
-        epoch: 5,
-        contentType: "LC4J",
-        content: [
-          {
-            type: "text",
-            text: "Updated memory after re-sync.",
-          },
-        ],
-        createdAt: "2025-01-10T14:40:12Z",
-      },
-    ],
+    entry: {
+      id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      conversationId: "550e8400-e29b-41d4-a716-446655440000",
+      userId: "agent_memory",
+      channel: "memory",
+      epoch: 5,
+      contentType: "LC4J",
+      content: [
+        {
+          type: "text",
+          text: "First message in memory.",
+        },
+        {
+          type: "text",
+          text: "Second message added during sync.",
+        },
+      ],
+      createdAt: "2025-01-10T14:40:12Z",
+    },
   },
 } as const;
 
@@ -449,39 +407,41 @@ export const $SearchConversationsRequest = {
       type: "string",
       description: "Natural language query.",
     },
-    topK: {
+    after: {
+      type: "string",
+      nullable: true,
+      description: "Cursor for pagination; returns items after this result.",
+    },
+    limit: {
       type: "integer",
       default: 20,
+      description: "Maximum number of results to return.",
     },
-    conversationIds: {
-      type: "array",
-      items: {
-        type: "string",
-        format: "uuid",
-      },
-      nullable: true,
-      description: "Filter search to specific conversations (UUID format).",
-    },
-    before: {
-      type: "string",
-      format: "uuid",
-      nullable: true,
-      description: "Optional upper bound entry ID for temporal filtering.",
+    includeEntry: {
+      type: "boolean",
+      default: true,
+      description:
+        "Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.",
     },
   },
   example: {
     query: "summary of memory service design decisions",
-    topK: 5,
-    conversationIds: ["550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440001"],
-    before: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    limit: 20,
+    includeEntry: true,
   },
 } as const;
 
 export const $SearchResult = {
   type: "object",
   properties: {
-    entry: {
-      $ref: "#/components/schemas/Entry",
+    conversationId: {
+      type: "string",
+      format: "uuid",
+      description: "Unique identifier of the conversation containing this entry.",
+    },
+    conversationTitle: {
+      type: "string",
+      description: "Title of the conversation containing this entry.",
     },
     score: {
       type: "number",
@@ -491,8 +451,20 @@ export const $SearchResult = {
       type: "string",
       nullable: true,
     },
+    entry: {
+      allOf: [
+        {
+          $ref: "#/components/schemas/Entry",
+        },
+      ],
+      description: "The matched entry. Only included when includeEntry is true in the request.",
+    },
   },
   example: {
+    conversationId: "550e8400-e29b-41d4-a716-446655440000",
+    conversationTitle: "Memory Service Design Discussion",
+    score: 0.93,
+    highlights: "design a memory service for my agent",
     entry: {
       id: "6ba7b810-9dad-11d1-80b4-00c04fd430c9",
       conversationId: "550e8400-e29b-41d4-a716-446655440000",
@@ -507,8 +479,6 @@ export const $SearchResult = {
       ],
       createdAt: "2025-01-10T14:32:05Z",
     },
-    score: 0.93,
-    highlights: "design a memory service for my agent",
   },
 } as const;
 

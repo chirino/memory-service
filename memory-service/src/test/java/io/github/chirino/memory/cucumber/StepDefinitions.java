@@ -1715,6 +1715,32 @@ public class StepDefinitions {
         assertThat(actualContent, is(expectedContent));
     }
 
+    @io.cucumber.java.en.Then("search result at index {int} should have conversationId {string}")
+    public void searchResultAtIndexShouldHaveConversationId(int index, String expectedId) {
+        trackUsage();
+        String rendered = renderTemplate(expectedId);
+        JsonPath jsonPath = lastResponse.jsonPath();
+        String actualId = jsonPath.getString("data[" + index + "].conversationId");
+        assertThat(actualId, is(rendered));
+    }
+
+    @io.cucumber.java.en.Then("search result at index {int} should have conversationTitle {string}")
+    public void searchResultAtIndexShouldHaveConversationTitle(int index, String expectedTitle) {
+        trackUsage();
+        String rendered = renderTemplate(expectedTitle);
+        JsonPath jsonPath = lastResponse.jsonPath();
+        String actualTitle = jsonPath.getString("data[" + index + "].conversationTitle");
+        assertThat(actualTitle, is(rendered));
+    }
+
+    @io.cucumber.java.en.Then("search result at index {int} should not have entry")
+    public void searchResultAtIndexShouldNotHaveEntry(int index) {
+        trackUsage();
+        JsonPath jsonPath = lastResponse.jsonPath();
+        Object entry = jsonPath.get("data[" + index + "].entry");
+        assertThat(entry, is(nullValue()));
+    }
+
     @io.cucumber.java.en.Then("entry at index {int} should have content {string}")
     public void entryAtIndexShouldHaveContent(int index, String expectedContent) {
         trackUsage();
@@ -1887,6 +1913,25 @@ public class StepDefinitions {
         JsonPath jsonPath = ensureGrpcJsonPath();
         Object value = jsonPath.get(path);
         assertThat("gRPC response field '" + path + "' should not be null", value, notNullValue());
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response field {string} should be null")
+    public void theGrpcResponseFieldShouldBeNull(String path) {
+        trackUsage();
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Object value = jsonPath.get(path);
+        assertThat("gRPC response field '" + path + "' should be null", value, nullValue());
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response field {string} should have size {int}")
+    public void theGrpcResponseFieldShouldHaveSize(String path, int expectedSize) {
+        trackUsage();
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        java.util.List<?> list = jsonPath.getList(path);
+        assertThat(
+                "gRPC response field '" + path + "' should have size " + expectedSize,
+                list,
+                hasSize(expectedSize));
     }
 
     @io.cucumber.java.en.Then("the gRPC response should not contain field {string}")
@@ -3022,6 +3067,13 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("I am authenticated as auditor user {string}")
     public void iAmAuthenticatedAsAuditorUser(String userId) {
+        trackUsage();
+        this.currentUserId = userId;
+        this.currentApiKey = null;
+    }
+
+    @io.cucumber.java.en.Given("I am authenticated as indexer user {string}")
+    public void iAmAuthenticatedAsIndexerUser(String userId) {
         trackUsage();
         this.currentUserId = userId;
         this.currentApiKey = null;

@@ -2,7 +2,7 @@ package io.github.chirino.memory.grpc;
 
 import static io.github.chirino.memory.grpc.UuidUtils.byteStringToString;
 
-import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.grpc.v1.Entry;
 import io.github.chirino.memory.grpc.v1.IndexTranscriptRequest;
@@ -15,8 +15,6 @@ import io.grpc.StatusRuntimeException;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.stream.Collectors;
 
 @GrpcService
@@ -48,26 +46,31 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                             io.github.chirino.memory.api.dto.SearchEntriesRequest internal =
                                     new io.github.chirino.memory.api.dto.SearchEntriesRequest();
                             internal.setQuery(request.getQuery());
-                            internal.setTopK(request.getTopK() > 0 ? request.getTopK() : 20);
-                            if (!request.getConversationIdsList().isEmpty()) {
-                                List<String> conversationIds =
-                                        request.getConversationIdsList().stream()
-                                                .map(UuidUtils::byteStringToString)
-                                                .collect(Collectors.toList());
-                                internal.setConversationIds(new ArrayList<>(conversationIds));
+                            internal.setLimit(request.getLimit() > 0 ? request.getLimit() : 20);
+                            if (request.getAfter() != null && !request.getAfter().isBlank()) {
+                                internal.setAfter(request.getAfter());
                             }
-                            String before = byteStringToString(request.getBefore());
-                            if (before != null && !before.isBlank()) {
-                                internal.setBefore(before);
-                            }
-                            List<SearchResultDto> internalResults =
+                            boolean includeEntry =
+                                    !request.hasIncludeEntry() || request.getIncludeEntry();
+                            internal.setIncludeEntry(includeEntry);
+
+                            SearchResultsDto internalResults =
                                     vectorStore.search(currentUserId(), internal);
-                            return SearchEntriesResponse.newBuilder()
-                                    .addAllResults(
-                                            internalResults.stream()
-                                                    .map(GrpcDtoMapper::toProto)
-                                                    .collect(Collectors.toList()))
-                                    .build();
+
+                            SearchEntriesResponse.Builder responseBuilder =
+                                    SearchEntriesResponse.newBuilder()
+                                            .addAllResults(
+                                                    internalResults.getResults().stream()
+                                                            .map(
+                                                                    r ->
+                                                                            GrpcDtoMapper.toProto(
+                                                                                    r,
+                                                                                    includeEntry))
+                                                            .collect(Collectors.toList()));
+                            if (internalResults.getNextCursor() != null) {
+                                responseBuilder.setNextCursor(internalResults.getNextCursor());
+                            }
+                            return responseBuilder.build();
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);

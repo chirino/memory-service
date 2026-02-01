@@ -5,6 +5,7 @@ import type { ConversationSummary } from "@/client";
 import { ApiError, ConversationsService, OpenAPI } from "@/client";
 import { ChatPanel } from "@/components/chat-panel";
 import { ChatSidebar } from "@/components/chat-sidebar";
+import { SearchModal } from "@/components/search-modal";
 import { PendingTransfersPanel } from "@/components/sharing";
 import { useResumeCheck } from "@/hooks/useResumeCheck";
 import { useAuth, getAccessToken } from "@/lib/auth";
@@ -92,7 +93,7 @@ function ChatSidebarLoading() {
 
 function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const pendingUrlLookupRef = useRef<string | null>(null);
   const [resolvedConversationIds, setResolvedConversationIds] = useState<Set<string>>(new Set());
@@ -349,11 +350,10 @@ function App() {
   ) : (
     <ChatSidebar
       conversations={conversations}
-      search={search}
-      onSearchChange={setSearch}
       selectedConversationId={selectedConversationId}
       onSelectConversation={handleSelectConversation}
       onNewChat={handleNewChat}
+      onOpenSearch={() => setIsSearchOpen(true)}
       statusMessage={statusMessage}
       resumableConversationIds={resumableConversationIds}
     />
@@ -363,9 +363,7 @@ function App() {
     <div className="flex h-screen">
       {sidebarContent}
       <div className="flex flex-1 flex-col">
-        <PendingTransfersPanel
-          onNavigateToConversation={handleSelectConversationId}
-        />
+        <PendingTransfersPanel onNavigateToConversation={handleSelectConversationId} />
         <ChatPanel
           conversationId={selectedConversationId}
           onSelectConversationId={handleSelectConversationId}
@@ -377,6 +375,11 @@ function App() {
           currentUser={currentUser}
         />
       </div>
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onSelectConversation={handleSelectConversationId}
+      />
     </div>
   );
 }

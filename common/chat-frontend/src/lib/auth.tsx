@@ -1,9 +1,5 @@
 import * as React from "react";
-import {
-  AuthProvider as OidcAuthProvider,
-  useAuth as useOidcAuth,
-  hasAuthParams,
-} from "react-oidc-context";
+import { AuthProvider as OidcAuthProvider, useAuth as useOidcAuth, hasAuthParams } from "react-oidc-context";
 import type { User } from "oidc-client-ts";
 import { OpenAPI } from "@/client";
 

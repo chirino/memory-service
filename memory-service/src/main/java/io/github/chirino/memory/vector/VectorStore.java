@@ -1,14 +1,13 @@
 package io.github.chirino.memory.vector;
 
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
-import io.github.chirino.memory.api.dto.SearchResultDto;
-import java.util.List;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 
 public interface VectorStore {
 
     boolean isEnabled();
 
-    List<SearchResultDto> search(String userId, SearchEntriesRequest request);
+    SearchResultsDto search(String userId, SearchEntriesRequest request);
 
     void upsertTranscriptEmbedding(String conversationId, String entryId, float[] embedding);
 

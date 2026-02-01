@@ -1,11 +1,10 @@
 package io.github.chirino.memory.vector;
 
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
-import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.store.impl.PostgresMemoryStore;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.util.List;
 import java.util.Locale;
 import org.jboss.logging.Logger;
 
@@ -32,7 +31,7 @@ public class PgVectorStore implements VectorStore {
     }
 
     @Override
-    public List<SearchResultDto> search(String userId, SearchEntriesRequest request) {
+    public SearchResultsDto search(String userId, SearchEntriesRequest request) {
         return postgresMemoryStore.searchEntries(userId, request);
     }
 

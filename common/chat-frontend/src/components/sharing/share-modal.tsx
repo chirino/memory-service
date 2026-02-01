@@ -27,17 +27,9 @@ type ShareModalProps = {
   currentUserId: string;
 };
 
-export function ShareModal({
-  isOpen,
-  onClose,
-  conversationId,
-  conversationTitle,
-  currentUserId,
-}: ShareModalProps) {
+export function ShareModal({ isOpen, onClose, conversationId, conversationTitle, currentUserId }: ShareModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
-  const [transferTargetUserId, setTransferTargetUserId] = useState<
-    string | null
-  >(null);
+  const [transferTargetUserId, setTransferTargetUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Queries
@@ -53,17 +45,14 @@ export function ShareModal({
   const deleteTransfer = useDeleteTransfer();
 
   // Derive current user's access level
-  const currentUserMembership = membershipsQuery.data?.find(
-    (m) => m.userId === currentUserId,
-  );
+  const currentUserMembership = membershipsQuery.data?.find((m) => m.userId === currentUserId);
   const currentUserAccessLevel = currentUserMembership?.accessLevel;
   const canManage = canManageMembers(currentUserAccessLevel);
   const assignableLevels = getAssignableAccessLevels(currentUserAccessLevel);
 
   // Check if current user is recipient of pending transfer
   const pendingTransfer = pendingTransferQuery.data;
-  const isTransferRecipient =
-    pendingTransfer && pendingTransfer.toUserId === currentUserId;
+  const isTransferRecipient = pendingTransfer && pendingTransfer.toUserId === currentUserId;
 
   // Existing user IDs for validation
   const existingUserIds = membershipsQuery.data?.map((m) => m.userId!) ?? [];
@@ -95,10 +84,7 @@ export function ShareModal({
       if (transferTargetUserId !== null) {
         return;
       }
-      if (
-        modalRef.current &&
-        !modalRef.current.contains(event.target as Node)
-      ) {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
         onClose();
       }
     }
@@ -130,16 +116,12 @@ export function ShareModal({
         accessLevel,
       });
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to add member";
+      const errorMessage = err instanceof Error ? err.message : "Failed to add member";
       setError(errorMessage);
     }
   };
 
-  const handleAccessLevelChange = async (
-    userId: string,
-    accessLevel: AccessLevel,
-  ) => {
+  const handleAccessLevelChange = async (userId: string, accessLevel: AccessLevel) => {
     setError(null);
     try {
       await updateMembership.mutateAsync({
@@ -148,8 +130,7 @@ export function ShareModal({
         accessLevel,
       });
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to update access level";
+      const errorMessage = err instanceof Error ? err.message : "Failed to update access level";
       setError(errorMessage);
     }
   };
@@ -162,8 +143,7 @@ export function ShareModal({
         userId,
       });
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to remove member";
+      const errorMessage = err instanceof Error ? err.message : "Failed to remove member";
       setError(errorMessage);
     }
   };
@@ -182,8 +162,7 @@ export function ShareModal({
       });
       setTransferTargetUserId(null);
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to initiate transfer";
+      const errorMessage = err instanceof Error ? err.message : "Failed to initiate transfer";
       setError(errorMessage);
     }
   };
@@ -194,8 +173,7 @@ export function ShareModal({
     try {
       await acceptTransfer.mutateAsync({ transferId: pendingTransfer.id });
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to accept transfer";
+      const errorMessage = err instanceof Error ? err.message : "Failed to accept transfer";
       setError(errorMessage);
     }
   };
@@ -206,8 +184,7 @@ export function ShareModal({
     try {
       await deleteTransfer.mutateAsync({ transferId: pendingTransfer.id });
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to decline transfer";
+      const errorMessage = err instanceof Error ? err.message : "Failed to decline transfer";
       setError(errorMessage);
     }
   };
@@ -218,8 +195,7 @@ export function ShareModal({
     try {
       await deleteTransfer.mutateAsync({ transferId: pendingTransfer.id });
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to cancel transfer";
+      const errorMessage = err instanceof Error ? err.message : "Failed to cancel transfer";
       setError(errorMessage);
     }
   };
@@ -260,17 +236,10 @@ export function ShareModal({
           {/* Header */}
           <div className="flex items-center justify-between border-b border-stone/10 px-6 py-4">
             <div>
-              <h2
-                id="share-modal-title"
-                className="font-serif text-xl text-ink"
-              >
+              <h2 id="share-modal-title" className="font-serif text-xl text-ink">
                 {canManage ? "Share" : "Members"}
               </h2>
-              {conversationTitle && (
-                <p className="mt-0.5 truncate text-sm text-stone">
-                  "{conversationTitle}"
-                </p>
-              )}
+              {conversationTitle && <p className="mt-0.5 truncate text-sm text-stone">"{conversationTitle}"</p>}
             </div>
             <button
               type="button"
@@ -285,11 +254,7 @@ export function ShareModal({
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
             {/* Error message */}
-            {error && (
-              <div className="mb-4 rounded-lg bg-terracotta/10 px-3 py-2 text-sm text-terracotta">
-                {error}
-              </div>
-            )}
+            {error && <div className="mb-4 rounded-lg bg-terracotta/10 px-3 py-2 text-sm text-terracotta">{error}</div>}
 
             {/* Incoming transfer banner (for recipient) */}
             {isTransferRecipient && pendingTransfer && (
@@ -320,25 +285,18 @@ export function ShareModal({
             {/* Section header */}
             <div className="mb-3 flex items-center gap-2">
               <Users className="h-4 w-4 text-stone" />
-              <span className="text-sm font-medium text-stone">
-                People with access
-              </span>
+              <span className="text-sm font-medium text-stone">People with access</span>
             </div>
 
             {/* Member list */}
             {membershipsQuery.isLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-16 animate-pulse rounded-lg bg-mist"
-                  />
+                  <div key={i} className="h-16 animate-pulse rounded-lg bg-mist" />
                 ))}
               </div>
             ) : sortedMembers.length === 0 ? (
-              <p className="py-4 text-center text-sm text-stone">
-                No members found
-              </p>
+              <p className="py-4 text-center text-sm text-stone">No members found</p>
             ) : (
               <div className="space-y-1">
                 {sortedMembers.map((membership) => (
@@ -352,9 +310,7 @@ export function ShareModal({
                     onRemove={handleRemoveMember}
                     onTransferOwnership={handleTransferOwnership}
                     onCancelTransfer={handleCancelTransfer}
-                    isUpdating={
-                      updateMembership.isPending || removeMembership.isPending
-                    }
+                    isUpdating={updateMembership.isPending || removeMembership.isPending}
                   />
                 ))}
               </div>
@@ -363,12 +319,8 @@ export function ShareModal({
             {/* Empty state message */}
             {!hasOtherMembers && !membershipsQuery.isLoading && canManage && (
               <div className="mt-4 rounded-lg border border-stone/10 bg-mist/30 px-4 py-3 text-center">
-                <p className="text-sm text-stone">
-                  This conversation is private.
-                </p>
-                <p className="mt-0.5 text-sm text-stone">
-                  Add people above to collaborate.
-                </p>
+                <p className="text-sm text-stone">This conversation is private.</p>
+                <p className="mt-0.5 text-sm text-stone">Add people above to collaborate.</p>
               </div>
             )}
           </div>
