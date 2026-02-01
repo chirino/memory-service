@@ -153,7 +153,16 @@ message CreateEntryRequest {
   string user_id = 1;
   Channel channel = 2;
   int64 epoch = 3;
+  // Describes the schema/format of the content array.
+  // History channel entries must use "history" as the content_type.
+  // The content array for history entries must contain exactly 1 object with:
+  //   - text (string): The message text.
+  //   - role (string): Either "USER" or "AI".
+  // Other content_types (e.g., "LC4J", "SpringAI") may be used for
+  // agent memory entries.
   string content_type = 4;
+  // For history channel entries (content_type: "history"), each block
+  // contains text and role fields.
   repeated google.protobuf.Value content = 5;
   // Optional text to index for search (history channel only)
   optional string indexed_content = 6;
@@ -203,7 +212,16 @@ message Entry {
   string user_id = 3;
   Channel channel = 4;
   int64 epoch = 5;
+  // Describes the schema/format of the content array.
+  // History channel entries must use "history" as the content_type.
+  // The content array for history entries contains objects with:
+  //   - text (string): The message text.
+  //   - role (string): Either "USER" or "AI".
+  // Other content_types (e.g., "LC4J", "SpringAI") may be used for
+  // agent memory entries.
   string content_type = 6;
+  // For history channel entries (content_type: "history"), each block
+  // contains text and role fields.
   repeated google.protobuf.Value content = 7;
   string created_at = 8;
 }

@@ -255,6 +255,11 @@ public class ConversationsResource {
                         && request.getChannel() != CreateEntryRequest.ChannelEnum.HISTORY) {
                     return badRequest("indexedContent is only allowed on history channel");
                 }
+                // Validate history channel entry format
+                Response historyValidationError = validateHistoryEntry(request);
+                if (historyValidationError != null) {
+                    return historyValidationError;
+                }
                 // Agents provide fully-typed content and channel/epoch directly
                 List<CreateEntryRequest> messages = List.of(request);
                 List<EntryDto> appended =
@@ -271,6 +276,11 @@ public class ConversationsResource {
                     return forbidden(
                             new AccessDeniedException(
                                     "Only agents can append messages to the MEMORY channel"));
+                }
+                // Validate history channel entry format
+                Response historyValidationError = validateHistoryEntry(request);
+                if (historyValidationError != null) {
+                    return historyValidationError;
                 }
                 // Users: convert CreateEntryRequest to CreateUserEntryRequest
                 String textContent = extractTextFromContent(request.getContent());
@@ -565,6 +575,50 @@ public class ConversationsResource {
         error.setCode("bad_request");
         error.setDetails(Map.of("message", message));
         return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+    }
+
+    /**
+     * Validates that history channel entries use the correct contentType and content structure.
+     * Returns null if valid, or an error Response if invalid.
+     */
+    private Response validateHistoryEntry(CreateEntryRequest request) {
+        // Only validate history channel entries
+        if (request.getChannel() != CreateEntryRequest.ChannelEnum.HISTORY) {
+            return null;
+        }
+
+        // History channel entries must use "history" contentType
+        if (!"history".equals(request.getContentType())) {
+            return badRequest("History channel entries must use 'history' as the contentType");
+        }
+
+        // Content must contain exactly 1 object
+        List<Object> content = request.getContent();
+        if (content == null || content.size() != 1) {
+            return badRequest("History channel entries must contain exactly 1 content object");
+        }
+
+        // The object must have text and role fields
+        Object block = content.get(0);
+        if (!(block instanceof Map)) {
+            return badRequest(
+                    "History channel content must be an object with 'text' and 'role' fields");
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> blockMap = (Map<String, Object>) block;
+
+        if (!blockMap.containsKey("text") || blockMap.get("text") == null) {
+            return badRequest("History channel content must have a 'text' field");
+        }
+
+        Object role = blockMap.get("role");
+        if (role == null || (!"USER".equals(role) && !"AI".equals(role))) {
+            return badRequest(
+                    "History channel content must have a 'role' field with value 'USER' or 'AI'");
+        }
+
+        return null;
     }
 
     @DELETE

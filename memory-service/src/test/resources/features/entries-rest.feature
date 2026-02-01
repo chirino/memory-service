@@ -39,7 +39,7 @@ Feature: Entries REST API
           "conversationId": "${response.body.data[0].conversationId}",
           "userId": "alice",
           "channel": "history",
-          "contentType": "message",
+          "contentType": "history",
           "content": ${response.body.data[0].content},
           "createdAt": "${response.body.data[0].createdAt}"
         },
@@ -48,7 +48,7 @@ Feature: Entries REST API
           "conversationId": "${response.body.data[1].conversationId}",
           "userId": "alice",
           "channel": "history",
-          "contentType": "message",
+          "contentType": "history",
           "content": ${response.body.data[1].content},
           "createdAt": "${response.body.data[1].createdAt}"
         }
@@ -272,8 +272,8 @@ Feature: Entries REST API
     """
     {
       "channel": "HISTORY",
-      "contentType": "message",
-      "content": [{"type": "text", "text": "Entry with inline index"}],
+      "contentType": "history",
+      "content": [{"text": "Entry with inline index", "role": "AI"}],
       "indexedContent": "Searchable inline content for testing"
     }
     """
@@ -297,3 +297,59 @@ Feature: Entries REST API
     }
     """
     Then the response status should be 400
+
+  Scenario: History channel entries must use 'history' contentType
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "message",
+      "content": [{"text": "Test message", "role": "AI"}]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "details.message" should be "History channel entries must use 'history' as the contentType"
+
+  Scenario: History channel entries must have exactly 1 content object
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"text": "First", "role": "AI"}, {"text": "Second", "role": "USER"}]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "details.message" should be "History channel entries must contain exactly 1 content object"
+
+  Scenario: History channel entries must have text field
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "AI"}]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "details.message" should be "History channel content must have a 'text' field"
+
+  Scenario: History channel entries must have valid role field
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"text": "Test message", "role": "INVALID"}]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "details.message" should be "History channel content must have a 'role' field with value 'USER' or 'AI'"

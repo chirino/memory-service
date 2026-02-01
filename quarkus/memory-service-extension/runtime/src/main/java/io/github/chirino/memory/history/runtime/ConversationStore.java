@@ -52,7 +52,7 @@ public class ConversationStore {
     public void appendUserMessage(String conversationId, String content) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
-        request.setContentType("message");
+        request.setContentType("history");
         String userId = resolveUserId();
         if (userId != null) {
             request.setUserId(userId);
@@ -74,7 +74,7 @@ public class ConversationStore {
 
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
-        request.setContentType("message");
+        request.setContentType("history");
         String userId = resolveUserId();
         if (userId != null) {
             request.setUserId(userId);

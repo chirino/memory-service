@@ -71,7 +71,7 @@ public class ConversationStore {
     private CreateEntryRequest createRequest(String content, String role) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.channel(Channel.HISTORY);
-        request.contentType("message");
+        request.contentType("history");
         String userId = resolveUserId();
         if (userId != null) {
             request.userId(userId);

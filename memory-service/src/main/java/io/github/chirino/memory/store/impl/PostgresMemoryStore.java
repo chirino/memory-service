@@ -309,8 +309,8 @@ public class PostgresMemoryStore implements MemoryStore {
         entry.setUserId(userId);
         entry.setChannel(Channel.HISTORY);
         entry.setEpoch(null);
-        entry.setContentType("message");
-        entry.setContent(encryptContent(toContentBlocksFromUser(request.getContent())));
+        entry.setContentType("history");
+        entry.setContent(encryptContent(toHistoryContent(request.getContent(), "USER")));
         entry.setConversationGroupId(conversation.getConversationGroup().getId());
         OffsetDateTime createdAt = OffsetDateTime.now();
         entry.setCreatedAt(createdAt);
@@ -1581,6 +1581,19 @@ public class PostgresMemoryStore implements MemoryStore {
             return Collections.emptyList();
         }
         return List.of(Map.of("type", "text", "text", text));
+    }
+
+    /**
+     * Creates content blocks for history channel entries with the required format.
+     * @param text The message text
+     * @param role Either "USER" or "AI"
+     * @return Content array with a single object containing text and role fields
+     */
+    private List<Object> toHistoryContent(String text, String role) {
+        if (text == null) {
+            return Collections.emptyList();
+        }
+        return List.of(Map.of("text", text, "role", role));
     }
 
     // Admin methods

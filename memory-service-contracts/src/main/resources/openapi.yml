@@ -1123,13 +1123,24 @@ components:
           type: string
           description: |-
             Describes the schema/format of the content array.
-            Examples: "message", "LC4J", "SpringAI"
+
+            **History channel entries must use `"history"` as the contentType.**
+            The content array for history entries contains objects with:
+            - `text` (string): The message text.
+            - `role` (string): Either `"USER"` or `"AI"`.
+            
+
+            Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
+            agent memory entries.
         content:
           type: array
           description: |-
             Opaque, agent-defined content blocks.
             Different agents may use different schemas; the memory-service
             stores and returns them without interpretation.
+
+            For history channel entries (contentType: `"history"`), each block
+            contains `text` and `role` fields.
           items: {}
         createdAt:
           type: string
@@ -1140,10 +1151,10 @@ components:
         userId: "user_1234"
         channel: "history"
         epoch: null
-        contentType: "message"
+        contentType: "history"
         content:
-          - type: "text"
-            text: "Here is a summary of what we discussed so far…"
+          - text: "Here is a summary of what we discussed so far…"
+            role: "AI"
         createdAt: "2025-01-10T14:40:12Z"
 
     CreateEntryRequest:
@@ -1172,9 +1183,19 @@ components:
           type: string
           description: |-
             Describes the schema/format of the content array.
-            Examples: "message", "LC4J", "SpringAI"
+
+            **History channel entries must use `"history"` as the contentType.**
+            The content array for history entries must contain exactly 1 object with:
+            - `text` (string): The message text.
+            - `role` (string): Either `"USER"` or `"AI"`.
+
+            Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
+            agent memory entries.
         content:
           type: array
+          description: |-
+            For history channel entries (contentType: `"history"`), each block
+            contains `text` and `role` fields.
           items: {}
         indexedContent:
           type: string
@@ -1186,10 +1207,10 @@ components:
       example:
         userId: "user_1234"
         channel: "history"
-        contentType: "message"
+        contentType: "history"
         content:
-          - type: "text"
-            text: "Based on your past chats, here are three possible approaches…"
+          - text: "Based on your past chats, here are three possible approaches…"
+            role: "AI"
 
     SyncEntryResponse:
       type: object
@@ -1279,10 +1300,10 @@ components:
             entry:
               id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
               channel: "history"
-              contentType: "message"
+              contentType: "history"
               content:
-                - type: "text"
-                  text: "Help me design a memory service"
+                - text: "Help me design a memory service"
+                  role: "USER"
               createdAt: "2025-01-10T14:40:12Z"
         cursor: "eyJjcmVhdGVkQXQiOiIyMDI1LTAxLTEwVDE0OjQwOjEyWiJ9"
 
@@ -1354,10 +1375,10 @@ components:
           conversationId: "550e8400-e29b-41d4-a716-446655440000"
           userId: "user_1234"
           channel: "history"
-          contentType: "message"
+          contentType: "history"
           content:
-            - type: "text"
-              text: "Help me design a memory service for my agent."
+            - text: "Help me design a memory service for my agent."
+              role: "USER"
           createdAt: "2025-01-10T14:32:05Z"
 
     OwnershipTransfer:

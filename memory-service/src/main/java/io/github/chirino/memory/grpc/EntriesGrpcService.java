@@ -130,6 +130,8 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                                 "indexedContent is only allowed on history channel")
                                         .asRuntimeException();
                             }
+                            // Validate history channel entry format
+                            validateHistoryEntry(request.getEntry());
                             CreateEntryRequest internal = new CreateEntryRequest();
                             internal.setUserId(request.getEntry().getUserId());
                             io.github.chirino.memory.model.Channel requestChannel =
@@ -253,5 +255,72 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
             return null;
         }
         return token;
+    }
+
+    /**
+     * Validates that history channel entries use the correct contentType and content structure.
+     */
+    private void validateHistoryEntry(io.github.chirino.memory.grpc.v1.CreateEntryRequest entry) {
+        // Only validate history channel entries
+        if (entry.getChannel() != io.github.chirino.memory.grpc.v1.Channel.HISTORY) {
+            return;
+        }
+
+        // History channel entries must use "history" contentType
+        if (!"history".equals(entry.getContentType())) {
+            throw Status.INVALID_ARGUMENT
+                    .withDescription(
+                            "History channel entries must use 'history' as the contentType")
+                    .asRuntimeException();
+        }
+
+        // Content must contain exactly 1 object
+        List<com.google.protobuf.Value> contentList = entry.getContentList();
+        if (contentList == null || contentList.size() != 1) {
+            throw Status.INVALID_ARGUMENT
+                    .withDescription(
+                            "History channel entries must contain exactly 1 content object")
+                    .asRuntimeException();
+        }
+
+        // The object must have text and role fields
+        com.google.protobuf.Value block = contentList.get(0);
+        if (block.getKindCase() != com.google.protobuf.Value.KindCase.STRUCT_VALUE) {
+            throw Status.INVALID_ARGUMENT
+                    .withDescription(
+                            "History channel content must be an object with 'text' and 'role'"
+                                    + " fields")
+                    .asRuntimeException();
+        }
+
+        com.google.protobuf.Struct struct = block.getStructValue();
+        java.util.Map<String, com.google.protobuf.Value> fields = struct.getFieldsMap();
+
+        if (!fields.containsKey("text")
+                || fields.get("text").getKindCase()
+                        == com.google.protobuf.Value.KindCase.NULL_VALUE) {
+            throw Status.INVALID_ARGUMENT
+                    .withDescription("History channel content must have a 'text' field")
+                    .asRuntimeException();
+        }
+
+        com.google.protobuf.Value roleValue = fields.get("role");
+        if (roleValue == null
+                || roleValue.getKindCase() != com.google.protobuf.Value.KindCase.STRING_VALUE) {
+            throw Status.INVALID_ARGUMENT
+                    .withDescription(
+                            "History channel content must have a 'role' field with value 'USER' or"
+                                    + " 'AI'")
+                    .asRuntimeException();
+        }
+
+        String role = roleValue.getStringValue();
+        if (!"USER".equals(role) && !"AI".equals(role)) {
+            throw Status.INVALID_ARGUMENT
+                    .withDescription(
+                            "History channel content must have a 'role' field with value 'USER' or"
+                                    + " 'AI'")
+                    .asRuntimeException();
+        }
     }
 }

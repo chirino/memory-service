@@ -486,14 +486,21 @@ public class StepDefinitions {
             String content, String channel, String contentType) {
         trackUsage();
         CreateEntryRequest request = new CreateEntryRequest();
-        request.setContent(List.of(Map.of("type", "text", "text", content)));
         CreateEntryRequest.ChannelEnum channelEnum =
                 CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase());
         request.setChannel(channelEnum);
         request.setContentType(contentType);
-        // Memory entries must always have an epoch (invariant)
-        if (channelEnum == CreateEntryRequest.ChannelEnum.MEMORY) {
-            request.setEpoch(1L);
+
+        // History channel entries must use "history" contentType and {text, role} structure
+        if (channelEnum == CreateEntryRequest.ChannelEnum.HISTORY) {
+            request.setContent(List.of(Map.of("text", content, "role", "USER")));
+            request.setContentType("history");
+        } else {
+            request.setContent(List.of(Map.of("type", "text", "text", content)));
+            // Memory entries must always have an epoch (invariant)
+            if (channelEnum == CreateEntryRequest.ChannelEnum.MEMORY) {
+                request.setEpoch(1L);
+            }
         }
         memoryStoreSelector
                 .getStore()
@@ -2015,6 +2022,27 @@ public class StepDefinitions {
         StatusRuntimeException sre = (StatusRuntimeException) lastGrpcError;
         Status.Code expectedCode = Status.Code.valueOf(expectedStatus);
         assertThat("gRPC status code", sre.getStatus().getCode(), is(expectedCode));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC error message should contain {string}")
+    public void theGrpcErrorMessageShouldContain(String expectedMessage) {
+        trackUsage();
+        if (lastGrpcError == null) {
+            throw new AssertionError(
+                    "Expected gRPC error with message containing '"
+                            + expectedMessage
+                            + "' but no error occurred");
+        }
+        if (!(lastGrpcError instanceof StatusRuntimeException)) {
+            throw new AssertionError(
+                    "Expected StatusRuntimeException but got: " + lastGrpcError.getClass());
+        }
+        StatusRuntimeException sre = (StatusRuntimeException) lastGrpcError;
+        String description = sre.getStatus().getDescription();
+        assertThat(
+                "gRPC error message",
+                description,
+                org.hamcrest.Matchers.containsString(expectedMessage));
     }
 
     @io.cucumber.java.en.Then("the gRPC response should not have an error")

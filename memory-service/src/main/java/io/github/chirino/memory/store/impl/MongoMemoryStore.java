@@ -318,9 +318,9 @@ public class MongoMemoryStore implements MemoryStore {
         m.userId = userId;
         m.channel = Channel.HISTORY;
         m.epoch = null;
-        m.contentType = "message";
+        m.contentType = "history";
         m.conversationGroupId = c.conversationGroupId;
-        m.decodedContent = List.of(Map.of("type", "text", "text", request.getContent()));
+        m.decodedContent = List.of(Map.of("text", request.getContent(), "role", "USER"));
         m.content = encryptContent(m.decodedContent);
         Instant createdAt = Instant.now();
         m.createdAt = createdAt;
