@@ -7,7 +7,7 @@ import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.api.SearchApi;
 import io.github.chirino.memory.client.model.Channel;
 import io.github.chirino.memory.client.model.Entry;
-import io.github.chirino.memory.client.model.IndexTranscriptRequest;
+import io.github.chirino.memory.client.model.IndexEntryRequest;
 import io.github.chirino.memory.client.model.ListConversationEntries200Response;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -79,12 +79,12 @@ public class TranscriptIndexingResource {
             String redactedTranscript = applyRedactions(transcript, redactionPayload.redact);
             LOG.infof("redactedTranscript: %s", redactedTranscript);
 
-            IndexTranscriptRequest request = new IndexTranscriptRequest();
+            // Index the redacted transcript for the last entry
+            IndexEntryRequest request = new IndexEntryRequest();
             request.setConversationId(UUID.fromString(conversationId));
-            request.setTitle(redactionPayload.title());
-            request.setTranscript(redactedTranscript);
-            request.setUntilEntryId(last.getId());
-            searchApi().indexConversationTranscript(request);
+            request.setEntryId(last.getId());
+            request.setIndexedContent(redactedTranscript);
+            searchApi().indexConversations(List.of(request));
             return Response.status(Response.Status.CREATED).build();
         } catch (Exception e) {
             LOG.errorf(e, "Failed to index transcript for conversationId=%s", conversationId);

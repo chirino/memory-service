@@ -1,10 +1,9 @@
 package io.github.chirino.memory.vector;
 
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
-import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.util.Collections;
-import java.util.List;
 
 @ApplicationScoped
 public class NoopVectorStore implements VectorStore {
@@ -15,13 +14,16 @@ public class NoopVectorStore implements VectorStore {
     }
 
     @Override
-    public List<SearchResultDto> search(String userId, SearchEntriesRequest request) {
-        return Collections.emptyList();
+    public SearchResultsDto search(String userId, SearchEntriesRequest request) {
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(Collections.emptyList());
+        result.setNextCursor(null);
+        return result;
     }
 
     @Override
     public void upsertTranscriptEmbedding(
-            String conversationId, String entryId, float[] embedding) {
+            String conversationGroupId, String conversationId, String entryId, float[] embedding) {
         // no-op
     }
 

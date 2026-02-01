@@ -9,11 +9,17 @@ export class ConversationsService {
   /**
    * List conversations visible to current user
    * Lists all conversations the current user has access to (owner, manager, writer, or reader).
+   *
+   * **Fork Tree Behavior**: Conversations can be forked to create branches. All forks
+   * share the same "conversation group" (fork tree). The `mode` parameter controls
+   * which conversations from each fork tree are returned.
    * @param data The data for the request.
-   * @param data.mode Listing mode for conversations.
+   * @param data.mode Listing mode for conversations. Controls which conversations are returned
+   * from each fork tree (conversation group).
    * - `all`: include all conversations the user can access (roots and forks).
-   * - `roots`: only include root conversations.
-   * - `latest-fork`: include the most recently updated conversation per root tree.
+   * - `roots`: only include root conversations (conversations that are not forks).
+   * - `latest-fork`: include only the most recently updated conversation per fork tree.
+   * This is useful for showing a single representative conversation from each tree.
    * @param data.after Cursor for pagination; returns items after this conversation id (UUID format).
    * @param data.limit Maximum number of conversations to return.
    * @param data.query Optional text query for basic title/metadata search.
@@ -204,18 +210,22 @@ export class ConversationsService {
 
   /**
    * Synchronize the agent memory epoch
-   * Synchronizes the in-memory context for the conversation. The service fails
-   * when any entry is not targeting the `memory` channel, then compares the
-   * provided list to the entries already stored in the latest memory epoch.
-   * If there is no difference it is a no-op, if the list merely appends more
-   * entries they are added to the current epoch, otherwise a new epoch is
-   * created and all provided entries are stored under the new epoch. Memory
-   * sync is scoped to the calling client id (from the API key). Requires a
-   * valid agent API key.
+   * Synchronizes the in-memory context for the conversation. The request body
+   * is a single entry whose `content` array contains all messages in the agent's
+   * memory. The service compares this content against the flattened content of
+   * all entries in the latest memory epoch.
+   *
+   * If the content matches exactly, it's a no-op. If the incoming content is a
+   * prefix extension (starts with existing content plus new items), only the
+   * delta is appended to the current epoch. Otherwise, a new epoch is created
+   * with the delta content.
+   *
+   * The entry must target the `memory` channel. Memory sync is scoped to the
+   * calling client id (from the API key). Requires a valid agent API key.
    * @param data The data for the request.
    * @param data.conversationId Conversation identifier (UUID format).
    * @param data.requestBody
-   * @returns SyncEntriesResponse Result of the sync operation.
+   * @returns SyncEntryResponse Result of the sync operation.
    * @returns ErrorResponse Error response
    * @throws ApiError
    */
@@ -497,6 +507,7 @@ export class SharingService {
   /**
    * List conversation memberships
    * Lists all users that have access to the conversation and their access levels.
+   * Any conversation member (owner, manager, writer, or reader) can list memberships.
    * @param data The data for the request.
    * @param data.conversationId Conversation identifier (UUID format).
    * @returns unknown Memberships for the conversation.

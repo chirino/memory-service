@@ -1,8 +1,88 @@
 databaseChangeLog:
-  # Placeholder MongoDB changelog. Collections and indexes can be added here
-  # once we commit to a concrete MongoDB deployment and index strategy.
   - changeSet:
-      id: mongo-1-noop
+      id: mongo-1-indexes
       author: memory-service
-      changes: []
+      comment: Create indexes for efficient queries
+      changes:
+        - runCommand:
+            command: |
+              {
+                "createIndexes": "entries",
+                "indexes": [
+                  {
+                    "key": { "conversationId": 1, "createdAt": 1 },
+                    "name": "idx_entries_conversation_created_at"
+                  },
+                  {
+                    "key": { "conversationGroupId": 1, "createdAt": 1 },
+                    "name": "idx_entries_group_created_at"
+                  },
+                  {
+                    "key": { "channel": 1, "indexedContent": 1, "createdAt": 1 },
+                    "name": "idx_entries_channel_indexed_created"
+                  },
+                  {
+                    "key": { "indexedContent": 1, "indexedAt": 1 },
+                    "name": "idx_entries_indexed_content_at"
+                  }
+                ]
+              }
+        - runCommand:
+            command: |
+              {
+                "createIndexes": "conversations",
+                "indexes": [
+                  {
+                    "key": { "conversationGroupId": 1 },
+                    "name": "idx_conversations_group"
+                  },
+                  {
+                    "key": { "deletedAt": 1 },
+                    "name": "idx_conversations_deleted_at"
+                  }
+                ]
+              }
+        - runCommand:
+            command: |
+              {
+                "createIndexes": "conversation_groups",
+                "indexes": [
+                  {
+                    "key": { "deletedAt": 1 },
+                    "name": "idx_conversation_groups_deleted_at"
+                  }
+                ]
+              }
+        - runCommand:
+            command: |
+              {
+                "createIndexes": "conversation_memberships",
+                "indexes": [
+                  {
+                    "key": { "userId": 1, "conversationGroupId": 1 },
+                    "name": "idx_memberships_user_group"
+                  },
+                  {
+                    "key": { "conversationGroupId": 1 },
+                    "name": "idx_memberships_group"
+                  }
+                ]
+              }
 
+  - changeSet:
+      id: mongo-2-fulltext-search
+      author: memory-service
+      comment: Add text index on indexedContent for full-text search
+      changes:
+        - runCommand:
+            command: |
+              {
+                "createIndexes": "entries",
+                "indexes": [
+                  {
+                    "key": { "indexedContent": "text" },
+                    "name": "idx_entries_indexed_content_text",
+                    "default_language": "english"
+                  }
+                ]
+              }

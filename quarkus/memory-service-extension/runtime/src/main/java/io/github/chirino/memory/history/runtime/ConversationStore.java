@@ -12,6 +12,7 @@ import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import io.smallrye.mutiny.Multi;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +29,7 @@ public class ConversationStore {
     @Inject SecurityIdentity securityIdentity;
     @Inject SecurityIdentityAssociation identityAssociation;
     @Inject ResponseResumer resumer;
+    @Inject Instance<IndexedContentProvider> indexedContentProviderInstance;
 
     private SecurityIdentity resolveIdentity() {
         if (identityAssociation != null) {
@@ -49,10 +51,21 @@ public class ConversationStore {
         return securityIdentity;
     }
 
+    private void applyIndexedContent(CreateEntryRequest request, String text, String role) {
+        if (indexedContentProviderInstance != null
+                && indexedContentProviderInstance.isResolvable()) {
+            String indexedContent =
+                    indexedContentProviderInstance.get().getIndexedContent(text, role);
+            if (indexedContent != null) {
+                request.setIndexedContent(indexedContent);
+            }
+        }
+    }
+
     public void appendUserMessage(String conversationId, String content) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
-        request.setContentType("message");
+        request.setContentType("history");
         String userId = resolveUserId();
         if (userId != null) {
             request.setUserId(userId);
@@ -61,6 +74,7 @@ public class ConversationStore {
         block.put("text", content);
         block.put("role", "USER");
         request.setContent(List.of(block));
+        applyIndexedContent(request, content, "USER");
         conversationsApi(bearerToken(securityIdentity))
                 .appendConversationEntry(UUID.fromString(conversationId), request);
     }
@@ -71,10 +85,9 @@ public class ConversationStore {
     }
 
     public void appendAgentMessage(String conversationId, String content, String bearerToken) {
-
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
-        request.setContentType("message");
+        request.setContentType("history");
         String userId = resolveUserId();
         if (userId != null) {
             request.setUserId(userId);
@@ -83,6 +96,7 @@ public class ConversationStore {
         block.put("text", content);
         block.put("role", "AI");
         request.setContent(List.of(block));
+        applyIndexedContent(request, content, "AI");
         String effectiveToken;
         effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
         conversationsApi(effectiveToken)

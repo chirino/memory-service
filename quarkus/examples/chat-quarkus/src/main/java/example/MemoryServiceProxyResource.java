@@ -120,4 +120,12 @@ public class MemoryServiceProxyResource {
     public Response cancelResponse(@PathParam("conversationId") String conversationId) {
         return proxy.cancelResponse(conversationId);
     }
+
+    @POST
+    @Path("/search")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response searchConversations(String body) {
+        return proxy.searchConversations(body);
+    }
 }

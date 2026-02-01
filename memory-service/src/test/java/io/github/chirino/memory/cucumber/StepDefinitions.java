@@ -45,7 +45,7 @@ import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.HealthResponse;
-import io.github.chirino.memory.grpc.v1.IndexTranscriptRequest;
+import io.github.chirino.memory.grpc.v1.IndexConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
 import io.github.chirino.memory.grpc.v1.ListEntriesRequest;
@@ -55,6 +55,7 @@ import io.github.chirino.memory.grpc.v1.ListForksResponse;
 import io.github.chirino.memory.grpc.v1.ListMembershipsRequest;
 import io.github.chirino.memory.grpc.v1.ListMembershipsResponse;
 import io.github.chirino.memory.grpc.v1.ListOwnershipTransfersRequest;
+import io.github.chirino.memory.grpc.v1.ListUnindexedEntriesRequest;
 import io.github.chirino.memory.grpc.v1.MutinyResponseResumerServiceGrpc;
 import io.github.chirino.memory.grpc.v1.OwnershipTransfersServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
@@ -485,14 +486,21 @@ public class StepDefinitions {
             String content, String channel, String contentType) {
         trackUsage();
         CreateEntryRequest request = new CreateEntryRequest();
-        request.setContent(List.of(Map.of("type", "text", "text", content)));
         CreateEntryRequest.ChannelEnum channelEnum =
                 CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase());
         request.setChannel(channelEnum);
         request.setContentType(contentType);
-        // Memory entries must always have an epoch (invariant)
-        if (channelEnum == CreateEntryRequest.ChannelEnum.MEMORY) {
-            request.setEpoch(1L);
+
+        // History channel entries must use "history" contentType and {text, role} structure
+        if (channelEnum == CreateEntryRequest.ChannelEnum.HISTORY) {
+            request.setContent(List.of(Map.of("text", content, "role", "USER")));
+            request.setContentType("history");
+        } else {
+            request.setContent(List.of(Map.of("type", "text", "text", content)));
+            // Memory entries must always have an epoch (invariant)
+            if (channelEnum == CreateEntryRequest.ChannelEnum.MEMORY) {
+                request.setEpoch(1L);
+            }
         }
         memoryStoreSelector
                 .getStore()
@@ -1715,6 +1723,32 @@ public class StepDefinitions {
         assertThat(actualContent, is(expectedContent));
     }
 
+    @io.cucumber.java.en.Then("search result at index {int} should have conversationId {string}")
+    public void searchResultAtIndexShouldHaveConversationId(int index, String expectedId) {
+        trackUsage();
+        String rendered = renderTemplate(expectedId);
+        JsonPath jsonPath = lastResponse.jsonPath();
+        String actualId = jsonPath.getString("data[" + index + "].conversationId");
+        assertThat(actualId, is(rendered));
+    }
+
+    @io.cucumber.java.en.Then("search result at index {int} should have conversationTitle {string}")
+    public void searchResultAtIndexShouldHaveConversationTitle(int index, String expectedTitle) {
+        trackUsage();
+        String rendered = renderTemplate(expectedTitle);
+        JsonPath jsonPath = lastResponse.jsonPath();
+        String actualTitle = jsonPath.getString("data[" + index + "].conversationTitle");
+        assertThat(actualTitle, is(rendered));
+    }
+
+    @io.cucumber.java.en.Then("search result at index {int} should not have entry")
+    public void searchResultAtIndexShouldNotHaveEntry(int index) {
+        trackUsage();
+        JsonPath jsonPath = lastResponse.jsonPath();
+        Object entry = jsonPath.get("data[" + index + "].entry");
+        assertThat(entry, is(nullValue()));
+    }
+
     @io.cucumber.java.en.Then("entry at index {int} should have content {string}")
     public void entryAtIndexShouldHaveContent(int index, String expectedContent) {
         trackUsage();
@@ -1889,6 +1923,25 @@ public class StepDefinitions {
         assertThat("gRPC response field '" + path + "' should not be null", value, notNullValue());
     }
 
+    @io.cucumber.java.en.Then("the gRPC response field {string} should be null")
+    public void theGrpcResponseFieldShouldBeNull(String path) {
+        trackUsage();
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        Object value = jsonPath.get(path);
+        assertThat("gRPC response field '" + path + "' should be null", value, nullValue());
+    }
+
+    @io.cucumber.java.en.Then("the gRPC response field {string} should have size {int}")
+    public void theGrpcResponseFieldShouldHaveSize(String path, int expectedSize) {
+        trackUsage();
+        JsonPath jsonPath = ensureGrpcJsonPath();
+        java.util.List<?> list = jsonPath.getList(path);
+        assertThat(
+                "gRPC response field '" + path + "' should have size " + expectedSize,
+                list,
+                hasSize(expectedSize));
+    }
+
     @io.cucumber.java.en.Then("the gRPC response should not contain field {string}")
     public void theGrpcResponseShouldNotContainField(String path) {
         trackUsage();
@@ -1969,6 +2022,27 @@ public class StepDefinitions {
         StatusRuntimeException sre = (StatusRuntimeException) lastGrpcError;
         Status.Code expectedCode = Status.Code.valueOf(expectedStatus);
         assertThat("gRPC status code", sre.getStatus().getCode(), is(expectedCode));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC error message should contain {string}")
+    public void theGrpcErrorMessageShouldContain(String expectedMessage) {
+        trackUsage();
+        if (lastGrpcError == null) {
+            throw new AssertionError(
+                    "Expected gRPC error with message containing '"
+                            + expectedMessage
+                            + "' but no error occurred");
+        }
+        if (!(lastGrpcError instanceof StatusRuntimeException)) {
+            throw new AssertionError(
+                    "Expected StatusRuntimeException but got: " + lastGrpcError.getClass());
+        }
+        StatusRuntimeException sre = (StatusRuntimeException) lastGrpcError;
+        String description = sre.getStatus().getDescription();
+        assertThat(
+                "gRPC error message",
+                description,
+                org.hamcrest.Matchers.containsString(expectedMessage));
     }
 
     @io.cucumber.java.en.Then("the gRPC response should not have an error")
@@ -2406,13 +2480,21 @@ public class StepDefinitions {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
         switch (method) {
-            case "IndexTranscript":
+            case "IndexConversations":
                 {
-                    var requestBuilder = IndexTranscriptRequest.newBuilder();
+                    var requestBuilder = IndexConversationsRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.indexTranscript(requestBuilder.build());
+                    return stub.indexConversations(requestBuilder.build());
+                }
+            case "ListUnindexedEntries":
+                {
+                    var requestBuilder = ListUnindexedEntriesRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.listUnindexedEntries(requestBuilder.build());
                 }
             case "SearchConversations":
                 {
@@ -3022,6 +3104,13 @@ public class StepDefinitions {
 
     @io.cucumber.java.en.Given("I am authenticated as auditor user {string}")
     public void iAmAuthenticatedAsAuditorUser(String userId) {
+        trackUsage();
+        this.currentUserId = userId;
+        this.currentApiKey = null;
+    }
+
+    @io.cucumber.java.en.Given("I am authenticated as indexer user {string}")
+    public void iAmAuthenticatedAsIndexerUser(String userId) {
         trackUsage();
         this.currentUserId = userId;
         this.currentApiKey = null;

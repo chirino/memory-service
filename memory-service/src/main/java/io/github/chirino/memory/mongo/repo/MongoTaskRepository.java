@@ -71,9 +71,21 @@ public class MongoTaskRepository {
      * Create a new task for background processing.
      */
     public void createTask(String taskType, Map<String, Object> body) {
+        createTask(null, taskType, body);
+    }
+
+    /**
+     * Create a named task (singleton/idempotent).
+     * If a task with the given name already exists, this is a no-op.
+     */
+    public void createTask(String taskName, String taskType, Map<String, Object> body) {
+        if (taskName != null && findByName(taskName) != null) {
+            return; // Task already exists, idempotent no-op
+        }
         Document task =
                 new Document()
                         .append("_id", UUID.randomUUID().toString())
+                        .append("taskName", taskName)
                         .append("taskType", taskType)
                         .append("taskBody", new Document(body))
                         .append("createdAt", Instant.now())
@@ -82,6 +94,13 @@ public class MongoTaskRepository {
                         .append("lastError", null)
                         .append("retryCount", 0);
         getCollection().insertOne(task);
+    }
+
+    /**
+     * Find a task by its unique name.
+     */
+    public Document findByName(String taskName) {
+        return getCollection().find(Filters.eq("taskName", taskName)).first();
     }
 
     /**

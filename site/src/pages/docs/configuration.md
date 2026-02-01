@@ -185,8 +185,9 @@ grants a role, the caller has that role.
 
 | Role | Access | Description |
 |------|--------|-------------|
-| `admin` | Read + Write | Full administrative access across all users. Implies `auditor`. |
+| `admin` | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`. |
 | `auditor` | Read-only | View any user's conversations and search system-wide. Cannot modify data. |
+| `indexer` | Index only | Index any conversation's transcript for search. Cannot view or modify other data. |
 
 ### Role Assignment
 
@@ -199,8 +200,9 @@ provider uses different role names (e.g., `administrator` instead of `admin`).
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `memory-service.roles.admin.oidc.role` | `admin` | OIDC role name that maps to the internal `admin` role |
-| `memory-service.roles.auditor.oidc.role` | `auditor` | OIDC role name that maps to the internal `auditor` role |
+| `memory-service.roles.admin.oidc.role` | _(none)_ | OIDC role name that maps to the internal `admin` role |
+| `memory-service.roles.auditor.oidc.role` | _(none)_ | OIDC role name that maps to the internal `auditor` role |
+| `memory-service.roles.indexer.oidc.role` | _(none)_ | OIDC role name that maps to the internal `indexer` role |
 
 ```bash
 # Map OIDC "administrator" role to internal "admin" role
@@ -208,6 +210,9 @@ MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE=administrator
 
 # Map OIDC "manager" role to internal "auditor" role
 MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE=manager
+
+# Map OIDC "transcript-indexer" role to internal "indexer" role
+MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE=transcript-indexer
 ```
 
 #### User-Based Assignment
@@ -218,10 +223,12 @@ Assign roles directly to user IDs (matched against the OIDC token principal name
 |----------|---------|-------------|
 | `memory-service.roles.admin.users` | _(empty)_ | Comma-separated list of user IDs with admin access |
 | `memory-service.roles.auditor.users` | _(empty)_ | Comma-separated list of user IDs with auditor access |
+| `memory-service.roles.indexer.users` | _(empty)_ | Comma-separated list of user IDs with indexer access |
 
 ```bash
 MEMORY_SERVICE_ROLES_ADMIN_USERS=alice,bob
 MEMORY_SERVICE_ROLES_AUDITOR_USERS=charlie,dave
+MEMORY_SERVICE_ROLES_INDEXER_USERS=indexer-user
 ```
 
 #### Client-Based Assignment (API Key)
@@ -233,10 +240,12 @@ The client ID is resolved from the `X-API-Key` header via the existing API key c
 |----------|---------|-------------|
 | `memory-service.roles.admin.clients` | _(empty)_ | Comma-separated list of API key client IDs with admin access |
 | `memory-service.roles.auditor.clients` | _(empty)_ | Comma-separated list of API key client IDs with auditor access |
+| `memory-service.roles.indexer.clients` | _(empty)_ | Comma-separated list of API key client IDs with indexer access |
 
 ```bash
 MEMORY_SERVICE_ROLES_ADMIN_CLIENTS=admin-agent
 MEMORY_SERVICE_ROLES_AUDITOR_CLIENTS=monitoring-agent,audit-agent
+MEMORY_SERVICE_ROLES_INDEXER_CLIENTS=indexer-service,summarizer-agent
 ```
 
 ### Audit Logging

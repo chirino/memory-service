@@ -10,13 +10,15 @@ import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
-import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
+import io.github.chirino.memory.api.dto.IndexConversationsResponse;
+import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
-import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
@@ -88,9 +90,43 @@ public interface MemoryStore {
     SyncResult syncAgentEntry(
             String userId, String conversationId, CreateEntryRequest entry, String clientId);
 
-    EntryDto indexTranscript(IndexTranscriptRequest request, String clientId);
+    /**
+     * Index entries for search. Updates indexedContent for each entry and attempts
+     * vector store indexing. On vector store failure, creates a singleton retry task.
+     *
+     * @param entries list of entries with conversationId, entryId, and text
+     * @return response with count of entries processed
+     */
+    IndexConversationsResponse indexEntries(List<IndexEntryRequest> entries);
 
-    List<SearchResultDto> searchEntries(String userId, SearchEntriesRequest request);
+    /**
+     * List entries that need indexing (history channel, indexed_content IS NULL).
+     * Results are sorted by createdAt for consistent pagination.
+     *
+     * @param limit maximum number of entries to return
+     * @param cursor pagination cursor from previous response
+     * @return paginated response with entries and cursor
+     */
+    UnindexedEntriesResponse listUnindexedEntries(int limit, String cursor);
+
+    /**
+     * Find entries pending vector store indexing (indexed_content IS NOT NULL AND indexed_at IS NULL).
+     * Used by the retry task to find entries that failed vector store indexing.
+     *
+     * @param limit maximum number of entries to return
+     * @return list of entries pending vector indexing
+     */
+    List<EntryDto> findEntriesPendingVectorIndexing(int limit);
+
+    /**
+     * Update indexed_at timestamp after successful vector store indexing.
+     *
+     * @param entryId the entry ID to update
+     * @param indexedAt the timestamp when the entry was indexed
+     */
+    void setIndexedAt(String entryId, OffsetDateTime indexedAt);
+
+    SearchResultsDto searchEntries(String userId, SearchEntriesRequest request);
 
     // Admin methods — no userId scoping, configurable deleted-resource visibility
     List<ConversationSummaryDto> adminListConversations(AdminConversationQuery query);
@@ -107,7 +143,7 @@ public interface MemoryStore {
 
     List<ConversationForkSummaryDto> adminListForks(String conversationId);
 
-    List<SearchResultDto> adminSearchEntries(AdminSearchQuery query);
+    SearchResultsDto adminSearchEntries(AdminSearchQuery query);
 
     // Eviction support
     List<String> findEvictableGroupIds(OffsetDateTime cutoff, int limit);

@@ -25,7 +25,7 @@ Feature: Entries gRPC API
       conversation_id: "${conversationId}"
       user_id: "alice"
       channel: HISTORY
-      content_type: "message"
+      content_type: "history"
     }
     """
 
@@ -48,7 +48,7 @@ Feature: Entries gRPC API
     entries {
       conversation_id: "${conversationId}"
       channel: HISTORY
-      content_type: "message"
+      content_type: "history"
     }
     page_info {
       next_page_token: "${response.body.pageInfo.nextPageToken}"
@@ -239,8 +239,9 @@ Feature: Entries gRPC API
     conversation_id: "${conversationId}"
     entry {
       user_id: "alice"
-      channel: HISTORY
-      content_type: "message"
+      channel: MEMORY
+      epoch: 1
+      content_type: "test.v1"
       content {
         string_value: "First part"
       }
@@ -251,5 +252,98 @@ Feature: Entries gRPC API
     """
     Then the gRPC response should not have an error
     And the gRPC response field "id" should not be null
-    And the gRPC response field "channel" should be "HISTORY"
-    And the gRPC response field "contentType" should be "message"
+    And the gRPC response field "channel" should be "MEMORY"
+    And the gRPC response field "contentType" should be "test.v1"
+
+  Scenario: gRPC history channel entries must use 'history' contentType
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      user_id: "alice"
+      channel: HISTORY
+      content_type: "message"
+      content {
+        struct_value {
+          fields {
+            key: "text"
+            value { string_value: "Test message" }
+          }
+          fields {
+            key: "role"
+            value { string_value: "AI" }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+    And the gRPC error message should contain "History channel entries must use 'history' as the contentType"
+
+  Scenario: gRPC history channel entries must have exactly 1 content object
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      user_id: "alice"
+      channel: HISTORY
+      content_type: "history"
+      content {
+        struct_value {
+          fields {
+            key: "text"
+            value { string_value: "First" }
+          }
+          fields {
+            key: "role"
+            value { string_value: "AI" }
+          }
+        }
+      }
+      content {
+        struct_value {
+          fields {
+            key: "text"
+            value { string_value: "Second" }
+          }
+          fields {
+            key: "role"
+            value { string_value: "USER" }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+    And the gRPC error message should contain "History channel entries must contain exactly 1 content object"
+
+  Scenario: gRPC history channel entries must have valid role
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      user_id: "alice"
+      channel: HISTORY
+      content_type: "history"
+      content {
+        struct_value {
+          fields {
+            key: "text"
+            value { string_value: "Test message" }
+          }
+          fields {
+            key: "role"
+            value { string_value: "INVALID" }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+    And the gRPC error message should contain "History channel content must have a 'role' field with value 'USER' or 'AI'"

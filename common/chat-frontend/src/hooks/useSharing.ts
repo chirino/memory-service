@@ -1,10 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SharingService } from "@/client";
-import type {
-  AccessLevel,
-  ConversationMembership,
-  OwnershipTransfer,
-} from "@/client";
+import type { AccessLevel, ConversationMembership, OwnershipTransfer } from "@/client";
 
 // Response types for the API calls
 type MembershipsResponse = {
@@ -98,13 +94,7 @@ export function useRemoveMembership() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      conversationId,
-      userId,
-    }: {
-      conversationId: string;
-      userId: string;
-    }) => {
+    mutationFn: async ({ conversationId, userId }: { conversationId: string; userId: string }) => {
       return SharingService.deleteConversationMembership({
         conversationId,
         userId,
@@ -136,14 +126,10 @@ export function usePendingTransfers(role?: "sender" | "recipient" | "all") {
 /**
  * Hook to get a pending transfer for a specific conversation
  */
-export function usePendingTransferForConversation(
-  conversationId: string | null,
-) {
+export function usePendingTransferForConversation(conversationId: string | null) {
   const transfersQuery = usePendingTransfers();
 
-  const pendingTransfer = transfersQuery.data?.find(
-    (t) => t.conversationId === conversationId,
-  );
+  const pendingTransfer = transfersQuery.data?.find((t) => t.conversationId === conversationId);
 
   return {
     ...transfersQuery,
@@ -158,13 +144,7 @@ export function useCreateTransfer() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      conversationId,
-      newOwnerUserId,
-    }: {
-      conversationId: string;
-      newOwnerUserId: string;
-    }) => {
+    mutationFn: async ({ conversationId, newOwnerUserId }: { conversationId: string; newOwnerUserId: string }) => {
       return SharingService.createOwnershipTransfer({
         requestBody: { conversationId, newOwnerUserId },
       });
@@ -231,9 +211,7 @@ export function canManageMembers(accessLevel: AccessLevel | undefined): boolean 
 /**
  * Utility to determine if a user can transfer ownership
  */
-export function canTransferOwnership(
-  accessLevel: AccessLevel | undefined,
-): boolean {
+export function canTransferOwnership(accessLevel: AccessLevel | undefined): boolean {
   return accessLevel === "owner";
 }
 
@@ -242,9 +220,7 @@ export function canTransferOwnership(
  * Managers can only assign writer/reader
  * Owners can assign any level except owner
  */
-export function getAssignableAccessLevels(
-  currentUserAccessLevel: AccessLevel | undefined,
-): AccessLevel[] {
+export function getAssignableAccessLevels(currentUserAccessLevel: AccessLevel | undefined): AccessLevel[] {
   if (currentUserAccessLevel === "owner") {
     return ["manager", "writer", "reader"];
   }
@@ -271,10 +247,7 @@ export function canModifyMember(
 
   // Manager can only modify writers and readers
   if (currentUserAccessLevel === "manager") {
-    return (
-      targetMemberAccessLevel === "writer" ||
-      targetMemberAccessLevel === "reader"
-    );
+    return targetMemberAccessLevel === "writer" || targetMemberAccessLevel === "reader";
   }
 
   return false;

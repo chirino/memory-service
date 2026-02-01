@@ -37,11 +37,7 @@ export function TransferConfirmModal({
   // Close when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (
-        modalRef.current &&
-        !modalRef.current.contains(event.target as Node) &&
-        !isLoading
-      ) {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node) && !isLoading) {
         onClose();
       }
     }
@@ -97,16 +93,12 @@ export function TransferConfirmModal({
         </div>
 
         {/* Content */}
-        <h2
-          id="transfer-modal-title"
-          className="font-serif text-xl text-ink"
-        >
+        <h2 id="transfer-modal-title" className="font-serif text-xl text-ink">
           Transfer ownership
         </h2>
 
         <p className="mt-3 text-sm text-stone">
-          Transfer ownership to{" "}
-          <span className="font-medium text-ink">{recipientUserId}</span>?
+          Transfer ownership to <span className="font-medium text-ink">{recipientUserId}</span>?
         </p>
 
         <div className="mt-4 rounded-lg bg-mist/50 p-3">

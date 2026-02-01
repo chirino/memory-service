@@ -1,13 +1,13 @@
 package io.github.chirino.memory.api.dto;
 
-import java.util.List;
-
 public class SearchEntriesRequest {
 
     private String query;
-    private Integer topK;
-    private List<String> conversationIds;
-    private String before;
+    private String searchType;
+    private Integer limit;
+    private String after;
+    private Boolean includeEntry;
+    private Boolean groupByConversation;
 
     public String getQuery() {
         return query;
@@ -17,27 +17,43 @@ public class SearchEntriesRequest {
         this.query = query;
     }
 
-    public Integer getTopK() {
-        return topK;
+    public String getSearchType() {
+        return searchType;
     }
 
-    public void setTopK(Integer topK) {
-        this.topK = topK;
+    public void setSearchType(String searchType) {
+        this.searchType = searchType;
     }
 
-    public List<String> getConversationIds() {
-        return conversationIds;
+    public Integer getLimit() {
+        return limit;
     }
 
-    public void setConversationIds(List<String> conversationIds) {
-        this.conversationIds = conversationIds;
+    public void setLimit(Integer limit) {
+        this.limit = limit;
     }
 
-    public String getBefore() {
-        return before;
+    public String getAfter() {
+        return after;
     }
 
-    public void setBefore(String before) {
-        this.before = before;
+    public void setAfter(String after) {
+        this.after = after;
+    }
+
+    public Boolean getIncludeEntry() {
+        return includeEntry;
+    }
+
+    public void setIncludeEntry(Boolean includeEntry) {
+        this.includeEntry = includeEntry;
+    }
+
+    public Boolean getGroupByConversation() {
+        return groupByConversation;
+    }
+
+    public void setGroupByConversation(Boolean groupByConversation) {
+        this.groupByConversation = groupByConversation;
     }
 }

@@ -41,9 +41,12 @@ public class ConversationHistoryAutoConfiguration {
     @Bean
     public ConversationStore conversationStore(
             ConversationsApiFactory conversationsApiFactory,
-            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
+            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider,
+            ObjectProvider<IndexedContentProvider> indexedContentProviderProvider) {
         return new ConversationStore(
-                conversationsApiFactory, authorizedClientServiceProvider.getIfAvailable());
+                conversationsApiFactory,
+                authorizedClientServiceProvider.getIfAvailable(),
+                indexedContentProviderProvider.getIfAvailable());
     }
 
     @Bean

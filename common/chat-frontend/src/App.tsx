@@ -5,6 +5,7 @@ import type { ConversationSummary } from "@/client";
 import { ApiError, ConversationsService, OpenAPI } from "@/client";
 import { ChatPanel } from "@/components/chat-panel";
 import { ChatSidebar } from "@/components/chat-sidebar";
+import { SearchModal } from "@/components/search-modal";
 import { PendingTransfersPanel } from "@/components/sharing";
 import { useResumeCheck } from "@/hooks/useResumeCheck";
 import { useAuth, getAccessToken } from "@/lib/auth";
@@ -92,7 +93,7 @@ function ChatSidebarLoading() {
 
 function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const pendingUrlLookupRef = useRef<string | null>(null);
   const [resolvedConversationIds, setResolvedConversationIds] = useState<Set<string>>(new Set());
@@ -152,7 +153,6 @@ function App() {
   // Note: This effect syncs UI state (status message) with external data (React Query)
   useEffect(() => {
     if (conversationsQuery.data && statusMessage !== null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStatusMessage(null);
     }
   }, [conversationsQuery.data, statusMessage]);
@@ -190,7 +190,7 @@ function App() {
             setSelectedConversationId(urlConversationId);
             updateConversationInUrl(urlConversationId, true);
             markResolvedConversation(urlConversationId);
-          } catch (error) {
+          } catch {
             const candidate = (conversationsQuery.data ?? []).find((conversation) => conversation.id)?.id ?? null;
             const nextSelected = candidate ?? generateConversationId();
             setSelectedConversationId(nextSelected);
@@ -211,10 +211,10 @@ function App() {
     if (nextSelected !== selectedConversationId) {
       // Note: This effect syncs selected conversation with URL and available conversations
       // We need setState here to initialize selection from URL/available conversations
-      setSelectedConversationId(nextSelected); // eslint-disable-line react-hooks/set-state-in-effect
+      setSelectedConversationId(nextSelected);
       updateConversationInUrl(nextSelected, true);
     }
-  }, [selectedConversationId, conversationsQuery.data]);
+  }, [selectedConversationId, conversationsQuery.data, markResolvedConversation]);
 
   const deleteConversationMutation = useMutation({
     mutationFn: async (conversationId: string) => {
@@ -349,11 +349,10 @@ function App() {
   ) : (
     <ChatSidebar
       conversations={conversations}
-      search={search}
-      onSearchChange={setSearch}
       selectedConversationId={selectedConversationId}
       onSelectConversation={handleSelectConversation}
       onNewChat={handleNewChat}
+      onOpenSearch={() => setIsSearchOpen(true)}
       statusMessage={statusMessage}
       resumableConversationIds={resumableConversationIds}
     />
@@ -363,9 +362,7 @@ function App() {
     <div className="flex h-screen">
       {sidebarContent}
       <div className="flex flex-1 flex-col">
-        <PendingTransfersPanel
-          onNavigateToConversation={handleSelectConversationId}
-        />
+        <PendingTransfersPanel onNavigateToConversation={handleSelectConversationId} />
         <ChatPanel
           conversationId={selectedConversationId}
           onSelectConversationId={handleSelectConversationId}
@@ -377,6 +374,11 @@ function App() {
           currentUser={currentUser}
         />
       </div>
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onSelectConversation={handleSelectConversationId}
+      />
     </div>
   );
 }

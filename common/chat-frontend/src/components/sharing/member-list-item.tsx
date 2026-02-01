@@ -2,11 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { MoreVertical, Trash2, Crown, User, Clock } from "lucide-react";
 import type { AccessLevel, ConversationMembership, OwnershipTransfer } from "@/client";
 import { AccessLevelSelect, AccessLevelBadge } from "./access-level-select";
-import {
-  canModifyMember,
-  canTransferOwnership,
-  getAssignableAccessLevels,
-} from "@/hooks/useSharing";
+import { canModifyMember, canTransferOwnership, getAssignableAccessLevels } from "@/hooks/useSharing";
 
 type MemberListItemProps = {
   membership: ConversationMembership;
@@ -52,8 +48,7 @@ export function MemberListItem({
   const assignableLevels = getAssignableAccessLevels(currentUserAccessLevel);
 
   // Check if this member is the recipient of a pending transfer
-  const isPendingTransferRecipient =
-    pendingTransfer && pendingTransfer.toUserId === membership.userId;
+  const isPendingTransferRecipient = pendingTransfer && pendingTransfer.toUserId === membership.userId;
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -90,11 +85,7 @@ export function MemberListItem({
   const showOverflowMenu = !isOwner && (canModify || (canTransfer && !isCurrentUser));
 
   return (
-    <div
-      className={`rounded-lg p-3 transition-colors ${
-        isUpdating ? "opacity-60" : "hover:bg-mist/50"
-      }`}
-    >
+    <div className={`rounded-lg p-3 transition-colors ${isUpdating ? "opacity-60" : "hover:bg-mist/50"}`}>
       <div className="flex items-start gap-3">
         {/* Avatar placeholder */}
         <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-mist">
@@ -104,31 +95,19 @@ export function MemberListItem({
         {/* User info */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="truncate text-sm font-medium text-ink">
-              {membership.userId}
-            </p>
-            {isCurrentUser && (
-              <span className="rounded-full bg-mist px-2 py-0.5 text-xs text-stone">
-                you
-              </span>
-            )}
+            <p className="truncate text-sm font-medium text-ink">{membership.userId}</p>
+            {isCurrentUser && <span className="rounded-full bg-mist px-2 py-0.5 text-xs text-stone">you</span>}
           </div>
-          <p className="mt-0.5 text-xs text-stone">
-            Added {formatDate(membership.createdAt)}
-          </p>
+          <p className="mt-0.5 text-xs text-stone">Added {formatDate(membership.createdAt)}</p>
 
           {/* Pending transfer banner for this member */}
           {isPendingTransferRecipient && (
             <div className="mt-2 rounded-lg border border-terracotta/30 bg-terracotta/5 px-3 py-2">
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4 text-terracotta" />
-                <span className="text-xs font-medium text-terracotta">
-                  Transfer pending
-                </span>
+                <span className="text-xs font-medium text-terracotta">Transfer pending</span>
               </div>
-              <p className="mt-1 text-xs text-stone">
-                Waiting for acceptance
-              </p>
+              <p className="mt-1 text-xs text-stone">Waiting for acceptance</p>
               {canTransfer && (
                 <button
                   type="button"
@@ -153,9 +132,7 @@ export function MemberListItem({
           ) : canModify && !isPendingTransferRecipient ? (
             <AccessLevelSelect
               value={membership.accessLevel!}
-              onChange={(level) =>
-                onAccessLevelChange(membership.userId!, level)
-              }
+              onChange={(level) => onAccessLevelChange(membership.userId!, level)}
               allowedLevels={assignableLevels}
               disabled={isUpdating}
             />

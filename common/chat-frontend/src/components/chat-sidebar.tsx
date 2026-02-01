@@ -3,11 +3,10 @@ import { Plus, Search } from "lucide-react";
 
 type ChatSidebarProps = {
   conversations: ConversationSummary[];
-  search: string;
-  onSearchChange: (value: string) => void;
   selectedConversationId: string | null;
   onSelectConversation: (conversation: ConversationSummary) => void;
   onNewChat: () => void;
+  onOpenSearch: () => void;
   statusMessage?: string | null;
   resumableConversationIds?: Set<string>;
 };
@@ -43,24 +42,13 @@ function formatRelativeTime(value?: string): string {
 
 export function ChatSidebar({
   conversations,
-  search,
-  onSearchChange,
   selectedConversationId,
   onSelectConversation,
   onNewChat,
+  onOpenSearch,
   statusMessage,
   resumableConversationIds = new Set(),
 }: ChatSidebarProps) {
-  const filteredConversations = conversations.filter((conversation) => {
-    if (!search.trim()) {
-      return true;
-    }
-    const q = search.toLowerCase();
-    return (
-      (conversation.title ?? "").toLowerCase().includes(q) ||
-      (conversation.lastMessagePreview ?? "").toLowerCase().includes(q)
-    );
-  });
 
   return (
     <aside className="flex w-80 flex-col border-r border-stone/20 bg-cream">
@@ -82,28 +70,26 @@ export function ChatSidebar({
         </div>
       </header>
 
-      {/* Search */}
+      {/* Search Button */}
       <div className="px-5 py-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone" />
-          <input
-            type="search"
-            placeholder="Search conversations..."
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            className="w-full rounded-xl border border-transparent bg-mist py-2.5 pl-10 pr-4 text-sm transition-colors placeholder:text-stone/60 focus:border-stone/20 focus:outline-none"
-          />
-        </div>
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          className="flex w-full items-center gap-3 rounded-xl border border-transparent bg-mist py-2.5 pl-3 pr-4 text-left text-sm text-stone/60 transition-colors hover:border-stone/20 hover:bg-mist/80"
+        >
+          <Search className="h-4 w-4 text-stone" />
+          <span>Search conversations...</span>
+        </button>
       </div>
 
       {statusMessage && <div className="px-5 py-2 text-xs text-terracotta">{statusMessage}</div>}
 
       {/* Conversation List */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        {filteredConversations.length === 0 && <p className="px-4 text-sm text-stone">No conversations yet.</p>}
+        {conversations.length === 0 && <p className="px-4 text-sm text-stone">No conversations yet.</p>}
 
         <div className="space-y-1">
-          {filteredConversations.map((conversation, index) => {
+          {conversations.map((conversation, index) => {
             const isSelected = conversation.id === selectedConversationId;
             const isResumable = conversation.id ? resumableConversationIds.has(conversation.id) : false;
             const animationDelay = `${index * 0.05}s`;

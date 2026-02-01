@@ -799,6 +799,11 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/SearchResult'
+                  nextCursor:
+                    type: string
+                    nullable: true
+        '501':
+          $ref: '#/components/responses/SearchTypeUnavailable'
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -807,33 +812,91 @@ paths:
   /v1/conversations/index:
     post:
       tags: [Search]
-      summary: Index a conversation transcript
+      summary: Index conversation entries
       description: |-
-        Indexes conversation transcript content for semantic search. Stores the
-        provided transcript text as searchable content and updates the conversation
-        title. The `untilEntryId` tracks which entries have been indexed.
+        Indexes searchable text for conversation entries. Each item in the request
+        array specifies a single entry with the text that should be searchable.
 
-        This endpoint is typically called by agents after processing recent
-        conversation entries. The transcript text becomes searchable via
-        the `/v1/conversations/search` endpoint.
+        This endpoint is called by batch indexing services after processing
+        conversation entries. The indexed text becomes searchable via
+        `/v1/conversations/search`.
 
-        Requires a valid agent API key.
-      operationId: indexConversationTranscript
+        If an entry has already been indexed, its text is replaced with the new value.
+        The entry's `indexedAt` timestamp is updated when successfully indexed.
+
+        **Note:** This endpoint may return successfully even if vector store indexing
+        fails. In that case, the indexed content is stored and a background retry task
+        is created to complete the indexing asynchronously. Entries will become
+        searchable once the retry task succeeds.
+
+        Requires indexer or admin role.
+      operationId: indexConversations
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IndexTranscriptRequest'
+              type: array
+              items:
+                $ref: '#/components/schemas/IndexEntryRequest'
       responses:
-        '201':
-          description: The index entry was created.
+        '200':
+          description: Entries indexed successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Entry'
+                $ref: '#/components/schemas/IndexConversationsResponse'
+        '403':
+          description: Indexer or admin role required.
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/conversations/unindexed:
+    get:
+      tags: [Search]
+      summary: List entries needing indexing
+      description: |-
+        Returns entries from the history channel that have not yet had their
+        index content generated (where `indexedContent` is null). This endpoint
+        is used by batch indexing jobs to discover entries that need processing.
+
+        Entries are returned with their full content so that callers can
+        process the content before submitting index text. Results are sorted
+        by `createdAt` for consistent ordering.
+
+        Uses cursor-based pagination.
+
+        Requires indexer or admin role.
+      operationId: listUnindexedEntries
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of entries to return.
+          schema:
+            type: integer
+            default: 100
+        - name: cursor
+          in: query
+          required: false
+          description: Pagination cursor from previous response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated list of unindexed entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnindexedEntriesResponse'
+        '403':
+          description: Indexer or admin role required.
+          $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -859,6 +922,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    SearchTypeUnavailable:
+      description: Requested search type is not available on this server
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SearchTypeUnavailableError'
 
   schemas:
     ErrorResponse:
@@ -871,6 +940,25 @@ components:
         details:
           type: object
           additionalProperties: true
+
+    SearchTypeUnavailableError:
+      type: object
+      description: Error response when the requested search type is not available on the server.
+      properties:
+        error:
+          type: string
+          description: Error code.
+          example: search_type_unavailable
+        message:
+          type: string
+          description: Human-readable error message.
+          example: Semantic search is not available. The embedding service is disabled on this server.
+        availableTypes:
+          type: array
+          items:
+            type: string
+          description: List of search types that are available on this server.
+          example: [fulltext]
 
     AccessLevel:
       type: string
@@ -1062,13 +1150,24 @@ components:
           type: string
           description: |-
             Describes the schema/format of the content array.
-            Examples: "message", "LC4J", "SpringAI"
+
+            **History channel entries must use `"history"` as the contentType.**
+            The content array for history entries contains objects with:
+            - `text` (string): The message text.
+            - `role` (string): Either `"USER"` or `"AI"`.
+            
+
+            Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
+            agent memory entries.
         content:
           type: array
           description: |-
             Opaque, agent-defined content blocks.
             Different agents may use different schemas; the memory-service
             stores and returns them without interpretation.
+
+            For history channel entries (contentType: `"history"`), each block
+            contains `text` and `role` fields.
           items: {}
         createdAt:
           type: string
@@ -1079,10 +1178,10 @@ components:
         userId: "user_1234"
         channel: "history"
         epoch: null
-        contentType: "message"
+        contentType: "history"
         content:
-          - type: "text"
-            text: "Here is a summary of what we discussed so far…"
+          - text: "Here is a summary of what we discussed so far…"
+            role: "AI"
         createdAt: "2025-01-10T14:40:12Z"
 
     CreateEntryRequest:
@@ -1111,17 +1210,34 @@ components:
           type: string
           description: |-
             Describes the schema/format of the content array.
-            Examples: "message", "LC4J", "SpringAI"
+
+            **History channel entries must use `"history"` as the contentType.**
+            The content array for history entries must contain exactly 1 object with:
+            - `text` (string): The message text.
+            - `role` (string): Either `"USER"` or `"AI"`.
+
+            Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
+            agent memory entries.
         content:
           type: array
+          description: |-
+            For history channel entries (contentType: `"history"`), each block
+            contains `text` and `role` fields.
           items: {}
+        indexedContent:
+          type: string
+          nullable: true
+          description: |-
+            Optional text to index for search. Only valid for entries in the history
+            channel. If provided, the entry will be indexed for search immediately
+            after creation. Returns 400 Bad Request if specified for non-history channels.
       example:
         userId: "user_1234"
         channel: "history"
-        contentType: "message"
+        contentType: "history"
         content:
-          - type: "text"
-            text: "Based on your past chats, here are three possible approaches…"
+          - text: "Based on your past chats, here are three possible approaches…"
+            role: "AI"
 
     SyncEntryResponse:
       type: object
@@ -1159,33 +1275,73 @@ components:
               text: "Second message added during sync."
           createdAt: "2025-01-10T14:40:12Z"
 
-    IndexTranscriptRequest:
+    IndexEntryRequest:
       type: object
       required:
         - conversationId
-        - transcript
-        - untilEntryId
+        - entryId
+        - indexedContent
       properties:
         conversationId:
           type: string
           format: uuid
-          description: The conversation to index.
-        title:
-          type: string
-          nullable: true
-          description: Optional conversation title to store/update.
-        transcript:
-          type: string
-          description: Transcript text to index for semantic search.
-        untilEntryId:
+          description: The conversation containing the entry.
+        entryId:
           type: string
           format: uuid
-          description: Highest entry ID covered by the index (inclusive).
+          description: The entry ID to index.
+        indexedContent:
+          type: string
+          description: The searchable text for this entry.
       example:
         conversationId: "550e8400-e29b-41d4-a716-446655440000"
-        title: "Conversation forking design"
-        transcript: "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch."
-        untilEntryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        entryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        indexedContent: "User asked about conversation forking and branching strategies"
+
+    IndexConversationsResponse:
+      type: object
+      properties:
+        indexed:
+          type: integer
+          description: |-
+            Number of entries processed. These entries have their indexed content
+            stored and will be searchable. If vector store indexing failed for some
+            entries, they will become searchable asynchronously via background retry.
+      example:
+        indexed: 3
+
+    UnindexedEntriesResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnindexedEntry'
+        cursor:
+          type: string
+          nullable: true
+          description: Cursor for fetching next page. Null when no more results.
+      example:
+        data:
+          - conversationId: "550e8400-e29b-41d4-a716-446655440000"
+            entry:
+              id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+              channel: "history"
+              contentType: "history"
+              content:
+                - text: "Help me design a memory service"
+                  role: "USER"
+              createdAt: "2025-01-10T14:40:12Z"
+        cursor: "eyJjcmVhdGVkQXQiOiIyMDI1LTAxLTEwVDE0OjQwOjEyWiJ9"
+
+    UnindexedEntry:
+      type: object
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        entry:
+          $ref: '#/components/schemas/Entry'
 
     SearchConversationsRequest:
       type: object
@@ -1195,53 +1351,83 @@ components:
         query:
           type: string
           description: Natural language query.
-        topK:
+        searchType:
+          type: string
+          enum: [auto, semantic, fulltext]
+          default: auto
+          description: |
+            The search method to use:
+            - `auto` (default): Try semantic (vector) search first, fall back to full-text if no results or unavailable
+            - `semantic`: Use only vector/embedding-based semantic search
+            - `fulltext`: Use only PostgreSQL full-text search with GIN index
+
+            If the requested search type is not available on the server, a 501 (Not Implemented)
+            error is returned with details about which search types are available.
+        after:
+          type: string
+          nullable: true
+          description: Cursor for pagination; returns items after this result.
+        limit:
           type: integer
           default: 20
-        conversationIds:
-          type: array
-          items:
-            type: string
-            format: uuid
-          nullable: true
-          description: Filter search to specific conversations (UUID format).
-        before:
-          type: string
-          format: uuid
-          nullable: true
-          description: Optional upper bound entry ID for temporal filtering.
+          description: Maximum number of results to return.
+        includeEntry:
+          type: boolean
+          default: true
+          description: Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.
+        groupByConversation:
+          type: boolean
+          default: true
+          description: |
+            When true (default), groups results by conversation and returns only
+            the highest-scoring entry per conversation. When false, returns all
+            matching entries ordered by score.
       example:
         query: "summary of memory service design decisions"
-        topK: 5
-        conversationIds:
-          - "550e8400-e29b-41d4-a716-446655440000"
-          - "550e8400-e29b-41d4-a716-446655440001"
-        before: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        searchType: auto
+        limit: 20
+        includeEntry: true
+        groupByConversation: true
 
     SearchResult:
       type: object
       properties:
-        entry:
-          $ref: '#/components/schemas/Entry'
+        conversationId:
+          type: string
+          format: uuid
+          description: Unique identifier of the conversation containing this entry.
+        conversationTitle:
+          type: string
+          description: Title of the conversation containing this entry.
+        entryId:
+          type: string
+          format: uuid
+          description: ID of the matched entry. Always present for deep-linking.
         score:
           type: number
           format: float
         highlights:
           type: string
           nullable: true
+        entry:
+          allOf:
+            - $ref: '#/components/schemas/Entry'
+          description: The matched entry. Only included when includeEntry is true in the request.
       example:
+        conversationId: "550e8400-e29b-41d4-a716-446655440000"
+        conversationTitle: "Memory Service Design Discussion"
+        score: 0.93
+        highlights: "design a memory service for my agent"
         entry:
           id: "6ba7b810-9dad-11d1-80b4-00c04fd430c9"
           conversationId: "550e8400-e29b-41d4-a716-446655440000"
           userId: "user_1234"
           channel: "history"
-          contentType: "message"
+          contentType: "history"
           content:
-            - type: "text"
-              text: "Help me design a memory service for my agent."
+            - text: "Help me design a memory service for my agent."
+              role: "USER"
           createdAt: "2025-01-10T14:32:05Z"
-        score: 0.93
-        highlights: "design a memory service for my agent"
 
     OwnershipTransfer:
       type: object

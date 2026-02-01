@@ -109,9 +109,7 @@ export function UserAvatar({ user }: UserAvatarProps) {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-ink">{displayName}</p>
-                {user.email && user.name && (
-                  <p className="truncate text-xs text-stone">{user.email}</p>
-                )}
+                {user.email && user.name && <p className="truncate text-xs text-stone">{user.email}</p>}
               </div>
             </div>
           </div>

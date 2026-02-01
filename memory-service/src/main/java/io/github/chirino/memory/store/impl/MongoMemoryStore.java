@@ -14,13 +14,17 @@ import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
-import io.github.chirino.memory.api.dto.IndexTranscriptRequest;
+import io.github.chirino.memory.api.dto.IndexConversationsResponse;
+import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
+import io.github.chirino.memory.api.dto.UnindexedEntry;
 import io.github.chirino.memory.cache.CachedMemoryEntries;
 import io.github.chirino.memory.cache.MemoryEntriesCache;
 import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
@@ -314,9 +318,9 @@ public class MongoMemoryStore implements MemoryStore {
         m.userId = userId;
         m.channel = Channel.HISTORY;
         m.epoch = null;
-        m.contentType = "message";
+        m.contentType = "history";
         m.conversationGroupId = c.conversationGroupId;
-        m.decodedContent = List.of(Map.of("type", "text", "text", request.getContent()));
+        m.decodedContent = List.of(Map.of("text", request.getContent(), "role", "USER"));
         m.content = encryptContent(m.decodedContent);
         Instant createdAt = Instant.now();
         m.createdAt = createdAt;
@@ -893,6 +897,7 @@ public class MongoMemoryStore implements MemoryStore {
             m.contentType = req.getContentType() != null ? req.getContentType() : "message";
             m.decodedContent = req.getContent();
             m.content = encryptContent(m.decodedContent);
+            m.indexedContent = req.getIndexedContent();
             m.conversationGroupId = c.conversationGroupId;
             Instant createdAt = Instant.now();
             m.createdAt = createdAt;
@@ -1006,51 +1011,66 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public EntryDto indexTranscript(IndexTranscriptRequest request, String clientId) {
-        String conversationId = request.getConversationId();
-        MongoConversation c = conversationRepository.findById(conversationId);
-        if (c == null) {
-            throw new ResourceNotFoundException("conversation", conversationId);
-        }
-        MongoEntry transcriptEntry = new MongoEntry();
-        transcriptEntry.id = UUID.randomUUID().toString();
-        transcriptEntry.conversationId = conversationId;
-        transcriptEntry.userId = null;
-        transcriptEntry.clientId = clientId;
-        transcriptEntry.channel = Channel.TRANSCRIPT;
-        transcriptEntry.epoch = null;
-        transcriptEntry.contentType = "transcript";
-        transcriptEntry.decodedContent = buildTranscriptContent(request);
-        transcriptEntry.content = encryptContent(transcriptEntry.decodedContent);
-        transcriptEntry.conversationGroupId = c.conversationGroupId;
-        transcriptEntry.createdAt = Instant.now();
-        entryRepository.persist(transcriptEntry);
+    public IndexConversationsResponse indexEntries(List<IndexEntryRequest> entries) {
+        int indexed = 0;
+        List<MongoEntry> entriesToVectorize = new ArrayList<>();
 
-        boolean conversationUpdated = false;
-        if (request.getTitle() != null && !request.getTitle().isBlank()) {
-            c.title = encryptTitle(request.getTitle());
-            conversationUpdated = true;
+        for (IndexEntryRequest req : entries) {
+            String conversationId = req.getConversationId();
+            String entryId = req.getEntryId();
+
+            MongoEntry entry = entryRepository.findById(entryId);
+            if (entry == null) {
+                throw new ResourceNotFoundException("entry", entryId);
+            }
+            if (!entry.conversationId.equals(conversationId)) {
+                throw new ResourceNotFoundException("entry", entryId);
+            }
+            if (entry.channel != Channel.HISTORY) {
+                throw new IllegalArgumentException("Only history channel entries can be indexed");
+            }
+
+            entry.indexedContent = req.getIndexedContent();
+            entryRepository.persistOrUpdate(entry);
+            entriesToVectorize.add(entry);
+            indexed++;
         }
+
+        // Attempt synchronous vector store indexing
         if (shouldVectorize()) {
-            vectorizeTranscript(c, transcriptEntry, request);
-        } else if (conversationUpdated) {
-            conversationRepository.persistOrUpdate(c);
+            boolean anyFailed = false;
+            for (MongoEntry entry : entriesToVectorize) {
+                try {
+                    vectorizeEntry(entry);
+                    entry.indexedAt = Instant.now();
+                    entryRepository.persistOrUpdate(entry);
+                } catch (Exception e) {
+                    LOG.warnf(e, "Failed to vectorize entry %s", entry.id);
+                    anyFailed = true;
+                }
+            }
+            if (anyFailed) {
+                // Create singleton retry task
+                taskRepository.createTask(
+                        "vector_store_index_retry", "vector_store_index_retry", Map.of());
+            }
         }
 
-        return toEntryDto(transcriptEntry);
+        return new IndexConversationsResponse(indexed);
     }
 
-    private List<Object> buildTranscriptContent(IndexTranscriptRequest request) {
-        if (request == null) {
-            return Collections.emptyList();
+    private void vectorizeEntry(MongoEntry entry) {
+        String text = entry.indexedContent;
+        if (text == null || text.isBlank()) {
+            return;
         }
-        Map<String, Object> block = new HashMap<>();
-        block.put("type", "transcript");
-        block.put("text", request.getTranscript());
-        if (request.getUntilEntryId() != null) {
-            block.put("untilEntryId", request.getUntilEntryId());
+        VectorStore store = vectorStoreSelector.getVectorStore();
+        float[] embedding = embeddingService.embed(text);
+        if (embedding == null || embedding.length == 0) {
+            return;
         }
-        return List.of(block);
+        store.upsertTranscriptEmbedding(
+                entry.conversationGroupId, entry.conversationId, entry.id, embedding);
     }
 
     private boolean shouldVectorize() {
@@ -1058,26 +1078,76 @@ public class MongoMemoryStore implements MemoryStore {
         return store != null && store.isEnabled() && embeddingService.isEnabled();
     }
 
-    private void vectorizeTranscript(
-            MongoConversation conversation,
-            MongoEntry transcriptEntry,
-            IndexTranscriptRequest request) {
-        if (request == null
-                || request.getTranscript() == null
-                || request.getTranscript().isBlank()) {
-            return;
-        }
-        VectorStore store = vectorStoreSelector.getVectorStore();
-        try {
-            float[] embedding = embeddingService.embed(request.getTranscript());
-            if (embedding == null || embedding.length == 0) {
-                return;
+    @Override
+    public UnindexedEntriesResponse listUnindexedEntries(int limit, String cursor) {
+        // Query entries where channel = HISTORY AND indexed_content IS NULL
+        Bson filter =
+                Filters.and(
+                        Filters.eq("channel", Channel.HISTORY.name()),
+                        Filters.eq("indexedContent", null));
+
+        // Handle cursor-based pagination
+        if (cursor != null && !cursor.isBlank()) {
+            try {
+                String decoded =
+                        new String(
+                                java.util.Base64.getDecoder().decode(cursor),
+                                StandardCharsets.UTF_8);
+                Instant cursorTime = Instant.from(ISO_FORMATTER.parse(decoded));
+                filter = Filters.and(filter, Filters.gt("createdAt", cursorTime));
+            } catch (Exception e) {
+                // Invalid cursor, ignore
             }
-            store.upsertTranscriptEmbedding(conversation.id, transcriptEntry.id, embedding);
-            conversation.vectorizedAt = Instant.now();
-            conversationRepository.persistOrUpdate(conversation);
-        } catch (Exception e) {
-            LOG.warnf(e, "Failed to vectorize transcript for conversationId=%s", conversation.id);
+        }
+
+        List<MongoEntry> results =
+                entryRepository.find(filter).stream()
+                        .sorted(Comparator.comparing(e -> e.createdAt))
+                        .limit(limit + 1)
+                        .collect(Collectors.toList());
+
+        // Determine next cursor
+        String nextCursor = null;
+        if (results.size() > limit) {
+            results = results.subList(0, limit);
+            if (!results.isEmpty()) {
+                MongoEntry last = results.get(results.size() - 1);
+                String timestamp = ISO_FORMATTER.format(last.createdAt.atOffset(ZoneOffset.UTC));
+                nextCursor =
+                        java.util.Base64.getEncoder()
+                                .encodeToString(timestamp.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+
+        // Convert to DTOs
+        List<UnindexedEntry> data =
+                results.stream()
+                        .map(e -> new UnindexedEntry(e.conversationId, toEntryDto(e)))
+                        .collect(Collectors.toList());
+
+        return new UnindexedEntriesResponse(data, nextCursor);
+    }
+
+    @Override
+    public List<EntryDto> findEntriesPendingVectorIndexing(int limit) {
+        // Query entries where indexed_content IS NOT NULL AND indexed_at IS NULL
+        Bson filter =
+                Filters.and(Filters.ne("indexedContent", null), Filters.eq("indexedAt", null));
+
+        return entryRepository.find(filter).stream()
+                .sorted(Comparator.comparing(e -> e.createdAt))
+                .limit(limit)
+                .map(this::toEntryDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public void setIndexedAt(String entryId, OffsetDateTime indexedAt) {
+        MongoEntry entry = entryRepository.findById(entryId);
+        if (entry != null) {
+            entry.indexedAt = indexedAt.toInstant();
+            entryRepository.persistOrUpdate(entry);
         }
     }
 
@@ -1092,10 +1162,20 @@ public class MongoMemoryStore implements MemoryStore {
         }
     }
 
+    /**
+     * @deprecated Use {@link io.github.chirino.memory.vector.MongoVectorStore#search(String,
+     *     SearchEntriesRequest)} instead. This method uses inefficient in-memory filtering. The new
+     *     implementation uses MongoDB full-text search with text indexes.
+     */
+    @Deprecated(forRemoval = true)
     @Override
-    public List<SearchResultDto> searchEntries(String userId, SearchEntriesRequest request) {
+    public SearchResultsDto searchEntries(String userId, SearchEntriesRequest request) {
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(Collections.emptyList());
+        result.setNextCursor(null);
+
         if (request.getQuery() == null || request.getQuery().isBlank()) {
-            return Collections.emptyList();
+            return result;
         }
 
         Set<String> groupIds =
@@ -1103,55 +1183,90 @@ public class MongoMemoryStore implements MemoryStore {
                         .map(m -> m.conversationGroupId)
                         .collect(Collectors.toSet());
         if (groupIds.isEmpty()) {
-            return Collections.emptyList();
+            return result;
         }
 
         List<MongoConversation> conversations =
                 conversationRepository.find("conversationGroupId in ?1", groupIds).stream()
                         .filter(c -> c.deletedAt == null)
                         .collect(Collectors.toList());
-        Set<String> userConversationIds =
-                conversations.stream().map(c -> c.id).collect(Collectors.toSet());
+        Map<String, MongoConversation> conversationMap =
+                conversations.stream().collect(Collectors.toMap(c -> c.id, c -> c));
+        Set<String> userConversationIds = conversationMap.keySet();
 
-        List<String> targetConversationIds;
-        if (request.getConversationIds() != null && !request.getConversationIds().isEmpty()) {
-            targetConversationIds =
-                    request.getConversationIds().stream()
-                            .filter(userConversationIds::contains)
-                            .collect(Collectors.toList());
-            if (targetConversationIds.isEmpty()) {
-                return Collections.emptyList();
-            }
-        } else {
-            targetConversationIds = new ArrayList<>(userConversationIds);
+        if (userConversationIds.isEmpty()) {
+            return result;
         }
 
         String query = request.getQuery().toLowerCase();
-        int limit = request.getTopK() != null ? request.getTopK() : 20;
+        int limit = request.getLimit() != null ? request.getLimit() : 20;
+
+        // Parse after cursor if present
+        String afterEntryId = request.getAfter();
 
         List<MongoEntry> candidates =
-                entryRepository.find("conversationId in ?1", targetConversationIds).list();
+                entryRepository.find("conversationId in ?1", userConversationIds).list().stream()
+                        .sorted(
+                                (a, b) -> {
+                                    // Sort by createdAt desc, then id desc
+                                    int cmp = b.createdAt.compareTo(a.createdAt);
+                                    if (cmp != 0) return cmp;
+                                    return b.id.compareTo(a.id);
+                                })
+                        .collect(Collectors.toList());
 
-        return candidates.stream()
-                .map(
-                        m -> {
-                            List<Object> content = decryptContent(m.content);
-                            if (content == null || content.isEmpty()) {
-                                return null;
-                            }
-                            String text = extractSearchText(content);
-                            if (text == null || !text.toLowerCase().contains(query)) {
-                                return null;
-                            }
-                            SearchResultDto dto = new SearchResultDto();
-                            dto.setEntry(toEntryDto(m, content));
-                            dto.setScore(1.0);
-                            dto.setHighlights(null);
-                            return dto;
-                        })
-                .filter(r -> r != null)
-                .limit(limit)
-                .collect(Collectors.toList());
+        // Skip entries until we find the cursor
+        boolean skipMode = afterEntryId != null && !afterEntryId.isBlank();
+        List<SearchResultDto> resultsList = new ArrayList<>();
+
+        for (MongoEntry m : candidates) {
+            if (skipMode) {
+                if (m.id.equals(afterEntryId)) {
+                    skipMode = false;
+                }
+                continue;
+            }
+
+            List<Object> content = decryptContent(m.content);
+            if (content == null || content.isEmpty()) {
+                continue;
+            }
+            String text = extractSearchText(content);
+            String indexedContent = m.indexedContent;
+            boolean matchesContent = text != null && text.toLowerCase().contains(query);
+            boolean matchesIndexed =
+                    indexedContent != null && indexedContent.toLowerCase().contains(query);
+            if (!matchesContent && !matchesIndexed) {
+                continue;
+            }
+            // Prefer indexed content for highlights if it matched
+            String highlightSource = matchesIndexed ? indexedContent : text;
+
+            SearchResultDto dto = new SearchResultDto();
+            dto.setConversationId(m.conversationId);
+            MongoConversation conv = conversationMap.get(m.conversationId);
+            dto.setConversationTitle(conv != null ? decryptTitle(conv.title) : null);
+            dto.setEntryId(m.id);
+            dto.setEntry(toEntryDto(m, content));
+            dto.setScore(1.0);
+            dto.setHighlights(extractHighlight(highlightSource, query));
+            resultsList.add(dto);
+
+            // Fetch one extra to determine if there's a next page
+            if (resultsList.size() > limit) {
+                break;
+            }
+        }
+
+        // Determine next cursor
+        if (resultsList.size() > limit) {
+            SearchResultDto last = resultsList.get(limit - 1);
+            result.setNextCursor(last.getEntry().getId());
+            resultsList = resultsList.subList(0, limit);
+        }
+
+        result.setResults(resultsList);
+        return result;
     }
 
     private void ensureHasAccess(String conversationId, String userId, AccessLevel level) {
@@ -1271,6 +1386,40 @@ public class MongoMemoryStore implements MemoryStore {
             }
         }
         return null;
+    }
+
+    /**
+     * Extracts a highlight snippet showing the query match in context.
+     *
+     * @param text  The full text to extract from
+     * @param query The search query (lowercase)
+     * @return A snippet with context around the match, or null if not found
+     */
+    private String extractHighlight(String text, String query) {
+        if (text == null || query == null) {
+            return null;
+        }
+        String lowerText = text.toLowerCase();
+        int matchIndex = lowerText.indexOf(query);
+        if (matchIndex < 0) {
+            return null;
+        }
+
+        // Extract a snippet with context around the match
+        int contextChars = 50;
+        int start = Math.max(0, matchIndex - contextChars);
+        int end = Math.min(text.length(), matchIndex + query.length() + contextChars);
+
+        StringBuilder snippet = new StringBuilder();
+        if (start > 0) {
+            snippet.append("...");
+        }
+        snippet.append(text, start, end);
+        if (end < text.length()) {
+            snippet.append("...");
+        }
+
+        return snippet.toString().trim();
     }
 
     private String inferTitleFromUserEntry(CreateUserEntryRequest request) {
@@ -1649,13 +1798,17 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<SearchResultDto> adminSearchEntries(AdminSearchQuery query) {
+    public SearchResultsDto adminSearchEntries(AdminSearchQuery query) {
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(Collections.emptyList());
+        result.setNextCursor(null);
+
         if (query.getQuery() == null || query.getQuery().isBlank()) {
-            return Collections.emptyList();
+            return result;
         }
 
         List<MongoConversation> allConversations = conversationRepository.listAll();
-        Set<String> conversationIds =
+        Map<String, MongoConversation> conversationMap =
                 allConversations.stream()
                         .filter(
                                 c -> {
@@ -1671,44 +1824,77 @@ public class MongoMemoryStore implements MemoryStore {
                                     }
                                     return true;
                                 })
-                        .map(c -> c.id)
-                        .collect(Collectors.toSet());
+                        .collect(Collectors.toMap(c -> c.id, c -> c));
 
-        if (query.getConversationIds() != null && !query.getConversationIds().isEmpty()) {
-            Set<String> requested = Set.copyOf(query.getConversationIds());
-            conversationIds.retainAll(requested);
-        }
+        Set<String> conversationIds = conversationMap.keySet();
 
         if (conversationIds.isEmpty()) {
-            return Collections.emptyList();
+            return result;
         }
 
         String searchQuery = query.getQuery().toLowerCase();
-        int limit = query.getTopK() != null ? query.getTopK() : 20;
+        int limit = query.getLimit() != null ? query.getLimit() : 20;
+
+        // Parse after cursor if present
+        String afterEntryId = query.getAfter();
 
         List<MongoEntry> candidates =
-                entryRepository.find("conversationId in ?1", conversationIds).list();
+                entryRepository.find("conversationId in ?1", conversationIds).list().stream()
+                        .sorted(
+                                (a, b) -> {
+                                    // Sort by createdAt desc, then id desc
+                                    int cmp = b.createdAt.compareTo(a.createdAt);
+                                    if (cmp != 0) return cmp;
+                                    return b.id.compareTo(a.id);
+                                })
+                        .collect(Collectors.toList());
 
-        return candidates.stream()
-                .map(
-                        m -> {
-                            List<Object> content = decryptContent(m.content);
-                            if (content == null || content.isEmpty()) {
-                                return null;
-                            }
-                            String text = extractSearchText(content);
-                            if (text == null || !text.toLowerCase().contains(searchQuery)) {
-                                return null;
-                            }
-                            SearchResultDto dto = new SearchResultDto();
-                            dto.setEntry(toEntryDto(m, content));
-                            dto.setScore(1.0);
-                            dto.setHighlights(null);
-                            return dto;
-                        })
-                .filter(r -> r != null)
-                .limit(limit)
-                .collect(Collectors.toList());
+        // Skip entries until we find the cursor
+        boolean skipMode = afterEntryId != null && !afterEntryId.isBlank();
+        List<SearchResultDto> resultsList = new ArrayList<>();
+
+        for (MongoEntry m : candidates) {
+            if (skipMode) {
+                if (m.id.equals(afterEntryId)) {
+                    skipMode = false;
+                }
+                continue;
+            }
+
+            List<Object> content = decryptContent(m.content);
+            if (content == null || content.isEmpty()) {
+                continue;
+            }
+            String text = extractSearchText(content);
+            if (text == null || !text.toLowerCase().contains(searchQuery)) {
+                continue;
+            }
+
+            SearchResultDto dto = new SearchResultDto();
+            dto.setConversationId(m.conversationId);
+            MongoConversation conv = conversationMap.get(m.conversationId);
+            dto.setConversationTitle(conv != null ? decryptTitle(conv.title) : null);
+            dto.setEntryId(m.id);
+            dto.setEntry(toEntryDto(m, content));
+            dto.setScore(1.0);
+            dto.setHighlights(extractHighlight(text, searchQuery));
+            resultsList.add(dto);
+
+            // Fetch one extra to determine if there's a next page
+            if (resultsList.size() > limit) {
+                break;
+            }
+        }
+
+        // Determine next cursor
+        if (resultsList.size() > limit) {
+            SearchResultDto last = resultsList.get(limit - 1);
+            result.setNextCursor(last.getEntry().getId());
+            resultsList = resultsList.subList(0, limit);
+        }
+
+        result.setResults(resultsList);
+        return result;
     }
 
     @Override

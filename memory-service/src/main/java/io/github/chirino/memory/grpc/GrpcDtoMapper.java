@@ -125,15 +125,24 @@ public final class GrpcDtoMapper {
         return builder.build();
     }
 
-    public static SearchResult toProto(SearchResultDto dto) {
+    public static SearchResult toProto(SearchResultDto dto, boolean includeEntry) {
         if (dto == null) {
             return null;
         }
-        return SearchResult.newBuilder()
-                .setEntry(toProto(dto.getEntry()))
-                .setScore((float) dto.getScore())
-                .setHighlights(dto.getHighlights() == null ? "" : dto.getHighlights())
-                .build();
+        SearchResult.Builder builder =
+                SearchResult.newBuilder()
+                        .setConversationId(stringToByteString(dto.getConversationId()))
+                        .setConversationTitle(
+                                dto.getConversationTitle() == null
+                                        ? ""
+                                        : dto.getConversationTitle())
+                        .setEntryId(stringToByteString(dto.getEntryId()))
+                        .setScore((float) dto.getScore())
+                        .setHighlights(dto.getHighlights() == null ? "" : dto.getHighlights());
+        if (includeEntry && dto.getEntry() != null) {
+            builder.setEntry(toProto(dto.getEntry()));
+        }
+        return builder.build();
     }
 
     public static OwnershipTransfer toProto(OwnershipTransferDto dto) {

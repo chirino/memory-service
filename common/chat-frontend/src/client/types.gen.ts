@@ -149,16 +149,7 @@ export type CreateEntryRequest = {
   content: Array<unknown>;
 };
 
-export type SyncEntriesRequest = {
-  /**
-   * The desired memory epoch contents. Each entry must include the
-   * `memory` channel and should match the ordering that the agent expects to
-   * see replayed; only the agent may call this endpoint.
-   */
-  entries: Array<CreateEntryRequest>;
-};
-
-export type SyncEntriesResponse = {
+export type SyncEntryResponse = {
   /**
    * The epoch number that now reflects the stored memory state.
    */
@@ -172,9 +163,9 @@ export type SyncEntriesResponse = {
    */
   epochIncremented?: boolean;
   /**
-   * List of entries that were appended during this sync.
+   * The entry that was appended during this sync, or null if no-op.
    */
-  entries?: Array<Entry>;
+  entry?: Entry | null;
 };
 
 export type IndexTranscriptRequest = {
@@ -201,21 +192,35 @@ export type SearchConversationsRequest = {
    * Natural language query.
    */
   query: string;
-  topK?: number;
   /**
-   * Filter search to specific conversations (UUID format).
+   * Cursor for pagination; returns items after this result.
    */
-  conversationIds?: Array<string> | null;
+  after?: string | null;
   /**
-   * Optional upper bound entry ID for temporal filtering.
+   * Maximum number of results to return.
    */
-  before?: string | null;
+  limit?: number;
+  /**
+   * Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.
+   */
+  includeEntry?: boolean;
 };
 
 export type SearchResult = {
-  entry?: Entry;
+  /**
+   * Unique identifier of the conversation containing this entry.
+   */
+  conversationId?: string;
+  /**
+   * Title of the conversation containing this entry.
+   */
+  conversationTitle?: string;
   score?: number;
   highlights?: string | null;
+  /**
+   * The matched entry. Only included when includeEntry is true in the request.
+   */
+  entry?: Entry;
 };
 
 /**
@@ -274,10 +279,12 @@ export type $OpenApiTs = {
          */
         limit?: number;
         /**
-         * Listing mode for conversations.
+         * Listing mode for conversations. Controls which conversations are returned
+         * from each fork tree (conversation group).
          * - `all`: include all conversations the user can access (roots and forks).
-         * - `roots`: only include root conversations.
-         * - `latest-fork`: include the most recently updated conversation per root tree.
+         * - `roots`: only include root conversations (conversations that are not forks).
+         * - `latest-fork`: include only the most recently updated conversation per fork tree.
+         * This is useful for showing a single representative conversation from each tree.
          */
         mode?: "all" | "roots" | "latest-fork";
         /**
@@ -418,7 +425,7 @@ export type $OpenApiTs = {
          * Conversation identifier (UUID format).
          */
         conversationId: string;
-        requestBody: SyncEntriesRequest;
+        requestBody: CreateEntryRequest;
       };
       res: {
         /**

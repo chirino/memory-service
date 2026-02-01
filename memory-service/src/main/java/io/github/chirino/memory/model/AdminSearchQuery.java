@@ -1,15 +1,13 @@
 package io.github.chirino.memory.model;
 
-import java.util.List;
-
 public class AdminSearchQuery {
 
     private String query;
-    private Integer topK;
-    private List<String> conversationIds;
+    private Integer limit;
+    private String after;
     private String userId;
-    private String before;
     private boolean includeDeleted;
+    private Boolean includeEntry;
 
     public String getQuery() {
         return query;
@@ -19,20 +17,20 @@ public class AdminSearchQuery {
         this.query = query;
     }
 
-    public Integer getTopK() {
-        return topK;
+    public Integer getLimit() {
+        return limit;
     }
 
-    public void setTopK(Integer topK) {
-        this.topK = topK;
+    public void setLimit(Integer limit) {
+        this.limit = limit;
     }
 
-    public List<String> getConversationIds() {
-        return conversationIds;
+    public String getAfter() {
+        return after;
     }
 
-    public void setConversationIds(List<String> conversationIds) {
-        this.conversationIds = conversationIds;
+    public void setAfter(String after) {
+        this.after = after;
     }
 
     public String getUserId() {
@@ -43,19 +41,19 @@ public class AdminSearchQuery {
         this.userId = userId;
     }
 
-    public String getBefore() {
-        return before;
-    }
-
-    public void setBefore(String before) {
-        this.before = before;
-    }
-
     public boolean isIncludeDeleted() {
         return includeDeleted;
     }
 
     public void setIncludeDeleted(boolean includeDeleted) {
         this.includeDeleted = includeDeleted;
+    }
+
+    public Boolean getIncludeEntry() {
+        return includeEntry;
+    }
+
+    public void setIncludeEntry(Boolean includeEntry) {
+        this.includeEntry = includeEntry;
     }
 }

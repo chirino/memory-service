@@ -2,6 +2,7 @@ package io.github.chirino.memory.api;
 
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
 import io.github.chirino.memory.client.model.SearchConversationsRequest;
@@ -10,6 +11,7 @@ import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.model.Channel;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
+import io.github.chirino.memory.store.SearchTypeUnavailableException;
 import io.github.chirino.memory.vector.VectorStore;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -26,7 +28,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Path("/v1")
 @Authenticated
@@ -59,21 +60,24 @@ public class SearchResource {
             io.github.chirino.memory.api.dto.SearchEntriesRequest internal =
                     new io.github.chirino.memory.api.dto.SearchEntriesRequest();
             internal.setQuery(request.getQuery());
-            internal.setTopK(request.getTopK());
-            if (request.getConversationIds() != null) {
-                internal.setConversationIds(
-                        request.getConversationIds().stream()
-                                .map(UUID::toString)
-                                .collect(Collectors.toList()));
-            }
-            internal.setBefore(request.getBefore() != null ? request.getBefore().toString() : null);
+            internal.setSearchType(
+                    request.getSearchType() != null ? request.getSearchType().value() : "auto");
+            internal.setLimit(request.getLimit());
+            internal.setAfter(request.getAfter());
+            internal.setIncludeEntry(request.getIncludeEntry());
+            internal.setGroupByConversation(request.getGroupByConversation());
 
-            List<SearchResultDto> internalResults = vectorStore.search(currentUserId(), internal);
+            SearchResultsDto internalResults = vectorStore.search(currentUserId(), internal);
             List<SearchResult> data =
-                    internalResults.stream().map(this::toClientSearchResult).toList();
+                    internalResults.getResults().stream()
+                            .map(dto -> toClientSearchResult(dto, internal.getIncludeEntry()))
+                            .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
+            response.put("nextCursor", internalResults.getNextCursor());
             return Response.ok(response).build();
+        } catch (SearchTypeUnavailableException e) {
+            return searchTypeUnavailable(e);
         } catch (ResourceNotFoundException e) {
             return notFound(e);
         } catch (AccessDeniedException e) {
@@ -87,6 +91,14 @@ public class SearchResource {
         error.setCode("vector_store_disabled");
         error.setDetails(Map.of("message", "Enable a vector store to use semantic search."));
         return Response.status(Response.Status.NOT_IMPLEMENTED).entity(error).build();
+    }
+
+    private Response searchTypeUnavailable(SearchTypeUnavailableException e) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("error", "search_type_unavailable");
+        body.put("message", e.getMessage());
+        body.put("availableTypes", e.getAvailableTypes());
+        return Response.status(501).entity(body).build();
     }
 
     private Response notFound(ResourceNotFoundException e) {
@@ -105,14 +117,20 @@ public class SearchResource {
         return Response.status(Response.Status.FORBIDDEN).entity(error).build();
     }
 
-    private SearchResult toClientSearchResult(SearchResultDto dto) {
+    private SearchResult toClientSearchResult(SearchResultDto dto, Boolean includeEntry) {
         if (dto == null) {
             return null;
         }
         SearchResult result = new SearchResult();
-        result.setEntry(toClientEntry(dto.getEntry()));
+        result.setConversationId(
+                dto.getConversationId() != null ? UUID.fromString(dto.getConversationId()) : null);
+        result.setConversationTitle(dto.getConversationTitle());
+        result.setEntryId(dto.getEntryId() != null ? UUID.fromString(dto.getEntryId()) : null);
         result.setScore((float) dto.getScore());
         result.setHighlights(dto.getHighlights());
+        if (includeEntry == null || includeEntry) {
+            result.setEntry(toClientEntry(dto.getEntry()));
+        }
         return result;
     }
 

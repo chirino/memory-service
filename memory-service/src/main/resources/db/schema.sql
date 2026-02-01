@@ -73,8 +73,29 @@ CREATE TABLE IF NOT EXISTS entries (
     epoch             BIGINT,
     content_type      TEXT NOT NULL,
     content           BYTEA NOT NULL,
+    indexed_content   TEXT,
+    indexed_at        TIMESTAMPTZ,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Index for finding unindexed history entries (batch indexing job)
+CREATE INDEX IF NOT EXISTS idx_entries_unindexed
+    ON entries (channel, created_at)
+    WHERE indexed_content IS NULL;
+
+-- Index for finding entries pending vector store indexing (retry task)
+CREATE INDEX IF NOT EXISTS idx_entries_pending_vector_indexing
+    ON entries (indexed_at)
+    WHERE indexed_content IS NOT NULL AND indexed_at IS NULL;
+
+-- Full-text search support: generated tsvector column for GIN index
+-- Automatically maintained when indexed_content changes
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS indexed_content_tsv tsvector
+    GENERATED ALWAYS AS (to_tsvector('english', COALESCE(indexed_content, ''))) STORED;
+
+-- GIN index for fast full-text search
+CREATE INDEX IF NOT EXISTS idx_entries_indexed_content_fts
+    ON entries USING GIN (indexed_content_tsv);
 
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_created_at
     ON entries (conversation_id, created_at);
@@ -147,6 +168,7 @@ CREATE INDEX IF NOT EXISTS idx_ownership_transfers_from_user
 
 CREATE TABLE IF NOT EXISTS tasks (
     id              UUID PRIMARY KEY,
+    task_name       TEXT UNIQUE,
     task_type       TEXT NOT NULL,
     task_body       JSONB NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -155,5 +177,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     retry_count     INT NOT NULL DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_tasks_ready 
+CREATE INDEX IF NOT EXISTS idx_tasks_ready
     ON tasks (task_type, retry_at);
+
+-- Unique partial index for singleton tasks (allows multiple NULL task_name values)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name
+    ON tasks (task_name) WHERE task_name IS NOT NULL;

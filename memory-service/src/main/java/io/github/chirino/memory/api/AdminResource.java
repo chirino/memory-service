@@ -7,7 +7,6 @@ import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.EvictRequest;
 import io.github.chirino.memory.api.dto.PagedEntries;
-import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.client.model.ConversationForkSummary;
 import io.github.chirino.memory.client.model.ConversationMembership;
 import io.github.chirino.memory.client.model.Entry;
@@ -350,13 +349,22 @@ public class AdminResource {
                 return badRequest("query is required");
             }
 
-            List<SearchResultDto> results = store().adminSearchEntries(request);
+            boolean includeEntry = request.getIncludeEntry() == null || request.getIncludeEntry();
+            io.github.chirino.memory.api.dto.SearchResultsDto internalResults =
+                    store().adminSearchEntries(request);
             List<SearchResult> data =
-                    results.stream()
+                    internalResults.getResults().stream()
                             .map(
                                     dto -> {
                                         SearchResult result = new SearchResult();
-                                        result.setEntry(toClientEntry(dto.getEntry()));
+                                        result.setConversationId(
+                                                dto.getConversationId() != null
+                                                        ? UUID.fromString(dto.getConversationId())
+                                                        : null);
+                                        result.setConversationTitle(dto.getConversationTitle());
+                                        if (includeEntry) {
+                                            result.setEntry(toClientEntry(dto.getEntry()));
+                                        }
                                         result.setScore((float) dto.getScore());
                                         result.setHighlights(dto.getHighlights());
                                         return result;
@@ -364,6 +372,9 @@ public class AdminResource {
                             .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
+            if (internalResults.getNextCursor() != null) {
+                response.put("nextCursor", internalResults.getNextCursor());
+            }
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);

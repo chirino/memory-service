@@ -37,13 +37,32 @@ public class TaskRepository implements PanacheRepositoryBase<TaskEntity, UUID> {
      * Create a new task for background processing.
      */
     public void createTask(String taskType, Map<String, Object> body) {
+        createTask(null, taskType, body);
+    }
+
+    /**
+     * Create a named task (singleton/idempotent).
+     * If a task with the given name already exists, this is a no-op.
+     */
+    public void createTask(String taskName, String taskType, Map<String, Object> body) {
+        if (taskName != null && findByName(taskName) != null) {
+            return; // Task already exists, idempotent no-op
+        }
         TaskEntity task = new TaskEntity();
         task.setId(UUID.randomUUID());
+        task.setTaskName(taskName);
         task.setTaskType(taskType);
         task.setTaskBody(body);
         task.setCreatedAt(OffsetDateTime.now());
         task.setRetryAt(OffsetDateTime.now());
         persist(task);
+    }
+
+    /**
+     * Find a task by its unique name.
+     */
+    public TaskEntity findByName(String taskName) {
+        return find("taskName", taskName).firstResult();
     }
 
     /**
