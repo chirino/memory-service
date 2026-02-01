@@ -295,3 +295,136 @@ Feature: Admin REST API
     Then the response status should be 200
     And the admin audit log should contain "listForks"
     And the admin audit log should contain "Investigating fork history"
+
+  # Admin index endpoint tests
+
+  Scenario: Admin can index any conversation transcript
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Some content"}]
+    }
+    """
+    And set "entryId" to "${response.body.id}"
+    Given I am authenticated as admin user "alice"
+    When I call POST "/v1/admin/conversations/index" with body:
+    """
+    {
+      "conversationId": "${bobConversationId}",
+      "transcript": "This is a test transcript from admin",
+      "untilEntryId": "${entryId}",
+      "title": "Updated Title by Admin"
+    }
+    """
+    Then the response status should be 201
+    And the response body "channel" should be "transcript"
+    And the response body "contentType" should be "transcript"
+
+  Scenario: Indexer can index any conversation transcript
+    Given I am authenticated as indexer user "dave"
+    And there is a conversation owned by "bob" with title "Dave Test Conversation"
+    And set "daveTestConversationId" to "${conversationId}"
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${daveTestConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry for indexer test"}]
+    }
+    """
+    And set "indexerTestEntryId" to "${response.body.id}"
+    Given I am authenticated as indexer user "dave"
+    When I call POST "/v1/admin/conversations/index" with body:
+    """
+    {
+      "conversationId": "${daveTestConversationId}",
+      "transcript": "This is a test transcript from indexer",
+      "untilEntryId": "${indexerTestEntryId}"
+    }
+    """
+    Then the response status should be 201
+    And the response body "channel" should be "transcript"
+
+  Scenario: Auditor cannot index conversations
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Some content"}]
+    }
+    """
+    And set "entryId" to "${response.body.id}"
+    Given I am authenticated as auditor user "charlie"
+    When I call POST "/v1/admin/conversations/index" with body:
+    """
+    {
+      "conversationId": "${bobConversationId}",
+      "transcript": "This should fail",
+      "untilEntryId": "${entryId}"
+    }
+    """
+    Then the response status should be 403
+
+  Scenario: Regular user cannot index via admin endpoint
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Some content"}]
+    }
+    """
+    And set "entryId" to "${response.body.id}"
+    When I call POST "/v1/admin/conversations/index" with body:
+    """
+    {
+      "conversationId": "${bobConversationId}",
+      "transcript": "This should fail",
+      "untilEntryId": "${entryId}"
+    }
+    """
+    Then the response status should be 403
+
+  Scenario: Admin index returns 404 for non-existent conversation
+    When I call POST "/v1/admin/conversations/index" with body:
+    """
+    {
+      "conversationId": "00000000-0000-0000-0000-000000000000",
+      "transcript": "This should fail",
+      "untilEntryId": "00000000-0000-0000-0000-000000000001"
+    }
+    """
+    Then the response status should be 404
+
+  Scenario: Admin index requires conversationId
+    When I call POST "/v1/admin/conversations/index" with body:
+    """
+    {
+      "transcript": "Missing conversationId",
+      "untilEntryId": "00000000-0000-0000-0000-000000000001"
+    }
+    """
+    Then the response status should be 400
+
+  Scenario: Admin index requires transcript
+    When I call POST "/v1/admin/conversations/index" with body:
+    """
+    {
+      "conversationId": "${bobConversationId}",
+      "untilEntryId": "00000000-0000-0000-0000-000000000001"
+    }
+    """
+    Then the response status should be 400
+
+  Scenario: Admin index requires untilEntryId
+    When I call POST "/v1/admin/conversations/index" with body:
+    """
+    {
+      "conversationId": "${bobConversationId}",
+      "transcript": "Missing untilEntryId"
+    }
+    """
+    Then the response status should be 400

@@ -16,6 +16,7 @@ import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
 import io.github.chirino.memory.cache.CachedMemoryEntries;
@@ -1045,15 +1046,19 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<SearchResultDto> searchEntries(String userId, SearchEntriesRequest request) {
+    public SearchResultsDto searchEntries(String userId, SearchEntriesRequest request) {
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(Collections.emptyList());
+        result.setNextCursor(null);
+
         if (request.getQuery() == null || request.getQuery().isBlank()) {
-            return Collections.emptyList();
+            return result;
         }
 
         List<ConversationMembershipEntity> memberships =
                 membershipRepository.listForUser(userId, Integer.MAX_VALUE);
         if (memberships.isEmpty()) {
-            return Collections.emptyList();
+            return result;
         }
 
         Set<UUID> groupIds =
@@ -1061,56 +1066,84 @@ public class PostgresMemoryStore implements MemoryStore {
                         .map(m -> m.getId().getConversationGroupId())
                         .collect(Collectors.toSet());
         if (groupIds.isEmpty()) {
-            return Collections.emptyList();
+            return result;
         }
         List<ConversationEntity> conversations =
                 conversationRepository.find("conversationGroup.id in ?1", groupIds).list();
-        Set<UUID> userConversationIds =
-                conversations.stream().map(ConversationEntity::getId).collect(Collectors.toSet());
+        Map<UUID, ConversationEntity> conversationMap =
+                conversations.stream().collect(Collectors.toMap(ConversationEntity::getId, c -> c));
+        Set<UUID> userConversationIds = conversationMap.keySet();
 
-        List<UUID> targetConversationIds;
-        if (request.getConversationIds() != null && !request.getConversationIds().isEmpty()) {
-            List<UUID> requested =
-                    request.getConversationIds().stream()
-                            .map(UUID::fromString)
-                            .collect(Collectors.toList());
-            targetConversationIds =
-                    requested.stream()
-                            .filter(userConversationIds::contains)
-                            .collect(Collectors.toList());
-            if (targetConversationIds.isEmpty()) {
-                return Collections.emptyList();
-            }
-        } else {
-            targetConversationIds = new ArrayList<>(userConversationIds);
+        if (userConversationIds.isEmpty()) {
+            return result;
         }
 
         String query = request.getQuery().toLowerCase();
-        int limit = request.getTopK() != null ? request.getTopK() : 20;
+        int limit = request.getLimit() != null ? request.getLimit() : 20;
+
+        // Parse after cursor if present
+        UUID afterEntryId = null;
+        if (request.getAfter() != null && !request.getAfter().isBlank()) {
+            try {
+                afterEntryId = UUID.fromString(request.getAfter());
+            } catch (IllegalArgumentException e) {
+                // Invalid cursor, ignore
+            }
+        }
 
         List<EntryEntity> candidates =
-                entryRepository.find("conversation.id in ?1", targetConversationIds).list();
+                entryRepository
+                        .find(
+                                "conversation.id in ?1 order by createdAt desc, id desc",
+                                userConversationIds)
+                        .list();
 
-        return candidates.stream()
-                .map(
-                        m -> {
-                            List<Object> content = decryptContent(m.getContent());
-                            if (content == null || content.isEmpty()) {
-                                return null;
-                            }
-                            String text = extractSearchText(content);
-                            if (text == null || !text.toLowerCase().contains(query)) {
-                                return null;
-                            }
-                            SearchResultDto dto = new SearchResultDto();
-                            dto.setEntry(toEntryDto(m, content));
-                            dto.setScore(1.0);
-                            dto.setHighlights(null);
-                            return dto;
-                        })
-                .filter(r -> r != null)
-                .limit(limit)
-                .collect(Collectors.toList());
+        // Skip entries until we find the cursor
+        final UUID finalAfterEntryId = afterEntryId;
+        boolean skipMode = afterEntryId != null;
+        List<SearchResultDto> resultsList = new ArrayList<>();
+
+        for (EntryEntity m : candidates) {
+            if (skipMode) {
+                if (m.getId().equals(finalAfterEntryId)) {
+                    skipMode = false;
+                }
+                continue;
+            }
+
+            List<Object> content = decryptContent(m.getContent());
+            if (content == null || content.isEmpty()) {
+                continue;
+            }
+            String text = extractSearchText(content);
+            if (text == null || !text.toLowerCase().contains(query)) {
+                continue;
+            }
+
+            SearchResultDto dto = new SearchResultDto();
+            dto.setConversationId(m.getConversation().getId().toString());
+            ConversationEntity conv = conversationMap.get(m.getConversation().getId());
+            dto.setConversationTitle(conv != null ? decryptTitle(conv.getTitle()) : null);
+            dto.setEntry(toEntryDto(m, content));
+            dto.setScore(1.0);
+            dto.setHighlights(extractHighlight(text, query));
+            resultsList.add(dto);
+
+            // Fetch one extra to determine if there's a next page
+            if (resultsList.size() > limit) {
+                break;
+            }
+        }
+
+        // Determine next cursor
+        if (resultsList.size() > limit) {
+            SearchResultDto last = resultsList.get(limit - 1);
+            result.setNextCursor(last.getEntry().getId());
+            resultsList = resultsList.subList(0, limit);
+        }
+
+        result.setResults(resultsList);
+        return result;
     }
 
     private byte[] encryptContent(List<Object> content) {
@@ -1209,6 +1242,40 @@ public class PostgresMemoryStore implements MemoryStore {
             }
         }
         return null;
+    }
+
+    /**
+     * Extracts a highlight snippet showing the query match in context.
+     *
+     * @param text  The full text to extract from
+     * @param query The search query (lowercase)
+     * @return A snippet with context around the match, or null if not found
+     */
+    private String extractHighlight(String text, String query) {
+        if (text == null || query == null) {
+            return null;
+        }
+        String lowerText = text.toLowerCase();
+        int matchIndex = lowerText.indexOf(query);
+        if (matchIndex < 0) {
+            return null;
+        }
+
+        // Extract a snippet with context around the match
+        int contextChars = 50;
+        int start = Math.max(0, matchIndex - contextChars);
+        int end = Math.min(text.length(), matchIndex + query.length() + contextChars);
+
+        StringBuilder snippet = new StringBuilder();
+        if (start > 0) {
+            snippet.append("...");
+        }
+        snippet.append(text, start, end);
+        if (end < text.length()) {
+            snippet.append("...");
+        }
+
+        return snippet.toString().trim();
     }
 
     private String inferTitleFromUserEntry(CreateUserEntryRequest request) {
@@ -1657,9 +1724,13 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<SearchResultDto> adminSearchEntries(AdminSearchQuery query) {
+    public SearchResultsDto adminSearchEntries(AdminSearchQuery query) {
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(Collections.emptyList());
+        result.setNextCursor(null);
+
         if (query.getQuery() == null || query.getQuery().isBlank()) {
-            return Collections.emptyList();
+            return result;
         }
 
         StringBuilder jpql = new StringBuilder("FROM ConversationEntity c WHERE 1=1");
@@ -1677,43 +1748,80 @@ public class PostgresMemoryStore implements MemoryStore {
 
         List<ConversationEntity> conversations =
                 conversationRepository.find(jpql.toString(), params.toArray()).list();
-        Set<UUID> conversationIds =
-                conversations.stream().map(ConversationEntity::getId).collect(Collectors.toSet());
-
-        if (query.getConversationIds() != null && !query.getConversationIds().isEmpty()) {
-            Set<UUID> requested =
-                    query.getConversationIds().stream()
-                            .map(UUID::fromString)
-                            .collect(Collectors.toSet());
-            conversationIds.retainAll(requested);
-        }
+        Map<UUID, ConversationEntity> conversationMap =
+                conversations.stream().collect(Collectors.toMap(ConversationEntity::getId, c -> c));
+        Set<UUID> conversationIds = conversationMap.keySet();
 
         if (conversationIds.isEmpty()) {
-            return Collections.emptyList();
+            return result;
         }
 
         String searchQuery = query.getQuery().toLowerCase();
-        int limit = query.getTopK() != null ? query.getTopK() : 20;
+        int limit = query.getLimit() != null ? query.getLimit() : 20;
+
+        // Parse after cursor if present
+        UUID afterEntryId = null;
+        if (query.getAfter() != null && !query.getAfter().isBlank()) {
+            try {
+                afterEntryId = UUID.fromString(query.getAfter());
+            } catch (IllegalArgumentException e) {
+                // Invalid cursor, ignore
+            }
+        }
 
         List<EntryEntity> candidates =
-                entryRepository.find("conversation.id in ?1", conversationIds).list();
+                entryRepository
+                        .find(
+                                "conversation.id in ?1 order by createdAt desc, id desc",
+                                conversationIds)
+                        .list();
 
-        return candidates.stream()
-                .map(
-                        m -> {
-                            List<Object> content = decryptContent(m.getContent());
-                            if (content == null || content.isEmpty()) {
-                                return null;
-                            }
-                            String text = extractSearchText(content);
-                            if (text == null || !text.toLowerCase().contains(searchQuery)) {
-                                return null;
-                            }
-                            return toSearchResult(m, content);
-                        })
-                .filter(r -> r != null)
-                .limit(limit)
-                .collect(Collectors.toList());
+        // Skip entries until we find the cursor
+        final UUID finalAfterEntryId = afterEntryId;
+        boolean skipMode = afterEntryId != null;
+        List<SearchResultDto> resultsList = new ArrayList<>();
+
+        for (EntryEntity m : candidates) {
+            if (skipMode) {
+                if (m.getId().equals(finalAfterEntryId)) {
+                    skipMode = false;
+                }
+                continue;
+            }
+
+            List<Object> content = decryptContent(m.getContent());
+            if (content == null || content.isEmpty()) {
+                continue;
+            }
+            String text = extractSearchText(content);
+            if (text == null || !text.toLowerCase().contains(searchQuery)) {
+                continue;
+            }
+
+            SearchResultDto dto = new SearchResultDto();
+            dto.setConversationId(m.getConversation().getId().toString());
+            ConversationEntity conv = conversationMap.get(m.getConversation().getId());
+            dto.setConversationTitle(conv != null ? decryptTitle(conv.getTitle()) : null);
+            dto.setEntry(toEntryDto(m, content));
+            dto.setScore(1.0);
+            dto.setHighlights(null);
+            resultsList.add(dto);
+
+            // Fetch one extra to determine if there's a next page
+            if (resultsList.size() > limit) {
+                break;
+            }
+        }
+
+        // Determine next cursor
+        if (resultsList.size() > limit) {
+            SearchResultDto last = resultsList.get(limit - 1);
+            result.setNextCursor(last.getEntry().getId());
+            resultsList = resultsList.subList(0, limit);
+        }
+
+        result.setResults(resultsList);
+        return result;
     }
 
     @Override

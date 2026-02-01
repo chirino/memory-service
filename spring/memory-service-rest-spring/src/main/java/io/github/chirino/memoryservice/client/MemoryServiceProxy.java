@@ -2,11 +2,13 @@ package io.github.chirino.memoryservice.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
+import io.github.chirino.memoryservice.client.api.SearchApi;
 import io.github.chirino.memoryservice.client.api.SharingApi;
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
 import io.github.chirino.memoryservice.client.model.Channel;
 import io.github.chirino.memoryservice.client.model.CreateOwnershipTransferRequest;
 import io.github.chirino.memoryservice.client.model.ForkFromEntryRequest;
+import io.github.chirino.memoryservice.client.model.SearchConversationsRequest;
 import io.github.chirino.memoryservice.client.model.ShareConversationRequest;
 import io.github.chirino.memoryservice.client.model.UpdateConversationMembershipRequest;
 import java.time.Duration;
@@ -194,12 +196,29 @@ public class MemoryServiceProxy {
                 api -> api.deleteTransferWithHttpInfo(toUuid(transferId)), HttpStatus.NO_CONTENT);
     }
 
+    public ResponseEntity<?> searchConversations(String body) {
+        try {
+            SearchConversationsRequest request =
+                    OBJECT_MAPPER.readValue(body, SearchConversationsRequest.class);
+            return executeSearchApi(
+                    api -> api.searchConversationsWithHttpInfo(request), HttpStatus.OK);
+        } catch (Exception e) {
+            LOG.error("Error parsing search request body", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "Invalid request body"));
+        }
+    }
+
     private ConversationsApi conversationsApi(@Nullable String explicitBearerToken) {
         return new ConversationsApi(createConfiguredApiClient(explicitBearerToken));
     }
 
     private SharingApi sharingApi(@Nullable String explicitBearerToken) {
         return new SharingApi(createConfiguredApiClient(explicitBearerToken));
+    }
+
+    private SearchApi searchApi(@Nullable String explicitBearerToken) {
+        return new SearchApi(createConfiguredApiClient(explicitBearerToken));
     }
 
     private ApiClient createConfiguredApiClient(@Nullable String explicitBearerToken) {
@@ -256,6 +275,22 @@ public class MemoryServiceProxy {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
             }
             return ResponseEntity.status(upstream.getStatusCode()).build();
+        } catch (WebClientResponseException e) {
+            LOG.warn("memory-service call failed: {}", e.getMessage());
+            return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
+        } catch (Exception e) {
+            LOG.error("Unexpected error calling memory-service", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Internal server error"));
+        }
+    }
+
+    private <T> ResponseEntity<?> executeSearchApi(
+            ThrowingFunction<SearchApi, Mono<ResponseEntity<T>>> action,
+            HttpStatus expectedStatus) {
+        try {
+            ResponseEntity<T> upstream = action.apply(searchApi(null)).block(resolveTimeout());
+            return handleUpstreamResponse(upstream);
         } catch (WebClientResponseException e) {
             LOG.warn("memory-service call failed: {}", e.getMessage());
             return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());

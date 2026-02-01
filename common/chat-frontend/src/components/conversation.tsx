@@ -313,7 +313,14 @@ function conversationReducer(state: ConversationState, action: ConversationActio
 }
 
 function useConversationProviderValue(props: ConversationRootProps): ConversationContextValue {
-  const { controller, conversationId, conversationGroupId, messages = [], initialInputValue = "", currentUserId } = props;
+  const {
+    controller,
+    conversationId,
+    conversationGroupId,
+    messages = [],
+    initialInputValue = "",
+    currentUserId,
+  } = props;
 
   // Track whether component has mounted to skip prop-sync effects on initial render.
   // The reducer already receives initial props, so we only need to sync on updates.

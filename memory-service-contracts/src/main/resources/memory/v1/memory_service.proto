@@ -284,21 +284,28 @@ message DeleteOwnershipTransferRequest {
 
 message SearchEntriesRequest {
   string query = 1;
-  int32 top_k = 2;
-  // Conversation identifiers to filter (UUID as 16-byte big-endian binary each)
-  repeated bytes conversation_ids = 3;
-  // Upper bound entry ID for temporal filtering (UUID as 16-byte big-endian binary)
-  bytes before = 4;
+  // Cursor for pagination; returns items after this result
+  string after = 2;
+  // Maximum number of results to return (default 20)
+  int32 limit = 3;
+  // Whether to include the full entry in results. Defaults to true.
+  optional bool include_entry = 4;
 }
 
 message SearchEntriesResponse {
   repeated SearchResult results = 1;
+  string next_cursor = 2;
 }
 
 message SearchResult {
-  Entry entry = 1;
-  float score = 2;
-  string highlights = 3;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  // Title of the conversation containing this entry
+  string conversation_title = 2;
+  float score = 3;
+  string highlights = 4;
+  // The matched entry. Only included when include_entry is true in the request.
+  Entry entry = 5;
 }
 
 message IndexTranscriptRequest {

@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { Crown, ChevronDown, ChevronUp, ExternalLink, X } from "lucide-react";
 import type { OwnershipTransfer } from "@/client";
-import {
-  usePendingTransfers,
-  useAcceptTransfer,
-  useDeleteTransfer,
-} from "@/hooks/useSharing";
+import { usePendingTransfers, useAcceptTransfer, useDeleteTransfer } from "@/hooks/useSharing";
 
 type PendingTransfersPanelProps = {
   onNavigateToConversation?: (conversationId: string) => void;
@@ -20,14 +16,7 @@ type TransferItemProps = {
   isDeclining: boolean;
 };
 
-function TransferItem({
-  transfer,
-  onAccept,
-  onDecline,
-  onNavigate,
-  isAccepting,
-  isDeclining,
-}: TransferItemProps) {
+function TransferItem({ transfer, onAccept, onDecline, onNavigate, isAccepting, isDeclining }: TransferItemProps) {
   const isLoading = isAccepting || isDeclining;
 
   return (
@@ -39,9 +28,7 @@ function TransferItem({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-ink">
-              From {transfer.fromUserId}
-            </p>
+            <p className="text-sm font-medium text-ink">From {transfer.fromUserId}</p>
             {onNavigate && (
               <button
                 type="button"
@@ -53,9 +40,7 @@ function TransferItem({
               </button>
             )}
           </div>
-          <p className="mt-0.5 truncate text-xs text-stone">
-            Conversation: {transfer.conversationId?.slice(0, 8)}...
-          </p>
+          <p className="mt-0.5 truncate text-xs text-stone">Conversation: {transfer.conversationId?.slice(0, 8)}...</p>
 
           <div className="mt-2 flex items-center gap-2">
             <button
@@ -81,14 +66,10 @@ function TransferItem({
   );
 }
 
-export function PendingTransfersPanel({
-  onNavigateToConversation,
-}: PendingTransfersPanelProps) {
+export function PendingTransfersPanel({ onNavigateToConversation }: PendingTransfersPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isDismissed, setIsDismissed] = useState(false);
-  const [processingTransferId, setProcessingTransferId] = useState<
-    string | null
-  >(null);
+  const [processingTransferId, setProcessingTransferId] = useState<string | null>(null);
 
   const transfersQuery = usePendingTransfers("recipient");
   const acceptTransfer = useAcceptTransfer();
@@ -129,14 +110,8 @@ export function PendingTransfersPanel({
           className="flex flex-1 items-center gap-2 text-left"
         >
           <Crown className="h-4 w-4 text-terracotta" />
-          <span className="text-sm font-medium text-ink">
-            Pending transfers ({pendingTransfers.length})
-          </span>
-          {isExpanded ? (
-            <ChevronUp className="h-4 w-4 text-stone" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-stone" />
-          )}
+          <span className="text-sm font-medium text-ink">Pending transfers ({pendingTransfers.length})</span>
+          {isExpanded ? <ChevronUp className="h-4 w-4 text-stone" /> : <ChevronDown className="h-4 w-4 text-stone" />}
         </button>
         <button
           type="button"
@@ -162,12 +137,8 @@ export function PendingTransfersPanel({
                   ? () => onNavigateToConversation(transfer.conversationId!)
                   : undefined
               }
-              isAccepting={
-                processingTransferId === transfer.id && acceptTransfer.isPending
-              }
-              isDeclining={
-                processingTransferId === transfer.id && deleteTransfer.isPending
-              }
+              isAccepting={processingTransferId === transfer.id && acceptTransfer.isPending}
+              isDeclining={processingTransferId === transfer.id && deleteTransfer.isPending}
             />
           ))}
         </div>

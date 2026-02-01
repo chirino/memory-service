@@ -9,12 +9,7 @@ type ShareButtonProps = {
   disabled?: boolean;
 };
 
-export function ShareButton({
-  conversationId,
-  conversationTitle,
-  currentUserId,
-  disabled = false,
-}: ShareButtonProps) {
+export function ShareButton({ conversationId, conversationTitle, currentUserId, disabled = false }: ShareButtonProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleClick = () => {

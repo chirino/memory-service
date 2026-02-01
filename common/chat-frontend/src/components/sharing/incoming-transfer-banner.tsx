@@ -26,12 +26,9 @@ export function IncomingTransferBanner({
         </div>
 
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-medium text-ink">
-            Ownership transfer request
-          </h3>
+          <h3 className="text-sm font-medium text-ink">Ownership transfer request</h3>
           <p className="mt-1 text-sm text-stone">
-            <span className="font-medium text-ink">{transfer.fromUserId}</span>{" "}
-            wants to transfer ownership to you
+            <span className="font-medium text-ink">{transfer.fromUserId}</span> wants to transfer ownership to you
           </p>
 
           <div className="mt-4 flex items-center gap-3">

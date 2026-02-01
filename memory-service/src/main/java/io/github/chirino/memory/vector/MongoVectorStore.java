@@ -1,11 +1,10 @@
 package io.github.chirino.memory.vector;
 
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
-import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.store.impl.MongoMemoryStore;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.util.List;
 
 /**
  * Placeholder MongoDB-backed implementation.
@@ -27,7 +26,7 @@ public class MongoVectorStore implements VectorStore {
     }
 
     @Override
-    public List<SearchResultDto> search(String userId, SearchEntriesRequest request) {
+    public SearchResultsDto search(String userId, SearchEntriesRequest request) {
         return mongoMemoryStore.searchEntries(userId, request);
     }
 

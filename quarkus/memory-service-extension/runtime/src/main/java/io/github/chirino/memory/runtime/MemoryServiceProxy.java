@@ -15,6 +15,7 @@ import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.client.model.ForkFromEntryRequest;
 import io.github.chirino.memory.client.model.IndexTranscriptRequest;
+import io.github.chirino.memory.client.model.SearchConversationsRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -255,6 +256,20 @@ public class MemoryServiceProxy {
                     request.getConversationId());
         } catch (Exception e) {
             LOG.errorf(e, "Error parsing index transcript request body");
+            return handleException(e);
+        }
+    }
+
+    public Response searchConversations(String body) {
+        try {
+            SearchConversationsRequest request =
+                    OBJECT_MAPPER.readValue(body, SearchConversationsRequest.class);
+            return execute(
+                    () -> searchApi().searchConversations(request),
+                    OK,
+                    "Error searching conversations");
+        } catch (Exception e) {
+            LOG.errorf(e, "Error parsing search request body");
             return handleException(e);
         }
     }

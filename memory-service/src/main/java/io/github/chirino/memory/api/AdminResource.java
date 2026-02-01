@@ -7,11 +7,11 @@ import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.EvictRequest;
 import io.github.chirino.memory.api.dto.PagedEntries;
-import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.client.model.ConversationForkSummary;
 import io.github.chirino.memory.client.model.ConversationMembership;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
+import io.github.chirino.memory.client.model.IndexTranscriptRequest;
 import io.github.chirino.memory.client.model.SearchResult;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AdminActionRequest;
@@ -350,13 +350,22 @@ public class AdminResource {
                 return badRequest("query is required");
             }
 
-            List<SearchResultDto> results = store().adminSearchEntries(request);
+            boolean includeEntry = request.getIncludeEntry() == null || request.getIncludeEntry();
+            io.github.chirino.memory.api.dto.SearchResultsDto internalResults =
+                    store().adminSearchEntries(request);
             List<SearchResult> data =
-                    results.stream()
+                    internalResults.getResults().stream()
                             .map(
                                     dto -> {
                                         SearchResult result = new SearchResult();
-                                        result.setEntry(toClientEntry(dto.getEntry()));
+                                        result.setConversationId(
+                                                dto.getConversationId() != null
+                                                        ? UUID.fromString(dto.getConversationId())
+                                                        : null);
+                                        result.setConversationTitle(dto.getConversationTitle());
+                                        if (includeEntry) {
+                                            result.setEntry(toClientEntry(dto.getEntry()));
+                                        }
                                         result.setScore((float) dto.getScore());
                                         result.setHighlights(dto.getHighlights());
                                         return result;
@@ -364,11 +373,61 @@ public class AdminResource {
                             .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
+            if (internalResults.getNextCursor() != null) {
+                response.put("nextCursor", internalResults.getNextCursor());
+            }
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);
         } catch (JustificationRequiredException e) {
             return justificationRequired();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @POST
+    @Path("/conversations/index")
+    public Response adminIndexConversationTranscript(IndexTranscriptRequest request) {
+        try {
+            roleResolver.requireIndexer(identity, apiKeyContext);
+
+            if (request == null) {
+                return badRequest("Index request body is required");
+            }
+            if (request.getConversationId() == null) {
+                return badRequest("conversationId is required");
+            }
+            if (request.getTranscript() == null || request.getTranscript().isBlank()) {
+                return badRequest("Transcript text is required");
+            }
+            if (request.getUntilEntryId() == null) {
+                return badRequest("untilEntryId is required");
+            }
+
+            String conversationId = request.getConversationId().toString();
+            String untilEntryId = request.getUntilEntryId().toString();
+            LOG.infof(
+                    "Admin indexing transcript for conversationId=%s, untilEntryId=%s",
+                    conversationId, untilEntryId);
+
+            io.github.chirino.memory.api.dto.IndexTranscriptRequest internal =
+                    new io.github.chirino.memory.api.dto.IndexTranscriptRequest();
+            internal.setConversationId(conversationId);
+            internal.setTitle(request.getTitle());
+            internal.setTranscript(request.getTranscript());
+            internal.setUntilEntryId(untilEntryId);
+
+            EntryDto dto = store().indexTranscript(internal, "admin");
+            LOG.infof(
+                    "Successfully indexed transcript for conversationId=%s, entryId=%s",
+                    conversationId, dto.getId());
+            Entry result = toClientEntry(dto);
+            return Response.status(Response.Status.CREATED).entity(result).build();
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
         } catch (IllegalArgumentException e) {
             return badRequest(e.getMessage());
         }

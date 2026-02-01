@@ -11,10 +11,7 @@ type AccessLevelSelectProps = {
   openDirection?: "up" | "down";
 };
 
-const ACCESS_LEVEL_CONFIG: Record<
-  AccessLevel,
-  { label: string; description: string; icon: typeof Crown }
-> = {
+const ACCESS_LEVEL_CONFIG: Record<AccessLevel, { label: string; description: string; icon: typeof Crown }> = {
   owner: {
     label: "Owner",
     description: "Full control",
@@ -50,10 +47,7 @@ export function AccessLevelSelect({
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
@@ -86,11 +80,7 @@ export function AccessLevelSelect({
 
   // If no allowed levels or only the current level, show as static text
   if (allowedLevels.length === 0 || disabled) {
-    return (
-      <span className="flex items-center gap-1.5 text-sm text-stone">
-        {currentConfig.label}
-      </span>
-    );
+    return <span className="flex items-center gap-1.5 text-sm text-stone">{currentConfig.label}</span>;
   }
 
   return (
@@ -103,9 +93,7 @@ export function AccessLevelSelect({
         aria-expanded={isOpen}
       >
         <span>{currentConfig.label}</span>
-        <ChevronDown
-          className={`h-3.5 w-3.5 text-stone transition-transform ${isOpen ? "rotate-180" : ""}`}
-        />
+        <ChevronDown className={`h-3.5 w-3.5 text-stone transition-transform ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
       {isOpen && (
@@ -131,40 +119,22 @@ export function AccessLevelSelect({
                     setIsOpen(false);
                   }}
                   className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors ${
-                    isSelected
-                      ? "bg-mist/50"
-                      : "hover:bg-mist/50"
+                    isSelected ? "bg-mist/50" : "hover:bg-mist/50"
                   }`}
                 >
                   <Icon
                     className={`h-4 w-4 ${
-                      level === "owner"
-                        ? "text-terracotta"
-                        : level === "manager"
-                          ? "text-sage"
-                          : "text-stone"
+                      level === "owner" ? "text-terracotta" : level === "manager" ? "text-sage" : "text-stone"
                     }`}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-ink">
-                      {config.label}
-                    </p>
+                    <p className="text-sm font-medium text-ink">{config.label}</p>
                     <p className="text-xs text-stone">{config.description}</p>
                   </div>
                   {isSelected && (
                     <span className="text-sage">
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                     </span>
                   )}
@@ -181,24 +151,14 @@ export function AccessLevelSelect({
 /**
  * Static display of an access level (for read-only views)
  */
-export function AccessLevelBadge({
-  level,
-  showIcon = true,
-}: {
-  level: AccessLevel;
-  showIcon?: boolean;
-}) {
+export function AccessLevelBadge({ level, showIcon = true }: { level: AccessLevel; showIcon?: boolean }) {
   const config = ACCESS_LEVEL_CONFIG[level];
   const Icon = config.icon;
 
   return (
     <span
       className={`flex items-center gap-1.5 text-sm ${
-        level === "owner"
-          ? "text-terracotta"
-          : level === "manager"
-            ? "text-sage"
-            : "text-stone"
+        level === "owner" ? "text-terracotta" : level === "manager" ? "text-sage" : "text-stone"
       }`}
     >
       {showIcon && <Icon className="h-4 w-4" />}

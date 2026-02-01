@@ -91,4 +91,9 @@ class MemoryServiceProxyController {
     public ResponseEntity<?> cancelResponse(@PathVariable String conversationId) {
         return proxy.cancelResponse(conversationId);
     }
+
+    @PostMapping("/search")
+    public ResponseEntity<?> searchConversations(@RequestBody String body) {
+        return proxy.searchConversations(body);
+    }
 }

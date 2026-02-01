@@ -77,9 +77,7 @@ function formatMessageTime(createdAt?: string): string {
 
   const now = new Date();
   const isToday =
-    date.getDate() === now.getDate() &&
-    date.getMonth() === now.getMonth() &&
-    date.getFullYear() === now.getFullYear();
+    date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
 
   if (isToday) {
     return date.toLocaleTimeString(undefined, {
@@ -113,11 +111,7 @@ function ConversationsUIMessageRow({
   const isStreaming = message.displayState === "streaming";
 
   // Determine the display name for the message author (only for user messages)
-  const authorName = isUser
-    ? message.userId === currentUserId
-      ? "You"
-      : message.userId || "User"
-    : null;
+  const authorName = isUser ? (message.userId === currentUserId ? "You" : message.userId || "User") : null;
 
   const timestamp = formatMessageTime(message.createdAt);
 
