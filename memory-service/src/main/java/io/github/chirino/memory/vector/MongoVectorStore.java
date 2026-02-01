@@ -5,6 +5,7 @@ import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
+import io.github.chirino.memory.model.AdminSearchQuery;
 import io.github.chirino.memory.mongo.model.MongoConversation;
 import io.github.chirino.memory.mongo.model.MongoEntry;
 import io.github.chirino.memory.mongo.repo.MongoConversationRepository;
@@ -12,7 +13,6 @@ import io.github.chirino.memory.mongo.repo.MongoEntryRepository;
 import io.github.chirino.memory.mongo.repo.MongoFullTextSearchRepository;
 import io.github.chirino.memory.mongo.repo.MongoFullTextSearchRepository.FullTextSearchResult;
 import io.github.chirino.memory.store.SearchTypeUnavailableException;
-import io.github.chirino.memory.store.impl.MongoMemoryStore;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.nio.charset.StandardCharsets;
@@ -42,7 +42,6 @@ public class MongoVectorStore implements VectorStore {
     @ConfigProperty(name = "memory-service.search.fulltext.enabled", defaultValue = "true")
     boolean fullTextSearchEnabled;
 
-    @Inject MongoMemoryStore mongoMemoryStore;
     @Inject MongoFullTextSearchRepository fullTextSearchRepository;
     @Inject MongoEntryRepository entryRepository;
     @Inject MongoConversationRepository conversationRepository;
@@ -100,7 +99,6 @@ public class MongoVectorStore implements VectorStore {
         }
     }
 
-    @SuppressWarnings("deprecation")
     private SearchResultsDto autoSearch(String userId, SearchEntriesRequest request) {
         // For MongoDB, semantic search is not available, go directly to full-text
         if (fullTextSearchEnabled) {
@@ -110,8 +108,7 @@ public class MongoVectorStore implements VectorStore {
             }
         }
 
-        // Fall back to deprecated in-memory search for entries without indexed content
-        return mongoMemoryStore.searchEntries(userId, request);
+        return emptyResults();
     }
 
     private SearchResultsDto fullTextSearch(String userId, SearchEntriesRequest request) {
@@ -239,6 +236,91 @@ public class MongoVectorStore implements VectorStore {
         }
 
         return dto;
+    }
+
+    @Override
+    public SearchResultsDto adminSearch(AdminSearchQuery query) {
+        if (query.getQuery() == null || query.getQuery().isBlank()) {
+            return emptyResults();
+        }
+
+        String searchType = query.getSearchType() != null ? query.getSearchType() : "auto";
+
+        return switch (searchType) {
+            case "semantic" -> {
+                validateSemanticSearchAvailable();
+                // MongoDB vector search not implemented yet - this will throw
+                yield emptyResults();
+            }
+            case "fulltext" -> {
+                validateFullTextSearchAvailable();
+                yield adminFullTextSearch(query);
+            }
+            case "auto" -> adminAutoSearch(query);
+            default ->
+                    throw new IllegalArgumentException(
+                            "Invalid searchType: "
+                                    + searchType
+                                    + ". Valid values: auto, semantic, fulltext");
+        };
+    }
+
+    private SearchResultsDto adminAutoSearch(AdminSearchQuery query) {
+        // For MongoDB, semantic search is not available, go directly to full-text
+        if (fullTextSearchEnabled) {
+            SearchResultsDto results = adminFullTextSearch(query);
+            if (!results.getResults().isEmpty()) {
+                return results;
+            }
+        }
+
+        return emptyResults();
+    }
+
+    private SearchResultsDto adminFullTextSearch(AdminSearchQuery query) {
+        int limit = query.getLimit() != null ? query.getLimit() : 20;
+        boolean groupByConversation =
+                query.getGroupByConversation() == null || query.getGroupByConversation();
+        boolean includeEntry = query.getIncludeEntry() == null || query.getIncludeEntry();
+
+        List<FullTextSearchResult> ftsResults;
+        try {
+            ftsResults =
+                    fullTextSearchRepository.adminSearch(
+                            query.getQuery(),
+                            limit + 1,
+                            groupByConversation,
+                            query.getUserId(),
+                            query.isIncludeDeleted());
+        } catch (Exception e) {
+            LOG.warnf("MongoDB admin full-text search failed: %s", e.getMessage());
+            return emptyResults();
+        }
+
+        if (ftsResults.isEmpty()) {
+            return emptyResults();
+        }
+
+        List<SearchResultDto> resultsList = new ArrayList<>();
+        for (FullTextSearchResult fts : ftsResults) {
+            if (resultsList.size() >= limit) {
+                break;
+            }
+
+            SearchResultDto dto = buildSearchResultDtoFromFts(fts, includeEntry);
+            if (dto != null) {
+                resultsList.add(dto);
+            }
+        }
+
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(resultsList);
+
+        if (ftsResults.size() > limit && !resultsList.isEmpty()) {
+            result.setNextCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+        }
+
+        return result;
     }
 
     @Override

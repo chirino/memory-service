@@ -43,7 +43,7 @@ A memory service for AI agents that stores messages exchanged with LLMs and user
 # Then search for errors using Grep tool on test.log
 ```
 
-**Pre-release**: Changes do not need backward compatibility.
+**Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 
 ## Skills
 

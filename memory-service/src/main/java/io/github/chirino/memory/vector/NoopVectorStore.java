@@ -2,6 +2,7 @@ package io.github.chirino.memory.vector;
 
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
+import io.github.chirino.memory.model.AdminSearchQuery;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.util.Collections;
 
@@ -15,6 +16,14 @@ public class NoopVectorStore implements VectorStore {
 
     @Override
     public SearchResultsDto search(String userId, SearchEntriesRequest request) {
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(Collections.emptyList());
+        result.setNextCursor(null);
+        return result;
+    }
+
+    @Override
+    public SearchResultsDto adminSearch(AdminSearchQuery query) {
         SearchResultsDto result = new SearchResultsDto();
         result.setResults(Collections.emptyList());
         result.setNextCursor(null);

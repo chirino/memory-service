@@ -15,7 +15,6 @@ import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
-import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
@@ -311,6 +310,7 @@ public class PostgresMemoryStore implements MemoryStore {
         entry.setEpoch(null);
         entry.setContentType("history");
         entry.setContent(encryptContent(toHistoryContent(request.getContent(), "USER")));
+        entry.setIndexedContent(request.getContent());
         entry.setConversationGroupId(conversation.getConversationGroup().getId());
         OffsetDateTime createdAt = OffsetDateTime.now();
         entry.setCreatedAt(createdAt);
@@ -908,6 +908,12 @@ public class PostgresMemoryStore implements MemoryStore {
             OffsetDateTime createdAt = OffsetDateTime.now();
             entity.setCreatedAt(createdAt);
             entryRepository.persist(entity);
+            if (req.getIndexedContent() != null && !req.getIndexedContent().isBlank()) {
+                LOG.infof(
+                        "Entry created with indexedContent: entryId=%s, conversationId=%s,"
+                                + " contentLength=%d",
+                        entity.getId(), conversation.getId(), req.getIndexedContent().length());
+            }
             if (entity.getChannel() == Channel.HISTORY) {
                 latestHistoryTimestamp = createdAt;
             }
@@ -1180,120 +1186,6 @@ public class PostgresMemoryStore implements MemoryStore {
         }
     }
 
-    /**
-     * @deprecated Use {@link io.github.chirino.memory.vector.PgVectorStore#search(String,
-     *     SearchEntriesRequest)} instead. This method uses inefficient in-memory filtering. The new
-     *     implementation uses PostgreSQL full-text search with GIN indexes.
-     */
-    @Deprecated(forRemoval = true)
-    @Override
-    public SearchResultsDto searchEntries(String userId, SearchEntriesRequest request) {
-        SearchResultsDto result = new SearchResultsDto();
-        result.setResults(Collections.emptyList());
-        result.setNextCursor(null);
-
-        if (request.getQuery() == null || request.getQuery().isBlank()) {
-            return result;
-        }
-
-        List<ConversationMembershipEntity> memberships =
-                membershipRepository.listForUser(userId, Integer.MAX_VALUE);
-        if (memberships.isEmpty()) {
-            return result;
-        }
-
-        Set<UUID> groupIds =
-                memberships.stream()
-                        .map(m -> m.getId().getConversationGroupId())
-                        .collect(Collectors.toSet());
-        if (groupIds.isEmpty()) {
-            return result;
-        }
-        List<ConversationEntity> conversations =
-                conversationRepository.find("conversationGroup.id in ?1", groupIds).list();
-        Map<UUID, ConversationEntity> conversationMap =
-                conversations.stream().collect(Collectors.toMap(ConversationEntity::getId, c -> c));
-        Set<UUID> userConversationIds = conversationMap.keySet();
-
-        if (userConversationIds.isEmpty()) {
-            return result;
-        }
-
-        String query = request.getQuery().toLowerCase();
-        int limit = request.getLimit() != null ? request.getLimit() : 20;
-
-        // Parse after cursor if present
-        UUID afterEntryId = null;
-        if (request.getAfter() != null && !request.getAfter().isBlank()) {
-            try {
-                afterEntryId = UUID.fromString(request.getAfter());
-            } catch (IllegalArgumentException e) {
-                // Invalid cursor, ignore
-            }
-        }
-
-        List<EntryEntity> candidates =
-                entryRepository
-                        .find(
-                                "conversation.id in ?1 order by createdAt desc, id desc",
-                                userConversationIds)
-                        .list();
-
-        // Skip entries until we find the cursor
-        final UUID finalAfterEntryId = afterEntryId;
-        boolean skipMode = afterEntryId != null;
-        List<SearchResultDto> resultsList = new ArrayList<>();
-
-        for (EntryEntity m : candidates) {
-            if (skipMode) {
-                if (m.getId().equals(finalAfterEntryId)) {
-                    skipMode = false;
-                }
-                continue;
-            }
-
-            List<Object> content = decryptContent(m.getContent());
-            if (content == null || content.isEmpty()) {
-                continue;
-            }
-            String text = extractSearchText(content);
-            String indexedContent = m.getIndexedContent();
-            boolean matchesContent = text != null && text.toLowerCase().contains(query);
-            boolean matchesIndexed =
-                    indexedContent != null && indexedContent.toLowerCase().contains(query);
-            if (!matchesContent && !matchesIndexed) {
-                continue;
-            }
-            // Prefer indexed content for highlights if it matched
-            String highlightSource = matchesIndexed ? indexedContent : text;
-
-            SearchResultDto dto = new SearchResultDto();
-            dto.setConversationId(m.getConversation().getId().toString());
-            ConversationEntity conv = conversationMap.get(m.getConversation().getId());
-            dto.setConversationTitle(conv != null ? decryptTitle(conv.getTitle()) : null);
-            dto.setEntryId(m.getId().toString());
-            dto.setEntry(toEntryDto(m, content));
-            dto.setScore(1.0);
-            dto.setHighlights(extractHighlight(highlightSource, query));
-            resultsList.add(dto);
-
-            // Fetch one extra to determine if there's a next page
-            if (resultsList.size() > limit) {
-                break;
-            }
-        }
-
-        // Determine next cursor
-        if (resultsList.size() > limit) {
-            SearchResultDto last = resultsList.get(limit - 1);
-            result.setNextCursor(last.getEntry().getId());
-            resultsList = resultsList.subList(0, limit);
-        }
-
-        result.setResults(resultsList);
-        return result;
-    }
-
     private byte[] encryptContent(List<Object> content) {
         if (content == null) {
             return null;
@@ -1350,40 +1242,6 @@ public class PostgresMemoryStore implements MemoryStore {
             }
         }
         return null;
-    }
-
-    /**
-     * Extracts a highlight snippet showing the query match in context.
-     *
-     * @param text  The full text to extract from
-     * @param query The search query (lowercase)
-     * @return A snippet with context around the match, or null if not found
-     */
-    private String extractHighlight(String text, String query) {
-        if (text == null || query == null) {
-            return null;
-        }
-        String lowerText = text.toLowerCase();
-        int matchIndex = lowerText.indexOf(query);
-        if (matchIndex < 0) {
-            return null;
-        }
-
-        // Extract a snippet with context around the match
-        int contextChars = 50;
-        int start = Math.max(0, matchIndex - contextChars);
-        int end = Math.min(text.length(), matchIndex + query.length() + contextChars);
-
-        StringBuilder snippet = new StringBuilder();
-        if (start > 0) {
-            snippet.append("...");
-        }
-        snippet.append(text, start, end);
-        if (end < text.length()) {
-            snippet.append("...");
-        }
-
-        return snippet.toString().trim();
     }
 
     private String inferTitleFromUserEntry(CreateUserEntryRequest request) {

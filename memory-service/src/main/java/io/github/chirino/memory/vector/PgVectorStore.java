@@ -5,12 +5,12 @@ import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
+import io.github.chirino.memory.model.AdminSearchQuery;
 import io.github.chirino.memory.persistence.entity.ConversationEntity;
 import io.github.chirino.memory.persistence.entity.EntryEntity;
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
 import io.github.chirino.memory.persistence.repo.EntryRepository;
 import io.github.chirino.memory.store.SearchTypeUnavailableException;
-import io.github.chirino.memory.store.impl.PostgresMemoryStore;
 import io.github.chirino.memory.vector.FullTextSearchRepository.FullTextSearchResult;
 import io.github.chirino.memory.vector.PgVectorEmbeddingRepository.VectorSearchResult;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -44,7 +44,6 @@ public class PgVectorStore implements VectorStore {
     @ConfigProperty(name = "memory-service.search.fulltext.enabled", defaultValue = "true")
     boolean fullTextSearchEnabled;
 
-    @Inject PostgresMemoryStore postgresMemoryStore;
     @Inject PgVectorEmbeddingRepository embeddingRepository;
     @Inject FullTextSearchRepository fullTextSearchRepository;
     @Inject EmbeddingService embeddingService;
@@ -108,33 +107,48 @@ public class PgVectorStore implements VectorStore {
         }
     }
 
-    @SuppressWarnings("deprecation")
     private SearchResultsDto autoSearch(String userId, SearchEntriesRequest request) {
         // Try semantic first if available
         if (semanticSearchEnabled && embeddingService.isEnabled()) {
+            LOG.infof("autoSearch: attempting semantic search for query '%s'", request.getQuery());
             SearchResultsDto results = semanticSearch(userId, request);
             if (!results.getResults().isEmpty()) {
+                LOG.infof(
+                        "autoSearch: semantic search returned %d results",
+                        results.getResults().size());
                 return results;
             }
+            LOG.info("autoSearch: semantic search returned no results");
+        } else {
+            LOG.infof(
+                    "autoSearch: semantic search skipped (enabled=%s, embeddingService.enabled=%s)",
+                    semanticSearchEnabled, embeddingService.isEnabled());
         }
 
         // Fall back to full-text if available
         if (fullTextSearchEnabled) {
+            LOG.infof("autoSearch: attempting full-text search for query '%s'", request.getQuery());
             SearchResultsDto results = fullTextSearch(userId, request);
             if (!results.getResults().isEmpty()) {
+                LOG.infof(
+                        "autoSearch: full-text search returned %d results",
+                        results.getResults().size());
                 return results;
             }
+            LOG.info("autoSearch: full-text search returned no results");
+        } else {
+            LOG.info("autoSearch: full-text search skipped (disabled)");
         }
 
-        // Fall back to deprecated in-memory search for entries without indexed content
-        return postgresMemoryStore.searchEntries(userId, request);
+        LOG.info("autoSearch: no results from any search method");
+        return emptyResults();
     }
 
     private SearchResultsDto semanticSearch(String userId, SearchEntriesRequest request) {
         // Embed the query
         float[] queryEmbedding = embeddingService.embed(request.getQuery());
         if (queryEmbedding == null || queryEmbedding.length == 0) {
-            LOG.warn("Failed to embed query");
+            LOG.warn("semanticSearch: failed to embed query");
             return emptyResults();
         }
 
@@ -142,6 +156,10 @@ public class PgVectorStore implements VectorStore {
         boolean groupByConversation =
                 request.getGroupByConversation() == null || request.getGroupByConversation();
         boolean includeEntry = request.getIncludeEntry() == null || request.getIncludeEntry();
+
+        LOG.infof(
+                "semanticSearch: query='%s', limit=%d, groupByConversation=%s",
+                request.getQuery(), limit, groupByConversation);
 
         // Perform vector search - fetch one extra to determine if there's a next page
         List<VectorSearchResult> vectorResults;
@@ -152,8 +170,9 @@ public class PgVectorStore implements VectorStore {
                             toPgVectorLiteral(queryEmbedding),
                             limit + 1,
                             groupByConversation);
+            LOG.infof("semanticSearch: vector query returned %d raw results", vectorResults.size());
         } catch (Exception e) {
-            LOG.warnf("Vector search failed: %s", e.getMessage());
+            LOG.warnf("semanticSearch: vector search failed: %s", e.getMessage());
             return emptyResults();
         }
 
@@ -191,13 +210,18 @@ public class PgVectorStore implements VectorStore {
                 request.getGroupByConversation() == null || request.getGroupByConversation();
         boolean includeEntry = request.getIncludeEntry() == null || request.getIncludeEntry();
 
+        LOG.infof(
+                "fullTextSearch: query='%s', limit=%d, groupByConversation=%s",
+                request.getQuery(), limit, groupByConversation);
+
         List<FullTextSearchResult> ftsResults;
         try {
             ftsResults =
                     fullTextSearchRepository.search(
                             userId, request.getQuery(), limit + 1, groupByConversation);
+            LOG.infof("fullTextSearch: query returned %d raw results", ftsResults.size());
         } catch (Exception e) {
-            LOG.warnf("Full-text search failed: %s", e.getMessage());
+            LOG.warnf("fullTextSearch: search failed: %s", e.getMessage());
             return emptyResults();
         }
 
@@ -367,6 +391,10 @@ public class PgVectorStore implements VectorStore {
         }
         embeddingRepository.upsertEmbedding(
                 entryId, conversationId, conversationGroupId, toPgVectorLiteral(embedding));
+        LOG.infof(
+                "Embedding stored in vector store: entryId=%s, conversationId=%s,"
+                        + " embeddingDimensions=%d",
+                entryId, conversationId, embedding.length);
     }
 
     @Override
@@ -379,6 +407,183 @@ public class PgVectorStore implements VectorStore {
                     "Could not delete embeddings for group %s: %s",
                     conversationGroupId, e.getMessage());
         }
+    }
+
+    @Override
+    public SearchResultsDto adminSearch(AdminSearchQuery query) {
+        if (query.getQuery() == null || query.getQuery().isBlank()) {
+            return emptyResults();
+        }
+
+        String searchType = query.getSearchType() != null ? query.getSearchType() : "auto";
+
+        return switch (searchType) {
+            case "semantic" -> {
+                validateSemanticSearchAvailable();
+                yield adminSemanticSearch(query);
+            }
+            case "fulltext" -> {
+                validateFullTextSearchAvailable();
+                yield adminFullTextSearch(query);
+            }
+            case "auto" -> adminAutoSearch(query);
+            default ->
+                    throw new IllegalArgumentException(
+                            "Invalid searchType: "
+                                    + searchType
+                                    + ". Valid values: auto, semantic, fulltext");
+        };
+    }
+
+    private SearchResultsDto adminAutoSearch(AdminSearchQuery query) {
+        // Try semantic first if available
+        if (semanticSearchEnabled && embeddingService.isEnabled()) {
+            LOG.infof(
+                    "adminAutoSearch: attempting semantic search for query '%s'", query.getQuery());
+            SearchResultsDto results = adminSemanticSearch(query);
+            if (!results.getResults().isEmpty()) {
+                LOG.infof(
+                        "adminAutoSearch: semantic search returned %d results",
+                        results.getResults().size());
+                return results;
+            }
+            LOG.info("adminAutoSearch: semantic search returned no results");
+        } else {
+            LOG.infof(
+                    "adminAutoSearch: semantic search skipped (enabled=%s,"
+                            + " embeddingService.enabled=%s)",
+                    semanticSearchEnabled, embeddingService.isEnabled());
+        }
+
+        // Fall back to full-text if available
+        if (fullTextSearchEnabled) {
+            LOG.infof(
+                    "adminAutoSearch: attempting full-text search for query '%s'",
+                    query.getQuery());
+            SearchResultsDto results = adminFullTextSearch(query);
+            if (!results.getResults().isEmpty()) {
+                LOG.infof(
+                        "adminAutoSearch: full-text search returned %d results",
+                        results.getResults().size());
+                return results;
+            }
+            LOG.info("adminAutoSearch: full-text search returned no results");
+        } else {
+            LOG.info("adminAutoSearch: full-text search skipped (disabled)");
+        }
+
+        LOG.info("adminAutoSearch: no results from any search method");
+        return emptyResults();
+    }
+
+    private SearchResultsDto adminSemanticSearch(AdminSearchQuery query) {
+        float[] queryEmbedding = embeddingService.embed(query.getQuery());
+        if (queryEmbedding == null || queryEmbedding.length == 0) {
+            LOG.warn("adminSemanticSearch: failed to embed query");
+            return emptyResults();
+        }
+
+        int limit = query.getLimit() != null ? query.getLimit() : 20;
+        boolean groupByConversation =
+                query.getGroupByConversation() == null || query.getGroupByConversation();
+        boolean includeEntry = query.getIncludeEntry() == null || query.getIncludeEntry();
+
+        LOG.infof(
+                "adminSemanticSearch: query='%s', limit=%d, groupByConversation=%s, userId=%s",
+                query.getQuery(), limit, groupByConversation, query.getUserId());
+
+        List<VectorSearchResult> vectorResults;
+        try {
+            vectorResults =
+                    embeddingRepository.adminSearchSimilar(
+                            toPgVectorLiteral(queryEmbedding),
+                            limit + 1,
+                            groupByConversation,
+                            query.getUserId(),
+                            query.isIncludeDeleted());
+            LOG.infof(
+                    "adminSemanticSearch: vector query returned %d raw results",
+                    vectorResults.size());
+        } catch (Exception e) {
+            LOG.warnf("adminSemanticSearch: vector search failed: %s", e.getMessage());
+            return emptyResults();
+        }
+
+        if (vectorResults.isEmpty()) {
+            return emptyResults();
+        }
+
+        List<SearchResultDto> resultsList = new ArrayList<>();
+        for (VectorSearchResult vr : vectorResults) {
+            if (resultsList.size() >= limit) {
+                break;
+            }
+
+            SearchResultDto dto = buildSearchResultDto(vr, includeEntry);
+            if (dto != null) {
+                resultsList.add(dto);
+            }
+        }
+
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(resultsList);
+
+        if (vectorResults.size() > limit && !resultsList.isEmpty()) {
+            result.setNextCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+        }
+
+        return result;
+    }
+
+    private SearchResultsDto adminFullTextSearch(AdminSearchQuery query) {
+        int limit = query.getLimit() != null ? query.getLimit() : 20;
+        boolean groupByConversation =
+                query.getGroupByConversation() == null || query.getGroupByConversation();
+        boolean includeEntry = query.getIncludeEntry() == null || query.getIncludeEntry();
+
+        LOG.infof(
+                "adminFullTextSearch: query='%s', limit=%d, groupByConversation=%s, userId=%s",
+                query.getQuery(), limit, groupByConversation, query.getUserId());
+
+        List<FullTextSearchResult> ftsResults;
+        try {
+            ftsResults =
+                    fullTextSearchRepository.adminSearch(
+                            query.getQuery(),
+                            limit + 1,
+                            groupByConversation,
+                            query.getUserId(),
+                            query.isIncludeDeleted());
+            LOG.infof("adminFullTextSearch: query returned %d raw results", ftsResults.size());
+        } catch (Exception e) {
+            LOG.warnf("adminFullTextSearch: search failed: %s", e.getMessage());
+            return emptyResults();
+        }
+
+        if (ftsResults.isEmpty()) {
+            return emptyResults();
+        }
+
+        List<SearchResultDto> resultsList = new ArrayList<>();
+        for (FullTextSearchResult fts : ftsResults) {
+            if (resultsList.size() >= limit) {
+                break;
+            }
+
+            SearchResultDto dto = buildSearchResultDtoFromFts(fts, includeEntry);
+            if (dto != null) {
+                resultsList.add(dto);
+            }
+        }
+
+        SearchResultsDto result = new SearchResultsDto();
+        result.setResults(resultsList);
+
+        if (ftsResults.size() > limit && !resultsList.isEmpty()) {
+            result.setNextCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+        }
+
+        return result;
     }
 
     private String toPgVectorLiteral(float[] embedding) {
