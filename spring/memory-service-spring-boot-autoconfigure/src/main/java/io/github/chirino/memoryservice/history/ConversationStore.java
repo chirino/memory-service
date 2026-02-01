@@ -20,12 +20,15 @@ public class ConversationStore {
 
     private final ConversationsApiFactory apiFactory;
     private final OAuth2AuthorizedClientService authorizedClientService;
+    private final IndexedContentProvider indexedContentProvider;
 
     public ConversationStore(
             ConversationsApiFactory apiFactory,
-            @Nullable OAuth2AuthorizedClientService authorizedClientService) {
+            @Nullable OAuth2AuthorizedClientService authorizedClientService,
+            @Nullable IndexedContentProvider indexedContentProvider) {
         this.apiFactory = apiFactory;
         this.authorizedClientService = authorizedClientService;
+        this.indexedContentProvider = indexedContentProvider;
     }
 
     public void appendUserMessage(
@@ -80,6 +83,12 @@ public class ConversationStore {
         block.put("text", content);
         block.put("role", role);
         request.content(List.of(block));
+        if (indexedContentProvider != null) {
+            String indexedContent = indexedContentProvider.getIndexedContent(content, role);
+            if (indexedContent != null) {
+                request.indexedContent(indexedContent);
+            }
+        }
         return request;
     }
 
