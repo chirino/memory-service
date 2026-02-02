@@ -5,8 +5,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum Channel {
     HISTORY,
-    MEMORY,
-    TRANSCRIPT;
+    MEMORY;
 
     @JsonValue
     public String toValue() {

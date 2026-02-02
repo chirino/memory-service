@@ -52,7 +52,6 @@ enum Channel {
   CHANNEL_UNSPECIFIED = 0;
   HISTORY = 1;
   MEMORY = 2;
-  TRANSCRIPT = 3;
 }
 
 message ConversationSummary {

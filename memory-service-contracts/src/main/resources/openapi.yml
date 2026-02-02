@@ -1109,7 +1109,6 @@ components:
       enum:
         - history
         - memory
-        - transcript
 
     Entry:
       type: object

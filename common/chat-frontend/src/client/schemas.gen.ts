@@ -16,6 +16,31 @@ export const $ErrorResponse = {
   },
 } as const;
 
+export const $SearchTypeUnavailableError = {
+  type: "object",
+  description: "Error response when the requested search type is not available on the server.",
+  properties: {
+    error: {
+      type: "string",
+      description: "Error code.",
+      example: "search_type_unavailable",
+    },
+    message: {
+      type: "string",
+      description: "Human-readable error message.",
+      example: "Semantic search is not available. The embedding service is disabled on this server.",
+    },
+    availableTypes: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+      description: "List of search types that are available on this server.",
+      example: ["fulltext"],
+    },
+  },
+} as const;
+
 export const $AccessLevel = {
   type: "string",
   description: "Access level of a user for a conversation.",
@@ -204,7 +229,7 @@ export const $ForkFromEntryRequest = {
 export const $Channel = {
   type: "string",
   description: "Logical channel of the entry within the conversation.",
-  enum: ["history", "memory", "transcript"],
+  enum: ["history", "memory"],
 } as const;
 
 export const $Entry = {
@@ -242,13 +267,24 @@ the agent increments the epoch when starting a new memory version.`,
     contentType: {
       type: "string",
       description: `Describes the schema/format of the content array.
-Examples: "message", "LC4J", "SpringAI"`,
+
+**History channel entries must use \`"history"\` as the contentType.**
+The content array for history entries contains objects with:
+- \`text\` (string): The message text.
+- \`role\` (string): Either \`"USER"\` or \`"AI"\`.
+
+
+Other contentTypes (e.g., \`"LC4J"\`, \`"SpringAI"\`) may be used for
+agent memory entries.`,
     },
     content: {
       type: "array",
       description: `Opaque, agent-defined content blocks.
 Different agents may use different schemas; the memory-service
-stores and returns them without interpretation.`,
+stores and returns them without interpretation.
+
+For history channel entries (contentType: \`"history"\`), each block
+contains \`text\` and \`role\` fields.`,
       items: {},
     },
     createdAt: {
@@ -262,11 +298,11 @@ stores and returns them without interpretation.`,
     userId: "user_1234",
     channel: "history",
     epoch: null,
-    contentType: "message",
+    contentType: "history",
     content: [
       {
-        type: "text",
         text: "Here is a summary of what we discussed so far…",
+        role: "AI",
       },
     ],
     createdAt: "2025-01-10T14:40:12Z",
@@ -297,21 +333,37 @@ belong to. The agent increments this when starting a new epoch.`,
     contentType: {
       type: "string",
       description: `Describes the schema/format of the content array.
-Examples: "message", "LC4J", "SpringAI"`,
+
+**History channel entries must use \`"history"\` as the contentType.**
+The content array for history entries must contain exactly 1 object with:
+- \`text\` (string): The message text.
+- \`role\` (string): Either \`"USER"\` or \`"AI"\`.
+
+Other contentTypes (e.g., \`"LC4J"\`, \`"SpringAI"\`) may be used for
+agent memory entries.`,
     },
     content: {
       type: "array",
+      description: `For history channel entries (contentType: \`"history"\`), each block
+contains \`text\` and \`role\` fields.`,
       items: {},
+    },
+    indexedContent: {
+      type: "string",
+      nullable: true,
+      description: `Optional text to index for search. Only valid for entries in the history
+channel. If provided, the entry will be indexed for search immediately
+after creation. Returns 400 Bad Request if specified for non-history channels.`,
     },
   },
   example: {
     userId: "user_1234",
     channel: "history",
-    contentType: "message",
+    contentType: "history",
     content: [
       {
-        type: "text",
         text: "Based on your past chats, here are three possible approaches…",
+        role: "AI",
       },
     ],
   },
@@ -366,36 +418,94 @@ export const $SyncEntryResponse = {
   },
 } as const;
 
-export const $IndexTranscriptRequest = {
+export const $IndexEntryRequest = {
   type: "object",
-  required: ["conversationId", "transcript", "untilEntryId"],
+  required: ["conversationId", "entryId", "indexedContent"],
   properties: {
     conversationId: {
       type: "string",
       format: "uuid",
-      description: "The conversation to index.",
+      description: "The conversation containing the entry.",
     },
-    title: {
-      type: "string",
-      nullable: true,
-      description: "Optional conversation title to store/update.",
-    },
-    transcript: {
-      type: "string",
-      description: "Transcript text to index for semantic search.",
-    },
-    untilEntryId: {
+    entryId: {
       type: "string",
       format: "uuid",
-      description: "Highest entry ID covered by the index (inclusive).",
+      description: "The entry ID to index.",
+    },
+    indexedContent: {
+      type: "string",
+      description: "The searchable text for this entry.",
     },
   },
   example: {
     conversationId: "550e8400-e29b-41d4-a716-446655440000",
-    title: "Conversation forking design",
-    transcript:
-      "User asked several questions about conversation forking. They want to support branching at any message with independent access control per branch.",
-    untilEntryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    entryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    indexedContent: "User asked about conversation forking and branching strategies",
+  },
+} as const;
+
+export const $IndexConversationsResponse = {
+  type: "object",
+  properties: {
+    indexed: {
+      type: "integer",
+      description: `Number of entries processed. These entries have their indexed content
+stored and will be searchable. If vector store indexing failed for some
+entries, they will become searchable asynchronously via background retry.`,
+    },
+  },
+  example: {
+    indexed: 3,
+  },
+} as const;
+
+export const $UnindexedEntriesResponse = {
+  type: "object",
+  properties: {
+    data: {
+      type: "array",
+      items: {
+        $ref: "#/components/schemas/UnindexedEntry",
+      },
+    },
+    cursor: {
+      type: "string",
+      nullable: true,
+      description: "Cursor for fetching next page. Null when no more results.",
+    },
+  },
+  example: {
+    data: [
+      {
+        conversationId: "550e8400-e29b-41d4-a716-446655440000",
+        entry: {
+          id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+          channel: "history",
+          contentType: "history",
+          content: [
+            {
+              text: "Help me design a memory service",
+              role: "USER",
+            },
+          ],
+          createdAt: "2025-01-10T14:40:12Z",
+        },
+      },
+    ],
+    cursor: "eyJjcmVhdGVkQXQiOiIyMDI1LTAxLTEwVDE0OjQwOjEyWiJ9",
+  },
+} as const;
+
+export const $UnindexedEntry = {
+  type: "object",
+  properties: {
+    conversationId: {
+      type: "string",
+      format: "uuid",
+    },
+    entry: {
+      $ref: "#/components/schemas/Entry",
+    },
   },
 } as const;
 
@@ -406,6 +516,19 @@ export const $SearchConversationsRequest = {
     query: {
       type: "string",
       description: "Natural language query.",
+    },
+    searchType: {
+      type: "string",
+      enum: ["auto", "semantic", "fulltext"],
+      default: "auto",
+      description: `The search method to use:
+- \`auto\` (default): Try semantic (vector) search first, fall back to full-text if no results or unavailable
+- \`semantic\`: Use only vector/embedding-based semantic search
+- \`fulltext\`: Use only PostgreSQL full-text search with GIN index
+
+If the requested search type is not available on the server, a 501 (Not Implemented)
+error is returned with details about which search types are available.
+`,
     },
     after: {
       type: "string",
@@ -423,11 +546,21 @@ export const $SearchConversationsRequest = {
       description:
         "Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.",
     },
+    groupByConversation: {
+      type: "boolean",
+      default: true,
+      description: `When true (default), groups results by conversation and returns only
+the highest-scoring entry per conversation. When false, returns all
+matching entries ordered by score.
+`,
+    },
   },
   example: {
     query: "summary of memory service design decisions",
+    searchType: "auto",
     limit: 20,
     includeEntry: true,
+    groupByConversation: true,
   },
 } as const;
 
@@ -442,6 +575,11 @@ export const $SearchResult = {
     conversationTitle: {
       type: "string",
       description: "Title of the conversation containing this entry.",
+    },
+    entryId: {
+      type: "string",
+      format: "uuid",
+      description: "ID of the matched entry. Always present for deep-linking.",
     },
     score: {
       type: "number",
@@ -470,11 +608,11 @@ export const $SearchResult = {
       conversationId: "550e8400-e29b-41d4-a716-446655440000",
       userId: "user_1234",
       channel: "history",
-      contentType: "message",
+      contentType: "history",
       content: [
         {
-          type: "text",
           text: "Help me design a memory service for my agent.",
+          role: "USER",
         },
       ],
       createdAt: "2025-01-10T14:32:05Z",
