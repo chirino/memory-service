@@ -65,6 +65,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                     request.hasPage() && request.getPage().getPageSize() > 0
                                             ? request.getPage().getPageSize()
                                             : 50;
+                            boolean allForks = "all".equalsIgnoreCase(request.getForks());
                             PagedEntries paged =
                                     store().getEntries(
                                                     currentUserId(),
@@ -73,7 +74,8 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                                     pageSize,
                                                     channel,
                                                     epochFilter,
-                                                    currentClientId());
+                                                    currentClientId(),
+                                                    allForks);
                             ListEntriesResponse.Builder builder = ListEntriesResponse.newBuilder();
                             if (paged != null) {
                                 builder.addAllEntries(

@@ -462,6 +462,14 @@ export type $OpenApiTs = {
          * calling client id.
          */
         epoch?: string | null;
+        /**
+         * Controls which fork entries to include. `none` (default) follows the
+         * fork ancestry path, returning entries from the target conversation
+         * and its ancestors up to fork points. `all` returns entries from all
+         * forks in the conversation group, useful for debugging or getting a
+         * complete picture of all activity across forks.
+         */
+        forks?: "none" | "all";
         limit?: number;
       };
       res: {

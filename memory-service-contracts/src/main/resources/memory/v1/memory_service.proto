@@ -196,6 +196,9 @@ message ListEntriesRequest {
   Channel channel = 2;
   string epoch_filter = 3;
   PageRequest page = 4;
+  // Controls which fork entries to include: "none" (default) follows ancestry,
+  // "all" returns entries from all forks in the conversation group
+  string forks = 5;
 }
 
 message ListEntriesResponse {

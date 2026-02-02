@@ -78,7 +78,8 @@ public interface MemoryStore {
             int limit,
             Channel channel,
             MemoryEpochFilter epochFilter,
-            String clientId);
+            String clientId,
+            boolean allForks);
 
     /**
      * Appends entries to a conversation. For MEMORY channel entries, an epoch is required.

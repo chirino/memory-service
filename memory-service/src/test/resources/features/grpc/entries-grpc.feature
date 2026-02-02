@@ -240,7 +240,6 @@ Feature: Entries gRPC API
     entry {
       user_id: "alice"
       channel: MEMORY
-      epoch: 1
       content_type: "test.v1"
       content {
         string_value: "First part"

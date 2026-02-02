@@ -78,15 +78,21 @@ public class MemoryServiceProxy {
     }
 
     public ResponseEntity<?> listConversationEntries(
-            String conversationId, String after, Integer limit) {
+            String conversationId,
+            String after,
+            Integer limit,
+            Channel channel,
+            String epoch,
+            String forks) {
         return execute(
                 api ->
                         api.listConversationEntriesWithHttpInfo(
                                 toUuid(conversationId),
                                 toUuid(after),
                                 limit,
-                                Channel.HISTORY,
-                                null),
+                                channel,
+                                epoch,
+                                forks),
                 HttpStatus.OK);
     }
 

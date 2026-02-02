@@ -164,6 +164,7 @@ function ChatMessageRow({
             conversationId: fork.conversationId,
             limit: 200,
             channel: "history",
+            forks: "all",            
           })) as unknown as ListUserEntriesResponse;
           const entries = Array.isArray(response.data) ? response.data : [];
           const entryId = activeForkMenuMessageId ?? message.id;
@@ -1384,6 +1385,7 @@ export function ChatPanel({
             conversationId: id,
             limit: 200,
             channel: "history",
+            forks: "all",
           })) as unknown as ListUserEntriesResponse;
           entriesByConversation.set(id, Array.isArray(response.data) ? response.data : []);
         }),

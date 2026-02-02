@@ -213,7 +213,9 @@ public class AdminResource {
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit,
             @QueryParam("channel") String channel,
-            @QueryParam("justification") String justification) {
+            @QueryParam("justification") String justification,
+            @QueryParam("forks") @DefaultValue("none") String forks) {
+        boolean allForks = "all".equalsIgnoreCase(forks);
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
@@ -226,6 +228,7 @@ public class AdminResource {
             if (channel != null && !channel.isBlank()) {
                 query.setChannel(Channel.fromString(channel));
             }
+            query.setAllForks(allForks);
 
             PagedEntries result = store().adminGetEntries(id, query);
             Map<String, Object> response = new HashMap<>();

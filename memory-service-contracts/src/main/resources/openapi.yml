@@ -226,6 +226,19 @@ paths:
             are `latest`, `all`, or a numeric epoch identifier. Defaults to
             `latest` when not provided. The epoch selection is scoped to the
             calling client id.
+        - name: forks
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [none, all]
+            default: none
+          description: |-
+            Controls which fork entries to include. `none` (default) follows the
+            fork ancestry path, returning entries from the target conversation
+            and its ancestors up to fork points. `all` returns entries from all
+            forks in the conversation group, useful for debugging or getting a
+            complete picture of all activity across forks.
       responses:
         '200':
           description: A list of entries.

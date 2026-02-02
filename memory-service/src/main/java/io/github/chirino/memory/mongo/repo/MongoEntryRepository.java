@@ -179,4 +179,36 @@ public class MongoEntryRepository implements PanacheMongoRepositoryBase<MongoEnt
         }
         return find(query, sort, params.toArray()).page(0, limit).list();
     }
+
+    /**
+     * Lists entries by conversation group ID, ordered by created_at. Used for fork-aware entry
+     * retrieval where we need all entries across a conversation group.
+     *
+     * @param conversationGroupId the conversation group ID
+     * @param channel optional channel filter (null for all channels)
+     * @param clientId client ID filter (required for MEMORY channel)
+     * @return entries ordered by created_at, id
+     */
+    public List<MongoEntry> listByConversationGroup(
+            String conversationGroupId, Channel channel, String clientId) {
+        Sort sort = Sort.by("createdAt").and("id");
+        if (channel != null) {
+            if (channel == Channel.MEMORY && clientId != null) {
+                return find(
+                                "conversationGroupId = ?1 and channel = ?2 and clientId = ?3",
+                                sort,
+                                conversationGroupId,
+                                channel,
+                                clientId)
+                        .list();
+            }
+            return find(
+                            "conversationGroupId = ?1 and channel = ?2",
+                            sort,
+                            conversationGroupId,
+                            channel)
+                    .list();
+        }
+        return find("conversationGroupId = ?1", sort, conversationGroupId).list();
+    }
 }

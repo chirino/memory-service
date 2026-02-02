@@ -5,6 +5,7 @@ public class AdminMessageQuery {
     private String afterEntryId;
     private int limit;
     private Channel channel;
+    private boolean allForks;
 
     public String getAfterEntryId() {
         return afterEntryId;
@@ -28,5 +29,13 @@ public class AdminMessageQuery {
 
     public void setChannel(Channel channel) {
         this.channel = channel;
+    }
+
+    public boolean isAllForks() {
+        return allForks;
+    }
+
+    public void setAllForks(boolean allForks) {
+        this.allForks = allForks;
     }
 }
