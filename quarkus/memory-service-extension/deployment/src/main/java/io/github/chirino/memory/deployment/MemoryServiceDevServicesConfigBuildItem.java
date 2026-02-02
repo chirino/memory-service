@@ -27,13 +27,13 @@ public final class MemoryServiceDevServicesConfigBuildItem extends SimpleBuildIt
      * @return the memory-service URL, or null if not available
      */
     public String getUrl() {
-        return config != null ? config.get("memory-service-client.url") : null;
+        return config != null ? config.get("memory-service.client.url") : null;
     }
 
     /**
      * @return the memory-service API key, or null if not available
      */
     public String getApiKey() {
-        return config != null ? config.get("memory-service-client.api-key") : null;
+        return config != null ? config.get("memory-service.client.api-key") : null;
     }
 }

@@ -8,11 +8,11 @@ import java.util.Map;
 import org.eclipse.microprofile.config.spi.ConfigSource;
 
 /**
- * ConfigSourceFactory that aliases {@code memory-service-client.*} properties
+ * ConfigSourceFactory that aliases {@code memory-service.client.*} properties
  * to {@code quarkus.rest-client.memory-service-client.*}.
  *
  * <p>This allows users to configure the REST client using the simpler
- * {@code memory-service-client.url} property instead of the verbose
+ * {@code memory-service.client.url} property instead of the verbose
  * {@code quarkus.rest-client.memory-service-client.url}.
  *
  * <p>Note: gRPC client configuration is handled separately by
@@ -22,13 +22,13 @@ import org.eclipse.microprofile.config.spi.ConfigSource;
 public class MemoryServiceClientAliasConfigSourceFactory implements ConfigSourceFactory {
 
     private static final String TARGET_PREFIX = "quarkus.rest-client.memory-service-client.";
-    private static final String ALIAS_PREFIX = "memory-service-client.";
+    private static final String ALIAS_PREFIX = "memory-service.client.";
 
     @Override
     public Iterable<ConfigSource> getConfigSources(ConfigSourceContext context) {
         Map<String, String> props = new HashMap<>();
 
-        // Alias memory-service-client.* to quarkus.rest-client.memory-service-client.*
+        // Alias memory-service.client.* to quarkus.rest-client.memory-service-client.*
         for (var it = context.iterateNames(); it.hasNext(); ) {
             String name = it.next();
             if (name.startsWith(ALIAS_PREFIX)) {

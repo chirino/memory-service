@@ -19,13 +19,10 @@ public class RestClientRequestLoggingFilter implements ClientRequestFilter {
     private final String memoryServiceBaseUrl;
 
     public RestClientRequestLoggingFilter() {
-        var config = ConfigProvider.getConfig();
-        String baseUrl =
-                config.getOptionalValue("memory-service-client.url", String.class).orElse(null);
-        if (baseUrl == null) {
-            baseUrl = config.getOptionalValue("memory-service.url", String.class).orElse(null);
-        }
-        this.memoryServiceBaseUrl = baseUrl;
+        this.memoryServiceBaseUrl =
+                ConfigProvider.getConfig()
+                        .getOptionalValue("memory-service.client.url", String.class)
+                        .orElse(null);
     }
 
     @Override

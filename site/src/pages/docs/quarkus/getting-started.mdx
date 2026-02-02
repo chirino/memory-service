@@ -186,11 +186,11 @@ public class ChatResource {
 
 Start the Memory Service in Docker Compose following the [Getting Started](/docs/getting-started/) guide.
 
-Configure the agent to connect to the Memory Service by setting the `memory-service-client.url` and `memory-service-client.api-key` in `application.properties`:
+Configure the agent to connect to the Memory Service by setting the `memory-service.client.url` and `memory-service.client.api-key` in `application.properties`:
 
 ```properties
-memory-service-client.url=http://localhost:8082
-memory-service-client.api-key=agent-api-key-1
+memory-service.client.url=http://localhost:8082
+memory-service.client.api-key=agent-api-key-1
 ```
 
 The ChatMemory provider for the Memory Service extension requires that the user request is authenticated.  Configure the OIDC configuration in `application.properties`:
