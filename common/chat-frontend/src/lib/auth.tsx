@@ -76,6 +76,7 @@ interface AuthContextValue {
   accessToken: string | null;
   login: () => void;
   logout: () => void;
+  clearSessionAndLogin: () => Promise<void>;
 }
 
 const AuthContext = React.createContext<AuthContextValue | undefined>(undefined);
@@ -205,6 +206,14 @@ function OidcAuthContextProvider({ children }: { children: React.ReactNode }) {
     }
   }, [auth.user?.expires_at]);
 
+  const clearSessionAndLogin = async () => {
+    // Clear the auth state before redirecting to prevent 401 loops
+    clearAuthState();
+    await auth.removeUser();
+    savePreLoginUrl();
+    await auth.signinRedirect();
+  };
+
   const value: AuthContextValue = {
     isAuthenticated: auth.isAuthenticated,
     isLoading: auth.isLoading,
@@ -217,6 +226,7 @@ function OidcAuthContextProvider({ children }: { children: React.ReactNode }) {
       auth.signinRedirect();
     },
     logout: () => auth.signoutRedirect(),
+    clearSessionAndLogin,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -232,6 +242,7 @@ function MockAuthProvider({ children }: { children: React.ReactNode }) {
     accessToken: "mock-token",
     login: () => console.log("Mock login"),
     logout: () => console.log("Mock logout"),
+    clearSessionAndLogin: async () => console.log("Mock clear session and login"),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
