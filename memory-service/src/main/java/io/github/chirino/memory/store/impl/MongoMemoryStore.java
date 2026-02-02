@@ -848,7 +848,8 @@ public class MongoMemoryStore implements MemoryStore {
             String userId,
             String conversationId,
             List<CreateEntryRequest> entries,
-            String clientId) {
+            String clientId,
+            Long epoch) {
         MongoConversation c = conversationRepository.findById(conversationId);
         if (c != null && c.deletedAt != null) {
             c = null; // Treat soft-deleted as non-existent for auto-create
@@ -881,6 +882,35 @@ public class MongoMemoryStore implements MemoryStore {
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);
         }
 
+        // For MEMORY channel entries, determine the epoch to use.
+        // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
+        // If no epoch is provided, look up the latest epoch or default to 1.
+        Long effectiveEpoch = epoch;
+        boolean hasMemoryEntries =
+                entries.stream()
+                        .anyMatch(
+                                e ->
+                                        e.getChannel() == CreateEntryRequest.ChannelEnum.MEMORY
+                                                || e.getChannel() == null);
+        if (hasMemoryEntries && effectiveEpoch == null) {
+            // Look up the latest epoch for this conversation+clientId
+            List<MongoEntry> latestEntries =
+                    entryRepository.listMemoryEntriesAtLatestEpoch(conversationId, clientId);
+            if (latestEntries.isEmpty()) {
+                effectiveEpoch = 1L; // Initial epoch starts at 1
+            } else {
+                effectiveEpoch = latestEntries.get(0).epoch;
+                if (effectiveEpoch == null) {
+                    // Safety: if somehow existing entries have null epoch, start fresh at 1
+                    effectiveEpoch = 1L;
+                }
+            }
+            LOG.infof(
+                    "Auto-calculated epoch for MEMORY entries: conversationId=%s, clientId=%s,"
+                            + " epoch=%d",
+                    conversationId, clientId, effectiveEpoch);
+        }
+
         Instant latestHistoryTimestamp = null;
         List<EntryDto> created = new ArrayList<>(entries.size());
         for (CreateEntryRequest req : entries) {
@@ -889,11 +919,21 @@ public class MongoMemoryStore implements MemoryStore {
             m.conversationId = conversationId;
             m.userId = req.getUserId();
             m.clientId = clientId;
-            m.channel =
+            Channel channel =
                     req.getChannel() != null
                             ? Channel.fromString(req.getChannel().value())
                             : Channel.MEMORY;
-            m.epoch = req.getEpoch();
+            m.channel = channel;
+
+            // Set epoch based on channel type
+            // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
+            // History channel entries always have null epoch.
+            if (channel == Channel.MEMORY) {
+                m.epoch = effectiveEpoch;
+            } else {
+                m.epoch = null;
+            }
+
             m.contentType = req.getContentType() != null ? req.getContentType() : "message";
             m.decodedContent = req.getContent();
             m.content = encryptContent(m.decodedContent);
@@ -943,10 +983,10 @@ public class MongoMemoryStore implements MemoryStore {
         if (MemorySyncHelper.hasContentTypeMismatch(latestEpochEntries, entry.getContentType())) {
             // ContentType changed - create new epoch with all incoming content
             Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
-            CreateEntryRequest toAppend =
-                    MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
+            CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
             List<EntryDto> appended =
-                    appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+                    appendAgentEntries(
+                            userId, conversationId, List.of(toAppend), clientId, nextEpoch);
             // Update cache with new epoch entries
             updateCacheWithLatestEntries(conversationId, clientId);
             result.setEpoch(nextEpoch);
@@ -971,10 +1011,12 @@ public class MongoMemoryStore implements MemoryStore {
                 result.setNoOp(true);
                 return result;
             }
-            CreateEntryRequest deltaEntry =
-                    MemorySyncHelper.withEpochAndContent(entry, latestEpoch, deltaContent);
+            // Use latestEpoch if available, otherwise this is the first entry so use initial epoch
+            Long epochToUse = latestEpoch != null ? latestEpoch : 1L;
+            CreateEntryRequest deltaEntry = MemorySyncHelper.withContent(entry, deltaContent);
             List<EntryDto> appended =
-                    appendAgentEntries(userId, conversationId, List.of(deltaEntry), clientId);
+                    appendAgentEntries(
+                            userId, conversationId, List.of(deltaEntry), clientId, epochToUse);
             // Update cache with appended entry
             updateCacheWithLatestEntries(conversationId, clientId);
             result.setEntry(appended.isEmpty() ? null : appended.get(0));
@@ -985,10 +1027,9 @@ public class MongoMemoryStore implements MemoryStore {
 
         // Content diverged - create new epoch with all incoming content
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
-        CreateEntryRequest toAppend =
-                MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
+        CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
         List<EntryDto> appended =
-                appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+                appendAgentEntries(userId, conversationId, List.of(toAppend), clientId, nextEpoch);
         // Update cache with new epoch entries
         updateCacheWithLatestEntries(conversationId, clientId);
         result.setEpoch(nextEpoch);

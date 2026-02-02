@@ -151,7 +151,7 @@ message ListForksResponse {
 message CreateEntryRequest {
   string user_id = 1;
   Channel channel = 2;
-  int64 epoch = 3;
+  reserved 3; // epoch removed - server auto-calculates epoch for memory channel entries
   // Describes the schema/format of the content array.
   // History channel entries must use "history" as the content_type.
   // The content array for history entries must contain exactly 1 object with:

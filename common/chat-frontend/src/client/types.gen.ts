@@ -166,11 +166,6 @@ export type CreateEntryRequest = {
   userId?: string | null;
   channel?: Channel;
   /**
-   * For memory entries, the epoch the agent wants this entry to
-   * belong to. The agent increments this when starting a new epoch.
-   */
-  epoch?: number | null;
-  /**
    * Describes the schema/format of the content array.
    *
    * **History channel entries must use `"history"` as the contentType.**

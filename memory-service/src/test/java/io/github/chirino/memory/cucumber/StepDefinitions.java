@@ -497,15 +497,13 @@ public class StepDefinitions {
             request.setContentType("history");
         } else {
             request.setContent(List.of(Map.of("type", "text", "text", content)));
-            // Memory entries must always have an epoch (invariant)
-            if (channelEnum == CreateEntryRequest.ChannelEnum.MEMORY) {
-                request.setEpoch(1L);
-            }
+            // Memory entries epoch is now auto-calculated by the store
         }
+        // Pass null for epoch - the store will auto-calculate for memory entries
         memoryStoreSelector
                 .getStore()
                 .appendAgentEntries(
-                        currentUserId, conversationId, List.of(request), resolveClientId());
+                        currentUserId, conversationId, List.of(request), resolveClientId(), null);
     }
 
     @io.cucumber.java.en.Given(
@@ -517,12 +515,16 @@ public class StepDefinitions {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
         request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
-        request.setEpoch((long) epoch);
+        // Epoch is now passed as a parameter to appendAgentEntries, not set on request
         request.setContentType(contentType);
         memoryStoreSelector
                 .getStore()
                 .appendAgentEntries(
-                        currentUserId, conversationId, List.of(request), resolveClientId());
+                        currentUserId,
+                        conversationId,
+                        List.of(request),
+                        resolveClientId(),
+                        (long) epoch);
     }
 
     @io.cucumber.java.en.Given("I have streamed tokens {string} to the conversation")
@@ -1707,6 +1709,14 @@ public class StepDefinitions {
         trackUsage();
         // Alias for "the response body {string} should be {string}" to match test feature file
         theResponseBodyFieldShouldBe(path, expected);
+    }
+
+    @io.cucumber.java.en.Then("the response body field {string} should be null")
+    public void theResponseBodyFieldShouldBeNull(String path) {
+        trackUsage();
+        JsonPath jsonPath = lastResponse.jsonPath();
+        Object value = jsonPath.get(path);
+        assertThat("Field " + path + " should be null", value, is(nullValue()));
     }
 
     @io.cucumber.java.en.Then("the search response should contain {int} results")
@@ -3837,14 +3847,18 @@ public class StepDefinitions {
             CreateEntryRequest request = new CreateEntryRequest();
             request.setContent(List.of(Map.of("type", "text", "text", content)));
             request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
-            request.setEpoch(epoch);
+            // Epoch is now passed as a parameter to appendAgentEntries, not set on request
             request.setContentType("message");
 
             var entries =
                     memoryStoreSelector
                             .getStore()
                             .appendAgentEntries(
-                                    currentUserId, conversationId, List.of(request), clientId);
+                                    currentUserId,
+                                    conversationId,
+                                    List.of(request),
+                                    clientId,
+                                    epoch);
 
             // Back-date the created_at timestamp
             if (!entries.isEmpty()) {

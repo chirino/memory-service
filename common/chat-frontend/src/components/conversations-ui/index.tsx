@@ -263,7 +263,7 @@ function ConversationsUIEmptyState({
           <>
             <div className="mb-8 animate-float">
               <div className="inline-flex h-24 w-24 items-center justify-center rounded-3xl border border-stone/10 bg-mist">
-          <MessageCircle className="h-12 w-12 text-sage" strokeWidth={1.5} />
+                <MessageCircle className="h-12 w-12 text-sage" strokeWidth={1.5} />
               </div>
             </div>
 
@@ -307,7 +307,7 @@ function ConversationsUIEmptyState({
             <button
               ref={buttonRef}
               type="button"
-              onClick={() => isPopupOpen ? setIsPopupOpen(false) : openPopup()}
+              onClick={() => (isPopupOpen ? setIsPopupOpen(false) : openPopup())}
               className="group w-full rounded-xl border border-transparent bg-mist px-5 py-4 text-left transition-all hover:border-stone/20"
             >
               <div className="flex items-center gap-3">
@@ -327,10 +327,7 @@ function ConversationsUIEmptyState({
             {isPopupOpen && (
               <>
                 {/* Backdrop */}
-                <div
-                  className="fixed inset-0 z-[99] bg-ink/20"
-                  onClick={() => setIsPopupOpen(false)}
-                />
+                <div className="fixed inset-0 z-[99] bg-ink/20" onClick={() => setIsPopupOpen(false)} />
                 <div
                   ref={popupRef}
                   className="fixed left-1/2 top-1/2 z-[100] w-[90vw] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-stone/20 bg-cream shadow-xl"

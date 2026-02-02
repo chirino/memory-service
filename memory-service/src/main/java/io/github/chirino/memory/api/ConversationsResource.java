@@ -260,11 +260,12 @@ public class ConversationsResource {
                 if (historyValidationError != null) {
                     return historyValidationError;
                 }
-                // Agents provide fully-typed content and channel/epoch directly
+                // Agents provide fully-typed content and channel directly
+                // Epoch is auto-calculated by the store for MEMORY channel entries
                 List<CreateEntryRequest> messages = List.of(request);
                 List<EntryDto> appended =
                         store().appendAgentEntries(
-                                        currentUserId(), conversationId, messages, clientId);
+                                        currentUserId(), conversationId, messages, clientId, null);
                 EntryDto dto =
                         appended != null && !appended.isEmpty()
                                 ? appended.get(appended.size() - 1)

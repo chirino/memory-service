@@ -118,19 +118,22 @@ public final class MemorySyncHelper {
     }
 
     /**
-     * Creates a CreateEntryRequest with the specified epoch and delta content.
+     * Creates a CreateEntryRequest with the specified content.
+     * The epoch is NOT set on the request - it should be passed separately to appendAgentEntries.
      */
-    public static CreateEntryRequest withEpochAndContent(
-            CreateEntryRequest original, Long epoch, List<Object> deltaContent) {
+    public static CreateEntryRequest withContent(
+            CreateEntryRequest original, List<Object> content) {
         CreateEntryRequest copy = new CreateEntryRequest();
         copy.setUserId(original != null ? original.getUserId() : null);
         copy.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
-        copy.setEpoch(epoch);
         copy.setContentType(original != null ? original.getContentType() : null);
-        copy.setContent(deltaContent);
+        copy.setContent(content);
         return copy;
     }
 
+    /**
+     * Calculates the next epoch value. Initial epoch is 1.
+     */
     public static Long nextEpoch(Long current) {
         return current == null ? 1L : current + 1;
     }
@@ -177,8 +180,12 @@ public final class MemorySyncHelper {
         return true;
     }
 
-    public static List<CreateEntryRequest> withEpoch(
-            List<CreateEntryRequest> originals, Long epoch) {
+    /**
+     * Creates copies of CreateEntryRequests for the MEMORY channel.
+     * Note: Epoch is NOT set on the requests - it should be passed separately to appendAgentEntries.
+     */
+    public static List<CreateEntryRequest> copyForMemoryChannel(
+            List<CreateEntryRequest> originals) {
         if (originals == null || originals.isEmpty()) {
             return Collections.emptyList();
         }
@@ -187,7 +194,6 @@ public final class MemorySyncHelper {
             CreateEntryRequest copy = new CreateEntryRequest();
             copy.setUserId(original != null ? original.getUserId() : null);
             copy.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
-            copy.setEpoch(epoch);
             copy.setContentType(original != null ? original.getContentType() : null);
             copy.setContent(original != null ? original.getContent() : null);
             normalized.add(copy);

@@ -854,7 +854,8 @@ public class PostgresMemoryStore implements MemoryStore {
             String userId,
             String conversationId,
             List<CreateEntryRequest> entries,
-            String clientId) {
+            String clientId,
+            Long epoch) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
 
@@ -885,7 +886,35 @@ public class PostgresMemoryStore implements MemoryStore {
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);
         }
 
-        // Make conversation effectively final for lambda
+        // For MEMORY channel entries, determine the epoch to use.
+        // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
+        // If no epoch is provided, look up the latest epoch or default to 1.
+        Long effectiveEpoch = epoch;
+        boolean hasMemoryEntries =
+                entries.stream()
+                        .anyMatch(
+                                e ->
+                                        e.getChannel() == CreateEntryRequest.ChannelEnum.MEMORY
+                                                || e.getChannel() == null);
+        if (hasMemoryEntries && effectiveEpoch == null) {
+            // Look up the latest epoch for this conversation+clientId
+            List<EntryEntity> latestEntries =
+                    entryRepository.listMemoryEntriesAtLatestEpoch(cid, clientId);
+            if (latestEntries.isEmpty()) {
+                effectiveEpoch = 1L; // Initial epoch starts at 1
+            } else {
+                effectiveEpoch = latestEntries.get(0).getEpoch();
+                if (effectiveEpoch == null) {
+                    // Safety: if somehow existing entries have null epoch, start fresh at 1
+                    effectiveEpoch = 1L;
+                }
+            }
+            LOG.infof(
+                    "Auto-calculated epoch for MEMORY entries: conversationId=%s, clientId=%s,"
+                            + " epoch=%d",
+                    conversationId, clientId, effectiveEpoch);
+        }
+
         OffsetDateTime latestHistoryTimestamp = null;
         List<EntryDto> created = new ArrayList<>(entries.size());
         for (CreateEntryRequest req : entries) {
@@ -893,14 +922,24 @@ public class PostgresMemoryStore implements MemoryStore {
             entity.setConversation(conversation);
             entity.setUserId(req.getUserId());
             entity.setClientId(clientId);
+            Channel channel;
             if (req.getChannel() != null) {
-                entity.setChannel(
-                        io.github.chirino.memory.model.Channel.fromString(
-                                req.getChannel().value()));
+                channel =
+                        io.github.chirino.memory.model.Channel.fromString(req.getChannel().value());
             } else {
-                entity.setChannel(io.github.chirino.memory.model.Channel.MEMORY);
+                channel = io.github.chirino.memory.model.Channel.MEMORY;
             }
-            entity.setEpoch(req.getEpoch());
+            entity.setChannel(channel);
+
+            // Set epoch based on channel type
+            // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
+            // History channel entries always have null epoch.
+            if (channel == Channel.MEMORY) {
+                entity.setEpoch(effectiveEpoch);
+            } else {
+                entity.setEpoch(null);
+            }
+
             entity.setContentType(req.getContentType() != null ? req.getContentType() : "message");
             entity.setContent(encryptContent(req.getContent()));
             entity.setIndexedContent(req.getIndexedContent());
@@ -954,10 +993,10 @@ public class PostgresMemoryStore implements MemoryStore {
         if (MemorySyncHelper.hasContentTypeMismatch(latestEpochEntries, entry.getContentType())) {
             // ContentType changed - create new epoch with all incoming content
             Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
-            CreateEntryRequest toAppend =
-                    MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
+            CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
             List<EntryDto> appended =
-                    appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+                    appendAgentEntries(
+                            userId, conversationId, List.of(toAppend), clientId, nextEpoch);
             // Update cache with new epoch entries
             updateCacheWithLatestEntries(cid, clientId);
             result.setEpoch(nextEpoch);
@@ -982,10 +1021,12 @@ public class PostgresMemoryStore implements MemoryStore {
                 result.setNoOp(true);
                 return result;
             }
-            CreateEntryRequest deltaEntry =
-                    MemorySyncHelper.withEpochAndContent(entry, latestEpoch, deltaContent);
+            // Use latestEpoch if available, otherwise this is the first entry so use initial epoch
+            Long epochToUse = latestEpoch != null ? latestEpoch : 1L;
+            CreateEntryRequest deltaEntry = MemorySyncHelper.withContent(entry, deltaContent);
             List<EntryDto> appended =
-                    appendAgentEntries(userId, conversationId, List.of(deltaEntry), clientId);
+                    appendAgentEntries(
+                            userId, conversationId, List.of(deltaEntry), clientId, epochToUse);
             // Update cache with appended entry
             updateCacheWithLatestEntries(cid, clientId);
             result.setEntry(appended.isEmpty() ? null : appended.get(0));
@@ -996,10 +1037,9 @@ public class PostgresMemoryStore implements MemoryStore {
 
         // Content diverged - create new epoch with all incoming content
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
-        CreateEntryRequest toAppend =
-                MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
+        CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
         List<EntryDto> appended =
-                appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+                appendAgentEntries(userId, conversationId, List.of(toAppend), clientId, nextEpoch);
         // Update cache with new epoch entries
         updateCacheWithLatestEntries(cid, clientId);
         result.setEpoch(nextEpoch);

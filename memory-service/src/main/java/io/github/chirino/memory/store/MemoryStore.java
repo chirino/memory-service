@@ -80,11 +80,23 @@ public interface MemoryStore {
             MemoryEpochFilter epochFilter,
             String clientId);
 
+    /**
+     * Appends entries to a conversation. For MEMORY channel entries, an epoch is required.
+     *
+     * @param userId the user making the request
+     * @param conversationId the conversation to append to
+     * @param entries the entries to append
+     * @param clientId the client ID (required for MEMORY channel)
+     * @param epoch the epoch for MEMORY channel entries; if null, the latest epoch is used
+     *              (or 1 if no entries exist yet)
+     * @return the created entries
+     */
     List<EntryDto> appendAgentEntries(
             String userId,
             String conversationId,
             List<CreateEntryRequest> entries,
-            String clientId);
+            String clientId,
+            Long epoch);
 
     SyncResult syncAgentEntry(
             String userId, String conversationId, CreateEntryRequest entry, String clientId);
