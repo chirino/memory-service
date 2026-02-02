@@ -192,8 +192,17 @@ function ConversationsUIEmptyState({
 }: ConversationsUIEmptyStateProps) {
   const { sendMessage } = useConversationStreaming();
   const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [popupMaxHeight, setPopupMaxHeight] = useState(320);
   const popupRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Calculate popup max height based on viewport when opening
+  const openPopup = () => {
+    const viewportHeight = window.innerHeight;
+    const padding = 80; // padding from top and bottom of viewport
+    setPopupMaxHeight(Math.min(400, viewportHeight - padding * 2));
+    setIsPopupOpen(true);
+  };
 
   // Close popup when clicking outside
   useEffect(() => {
@@ -244,19 +253,24 @@ function ConversationsUIEmptyState({
     sendMessage(prompt);
   };
 
+  const showHeader = false;
   return (
     <div className={`flex flex-1 items-center justify-center px-8 ${className ?? ""}`}>
       <div className="max-w-md animate-slide-up text-center">
         {/* Decorative icon */}
-        <div className="mb-8 animate-float">
-          <div className="inline-flex h-24 w-24 items-center justify-center rounded-3xl border border-stone/10 bg-mist">
-            <MessageCircle className="h-12 w-12 text-sage" strokeWidth={1.5} />
-          </div>
-        </div>
 
-        {/* Heading */}
-        <h3 className="mb-3 font-serif text-3xl tracking-tight">{title}</h3>
-        <p className="mb-8 text-lg leading-relaxed text-stone">{description}</p>
+        {showHeader && (
+          <>
+            <div className="mb-8 animate-float">
+              <div className="inline-flex h-24 w-24 items-center justify-center rounded-3xl border border-stone/10 bg-mist">
+          <MessageCircle className="h-12 w-12 text-sage" strokeWidth={1.5} />
+              </div>
+            </div>
+
+            <h3 className="mb-3 font-serif text-3xl tracking-tight">{title}</h3>
+            <p className="mb-8 text-lg leading-relaxed text-stone">{description}</p>
+          </>
+        )}
 
         {/* Suggestion cards */}
         <div className="mb-8 space-y-3">
@@ -293,7 +307,7 @@ function ConversationsUIEmptyState({
             <button
               ref={buttonRef}
               type="button"
-              onClick={() => setIsPopupOpen(!isPopupOpen)}
+              onClick={() => isPopupOpen ? setIsPopupOpen(false) : openPopup()}
               className="group w-full rounded-xl border border-transparent bg-mist px-5 py-4 text-left transition-all hover:border-stone/20"
             >
               <div className="flex items-center gap-3">
@@ -309,35 +323,43 @@ function ConversationsUIEmptyState({
               </div>
             </button>
 
-            {/* Popup menu */}
+            {/* Popup menu - centered in viewport */}
             {isPopupOpen && (
-              <div
-                ref={popupRef}
-                className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto rounded-xl border border-stone/20 bg-cream shadow-lg"
-              >
-                <div className="sticky top-0 flex items-center justify-between border-b border-stone/10 bg-cream px-4 py-3">
-                  <span className="text-xs font-medium uppercase tracking-wide text-stone">Choose a prompt</span>
-                  <button
-                    type="button"
-                    onClick={() => setIsPopupOpen(false)}
-                    className="rounded-full p-1 text-stone hover:bg-mist hover:text-ink"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="p-2">
-                  {morePrompts.map((prompt) => (
+              <>
+                {/* Backdrop */}
+                <div
+                  className="fixed inset-0 z-[99] bg-ink/20"
+                  onClick={() => setIsPopupOpen(false)}
+                />
+                <div
+                  ref={popupRef}
+                  className="fixed left-1/2 top-1/2 z-[100] w-[90vw] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-stone/20 bg-cream shadow-xl"
+                  style={{ maxHeight: popupMaxHeight }}
+                >
+                  <div className="sticky top-0 flex items-center justify-between border-b border-stone/10 bg-cream px-4 py-3">
+                    <span className="text-xs font-medium uppercase tracking-wide text-stone">Choose a prompt</span>
                     <button
-                      key={prompt}
                       type="button"
-                      onClick={() => handlePromptSelect(prompt)}
-                      className="w-full rounded-lg px-3 py-2.5 text-left text-sm text-ink transition-colors hover:bg-mist"
+                      onClick={() => setIsPopupOpen(false)}
+                      className="rounded-full p-1 text-stone hover:bg-mist hover:text-ink"
                     >
-                      {prompt}
+                      <X className="h-4 w-4" />
                     </button>
-                  ))}
+                  </div>
+                  <div className="p-2">
+                    {morePrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => handlePromptSelect(prompt)}
+                        className="w-full rounded-lg px-3 py-2.5 text-left text-sm text-ink transition-colors hover:bg-mist"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         </div>

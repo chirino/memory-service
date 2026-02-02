@@ -34,4 +34,3 @@
 * How useful is the current index/search feature?
 * Ponder how best to kick off/manage async indexing maybe move this into the admin api?
 * Do we need to support anonymous user conversations?
-
