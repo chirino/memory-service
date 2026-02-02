@@ -596,7 +596,6 @@ components:
       enum:
         - history
         - memory
-        - summary
 
     Entry:
       type: object
