@@ -1601,10 +1601,25 @@ export function ChatPanel({
     return id;
   }, []);
 
+  // Optimistically mark a conversation as having an in-progress response
+  const markConversationAsStreaming = useCallback(
+    (targetConversationId: string) => {
+      // Add this conversation to all resume-check query results optimistically
+      queryClient.setQueriesData<string[]>({ queryKey: ["resume-check"] }, (old) => {
+        if (!old) return [targetConversationId];
+        if (old.includes(targetConversationId)) return old;
+        return [...old, targetConversationId];
+      });
+    },
+    [queryClient],
+  );
+
   const controller = useMemo<ConversationController>(
     () => ({
       idFactory,
       startStream: async (targetConversationId, text, callbacks) => {
+        // Optimistically mark conversation as having in-progress response
+        markConversationAsStreaming(targetConversationId);
         // IDs were generated before this call, so they're in temp queue
         // Move the first 2 IDs (assistant, user) from temp queue to this conversation's queue
         // This ensures per-conversation tracking. We use FIFO since ids are generated in order.
@@ -1638,6 +1653,8 @@ export function ChatPanel({
         startEventStream(targetConversationId, text, true, callbacks);
       },
       resumeStream: async (targetConversationId, callbacks) => {
+        // Optimistically mark conversation as having in-progress response
+        markConversationAsStreaming(targetConversationId);
         if (!callbacks.replaceMessageId) {
           // IDs may have been generated before this call
           // Move the first ID from temp queue to this conversation's queue if present (FIFO)
@@ -1686,7 +1703,7 @@ export function ChatPanel({
         onSelectConversationId?.(id);
       },
     }),
-    [idFactory, onSelectConversationId, queryClient, sseStream, startEventStream],
+    [idFactory, markConversationAsStreaming, onSelectConversationId, queryClient, sseStream, startEventStream],
   );
 
   return (

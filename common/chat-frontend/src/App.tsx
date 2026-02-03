@@ -292,6 +292,7 @@ function App() {
     if (id) {
       markResolvedConversation(id);
     }
+    void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
   };
 
   const handleSelectConversationId = useCallback(
