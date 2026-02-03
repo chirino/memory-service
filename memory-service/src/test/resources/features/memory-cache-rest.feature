@@ -48,3 +48,22 @@ Feature: Memory entries cache via REST
     When I list memory entries for the conversation with epoch "LATEST"
     Then the response status should be 200
     And the cache hit count should have increased by at least 1
+
+  Scenario: Cache is updated after append (not just sync)
+    Given I am authenticated as agent with API key "test-agent-key-c"
+    And the conversation has a memory entry "Initial content" with epoch 1 and contentType "test.v1"
+    And I record the current cache metrics
+    # Read to populate cache
+    When I list memory entries for the conversation with epoch "LATEST"
+    Then the response status should be 200
+    And the response should contain 1 entry
+    # Append a new memory entry (NOT using sync API)
+    When I append an entry with content "Appended content" and channel "MEMORY" and contentType "test.v1"
+    Then the response status should be 201
+    # Record metrics before next read
+    Given I record the current cache metrics
+    # Read after append - should be cache hit (cache was updated by append)
+    When I list memory entries for the conversation with epoch "LATEST"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And the cache hit count should have increased by at least 1

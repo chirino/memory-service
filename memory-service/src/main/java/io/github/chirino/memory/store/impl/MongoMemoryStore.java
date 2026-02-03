@@ -1328,6 +1328,16 @@ public class MongoMemoryStore implements MemoryStore {
             }
             created.add(toEntryDto(m));
         }
+        // Note: MongoDB writes are immediately visible (no flush needed unlike Hibernate ORM)
+
+        // Invalidate/update cache if MEMORY entries were created
+        if (hasMemoryEntries && clientId != null) {
+            LOG.infof(
+                    "appendAgentEntries: updating cache for conversationId=%s, clientId=%s",
+                    conversationId, clientId);
+            updateCacheWithLatestEntries(conversationId, clientId);
+        }
+
         if (latestHistoryTimestamp != null) {
             c.updatedAt = latestHistoryTimestamp;
             conversationRepository.persistOrUpdate(c);
