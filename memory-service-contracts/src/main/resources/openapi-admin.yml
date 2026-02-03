@@ -9,6 +9,8 @@ info:
 tags:
   - name: Admin
     description: Administrative APIs for system-wide access to conversations and entries.
+  - name: Admin Stats
+    description: Operational statistics endpoints for admin dashboards. Requires Prometheus to be configured.
   - name: System
     description: Health Endpoints
 paths:
@@ -504,12 +506,198 @@ paths:
       security:
         - BearerAuth: []
 
+  ############################################################
+  # Admin Stats
+  ############################################################
+
+  /v1/admin/stats/request-rate:
+    get:
+      tags: [Admin Stats]
+      summary: Get HTTP request rate over time
+      description: |-
+        Returns the HTTP request rate (requests per second) as a time series.
+        Requires auditor or admin role.
+
+        **Requires Prometheus**: This endpoint queries Prometheus for metrics.
+        If Prometheus is not configured, returns 501 Not Implemented.
+      operationId: getRequestRate
+      parameters:
+        - $ref: '#/components/parameters/StatsStart'
+        - $ref: '#/components/parameters/StatsEnd'
+        - $ref: '#/components/parameters/StatsStep'
+      responses:
+        '200':
+          description: Time series data for request rate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesResponse'
+        '501':
+          description: Prometheus not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Prometheus unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/stats/error-rate:
+    get:
+      tags: [Admin Stats]
+      summary: Get 5xx error rate percentage over time
+      description: |-
+        Returns the percentage of HTTP requests resulting in 5xx errors as a time series.
+        Requires auditor or admin role.
+
+        **Requires Prometheus**: This endpoint queries Prometheus for metrics.
+        If Prometheus is not configured, returns 501 Not Implemented.
+      operationId: getErrorRate
+      parameters:
+        - $ref: '#/components/parameters/StatsStart'
+        - $ref: '#/components/parameters/StatsEnd'
+        - $ref: '#/components/parameters/StatsStep'
+      responses:
+        '200':
+          description: Time series data for error rate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesResponse'
+        '501':
+          description: Prometheus not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Prometheus unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/stats/latency-p95:
+    get:
+      tags: [Admin Stats]
+      summary: Get P95 response latency over time
+      description: |-
+        Returns the 95th percentile HTTP response latency in seconds as a time series.
+        Requires auditor or admin role.
+
+        **Requires Prometheus**: This endpoint queries Prometheus for metrics.
+        If Prometheus is not configured, returns 501 Not Implemented.
+      operationId: getLatencyP95
+      parameters:
+        - $ref: '#/components/parameters/StatsStart'
+        - $ref: '#/components/parameters/StatsEnd'
+        - $ref: '#/components/parameters/StatsStep'
+      responses:
+        '200':
+          description: Time series data for P95 latency.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesResponse'
+        '501':
+          description: Prometheus not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Prometheus unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/stats/cache-hit-rate:
+    get:
+      tags: [Admin Stats]
+      summary: Get cache hit rate percentage over time
+      description: |-
+        Returns the cache hit rate as a percentage as a time series.
+        Requires auditor or admin role.
+
+        **Requires Prometheus**: This endpoint queries Prometheus for metrics.
+        If Prometheus is not configured, returns 501 Not Implemented.
+      operationId: getCacheHitRate
+      parameters:
+        - $ref: '#/components/parameters/StatsStart'
+        - $ref: '#/components/parameters/StatsEnd'
+        - $ref: '#/components/parameters/StatsStep'
+      responses:
+        '200':
+          description: Time series data for cache hit rate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesResponse'
+        '501':
+          description: Prometheus not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Prometheus unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  parameters:
+    StatsStart:
+      name: start
+      in: query
+      required: false
+      description: Start of time range (ISO 8601 timestamp). Defaults to 1 hour ago.
+      schema:
+        type: string
+        format: date-time
+    StatsEnd:
+      name: end
+      in: query
+      required: false
+      description: End of time range (ISO 8601 timestamp). Defaults to now.
+      schema:
+        type: string
+        format: date-time
+    StatsStep:
+      name: step
+      in: query
+      required: false
+      description: Resolution step for the time series (e.g., "60s", "5m"). Defaults to "60s".
+      schema:
+        type: string
+        default: "60s"
 
   responses:
     Error:
@@ -792,4 +980,43 @@ components:
           type: string
           description: Error message describing what went wrong.
           example: "Database connection failed"
+
+    TimeSeriesResponse:
+      type: object
+      description: Time series data returned by admin stats endpoints.
+      required:
+        - metric
+        - unit
+        - data
+      properties:
+        metric:
+          type: string
+          description: Metric identifier (e.g., "request_rate", "error_rate").
+          example: "request_rate"
+        unit:
+          type: string
+          description: Unit of measurement (e.g., "requests/sec", "percent", "seconds").
+          example: "requests/sec"
+        data:
+          type: array
+          description: Time series data points.
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
+
+    TimeSeriesDataPoint:
+      type: object
+      description: A single data point in a time series.
+      required:
+        - timestamp
+        - value
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the data point.
+        value:
+          type: number
+          format: double
+          description: Value at this timestamp.
+          example: 42.5
 

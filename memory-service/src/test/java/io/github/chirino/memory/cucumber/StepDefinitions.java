@@ -3946,4 +3946,58 @@ public class StepDefinitions {
                 .mapToDouble(io.micrometer.core.instrument.Counter::count)
                 .sum();
     }
+
+    // Admin Stats / Prometheus step definitions
+
+    @Inject @org.eclipse.microprofile.rest.client.inject.RestClient
+    io.github.chirino.memory.prometheus.PrometheusClient prometheusClient;
+
+    @io.cucumber.java.en.Given("Prometheus is not configured")
+    public void prometheusIsNotConfigured() {
+        trackUsage();
+        // The mock is always available during tests, so we can't actually
+        // "unconfigure" Prometheus. Instead, we rely on the test application.properties
+        // not having memory-service.prometheus.url set, which causes the endpoint
+        // to return 501. For explicit control, use "Prometheus is unavailable".
+    }
+
+    @io.cucumber.java.en.Given("Prometheus is unavailable")
+    public void prometheusIsUnavailable() {
+        trackUsage();
+        getMockPrometheusClient().setAvailable(false);
+    }
+
+    @io.cucumber.java.en.Given("Prometheus is available")
+    public void prometheusIsAvailable() {
+        trackUsage();
+        getMockPrometheusClient().setAvailable(true);
+    }
+
+    private io.github.chirino.memory.prometheus.MockPrometheusClient getMockPrometheusClient() {
+        return (io.github.chirino.memory.prometheus.MockPrometheusClient) prometheusClient;
+    }
+
+    @io.cucumber.java.en.Then("the response should be a time series with metric {string}")
+    public void theResponseShouldBeATimeSeriesWithMetric(String expectedMetric) {
+        trackUsage();
+        String metric = lastResponse.jsonPath().getString("metric");
+        assertThat("Response metric should match", metric, is(expectedMetric));
+    }
+
+    @io.cucumber.java.en.Then("the response should be a time series with unit {string}")
+    public void theResponseShouldBeATimeSeriesWithUnit(String expectedUnit) {
+        trackUsage();
+        String unit = lastResponse.jsonPath().getString("unit");
+        assertThat("Response unit should match", unit, is(expectedUnit));
+    }
+
+    @io.cucumber.java.en.Then("the response time series data should have at least {int} points")
+    public void theResponseTimeSeriesDataShouldHaveAtLeastPoints(int minPoints) {
+        trackUsage();
+        int dataSize = lastResponse.jsonPath().getList("data").size();
+        assertThat(
+                "Time series should have at least " + minPoints + " points",
+                dataSize,
+                greaterThan(minPoints - 1));
+    }
 }
