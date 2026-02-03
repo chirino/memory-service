@@ -8,6 +8,7 @@ public class EntryDto {
     private String id;
     private String conversationId;
     private String userId;
+    private String clientId;
     private Channel channel;
     private Long epoch;
     private List<Object> content;
@@ -36,6 +37,14 @@ public class EntryDto {
 
     public void setUserId(String userId) {
         this.userId = userId;
+    }
+
+    public String getClientId() {
+        return clientId;
+    }
+
+    public void setClientId(String clientId) {
+        this.clientId = clientId;
     }
 
     public Channel getChannel() {

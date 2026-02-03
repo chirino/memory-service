@@ -628,6 +628,10 @@ components:
         userId:
           type: string
           nullable: true
+        clientId:
+          type: string
+          nullable: true
+          description: Client identifier that created this entry.
         channel:
           $ref: '#/components/schemas/Channel'
         epoch:

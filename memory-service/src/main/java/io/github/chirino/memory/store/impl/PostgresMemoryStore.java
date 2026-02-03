@@ -1943,6 +1943,7 @@ public class PostgresMemoryStore implements MemoryStore {
         dto.setId(entity.getId().toString());
         dto.setConversationId(entity.getConversation().getId().toString());
         dto.setUserId(entity.getUserId());
+        dto.setClientId(entity.getClientId());
         dto.setChannel(entity.getChannel());
         dto.setEpoch(entity.getEpoch());
         dto.setContentType(entity.getContentType());

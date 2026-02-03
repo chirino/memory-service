@@ -1653,6 +1653,7 @@ public class MongoMemoryStore implements MemoryStore {
         dto.setId(entity.id);
         dto.setConversationId(entity.conversationId);
         dto.setUserId(entity.userId);
+        dto.setClientId(entity.clientId);
         dto.setChannel(entity.channel);
         dto.setEpoch(entity.epoch);
         dto.setContentType(entity.contentType);
