@@ -56,6 +56,8 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
 
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
+
+        LOG.infof("getMessages(%s)", memoryId);
         Objects.requireNonNull(memoryId, "memoryId");
         ListConversationEntries200Response context;
         try {
@@ -66,6 +68,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                                     null,
                                     50,
                                     Channel.MEMORY,
+                                    null,
                                     null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;

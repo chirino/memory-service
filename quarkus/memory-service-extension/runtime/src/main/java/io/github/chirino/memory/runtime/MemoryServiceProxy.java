@@ -67,7 +67,12 @@ public class MemoryServiceProxy {
     }
 
     public Response listConversationEntries(
-            String conversationId, String after, Integer limit, Channel channel, String epoch) {
+            String conversationId,
+            String after,
+            Integer limit,
+            Channel channel,
+            String epoch,
+            String forks) {
         return execute(
                 () ->
                         conversationsApi()
@@ -76,7 +81,8 @@ public class MemoryServiceProxy {
                                         toUuid(after),
                                         limit,
                                         channel,
-                                        epoch),
+                                        epoch,
+                                        forks),
                 OK,
                 "Error listing entries for history %s",
                 conversationId);

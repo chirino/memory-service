@@ -144,7 +144,7 @@ abstract class AbstractMemoryServiceTest {
 
         memoryStoreSelector
                 .getStore()
-                .appendAgentEntries("alice", conversationId, List.of(a1, a2), "test-agent");
+                .appendAgentEntries("alice", conversationId, List.of(a1, a2), "test-agent", null);
 
         // Agent view of entries should include all entries
         given().header("X-API-Key", "test-agent-key")
@@ -264,7 +264,7 @@ abstract class AbstractMemoryServiceTest {
         u3.setContent("Entry 3");
         memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u3);
 
-        // Fork at the second entry
+        // Fork at the second entry (forkedAtEntryId becomes m1, the entry BEFORE m2)
         String forkedId =
                 given().contentType(MediaType.APPLICATION_JSON)
                         .body(Map.of("title", "Forked Conversation"))
@@ -281,12 +281,15 @@ abstract class AbstractMemoryServiceTest {
                         .extract()
                         .path("id");
 
-        // Fork should start empty (no entry copying)
+        // Fork should include parent entries up to the fork point (Entry 1)
+        // No entries are copied - instead, queries for the fork include parent entries
         given().when()
                 .get("/v1/conversations/{id}/entries", forkedId)
                 .then()
                 .statusCode(200)
-                .body("data", hasSize(0));
+                .body("data", hasSize(1))
+                .body("data[0].id", is(m1.getId()))
+                .body("data[0].content[0].text", is("Entry 1"));
     }
 
     @Test

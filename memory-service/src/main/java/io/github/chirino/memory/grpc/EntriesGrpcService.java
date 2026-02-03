@@ -65,6 +65,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                     request.hasPage() && request.getPage().getPageSize() > 0
                                             ? request.getPage().getPageSize()
                                             : 50;
+                            boolean allForks = "all".equalsIgnoreCase(request.getForks());
                             PagedEntries paged =
                                     store().getEntries(
                                                     currentUserId(),
@@ -73,7 +74,8 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                                     pageSize,
                                                     channel,
                                                     epochFilter,
-                                                    currentClientId());
+                                                    currentClientId(),
+                                                    allForks);
                             ListEntriesResponse.Builder builder = ListEntriesResponse.newBuilder();
                             if (paged != null) {
                                 builder.addAllEntries(
@@ -137,7 +139,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                             io.github.chirino.memory.model.Channel requestChannel =
                                     GrpcDtoMapper.fromProtoChannel(request.getEntry().getChannel());
                             internal.setChannel(GrpcDtoMapper.toCreateEntryChannel(requestChannel));
-                            internal.setEpoch(request.getEntry().getEpoch());
+                            // Note: epoch is no longer set from request - server auto-calculates
                             internal.setContentType(request.getEntry().getContentType());
                             internal.setContent(
                                     GrpcDtoMapper.fromValues(request.getEntry().getContentList()));
@@ -149,7 +151,8 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                                     currentUserId(),
                                                     conversationId,
                                                     List.of(internal),
-                                                    clientId);
+                                                    clientId,
+                                                    null); // epoch auto-calculated by store
                             io.github.chirino.memory.api.dto.EntryDto latest =
                                     appended != null && !appended.isEmpty()
                                             ? appended.get(appended.size() - 1)
@@ -241,7 +244,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
         io.github.chirino.memory.model.Channel requestChannel =
                 GrpcDtoMapper.fromProtoChannel(request.getChannel());
         internal.setChannel(GrpcDtoMapper.toCreateEntryChannel(requestChannel));
-        internal.setEpoch(request.getEpoch());
+        // Note: epoch is no longer set from request - server auto-calculates
         internal.setContentType(request.getContentType());
         internal.setContent(GrpcDtoMapper.fromValues(request.getContentList()));
         if (request.hasIndexedContent()) {

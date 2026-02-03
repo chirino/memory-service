@@ -51,13 +51,13 @@ public class MemoryServiceDevServicesProcessor {
                 Map<String, String> resultConfig = result.getConfig();
                 if (resultConfig != null) {
                     // Look for memory-service related config
-                    String url = resultConfig.get("memory-service-client.url");
+                    String url = resultConfig.get("memory-service.client.url");
                     if (url != null) {
-                        config.put("memory-service-client.url", url);
+                        config.put("memory-service.client.url", url);
                     }
-                    String apiKey = resultConfig.get("memory-service-client.api-key");
+                    String apiKey = resultConfig.get("memory-service.client.api-key");
                     if (apiKey != null) {
-                        config.put("memory-service-client.api-key", apiKey);
+                        config.put("memory-service.client.api-key", apiKey);
                     }
                     String grpcHost = resultConfig.get("quarkus.grpc.clients.responseresumer.host");
                     if (grpcHost != null) {
@@ -90,7 +90,7 @@ public class MemoryServiceDevServicesProcessor {
 
         if (!dockerStatus.isContainerRuntimeAvailable()) {
             LOG.warn(
-                    "Docker is not available. Please configure memory-service-client.url manually"
+                    "Docker is not available. Please configure memory-service.client.url manually"
                             + " or start Docker.");
             return;
         }
@@ -99,35 +99,48 @@ public class MemoryServiceDevServicesProcessor {
         try {
             memoryServiceUrl =
                     ConfigProvider.getConfig()
-                            .getOptionalValue("memory-service-client.url", String.class)
+                            .getOptionalValue("memory-service.client.url", String.class)
                             .orElse(null);
         } catch (IllegalStateException e) {
         }
         if (memoryServiceUrl != null && !memoryServiceUrl.isEmpty()) {
             LOG.debugf(
-                    "Not starting memory-service dev service as memory-service-client.url is set"
+                    "Not starting memory-service dev service as memory-service.client.url is set"
                             + " to: %s",
                     memoryServiceUrl);
             return;
         }
 
         // Determine the API key to use. Prefer an explicitly configured
-        // memory-service-client.api-key.
+        // memory-service.client.api-key.
+        // If not present, check if memory-service.devservices.env.MEMORY_SERVICE_API_KEYS_AGENT
+        // is configured and extract the key from there.
         // If not present, generate a random Base64-encoded key and expose it both to the container
         // (as MEMORY_SERVICE_API_KEYS_AGENT) and to the application config (as
-        // memory-service-client.api-key).
+        // memory-service.client.api-key).
         String configuredApiKey = null;
         try {
             configuredApiKey =
                     ConfigProvider.getConfig()
-                            .getOptionalValue("memory-service-client.api-key", String.class)
+                            .getOptionalValue("memory-service.client.api-key", String.class)
                             .orElse(null);
         } catch (IllegalStateException e) {
-            // Config may not be available in some edge cases; fall through to generating a key.
-            LOG.debug(
-                    "Unable to read memory-service-client.api-key from config, generating a random"
-                            + " key.",
-                    e);
+            // Config may not be available in some edge cases; fall through to other sources.
+            LOG.debug("Unable to read memory-service.client.api-key from config.", e);
+        }
+
+        // Read additional environment variables to pass to the container
+        final Map<String, String> additionalEnvVars = getAdditionalEnvVars();
+
+        // If no explicit api-key configured, check if it's provided via devservices env vars
+        if (configuredApiKey == null || configuredApiKey.isBlank()) {
+            String envApiKey = additionalEnvVars.get("MEMORY_SERVICE_API_KEYS_AGENT");
+            if (envApiKey != null && !envApiKey.isBlank()) {
+                configuredApiKey = envApiKey;
+                LOG.debug(
+                        "Using memory-service.client.api-key from"
+                                + " memory-service.devservices.env.MEMORY_SERVICE_API_KEYS_AGENT");
+            }
         }
 
         final boolean generatedApiKey;
@@ -135,11 +148,11 @@ public class MemoryServiceDevServicesProcessor {
         if (configuredApiKey == null || configuredApiKey.isBlank()) {
             effectiveApiKey = generateRandomApiKey();
             generatedApiKey = true;
-            LOG.info("No memory-service-client.api-key configured; generated a random API key.");
+            LOG.info("No memory-service.client.api-key configured; generated a random API key.");
         } else {
             effectiveApiKey = configuredApiKey;
             generatedApiKey = false;
-            LOG.debug("Using configured memory-service-client.api-key for Dev Services.");
+            LOG.debug("Using configured memory-service.client.api-key for Dev Services.");
         }
 
         // Read response resumer configuration if set
@@ -148,14 +161,11 @@ public class MemoryServiceDevServicesProcessor {
         // Read optional fixed port configuration
         final Integer fixedPort = getFixedPortConfig();
 
-        // Read additional environment variables to pass to the container
-        final Map<String, String> additionalEnvVars = getAdditionalEnvVars();
-
         LOG.info("Starting memory-service dev service...");
 
         Map<String, Function<Startable, String>> configProviders = new HashMap<>();
         configProviders.put(
-                "memory-service-client.url",
+                "memory-service.client.url",
                 (Function<Startable, String>) s -> getConnectionInfo(s));
 
         // Configure gRPC client using host, port, and TLS settings (as per Quarkus gRPC client
@@ -171,7 +181,7 @@ public class MemoryServiceDevServicesProcessor {
                 (Function<Startable, String>) s -> parsePlainText(getConnectionInfo(s)));
 
         if (generatedApiKey) {
-            configProviders.put("memory-service-client.api-key", s -> effectiveApiKey);
+            configProviders.put("memory-service.client.api-key", s -> effectiveApiKey);
         }
 
         devServicesResult.produce(

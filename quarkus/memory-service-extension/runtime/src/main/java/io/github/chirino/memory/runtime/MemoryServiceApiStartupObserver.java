@@ -18,7 +18,7 @@ public class MemoryServiceApiStartupObserver {
     void onStart(@Observes StartupEvent ev) {
         var config = ConfigProvider.getConfig();
         String baseUrl =
-                config.getOptionalValue("memory-service-client.url", String.class)
+                config.getOptionalValue("memory-service.client.url", String.class)
                         .or(
                                 () ->
                                         config.getOptionalValue(

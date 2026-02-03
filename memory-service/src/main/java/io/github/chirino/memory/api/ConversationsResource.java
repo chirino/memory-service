@@ -41,6 +41,7 @@ import io.vertx.ext.web.RoutingContext;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
@@ -175,11 +176,13 @@ public class ConversationsResource {
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit,
             @QueryParam("channel") String channel,
-            @QueryParam("epoch") String epoch) {
+            @QueryParam("epoch") String epoch,
+            @QueryParam("forks") @DefaultValue("none") String forks) {
+        boolean allForks = "all".equalsIgnoreCase(forks);
         LOG.infof(
                 "Listing messages for conversationId=%s, user=%s, after=%s, limit=%s,"
-                        + " channel=%s",
-                conversationId, currentUserId(), after, limit, channel);
+                        + " channel=%s, forks=%s",
+                conversationId, currentUserId(), after, limit, channel, forks);
         Channel requestedChannel = channel != null ? Channel.fromString(channel) : null;
         try {
             int pageSize = limit != null ? limit : 50;
@@ -209,7 +212,8 @@ public class ConversationsResource {
                                     pageSize,
                                     effectiveChannel,
                                     epochFilter,
-                                    hasApiKey ? apiKeyContext.getClientId() : null);
+                                    hasApiKey ? apiKeyContext.getClientId() : null,
+                                    allForks);
             internal = context.getEntries();
             nextCursor = context.getNextCursor();
             List<Entry> data = internal.stream().map(this::toClientEntry).toList();
@@ -260,11 +264,12 @@ public class ConversationsResource {
                 if (historyValidationError != null) {
                     return historyValidationError;
                 }
-                // Agents provide fully-typed content and channel/epoch directly
+                // Agents provide fully-typed content and channel directly
+                // Epoch is auto-calculated by the store for MEMORY channel entries
                 List<CreateEntryRequest> messages = List.of(request);
                 List<EntryDto> appended =
                         store().appendAgentEntries(
-                                        currentUserId(), conversationId, messages, clientId);
+                                        currentUserId(), conversationId, messages, clientId, null);
                 EntryDto dto =
                         appended != null && !appended.isEmpty()
                                 ? appended.get(appended.size() - 1)

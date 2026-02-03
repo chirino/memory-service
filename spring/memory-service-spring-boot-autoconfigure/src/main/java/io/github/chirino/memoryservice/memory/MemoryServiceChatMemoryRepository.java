@@ -76,6 +76,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
                                     null,
                                     1000,
                                     Channel.MEMORY,
+                                    null,
                                     null)
                             .block();
         } catch (WebClientResponseException e) {

@@ -323,13 +323,6 @@ For agent entries, this is the user the agent is responding to.`,
     channel: {
       $ref: "#/components/schemas/Channel",
     },
-    epoch: {
-      type: "integer",
-      format: "int64",
-      nullable: true,
-      description: `For memory entries, the epoch the agent wants this entry to
-belong to. The agent increments this when starting a new epoch.`,
-    },
     contentType: {
       type: "string",
       description: `Describes the schema/format of the content array.

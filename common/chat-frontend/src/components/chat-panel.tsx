@@ -164,6 +164,7 @@ function ChatMessageRow({
             conversationId: fork.conversationId,
             limit: 200,
             channel: "history",
+            forks: "all",            
           })) as unknown as ListUserEntriesResponse;
           const entries = Array.isArray(response.data) ? response.data : [];
           const entryId = activeForkMenuMessageId ?? message.id;
@@ -442,6 +443,8 @@ function ChatPanelContent({
   const shouldAutoScrollRef = useRef(true);
   const lastMessageCountRef = useRef(0);
   const isInitialLoadRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
+  const isProgrammaticScrollRef = useRef(false);
 
   const formatForkTimestamp = (value?: string | null) => {
     if (!value) {
@@ -709,12 +712,20 @@ function ChatPanelContent({
         return;
       }
 
+      // Mark as programmatic scroll to prevent handleScroll from disabling auto-scroll
+      isProgrammaticScrollRef.current = true;
+
       // Try to scroll to the last message element if available
       if (messages.length > 0) {
         const lastMessage = messages[messages.length - 1];
         const lastMessageElement = messageRefs.current.get(lastMessage.id);
         if (lastMessageElement) {
           lastMessageElement.scrollIntoView({ behavior, block: "end" });
+          // Reset programmatic flag after scroll completes
+          requestAnimationFrame(() => {
+            isProgrammaticScrollRef.current = false;
+            lastScrollTopRef.current = viewport.scrollTop;
+          });
           return;
         }
       }
@@ -724,17 +735,45 @@ function ChatPanelContent({
         top: viewport.scrollHeight,
         behavior,
       });
+      // Reset programmatic flag after scroll completes
+      requestAnimationFrame(() => {
+        isProgrammaticScrollRef.current = false;
+        lastScrollTopRef.current = viewport.scrollTop;
+      });
     },
     [messages],
   );
 
   // Handle scroll events to track if user is near bottom
   const handleScroll = useCallback(() => {
-    isNearBottomRef.current = checkNearBottom();
-    // If user manually scrolls away from bottom, disable auto-scroll
-    if (!isNearBottomRef.current) {
-      shouldAutoScrollRef.current = false;
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
     }
+
+    const currentScrollTop = viewport.scrollTop;
+    const wasNearBottom = isNearBottomRef.current;
+    isNearBottomRef.current = checkNearBottom();
+
+    // Skip if this is a programmatic scroll
+    if (isProgrammaticScrollRef.current) {
+      lastScrollTopRef.current = currentScrollTop;
+      return;
+    }
+
+    // Detect if user explicitly scrolled UP (away from bottom)
+    // Only disable auto-scroll if user scrolled up significantly (more than 50px)
+    const scrolledUp = currentScrollTop < lastScrollTopRef.current - 50;
+
+    if (scrolledUp && !isNearBottomRef.current) {
+      // User scrolled up away from bottom - disable auto-scroll
+      shouldAutoScrollRef.current = false;
+    } else if (isNearBottomRef.current && !wasNearBottom) {
+      // User scrolled back near bottom - re-enable auto-scroll
+      shouldAutoScrollRef.current = true;
+    }
+
+    lastScrollTopRef.current = currentScrollTop;
   }, [checkNearBottom]);
 
   // Scroll to bottom on initial load
@@ -786,6 +825,8 @@ function ChatPanelContent({
     shouldAutoScrollRef.current = true;
     isNearBottomRef.current = true;
     lastMessageCountRef.current = 0;
+    lastScrollTopRef.current = 0;
+    isProgrammaticScrollRef.current = false;
   }, [conversationId]);
 
   // Auto-scroll when new messages arrive or content streams, if near bottom
@@ -798,9 +839,7 @@ function ChatPanelContent({
     const messageCountChanged = messages.length !== lastMessageCountRef.current;
     const wasEmpty = lastMessageCountRef.current === 0;
     const hasStreamingMessage = messages.some((msg) => msg.displayState === "streaming");
-
-    // Update near-bottom status
-    isNearBottomRef.current = checkNearBottom();
+    const hasPendingMessage = messages.some((msg) => msg.displayState === "pending");
 
     // If this is the first time messages appear (initial load), force scroll to bottom
     if (wasEmpty && isInitialLoadRef.current && viewport.scrollHeight > viewport.clientHeight) {
@@ -809,34 +848,30 @@ function ChatPanelContent({
         scrollToBottom("instant");
         shouldAutoScrollRef.current = true;
         isNearBottomRef.current = true;
+        lastScrollTopRef.current = viewport.scrollTop;
       });
       lastMessageCountRef.current = messages.length;
       return;
     }
 
-    // If user scrolled away, don't auto-scroll unless they scroll back near bottom
-    if (!shouldAutoScrollRef.current && !isNearBottomRef.current) {
+    // If user has explicitly disabled auto-scroll by scrolling up, don't auto-scroll
+    if (!shouldAutoScrollRef.current) {
       lastMessageCountRef.current = messages.length;
       return;
     }
 
-    // Re-enable auto-scroll if user scrolls back near bottom
-    if (isNearBottomRef.current) {
-      shouldAutoScrollRef.current = true;
-    }
-
-    // Auto-scroll if near bottom and (messages changed or streaming)
-    if ((messageCountChanged || hasStreamingMessage) && shouldAutoScrollRef.current) {
+    // Auto-scroll when:
+    // 1. New messages are added (messageCountChanged)
+    // 2. Content is streaming (hasStreamingMessage)
+    // 3. Message is pending/being sent (hasPendingMessage)
+    if (messageCountChanged || hasStreamingMessage || hasPendingMessage) {
       requestAnimationFrame(() => {
-        // Double-check we're still near bottom before scrolling
-        if (checkNearBottom()) {
-          scrollToBottom("smooth");
-        }
+        scrollToBottom(hasStreamingMessage ? "instant" : "smooth");
       });
     }
 
     lastMessageCountRef.current = messages.length;
-  }, [messages, checkNearBottom, scrollToBottom]);
+  }, [messages, scrollToBottom]);
 
   // Attach scroll listener
   useEffect(() => {
@@ -1350,6 +1385,7 @@ export function ChatPanel({
             conversationId: id,
             limit: 200,
             channel: "history",
+            forks: "all",
           })) as unknown as ListUserEntriesResponse;
           entriesByConversation.set(id, Array.isArray(response.data) ? response.data : []);
         }),

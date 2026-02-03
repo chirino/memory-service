@@ -136,3 +136,113 @@ Feature: Conversation Forking REST API
     And I authenticate as user "bob"
     When I get conversation "${forkConversationId}"
     Then the response status should be 200
+
+  # Regression test: Root conversation continues after fork - querying root returns only root entries
+  # This tests that fork-aware entry retrieval correctly handles the case where the root
+  # conversation has entries AFTER a fork was created (the fork point should not limit root entries)
+  Scenario: Root conversation entries after fork point are returned when querying root
+    Given I am authenticated as user "alice"
+    And I have a conversation with title "Root Conversation"
+    And set "rootConversationId" to "${conversationId}"
+    # Create initial entries in root (before fork point)
+    And the conversation has an entry "A" in channel "HISTORY"
+    And the conversation has an entry "B" in channel "MEMORY"
+    And the conversation has an entry "C" in channel "MEMORY"
+    And the conversation has an entry "D" in channel "HISTORY"
+
+    # Capture entry D as the fork point (need agent auth to see MEMORY entries)
+    When I am authenticated as agent with API key "test-agent-key"
+    And I list entries for the conversation
+    And set "entryD_Id" to the json response field "data[3].id"
+    # Switch back to user for forking
+    And I am authenticated as user "alice"
+
+    # Fork the conversation at entry D
+    When I fork the conversation at entry "${entryD_Id}" with request:
+    """
+    {
+      "title": "Forked Conversation"
+    }
+    """
+    Then the response status should be 201
+    And set "forkConversationId" to the json response field "id"
+
+    # Switch to agent to add entries (users can't add MEMORY entries)
+    When I am authenticated as agent with API key "test-agent-key"
+
+    # Add entries to the fork
+    When I call POST "/v1/conversations/${forkConversationId}/entries" with body:
+    """
+    {"channel": "HISTORY", "contentType": "history", "content": [{"text": "E", "role": "USER"}]}
+    """
+    Then the response status should be 201
+    When I call POST "/v1/conversations/${forkConversationId}/entries" with body:
+    """
+    {"channel": "MEMORY", "contentType": "test.v1", "content": [{"type": "text", "text": "F"}]}
+    """
+    Then the response status should be 201
+    When I call POST "/v1/conversations/${forkConversationId}/entries" with body:
+    """
+    {"channel": "MEMORY", "contentType": "test.v1", "content": [{"type": "text", "text": "G"}]}
+    """
+    Then the response status should be 201
+    When I call POST "/v1/conversations/${forkConversationId}/entries" with body:
+    """
+    {"channel": "HISTORY", "contentType": "history", "content": [{"text": "H", "role": "AI"}]}
+    """
+    Then the response status should be 201
+
+    # Root conversation continues with more entries AFTER fork was created
+    When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
+    """
+    {"channel": "HISTORY", "contentType": "history", "content": [{"text": "I", "role": "USER"}]}
+    """
+    Then the response status should be 201
+    When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
+    """
+    {"channel": "MEMORY", "contentType": "test.v1", "content": [{"type": "text", "text": "J"}]}
+    """
+    Then the response status should be 201
+    When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
+    """
+    {"channel": "MEMORY", "contentType": "test.v1", "content": [{"type": "text", "text": "K"}]}
+    """
+    Then the response status should be 201
+    When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
+    """
+    {"channel": "HISTORY", "contentType": "history", "content": [{"text": "L", "role": "AI"}]}
+    """
+    Then the response status should be 201
+
+    # Query the ROOT conversation (default, no forks=all)
+    # Expected: All root entries A, B, C, D, I, J, K, L (NOT fork entries E, F, G, H)
+    When I call GET "/v1/conversations/${rootConversationId}/entries"
+    Then the response status should be 200
+    And the response should contain 8 entries
+    And entry at index 0 should have content "A"
+    And entry at index 1 should have content "B"
+    And entry at index 2 should have content "C"
+    And entry at index 3 should have content "D"
+    And entry at index 4 should have content "I"
+    And entry at index 5 should have content "J"
+    And entry at index 6 should have content "K"
+    And entry at index 7 should have content "L"
+
+    # Query the FORK conversation (default, no forks=all)
+    # Expected: Parent entries BEFORE fork point (A, B, C) + fork entries (E, F, G, H)
+    # Note: D is NOT included because fork at D means "branch before D"
+    When I call GET "/v1/conversations/${forkConversationId}/entries"
+    Then the response status should be 200
+    And the response should contain 7 entries
+    And entry at index 0 should have content "A"
+    And entry at index 1 should have content "B"
+    And entry at index 2 should have content "C"
+    And entry at index 3 should have content "E"
+    And entry at index 4 should have content "F"
+    And entry at index 5 should have content "G"
+    And entry at index 6 should have content "H"
+
+    # Query root with forks=all - should return ALL entries from both conversations
+    When I call GET "/v1/conversations/${rootConversationId}/entries?forks=all"
+    Then the response status should be 200
+    And the response should contain 12 entries

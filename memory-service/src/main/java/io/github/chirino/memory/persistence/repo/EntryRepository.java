@@ -8,9 +8,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID> {
+
+    private static final Logger LOG = Logger.getLogger(EntryRepository.class);
 
     public List<EntryEntity> listUserVisible(UUID conversationId, String afterEntryId, int limit) {
         String baseQuery =
@@ -39,6 +42,10 @@ public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID>
 
     public List<EntryEntity> listByChannel(
             UUID conversationId, String afterEntryId, int limit, Channel channel, String clientId) {
+        LOG.infof(
+                "listByChannel: conversationId=%s, afterEntryId=%s, limit=%d, channel=%s,"
+                        + " clientId=%s",
+                conversationId, afterEntryId, limit, channel, clientId);
         String baseQuery =
                 "from EntryEntity m where m.conversation.id = ?1 and m.conversation.deletedAt IS"
                         + " NULL and m.conversation.conversationGroup.deletedAt IS NULL";
@@ -67,12 +74,18 @@ public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID>
                                 + " and m.createdAt > ?"
                                 + params.size()
                                 + " order by m.createdAt, m.id";
-                return find(query, params.toArray()).page(0, limit).list();
+                LOG.infof("listByChannel: executing query=%s with params=%s", query, params);
+                List<EntryEntity> result = find(query, params.toArray()).page(0, limit).list();
+                LOG.infof("listByChannel: found %d entries", result.size());
+                return result;
             }
         }
 
         String query = baseQuery + " order by m.createdAt, m.id";
-        return find(query, params.toArray()).page(0, limit).list();
+        LOG.infof("listByChannel: executing query=%s with params=%s", query, params);
+        List<EntryEntity> result = find(query, params.toArray()).page(0, limit).list();
+        LOG.infof("listByChannel: found %d entries", result.size());
+        return result;
     }
 
     /**
@@ -93,6 +106,10 @@ public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID>
      */
     public List<EntryEntity> listMemoryEntriesAtLatestEpoch(
             UUID conversationId, String afterEntryId, int limit, String clientId) {
+        LOG.infof(
+                "listMemoryEntriesAtLatestEpoch: conversationId=%s, afterEntryId=%s, limit=%d,"
+                        + " clientId=%s",
+                conversationId, afterEntryId, limit, clientId);
         // Build the subquery to find max epoch
         String maxEpochSubquery =
                 "(select max(m2.epoch) from EntryEntity m2 where m2.conversation.id = ?1"
@@ -124,7 +141,11 @@ public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID>
         }
 
         String query = baseQuery + " order by m.createdAt, m.id";
-        return find(query, params.toArray()).page(0, limit).list();
+        LOG.infof(
+                "listMemoryEntriesAtLatestEpoch: executing query=%s with params=%s", query, params);
+        List<EntryEntity> result = find(query, params.toArray()).page(0, limit).list();
+        LOG.infof("listMemoryEntriesAtLatestEpoch: found %d entries", result.size());
+        return result;
     }
 
     public List<EntryEntity> listMemoryEntriesByEpoch(
@@ -166,5 +187,43 @@ public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID>
 
         String query = baseQuery + " order by m.createdAt, m.id";
         return find(query, params.toArray()).page(0, limit).list();
+    }
+
+    /**
+     * Lists entries by conversation group ID, ordered by created_at. Used for fork-aware entry
+     * retrieval where we need all entries across a conversation group.
+     *
+     * @param conversationGroupId the conversation group ID
+     * @param channel optional channel filter (null for all channels)
+     * @param clientId client ID filter (required for MEMORY channel)
+     * @return entries ordered by created_at, id
+     */
+    public List<EntryEntity> listByConversationGroup(
+            UUID conversationGroupId, Channel channel, String clientId) {
+        LOG.infof(
+                "listByConversationGroup: conversationGroupId=%s, channel=%s, clientId=%s",
+                conversationGroupId, channel, clientId);
+
+        String baseQuery =
+                "from EntryEntity m where m.conversationGroupId = ?1"
+                        + " and m.conversation.deletedAt IS NULL"
+                        + " and m.conversation.conversationGroup.deletedAt IS NULL";
+        List<Object> params = new ArrayList<>();
+        params.add(conversationGroupId);
+
+        if (channel != null) {
+            baseQuery += " and m.channel = ?" + (params.size() + 1);
+            params.add(channel);
+        }
+        if (channel == Channel.MEMORY && clientId != null) {
+            baseQuery += " and m.clientId = ?" + (params.size() + 1);
+            params.add(clientId);
+        }
+
+        String query = baseQuery + " order by m.createdAt, m.id";
+        LOG.infof("listByConversationGroup: executing query=%s with params=%s", query, params);
+        List<EntryEntity> result = find(query, params.toArray()).list();
+        LOG.infof("listByConversationGroup: found %d entries", result.size());
+        return result;
     }
 }

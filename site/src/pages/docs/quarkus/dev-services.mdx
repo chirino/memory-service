@@ -25,11 +25,11 @@ This means you can focus on developing your agent application without worrying a
 When you run your Quarkus application in dev mode (`./mvnw quarkus:dev`), the extension:
 
 1. Checks if Docker is available
-2. Checks if `memory-service-client.url` is already configured
+2. Checks if `memory-service.client.url` is already configured
 3. If not configured, starts a memory-service container
 4. Automatically configures your application with:
-   - `memory-service-client.url` - The base URL of the dev memory-service
-   - `memory-service-client.api-key` - The API key (generated or from your config)
+   - `memory-service.client.url` - The base URL of the dev memory-service
+   - `memory-service.client.api-key` - The API key (generated or from your config)
 
 The memory-service container automatically connects to:
 - **PostgreSQL** dev service (if available) - for the main datastore
@@ -41,7 +41,7 @@ The memory-service container automatically connects to:
 
 The following configuration properties control Dev Services behavior:
 
-### `memory-service-client.url`
+### `memory-service.client.url`
 
 **Type:** `String`  
 **Default:** Not set (triggers Dev Services)  
@@ -49,10 +49,10 @@ The following configuration properties control Dev Services behavior:
 
 ```properties
 # Disable Dev Services and use existing instance
-memory-service-client.url=http://localhost:8082
+memory-service.client.url=http://localhost:8082
 ```
 
-### `memory-service-client.api-key`
+### `memory-service.client.api-key`
 
 **Type:** `String`  
 **Default:** Auto-generated random key if not set  
@@ -60,7 +60,7 @@ memory-service-client.url=http://localhost:8082
 
 ```properties
 # Use a specific API key
-memory-service-client.api-key=my-custom-api-key
+memory-service.client.api-key=my-custom-api-key
 ```
 
 ### `memory-service.cache.type`

@@ -128,7 +128,8 @@ function App() {
   useEffect(() => {
     const interceptor = (response: Response) => {
       if (response.status === 401) {
-        window.location.reload();
+        // Clear session and redirect to login instead of reloading (which causes a loop)
+        auth.clearSessionAndLogin();
       }
       return response;
     };
@@ -136,7 +137,7 @@ function App() {
     return () => {
       OpenAPI.interceptors.response.eject(interceptor);
     };
-  }, []);
+  }, [auth]);
 
   const markResolvedConversation = useCallback((conversationId: string) => {
     setResolvedConversationIds((prev) => {

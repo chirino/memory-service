@@ -81,7 +81,7 @@ public class GrpcResponseResumer implements ResponseResumer {
     public GrpcResponseResumer() {
         this.configuredApiKey =
                 ConfigProvider.getConfig()
-                        .getOptionalValue("memory-service-client.api-key", String.class)
+                        .getOptionalValue("memory-service.client.api-key", String.class)
                         .orElse(null);
     }
 

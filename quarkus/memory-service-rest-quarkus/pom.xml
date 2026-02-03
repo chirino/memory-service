@@ -100,6 +100,7 @@
                 <copy failonerror="false" preservelastmodified="true" todir="${contracts.dir}">
                   <fileset dir="${contracts.source.dir}" erroronmissingdir="false">
                     <include name="openapi.yml"/>
+                    <include name="openapi-admin.yml"/>
                   </fileset>
                 </copy>
               </target>
@@ -122,7 +123,7 @@
               <skip>${contracts.local.available}</skip>
               <includeGroupIds>${project.groupId}</includeGroupIds>
               <includeArtifactIds>memory-service-contracts</includeArtifactIds>
-              <includes>openapi.yml</includes>
+              <includes>openapi.yml,openapi-admin.yml</includes>
               <outputDirectory>${project.build.directory}/generated-resources/contracts</outputDirectory>
             </configuration>
           </execution>

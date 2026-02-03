@@ -74,6 +74,8 @@ public class MemoryServiceChatMemory implements ChatMemory {
 
     @Override
     public List<ChatMessage> messages() {
+        LOG.infof("messages(%s)", conversationId);
+
         ListConversationEntries200Response context;
         try {
             context =
@@ -83,6 +85,7 @@ public class MemoryServiceChatMemory implements ChatMemory {
                                     null,
                                     50,
                                     Channel.MEMORY,
+                                    null,
                                     null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
@@ -105,8 +108,6 @@ public class MemoryServiceChatMemory implements ChatMemory {
                 continue;
             }
 
-            LOG.infof("Entry was on channel: %s", entry.getChannel());
-
             for (Object block : entry.getContent()) {
                 if (block == null) {
                     continue;
@@ -116,7 +117,6 @@ public class MemoryServiceChatMemory implements ChatMemory {
                 result.addAll(decoded);
             }
         }
-
         return result;
     }
 
@@ -137,6 +137,7 @@ public class MemoryServiceChatMemory implements ChatMemory {
     private List<ChatMessage> decodeContentBlock(Object block, String entryId) {
         try {
             String json = OBJECT_MAPPER.writeValueAsString(List.of(block));
+            LOG.infof("Got memory entry: %s", json);
             // LOG.infof("Decoding content block: %s", json);
             return CODEC.messagesFromJson(json);
         } catch (Exception e) {

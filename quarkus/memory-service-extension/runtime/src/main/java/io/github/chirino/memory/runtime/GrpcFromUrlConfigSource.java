@@ -7,7 +7,7 @@ import org.eclipse.microprofile.config.spi.ConfigSource;
 
 /**
  * A ConfigSource that provides gRPC client configuration by deriving values
- * from the memory-service-client.url.
+ * from the memory-service.client.url.
  *
  * <p>This ConfigSource is created by {@link GrpcFromUrlConfigSourceFactory}
  * which reads the URL from the config context (including application.properties).

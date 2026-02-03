@@ -353,3 +353,45 @@ Feature: Entries REST API
     """
     Then the response status should be 400
     And the response body field "details.message" should be "History channel content must have a 'role' field with value 'USER' or 'AI'"
+
+  # Regression test for bug: memory entries created via append had null epoch,
+  # causing channel=memory filter to return no results (SQL: epoch = null never matches)
+  Scenario: Memory entries created via append are retrievable via channel filter
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    # Create multiple memory entries via append (not sync)
+    When I append an entry with content "First memory entry" and channel "MEMORY" and contentType "test.v1"
+    Then the response status should be 201
+    And the response body field "epoch" should be "1"
+    When I append an entry with content "Second memory entry" and channel "MEMORY" and contentType "test.v1"
+    Then the response status should be 201
+    And the response body field "epoch" should be "1"
+    # Verify entries are retrievable without channel filter
+    When I list entries for the conversation
+    Then the response status should be 200
+    And the response should contain 2 entries
+    # Verify entries are retrievable with channel=memory filter
+    When I list entries for the conversation with channel "MEMORY"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "First memory entry"
+    And entry at index 1 should have content "Second memory entry"
+    # Verify epoch filter also works
+    When I list memory entries for the conversation with epoch "1"
+    Then the response status should be 200
+    And the response should contain 2 entries
+
+  # Test that history entries don't get epochs (they should have null epoch)
+  Scenario: History entries have null epoch
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"text": "History entry without epoch", "role": "AI"}]
+    }
+    """
+    Then the response status should be 201
+    And the response body field "epoch" should be null

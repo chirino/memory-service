@@ -8,6 +8,30 @@ const keycloakUrl = import.meta.env.VITE_KEYCLOAK_URL || "http://localhost:8081"
 const keycloakRealm = import.meta.env.VITE_KEYCLOAK_REALM || "memory-service";
 const keycloakClientId = import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "frontend";
 
+// Key for storing pre-login URL in sessionStorage
+const PRE_LOGIN_URL_KEY = "auth_pre_login_url";
+
+/**
+ * Save the current URL before redirecting to the IdP.
+ * This allows us to restore query params (like conversationId) after login.
+ */
+function savePreLoginUrl() {
+  if (typeof window !== "undefined" && window.location.search) {
+    sessionStorage.setItem(PRE_LOGIN_URL_KEY, window.location.href);
+  }
+}
+
+/**
+ * Restore the pre-login URL after successful authentication.
+ * Returns the URL to navigate to, or null if no saved URL.
+ */
+function getAndClearPreLoginUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const savedUrl = sessionStorage.getItem(PRE_LOGIN_URL_KEY);
+  sessionStorage.removeItem(PRE_LOGIN_URL_KEY);
+  return savedUrl;
+}
+
 const oidcConfig = {
   authority: `${keycloakUrl}/realms/${keycloakRealm}`,
   client_id: keycloakClientId,
@@ -20,8 +44,17 @@ const oidcConfig = {
   // This ensures tokens are only renewed when the user is actively using the app
   automaticSilentRenew: false,
   onSigninCallback: () => {
-    // Remove OIDC query params from URL after login
-    window.history.replaceState({}, document.title, window.location.pathname);
+    // Restore the pre-login URL if we saved one (to preserve query params like conversationId)
+    const savedUrl = getAndClearPreLoginUrl();
+    if (savedUrl) {
+      // Use the saved URL (which has the original query params)
+      const url = new URL(savedUrl);
+      const newUrl = url.pathname + (url.searchParams.toString() ? "?" + url.searchParams.toString() : "");
+      window.history.replaceState({}, document.title, newUrl);
+    } else {
+      // No saved URL - just clean up OIDC params from current URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   },
 };
 
@@ -43,6 +76,7 @@ interface AuthContextValue {
   accessToken: string | null;
   login: () => void;
   logout: () => void;
+  clearSessionAndLogin: () => Promise<void>;
 }
 
 const AuthContext = React.createContext<AuthContextValue | undefined>(undefined);
@@ -172,14 +206,27 @@ function OidcAuthContextProvider({ children }: { children: React.ReactNode }) {
     }
   }, [auth.user?.expires_at]);
 
+  const clearSessionAndLogin = async () => {
+    // Clear the auth state before redirecting to prevent 401 loops
+    clearAuthState();
+    await auth.removeUser();
+    savePreLoginUrl();
+    await auth.signinRedirect();
+  };
+
   const value: AuthContextValue = {
     isAuthenticated: auth.isAuthenticated,
     isLoading: auth.isLoading,
     error: auth.error || null,
     user: extractUser(auth.user),
     accessToken: auth.user?.access_token || null,
-    login: () => auth.signinRedirect(),
+    login: () => {
+      // Save current URL before redirecting so we can restore query params after login
+      savePreLoginUrl();
+      auth.signinRedirect();
+    },
     logout: () => auth.signoutRedirect(),
+    clearSessionAndLogin,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -195,6 +242,7 @@ function MockAuthProvider({ children }: { children: React.ReactNode }) {
     accessToken: "mock-token",
     login: () => console.log("Mock login"),
     logout: () => console.log("Mock logout"),
+    clearSessionAndLogin: async () => console.log("Mock clear session and login"),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,20 +1,23 @@
 package io.github.chirino.memory.api;
 
+import io.github.chirino.memory.admin.client.model.AdminConversation;
+import io.github.chirino.memory.admin.client.model.AdminConversationSummary;
+import io.github.chirino.memory.admin.client.model.ConversationForkSummary;
+import io.github.chirino.memory.admin.client.model.ConversationMembership;
+import io.github.chirino.memory.admin.client.model.Entry;
+import io.github.chirino.memory.admin.client.model.ErrorResponse;
+import io.github.chirino.memory.admin.client.model.EvictRequest;
+import io.github.chirino.memory.admin.client.model.SearchResult;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.EntryDto;
-import io.github.chirino.memory.api.dto.EvictRequest;
 import io.github.chirino.memory.api.dto.PagedEntries;
-import io.github.chirino.memory.client.model.ConversationForkSummary;
-import io.github.chirino.memory.client.model.ConversationMembership;
-import io.github.chirino.memory.client.model.Entry;
-import io.github.chirino.memory.client.model.ErrorResponse;
-import io.github.chirino.memory.client.model.SearchResult;
+import io.github.chirino.memory.api.dto.SearchResultDto;
+import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.config.VectorStoreSelector;
-import io.github.chirino.memory.model.AdminActionRequest;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
 import io.github.chirino.memory.model.AdminSearchQuery;
@@ -125,8 +128,10 @@ public class AdminResource {
             query.setLimit(limit != null ? limit : 100);
 
             List<ConversationSummaryDto> internal = store().adminListConversations(query);
+            List<AdminConversationSummary> data =
+                    internal.stream().map(this::toAdminConversationSummary).toList();
             Map<String, Object> response = new HashMap<>();
-            response.put("data", internal);
+            response.put("data", data);
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);
@@ -151,7 +156,7 @@ public class AdminResource {
             if (dto.isEmpty()) {
                 return notFound(new ResourceNotFoundException("conversation", id));
             }
-            return Response.ok(dto.get()).build();
+            return Response.ok(toAdminConversation(dto.get())).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);
         } catch (JustificationRequiredException e) {
@@ -163,7 +168,9 @@ public class AdminResource {
 
     @DELETE
     @Path("/conversations/{id}")
-    public Response deleteConversation(@PathParam("id") String id, AdminActionRequest request) {
+    public Response deleteConversation(
+            @PathParam("id") String id,
+            io.github.chirino.memory.admin.client.model.AdminActionRequest request) {
         try {
             roleResolver.requireAdmin(identity, apiKeyContext);
             String justification = request != null ? request.getJustification() : null;
@@ -184,7 +191,9 @@ public class AdminResource {
 
     @POST
     @Path("/conversations/{id}/restore")
-    public Response restoreConversation(@PathParam("id") String id, AdminActionRequest request) {
+    public Response restoreConversation(
+            @PathParam("id") String id,
+            io.github.chirino.memory.admin.client.model.AdminActionRequest request) {
         try {
             roleResolver.requireAdmin(identity, apiKeyContext);
             String justification = request != null ? request.getJustification() : null;
@@ -192,7 +201,7 @@ public class AdminResource {
 
             store().adminRestoreConversation(id);
             Optional<ConversationDto> dto = store().adminGetConversation(id);
-            return Response.ok(dto.orElse(null)).build();
+            return Response.ok(dto.map(this::toAdminConversation).orElse(null)).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);
         } catch (JustificationRequiredException e) {
@@ -213,7 +222,9 @@ public class AdminResource {
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit,
             @QueryParam("channel") String channel,
-            @QueryParam("justification") String justification) {
+            @QueryParam("justification") String justification,
+            @QueryParam("forks") @DefaultValue("none") String forks) {
+        boolean allForks = "all".equalsIgnoreCase(forks);
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
@@ -226,10 +237,12 @@ public class AdminResource {
             if (channel != null && !channel.isBlank()) {
                 query.setChannel(Channel.fromString(channel));
             }
+            query.setAllForks(allForks);
 
             PagedEntries result = store().adminGetEntries(id, query);
+            List<Entry> entries = result.getEntries().stream().map(this::toAdminEntry).toList();
             Map<String, Object> response = new HashMap<>();
-            response.put("data", result.getEntries());
+            response.put("data", entries);
             response.put("nextCursor", result.getNextCursor());
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
@@ -361,29 +374,10 @@ public class AdminResource {
             }
 
             boolean includeEntry = request.getIncludeEntry() == null || request.getIncludeEntry();
-            io.github.chirino.memory.api.dto.SearchResultsDto internalResults =
-                    vectorStore.adminSearch(request);
+            SearchResultsDto internalResults = vectorStore.adminSearch(request);
             List<SearchResult> data =
                     internalResults.getResults().stream()
-                            .map(
-                                    dto -> {
-                                        SearchResult result = new SearchResult();
-                                        result.setConversationId(
-                                                dto.getConversationId() != null
-                                                        ? UUID.fromString(dto.getConversationId())
-                                                        : null);
-                                        result.setConversationTitle(dto.getConversationTitle());
-                                        result.setEntryId(
-                                                dto.getEntryId() != null
-                                                        ? UUID.fromString(dto.getEntryId())
-                                                        : null);
-                                        if (includeEntry) {
-                                            result.setEntry(toClientEntry(dto.getEntry()));
-                                        }
-                                        result.setScore((float) dto.getScore());
-                                        result.setHighlights(dto.getHighlights());
-                                        return result;
-                                    })
+                            .map(dto -> toAdminSearchResult(dto, includeEntry))
                             .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
@@ -451,14 +445,10 @@ public class AdminResource {
                 return badRequest("retentionPeriod must be a positive duration");
             }
 
-            Set<String> resourceTypes = Set.copyOf(request.getResourceTypes());
-
-            // Validate resource types
-            for (String type : resourceTypes) {
-                if (!"conversations".equals(type) && !"memory_epochs".equals(type)) {
-                    return badRequest("Unknown resource type: " + type);
-                }
-            }
+            Set<String> resourceTypes =
+                    request.getResourceTypes().stream()
+                            .map(EvictRequest.ResourceTypesEnum::value)
+                            .collect(java.util.stream.Collectors.toSet());
 
             // Async mode or SSE header: stream progress via SSE
             boolean wantsSSE = async || accept.contains("text/event-stream");
@@ -564,7 +554,14 @@ public class AdminResource {
         return response;
     }
 
-    private Entry toClientEntry(EntryDto dto) {
+    private OffsetDateTime parseDate(String value) {
+        if (value == null) {
+            return null;
+        }
+        return OffsetDateTime.parse(value, ISO_FORMATTER);
+    }
+
+    private Entry toAdminEntry(EntryDto dto) {
         if (dto == null) {
             return null;
         }
@@ -573,8 +570,11 @@ public class AdminResource {
         result.setConversationId(
                 dto.getConversationId() != null ? UUID.fromString(dto.getConversationId()) : null);
         result.setUserId(dto.getUserId());
+        result.setClientId(dto.getClientId());
         if (dto.getChannel() != null) {
-            result.setChannel(Entry.ChannelEnum.fromString(dto.getChannel().toValue()));
+            result.setChannel(
+                    io.github.chirino.memory.admin.client.model.Channel.fromString(
+                            dto.getChannel().toValue()));
         }
         result.setEpoch(dto.getEpoch());
         result.setContentType(dto.getContentType());
@@ -585,10 +585,59 @@ public class AdminResource {
         return result;
     }
 
-    private OffsetDateTime parseDate(String value) {
-        if (value == null) {
-            return null;
+    private SearchResult toAdminSearchResult(SearchResultDto dto, boolean includeEntry) {
+        SearchResult result = new SearchResult();
+        result.setConversationId(
+                dto.getConversationId() != null ? UUID.fromString(dto.getConversationId()) : null);
+        result.setConversationTitle(dto.getConversationTitle());
+        result.setEntryId(dto.getEntryId() != null ? UUID.fromString(dto.getEntryId()) : null);
+        if (includeEntry) {
+            result.setEntry(toAdminEntry(dto.getEntry()));
         }
-        return OffsetDateTime.parse(value, ISO_FORMATTER);
+        result.setScore((float) dto.getScore());
+        result.setHighlights(dto.getHighlights());
+        return result;
+    }
+
+    private AdminConversationSummary toAdminConversationSummary(ConversationSummaryDto dto) {
+        AdminConversationSummary result = new AdminConversationSummary();
+        result.setId(dto.getId() != null ? UUID.fromString(dto.getId()) : null);
+        result.setTitle(dto.getTitle());
+        result.setOwnerUserId(dto.getOwnerUserId());
+        result.setCreatedAt(parseDate(dto.getCreatedAt()));
+        result.setUpdatedAt(parseDate(dto.getUpdatedAt()));
+        result.setDeletedAt(parseDate(dto.getDeletedAt()));
+        result.setLastMessagePreview(dto.getLastMessagePreview());
+        if (dto.getAccessLevel() != null) {
+            result.setAccessLevel(
+                    AdminConversationSummary.AccessLevelEnum.fromString(
+                            dto.getAccessLevel().name().toLowerCase()));
+        }
+        return result;
+    }
+
+    private AdminConversation toAdminConversation(ConversationDto dto) {
+        AdminConversation result = new AdminConversation();
+        result.setId(dto.getId() != null ? UUID.fromString(dto.getId()) : null);
+        result.setTitle(dto.getTitle());
+        result.setOwnerUserId(dto.getOwnerUserId());
+        result.setCreatedAt(parseDate(dto.getCreatedAt()));
+        result.setUpdatedAt(parseDate(dto.getUpdatedAt()));
+        result.setDeletedAt(parseDate(dto.getDeletedAt()));
+        result.setLastMessagePreview(dto.getLastMessagePreview());
+        if (dto.getAccessLevel() != null) {
+            result.setAccessLevel(
+                    AdminConversation.AccessLevelEnum.fromString(
+                            dto.getAccessLevel().name().toLowerCase()));
+        }
+        result.setForkedAtEntryId(
+                dto.getForkedAtEntryId() != null
+                        ? UUID.fromString(dto.getForkedAtEntryId())
+                        : null);
+        result.setForkedAtConversationId(
+                dto.getForkedAtConversationId() != null
+                        ? UUID.fromString(dto.getForkedAtConversationId())
+                        : null);
+        return result;
     }
 }

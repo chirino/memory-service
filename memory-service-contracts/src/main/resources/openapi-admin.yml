@@ -284,6 +284,16 @@ paths:
           description: Reason for this admin action (for audit log).
           schema:
             type: string
+        - name: forks
+          in: query
+          required: false
+          description: |-
+            Controls which fork entries to include. `none` (default) follows
+            the fork ancestry path. `all` returns entries from all forks.
+          schema:
+            type: string
+            enum: [none, all]
+            default: none
       responses:
         '200':
           description: Entries.
@@ -596,7 +606,6 @@ components:
       enum:
         - history
         - memory
-        - summary
 
     Entry:
       type: object
@@ -619,6 +628,10 @@ components:
         userId:
           type: string
           nullable: true
+        clientId:
+          type: string
+          nullable: true
+          description: Client identifier that created this entry.
         channel:
           $ref: '#/components/schemas/Channel'
         epoch:

@@ -145,6 +145,11 @@ export class ConversationsService {
    * are `latest`, `all`, or a numeric epoch identifier. Defaults to
    * `latest` when not provided. The epoch selection is scoped to the
    * calling client id.
+   * @param data.forks Controls which fork entries to include. `none` (default) follows the
+   * fork ancestry path, returning entries from the target conversation
+   * and its ancestors up to fork points. `all` returns entries from all
+   * forks in the conversation group, useful for debugging or getting a
+   * complete picture of all activity across forks.
    * @returns unknown A list of entries.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -166,6 +171,7 @@ export class ConversationsService {
         limit: data.limit,
         channel: data.channel,
         epoch: data.epoch,
+        forks: data.forks,
       },
       errors: {
         404: "Resource not found",

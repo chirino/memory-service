@@ -103,6 +103,7 @@ public class TranscriptIndexingResource {
                                     cursor,
                                     PAGE_SIZE,
                                     Channel.HISTORY,
+                                    null,
                                     null);
             List<Entry> data = response != null ? response.getData() : null;
             if (data != null && !data.isEmpty()) {

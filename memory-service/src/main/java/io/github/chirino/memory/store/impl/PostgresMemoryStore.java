@@ -105,6 +105,13 @@ public class PostgresMemoryStore implements MemoryStore {
 
     private MemoryEntriesCache memoryEntriesCache;
 
+    /**
+     * Represents a conversation in the fork ancestry chain. The forkedAtEntryId indicates the entry
+     * in THIS conversation where we should stop including entries (fork point). For the root
+     * conversation, forkedAtEntryId is null, meaning include all entries.
+     */
+    private record ForkAncestor(UUID conversationId, UUID forkedAtEntryId) {}
+
     @PostConstruct
     void init() {
         memoryEntriesCache = memoryCacheSelector.select();
@@ -437,14 +444,17 @@ public class PostgresMemoryStore implements MemoryStore {
             throw new AccessDeniedException("Forking is only allowed for history entries");
         }
 
+        // Find the previous entry of ANY channel before the target entry.
+        // forkedAtEntryId is set to this previous entry - all parent entries up to and including
+        // forkedAtEntryId are visible to the fork. This makes "fork at entry X" mean "branch before
+        // X".
         EntryEntity previous =
                 entryRepository
                         .find(
-                                "from EntryEntity m where m.conversation.id = ?1 and m.channel = ?2"
-                                    + " and (m.createdAt < ?3 or (m.createdAt = ?3 and m.id < ?4))"
-                                    + " order by m.createdAt desc, m.id desc",
+                                "from EntryEntity m where m.conversation.id = ?1 and (m.createdAt <"
+                                        + " ?2 or (m.createdAt = ?2 and m.id < ?3)) order by"
+                                        + " m.createdAt desc, m.id desc",
                                 originalId,
-                                Channel.HISTORY,
                                 target.getCreatedAt(),
                                 target.getId())
                         .firstResult();
@@ -675,10 +685,14 @@ public class PostgresMemoryStore implements MemoryStore {
             int limit,
             Channel channel,
             MemoryEpochFilter epochFilter,
-            String clientId) {
+            String clientId,
+            boolean allForks) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
         if (conversation == null) {
+            LOG.infof(
+                    "getEntries: conversation %s not found, returning empty result",
+                    conversationId);
             PagedEntries empty = new PagedEntries();
             empty.setConversationId(conversationId);
             empty.setEntries(Collections.emptyList());
@@ -686,21 +700,48 @@ public class PostgresMemoryStore implements MemoryStore {
             return empty;
         }
         UUID groupId = conversation.getConversationGroup().getId();
+        LOG.infof(
+                "getEntries: conversationId=%s, groupId=%s, forkedAtConversationId=%s,"
+                        + " forkedAtEntryId=%s, channel=%s, clientId=%s, allForks=%s",
+                conversationId,
+                groupId,
+                conversation.getForkedAtConversationId(),
+                conversation.getForkedAtEntryId(),
+                channel,
+                clientId,
+                allForks);
         ensureHasAccess(groupId, userId, AccessLevel.READER);
-        List<EntryEntity> entries;
-        if (channel == Channel.MEMORY) {
-            entries = fetchMemoryEntries(cid, afterEntryId, limit, epochFilter, clientId);
-        } else {
-            entries = entryRepository.listByChannel(cid, afterEntryId, limit, channel, clientId);
+
+        // When allForks=true, bypass fork ancestry and return all entries in the group
+        if (allForks) {
+            List<EntryEntity> entries =
+                    entryRepository.listByConversationGroup(
+                            groupId, channel, channel == Channel.MEMORY ? clientId : null);
+            List<EntryEntity> paginatedEntries = applyPagination(entries, afterEntryId, limit);
+            LOG.infof(
+                    "getEntries: found %d entries for conversationId=%s, allForks=true",
+                    paginatedEntries.size(), conversationId);
+            return buildPagedEntries(conversationId, paginatedEntries, limit);
         }
-        PagedEntries page = new PagedEntries();
-        page.setConversationId(conversationId);
-        List<EntryDto> dtos = entries.stream().map(this::toEntryDto).toList();
-        page.setEntries(dtos);
-        String nextCursor =
-                dtos.size() == limit && !dtos.isEmpty() ? dtos.get(dtos.size() - 1).getId() : null;
-        page.setNextCursor(nextCursor);
-        return page;
+
+        // For MEMORY channel, use fork-aware retrieval with epoch handling
+        if (channel == Channel.MEMORY) {
+            PagedEntries result =
+                    getMemoryEntriesWithForkSupport(
+                            conversation, afterEntryId, limit, epochFilter, clientId);
+            LOG.infof(
+                    "getEntries: found %d MEMORY entries for conversationId=%s (fork-aware)",
+                    result.getEntries().size(), conversationId);
+            return result;
+        }
+
+        // For HISTORY channel (or all channels), use fork-aware retrieval
+        PagedEntries result =
+                getEntriesWithForkSupport(conversation, afterEntryId, limit, channel, clientId);
+        LOG.infof(
+                "getEntries: found %d entries for conversationId=%s, channel=%s (fork-aware)",
+                result.getEntries().size(), conversationId, channel);
+        return result;
     }
 
     private List<EntryEntity> fetchMemoryEntries(
@@ -710,18 +751,33 @@ public class PostgresMemoryStore implements MemoryStore {
             MemoryEpochFilter epochFilter,
             String clientId) {
         if (clientId == null || clientId.isBlank()) {
+            LOG.infof("fetchMemoryEntries: clientId is null/blank, returning empty list");
             return Collections.emptyList();
         }
         MemoryEpochFilter filter = epochFilter != null ? epochFilter : MemoryEpochFilter.latest();
-        return switch (filter.getMode()) {
-            case ALL ->
-                    entryRepository.listByChannel(
-                            conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
-            case LATEST -> fetchLatestMemoryEntries(conversationId, afterEntryId, limit, clientId);
-            case EPOCH ->
-                    entryRepository.listMemoryEntriesByEpoch(
-                            conversationId, afterEntryId, limit, filter.getEpoch(), clientId);
-        };
+        LOG.infof(
+                "fetchMemoryEntries: conversationId=%s, afterEntryId=%s, limit=%d,"
+                        + " epochFilter.mode=%s, clientId=%s",
+                conversationId, afterEntryId, limit, filter.getMode(), clientId);
+        List<EntryEntity> result =
+                switch (filter.getMode()) {
+                    case ALL ->
+                            entryRepository.listByChannel(
+                                    conversationId, afterEntryId, limit, Channel.MEMORY, clientId);
+                    case LATEST ->
+                            fetchLatestMemoryEntries(conversationId, afterEntryId, limit, clientId);
+                    case EPOCH ->
+                            entryRepository.listMemoryEntriesByEpoch(
+                                    conversationId,
+                                    afterEntryId,
+                                    limit,
+                                    filter.getEpoch(),
+                                    clientId);
+                };
+        LOG.infof(
+                "fetchMemoryEntries: returning %d entries for conversationId=%s",
+                result.size(), conversationId);
+        return result;
     }
 
     private List<EntryEntity> fetchLatestMemoryEntries(
@@ -848,13 +904,426 @@ public class PostgresMemoryStore implements MemoryStore {
         return entity;
     }
 
+    /**
+     * Builds the ancestry stack for fork-aware entry retrieval. The stack contains all
+     * conversations from the root to the target conversation, in order.
+     *
+     * <p>Each ForkAncestor contains:
+     *
+     * <ul>
+     *   <li>conversationId: the conversation in the chain
+     *   <li>forkedAtEntryId: the last entry to include from this conversation (fork point), null
+     *       means include all entries from this conversation
+     * </ul>
+     *
+     * <p>Important: The fork point for a parent conversation comes from its child's
+     * forkedAtEntryId. For example, if fork B has forkedAtEntryId=X pointing to an entry in
+     * conversation A, then conversation A should only include entries up to and including X.
+     *
+     * @param targetConversation the conversation to build ancestry for
+     * @return list of ancestors from root (first) to target (last)
+     */
+    private List<ForkAncestor> buildAncestryStack(ConversationEntity targetConversation) {
+        UUID groupId = targetConversation.getConversationGroup().getId();
+
+        // Single query: get all conversations in the group
+        List<ConversationEntity> allConversations =
+                conversationRepository.findActiveByGroupId(groupId);
+
+        // Build lookup map
+        Map<UUID, ConversationEntity> byId =
+                allConversations.stream()
+                        .collect(Collectors.toMap(ConversationEntity::getId, c -> c));
+
+        // Build ancestry chain by traversing from target to root
+        // Store tuples of (conversation, forkPointFromChild) where forkPointFromChild
+        // is the forkedAtEntryId from the child conversation that tells us where to stop
+        List<ForkAncestor> stack = new ArrayList<>();
+        ConversationEntity current = targetConversation;
+        UUID forkPointFromChild = null; // Target conversation includes all its entries
+
+        while (current != null) {
+            // Add current conversation with the fork point limit from its child
+            stack.add(new ForkAncestor(current.getId(), forkPointFromChild));
+
+            // For the next iteration (parent), the fork point comes from current's metadata
+            forkPointFromChild = current.getForkedAtEntryId();
+            UUID parentId = current.getForkedAtConversationId();
+            current = (parentId != null) ? byId.get(parentId) : null;
+        }
+
+        Collections.reverse(stack); // Root first
+        LOG.infof(
+                "buildAncestryStack: targetConversation=%s, stack size=%d, stack=%s",
+                targetConversation.getId(),
+                stack.size(),
+                stack.stream()
+                        .map(
+                                a ->
+                                        String.format(
+                                                "(conv=%s, stopAt=%s)",
+                                                a.conversationId(), a.forkedAtEntryId()))
+                        .toList());
+        return stack;
+    }
+
+    /**
+     * Checks if a conversation is a fork (has a parent conversation).
+     *
+     * @param conversation the conversation to check
+     * @return true if this is a forked conversation
+     */
+    private boolean isFork(ConversationEntity conversation) {
+        return conversation.getForkedAtConversationId() != null;
+    }
+
+    /**
+     * Shared implementation for fork-aware entry retrieval. Used by both user and admin APIs.
+     *
+     * @param conversation the conversation to fetch entries for
+     * @param afterEntryId cursor for pagination
+     * @param limit maximum entries to return
+     * @param channel channel filter (null for all channels)
+     * @param clientId client ID (required for MEMORY channel)
+     * @return paged entries including parent entries up to fork point
+     */
+    private PagedEntries getEntriesWithForkSupport(
+            ConversationEntity conversation,
+            String afterEntryId,
+            int limit,
+            Channel channel,
+            String clientId) {
+        UUID conversationId = conversation.getId();
+
+        // For non-forked conversations, use existing efficient queries
+        if (!isFork(conversation)) {
+            LOG.infof(
+                    "getEntriesWithForkSupport: conversation %s is not a fork, using direct query",
+                    conversationId);
+            List<EntryEntity> entries =
+                    entryRepository.listByChannel(
+                            conversationId, afterEntryId, limit, channel, clientId);
+            return buildPagedEntries(conversationId.toString(), entries, limit);
+        }
+
+        // Build ancestry stack for fork-aware retrieval
+        List<ForkAncestor> ancestry = buildAncestryStack(conversation);
+        UUID groupId = conversation.getConversationGroup().getId();
+
+        // Query all entries in the conversation group
+        List<EntryEntity> allEntries =
+                entryRepository.listByConversationGroup(groupId, channel, clientId);
+        LOG.infof(
+                "getEntriesWithForkSupport: fetched %d entries from group %s",
+                allEntries.size(), groupId);
+
+        // Filter entries based on ancestry chain
+        List<EntryEntity> filteredEntries = filterEntriesByAncestry(allEntries, ancestry);
+        LOG.infof(
+                "getEntriesWithForkSupport: after ancestry filter, %d entries",
+                filteredEntries.size());
+
+        // Apply pagination
+        List<EntryEntity> paginatedEntries = applyPagination(filteredEntries, afterEntryId, limit);
+
+        return buildPagedEntries(conversationId.toString(), paginatedEntries, limit);
+    }
+
+    /**
+     * Filters entries based on the fork ancestry chain. Only includes entries that belong to:
+     *
+     * <ul>
+     *   <li>Ancestor conversations, up to (and including) their fork point
+     *   <li>The target conversation (all entries)
+     * </ul>
+     */
+    private List<EntryEntity> filterEntriesByAncestry(
+            List<EntryEntity> allEntries, List<ForkAncestor> ancestry) {
+        if (ancestry.isEmpty()) {
+            return allEntries;
+        }
+
+        List<EntryEntity> result = new ArrayList<>();
+        int ancestorIndex = 0;
+        ForkAncestor current = ancestry.get(ancestorIndex);
+        boolean isTargetConversation = (ancestorIndex == ancestry.size() - 1);
+
+        for (EntryEntity entry : allEntries) {
+            UUID entryConversationId = entry.getConversation().getId();
+
+            // Check if we're processing the current ancestor
+            if (entryConversationId.equals(current.conversationId())) {
+                // For target conversation (last in ancestry), include all entries
+                // For ancestors, include entries up to and including the fork point
+                if (isTargetConversation) {
+                    result.add(entry);
+                } else {
+                    // This is an ancestor conversation
+                    result.add(entry);
+
+                    // Check if we've reached the fork point for this ancestor
+                    if (current.forkedAtEntryId() != null
+                            && entry.getId().equals(current.forkedAtEntryId())) {
+                        // Move to next in ancestry chain
+                        ancestorIndex++;
+                        if (ancestorIndex < ancestry.size()) {
+                            current = ancestry.get(ancestorIndex);
+                            isTargetConversation = (ancestorIndex == ancestry.size() - 1);
+                        }
+                    }
+                }
+            }
+            // Entries from other conversations in the group are skipped
+        }
+
+        return result;
+    }
+
+    /**
+     * Fork-aware MEMORY channel retrieval with epoch handling.
+     *
+     * <p>For forked conversations, this method:
+     * <ol>
+     *   <li>Builds the ancestry stack
+     *   <li>Queries all entries in the conversation group (all channels for fork tracking)
+     *   <li>Filters entries following the fork ancestry path
+     *   <li>Applies epoch filtering (LATEST mode clears previous epochs when higher epoch found)
+     * </ol>
+     *
+     * @param conversation the conversation to fetch entries for
+     * @param afterEntryId cursor for pagination
+     * @param limit maximum entries to return
+     * @param epochFilter epoch filter mode (LATEST, ALL, or specific epoch)
+     * @param clientId client ID (required for MEMORY channel)
+     * @return paged entries with epoch-aware filtering
+     */
+    private PagedEntries getMemoryEntriesWithForkSupport(
+            ConversationEntity conversation,
+            String afterEntryId,
+            int limit,
+            MemoryEpochFilter epochFilter,
+            String clientId) {
+        UUID conversationId = conversation.getId();
+
+        // For non-forked conversations, use existing efficient queries
+        if (!isFork(conversation)) {
+            LOG.infof(
+                    "getMemoryEntriesWithForkSupport: conversation %s is not a fork, using direct"
+                            + " query",
+                    conversationId);
+            List<EntryEntity> entries =
+                    fetchMemoryEntries(conversationId, afterEntryId, limit, epochFilter, clientId);
+            return buildPagedEntries(conversationId.toString(), entries, limit);
+        }
+
+        // Build ancestry stack for fork-aware retrieval
+        List<ForkAncestor> ancestry = buildAncestryStack(conversation);
+        UUID groupId = conversation.getConversationGroup().getId();
+
+        // Query ALL entries in the group (need all channels for fork point tracking)
+        // Don't filter by clientId in query - filter in Java after fork traversal
+        List<EntryEntity> allEntries = entryRepository.listByConversationGroup(groupId, null, null);
+        LOG.infof(
+                "getMemoryEntriesWithForkSupport: fetched %d entries from group %s",
+                allEntries.size(), groupId);
+
+        // Filter entries based on ancestry and epoch
+        List<EntryEntity> filteredEntries =
+                filterMemoryEntriesWithEpoch(allEntries, ancestry, clientId, epochFilter);
+        LOG.infof(
+                "getMemoryEntriesWithForkSupport: after epoch filter, %d MEMORY entries",
+                filteredEntries.size());
+
+        // Apply pagination
+        List<EntryEntity> paginatedEntries = applyPagination(filteredEntries, afterEntryId, limit);
+
+        return buildPagedEntries(conversationId.toString(), paginatedEntries, limit);
+    }
+
+    /**
+     * Filters MEMORY entries following fork ancestry with epoch handling.
+     *
+     * <p>Algorithm:
+     * <ul>
+     *   <li>Iterate through entries following fork ancestry path (using ALL entries for tracking)
+     *   <li>Track maxEpochSeen; when epoch > maxEpochSeen, clear result (new epoch supersedes all)
+     *   <li>Only include MEMORY entries with matching clientId in the result
+     * </ul>
+     *
+     * <p>Key insight: All entries (all channels) are needed for fork point tracking, but only
+     * MEMORY entries with matching clientId are added to the result.
+     *
+     * @param allEntries all entries in the conversation group (all channels)
+     * @param ancestry fork ancestry chain from root to target
+     * @param clientId the client ID to filter MEMORY entries
+     * @param epochFilter epoch filter mode
+     * @return filtered MEMORY entries following fork ancestry with epoch handling
+     */
+    private List<EntryEntity> filterMemoryEntriesWithEpoch(
+            List<EntryEntity> allEntries,
+            List<ForkAncestor> ancestry,
+            String clientId,
+            MemoryEpochFilter epochFilter) {
+
+        if (ancestry.isEmpty()) {
+            // No ancestry, return all MEMORY entries matching clientId and epoch
+            return filterByEpochOnly(allEntries, clientId, epochFilter);
+        }
+
+        MemoryEpochFilter filter = epochFilter != null ? epochFilter : MemoryEpochFilter.latest();
+        List<EntryEntity> result = new ArrayList<>();
+        long maxEpochSeen = 0;
+        int ancestorIndex = 0;
+        ForkAncestor currentAncestor = ancestry.get(ancestorIndex);
+        boolean isTargetConversation = (ancestorIndex == ancestry.size() - 1);
+
+        for (EntryEntity entry : allEntries) {
+            UUID entryConversationId = entry.getConversation().getId();
+
+            // Skip entries not in current ancestor conversation
+            if (!entryConversationId.equals(currentAncestor.conversationId())) {
+                continue;
+            }
+
+            // Process MEMORY entries with matching clientId for the result
+            if (entry.getChannel() == Channel.MEMORY) {
+                if (clientId != null && clientId.equals(entry.getClientId())) {
+                    long entryEpoch = entry.getEpoch() != null ? entry.getEpoch() : 0L;
+
+                    switch (filter.getMode()) {
+                        case LATEST -> {
+                            if (entryEpoch > maxEpochSeen) {
+                                result.clear(); // New epoch supersedes all previous
+                                maxEpochSeen = entryEpoch;
+                            }
+                            if (entryEpoch == maxEpochSeen) {
+                                result.add(entry);
+                            }
+                            // entryEpoch < maxEpochSeen: skip (outdated)
+                        }
+                        case ALL -> result.add(entry);
+                        case EPOCH -> {
+                            Long filterEpoch = filter.getEpoch();
+                            if ((filterEpoch == null && entryEpoch == 0L)
+                                    || (filterEpoch != null && filterEpoch == entryEpoch)) {
+                                result.add(entry);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check if we've reached the fork point (after processing the entry)
+            // This uses ALL entries for tracking, not just MEMORY
+            if (!isTargetConversation
+                    && currentAncestor.forkedAtEntryId() != null
+                    && entry.getId().equals(currentAncestor.forkedAtEntryId())) {
+                // Move to next in ancestry chain
+                ancestorIndex++;
+                if (ancestorIndex < ancestry.size()) {
+                    currentAncestor = ancestry.get(ancestorIndex);
+                    isTargetConversation = (ancestorIndex == ancestry.size() - 1);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Simple epoch-only filtering for non-forked conversations.
+     */
+    private List<EntryEntity> filterByEpochOnly(
+            List<EntryEntity> allEntries, String clientId, MemoryEpochFilter epochFilter) {
+        MemoryEpochFilter filter = epochFilter != null ? epochFilter : MemoryEpochFilter.latest();
+        List<EntryEntity> result = new ArrayList<>();
+        long maxEpochSeen = 0;
+
+        for (EntryEntity entry : allEntries) {
+            if (entry.getChannel() != Channel.MEMORY) {
+                continue;
+            }
+            if (clientId != null && !clientId.equals(entry.getClientId())) {
+                continue;
+            }
+
+            long entryEpoch = entry.getEpoch() != null ? entry.getEpoch() : 0L;
+
+            switch (filter.getMode()) {
+                case LATEST -> {
+                    if (entryEpoch > maxEpochSeen) {
+                        result.clear();
+                        maxEpochSeen = entryEpoch;
+                    }
+                    if (entryEpoch == maxEpochSeen) {
+                        result.add(entry);
+                    }
+                }
+                case ALL -> result.add(entry);
+                case EPOCH -> {
+                    Long filterEpoch = filter.getEpoch();
+                    if ((filterEpoch == null && entryEpoch == 0L)
+                            || (filterEpoch != null && filterEpoch == entryEpoch)) {
+                        result.add(entry);
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Applies cursor-based pagination to the entry list.
+     *
+     * @param entries the filtered entries (already in order)
+     * @param afterEntryId cursor entry ID to start after (null to start from beginning)
+     * @param limit maximum entries to return
+     * @return paginated entries
+     */
+    private List<EntryEntity> applyPagination(
+            List<EntryEntity> entries, String afterEntryId, int limit) {
+        int startIndex = 0;
+        if (afterEntryId != null) {
+            UUID afterId = UUID.fromString(afterEntryId);
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).getId().equals(afterId)) {
+                    startIndex = i + 1;
+                    break;
+                }
+            }
+        }
+        return entries.stream().skip(startIndex).limit(limit).toList();
+    }
+
+    /**
+     * Builds a PagedEntries response from entry entities.
+     *
+     * @param conversationId the conversation ID for the response
+     * @param entries the entries to include
+     * @param limit the requested limit (for determining next cursor)
+     * @return paged entries with cursor for pagination
+     */
+    private PagedEntries buildPagedEntries(
+            String conversationId, List<EntryEntity> entries, int limit) {
+        PagedEntries page = new PagedEntries();
+        page.setConversationId(conversationId);
+        List<EntryDto> dtos = entries.stream().map(this::toEntryDto).toList();
+        page.setEntries(dtos);
+        String nextCursor =
+                dtos.size() == limit && !dtos.isEmpty() ? dtos.get(dtos.size() - 1).getId() : null;
+        page.setNextCursor(nextCursor);
+        return page;
+    }
+
     @Override
     @Transactional
     public List<EntryDto> appendAgentEntries(
             String userId,
             String conversationId,
             List<CreateEntryRequest> entries,
-            String clientId) {
+            String clientId,
+            Long epoch) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
 
@@ -885,7 +1354,35 @@ public class PostgresMemoryStore implements MemoryStore {
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);
         }
 
-        // Make conversation effectively final for lambda
+        // For MEMORY channel entries, determine the epoch to use.
+        // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
+        // If no epoch is provided, look up the latest epoch or default to 1.
+        Long effectiveEpoch = epoch;
+        boolean hasMemoryEntries =
+                entries.stream()
+                        .anyMatch(
+                                e ->
+                                        e.getChannel() == CreateEntryRequest.ChannelEnum.MEMORY
+                                                || e.getChannel() == null);
+        if (hasMemoryEntries && effectiveEpoch == null) {
+            // Look up the latest epoch for this conversation+clientId
+            List<EntryEntity> latestEntries =
+                    entryRepository.listMemoryEntriesAtLatestEpoch(cid, clientId);
+            if (latestEntries.isEmpty()) {
+                effectiveEpoch = 1L; // Initial epoch starts at 1
+            } else {
+                effectiveEpoch = latestEntries.get(0).getEpoch();
+                if (effectiveEpoch == null) {
+                    // Safety: if somehow existing entries have null epoch, start fresh at 1
+                    effectiveEpoch = 1L;
+                }
+            }
+            LOG.infof(
+                    "Auto-calculated epoch for MEMORY entries: conversationId=%s, clientId=%s,"
+                            + " epoch=%d",
+                    conversationId, clientId, effectiveEpoch);
+        }
+
         OffsetDateTime latestHistoryTimestamp = null;
         List<EntryDto> created = new ArrayList<>(entries.size());
         for (CreateEntryRequest req : entries) {
@@ -893,14 +1390,24 @@ public class PostgresMemoryStore implements MemoryStore {
             entity.setConversation(conversation);
             entity.setUserId(req.getUserId());
             entity.setClientId(clientId);
+            Channel channel;
             if (req.getChannel() != null) {
-                entity.setChannel(
-                        io.github.chirino.memory.model.Channel.fromString(
-                                req.getChannel().value()));
+                channel =
+                        io.github.chirino.memory.model.Channel.fromString(req.getChannel().value());
             } else {
-                entity.setChannel(io.github.chirino.memory.model.Channel.MEMORY);
+                channel = io.github.chirino.memory.model.Channel.MEMORY;
             }
-            entity.setEpoch(req.getEpoch());
+            entity.setChannel(channel);
+
+            // Set epoch based on channel type
+            // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
+            // History channel entries always have null epoch.
+            if (channel == Channel.MEMORY) {
+                entity.setEpoch(effectiveEpoch);
+            } else {
+                entity.setEpoch(null);
+            }
+
             entity.setContentType(req.getContentType() != null ? req.getContentType() : "message");
             entity.setContent(encryptContent(req.getContent()));
             entity.setIndexedContent(req.getIndexedContent());
@@ -954,10 +1461,10 @@ public class PostgresMemoryStore implements MemoryStore {
         if (MemorySyncHelper.hasContentTypeMismatch(latestEpochEntries, entry.getContentType())) {
             // ContentType changed - create new epoch with all incoming content
             Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
-            CreateEntryRequest toAppend =
-                    MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
+            CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
             List<EntryDto> appended =
-                    appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+                    appendAgentEntries(
+                            userId, conversationId, List.of(toAppend), clientId, nextEpoch);
             // Update cache with new epoch entries
             updateCacheWithLatestEntries(cid, clientId);
             result.setEpoch(nextEpoch);
@@ -982,10 +1489,12 @@ public class PostgresMemoryStore implements MemoryStore {
                 result.setNoOp(true);
                 return result;
             }
-            CreateEntryRequest deltaEntry =
-                    MemorySyncHelper.withEpochAndContent(entry, latestEpoch, deltaContent);
+            // Use latestEpoch if available, otherwise this is the first entry so use initial epoch
+            Long epochToUse = latestEpoch != null ? latestEpoch : 1L;
+            CreateEntryRequest deltaEntry = MemorySyncHelper.withContent(entry, deltaContent);
             List<EntryDto> appended =
-                    appendAgentEntries(userId, conversationId, List.of(deltaEntry), clientId);
+                    appendAgentEntries(
+                            userId, conversationId, List.of(deltaEntry), clientId, epochToUse);
             // Update cache with appended entry
             updateCacheWithLatestEntries(cid, clientId);
             result.setEntry(appended.isEmpty() ? null : appended.get(0));
@@ -996,10 +1505,9 @@ public class PostgresMemoryStore implements MemoryStore {
 
         // Content diverged - create new epoch with all incoming content
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
-        CreateEntryRequest toAppend =
-                MemorySyncHelper.withEpochAndContent(entry, nextEpoch, incomingContent);
+        CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
         List<EntryDto> appended =
-                appendAgentEntries(userId, conversationId, List.of(toAppend), clientId);
+                appendAgentEntries(userId, conversationId, List.of(toAppend), clientId, nextEpoch);
         // Update cache with new epoch entries
         updateCacheWithLatestEntries(cid, clientId);
         result.setEpoch(nextEpoch);
@@ -1435,6 +1943,7 @@ public class PostgresMemoryStore implements MemoryStore {
         dto.setId(entity.getId().toString());
         dto.setConversationId(entity.getConversation().getId().toString());
         dto.setUserId(entity.getUserId());
+        dto.setClientId(entity.getClientId());
         dto.setChannel(entity.getChannel());
         dto.setEpoch(entity.getEpoch());
         dto.setContentType(entity.getContentType());
@@ -1599,56 +2108,40 @@ public class PostgresMemoryStore implements MemoryStore {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
 
-        StringBuilder jpql = new StringBuilder("FROM EntryEntity m WHERE m.conversation.id = ?1");
-        List<Object> params = new ArrayList<>();
-        params.add(cid);
-        int paramIndex = 2;
+        int limit = query.getLimit() > 0 ? query.getLimit() : 50;
+        String afterEntryId = query.getAfterEntryId();
+        Channel channel = query.getChannel();
+        boolean allForks = query.isAllForks();
 
-        if (query.getChannel() != null) {
-            jpql.append(" AND m.channel = ?").append(paramIndex++);
-            params.add(query.getChannel());
+        LOG.infof(
+                "adminGetEntries: conversationId=%s, forkedAtConversationId=%s,"
+                        + " forkedAtEntryId=%s, channel=%s, limit=%d, afterEntryId=%s, allForks=%s",
+                conversationId,
+                conversation.getForkedAtConversationId(),
+                conversation.getForkedAtEntryId(),
+                channel,
+                limit,
+                afterEntryId,
+                allForks);
+
+        // When allForks=true, bypass fork ancestry and return all entries in the group
+        if (allForks) {
+            UUID groupId = conversation.getConversationGroup().getId();
+            List<EntryEntity> entries =
+                    entryRepository.listByConversationGroup(groupId, channel, null);
+            List<EntryEntity> paginatedEntries = applyPagination(entries, afterEntryId, limit);
+            LOG.infof(
+                    "adminGetEntries: found %d entries for conversationId=%s, allForks=true",
+                    paginatedEntries.size(), conversationId);
+            return buildPagedEntries(conversationId, paginatedEntries, limit);
         }
 
-        if (query.getAfterEntryId() != null && !query.getAfterEntryId().isBlank()) {
-            UUID afterId = UUID.fromString(query.getAfterEntryId());
-            jpql.append(
-                            " AND (m.createdAt > (SELECT m2.createdAt FROM EntryEntity m2 WHERE"
-                                    + " m2.id = ?")
-                    .append(paramIndex)
-                    .append(
-                            ") OR (m.createdAt = (SELECT m2.createdAt FROM EntryEntity m2 WHERE"
-                                    + " m2.id = ?")
-                    .append(paramIndex)
-                    .append(") AND m.id > ?")
-                    .append(paramIndex)
-                    .append("))");
-            params.add(afterId);
-            params.add(afterId);
-            params.add(afterId);
-            paramIndex += 3;
-        }
-
-        jpql.append(" ORDER BY m.createdAt ASC, m.id ASC");
-
-        List<EntryEntity> entities =
-                entryRepository
-                        .find(jpql.toString(), params.toArray())
-                        .page(0, query.getLimit() > 0 ? query.getLimit() : 50)
-                        .list();
-
-        List<EntryDto> entryDtos =
-                entities.stream().map(this::toEntryDto).collect(Collectors.toList());
-
-        String nextCursor = null;
-        if (entryDtos.size() == query.getLimit()) {
-            EntryEntity last = entities.get(entities.size() - 1);
-            nextCursor = last.getId().toString();
-        }
-
-        PagedEntries result = new PagedEntries();
-        result.setConversationId(conversationId);
-        result.setEntries(entryDtos);
-        result.setNextCursor(nextCursor);
+        // Use fork-aware retrieval (clientId is null for admin API)
+        PagedEntries result =
+                getEntriesWithForkSupport(conversation, afterEntryId, limit, channel, null);
+        LOG.infof(
+                "adminGetEntries: found %d entries for conversationId=%s (fork-aware)",
+                result.getEntries().size(), conversationId);
         return result;
     }
 
