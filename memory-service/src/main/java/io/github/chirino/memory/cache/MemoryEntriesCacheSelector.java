@@ -19,9 +19,13 @@ public class MemoryEntriesCacheSelector {
 
     public MemoryEntriesCache select() {
         String type = cacheType == null ? "none" : cacheType.trim().toLowerCase();
+        // Return the configured cache implementation directly, not noop.
+        // The cache implementations handle unavailability gracefully by incrementing
+        // miss metrics and returning empty results. This avoids a startup race condition
+        // where the cache might not be ready when select() is first called.
         return switch (type) {
-            case "redis" -> redisCache.available() ? redisCache : noopCache;
-            case "infinispan" -> infinispanCache.available() ? infinispanCache : noopCache;
+            case "redis" -> redisCache;
+            case "infinispan" -> infinispanCache;
             default -> noopCache;
         };
     }
