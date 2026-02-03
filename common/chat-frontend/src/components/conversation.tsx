@@ -64,10 +64,7 @@ export type ConversationStreamPhase = "idle" | "sending" | "streaming" | "comple
 
 export type ConversationController = {
   startStream: (conversationId: string, text: string, callbacks: StreamCallbacks) => void | Promise<void>;
-  resumeStream: (
-    conversationId: string,
-    callbacks: StreamCallbacks & { replaceMessageId?: string | null },
-  ) => void | Promise<void>;
+  resumeStream: (conversationId: string, callbacks: StreamCallbacks) => void | Promise<void>;
   cancelStream: (conversationId: string) => void | Promise<void>;
   selectConversation: (conversationId: string) => void | Promise<void>;
   // Optional ID factory for generating message IDs; defaults to timestamp-based IDs
@@ -89,7 +86,6 @@ export type RenderableConversationMessage = ConversationMessage & {
 type StreamingSnapshot = {
   phase: ConversationStreamPhase;
   error: string | null;
-  replaceMessageId: string | null;
   userMessage: ConversationMessage | null;
   assistantMessage: ConversationMessage | null;
   // Stream identity to prevent stale chunks from previous streams being applied
@@ -111,7 +107,7 @@ type ConversationAction =
   | { type: "SET_MESSAGES"; messages: ConversationMessage[] }
   | { type: "SET_INPUT"; value: string }
   | { type: "SEND_START"; userMessage: ConversationMessage; streamId: string; pendingAssistantId: string }
-  | { type: "RESUME_START"; replaceMessageId: string | null; streamId: string; pendingAssistantId: string }
+  | { type: "RESUME_START"; streamId: string; pendingAssistantId: string }
   | { type: "STREAM_CHUNK"; chunk: string; streamId: string }
   | { type: "STREAM_COMPLETE"; streamId: string }
   | { type: "STREAM_CANCEL"; streamId: string }
@@ -123,7 +119,7 @@ type ConversationContextValue = {
   controller: ConversationController;
   currentUserId: string | null | undefined;
   sendMessage: (text: string) => void;
-  resumeStream: (options?: { replaceMessageId?: string | null; conversationId?: string | null }) => void;
+  resumeStream: (options?: { conversationId?: string | null }) => void;
   cancelStream: () => void;
   selectConversation: (conversationId: string) => void;
   setInputValue: (value: string) => void;
@@ -161,7 +157,7 @@ type ConversationInputProps = {
 type ConversationActionsProps = {
   children: (options: {
     send: (text: string) => void;
-    resume: (options?: { replaceMessageId?: string | null }) => void;
+    resume: (options?: { conversationId?: string | null }) => void;
     cancel: () => void;
     state: StreamingSnapshot;
     conversationId: string | null;
@@ -174,7 +170,6 @@ const MessageContext = createContext<RenderableConversationMessage | null>(null)
 const initialStreamingState: StreamingSnapshot = {
   phase: "idle",
   error: null,
-  replaceMessageId: null,
   userMessage: null,
   assistantMessage: null,
   streamId: null,
@@ -228,7 +223,6 @@ function conversationReducer(state: ConversationState, action: ConversationActio
           error: null,
           userMessage: action.userMessage,
           assistantMessage: null,
-          replaceMessageId: null,
           streamId: action.streamId,
           pendingAssistantId: action.pendingAssistantId,
         },
@@ -241,7 +235,6 @@ function conversationReducer(state: ConversationState, action: ConversationActio
           error: null,
           userMessage: null,
           assistantMessage: null,
-          replaceMessageId: action.replaceMessageId,
           streamId: action.streamId,
           pendingAssistantId: action.pendingAssistantId,
         },
@@ -251,8 +244,8 @@ function conversationReducer(state: ConversationState, action: ConversationActio
       if (state.streaming.streamId !== action.streamId) {
         return state;
       }
-      // Use pre-generated ID from pendingAssistantId (or replaceMessageId for resume)
-      const assistantId = state.streaming.replaceMessageId ?? state.streaming.pendingAssistantId;
+      // Use pre-generated ID from pendingAssistantId
+      const assistantId = state.streaming.pendingAssistantId;
       const assistant =
         state.streaming.assistantMessage ??
         (state.conversationId && assistantId
@@ -362,7 +355,9 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
     dispatch({ type: "SET_MESSAGES", messages });
   }, [messages]);
 
-  // Clear current stream reference when streaming ends
+  // Clear streaming state when streaming ends.
+  // When completed, reset stream so the streaming message disappears and
+  // the final message from /entries takes over.
   useEffect(() => {
     if (
       state.streaming.phase === "completed" ||
@@ -370,40 +365,17 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
       state.streaming.phase === "error"
     ) {
       currentStreamIdRef.current = null;
+      // Reset streaming state so the temporary streaming message disappears.
+      // The entries query refresh will provide the final message.
+      dispatch({ type: "RESET_STREAM" });
     }
   }, [state.streaming.phase]);
-
-  // State machine stabilization: If the backend echoes the assistant message while
-  // we're streaming, complete the stream to prevent UX deadlocks.
-  // Only triggers during "streaming" phase (not "sending") because during "sending"
-  // we haven't received any chunks yet and shouldn't auto-complete prematurely.
-  useEffect(() => {
-    const { phase, streamId, replaceMessageId, pendingAssistantId } = state.streaming;
-
-    // Only stabilize during streaming phase, not sending
-    if (phase !== "streaming" || !streamId) {
-      return;
-    }
-
-    // The expected assistant message ID is either the replacement ID or the pending ID
-    const expectedAssistantId = replaceMessageId ?? pendingAssistantId;
-    if (!expectedAssistantId) {
-      return;
-    }
-
-    // Check if the expected assistant message has been echoed in base messages
-    const assistantEchoed = messages.some((msg) => msg.id === expectedAssistantId);
-
-    if (assistantEchoed) {
-      dispatch({ type: "STREAM_COMPLETE", streamId });
-    }
-  }, [messages, state.streaming]);
 
   const setInputValue = useCallback((value: string) => {
     dispatch({ type: "SET_INPUT", value });
   }, []);
 
-  const handleStreamCallbacks = useCallback((streamId: string, overrides?: { replaceMessageId?: string | null }) => {
+  const handleStreamCallbacks = useCallback((streamId: string) => {
     return {
       onChunk: (chunk: string) => dispatch({ type: "STREAM_CHUNK", chunk, streamId }),
       onComplete: () => dispatch({ type: "STREAM_COMPLETE", streamId }),
@@ -412,7 +384,6 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
         const message = error instanceof Error ? error.message : String(error ?? "Streaming failed");
         dispatch({ type: "STREAM_ERROR", error: message, streamId });
       },
-      replaceMessageId: overrides?.replaceMessageId,
     };
   }, []);
 
@@ -458,20 +429,19 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
 
   // Helper function to resume after state update - uses dispatch directly to avoid closure issues
   const resumeStreamAfterStateUpdate = useCallback(
-    (targetConversationId: string, options?: { replaceMessageId?: string | null }) => {
+    (targetConversationId: string) => {
       // Use dispatch with a function to get current state
       // This ensures we're using the latest state after SET_CONVERSATION
       const idFactory = controller.idFactory ?? (() => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
       const streamId = generateStreamId();
-      const pendingAssistantId = options?.replaceMessageId ?? idFactory();
+      const pendingAssistantId = idFactory();
       currentStreamIdRef.current = streamId;
       dispatch({
         type: "RESUME_START",
-        replaceMessageId: options?.replaceMessageId ?? null,
         streamId,
         pendingAssistantId,
       });
-      const callbacks = handleStreamCallbacks(streamId, { replaceMessageId: options?.replaceMessageId });
+      const callbacks = handleStreamCallbacks(streamId);
       try {
         void Promise.resolve(controller.resumeStream(targetConversationId, callbacks)).catch((error) =>
           callbacks.onError?.(error),
@@ -484,7 +454,7 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
   );
 
   const resumeStream = useCallback(
-    (options?: { replaceMessageId?: string | null; conversationId?: string | null }) => {
+    (options?: { conversationId?: string | null }) => {
       // Use provided conversationId or fall back to state.conversationId
       const targetConversationId = options?.conversationId ?? state.conversationId;
       if (!targetConversationId) {
@@ -509,7 +479,7 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
           }
           // Now proceed with resume - use the ref to get current state
           // We'll check the actual state in the next render cycle
-          resumeStreamAfterStateUpdate(targetConversationId, options);
+          resumeStreamAfterStateUpdate(targetConversationId);
         });
         return;
       }
@@ -521,16 +491,14 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
 
       const idFactory = controller.idFactory ?? (() => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
       const streamId = generateStreamId();
-      // For resume with replacement, use the replaceMessageId; otherwise generate new
-      const pendingAssistantId = options?.replaceMessageId ?? idFactory();
+      const pendingAssistantId = idFactory();
       currentStreamIdRef.current = streamId;
       dispatch({
         type: "RESUME_START",
-        replaceMessageId: options?.replaceMessageId ?? null,
         streamId,
         pendingAssistantId,
       });
-      const callbacks = handleStreamCallbacks(streamId, { replaceMessageId: options?.replaceMessageId });
+      const callbacks = handleStreamCallbacks(streamId);
       // Wrap in try-catch to handle both sync throws and async rejections
       try {
         void Promise.resolve(controller.resumeStream(targetConversationId, callbacks)).catch((error) =>
@@ -725,85 +693,40 @@ export function useConversationMessages() {
     // Reconciliation: Check if streaming assistant message is already in base messages (ID-based echo detection)
     // Handle all streaming phases (sending, streaming, error, canceled) when we have a pendingAssistantId
     // This ensures we show placeholder messages even if error/cancel happens before first chunk
+    // Show streaming assistant message during active streaming phases.
+    // The streaming message is temporary - once streaming completes, it's removed
+    // and the final message from /entries takes its place.
     if (
-      (streaming.phase === "sending" ||
-        streaming.phase === "streaming" ||
-        streaming.phase === "error" ||
-        streaming.phase === "canceled") &&
+      (streaming.phase === "sending" || streaming.phase === "streaming") &&
       streaming.streamId &&
-      streaming.pendingAssistantId
+      state.conversationId
     ) {
-      const assistantId = streaming.replaceMessageId ?? streaming.pendingAssistantId;
-      if (assistantId && state.conversationId) {
-        // Check if this assistant message already exists in base messages
-        const hasAssistantEcho = dedupedBase.some((msg) => msg.id === assistantId);
+      const assistantId = streaming.pendingAssistantId;
+      const assistantMessage: ConversationMessage = streaming.assistantMessage ?? {
+        id: assistantId ?? `temp-${streaming.streamId}`,
+        author: "assistant" as const,
+        conversationId: state.conversationId,
+        content: "",
+      };
 
-        if (!hasAssistantEcho) {
-          // Create the streaming message even if we haven't received chunks yet
-          const assistantMessage: ConversationMessage = streaming.assistantMessage ?? {
-            id: assistantId,
-            author: "assistant" as const,
-            conversationId: state.conversationId,
-            content: "",
-          };
+      const previous =
+        assistantMessage.previousMessageId === undefined
+          ? (lastByConversation.get(assistantMessage.conversationId) ?? null)
+          : assistantMessage.previousMessageId;
+      const streamingEntry: RenderableConversationMessage = {
+        ...assistantMessage,
+        previousMessageId: previous,
+        displayState: streaming.phase === "sending" ? "pending" : "streaming",
+      };
 
-          const replacementIndex = streaming.replaceMessageId
-            ? items.findIndex((msg) => msg.id === streaming.replaceMessageId)
-            : -1;
-          const previous =
-            assistantMessage.previousMessageId === undefined
-              ? (lastByConversation.get(assistantMessage.conversationId) ?? null)
-              : assistantMessage.previousMessageId;
-          const streamingEntry: RenderableConversationMessage = {
-            ...assistantMessage,
-            previousMessageId: previous,
-            displayState:
-              streaming.phase === "error"
-                ? "error"
-                : streaming.phase === "canceled"
-                  ? "canceled"
-                  : streaming.phase === "sending"
-                    ? "pending"
-                    : "streaming",
-          };
-          if (replacementIndex >= 0) {
-            items.splice(replacementIndex, 1, streamingEntry);
-          } else {
-            items.push(streamingEntry);
-          }
-        }
-      }
-    } else if (streaming.assistantMessage) {
-      // Legacy path for when assistantMessage exists (shouldn't be needed but keeping for safety)
-      const hasAssistantEcho = dedupedBase.some((msg) => msg.id === streaming.assistantMessage?.id);
-
-      if (!hasAssistantEcho) {
-        const replacementIndex = streaming.replaceMessageId
-          ? items.findIndex((msg) => msg.id === streaming.replaceMessageId)
-          : -1;
-        const previous =
-          streaming.assistantMessage.previousMessageId === undefined
-            ? (lastByConversation.get(streaming.assistantMessage.conversationId) ?? null)
-            : streaming.assistantMessage.previousMessageId;
-        const streamingEntry: RenderableConversationMessage = {
-          ...streaming.assistantMessage,
-          previousMessageId: previous,
-          displayState:
-            streaming.phase === "error" ? "error" : streaming.phase === "canceled" ? "canceled" : "streaming",
-        };
-        if (replacementIndex >= 0) {
-          items.splice(replacementIndex, 1, streamingEntry);
-        } else {
-          items.push(streamingEntry);
-        }
-      }
+      items.push(streamingEntry);
     }
+
     return items;
   }, [
     dedupedBase,
     streaming.assistantMessage,
     streaming.phase,
-    streaming.replaceMessageId,
     streaming.userMessage,
     streaming.streamId,
     streaming.pendingAssistantId,
@@ -870,6 +793,7 @@ const ConversationMessages = forwardRef<
 >(({ asChild, children, ...props }, ref) => {
   const { messages } = useConversationMessages();
   const Comp = asChild ? Slot : "div";
+
   // role="list" provides semantic structure for screen readers
   if (typeof children === "function") {
     return (

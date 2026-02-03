@@ -9,6 +9,7 @@ function normalizeEventChunk(chunk: string): string {
 export function useSseStream(): StreamClient {
   const controllerRef = useRef<AbortController | null>(null);
   const closedByClientRef = useRef(false);
+  const streamIdRef = useRef(0);
 
   const close = useCallback(() => {
     const controller = controllerRef.current;
@@ -23,6 +24,9 @@ export function useSseStream(): StreamClient {
 
   const start = useCallback(
     (params: StreamStartParams) => {
+      streamIdRef.current += 1;
+      const localStreamId = streamIdRef.current;
+
       if (!params.sessionId) {
         params.onError?.(new Error("SSE stream requires a session id"));
         return;
@@ -32,6 +36,14 @@ export function useSseStream(): StreamClient {
       // Determine if this is a resume operation
       // Resume: text is empty and resetResume is false
       const isResume = !trimmedMessage && !params.resetResume;
+
+      console.info("[useSseStream] start", {
+        localStreamId,
+        sessionId: params.sessionId,
+        isResume,
+        hasText: Boolean(trimmedMessage),
+        resetResume: params.resetResume,
+      });
 
       if (!isResume && !trimmedMessage) {
         params.onError?.(new Error("SSE stream requires a message"));
@@ -45,6 +57,7 @@ export function useSseStream(): StreamClient {
 
       const run = async () => {
         let receivedAnyChunks = false;
+        let chunkCount = 0;
 
         try {
           let url: string;
@@ -108,11 +121,13 @@ export function useSseStream(): StreamClient {
                 const parsed = JSON.parse(payload);
                 if (typeof parsed === "string") {
                   receivedAnyChunks = true;
+                  chunkCount += 1;
                   params.onChunk(parsed);
                   return;
                 }
                 if (parsed && typeof parsed.token === "string") {
                   receivedAnyChunks = true;
+                  chunkCount += 1;
                   params.onChunk(parsed.token);
                   return;
                 }
@@ -120,6 +135,7 @@ export function useSseStream(): StreamClient {
                 // fall through to handle raw payload
               }
               receivedAnyChunks = true;
+              chunkCount += 1;
               params.onChunk(payload);
               return;
             }
@@ -145,10 +161,21 @@ export function useSseStream(): StreamClient {
 
           // If this was a resume and we received no chunks, call onReplayFailed
           if (isResume && !receivedAnyChunks) {
+            console.info("[useSseStream] replayFailed (no chunks)", {
+              localStreamId,
+              isResume,
+              chunkCount,
+            });
             params.onReplayFailed();
             return;
           }
 
+          console.info("[useSseStream] cleanEnd", {
+            localStreamId,
+            isResume,
+            chunkCount,
+            receivedAnyChunks,
+          });
           params.onCleanEnd();
         } catch (error) {
           if (controller.signal.aborted && closedByClientRef.current) {
