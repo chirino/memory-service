@@ -137,7 +137,6 @@ public class MemoryServiceChatMemory implements ChatMemory {
     private List<ChatMessage> decodeContentBlock(Object block, String entryId) {
         try {
             String json = OBJECT_MAPPER.writeValueAsString(List.of(block));
-            LOG.infof("Got memory entry: %s", json);
             // LOG.infof("Decoding content block: %s", json);
             return CODEC.messagesFromJson(json);
         } catch (Exception e) {
