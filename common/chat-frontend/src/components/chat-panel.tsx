@@ -480,26 +480,14 @@ function ChatPanelContent({
     return trimmed.length <= 60 ? trimmed : `${trimmed.slice(0, 57)}...`;
   };
 
-  const lastAssistantMessageId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i]?.author === "assistant") {
-        return messages[i]?.id ?? null;
-      }
-    }
-    return null;
-  }, [messages]);
-
   // Get the current conversationId from the conversation context to check if state is synced
   const { conversationId: stateConversationId } = useConversationMessages();
 
   useEffect(() => {
-    if (!conversationId) {
+    // Early exit checks (no logging to reduce noise)
+    if (!conversationId || !isResolvedConversation) {
       return;
     }
-    if (!isResolvedConversation) {
-      return;
-    }
-    // Wait for state to sync with prop before resuming
     if (stateConversationId !== conversationId) {
       return;
     }
@@ -516,9 +504,7 @@ function ChatPanelContent({
     if (resumableConversationIds?.has(conversationId)) {
       // Mark as resumed before starting to prevent duplicate attempts
       hasResumedRef.current[conversationId] = true;
-      // When resuming, replace the last assistant message to avoid duplicates.
-      // State is now synced, so we can use the default (state.conversationId)
-      resumeStream({ replaceMessageId: lastAssistantMessageId });
+      resumeStream();
     }
   }, [
     conversationId,
@@ -527,7 +513,7 @@ function ChatPanelContent({
     hasResumedRef,
     isBusy,
     isResolvedConversation,
-    lastAssistantMessageId,
+    messages,
     pendingForkRef,
     resumableConversationIds,
     resumeStream,
@@ -783,11 +769,6 @@ function ChatPanelContent({
     }
     if (messages.length > 0 && isInitialLoadRef.current) {
       isInitialLoadRef.current = false;
-      console.info("[ChatPanel] initial-scroll", {
-        conversationId,
-        messagesLength: messages.length,
-        lastMessageId: messages[messages.length - 1]?.id ?? null,
-      });
       // Use multiple delays to ensure DOM is fully rendered and messages are laid out
       const attemptScroll = () => {
         const viewport = viewportRef.current;
@@ -1249,38 +1230,21 @@ export function ChatPanel({
   currentUserId,
   currentUser,
 }: ChatPanelProps) {
-  const [assistantIdOverrides, setAssistantIdOverrides] = useState<Record<string, string>>({});
-  const assistantIdOverridesRef = useRef<Record<string, string>>({});
   const [canceling, setCanceling] = useState(false);
-  // Track pending IDs per conversation to prevent desync across concurrent streams
-  // The queue stores pairs: [assistantId, userId] for each stream start
-  const pendingIdQueueRef = useRef<Map<string, string[]>>(new Map());
-  const pendingAssistantIdsRef = useRef<Map<string, string[]>>(new Map());
-  const lastAssistantIdRef = useRef<Map<string, string | null>>(new Map());
-  // Temporary storage for IDs generated before we know the conversation
-  // These will be moved to per-conversation queues when startStream/resumeStream is called
-  const tempIdQueueRef = useRef<string[]>([]);
   const firstChunkEmittedRef = useRef<Record<string, boolean>>({});
   const hasResumedRef = useRef<Record<string, boolean>>({});
   const pendingForkRef = useRef<PendingFork | null>(null);
 
   const sseStream = useSseStream();
-  // Keep ref in sync with state
-  useEffect(() => {
-    assistantIdOverridesRef.current = assistantIdOverrides;
-  }, [assistantIdOverrides]);
   const queryClient = useQueryClient();
 
-  // Reset resume tracking and pending IDs when switching conversations
+  // Reset resume tracking when switching conversations
   const previousConversationIdRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (previousConversationIdRef.current !== conversationId) {
       const previousId = previousConversationIdRef.current;
       if (previousId) {
         delete hasResumedRef.current[previousId];
-        pendingAssistantIdsRef.current.delete(previousId);
-        // Clear per-conversation pending ID queue when switching away
-        pendingIdQueueRef.current.delete(previousId);
       }
       previousConversationIdRef.current = conversationId;
       if (conversationId) {
@@ -1437,49 +1401,6 @@ export function ChatPanel({
     return map;
   }, [conversationId, conversationQuery.data, forksQuery.data]);
 
-  useEffect(() => {
-    const entries = entriesQuery.data ?? [];
-    if (!entries.length) {
-      return;
-    }
-    const lastAssistantByConversation = new Map<string, string>();
-    entries.forEach((entry) => {
-      if (!entry.id || !entry.conversationId) {
-        return;
-      }
-      if (entryAuthor(entry) !== "assistant") {
-        return;
-      }
-      lastAssistantByConversation.set(entry.conversationId, entry.id);
-    });
-    let updates: Record<string, string> | null = null;
-    lastAssistantByConversation.forEach((assistantId, conversationKey) => {
-      // Compute the resolved ID (after applying any existing overrides)
-      // Use ref to get current value without adding to dependencies
-      const resolved = assistantIdOverridesRef.current[assistantId] ?? assistantId;
-      const previous = lastAssistantIdRef.current.get(conversationKey) ?? null;
-      // Compare previous to resolved ID to avoid re-processing the same message
-      if (previous && previous === resolved) {
-        return;
-      }
-      const pendingIds = pendingAssistantIdsRef.current.get(conversationKey);
-      const pendingId = pendingIds?.shift();
-      if (!pendingId) {
-        // No pending ID available, just track the resolved backend ID
-        lastAssistantIdRef.current.set(conversationKey, resolved);
-        return;
-      }
-      // Align backend assistant IDs with optimistic IDs to prevent duplicates.
-      updates = updates ?? {};
-      updates[assistantId] = pendingId;
-      // Store the resolved ID (pendingId) for next comparison
-      lastAssistantIdRef.current.set(conversationKey, pendingId);
-    });
-    if (updates) {
-      setAssistantIdOverrides((prev) => ({ ...prev, ...updates }));
-    }
-  }, [entriesQuery.data]);
-
   const conversationMessages = useMemo<ConversationMessage[]>(() => {
     const entries = entriesQuery.data ?? [];
     const firstIndexByConversation = new Map<string, number>();
@@ -1490,12 +1411,11 @@ export function ChatPanel({
         return;
       }
       const author = entryAuthor(entry);
-      const resolvedId = author === "assistant" ? (assistantIdOverrides[entry.id] ?? entry.id) : entry.id;
       if (!firstIndexByConversation.has(entry.conversationId)) {
         firstIndexByConversation.set(entry.conversationId, mapped.length);
       }
       mapped.push({
-        id: resolvedId,
+        id: entry.id,
         conversationId: entry.conversationId,
         author,
         content: entryText(entry),
@@ -1521,7 +1441,7 @@ export function ChatPanel({
         },
       };
     });
-  }, [assistantIdOverrides, conversationMetaById, entriesQuery.data]);
+  }, [conversationMetaById, entriesQuery.data]);
 
   // conversationGroupId is now hidden from the API; use conversationId for state tracking
   const conversationGroupId = conversationId;
@@ -1593,14 +1513,6 @@ export function ChatPanel({
     [queryClient, sseStream],
   );
 
-  const idFactory = useCallback(() => {
-    const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `msg-${Date.now()}`;
-    // IDs are generated before we know which conversation they're for
-    // Store in temp queue, will be moved to per-conversation queue in startStream/resumeStream
-    tempIdQueueRef.current.push(id);
-    return id;
-  }, []);
-
   // Optimistically mark a conversation as having an in-progress response
   const markConversationAsStreaming = useCallback(
     (targetConversationId: string) => {
@@ -1616,71 +1528,12 @@ export function ChatPanel({
 
   const controller = useMemo<ConversationController>(
     () => ({
-      idFactory,
       startStream: async (targetConversationId, text, callbacks) => {
-        // Optimistically mark conversation as having in-progress response
         markConversationAsStreaming(targetConversationId);
-        // IDs were generated before this call, so they're in temp queue
-        // Move the first 2 IDs (assistant, user) from temp queue to this conversation's queue
-        // This ensures per-conversation tracking. We use FIFO since ids are generated in order.
-        const tempQueue = tempIdQueueRef.current;
-        if (tempQueue.length >= 2) {
-          // Take the first 2 IDs (FIFO: assistant, then user)
-          const assistantId = tempQueue.shift()!;
-          const userId = tempQueue.shift()!;
-
-          // Add to conversation queue
-          const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
-          conversationQueue.push(assistantId, userId);
-          pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
-        }
-
-        // Get IDs from per-conversation queue
-        const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
-        const pendingAssistantId = conversationQueue.shift();
-        conversationQueue.shift(); // user message ID (consumed but not used)
-        if (conversationQueue.length === 0) {
-          pendingIdQueueRef.current.delete(targetConversationId);
-        } else {
-          pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
-        }
-
-        if (pendingAssistantId) {
-          const queue = pendingAssistantIdsRef.current.get(targetConversationId) ?? [];
-          queue.push(pendingAssistantId);
-          pendingAssistantIdsRef.current.set(targetConversationId, queue);
-        }
         startEventStream(targetConversationId, text, true, callbacks);
       },
       resumeStream: async (targetConversationId, callbacks) => {
-        // Optimistically mark conversation as having in-progress response
         markConversationAsStreaming(targetConversationId);
-        if (!callbacks.replaceMessageId) {
-          // IDs may have been generated before this call
-          // Move the first ID from temp queue to this conversation's queue if present (FIFO)
-          const tempQueue = tempIdQueueRef.current;
-          if (tempQueue.length >= 1) {
-            const assistantId = tempQueue.shift()!;
-            const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
-            conversationQueue.push(assistantId);
-            pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
-          }
-
-          // Get ID from per-conversation queue
-          const conversationQueue = pendingIdQueueRef.current.get(targetConversationId) ?? [];
-          const pendingAssistantId = conversationQueue.shift();
-          if (conversationQueue.length === 0) {
-            pendingIdQueueRef.current.delete(targetConversationId);
-          } else {
-            pendingIdQueueRef.current.set(targetConversationId, conversationQueue);
-          }
-
-          if (pendingAssistantId) {
-            const queue = pendingAssistantIdsRef.current.get(targetConversationId) ?? [];
-            queue.push(pendingAssistantId);
-            pendingAssistantIdsRef.current.set(targetConversationId, queue);
-          }
-        }
         startEventStream(targetConversationId, "", false, callbacks);
       },
       cancelStream: async (targetConversationId) => {
@@ -1703,7 +1556,7 @@ export function ChatPanel({
         onSelectConversationId?.(id);
       },
     }),
-    [idFactory, markConversationAsStreaming, onSelectConversationId, queryClient, sseStream, startEventStream],
+    [markConversationAsStreaming, onSelectConversationId, queryClient, sseStream, startEventStream],
   );
 
   return (
