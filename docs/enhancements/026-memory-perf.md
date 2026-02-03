@@ -226,7 +226,7 @@ CREATE TABLE entries (
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id),
     user_id           TEXT,
     client_id         TEXT,          -- Agent identifier (from API key)
-    channel           TEXT NOT NULL, -- 'HISTORY', 'MEMORY', or 'TRANSCRIPT'
+    channel           TEXT NOT NULL, -- 'HISTORY' or 'MEMORY' [^1]
     epoch             BIGINT,        -- Memory epoch (null for non-memory)
     content_type      TEXT NOT NULL,
     content           BYTEA NOT NULL,-- Encrypted JSON content
@@ -1622,3 +1622,7 @@ void initMetrics() {
 - Add content hash for quick no-op detection without full comparison
 - Evaluate if soft-delete joins can be eliminated for memory-only queries
 - Consider cache warming strategies for predictable access patterns
+
+---
+
+[^1]: The TRANSCRIPT channel mentioned in this document was never implemented and has been removed from the design. Only HISTORY and MEMORY channels exist.

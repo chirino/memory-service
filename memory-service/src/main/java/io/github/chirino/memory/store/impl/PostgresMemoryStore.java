@@ -873,14 +873,28 @@ public class PostgresMemoryStore implements MemoryStore {
      * keep the cache warm instead of invalidating it.
      */
     private void updateCacheWithLatestEntries(UUID conversationId, String clientId) {
+        LOG.infof(
+                "updateCacheWithLatestEntries: querying DB for conversationId=%s, clientId=%s",
+                conversationId, clientId);
         List<EntryEntity> entries =
                 entryRepository.listMemoryEntriesAtLatestEpoch(conversationId, clientId);
+        LOG.infof(
+                "updateCacheWithLatestEntries: DB returned %d entries for conversationId=%s",
+                entries.size(), conversationId);
         if (!entries.isEmpty()) {
             CachedMemoryEntries cached = toCachedMemoryEntries(entries);
             memoryEntriesCache.set(conversationId, clientId, cached);
+            LOG.infof(
+                    "updateCacheWithLatestEntries: cached %d entries at epoch %d for"
+                            + " conversationId=%s",
+                    cached.entries().size(), cached.epoch(), conversationId);
         } else {
             // No entries at latest epoch - remove stale cache entry
             memoryEntriesCache.remove(conversationId, clientId);
+            LOG.infof(
+                    "updateCacheWithLatestEntries: removed cache for conversationId=%s (no"
+                            + " entries)",
+                    conversationId);
         }
     }
 
@@ -1426,6 +1440,19 @@ public class PostgresMemoryStore implements MemoryStore {
             }
             created.add(toEntryDto(entity));
         }
+        // Flush to ensure entries are visible to subsequent queries (e.g., cache updates)
+        LOG.infof("appendAgentEntries: flushing %d entries to database", created.size());
+        entryRepository.flush();
+        LOG.infof("appendAgentEntries: flush completed");
+
+        // Invalidate/update cache if MEMORY entries were created
+        if (hasMemoryEntries && clientId != null) {
+            LOG.infof(
+                    "appendAgentEntries: updating cache for conversationId=%s, clientId=%s",
+                    conversationId, clientId);
+            updateCacheWithLatestEntries(cid, clientId);
+        }
+
         if (latestHistoryTimestamp != null) {
             conversationRepository.update(
                     "updatedAt = ?1 where id = ?2", latestHistoryTimestamp, conversation.getId());
@@ -1476,6 +1503,10 @@ public class PostgresMemoryStore implements MemoryStore {
 
         // If existing content matches incoming exactly, it's a no-op
         if (MemorySyncHelper.contentEquals(existingContent, incomingContent)) {
+            LOG.infof(
+                    "syncAgentEntry: content equals - no-op for conversationId=%s (no cache"
+                            + " update)",
+                    conversationId);
             result.setNoOp(true);
             return result;
         }
@@ -1486,9 +1517,16 @@ public class PostgresMemoryStore implements MemoryStore {
                     MemorySyncHelper.extractDelta(existingContent, incomingContent);
             if (deltaContent.isEmpty()) {
                 // No new content - this is a no-op
+                LOG.infof(
+                        "syncAgentEntry: prefix but empty delta - no-op for conversationId=%s (no"
+                                + " cache update)",
+                        conversationId);
                 result.setNoOp(true);
                 return result;
             }
+            LOG.infof(
+                    "syncAgentEntry: prefix extension with %d delta items for conversationId=%s",
+                    deltaContent.size(), conversationId);
             // Use latestEpoch if available, otherwise this is the first entry so use initial epoch
             Long epochToUse = latestEpoch != null ? latestEpoch : 1L;
             CreateEntryRequest deltaEntry = MemorySyncHelper.withContent(entry, deltaContent);

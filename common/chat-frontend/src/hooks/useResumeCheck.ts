@@ -37,6 +37,5 @@ export function useResumeCheck(conversationIds: string[]) {
     },
     enabled: conversationIds.length > 0,
     staleTime: 5000, // Consider data fresh for 5 seconds
-    refetchInterval: 10000, // Refetch every 10 seconds to update spinner status
   });
 }

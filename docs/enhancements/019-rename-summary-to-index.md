@@ -440,7 +440,7 @@ Remove "Enhanced summarization capabilities" from the Planned Features list.
 
 | File | Changes |
 |------|---------|
-| `Channel.java` | Rename `SUMMARY` → `TRANSCRIPT` |
+| `Channel.java` | Rename `SUMMARY` → `TRANSCRIPT` [^1] |
 
 ### Tests (2+ files)
 
@@ -501,3 +501,7 @@ Cons:
 ## Decision
 
 Rename the summaries endpoint to `/v1/conversations/index` with operation `indexConversationTranscript`, rename the `summary` field to `transcript`, rename the `summary` channel to `transcript`, make `title` optional, remove `summarizedAt` (server derives timestamps), move `conversationId` to the request body, and relocate search to `/v1/conversations/search`. This provides accurate naming, a simpler request schema, and consistent path structure before the first release.
+
+---
+
+[^1]: The TRANSCRIPT channel proposed in this document was never implemented and has been removed from the design. Only HISTORY and MEMORY channels exist.

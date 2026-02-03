@@ -3940,10 +3940,10 @@ public class StepDefinitions {
     }
 
     private double getCacheMetricValue(String metricName) {
-        io.micrometer.core.instrument.Counter counter = meterRegistry.find(metricName).counter();
-        if (counter == null) {
-            return 0.0;
-        }
-        return counter.count();
+        // Sum all counters with this name regardless of tags (e.g., backend=infinispan vs
+        // backend=redis)
+        return meterRegistry.find(metricName).counters().stream()
+                .mapToDouble(io.micrometer.core.instrument.Counter::count)
+                .sum();
     }
 }
