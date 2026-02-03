@@ -504,6 +504,12 @@ public class StepDefinitions {
                 .getStore()
                 .appendAgentEntries(
                         currentUserId, conversationId, List.of(request), resolveClientId(), null);
+        // Small delay to ensure entries have distinct timestamps for deterministic ordering
+        try {
+            Thread.sleep(2);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @io.cucumber.java.en.Given(

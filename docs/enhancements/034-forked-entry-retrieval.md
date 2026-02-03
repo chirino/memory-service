@@ -20,9 +20,11 @@ Root Conversation (508e46da-750b-4992-98b7-16f91478056e)
 ```
 
 **Expected behavior**: Querying entries for the forked conversation (`405430dc...`) should return:
-- For `channel=null` (all channels): A, B, C, D, I, J, K, L
-- For `channel=HISTORY`: A, D, J, K
+- For `channel=null` (all channels): A, B, C, I, J, K, L (D is the fork point, NOT included)
+- For `channel=HISTORY`: A, J, K
 - For `channel=MEMORY`: B, C, I, L
+
+**Important**: "Fork at entry D" means "branch before D" — the fork includes all parent entries up to but NOT including D. The `forkedAtEntryId` stored on the fork is the entry immediately before D (entry C in this case), and entries up to and including `forkedAtEntryId` are visible to the fork.
 
 **Actual behavior**: Only entries from the forked conversation are returned (I, J, K, L or subset based on channel filter).
 
@@ -557,14 +559,15 @@ The existing index `entries(conversation_group_id, created_at)` mentioned in the
 @Test
 void getEntries_forkedConversation_includesParentEntries() {
     // Given: root conversation with mixed HISTORY and MEMORY entries
-    // Root: A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY) --fork--> Fork: I(MEMORY), J(HISTORY), K(HISTORY), L(MEMORY)
+    // Root: A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY) --fork at D--> Fork: I(MEMORY), J(HISTORY), K(HISTORY), L(MEMORY)
+    // Note: "fork at D" means D is NOT included; forkedAtEntryId = C (previous entry)
     var root = createConversation();
     createEntry(root, "A", Channel.HISTORY);
     createEntry(root, "B", Channel.MEMORY);
     createEntry(root, "C", Channel.MEMORY);
     var entryD = createEntry(root, "D", Channel.HISTORY);
 
-    // And: forked conversation from entry D
+    // And: forked conversation from entry D (fork sees entries before D)
     var fork = forkConversation(root, entryD);
     createEntry(fork, "I", Channel.MEMORY);
     createEntry(fork, "J", Channel.HISTORY);
@@ -574,9 +577,9 @@ void getEntries_forkedConversation_includesParentEntries() {
     // When: fetching all entries for the fork
     var result = store.getEntries(userId, fork.getId().toString(), null, 100, null, null, clientId);
 
-    // Then: includes parent entries up to fork point, then fork entries
+    // Then: includes parent entries BEFORE fork point (not D), then fork entries
     assertThat(result.getEntries()).extracting(EntryDto::getContent)
-        .containsExactly("A", "B", "C", "D", "I", "J", "K", "L");
+        .containsExactly("A", "B", "C", "I", "J", "K", "L");
 }
 
 @Test
@@ -596,9 +599,10 @@ void getEntries_forkedConversation_historyChannelOnly() {
     // When: fetching HISTORY entries only
     var result = store.getEntries(userId, fork.getId().toString(), null, 100, Channel.HISTORY, null, null);
 
-    // Then: only HISTORY entries from parent (up to fork) and fork
+    // Then: only HISTORY entries from parent (before D) and fork
+    // Note: D is NOT included because fork at D means "branch before D"
     assertThat(result.getEntries()).extracting(EntryDto::getContent)
-        .containsExactly("A", "D", "J", "K");
+        .containsExactly("A", "J", "K");
 }
 
 @Test
@@ -755,20 +759,23 @@ void adminGetEntries_forkAtBeginning_returnsOnlyForkEntries() {
 Feature: Forked conversation entry retrieval
 
   # Based on example:
-  # Root: A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY) --fork--> Fork: I(MEMORY), J(HISTORY), K(HISTORY), L(MEMORY)
+  # Root: A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY) --fork at D--> Fork: I(MEMORY), J(HISTORY), K(HISTORY), L(MEMORY)
   # Root continues: E(HISTORY), F(MEMORY), G(MEMORY), H(HISTORY)
+  # Note: "fork at D" means D is NOT included in the fork's view of parent entries
 
-  Scenario: Fetch all entries from forked conversation includes parent entries up to fork point
+  Scenario: Fetch all entries from forked conversation includes parent entries BEFORE fork point
     Given a root conversation with entries A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY), E(HISTORY), F(MEMORY), G(MEMORY), H(HISTORY)
     And a fork at entry D with entries I(MEMORY), J(HISTORY), K(HISTORY), L(MEMORY)
     When I fetch entries for the forked conversation
-    Then I should see entries "A", "B", "C", "D", "I", "J", "K", "L" in order
+    Then I should see entries "A", "B", "C", "I", "J", "K", "L" in order
+    # Note: D is NOT included because "fork at D" means "branch before D"
 
   Scenario: Fetch HISTORY entries from forked conversation
     Given a root conversation with entries A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY), E(HISTORY)
     And a fork at entry D with entries I(MEMORY), J(HISTORY), K(HISTORY)
     When I fetch entries for the forked conversation with channel=HISTORY
-    Then I should see entries "A", "D", "J", "K" in order
+    Then I should see entries "A", "J", "K" in order
+    # Note: D is NOT included
 
   Scenario: Fetch MEMORY entries from forked conversation
     Given a root conversation with entries A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY)
@@ -776,12 +783,13 @@ Feature: Forked conversation entry retrieval
     When I fetch entries for the forked conversation with channel=MEMORY
     Then I should see entries "B", "C", "I", "L" in order
 
-  Scenario: Multi-level fork includes all ancestors
+  Scenario: Multi-level fork includes all ancestors (before each fork point)
     Given a root conversation with entries "A", "B"
     And a fork at entry "B" with entries "C", "D"
     And a second fork at entry "D" with entries "E", "F"
     When I fetch entries for the second fork
-    Then I should see entries "A", "B", "C", "D", "E", "F" in order
+    Then I should see entries "A", "C", "E", "F" in order
+    # B excluded (fork point of first fork), D excluded (fork point of second fork)
 
   Scenario: Pagination works across fork boundary
     Given a conversation with 5 entries
@@ -948,6 +956,28 @@ The resulting ancestry stack for Fork2 should be:
 | Root         | D (from Fork1's `forkedAtEntryId`) |
 | Fork1        | G (from Fork2's `forkedAtEntryId`) |
 | Fork2        | null (include all entries)         |
+
+### Fork Point Entry Calculation (Critical)
+
+When creating a fork, the `forkedAtEntryId` must be calculated by finding the entry immediately before the target entry, considering **ALL channels** (not just HISTORY).
+
+**Bug fixed**: The original implementation only looked at HISTORY entries:
+```java
+// WRONG: Only considers HISTORY entries
+"... and m.channel = ?2 and (m.createdAt < ?3 ..."
+```
+
+This caused MEMORY entries between HISTORY entries to be skipped. For example:
+- Entries: A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY)
+- Fork at D
+- **Bug**: forkedAtEntryId = A (previous HISTORY), fork sees only A
+- **Fix**: forkedAtEntryId = C (previous entry of any channel), fork sees A, B, C
+
+The corrected query considers all channels:
+```java
+// CORRECT: Considers any channel
+"... and (m.createdAt < ?2 or (m.createdAt = ?2 and m.id < ?3)) ..."
+```
 
 ### MongoDB Query Syntax
 

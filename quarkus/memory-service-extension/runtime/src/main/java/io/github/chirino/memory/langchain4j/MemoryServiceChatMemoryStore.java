@@ -56,6 +56,8 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
 
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
+
+        LOG.infof("getMessages(%s)", memoryId);
         Objects.requireNonNull(memoryId, "memoryId");
         ListConversationEntries200Response context;
         try {

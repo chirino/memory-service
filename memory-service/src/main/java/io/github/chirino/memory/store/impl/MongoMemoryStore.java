@@ -440,17 +440,20 @@ public class MongoMemoryStore implements MemoryStore {
             throw new AccessDeniedException("Forking is only allowed for history entries");
         }
 
+        // Find the previous entry of ANY channel before the target entry.
+        // forkedAtEntryId is set to this previous entry - all parent entries up to and including
+        // forkedAtEntryId are visible to the fork. This makes "fork at entry X" mean "branch before
+        // X".
         MongoEntry previous =
                 entryRepository
                         .find(
-                                "conversationId = ?1 and channel = ?2 and (createdAt < ?3 or"
-                                        + " (createdAt = ?3 and id < ?4))",
+                                "conversationId = ?1 and (createdAt < ?2 or"
+                                        + " (createdAt = ?2 and id < ?3))",
                                 io.quarkus.panache.common.Sort.by("createdAt")
                                         .descending()
                                         .and("id")
                                         .descending(),
                                 conversationId,
-                                Channel.HISTORY,
                                 target.createdAt,
                                 target.id)
                         .firstResult();

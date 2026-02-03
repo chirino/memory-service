@@ -444,14 +444,17 @@ public class PostgresMemoryStore implements MemoryStore {
             throw new AccessDeniedException("Forking is only allowed for history entries");
         }
 
+        // Find the previous entry of ANY channel before the target entry.
+        // forkedAtEntryId is set to this previous entry - all parent entries up to and including
+        // forkedAtEntryId are visible to the fork. This makes "fork at entry X" mean "branch before
+        // X".
         EntryEntity previous =
                 entryRepository
                         .find(
-                                "from EntryEntity m where m.conversation.id = ?1 and m.channel = ?2"
-                                    + " and (m.createdAt < ?3 or (m.createdAt = ?3 and m.id < ?4))"
-                                    + " order by m.createdAt desc, m.id desc",
+                                "from EntryEntity m where m.conversation.id = ?1 and (m.createdAt <"
+                                        + " ?2 or (m.createdAt = ?2 and m.id < ?3)) order by"
+                                        + " m.createdAt desc, m.id desc",
                                 originalId,
-                                Channel.HISTORY,
                                 target.getCreatedAt(),
                                 target.getId())
                         .firstResult();
