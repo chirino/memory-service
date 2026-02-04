@@ -107,6 +107,13 @@ public class MemoryServiceChatMemory implements ChatMemory {
             if (entry.getContent() == null) {
                 continue;
             }
+            // Only decode entries with LC4J content type
+            if (!"LC4J".equals(entry.getContentType())) {
+                LOG.debugf(
+                        "Skipping entry %s with contentType=%s (not LC4J)",
+                        entry.getId(), entry.getContentType());
+                continue;
+            }
 
             for (Object block : entry.getContent()) {
                 if (block == null) {
@@ -146,6 +153,6 @@ public class MemoryServiceChatMemory implements ChatMemory {
                     conversationId,
                     entryId);
         }
-        return null;
+        return List.of();
     }
 }

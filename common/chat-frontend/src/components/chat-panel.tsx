@@ -15,10 +15,11 @@ import type { ApiError, Conversation as ApiConversation, ConversationForkSummary
 import { ConversationsService } from "@/client";
 import { useSseStream } from "@/hooks/useSseStream";
 import type { StreamStartParams } from "@/hooks/useStreamTypes";
-import { Check, Copy, Menu, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { Check, Copy, Menu, Pencil, Trash2 } from "lucide-react";
 import { ShareButton } from "@/components/sharing";
 import { UserAvatar } from "@/components/user-avatar";
 import type { AuthUser } from "@/lib/auth";
+import { createForkView, type EntryAndForkInfo, type ForkOption } from "@/lib/conversation";
 
 type ListUserEntriesResponse = {
   data?: Entry[];
@@ -34,20 +35,11 @@ type ForkPoint = {
   previousMessageId: string | null;
 };
 
-type ForkOption = {
-  conversationId: string;
-  forkedAtConversationId?: string | null;
-  forkedAtEntryId?: string | null;
-  createdAt?: string | null;
-  label?: string;
-};
-
 type ChatPanelProps = {
   conversationId: string | null;
   onSelectConversationId?: (conversationId: string) => void;
   resumableConversationIds?: Set<string>;
   knownConversationIds?: Set<string>;
-  onIndexConversation?: (conversationId: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
   currentUserId?: string | null;
   currentUser?: AuthUser | null;
@@ -77,12 +69,7 @@ type ChatMessageRowProps = {
   isReader: boolean;
   conversationId: string | null;
   forkOptionsCount: number;
-  forkLabels: Record<string, string>;
-  setForkLabels: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  activeForkMenuMessageId: string | null;
   setActiveForkMenuMessageId: (id: string | null) => void;
-  userMessageIndexById: Map<string, number>;
-  selectForkLabel: (entries: Entry[], userIndex?: number) => string;
   formatForkLabel: (text: string) => string;
   formatForkTimestamp: (value?: string | null) => string;
   forkPoint: ForkPoint | null;
@@ -109,12 +96,7 @@ function ChatMessageRow({
   isReader,
   conversationId,
   forkOptionsCount,
-  forkLabels,
-  setForkLabels,
-  activeForkMenuMessageId,
   setActiveForkMenuMessageId,
-  userMessageIndexById,
-  selectForkLabel,
   formatForkLabel,
   formatForkTimestamp,
   forkPoint,
@@ -147,64 +129,6 @@ function ChatMessageRow({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isForkMenuOpen, setOpenForkMenuMessageId, setActiveForkMenuMessageId]);
-
-  useEffect(() => {
-    if (!isForkMenuOpen || !forkPoint) {
-      return;
-    }
-    const missing = forkOptions.filter((entry) => entry.conversationId && !forkLabels[entry.conversationId]);
-    if (!missing.length) {
-      return;
-    }
-    let cancelled = false;
-    void Promise.all(
-      missing.map(async (fork) => {
-        try {
-          const response = (await ConversationsService.listConversationEntries({
-            conversationId: fork.conversationId,
-            limit: 200,
-            channel: "history",
-            forks: "all",            
-          })) as unknown as ListUserEntriesResponse;
-          const entries = Array.isArray(response.data) ? response.data : [];
-          const entryId = activeForkMenuMessageId ?? message.id;
-          const userIndex =
-            entryId && userMessageIndexById.has(entryId) ? userMessageIndexById.get(entryId) : undefined;
-          const label = selectForkLabel(entries, userIndex);
-          return { id: fork.conversationId, label };
-        } catch (error) {
-          void error;
-          return null;
-        }
-      }),
-    ).then((results) => {
-      if (cancelled) {
-        return;
-      }
-      setForkLabels((prev) => {
-        const next = { ...prev };
-        results.forEach((result) => {
-          if (result) {
-            next[result.id] = result.label;
-          }
-        });
-        return next;
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activeForkMenuMessageId,
-    forkLabels,
-    forkPoint,
-    isForkMenuOpen,
-    message.id,
-    forkOptions,
-    selectForkLabel,
-    setForkLabels,
-    userMessageIndexById,
-  ]);
 
   if (isEditing) {
     return (
@@ -279,8 +203,7 @@ function ChatMessageRow({
                   <>
                     {forkOptions.map((fork) => {
                       const isActive = fork.conversationId === conversationId;
-                      const fallbackLabel = isActive ? message.content : "Loading fork message...";
-                      const label = forkLabels[fork.conversationId] ?? fallbackLabel;
+                      const label = fork.label || (isActive ? message.content : "Fork message");
                       return (
                         <button
                           key={fork.conversationId}
@@ -380,9 +303,7 @@ type ChatPanelContentProps = {
   hasResumedRef: React.MutableRefObject<Record<string, boolean>>;
   onSelectConversationId?: (conversationId: string) => void;
   queryClient: ReturnType<typeof useQueryClient>;
-  userMessageIndexById: Map<string, number>;
   canceling: boolean;
-  onIndexConversation?: (conversationId: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
   currentUserId?: string | null;
   currentUser?: AuthUser | null;
@@ -410,19 +331,17 @@ function ChatPanelContent({
   hasResumedRef,
   onSelectConversationId,
   queryClient,
-  userMessageIndexById,
   canceling,
   forksQuery,
-  conversationMetaById,
   conversationQuery,
-  onIndexConversation,
+  entriesWithForks,
   onDeleteConversation,
   currentUserId,
   currentUser,
 }: ChatPanelContentProps & {
   forksQuery: ReturnType<typeof useQuery<ConversationForkSummary[], ApiError, ConversationForkSummary[]>>;
-  conversationMetaById: Map<string, ConversationMeta>;
   conversationQuery: ReturnType<typeof useQuery<ApiConversation, ApiError, ApiConversation>>;
+  entriesWithForks: EntryAndForkInfo[];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { messages } = useConversationMessages();
@@ -432,8 +351,7 @@ function ChatPanelContent({
   const [editingMessage, setEditingMessage] = useState<{ id: string; conversationId: string } | null>(null);
   const [editingText, setEditingText] = useState("");
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [forkLabels, setForkLabels] = useState<Record<string, string>>({});
-  const [activeForkMenuMessageId, setActiveForkMenuMessageId] = useState<string | null>(null);
+  const [, setActiveForkMenuMessageId] = useState<string | null>(null);
   const [openForkMenuMessageId, setOpenForkMenuMessageId] = useState<string | null>(null);
 
   // Scroll management refs
@@ -455,21 +373,6 @@ function ChatPanelContent({
       return "Unknown time";
     }
     return timestamp.toLocaleString();
-  };
-
-  const selectForkLabel = (entries: Entry[], userIndex?: number) => {
-    if (!entries.length) {
-      return "Forked entry";
-    }
-    const userEntries = entries.filter((entry) => entryAuthor(entry) === "user");
-    if (!userEntries.length) {
-      return "Forked entry";
-    }
-    const candidate =
-      userIndex !== undefined && userIndex >= 0 && userIndex < userEntries.length
-        ? userEntries[userIndex]
-        : userEntries[userEntries.length - 1];
-    return entryText(candidate);
   };
 
   const formatForkLabel = (text: string) => {
@@ -542,7 +445,6 @@ function ChatPanelContent({
   useEffect(() => {
     setEditingMessage(null);
     setEditingText("");
-    setForkLabels({});
     setActiveForkMenuMessageId(null);
     setOpenForkMenuMessageId(null);
   }, [conversationId]);
@@ -572,109 +474,14 @@ function ChatPanelContent({
     };
   }, [openForkMenuMessage]);
 
-  const forkPointKey = useCallback((conversationKey: string | null | undefined, previousMessageId: string | null) => {
-    if (!conversationKey) {
-      return null;
-    }
-    return `${conversationKey}:${previousMessageId ?? "__start__"}`;
-  }, []);
-
-  const forksByPointKey = useMemo(() => {
-    const grouped = new Map<string, ConversationForkSummary[]>();
-    (forksQuery.data ?? []).forEach((fork) => {
-      if (!fork.forkedAtConversationId || !fork.conversationId) {
-        return;
-      }
-      const key = forkPointKey(fork.forkedAtConversationId, fork.forkedAtEntryId ?? null);
-      if (!key) {
-        return;
-      }
-      const list = grouped.get(key) ?? [];
-      list.push(fork);
-      grouped.set(key, list);
-    });
-    return grouped;
-  }, [forkPointKey, forksQuery.data]);
-
-  const currentMeta = conversationId ? conversationMetaById.get(conversationId) : null;
-  const currentForkPointKey = useMemo(() => {
-    if (!currentMeta?.forkedAtConversationId) {
-      return null;
-    }
-    return forkPointKey(currentMeta.forkedAtConversationId, currentMeta.forkedAtEntryId ?? null);
-  }, [currentMeta, forkPointKey]);
-
-  const getForkOptionsForPoint = useCallback(
-    (forkKey: string | null) => {
-      if (!forkKey) {
-        return [];
-      }
-      const forksAtPoint = forksByPointKey.get(forkKey) ?? [];
-      const showParentEntry = Boolean(currentForkPointKey && forkKey === currentForkPointKey);
-
-      const options: ForkOption[] = forksAtPoint.map((fork) => ({
-        conversationId: fork.conversationId ?? "",
-        forkedAtConversationId: fork.forkedAtConversationId ?? null,
-        forkedAtEntryId: fork.forkedAtEntryId ?? null,
-        createdAt: fork.createdAt ?? null,
-        label: fork.title ?? undefined,
-      }));
-
-      if (showParentEntry && currentMeta?.forkedAtConversationId) {
-        options.push({
-          conversationId: currentMeta.forkedAtConversationId,
-          forkedAtConversationId: null,
-          forkedAtEntryId: currentMeta.forkedAtEntryId ?? null,
-        });
-      }
-
-      if (conversationId && (forksAtPoint.length > 0 || showParentEntry)) {
-        options.push({
-          conversationId,
-          forkedAtConversationId: currentMeta?.forkedAtConversationId ?? null,
-          forkedAtEntryId: currentMeta?.forkedAtEntryId ?? null,
-        });
-      }
-
-      const seen = new Set<string>();
-      return options.filter((opt) => {
-        if (!opt.conversationId || seen.has(opt.conversationId)) {
-          return false;
-        }
-        seen.add(opt.conversationId);
-        return true;
-      });
-    },
-    [conversationId, currentForkPointKey, currentMeta, forksByPointKey],
-  );
-
-  const forkOptions = useMemo<ForkOption[]>(() => {
-    if (!forkPoint) {
-      return [];
-    }
-    const key = forkPointKey(forkPoint.conversationId, forkPoint.previousMessageId ?? null);
-    return getForkOptionsForPoint(key);
-  }, [forkPoint, forkPointKey, getForkOptionsForPoint]);
-
+  // Build fork options map from entriesWithForks (from createForkView)
   const forkOptionsByMessageId = useMemo(() => {
     const map = new Map<string, ForkOption[]>();
-    messages.forEach((message) => {
-      const messageConversationId = message.conversationId;
-      const messageMeta = messageConversationId ? conversationMetaById.get(messageConversationId) : null;
-      const messagePreviousId = message.previousMessageId ?? null;
-      const pointConversationId =
-        messagePreviousId === null && messageMeta?.forkedAtConversationId
-          ? messageMeta.forkedAtConversationId
-          : messageConversationId;
-      const pointPreviousId =
-        messagePreviousId === null && messageMeta?.forkedAtConversationId
-          ? (messageMeta.forkedAtEntryId ?? null)
-          : messagePreviousId;
-      const forkKey = forkPointKey(pointConversationId, pointPreviousId);
-      map.set(message.id, getForkOptionsForPoint(forkKey));
+    entriesWithForks.forEach(({ entry, forks }) => {
+      map.set(entry.id, forks ?? []);
     });
     return map;
-  }, [conversationMetaById, forkPointKey, getForkOptionsForPoint, messages]);
+  }, [entriesWithForks]);
 
   const forkLoading = forksQuery.isLoading || forksQuery.isFetching;
   const isForkMenuOpen = Boolean(openForkMenuMessageId && forkPoint);
@@ -988,20 +795,6 @@ function ChatPanelContent({
                       type="button"
                       onClick={() => {
                         if (conversationId) {
-                          onIndexConversation?.(conversationId);
-                        }
-                        setMenuOpen(false);
-                      }}
-                      disabled={!conversationId || messages.length === 0}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink transition-colors hover:bg-mist disabled:opacity-50"
-                    >
-                      <Sparkles className="h-4 w-4 text-sage" />
-                      Index conversation
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (conversationId) {
                           onDeleteConversation?.(conversationId);
                         }
                         setMenuOpen(false);
@@ -1115,16 +908,15 @@ function ChatPanelContent({
                             isReader={isReader}
                             conversationId={conversationId}
                             forkOptionsCount={(forkOptionsByMessageId.get(turn.user.id) ?? []).length}
-                            forkLabels={forkLabels}
-                            setForkLabels={setForkLabels}
-                            activeForkMenuMessageId={activeForkMenuMessageId}
                             setActiveForkMenuMessageId={setActiveForkMenuMessageId}
-                            userMessageIndexById={userMessageIndexById}
-                            selectForkLabel={selectForkLabel}
                             formatForkLabel={formatForkLabel}
                             formatForkTimestamp={formatForkTimestamp}
                             forkPoint={openForkMenuMessageId === turn.user.id ? forkPoint : null}
-                            forkOptions={openForkMenuMessageId === turn.user.id ? forkOptions : []}
+                            forkOptions={
+                              openForkMenuMessageId === turn.user.id
+                                ? (forkOptionsByMessageId.get(turn.user.id) ?? [])
+                                : []
+                            }
                             forkLoading={openForkMenuMessageId === turn.user.id ? forkLoading : false}
                             isForkMenuOpen={openForkMenuMessageId === turn.user.id && isForkMenuOpen}
                             onForkSelect={handleForkSelect}
@@ -1167,16 +959,13 @@ function ChatPanelContent({
                           isReader={isReader}
                           conversationId={conversationId}
                           forkOptionsCount={messageForkOptions.length}
-                          forkLabels={forkLabels}
-                          setForkLabels={setForkLabels}
-                          activeForkMenuMessageId={activeForkMenuMessageId}
                           setActiveForkMenuMessageId={setActiveForkMenuMessageId}
-                          userMessageIndexById={userMessageIndexById}
-                          selectForkLabel={selectForkLabel}
                           formatForkLabel={formatForkLabel}
                           formatForkTimestamp={formatForkTimestamp}
                           forkPoint={openForkMenuMessageId === message.id ? forkPoint : null}
-                          forkOptions={openForkMenuMessageId === message.id ? forkOptions : []}
+                          forkOptions={
+                            openForkMenuMessageId === message.id ? (forkOptionsByMessageId.get(message.id) ?? []) : []
+                          }
                           forkLoading={openForkMenuMessageId === message.id ? forkLoading : false}
                           isForkMenuOpen={openForkMenuMessageId === message.id && isForkMenuOpen}
                           onForkSelect={handleForkSelect}
@@ -1225,7 +1014,6 @@ export function ChatPanel({
   onSelectConversationId,
   knownConversationIds,
   resumableConversationIds,
-  onIndexConversation,
   onDeleteConversation,
   currentUserId,
   currentUser,
@@ -1306,80 +1094,37 @@ export function ChatPanel({
     queryKey: ["conversation-path-messages", conversationId, forkFingerprint],
     enabled: Boolean(conversationId && conversationQuery.data && forksQuery.data),
     queryFn: async (): Promise<Entry[]> => {
-      const currentConversation = conversationQuery.data!;
-      const forks = forksQuery.data ?? [];
-      const forkMetaById = new Map<
-        string,
-        { forkedAtConversationId?: string | null; forkedAtEntryId?: string | null }
-      >();
-
-      forks.forEach((fork) => {
-        if (!fork.conversationId) {
-          return;
-        }
-        forkMetaById.set(fork.conversationId, {
-          forkedAtConversationId: fork.forkedAtConversationId ?? null,
-          forkedAtEntryId: fork.forkedAtEntryId ?? null,
-        });
-      });
-
-      forkMetaById.set(conversationId!, {
-        forkedAtConversationId: currentConversation.forkedAtConversationId ?? null,
-        forkedAtEntryId: currentConversation.forkedAtEntryId ?? null,
-      });
-
-      const lineage: string[] = [];
-      const seen = new Set<string>();
-      let cursor: string | null = conversationId!;
-      while (cursor && !seen.has(cursor)) {
-        lineage.push(cursor);
-        seen.add(cursor);
-        const meta = forkMetaById.get(cursor);
-        if (!meta?.forkedAtConversationId) {
-          break;
-        }
-        cursor = meta.forkedAtConversationId;
-      }
-      lineage.reverse();
-
-      const entriesByConversation = new Map<string, Entry[]>();
-      await Promise.all(
-        lineage.map(async (id) => {
-          const response = (await ConversationsService.listConversationEntries({
-            conversationId: id,
-            limit: 200,
-            channel: "history",
-            forks: "all",
-          })) as unknown as ListUserEntriesResponse;
-          entriesByConversation.set(id, Array.isArray(response.data) ? response.data : []);
-        }),
-      );
-
-      const combined: Entry[] = [];
-      for (let i = 0; i < lineage.length; i += 1) {
-        const conversationEntries = entriesByConversation.get(lineage[i]) ?? [];
-        const childId = lineage[i + 1];
-        if (!childId) {
-          combined.push(...conversationEntries);
-          continue;
-        }
-        const childMeta = forkMetaById.get(childId);
-        if (childMeta && childMeta.forkedAtEntryId === null) {
-          continue;
-        }
-        if (childMeta?.forkedAtEntryId) {
-          const forkedIndex = conversationEntries.findIndex((entry) => entry.id === childMeta.forkedAtEntryId);
-          if (forkedIndex >= 0) {
-            combined.push(...conversationEntries.slice(0, forkedIndex + 1));
-            continue;
-          }
-        }
-        combined.push(...conversationEntries);
-      }
-
-      return combined;
+      const response = (await ConversationsService.listConversationEntries({
+        conversationId: conversationId!,
+        limit: 200,
+        channel: "history",
+        forks: "all",
+      })) as unknown as ListUserEntriesResponse;
+      return Array.isArray(response.data) ? response.data : [];
     },
   });
+
+  // Create ForkView from entries and forks data
+  const forkView = useMemo(() => {
+    const entries = entriesQuery.data ?? [];
+    const forks = forksQuery.data ?? [];
+    const forkView = createForkView(entries, forks);
+
+    // // log forkView
+    // for( const convoId of forkView.conversationIds()) {
+    //   console.log(`Conversation ID: ${convoId}`, forkView.entries(convoId));
+    // }
+
+    return forkView;
+  }, [entriesQuery.data, forksQuery.data]);
+
+  // Get entries with fork info from the forkView
+  const entriesWithForks = useMemo<EntryAndForkInfo[]>(() => {
+    if (!forkView || !conversationId) {
+      return [];
+    }
+    return forkView.entries(conversationId);
+  }, [conversationId, forkView]);
 
   const conversationMetaById = useMemo(() => {
     const map = new Map<string, ConversationMeta>();
@@ -1402,11 +1147,10 @@ export function ChatPanel({
   }, [conversationId, conversationQuery.data, forksQuery.data]);
 
   const conversationMessages = useMemo<ConversationMessage[]>(() => {
-    const entries = entriesQuery.data ?? [];
     const firstIndexByConversation = new Map<string, number>();
     const mapped: ConversationMessage[] = [];
 
-    entries.forEach((entry) => {
+    entriesWithForks.forEach(({ entry }) => {
       if (!entry.id || !entry.conversationId) {
         return;
       }
@@ -1441,23 +1185,10 @@ export function ChatPanel({
         },
       };
     });
-  }, [conversationMetaById, entriesQuery.data]);
+  }, [conversationMetaById, entriesWithForks]);
 
   // conversationGroupId is now hidden from the API; use conversationId for state tracking
   const conversationGroupId = conversationId;
-
-  const userMessageIndexById = useMemo(() => {
-    const indexById = new Map<string, number>();
-    let index = 0;
-    conversationMessages.forEach((message) => {
-      if (message.author !== "user") {
-        return;
-      }
-      indexById.set(message.id, index);
-      index += 1;
-    });
-    return indexById;
-  }, [conversationMessages]);
 
   const startEventStream = useCallback(
     (
@@ -1575,12 +1306,10 @@ export function ChatPanel({
         hasResumedRef={hasResumedRef}
         onSelectConversationId={onSelectConversationId}
         queryClient={queryClient}
-        userMessageIndexById={userMessageIndexById}
         canceling={canceling}
         forksQuery={forksQuery}
-        conversationMetaById={conversationMetaById}
         conversationQuery={conversationQuery}
-        onIndexConversation={onIndexConversation}
+        entriesWithForks={entriesWithForks}
         onDeleteConversation={onDeleteConversation}
         currentUserId={currentUserId}
         currentUser={currentUser}
