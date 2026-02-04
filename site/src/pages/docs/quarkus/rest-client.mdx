@@ -12,7 +12,10 @@ export const mavenDep = `<dependency>
   <version>${PROJECT_VERSION}</version>
 </dependency>`;
 
-The Quarkus extension provides a type-safe REST client for interacting with Memory Service.
+The Quarkus extension provides two ways to interact with Memory Service via REST:
+
+1. **MemoryServiceProxy** - A helper class for building JAX-RS proxy endpoints that forward requests to the memory service
+2. **Generated API Clients** - Type-safe REST clients for direct programmatic access
 
 ## Setup
 
@@ -20,162 +23,269 @@ The REST client is included in the extension:
 
 <Code code={mavenDep} lang="xml" />
 
-## Injecting the Client
-
-```java
-@Inject
-MemoryServiceClient memoryClient;
-```
-
-## Conversations API
-
-### List Conversations
-
-```java
-ListConversationsResponse response = memoryClient.conversations()
-    .list(ListRequest.builder()
-        .limit(20)
-        .offset(0)
-        .build());
-
-for (Conversation conv : response.getConversations()) {
-    System.out.println(conv.getId());
-}
-```
-
-### Create Conversation
-
-```java
-Conversation conv = memoryClient.conversations()
-    .create(CreateConversationRequest.builder()
-        .id("my-conversation")
-        .metadata(Map.of("topic", "support"))
-        .build());
-```
-
-### Get Conversation
-
-```java
-Conversation conv = memoryClient.conversations()
-    .get("my-conversation");
-```
-
-### Update Conversation
-
-```java
-memoryClient.conversations()
-    .update("my-conversation", UpdateRequest.builder()
-        .metadata(Map.of("status", "resolved"))
-        .build());
-```
-
-### Delete Conversation
-
-```java
-memoryClient.conversations()
-    .delete("my-conversation");
-```
-
-### Fork Conversation
-
-```java
-Conversation forked = memoryClient.conversations()
-    .fork("original-id", ForkRequest.builder()
-        .newId("forked-conversation")
-        .atMessage(5)
-        .build());
-```
-
-## Messages API
-
-### Add Message
-
-```java
-Message msg = memoryClient.messages("my-conversation")
-    .add(AddMessageRequest.builder()
-        .type(MessageType.USER)
-        .content("Hello, how can you help?")
-        .metadata(Map.of("client", "web"))
-        .build());
-```
-
-### List Messages
-
-```java
-ListMessagesResponse response = memoryClient.messages("my-conversation")
-    .list(ListMessagesRequest.builder()
-        .limit(100)
-        .build());
-
-for (Message msg : response.getMessages()) {
-    System.out.println(msg.getType() + ": " + msg.getContent());
-}
-```
-
-### Get Message
-
-```java
-Message msg = memoryClient.messages("my-conversation")
-    .get("msg-123");
-```
-
-## Search API
-
-### Semantic Search
-
-```java
-SearchResponse response = memoryClient.search()
-    .query(SearchRequest.builder()
-        .query("How do I configure authentication?")
-        .limit(10)
-        .minScore(0.7)
-        .build());
-
-for (SearchResult result : response.getResults()) {
-    System.out.println(result.getScore() + ": " + result.getContent());
-}
-```
-
-### Filtered Search
-
-```java
-SearchResponse response = memoryClient.search()
-    .query(SearchRequest.builder()
-        .query("error handling")
-        .conversationIds(List.of("conv-1", "conv-2"))
-        .messageTypes(List.of(MessageType.AI))
-        .after(Instant.parse("2024-01-01T00:00:00Z"))
-        .build());
-```
-
-## Error Handling
-
-```java
-try {
-    Conversation conv = memoryClient.conversations().get("unknown-id");
-} catch (NotFoundException e) {
-    // Conversation not found
-} catch (MemoryServiceException e) {
-    // Other API error
-    System.err.println("Error: " + e.getErrorCode() + " - " + e.getMessage());
-}
-```
-
 ## Configuration
 
 ```properties
 # Memory Service URL (auto-configured with Dev Services)
-memory-service.url=http://localhost:8080
+memory-service.client.url=http://localhost:8080
 
-# Timeouts
-memory-service.connect-timeout=30s
-memory-service.read-timeout=60s
+# API key for agent authentication
+memory-service.client.api-key=your-api-key
+```
 
-# TLS
-memory-service.tls.verify=true
+These properties are aliased to `quarkus.rest-client.memory-service-client.*` automatically.
+
+## Using MemoryServiceProxy
+
+The `MemoryServiceProxy` is a helper class that makes it easier to implement JAX-RS endpoints that proxy requests to the memory service. It handles authentication and bearer token propagation automatically.
+
+### Injecting the Proxy
+
+```java
+import io.github.chirino.memory.runtime.MemoryServiceProxy;
+
+@ApplicationScoped
+public class ConversationsResource {
+
+    @Inject
+    MemoryServiceProxy proxy;
+}
+```
+
+### Conversations API
+
+```java
+import io.github.chirino.memory.client.model.Channel;
+import jakarta.ws.rs.core.Response;
+
+// List conversations
+Response response = proxy.listConversations(mode, after, limit, query);
+
+// Get a conversation
+Response response = proxy.getConversation(conversationId);
+
+// Create a conversation (body is JSON string)
+Response response = proxy.createConversation(jsonBody);
+
+// Delete a conversation
+Response response = proxy.deleteConversation(conversationId);
+
+// List conversation forks
+Response response = proxy.listConversationForks(conversationId);
+
+// Fork a conversation at an entry
+Response response = proxy.forkConversationAtEntry(conversationId, entryId, jsonBody);
+```
+
+### Entries API
+
+```java
+// List conversation entries
+// channel: Channel.HISTORY for user-visible messages, Channel.MEMORY for agent memory
+// epoch: "latest", "all", or a numeric epoch identifier
+// forks: "none" or "all"
+Response response = proxy.listConversationEntries(
+    conversationId, after, limit, Channel.HISTORY, epoch, forks);
+
+// Append an entry (body is JSON string)
+Response response = proxy.appendConversationEntry(conversationId, jsonBody);
+```
+
+### Sharing API
+
+```java
+// List memberships
+Response response = proxy.listConversationMemberships(conversationId);
+
+// Share a conversation (body is JSON string with userId and accessLevel)
+Response response = proxy.shareConversation(conversationId, jsonBody);
+
+// Update membership
+Response response = proxy.updateConversationMembership(conversationId, userId, jsonBody);
+
+// Remove membership
+Response response = proxy.deleteConversationMembership(conversationId, userId);
+```
+
+### Ownership Transfers
+
+```java
+// List pending transfers
+Response response = proxy.listPendingTransfers(role);
+
+// Create ownership transfer
+Response response = proxy.createOwnershipTransfer(jsonBody);
+
+// Get transfer details
+Response response = proxy.getTransfer(transferId);
+
+// Accept transfer
+Response response = proxy.acceptTransfer(transferId);
+
+// Delete/cancel transfer
+Response response = proxy.deleteTransfer(transferId);
+```
+
+### Search API
+
+```java
+// Search conversations (body is JSON SearchConversationsRequest)
+Response response = proxy.searchConversations(jsonBody);
+
+// Index entries (body is JSON array of IndexEntryRequest)
+Response response = proxy.indexConversations(jsonBody);
+```
+
+### Response Cancellation
+
+```java
+// Cancel an in-progress response
+Response response = proxy.cancelResponse(conversationId);
+```
+
+## Using Generated API Clients
+
+For direct programmatic access without JAX-RS proxying, you can use the generated API clients with `MemoryServiceApiBuilder`:
+
+```java
+import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
+import io.github.chirino.memory.client.api.ConversationsApi;
+import io.github.chirino.memory.client.api.SearchApi;
+import io.github.chirino.memory.client.api.SharingApi;
+import io.github.chirino.memory.client.model.*;
+
+@ApplicationScoped
+public class MyService {
+
+    @Inject
+    MemoryServiceApiBuilder apiBuilder;
+
+    public Conversation getConversation(String bearerToken, UUID conversationId) {
+        ConversationsApi api = apiBuilder
+            .withBearerAuth(bearerToken)
+            .build(ConversationsApi.class);
+
+        return api.getConversation(conversationId);
+    }
+
+    public ListConversations200Response listConversations(String bearerToken) {
+        ConversationsApi api = apiBuilder
+            .withBearerAuth(bearerToken)
+            .build(ConversationsApi.class);
+
+        return api.listConversations(
+            "latest-fork",  // mode
+            null,           // after cursor
+            20,             // limit
+            null            // query
+        );
+    }
+
+    public ListConversationEntries200Response listEntries(
+            String bearerToken, UUID conversationId) {
+        ConversationsApi api = apiBuilder
+            .withBearerAuth(bearerToken)
+            .build(ConversationsApi.class);
+
+        return api.listConversationEntries(
+            conversationId,
+            null,               // after cursor
+            50,                 // limit
+            Channel.HISTORY,    // channel
+            "latest",           // epoch
+            "none"              // forks
+        );
+    }
+}
+```
+
+### Available API Classes
+
+| API Class | Description |
+|-----------|-------------|
+| `ConversationsApi` | CRUD operations for conversations and entries |
+| `SearchApi` | Semantic search and indexing |
+| `SharingApi` | Memberships and ownership transfers |
+
+## Error Handling
+
+```java
+import jakarta.ws.rs.WebApplicationException;
+
+try {
+    Response response = proxy.getConversation(conversationId);
+    if (response.getStatus() == 404) {
+        // Conversation not found
+    }
+} catch (WebApplicationException e) {
+    int status = e.getResponse().getStatus();
+    // Handle HTTP errors
+}
+```
+
+## Complete Example
+
+Here's a complete JAX-RS resource using `MemoryServiceProxy`:
+
+```java
+package org.acme;
+
+import io.github.chirino.memory.client.model.Channel;
+import io.github.chirino.memory.runtime.MemoryServiceProxy;
+import io.smallrye.common.annotation.Blocking;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
+@Path("/v1/conversations")
+@ApplicationScoped
+@Blocking
+public class ConversationsResource {
+
+    @Inject
+    MemoryServiceProxy proxy;
+
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listConversations(
+            @QueryParam("mode") String mode,
+            @QueryParam("after") String after,
+            @QueryParam("limit") Integer limit,
+            @QueryParam("query") String query) {
+        return proxy.listConversations(mode, after, limit, query);
+    }
+
+    @GET
+    @Path("/{conversationId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getConversation(
+            @PathParam("conversationId") String conversationId) {
+        return proxy.getConversation(conversationId);
+    }
+
+    @GET
+    @Path("/{conversationId}/entries")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listEntries(
+            @PathParam("conversationId") String conversationId,
+            @QueryParam("after") String after,
+            @QueryParam("limit") Integer limit) {
+        return proxy.listConversationEntries(
+            conversationId, after, limit, Channel.HISTORY, null, null);
+    }
+
+    @DELETE
+    @Path("/{conversationId}")
+    public Response deleteConversation(
+            @PathParam("conversationId") String conversationId) {
+        return proxy.deleteConversation(conversationId);
+    }
+}
 ```
 
 ## Next Steps
 
 - [gRPC Client](/docs/quarkus/grpc-client/) - For streaming and high-performance use cases
-- [LangChain4j Integration](/docs/quarkus/langchain4j/) - ChatMemory provider
+- [Advanced Features](/docs/quarkus/advanced-features/) - Forking, streaming, and response resumption

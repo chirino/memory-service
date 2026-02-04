@@ -100,9 +100,9 @@ This time when you browse to to the demo agent app at
 [http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942) 
 you should see the messages that were exchanged between you and the agent.
 
-## Expose Conversation Messages API
+## Expose Conversation Entries API
 
-To let the frontend load a conversation's message history,
+To let the frontend load a conversation's entry history,
 add a jackson dependency to enable JSON serialization/deserialization to the `pom.xml`:
 
 ```xml
@@ -117,7 +117,7 @@ Then create a REST resource that proxies requests to Memory Service:
 ```java
 package org.acme;
 
-import io.github.chirino.memory.client.model.MessageChannel;
+import io.github.chirino.memory.client.model.Channel;
 import io.github.chirino.memory.runtime.MemoryServiceProxy;
 import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -135,7 +135,7 @@ import jakarta.ws.rs.core.Response;
 @Blocking
 public class ConversationsResource {
 
-    @Inject 
+    @Inject
     MemoryServiceProxy proxy;
 
     @GET
@@ -146,14 +146,14 @@ public class ConversationsResource {
     }
 
     @GET
-    @Path("/{conversationId}/messages")
+    @Path("/{conversationId}/entries")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response listConversationMessages(
+    public Response listConversationEntries(
             @PathParam("conversationId") String conversationId,
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit) {
-        return proxy.listConversationMessages(
-                conversationId, after, limit, MessageChannel.HISTORY, null);
+        return proxy.listConversationEntries(
+                conversationId, after, limit, Channel.HISTORY, null, null);
     }
 }
 ```
@@ -162,7 +162,7 @@ The `MemoryServiceProxy` is helper class that makes it easier to implement a JAX
 - Authentication with the memory service
 - Passing through the user's bearer token for authorization
 
-The `MessageChannel.HISTORY` parameter ensures you get messages from the history channel (recorded by `@RecordConversation`) rather than the memory channel (used by agents internally).
+The `Channel.HISTORY` parameter ensures you get entries from the history channel (recorded by `@RecordConversation`) rather than the memory channel (used by agents internally).
 
 Test it with curl:
 
@@ -170,11 +170,11 @@ Test it with curl:
 curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/ \
   -H "Authorization: Bearer $(get-token)" | jq
 
-curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/messages \
+curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
-You should see the conversation and messages that were exchanged between you and the agent.
+You should see the conversation and entries that were exchanged between you and the agent.
 
 ## Expose Conversation Listing API
 
