@@ -12,7 +12,7 @@ export const mavenDep = `<dependency>
   <version>${PROJECT_VERSION}</version>
 </dependency>`;
 
-The Quarkus extension provides a gRPC client for high-performance communication with Memory Service.
+The Quarkus extension provides gRPC clients for high-performance communication with Memory Service.
 
 ## Setup
 
@@ -23,34 +23,111 @@ Add the gRPC client dependency:
 ## Configuration
 
 ```properties
-quarkus.grpc.clients.memory-service.host=localhost
-quarkus.grpc.clients.memory-service.port=9000
+# Configure the gRPC client for each service you need
+quarkus.grpc.clients.conversations.host=localhost
+quarkus.grpc.clients.conversations.port=9000
+
+quarkus.grpc.clients.entries.host=localhost
+quarkus.grpc.clients.entries.port=9000
+
+quarkus.grpc.clients.search.host=localhost
+quarkus.grpc.clients.search.port=9000
 ```
 
-## Injecting the Client
+## Available Services
 
-### Blocking Client
+The Memory Service gRPC API is split into multiple services:
+
+| Service | Description |
+|---------|-------------|
+| `ConversationsService` | CRUD operations for conversations |
+| `EntriesService` | List, append, and sync entries |
+| `ConversationMembershipsService` | Sharing and membership management |
+| `OwnershipTransfersService` | Ownership transfer operations |
+| `SearchService` | Semantic search and indexing |
+| `ResponseResumerService` | Streaming response resumption |
+| `SystemService` | Health checks |
+
+## UUID Handling
+
+UUID fields in gRPC are represented as 16-byte big-endian binary values (not strings). Use this helper to convert:
 
 ```java
-@GrpcClient("memory-service")
-MemoryServiceGrpc.MemoryServiceBlockingStub client;
+import com.google.protobuf.ByteString;
+import java.nio.ByteBuffer;
+import java.util.UUID;
+
+public class UuidHelper {
+    public static ByteString toBytes(UUID uuid) {
+        ByteBuffer buffer = ByteBuffer.allocate(16);
+        buffer.putLong(uuid.getMostSignificantBits());
+        buffer.putLong(uuid.getLeastSignificantBits());
+        return ByteString.copyFrom(buffer.array());
+    }
+
+    public static UUID fromBytes(ByteString bytes) {
+        ByteBuffer buffer = ByteBuffer.wrap(bytes.toByteArray());
+        return new UUID(buffer.getLong(), buffer.getLong());
+    }
+}
 ```
 
-### Async Client
+## Injecting Clients
+
+### ConversationsService
 
 ```java
-@GrpcClient("memory-service")
-MemoryServiceGrpc.MemoryServiceStub asyncClient;
+import io.github.chirino.memory.grpc.v1.*;
+import io.quarkus.grpc.GrpcClient;
+
+@GrpcClient("conversations")
+ConversationsServiceGrpc.ConversationsServiceBlockingStub conversationsClient;
 ```
 
-## Conversations
+### EntriesService
+
+```java
+@GrpcClient("entries")
+EntriesServiceGrpc.EntriesServiceBlockingStub entriesClient;
+```
+
+### SearchService
+
+```java
+@GrpcClient("search")
+SearchServiceGrpc.SearchServiceBlockingStub searchClient;
+```
+
+## Conversations API
+
+### List Conversations
+
+```java
+import io.github.chirino.memory.grpc.v1.*;
+
+ListConversationsResponse response = conversationsClient.listConversations(
+    ListConversationsRequest.newBuilder()
+        .setMode(ConversationListMode.LATEST_FORK)
+        .setPage(PageRequest.newBuilder()
+            .setPageSize(20)
+            .build())
+        .build()
+);
+
+for (ConversationSummary conv : response.getConversationsList()) {
+    UUID id = UuidHelper.fromBytes(conv.getId());
+    System.out.println(conv.getTitle() + " - " + id);
+}
+```
 
 ### Get Conversation
 
 ```java
-Conversation conv = client.getConversation(
+UUID conversationId = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+
+Conversation conv = conversationsClient.getConversation(
     GetConversationRequest.newBuilder()
-        .setId("my-conversation")
+        .setConversationId(UuidHelper.toBytes(conversationId))
         .build()
 );
 ```
@@ -58,53 +135,174 @@ Conversation conv = client.getConversation(
 ### Create Conversation
 
 ```java
-Conversation conv = client.createConversation(
+import com.google.protobuf.Struct;
+import com.google.protobuf.Value;
+
+Conversation conv = conversationsClient.createConversation(
     CreateConversationRequest.newBuilder()
-        .setId("my-conversation")
-        .putMetadata("topic", "support")
+        .setTitle("My Conversation")
+        .setMetadata(Struct.newBuilder()
+            .putFields("topic", Value.newBuilder().setStringValue("support").build())
+            .build())
         .build()
 );
 ```
 
-### List Conversations
+### Delete Conversation
 
 ```java
-ListConversationsResponse response = client.listConversations(
-    ListConversationsRequest.newBuilder()
-        .setLimit(20)
+conversationsClient.deleteConversation(
+    DeleteConversationRequest.newBuilder()
+        .setConversationId(UuidHelper.toBytes(conversationId))
         .build()
 );
-
-for (Conversation conv : response.getConversationsList()) {
-    System.out.println(conv.getId());
-}
 ```
 
 ### Fork Conversation
 
 ```java
-Conversation forked = client.forkConversation(
+UUID conversationId = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+UUID entryId = UUID.fromString("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+
+Conversation forked = conversationsClient.forkConversation(
     ForkConversationRequest.newBuilder()
-        .setId("original-id")
-        .setNewId("forked-conversation")
-        .setAtMessage(5)
+        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setEntryId(UuidHelper.toBytes(entryId))
+        .setTitle("Forked conversation")
         .build()
 );
 ```
 
-## Streaming Messages
-
-### Server Streaming - Get All Messages
+### List Forks
 
 ```java
-asyncClient.getMessages(
-    GetMessagesRequest.newBuilder()
-        .setConversationId("my-conversation")
+ListForksResponse forks = conversationsClient.listForks(
+    ListForksRequest.newBuilder()
+        .setConversationId(UuidHelper.toBytes(conversationId))
+        .build()
+);
+
+for (ConversationForkSummary fork : forks.getForksList()) {
+    System.out.println("Fork: " + fork.getTitle());
+}
+```
+
+## Entries API
+
+### List Entries
+
+```java
+ListEntriesResponse response = entriesClient.listEntries(
+    ListEntriesRequest.newBuilder()
+        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setChannel(Channel.HISTORY)
+        .setEpochFilter("latest")
+        .setForks("none")
+        .setPage(PageRequest.newBuilder()
+            .setPageSize(50)
+            .build())
+        .build()
+);
+
+for (Entry entry : response.getEntriesList()) {
+    System.out.println(entry.getContentType() + ": " + entry.getContentList());
+}
+```
+
+### Append Entry
+
+```java
+import com.google.protobuf.Value;
+import com.google.protobuf.Struct;
+
+Entry entry = entriesClient.appendEntry(
+    AppendEntryRequest.newBuilder()
+        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setEntry(CreateEntryRequest.newBuilder()
+            .setUserId("user123")
+            .setChannel(Channel.HISTORY)
+            .setContentType("history")
+            .addContent(Value.newBuilder()
+                .setStructValue(Struct.newBuilder()
+                    .putFields("text", Value.newBuilder()
+                        .setStringValue("Hello, how can I help?").build())
+                    .putFields("role", Value.newBuilder()
+                        .setStringValue("USER").build())
+                    .build())
+                .build())
+            .build())
+        .build()
+);
+```
+
+### Sync Agent Memory
+
+```java
+SyncEntriesResponse response = entriesClient.syncEntries(
+    SyncEntriesRequest.newBuilder()
+        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setEntry(CreateEntryRequest.newBuilder()
+            .setChannel(Channel.MEMORY)
+            .setContentType("LC4J")
+            .addAllContent(memoryContent)
+            .build())
+        .build()
+);
+
+if (response.getNoOp()) {
+    System.out.println("Memory already up to date");
+} else if (response.getEpochIncremented()) {
+    System.out.println("New epoch started: " + response.getEpoch());
+}
+```
+
+## Search API
+
+### Search Conversations
+
+```java
+SearchEntriesResponse response = searchClient.searchConversations(
+    SearchEntriesRequest.newBuilder()
+        .setQuery("authentication configuration")
+        .setLimit(20)
+        .setIncludeEntry(true)
+        .build()
+);
+
+for (SearchResult result : response.getResultsList()) {
+    UUID convId = UuidHelper.fromBytes(result.getConversationId());
+    System.out.println("Score: " + result.getScore() +
+        " - " + result.getConversationTitle());
+}
+```
+
+## Response Resumer (Streaming)
+
+The `ResponseResumerService` handles streaming response resumption for interrupted connections:
+
+```java
+@GrpcClient("responseresumer")
+ResponseResumerServiceGrpc.ResponseResumerServiceStub resumerClient;
+
+// Check if response resumer is enabled
+IsEnabledResponse enabled = resumerClient.isEnabled(Empty.getDefaultInstance());
+
+// Check which conversations have responses in progress
+CheckConversationsResponse check = resumerClient.checkConversations(
+    CheckConversationsRequest.newBuilder()
+        .addConversationIds(UuidHelper.toBytes(conversationId))
+        .build()
+);
+
+// Replay response tokens
+resumerClient.replayResponseTokens(
+    ReplayResponseTokensRequest.newBuilder()
+        .setConversationId(UuidHelper.toBytes(conversationId))
         .build(),
-    new StreamObserver<Message>() {
+    new StreamObserver<ReplayResponseTokensResponse>() {
         @Override
-        public void onNext(Message message) {
-            System.out.println("Received: " + message.getContent());
+        public void onNext(ReplayResponseTokensResponse response) {
+            System.out.print(response.getToken());
         }
 
         @Override
@@ -114,38 +312,7 @@ asyncClient.getMessages(
 
         @Override
         public void onCompleted() {
-            System.out.println("Stream completed");
-        }
-    }
-);
-```
-
-### Real-time Message Updates
-
-Subscribe to new messages as they arrive:
-
-```java
-asyncClient.streamMessages(
-    StreamMessagesRequest.newBuilder()
-        .setConversationId("my-conversation")
-        .setFromSequence(lastKnownSequence)
-        .build(),
-    new StreamObserver<Message>() {
-        @Override
-        public void onNext(Message message) {
-            // Handle new message in real-time
-            updateUI(message);
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            // Handle reconnection
-            reconnect();
-        }
-
-        @Override
-        public void onCompleted() {
-            // Stream ended
+            System.out.println("\nReplay completed");
         }
     }
 );
@@ -154,8 +321,10 @@ asyncClient.streamMessages(
 ## Error Handling
 
 ```java
+import io.grpc.StatusRuntimeException;
+
 try {
-    Conversation conv = client.getConversation(request);
+    Conversation conv = conversationsClient.getConversation(request);
 } catch (StatusRuntimeException e) {
     switch (e.getStatus().getCode()) {
         case NOT_FOUND:
@@ -178,20 +347,20 @@ try {
 For production, enable TLS:
 
 ```properties
-quarkus.grpc.clients.memory-service.tls.enabled=true
-quarkus.grpc.clients.memory-service.tls.trust-certificate-pem.certs=ca.pem
+quarkus.grpc.clients.conversations.tls.enabled=true
+quarkus.grpc.clients.conversations.tls.trust-certificate-pem.certs=ca.pem
 ```
 
 ## When to Use gRPC
 
 Choose gRPC over REST when you need:
 
-- **Streaming** - Real-time message updates
+- **Streaming** - Real-time response resumption with `ResponseResumerService`
 - **High throughput** - Binary protocol is more efficient
 - **Strong typing** - Generated stubs catch errors at compile time
-- **Bi-directional communication** - Full duplex streaming
+- **Bi-directional communication** - Full duplex streaming for response recording
 
 ## Next Steps
 
 - [REST Client](/docs/quarkus/rest-client/) - For simpler use cases
-- [LangChain4j Integration](/docs/quarkus/langchain4j/) - ChatMemory provider
+- [Advanced Features](/docs/quarkus/advanced-features/) - Forking, streaming, and response resumption

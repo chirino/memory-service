@@ -121,6 +121,7 @@ Create a REST controller that proxies requests to Memory Service:
 package com.example.demo;
 
 import io.github.chirino.memoryservice.client.MemoryServiceProxy;
+import io.github.chirino.memoryservice.client.model.Channel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -143,12 +144,16 @@ class MemoryServiceProxyController {
         return proxy.getConversation(conversationId);
     }
 
-    @GetMapping("/{conversationId}/messages")
-    public ResponseEntity<?> listConversationMessages(
+    @GetMapping("/{conversationId}/entries")
+    public ResponseEntity<?> listConversationEntries(
             @PathVariable String conversationId,
             @RequestParam(required = false) String after,
-            @RequestParam(required = false) Integer limit) {
-        return proxy.listConversationMessages(conversationId, after, limit);
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String epoch,
+            @RequestParam(required = false) String forks) {
+        Channel channelEnum = channel != null ? Channel.fromValue(channel) : Channel.HISTORY;
+        return proxy.listConversationEntries(conversationId, after, limit, channelEnum, epoch, forks);
     }
 }
 ```
@@ -162,11 +167,11 @@ curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6e
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/messages \
+curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
-You should see the conversation and messages that were exchanged between you and the agent.
+You should see the conversation and entries that were exchanged between you and the agent.
 
 ## Expose Conversation Listing API
 

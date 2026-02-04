@@ -20,12 +20,12 @@ Make sure you've completed the previous guides:
 Conversation forking lets users branch off from any point in a conversation to explore alternative paths. Add these methods to the `MemoryServiceProxyController` to enable forking and listing forks:
 
 ```java
-@PostMapping("/{conversationId}/messages/{messageId}/fork")
-public ResponseEntity<?> forkConversationAtMessage(
+@PostMapping("/{conversationId}/entries/{entryId}/fork")
+public ResponseEntity<?> forkConversationAtEntry(
         @PathVariable String conversationId,
-        @PathVariable String messageId,
+        @PathVariable String entryId,
         @RequestBody(required = false) String body) {
-    return proxy.forkConversationAtMessage(conversationId, messageId, body);
+    return proxy.forkConversationAtEntry(conversationId, entryId, body);
 }
 
 @GetMapping("/{conversationId}/forks")
@@ -35,18 +35,18 @@ public ResponseEntity<?> listConversationForks(@PathVariable String conversation
 ```
 
 The fork endpoint creates a new conversation that:
-- Copies all messages up to and excluding the specified message
+- Copies all entries up to and excluding the specified entry
 - Creates a new conversation ID for the fork
 - Links the fork back to the original conversation
 
 Test it with curl:
 
 ```bash
-# Get the id of the first message in the conversation
-FIRST_MESSAGE_ID=$(curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/messages \
+# Get the id of the first entry in the conversation
+FIRST_ENTRY_ID=$(curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
   -H "Authorization: Bearer $(get-token)" | jq -r '.data[0].id')
 
-curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/messages/$FIRST_MESSAGE_ID/fork \
+curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries/$FIRST_ENTRY_ID/fork \
   -H "Authorization: Bearer $(get-token)" \
   -H "Content-Type: application/json" \
   -d '{"title": "Alternative approach"}' | jq
@@ -176,7 +176,7 @@ package com.example.demo;
 
 import io.github.chirino.memoryservice.history.ResponseResumer;
 import io.github.chirino.memoryservice.security.SecurityHelper;
-import io.github.chirino.memoryservice.spring.MemoryServiceProxy;
+import io.github.chirino.memoryservice.client.MemoryServiceProxy;
 import java.io.IOException;
 import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
