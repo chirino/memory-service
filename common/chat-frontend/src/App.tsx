@@ -8,7 +8,7 @@ import { ChatSidebar } from "@/components/chat-sidebar";
 import { SearchModal } from "@/components/search-modal";
 import { PendingTransfersPanel } from "@/components/sharing";
 import { useResumeCheck } from "@/hooks/useResumeCheck";
-import { useAuth, getAccessToken } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 
 type ListUserConversationsResponse = {
   data?: ConversationSummary[];
@@ -252,31 +252,6 @@ function App() {
     },
   });
 
-  const indexConversationMutation = useMutation({
-    mutationFn: async (conversationId: string) => {
-      const headers: Record<string, string> = {};
-      const token = getAccessToken();
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-      const response = await fetch(`/v1/conversations/${conversationId}/index`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        throw new Error("Indexing failed");
-      }
-    },
-    onSuccess: (_, conversationId) => {
-      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      void queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
-      setStatusMessage(null);
-    },
-    onError: () => {
-      setStatusMessage("Failed to index conversation. Please try again.");
-    },
-  });
-
   const handleNewChat = () => {
     setStatusMessage(null);
     const newId = generateConversationId();
@@ -311,14 +286,6 @@ function App() {
       deleteConversationMutation.mutate(conversationId);
     },
     [deleteConversationMutation],
-  );
-
-  const handleIndexConversationById = useCallback(
-    (conversationId: string) => {
-      setStatusMessage(null);
-      indexConversationMutation.mutate(conversationId);
-    },
-    [indexConversationMutation],
   );
 
   useEffect(() => {
@@ -370,7 +337,6 @@ function App() {
           onSelectConversationId={handleSelectConversationId}
           knownConversationIds={resolvedConversationIds}
           resumableConversationIds={resumableConversationIds}
-          onIndexConversation={handleIndexConversationById}
           onDeleteConversation={handleDeleteConversationById}
           currentUserId={currentUserId}
           currentUser={currentUser}

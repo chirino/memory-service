@@ -59,7 +59,7 @@ public class MemoryServiceProxyResource {
             @QueryParam("after") String after,
             @QueryParam("limit") Integer limit) {
         return proxy.listConversationEntries(
-                conversationId, after, limit, Channel.HISTORY, null, null);
+                conversationId, after, limit, Channel.HISTORY, null, "all");
     }
 
     @POST
