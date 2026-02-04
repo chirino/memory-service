@@ -2,9 +2,6 @@
 
 * Figure out how muli-modal content should be handled.
     * this will likely impact our history handling APIS.
-* Observability:
-    * Expose Metrics
-    * Integrate OpenTracing
 * Improve the langchain4j memory interface: Switch to the langchain4j MemoryChatStore once https://github.com/langchain4j/langchain4j/pull/4416 is released.
 * document sharing: concepts and spring/quarkus howtos
 * document index/search apis: concepts and spring/quarkus howtos (provide RAG example).
@@ -18,6 +15,7 @@
 * validate CreateMessageRequest.userId matches the bearer token principle.
 * test grpc resume redirects on whne a loadbalancer sits in front of the memory-service
 * validate all api fields
+* review all config key names: keep them consistent and simple.
 * test/find the message size limits of the app.
     * use that info to protect against DOS: huge api requests .
 
