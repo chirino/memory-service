@@ -61,3 +61,23 @@ Feature: Admin Stats REST API
     Given Prometheus is available
     When I call GET "/v1/admin/stats/request-rate"
     Then the response status should be 200
+
+  # Datastore metrics (requires MeteredMemoryStore)
+
+  Scenario: Get database pool utilization returns percentage data
+    When I call GET "/v1/admin/stats/db-pool-utilization"
+    Then the response status should be 200
+    And the response should be a time series with metric "db_pool_utilization"
+    And the response should be a time series with unit "percent"
+
+  Scenario: Get store latency P95 returns multi-series data
+    When I call GET "/v1/admin/stats/store-latency-p95"
+    Then the response status should be 200
+    And the response should be a multi-series with metric "store_latency_p95"
+    And the response should be a multi-series with unit "seconds"
+
+  Scenario: Get store throughput returns multi-series data
+    When I call GET "/v1/admin/stats/store-throughput"
+    Then the response status should be 200
+    And the response should be a multi-series with metric "store_throughput"
+    And the response should be a multi-series with unit "operations/sec"

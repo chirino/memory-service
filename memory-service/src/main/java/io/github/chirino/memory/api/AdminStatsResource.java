@@ -1,6 +1,8 @@
 package io.github.chirino.memory.api;
 
 import io.github.chirino.memory.admin.client.model.ErrorResponse;
+import io.github.chirino.memory.admin.client.model.MultiSeriesResponse;
+import io.github.chirino.memory.admin.client.model.MultiSeriesResponseSeriesInner;
 import io.github.chirino.memory.admin.client.model.TimeSeriesResponse;
 import io.github.chirino.memory.admin.client.model.TimeSeriesResponseDataInner;
 import io.github.chirino.memory.prometheus.PrometheusClient;
@@ -61,6 +63,16 @@ public class AdminStatsResource {
                     + "(sum(rate(memory_entries_cache_hits_total[5m])) + "
                     + "sum(rate(memory_entries_cache_misses_total[5m]))) * 100";
 
+    // Datastore metrics (requires MeteredMemoryStore)
+    private static final String DB_POOL_UTILIZATION_QUERY =
+            "sum(agroal_active_count) / "
+                    + "(sum(agroal_active_count) + sum(agroal_available_count)) * 100";
+    private static final String STORE_LATENCY_P95_QUERY =
+            "histogram_quantile(0.95, "
+                    + "sum(rate(memory_store_operation_seconds_bucket[5m])) by (le, operation))";
+    private static final String STORE_THROUGHPUT_QUERY =
+            "sum(rate(memory_store_operation_seconds_count[5m])) by (operation)";
+
     @ConfigProperty(name = "memory-service.prometheus.url")
     Optional<String> prometheusUrl;
 
@@ -110,6 +122,48 @@ public class AdminStatsResource {
                 CACHE_HIT_RATE_QUERY, "cache_hit_rate", "percent", start, end, step);
     }
 
+    @GET
+    @Path("/db-pool-utilization")
+    public Response getDbPoolUtilization(
+            @QueryParam("start") String start,
+            @QueryParam("end") String end,
+            @QueryParam("step") @DefaultValue("60s") String step) {
+        return executeRangeQuery(
+                DB_POOL_UTILIZATION_QUERY, "db_pool_utilization", "percent", start, end, step);
+    }
+
+    @GET
+    @Path("/store-latency-p95")
+    public Response getStoreLatencyP95(
+            @QueryParam("start") String start,
+            @QueryParam("end") String end,
+            @QueryParam("step") @DefaultValue("60s") String step) {
+        return executeMultiSeriesQuery(
+                STORE_LATENCY_P95_QUERY,
+                "store_latency_p95",
+                "seconds",
+                "operation",
+                start,
+                end,
+                step);
+    }
+
+    @GET
+    @Path("/store-throughput")
+    public Response getStoreThroughput(
+            @QueryParam("start") String start,
+            @QueryParam("end") String end,
+            @QueryParam("step") @DefaultValue("60s") String step) {
+        return executeMultiSeriesQuery(
+                STORE_THROUGHPUT_QUERY,
+                "store_throughput",
+                "operations/sec",
+                "operation",
+                start,
+                end,
+                step);
+    }
+
     private Response executeRangeQuery(
             String query, String metric, String unit, String start, String end, String step) {
         try {
@@ -138,6 +192,46 @@ public class AdminStatsResource {
                     new PrometheusUnavailableException("Prometheus query failed", e));
         } catch (Exception e) {
             // Catch-all for unexpected errors during Prometheus communication
+            LOG.warnf("Unexpected error querying Prometheus: %s", e.getMessage());
+            return prometheusUnavailable(
+                    new PrometheusUnavailableException(
+                            "Prometheus query failed: " + e.getMessage(), e));
+        }
+    }
+
+    private Response executeMultiSeriesQuery(
+            String query,
+            String metric,
+            String unit,
+            String labelKey,
+            String start,
+            String end,
+            String step) {
+        try {
+            roleResolver.requireAuditor(identity, apiKeyContext);
+            checkPrometheusConfigured();
+
+            // Default time range: last hour
+            String resolvedStart =
+                    start != null ? start : Instant.now().minus(1, ChronoUnit.HOURS).toString();
+            String resolvedEnd = end != null ? end : Instant.now().toString();
+
+            JsonObject prometheusResponse =
+                    prometheusClient.queryRange(query, resolvedStart, resolvedEnd, step);
+            MultiSeriesResponse response =
+                    convertToMultiSeries(prometheusResponse, metric, unit, labelKey);
+            return Response.ok(response).build();
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        } catch (PrometheusNotConfiguredException e) {
+            return prometheusNotConfigured(e);
+        } catch (PrometheusUnavailableException e) {
+            return prometheusUnavailable(e);
+        } catch (WebApplicationException e) {
+            LOG.warnf("Prometheus query failed: %s", e.getMessage());
+            return prometheusUnavailable(
+                    new PrometheusUnavailableException("Prometheus query failed", e));
+        } catch (Exception e) {
             LOG.warnf("Unexpected error querying Prometheus: %s", e.getMessage());
             return prometheusUnavailable(
                     new PrometheusUnavailableException(
@@ -180,6 +274,60 @@ public class AdminStatsResource {
             }
         }
         response.setData(data);
+        return response;
+    }
+
+    private MultiSeriesResponse convertToMultiSeries(
+            JsonObject prometheus, String metric, String unit, String labelKey) {
+        MultiSeriesResponse response = new MultiSeriesResponse();
+        response.setMetric(metric);
+        response.setUnit(unit);
+
+        List<MultiSeriesResponseSeriesInner> seriesList = new ArrayList<>();
+        JsonObject dataObj = prometheus.getJsonObject("data");
+        if (dataObj != null) {
+            JsonArray results = dataObj.getJsonArray("result");
+            if (results != null) {
+                for (int i = 0; i < results.size(); i++) {
+                    JsonObject result = results.getJsonObject(i);
+
+                    // Extract label value from metric labels
+                    JsonObject metricLabels = result.getJsonObject("metric");
+                    String label =
+                            metricLabels != null && metricLabels.containsKey(labelKey)
+                                    ? metricLabels.getString(labelKey)
+                                    : "unknown";
+
+                    // Extract time series data
+                    List<TimeSeriesResponseDataInner> dataPoints = new ArrayList<>();
+                    JsonArray values = result.getJsonArray("values");
+                    if (values != null) {
+                        for (int j = 0; j < values.size(); j++) {
+                            JsonArray point = values.getJsonArray(j);
+                            TimeSeriesResponseDataInner dp = new TimeSeriesResponseDataInner();
+                            long epochSeconds = point.getJsonNumber(0).longValue();
+                            dp.setTimestamp(
+                                    Instant.ofEpochSecond(epochSeconds).atOffset(ZoneOffset.UTC));
+                            String valueStr = point.getString(1);
+                            if ("NaN".equals(valueStr)
+                                    || "+Inf".equals(valueStr)
+                                    || "-Inf".equals(valueStr)) {
+                                dp.setValue(null);
+                            } else {
+                                dp.setValue(Double.parseDouble(valueStr));
+                            }
+                            dataPoints.add(dp);
+                        }
+                    }
+
+                    MultiSeriesResponseSeriesInner series = new MultiSeriesResponseSeriesInner();
+                    series.setLabel(label);
+                    series.setData(dataPoints);
+                    seriesList.add(series);
+                }
+            }
+        }
+        response.setSeries(seriesList);
         return response;
     }
 

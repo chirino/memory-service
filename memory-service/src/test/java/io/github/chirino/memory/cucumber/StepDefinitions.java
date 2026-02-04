@@ -4000,4 +4000,28 @@ public class StepDefinitions {
                 dataSize,
                 greaterThan(minPoints - 1));
     }
+
+    @io.cucumber.java.en.Then("the response should be a multi-series with metric {string}")
+    public void theResponseShouldBeAMultiSeriesWithMetric(String expectedMetric) {
+        trackUsage();
+        String metric = lastResponse.jsonPath().getString("metric");
+        assertThat("Multi-series metric should match", metric, is(expectedMetric));
+    }
+
+    @io.cucumber.java.en.Then("the response should be a multi-series with unit {string}")
+    public void theResponseShouldBeAMultiSeriesWithUnit(String expectedUnit) {
+        trackUsage();
+        String unit = lastResponse.jsonPath().getString("unit");
+        assertThat("Multi-series unit should match", unit, is(expectedUnit));
+    }
+
+    @io.cucumber.java.en.Then("the response multi-series should have at least {int} series")
+    public void theResponseMultiSeriesShouldHaveAtLeastSeries(int minSeries) {
+        trackUsage();
+        int seriesCount = lastResponse.jsonPath().getList("series").size();
+        assertThat(
+                "Multi-series should have at least " + minSeries + " series",
+                seriesCount,
+                greaterThan(minSeries - 1));
+    }
 }

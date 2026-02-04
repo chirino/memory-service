@@ -21,8 +21,8 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 @ScenarioScope
 public class MockPrometheusClient implements PrometheusClient {
 
-    // Canned Prometheus response for testing
-    private static final String MOCK_RESPONSE =
+    // Canned Prometheus response for single-series queries
+    private static final String MOCK_SINGLE_SERIES_RESPONSE =
             """
             {
               "status": "success",
@@ -40,6 +40,35 @@ public class MockPrometheusClient implements PrometheusClient {
             }
             """;
 
+    // Canned Prometheus response for multi-series queries (with operation labels)
+    private static final String MOCK_MULTI_SERIES_RESPONSE =
+            """
+            {
+              "status": "success",
+              "data": {
+                "resultType": "matrix",
+                "result": [
+                  {
+                    "metric": {"operation": "createConversation"},
+                    "values": [
+                      [1704067200, "0.025"],
+                      [1704067260, "0.028"],
+                      [1704067320, "0.022"]
+                    ]
+                  },
+                  {
+                    "metric": {"operation": "appendAgentEntries"},
+                    "values": [
+                      [1704067200, "0.045"],
+                      [1704067260, "0.052"],
+                      [1704067320, "0.048"]
+                    ]
+                  }
+                ]
+              }
+            }
+            """;
+
     private boolean available = true;
     private String customResponse = null;
 
@@ -48,8 +77,25 @@ public class MockPrometheusClient implements PrometheusClient {
         if (!available) {
             throw new WebApplicationException("Prometheus unavailable", 503);
         }
-        String responseJson = customResponse != null ? customResponse : MOCK_RESPONSE;
+        String responseJson;
+        if (customResponse != null) {
+            responseJson = customResponse;
+        } else if (isMultiSeriesQuery(query)) {
+            responseJson = MOCK_MULTI_SERIES_RESPONSE;
+        } else {
+            responseJson = MOCK_SINGLE_SERIES_RESPONSE;
+        }
         return Json.createReader(new StringReader(responseJson)).readObject();
+    }
+
+    /**
+     * Detect if the query is a multi-series query based on the "by" clause.
+     *
+     * @param query the PromQL query
+     * @return true if the query groups by labels
+     */
+    private boolean isMultiSeriesQuery(String query) {
+        return query != null && query.contains("by (");
     }
 
     /**

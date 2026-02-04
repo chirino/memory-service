@@ -666,6 +666,134 @@ paths:
       security:
         - BearerAuth: []
 
+  /v1/admin/stats/db-pool-utilization:
+    get:
+      tags: [Admin Stats]
+      summary: Get database connection pool utilization over time
+      description: |-
+        Returns the database connection pool utilization as a percentage.
+        This metric shows how many connections are active vs available.
+        Requires auditor or admin role.
+
+        **Requires Prometheus**: This endpoint queries Prometheus for metrics.
+        If Prometheus is not configured, returns 501 Not Implemented.
+      operationId: getDbPoolUtilization
+      parameters:
+        - $ref: '#/components/parameters/StatsStart'
+        - $ref: '#/components/parameters/StatsEnd'
+        - $ref: '#/components/parameters/StatsStep'
+      responses:
+        '200':
+          description: Time series data for database pool utilization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesResponse'
+        '501':
+          description: Prometheus not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Prometheus unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/stats/store-latency-p95:
+    get:
+      tags: [Admin Stats]
+      summary: Get P95 store operation latency by operation type
+      description: |-
+        Returns the 95th percentile latency for memory store operations,
+        broken down by operation type (e.g., createConversation, appendAgentEntries).
+        Requires auditor or admin role.
+
+        **Requires Prometheus**: This endpoint queries Prometheus for metrics.
+        If Prometheus is not configured, returns 501 Not Implemented.
+
+        **Requires MeteredMemoryStore**: This endpoint relies on metrics from
+        MeteredMemoryStore. If the store is not instrumented, the response
+        will be empty.
+      operationId: getStoreLatencyP95
+      parameters:
+        - $ref: '#/components/parameters/StatsStart'
+        - $ref: '#/components/parameters/StatsEnd'
+        - $ref: '#/components/parameters/StatsStep'
+      responses:
+        '200':
+          description: Multi-series time series data for store operation latency.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MultiSeriesResponse'
+        '501':
+          description: Prometheus not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Prometheus unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/stats/store-throughput:
+    get:
+      tags: [Admin Stats]
+      summary: Get store operation throughput by operation type
+      description: |-
+        Returns the throughput (operations per second) for memory store operations,
+        broken down by operation type (e.g., createConversation, appendAgentEntries).
+        Requires auditor or admin role.
+
+        **Requires Prometheus**: This endpoint queries Prometheus for metrics.
+        If Prometheus is not configured, returns 501 Not Implemented.
+
+        **Requires MeteredMemoryStore**: This endpoint relies on metrics from
+        MeteredMemoryStore. If the store is not instrumented, the response
+        will be empty.
+      operationId: getStoreThroughput
+      parameters:
+        - $ref: '#/components/parameters/StatsStart'
+        - $ref: '#/components/parameters/StatsEnd'
+        - $ref: '#/components/parameters/StatsStep'
+      responses:
+        '200':
+          description: Multi-series time series data for store operation throughput.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MultiSeriesResponse'
+        '501':
+          description: Prometheus not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Prometheus unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1019,4 +1147,43 @@ components:
           format: double
           description: Value at this timestamp.
           example: 42.5
+
+    MultiSeriesResponse:
+      type: object
+      description: Multi-series time series data for metrics grouped by a label (e.g., operation type).
+      required:
+        - metric
+        - unit
+        - series
+      properties:
+        metric:
+          type: string
+          description: Metric identifier (e.g., "store_latency_p95", "store_throughput").
+          example: "store_throughput"
+        unit:
+          type: string
+          description: Unit of measurement (e.g., "seconds", "operations/sec").
+          example: "operations/sec"
+        series:
+          type: array
+          description: Multiple time series, each with a label identifying the group.
+          items:
+            $ref: '#/components/schemas/LabeledTimeSeries'
+
+    LabeledTimeSeries:
+      type: object
+      description: A labeled time series within a multi-series response.
+      required:
+        - label
+        - data
+      properties:
+        label:
+          type: string
+          description: Label identifying this series (e.g., operation name).
+          example: "createConversation"
+        data:
+          type: array
+          description: Time series data points for this label.
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
 
