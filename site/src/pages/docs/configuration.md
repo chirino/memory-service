@@ -296,23 +296,12 @@ QUARKUS_DATASOURCE_JDBC_MAX_SIZE=20
 QUARKUS_DATASOURCE_JDBC_MIN_SIZE=5
 ```
 
-### Health Checks and Metrics
+### Health Checks
 
 ```bash
 # Enable health endpoints
 QUARKUS_HEALTH_EXTENSIONS_ENABLED=true
-
-# Enable Prometheus metrics
-QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED=true
 ```
-
-When cache is enabled, the following metrics are available:
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `memory_entries_cache_hits_total` | Counter | Number of cache hits for memory entries |
-| `memory_entries_cache_misses_total` | Counter | Number of cache misses for memory entries |
-| `memory_entries_cache_errors_total` | Counter | Number of cache errors for memory entries |
 
 ### Logging
 
@@ -320,6 +309,193 @@ When cache is enabled, the following metrics are available:
 # Set log level
 QUARKUS_LOG_LEVEL=INFO
 QUARKUS_LOG_CATEGORY__IO_GITHUB_CHIRINO__LEVEL=DEBUG
+```
+
+## Monitoring
+
+Memory Service exposes Prometheus metrics and provides admin stats endpoints that query Prometheus for aggregated metrics across all service replicas.
+
+### Metrics Endpoint
+
+Memory Service exposes metrics in Prometheus format at `/q/metrics`:
+
+```bash
+# Enable Prometheus metrics endpoint (enabled by default)
+QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED=true
+
+# Metrics endpoint path (default: /q/metrics)
+QUARKUS_MICROMETER_EXPORT_PROMETHEUS_PATH=/q/metrics
+```
+
+### Application Tag
+
+All Memory Service metrics include an `application="memory-service"` tag. This tag helps:
+
+- **Filter metrics** when multiple services are scraped by the same Prometheus
+- **Build dashboards** that only show memory-service data
+- **Configure alerts** specific to memory-service
+
+Example PromQL queries using the application tag:
+
+```promql
+# Request rate for memory-service only
+sum(rate(http_server_requests_seconds_count{application="memory-service"}[5m]))
+
+# Store operation latency (P95) for memory-service
+histogram_quantile(0.95, sum(rate(memory_store_operation_seconds_bucket{application="memory-service"}[5m])) by (le, operation))
+```
+
+### Prometheus Scrape Configuration
+
+Configure Prometheus to scrape metrics from all Memory Service replicas:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'memory-service'
+    scrape_interval: 15s
+    metrics_path: /q/metrics
+    static_configs:
+      - targets: ['memory-service:8080']
+    # For Kubernetes, use service discovery instead:
+    # kubernetes_sd_configs:
+    #   - role: pod
+    #     selectors:
+    #       - role: pod
+    #         label: "app=memory-service"
+```
+
+To keep only Memory Service metrics (useful when scraping multiple services):
+
+```yaml
+scrape_configs:
+  - job_name: 'memory-service'
+    scrape_interval: 15s
+    metrics_path: /q/metrics
+    static_configs:
+      - targets: ['memory-service:8080']
+    # Keep only metrics with application="memory-service" tag
+    metric_relabel_configs:
+      - source_labels: [application]
+        regex: memory-service
+        action: keep
+```
+
+### Admin Stats Endpoints
+
+Memory Service provides `/v1/admin/stats/*` endpoints that query Prometheus for pre-aggregated metrics. These endpoints require the Prometheus URL to be configured:
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory-service.prometheus.url` | URL | _(none)_ | Prometheus server URL for admin stats queries |
+
+```bash
+# Configure Prometheus URL for admin stats endpoints
+MEMORY_SERVICE_PROMETHEUS_URL=http://prometheus:9090
+```
+
+When `memory-service.prometheus.url` is not configured, admin stats endpoints return **501 Not Implemented**. All other Memory Service functionality works normally.
+
+#### Available Stats Endpoints
+
+| Endpoint | Description | Required Metrics |
+|----------|-------------|------------------|
+| `/v1/admin/stats/request-rate` | HTTP request rate (requests/sec) | `http_server_requests_seconds_count` |
+| `/v1/admin/stats/error-rate` | 5xx error rate (percent) | `http_server_requests_seconds_count` |
+| `/v1/admin/stats/latency-p95` | P95 response latency (seconds) | `http_server_requests_seconds_bucket` |
+| `/v1/admin/stats/cache-hit-rate` | Cache hit rate (percent) | `memory_entries_cache_hits_total`, `memory_entries_cache_misses_total` |
+| `/v1/admin/stats/db-pool-utilization` | DB connection pool usage (percent) | `agroal_active_count`, `agroal_available_count` |
+| `/v1/admin/stats/store-latency-p95` | Store operation P95 latency by type | `memory_store_operation_seconds_bucket` |
+| `/v1/admin/stats/store-throughput` | Store operations/sec by type | `memory_store_operation_seconds_count` |
+
+### Required Metrics
+
+For all admin stats endpoints to function correctly, Prometheus must scrape the following metrics from Memory Service:
+
+#### HTTP Metrics (Automatic)
+
+These are automatically provided by Quarkus Micrometer:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `http_server_requests_seconds_count` | Counter | Total HTTP requests by method, uri, status |
+| `http_server_requests_seconds_sum` | Counter | Total request duration |
+| `http_server_requests_seconds_bucket` | Histogram | Request duration distribution |
+
+#### Cache Metrics (When Cache Enabled)
+
+Available when `memory-service.cache.type` is `redis` or `infinispan`:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `memory_entries_cache_hits_total` | Counter | Cache hits for memory entries |
+| `memory_entries_cache_misses_total` | Counter | Cache misses for memory entries |
+| `memory_entries_cache_errors_total` | Counter | Cache errors for memory entries |
+
+#### Database Pool Metrics (Automatic)
+
+Automatically provided by Quarkus/Agroal for PostgreSQL:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `agroal_active_count` | Gauge | Active database connections |
+| `agroal_available_count` | Gauge | Available database connections |
+| `agroal_awaiting_count` | Gauge | Requests waiting for a connection |
+
+#### Store Operation Metrics (Automatic)
+
+Automatically provided by MeteredMemoryStore:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `memory_store_operation_seconds_count` | Counter | Store operations by operation type |
+| `memory_store_operation_seconds_sum` | Counter | Total operation duration by type |
+| `memory_store_operation_seconds_bucket` | Histogram | Operation duration distribution by type |
+
+The `operation` label identifies the operation type (e.g., `createConversation`, `appendAgentEntries`, `getEntries`).
+
+### Example: Full Monitoring Stack
+
+```yaml
+# docker-compose.yml
+services:
+  memory-service:
+    image: ghcr.io/chirino/memory-service:latest
+    environment:
+      MEMORY_SERVICE_DATASTORE_TYPE: postgres
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/memoryservice
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: postgres
+      # Enable admin stats to query Prometheus
+      MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
+    ports:
+      - "8080:8080"
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+```
+
+```yaml
+# prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'memory-service'
+    static_configs:
+      - targets: ['memory-service:8080']
+    metrics_path: /q/metrics
 ```
 
 ## Example: Docker Compose

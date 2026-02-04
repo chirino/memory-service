@@ -1,8 +1,11 @@
 package io.github.chirino.memory.config;
 
 import io.github.chirino.memory.store.MemoryStore;
+import io.github.chirino.memory.store.MeteredMemoryStore;
 import io.github.chirino.memory.store.impl.MongoMemoryStore;
 import io.github.chirino.memory.store.impl.PostgresMemoryStore;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -17,9 +20,22 @@ public class MemoryStoreSelector {
 
     @Inject MongoMemoryStore mongoMemoryStore;
 
+    @Inject MeterRegistry meterRegistry;
+
+    private MemoryStore meteredStore;
+
+    @PostConstruct
+    void init() {
+        MemoryStore delegate = selectDelegate();
+        meteredStore = new MeteredMemoryStore(meterRegistry, delegate);
+    }
+
     public MemoryStore getStore() {
+        return meteredStore;
+    }
+
+    private MemoryStore selectDelegate() {
         String type = datastoreType == null ? "postgres" : datastoreType.trim().toLowerCase();
-        // For now, only postgres is implemented. Other types can be wired here later.
         if ("postgres".equals(type)) {
             return postgresMemoryStore;
         }

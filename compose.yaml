@@ -87,12 +87,17 @@ services:
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
       QUARKUS_HTTP_CORS: "true"
       QUARKUS_HTTP_CORS_ORIGINS: http://localhost:3000
+
+      # Prometheus URL for admin stats endpoints
+      MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       keycloak:
+        condition: service_healthy
+      prometheus:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/v1/health || exit 1"]
@@ -101,6 +106,34 @@ services:
       retries: 12
     ports:
       - "8082:8080"
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    ports:
+      - "3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
 
   demo-chat:
     image: ghcr.io/chirino/memory-service-demo-chat:latest
