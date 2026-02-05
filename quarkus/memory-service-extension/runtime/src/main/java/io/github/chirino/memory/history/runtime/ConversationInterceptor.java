@@ -3,6 +3,7 @@ package io.github.chirino.memory.history.runtime;
 import io.github.chirino.memory.history.annotations.ConversationId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
+import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.inject.Instance;
@@ -11,6 +12,8 @@ import jakarta.interceptor.AroundInvoke;
 import jakarta.interceptor.Interceptor;
 import jakarta.interceptor.InvocationContext;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import org.jboss.logging.Logger;
 
 @RecordConversation
@@ -44,13 +47,35 @@ public class ConversationInterceptor {
         Object result = ctx.proceed();
 
         if (result instanceof Multi<?> multi) {
-            Multi<String> stringMulti = (Multi<String>) multi;
-            return store.appendAgentMessage(invocation.conversationId(), stringMulti);
+            // Check the generic return type to determine which adapter to use
+            Type returnType = ctx.getMethod().getGenericReturnType();
+            if (isChatEventMulti(returnType)) {
+                @SuppressWarnings("unchecked")
+                Multi<ChatEvent> eventMulti = (Multi<ChatEvent>) multi;
+                return store.appendAgentEvents(invocation.conversationId(), eventMulti);
+            } else {
+                @SuppressWarnings("unchecked")
+                Multi<String> stringMulti = (Multi<String>) multi;
+                return store.appendAgentMessage(invocation.conversationId(), stringMulti);
+            }
         }
 
         store.appendAgentMessage(invocation.conversationId(), String.valueOf(result));
         store.markCompleted(invocation.conversationId());
         return result;
+    }
+
+    /**
+     * Check if the return type is Multi&lt;ChatEvent&gt; or a subtype.
+     */
+    private boolean isChatEventMulti(Type type) {
+        if (type instanceof ParameterizedType pt) {
+            Type[] args = pt.getActualTypeArguments();
+            if (args.length == 1 && args[0] instanceof Class<?> cls) {
+                return ChatEvent.class.isAssignableFrom(cls);
+            }
+        }
+        return false;
     }
 
     private ConversationInvocation resolveInvocation(InvocationContext ctx) {

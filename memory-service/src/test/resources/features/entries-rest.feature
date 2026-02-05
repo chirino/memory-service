@@ -298,7 +298,7 @@ Feature: Entries REST API
     """
     Then the response status should be 400
 
-  Scenario: History channel entries must use 'history' contentType
+  Scenario: History channel entries must use 'history' or 'history/*' contentType
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists
     When I call POST "/v1/conversations/${conversationId}/entries" with body:
@@ -310,7 +310,24 @@ Feature: Entries REST API
     }
     """
     Then the response status should be 400
-    And the response body field "details.message" should be "History channel entries must use 'history' as the contentType"
+    And the response body field "details.message" should be "History channel entries must use 'history' or 'history/<subtype>' as the contentType"
+
+  Scenario: History channel accepts 'history/lc4j' contentType with events
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history/lc4j",
+      "content": [{
+        "role": "AI",
+        "text": "Hello world",
+        "events": [{"eventType": "PartialResponse", "chunk": "Hello world"}]
+      }]
+    }
+    """
+    Then the response status should be 201
 
   Scenario: History channel entries must have exactly 1 content object
     Given I am authenticated as agent with API key "test-agent-key"
@@ -338,7 +355,7 @@ Feature: Entries REST API
     }
     """
     Then the response status should be 400
-    And the response body field "details.message" should be "History channel content must have a 'text' field"
+    And the response body field "details.message" should be "History channel content must have either a 'text' field or an 'events' array"
 
   Scenario: History channel entries must have valid role field
     Given I am authenticated as agent with API key "test-agent-key"

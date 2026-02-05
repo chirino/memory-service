@@ -2,6 +2,7 @@ package io.github.chirino.memory.history.runtime;
 
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
@@ -76,6 +77,8 @@ public class GrpcResponseResumer implements ResponseResumer {
     @GrpcClient("responseresumer")
     MutinyResponseResumerServiceGrpc.MutinyResponseResumerServiceStub resumerService;
 
+    @Inject ObjectMapper objectMapper;
+
     private final String configuredApiKey;
 
     public GrpcResponseResumer() {
@@ -110,6 +113,29 @@ public class GrpcResponseResumer implements ResponseResumer {
                                         failure,
                                         "Failed to replay response tokens for conversationId=%s",
                                         conversationId));
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> Multi<T> replayEvents(String conversationId, String bearerToken, Class<T> type) {
+        Multi<String> raw = replay(conversationId, bearerToken);
+        Multi<String> buffered = JsonLineBufferingTransformer.bufferLines(raw);
+
+        if (type == String.class) {
+            // Return raw JSON lines - efficient for SSE, no deserialize/re-serialize
+            return (Multi<T>) buffered;
+        }
+
+        // Deserialize each line to the requested type
+        return buffered.map(
+                json -> {
+                    try {
+                        return objectMapper.readValue(json, type);
+                    } catch (Exception e) {
+                        throw new RuntimeException(
+                                "Failed to deserialize event JSON to " + type.getName(), e);
+                    }
+                });
     }
 
     @Override

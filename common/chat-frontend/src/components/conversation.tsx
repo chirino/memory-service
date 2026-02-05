@@ -44,6 +44,16 @@ import { Slot } from "@radix-ui/react-slot";
 
 type ConversationAuthor = "user" | "assistant" | "system";
 
+// Event type for rich event streams - matches backend format
+export type ChatEvent =
+  | { eventType: "PartialResponse"; chunk: string }
+  | { eventType: "PartialThinking"; chunk: string }
+  | { eventType: "BeforeToolExecution"; toolName: string; input?: unknown }
+  | { eventType: "ToolExecuted"; toolName: string; input?: unknown; output?: unknown }
+  | { eventType: "ContentFetched"; source?: string; content?: string }
+  | { eventType: "IntermediateResponse"; chunk?: string }
+  | { eventType: "ChatCompleted"; finishReason?: string };
+
 export type ConversationMessage = {
   id: string;
   conversationId: string;
@@ -58,6 +68,8 @@ export type ConversationMessage = {
     conversationId: string;
     messageId: string | null;
   };
+  // Rich event stream data (optional - present when AI response included tool calls, thinking, etc.)
+  events?: ChatEvent[];
 };
 
 export type ConversationStreamPhase = "idle" | "sending" | "streaming" | "completed" | "canceled" | "error";

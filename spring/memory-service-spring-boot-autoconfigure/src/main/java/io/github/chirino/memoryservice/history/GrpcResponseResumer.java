@@ -1,5 +1,6 @@
 package io.github.chirino.memoryservice.history;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
@@ -46,16 +47,19 @@ public class GrpcResponseResumer implements ResponseResumer {
     private final ManagedChannel channel;
     private final MemoryServiceClientProperties clientProperties;
     private final OAuth2AuthorizedClientService authorizedClientService;
+    private final ObjectMapper objectMapper;
 
     public GrpcResponseResumer(
             MemoryServiceGrpcClients.MemoryServiceStubs stubs,
             ManagedChannel channel,
             MemoryServiceClientProperties clientProperties,
-            @Nullable OAuth2AuthorizedClientService authorizedClientService) {
+            @Nullable OAuth2AuthorizedClientService authorizedClientService,
+            ObjectMapper objectMapper) {
         this.stubs = stubs;
         this.channel = channel;
         this.clientProperties = clientProperties;
         this.authorizedClientService = authorizedClientService;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -105,6 +109,30 @@ public class GrpcResponseResumer implements ResponseResumer {
                                         "Failed to replay tokens for conversationId={}",
                                         conversationId,
                                         failure));
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> Flux<T> replayEvents(
+            String conversationId, @Nullable String bearerToken, Class<T> type) {
+        Flux<String> raw = replay(conversationId, bearerToken);
+        Flux<String> buffered = JsonLineBufferingTransformer.bufferLinesWithFlush(raw);
+
+        if (type == String.class) {
+            // Return raw JSON lines - efficient for SSE, no deserialize/re-serialize
+            return (Flux<T>) buffered;
+        }
+
+        // Deserialize each line to the requested type
+        return buffered.map(
+                json -> {
+                    try {
+                        return objectMapper.readValue(json, type);
+                    } catch (Exception e) {
+                        throw new RuntimeException(
+                                "Failed to deserialize event JSON to " + type.getName(), e);
+                    }
+                });
     }
 
     @Override

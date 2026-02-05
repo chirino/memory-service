@@ -14,6 +14,23 @@ public interface ResponseResumer {
     Multi<String> replay(String conversationId, String bearerToken);
 
     /**
+     * Replay rich event stream with type-safe return.
+     *
+     * <p>This method buffers the raw replay stream and emits complete JSON lines.
+     * Use this for resuming rich event streams (Multi&lt;ChatEvent&gt;).
+     *
+     * @param conversationId the conversation ID
+     * @param bearerToken the bearer token for authentication
+     * @param type the return type - String.class for raw JSON lines (efficient, no
+     *     deserialize/re-serialize), or a specific event class for deserialized objects
+     * @param <T> the return type
+     * @return stream of complete JSON lines or deserialized objects
+     */
+    default <T> Multi<T> replayEvents(String conversationId, String bearerToken, Class<T> type) {
+        throw new UnsupportedOperationException("replayEvents not implemented");
+    }
+
+    /**
      * Check which conversations from the provided list have responses in progress,
      * optionally propagating a bearer token to downstream resumer implementations.
      *
