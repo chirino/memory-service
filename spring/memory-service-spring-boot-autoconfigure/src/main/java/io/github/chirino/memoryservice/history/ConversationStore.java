@@ -73,7 +73,6 @@ public class ConversationStore {
         }
 
         Map<String, Object> block = new HashMap<>();
-        block.put("text", finalText);
         block.put("role", "AI");
         block.put("events", events);
         request.content(List.of(block));

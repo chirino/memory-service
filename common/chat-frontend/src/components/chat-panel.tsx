@@ -3,6 +3,7 @@ import type React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Conversation,
+  type ChatEvent,
   type ConversationController,
   type ConversationMessage,
   type RenderableConversationMessage,
@@ -271,13 +272,22 @@ function ChatMessageRow({
   );
 }
 
-function entryText(entry: Entry): string {
+type EntryContent = {
+  text: string;
+  events?: ChatEvent[];
+};
+
+function entryContent(entry: Entry): EntryContent {
   const blocks = entry.content ?? [];
-  const textBlock = blocks.find((b) => {
+  const contentBlock = blocks.find((b) => {
     const block = b as { [key: string]: unknown } | undefined;
-    return block && typeof block.text === "string";
-  }) as { text: string } | undefined;
-  return textBlock?.text ?? "";
+    return block && (typeof block.text === "string" || Array.isArray(block.events));
+  }) as { text?: string; events?: ChatEvent[] } | undefined;
+
+  return {
+    text: contentBlock?.text ?? "",
+    events: contentBlock?.events,
+  };
 }
 
 function entryAuthor(entry: Entry): "user" | "assistant" {
@@ -1158,13 +1168,15 @@ export function ChatPanel({
       if (!firstIndexByConversation.has(entry.conversationId)) {
         firstIndexByConversation.set(entry.conversationId, mapped.length);
       }
+      const { text, events } = entryContent(entry);
       mapped.push({
         id: entry.id,
         conversationId: entry.conversationId,
         author,
-        content: entryText(entry),
+        content: text,
         createdAt: entry.createdAt,
         userId: entry.userId,
+        events,
       });
     });
 
@@ -1197,6 +1209,7 @@ export function ChatPanel({
       resetResume: boolean,
       callbacks: {
         onChunk?: (chunk: string) => void;
+        onEvent?: (event: ChatEvent) => void;
         onComplete?: () => void;
         onError?: (error: unknown) => void;
       },
@@ -1212,11 +1225,21 @@ export function ChatPanel({
           void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
         }
       };
+      const handleEvent = (event: ChatEvent) => {
+        callbacks.onEvent?.(event);
+        // Invalidate queries on first event as well
+        if (!firstChunkEmittedRef.current[targetConversationId]) {
+          firstChunkEmittedRef.current[targetConversationId] = true;
+          void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+          void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
+        }
+      };
       const params: StreamStartParams = {
         sessionId: targetConversationId,
         text,
         resetResume,
         onChunk: appendAssistantChunk,
+        onEvent: handleEvent,
         onReplayFailed: () => {
           callbacks.onComplete?.();
           void queryClient.invalidateQueries({ queryKey: ["conversation-path-messages", targetConversationId] });

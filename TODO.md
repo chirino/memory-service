@@ -13,7 +13,7 @@
 
 * require API_KEY for all api calls.
 * validate CreateMessageRequest.userId matches the bearer token principle.
-* test grpc resume redirects on whne a loadbalancer sits in front of the memory-service
+* test grpc resume redirects on when a loadbalancer sits in front of the memory-service
 * validate all api fields
 * review all config key names: keep them consistent and simple.
 * test/find the message size limits of the app.
@@ -27,8 +27,7 @@
 # Need Dev Feedback for:
 
 * Can the @RecordConversation bits be moved into Quarkus Langchain4j? https://github.com/quarkiverse/quarkus-langchain4j/issues/2068#issuecomment-3816044002
-* Do we need more multi-tenancy support?  What would it look like?
+* Do we need MORE multi-tenancy support?  What would it look like? Groups / Orgs?
 * Allow runtime configured agents/api-keys?
 * How useful is the current index/search feature?
-* Ponder how best to kick off/manage async indexing maybe move this into the admin api?
 * Do we need to support anonymous user conversations?

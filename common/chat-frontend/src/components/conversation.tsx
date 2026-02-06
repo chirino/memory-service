@@ -85,6 +85,7 @@ export type ConversationController = {
 
 export type StreamCallbacks = {
   onChunk?: (chunk: string) => void;
+  onEvent?: (event: ChatEvent) => void;
   onComplete?: () => void;
   onError?: (error: unknown) => void;
   onCancel?: () => void;
@@ -121,6 +122,7 @@ type ConversationAction =
   | { type: "SEND_START"; userMessage: ConversationMessage; streamId: string; pendingAssistantId: string }
   | { type: "RESUME_START"; streamId: string; pendingAssistantId: string }
   | { type: "STREAM_CHUNK"; chunk: string; streamId: string }
+  | { type: "STREAM_EVENT"; event: ChatEvent; streamId: string }
   | { type: "STREAM_COMPLETE"; streamId: string }
   | { type: "STREAM_CANCEL"; streamId: string }
   | { type: "STREAM_ERROR"; error: string; streamId: string }
@@ -280,6 +282,38 @@ function conversationReducer(state: ConversationState, action: ConversationActio
         },
       };
     }
+    case "STREAM_EVENT": {
+      // Guard: only apply events if they match the active stream ID
+      if (state.streaming.streamId !== action.streamId) {
+        return state;
+      }
+      // Use pre-generated ID from pendingAssistantId
+      const assistantId = state.streaming.pendingAssistantId;
+      const assistant =
+        state.streaming.assistantMessage ??
+        (state.conversationId && assistantId
+          ? {
+              id: assistantId,
+              author: "assistant" as const,
+              conversationId: state.conversationId,
+              content: "",
+              events: [] as ChatEvent[],
+            }
+          : null);
+      if (!assistant) {
+        return state;
+      }
+      // Append event to events array
+      const existingEvents = assistant.events ?? [];
+      return {
+        ...state,
+        streaming: {
+          ...state.streaming,
+          phase: "streaming",
+          assistantMessage: { ...assistant, events: [...existingEvents, action.event] },
+        },
+      };
+    }
     case "STREAM_COMPLETE": {
       // Guard: only complete if stream ID matches
       if (state.streaming.streamId !== action.streamId) {
@@ -390,6 +424,7 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
   const handleStreamCallbacks = useCallback((streamId: string) => {
     return {
       onChunk: (chunk: string) => dispatch({ type: "STREAM_CHUNK", chunk, streamId }),
+      onEvent: (event: ChatEvent) => dispatch({ type: "STREAM_EVENT", event, streamId }),
       onComplete: () => dispatch({ type: "STREAM_COMPLETE", streamId }),
       onCancel: () => dispatch({ type: "STREAM_CANCEL", streamId }),
       onError: (error: unknown) => {
