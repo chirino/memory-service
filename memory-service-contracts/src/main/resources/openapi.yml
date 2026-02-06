@@ -1163,11 +1163,21 @@ components:
           description: |-
             Describes the schema/format of the content array.
 
-            **History channel entries must use `"history"` as the contentType.**
+            **History channel entries must use `"history"` or `"history/<subtype>"` as the contentType.**
+
+            Supported content types:
+            - `history` - Simple text-only history entries
+            - `history/lc4j` - LangChain4j rich event format (Quarkus)
+
             The content array for history entries contains objects with:
-            - `text` (string): The message text.
-            - `role` (string): Either `"USER"` or `"AI"`.
-            
+            - `role` (string, required): Either `"USER"` or `"AI"`.
+            - `text` (string, optional): The message text. Required if `events` is not present.
+            - `events` (array, optional): Rich event objects for streaming details. Required if `text` is not present.
+              Event structure is not validated by the server. For `history/lc4j`, events use an `eventType` field:
+              - `PartialResponse`: Text chunk (`{eventType, chunk}`)
+              - `PartialThinking`: Reasoning chunk (`{eventType, chunk}`)
+              - `BeforeToolExecution`: Before tool call (`{eventType, toolName, input}`)
+              - `ToolExecuted`: Tool result (`{eventType, toolName, output}`)
 
             Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
             agent memory entries.
@@ -1216,18 +1226,29 @@ components:
           description: |-
             Describes the schema/format of the content array.
 
-            **History channel entries must use `"history"` as the contentType.**
+            **History channel entries must use `"history"` or `"history/<subtype>"` as the contentType.**
+
+            Supported content types:
+            - `history` - Simple text-only history entries
+            - `history/lc4j` - LangChain4j rich event format (Quarkus)
+
             The content array for history entries must contain exactly 1 object with:
-            - `text` (string): The message text.
-            - `role` (string): Either `"USER"` or `"AI"`.
+            - `role` (string, required): Either `"USER"` or `"AI"`.
+            - `text` (string, optional): The message text. Required if `events` is not present.
+            - `events` (array, optional): Rich event objects for streaming details. Required if `text` is not present.
+              Event structure is not validated by the server. For `history/lc4j`, events use an `eventType` field:
+              - `PartialResponse`: Text chunk (`{eventType, chunk}`)
+              - `PartialThinking`: Reasoning chunk (`{eventType, chunk}`)
+              - `BeforeToolExecution`: Before tool call (`{eventType, toolName, input}`)
+              - `ToolExecuted`: Tool result (`{eventType, toolName, output}`)
 
             Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
             agent memory entries.
         content:
           type: array
           description: |-
-            For history channel entries (contentType: `"history"`), each block
-            contains `text` and `role` fields.
+            For history channel entries (contentType: `"history"` or `"history/<subtype>"`), each block
+            contains `role` and either `text` or `events` (or both).
           items: {}
         indexedContent:
           type: string
@@ -1239,10 +1260,23 @@ components:
       example:
         userId: "user_1234"
         channel: "history"
-        contentType: "history"
+        contentType: "history/lc4j"
         content:
-          - text: "Based on your past chats, here are three possible approaches…"
+          - text: "Let me check the weather for you. The weather in Seattle is 72°F."
             role: "AI"
+            events:
+              - eventType: "PartialResponse"
+                chunk: "Let me check the weather for you."
+              - eventType: "BeforeToolExecution"
+                toolName: "get_weather"
+                input:
+                  city: "Seattle"
+              - eventType: "ToolExecuted"
+                toolName: "get_weather"
+                output:
+                  temp: 72
+              - eventType: "PartialResponse"
+                chunk: "The weather in Seattle is 72°F."
 
     SyncEntryResponse:
       type: object

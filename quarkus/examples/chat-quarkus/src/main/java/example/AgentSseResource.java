@@ -2,7 +2,10 @@ package example;
 
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.history.runtime.ResponseResumer;
+import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
@@ -26,17 +29,22 @@ public class AgentSseResource {
 
     @Inject ResponseResumer resumer;
     @Inject SecurityIdentity securityIdentity;
+    @Inject ObjectMapper objectMapper;
 
     public AgentSseResource(HistoryRecordingAgent agent) {
         this.agent = agent;
     }
 
+    /**
+     * Chat endpoint that returns rich event stream (ChatEvent JSON objects). This enables real-time
+     * rendering of tool calls, thinking, and other events in the UI.
+     */
     @POST
     @Path("/{conversationId}/chat")
     @Blocking
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    public Multi<TokenFrame> stream(
+    public Multi<String> stream(
             @PathParam("conversationId") String conversationId, MessageRequest request) {
         if (conversationId == null || conversationId.isBlank()) {
             throw new BadRequestException("Conversation ID is required");
@@ -46,6 +54,36 @@ public class AgentSseResource {
         }
 
         Log.infof("Received SSE request for conversationId=%s", conversationId);
+
+        return agent.chatDetailed(conversationId, request.getMessage())
+                .map(this::encode)
+                .onFailure()
+                .invoke(
+                        failure ->
+                                Log.warnf(
+                                        failure,
+                                        "Chat failed for conversationId=%s",
+                                        conversationId));
+    }
+
+    /**
+     * Simple chat endpoint that returns plain text tokens. Kept for backward compatibility.
+     */
+    @POST
+    @Path("/{conversationId}/chat-simple")
+    @Blocking
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    public Multi<TokenFrame> chatSimple(
+            @PathParam("conversationId") String conversationId, MessageRequest request) {
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new BadRequestException("Conversation ID is required");
+        }
+        if (request == null || request.getMessage() == null || request.getMessage().isBlank()) {
+            throw new BadRequestException("Message is required");
+        }
+
+        Log.infof("Received simple SSE request for conversationId=%s", conversationId);
 
         return agent.chat(conversationId, request.getMessage())
                 .map(TokenFrame::new)
@@ -58,16 +96,54 @@ public class AgentSseResource {
                                         conversationId));
     }
 
+    private String encode(ChatEvent chatEvent) {
+        try {
+            return objectMapper.writeValueAsString(chatEvent);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Resume a rich event stream. Returns complete JSON lines from the recorded event stream. This
+     * is the default resume endpoint that matches the rich event /chat endpoint.
+     */
     @GET
     @Path("/{conversationId}/resume")
     @Blocking
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    public Multi<TokenFrame> resume(@PathParam("conversationId") String conversationId) {
+    public Multi<String> resume(@PathParam("conversationId") String conversationId) {
         if (conversationId == null || conversationId.isBlank()) {
             throw new BadRequestException("Conversation ID is required");
         }
 
         Log.infof("SSE resume request for conversationId=%s", conversationId);
+
+        String bearerToken = bearerToken(securityIdentity);
+        // Return raw JSON lines (efficient - no decode/re-encode)
+        return resumer.replayEvents(conversationId, bearerToken, String.class)
+                .onFailure()
+                .invoke(
+                        failure ->
+                                Log.warnf(
+                                        failure,
+                                        "Resume failed for conversationId=%s",
+                                        conversationId));
+    }
+
+    /**
+     * Resume a simple token stream. Kept for backward compatibility with /chat-simple endpoint.
+     */
+    @GET
+    @Path("/{conversationId}/resume-simple")
+    @Blocking
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    public Multi<TokenFrame> resumeSimple(@PathParam("conversationId") String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new BadRequestException("Conversation ID is required");
+        }
+
+        Log.infof("SSE resume-simple request for conversationId=%s", conversationId);
 
         String bearerToken = bearerToken(securityIdentity);
         return resumer.replay(conversationId, bearerToken)
@@ -77,7 +153,7 @@ public class AgentSseResource {
                         failure ->
                                 Log.warnf(
                                         failure,
-                                        "Resume failed for conversationId=%s",
+                                        "Resume simple failed for conversationId=%s",
                                         conversationId));
     }
 

@@ -3,10 +3,13 @@ package io.github.chirino.memory.history.runtime;
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 import static io.github.chirino.memory.security.SecurityHelper.principalName;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
+import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.quarkus.arc.Arc;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.SecurityIdentityAssociation;
@@ -18,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
@@ -30,6 +34,7 @@ public class ConversationStore {
     @Inject SecurityIdentityAssociation identityAssociation;
     @Inject ResponseResumer resumer;
     @Inject Instance<IndexedContentProvider> indexedContentProviderInstance;
+    @Inject ObjectMapper objectMapper;
 
     private SecurityIdentity resolveIdentity() {
         if (identityAssociation != null) {
@@ -119,6 +124,64 @@ public class ConversationStore {
     public void appendPartialAgentMessage(String conversationId, String delta) {}
 
     public void markCompleted(String conversationId) {}
+
+    /**
+     * Wrap a ChatEvent stream with history recording and event coalescing.
+     *
+     * @param conversationId the conversation ID
+     * @param eventMulti the upstream ChatEvent stream
+     * @return wrapped Multi that records events as they stream
+     */
+    public Multi<ChatEvent> appendAgentEvents(String conversationId, Multi<ChatEvent> eventMulti) {
+        SecurityIdentity resolvedIdentity = resolveIdentity();
+        String bearerToken = bearerToken(resolvedIdentity);
+        return ConversationEventStreamAdapter.wrap(
+                conversationId,
+                eventMulti,
+                this,
+                resumer,
+                objectMapper,
+                resolvedIdentity,
+                identityAssociation,
+                bearerToken);
+    }
+
+    /**
+     * Store an agent message with rich event data using "history/lc4j" content type.
+     *
+     * <p>The history/lc4j content type supports LangChain4j event format: {role, text?, events?}
+     *
+     * @param conversationId the conversation ID
+     * @param finalText the accumulated response text
+     * @param events the coalesced event list
+     * @param bearerToken the bearer token for API calls
+     */
+    public void appendAgentMessageWithEvents(
+            String conversationId, String finalText, List<JsonNode> events, String bearerToken) {
+        CreateEntryRequest request = new CreateEntryRequest();
+        request.setChannel(ChannelEnum.HISTORY);
+        request.setContentType("history/lc4j");
+        String userId = resolveUserId();
+        if (userId != null) {
+            request.setUserId(userId);
+        }
+
+        // Convert JsonNode list to Object list for the API
+        List<Object> eventObjects =
+                events.stream()
+                        .map(node -> objectMapper.convertValue(node, Object.class))
+                        .collect(Collectors.toList());
+
+        Map<String, Object> block = new HashMap<>();
+        block.put("role", "AI");
+        block.put("events", eventObjects);
+        request.setContent(List.of(block));
+
+        applyIndexedContent(request, finalText, "AI");
+        String effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
+        conversationsApi(effectiveToken)
+                .appendConversationEntry(UUID.fromString(conversationId), request);
+    }
 
     private ConversationsApi conversationsApi(String bearerToken) {
         return conversationsApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);

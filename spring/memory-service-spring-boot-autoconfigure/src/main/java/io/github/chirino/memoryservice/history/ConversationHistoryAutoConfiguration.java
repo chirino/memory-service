@@ -1,5 +1,6 @@
 package io.github.chirino.memoryservice.history;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
 import io.github.chirino.memoryservice.grpc.MemoryServiceGrpcClients;
 import io.github.chirino.memoryservice.spring.autoconfigure.MemoryServiceAutoConfiguration;
@@ -61,9 +62,14 @@ public class ConversationHistoryAutoConfiguration {
             MemoryServiceClientProperties clientProperties,
             MemoryServiceGrpcClients.MemoryServiceStubs stubs,
             ManagedChannel channel,
-            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
+            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider,
+            ObjectMapper objectMapper) {
         return new GrpcResponseResumer(
-                stubs, channel, clientProperties, authorizedClientServiceProvider.getIfAvailable());
+                stubs,
+                channel,
+                clientProperties,
+                authorizedClientServiceProvider.getIfAvailable(),
+                objectMapper);
     }
 
     @Bean

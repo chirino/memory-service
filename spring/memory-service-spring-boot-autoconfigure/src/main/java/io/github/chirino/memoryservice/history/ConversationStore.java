@@ -49,6 +49,44 @@ public class ConversationStore {
         callAppend(conversationId, request, resolveBearerToken(bearerToken));
     }
 
+    /**
+     * Store an agent message with rich event data using "history/lc4j" content type.
+     *
+     * <p>The history/lc4j content type supports LangChain4j event format: {role, text?, events?}
+     *
+     * @param conversationId the conversation ID
+     * @param finalText the accumulated response text (for search indexing)
+     * @param events the coalesced event list as Maps
+     * @param bearerToken the bearer token for API calls
+     */
+    public void appendAgentMessageWithEvents(
+            String conversationId,
+            String finalText,
+            List<Map<String, Object>> events,
+            @Nullable String bearerToken) {
+        CreateEntryRequest request = new CreateEntryRequest();
+        request.channel(Channel.HISTORY);
+        request.contentType("history/lc4j");
+        String userId = resolveUserId();
+        if (userId != null) {
+            request.userId(userId);
+        }
+
+        Map<String, Object> block = new HashMap<>();
+        block.put("role", "AI");
+        block.put("events", events);
+        request.content(List.of(block));
+
+        if (indexedContentProvider != null) {
+            String indexedContent = indexedContentProvider.getIndexedContent(finalText, "AI");
+            if (indexedContent != null) {
+                request.indexedContent(indexedContent);
+            }
+        }
+
+        callAppend(conversationId, request, resolveBearerToken(bearerToken));
+    }
+
     public void appendPartialAgentMessage(String conversationId, String delta) {}
 
     public void markCompleted(String conversationId) {}

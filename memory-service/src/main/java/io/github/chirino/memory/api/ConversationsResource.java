@@ -585,6 +585,20 @@ public class ConversationsResource {
     /**
      * Validates that history channel entries use the correct contentType and content structure.
      * Returns null if valid, or an error Response if invalid.
+     *
+     * <p>Supported content types:
+     * <ul>
+     *   <li>{@code history} - simple text-only history</li>
+     *   <li>{@code history/lc4j} - LangChain4j event format</li>
+     *   <li>{@code history/*} - other subtypes for future frameworks</li>
+     * </ul>
+     *
+     * <p>History content blocks support:
+     * <ul>
+     *   <li>{@code role} (required): "USER" or "AI"</li>
+     *   <li>{@code text} (optional if events present): the message text</li>
+     *   <li>{@code events} (optional if text present): array of event objects (structure not validated)</li>
+     * </ul>
      */
     private Response validateHistoryEntry(CreateEntryRequest request) {
         // Only validate history channel entries
@@ -592,9 +606,13 @@ public class ConversationsResource {
             return null;
         }
 
-        // History channel entries must use "history" contentType
-        if (!"history".equals(request.getContentType())) {
-            return badRequest("History channel entries must use 'history' as the contentType");
+        // History channel entries must use "history" or "history/*" contentType
+        String contentType = request.getContentType();
+        if (contentType == null
+                || (!contentType.equals("history") && !contentType.startsWith("history/"))) {
+            return badRequest(
+                    "History channel entries must use 'history' or 'history/<subtype>' as the"
+                            + " contentType");
         }
 
         // Content must contain exactly 1 object
@@ -603,24 +621,38 @@ public class ConversationsResource {
             return badRequest("History channel entries must contain exactly 1 content object");
         }
 
-        // The object must have text and role fields
+        // The object must have role and either text or events (or both)
         Object block = content.get(0);
         if (!(block instanceof Map)) {
             return badRequest(
-                    "History channel content must be an object with 'text' and 'role' fields");
+                    "History channel content must be an object with 'role' and either 'text' or"
+                            + " 'events' fields");
         }
 
         @SuppressWarnings("unchecked")
         Map<String, Object> blockMap = (Map<String, Object>) block;
 
-        if (!blockMap.containsKey("text") || blockMap.get("text") == null) {
-            return badRequest("History channel content must have a 'text' field");
-        }
-
         Object role = blockMap.get("role");
         if (role == null || (!"USER".equals(role) && !"AI".equals(role))) {
             return badRequest(
                     "History channel content must have a 'role' field with value 'USER' or 'AI'");
+        }
+
+        // Check for text and events - at least one must be present
+        boolean hasText = blockMap.containsKey("text") && blockMap.get("text") != null;
+        boolean hasEvents = blockMap.containsKey("events") && blockMap.get("events") != null;
+
+        if (!hasText && !hasEvents) {
+            return badRequest(
+                    "History channel content must have either a 'text' field or an 'events' array");
+        }
+
+        // Validate events is an array if present (no validation of individual event structure)
+        if (hasEvents) {
+            Object events = blockMap.get("events");
+            if (!(events instanceof List)) {
+                return badRequest("History channel 'events' field must be an array");
+            }
         }
 
         return null;

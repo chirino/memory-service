@@ -254,7 +254,7 @@ Feature: Entries gRPC API
     And the gRPC response field "channel" should be "MEMORY"
     And the gRPC response field "contentType" should be "test.v1"
 
-  Scenario: gRPC history channel entries must use 'history' contentType
+  Scenario: gRPC history channel entries must use 'history' or 'history/*' contentType
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
@@ -279,7 +279,7 @@ Feature: Entries gRPC API
     }
     """
     Then the gRPC response should have status "INVALID_ARGUMENT"
-    And the gRPC error message should contain "History channel entries must use 'history' as the contentType"
+    And the gRPC error message should contain "History channel entries must use 'history' or 'history/<subtype>' as the contentType"
 
   Scenario: gRPC history channel entries must have exactly 1 content object
     Given I am authenticated as agent with API key "test-agent-key"

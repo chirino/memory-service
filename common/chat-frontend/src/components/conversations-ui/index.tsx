@@ -14,6 +14,7 @@ import {
   useConversationStreaming,
 } from "@/components/conversation";
 import { Streamdown } from "streamdown";
+import { RichEventRenderer } from "@/components/rich-event-renderer";
 import type React from "react";
 import { MessageCircle, PenLine, Shuffle, ChevronRight, Send, MoreHorizontal, X } from "lucide-react";
 
@@ -135,7 +136,11 @@ function ConversationsUIMessageRow({
           >
             {children ?? (
               <>
-                <Streamdown isAnimating={isStreaming}>{message.content}</Streamdown>
+                {message.events && message.events.length > 0 ? (
+                  <RichEventRenderer events={message.events} isStreaming={isStreaming} />
+                ) : (
+                  <Streamdown isAnimating={isStreaming}>{message.content}</Streamdown>
+                )}
                 {isStreaming && (
                   <span className="ml-1 inline-flex">
                     <span className="typing-dot h-1 w-1 rounded-full bg-stone" />

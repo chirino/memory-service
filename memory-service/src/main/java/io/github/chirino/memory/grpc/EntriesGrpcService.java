@@ -262,6 +262,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
 
     /**
      * Validates that history channel entries use the correct contentType and content structure.
+     * Accepts "history" or "history/*" subtypes (e.g., "history/lc4j").
      */
     private void validateHistoryEntry(io.github.chirino.memory.grpc.v1.CreateEntryRequest entry) {
         // Only validate history channel entries
@@ -269,11 +270,14 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
             return;
         }
 
-        // History channel entries must use "history" contentType
-        if (!"history".equals(entry.getContentType())) {
+        // History channel entries must use "history" or "history/*" contentType
+        String contentType = entry.getContentType();
+        if (contentType == null
+                || (!contentType.equals("history") && !contentType.startsWith("history/"))) {
             throw Status.INVALID_ARGUMENT
                     .withDescription(
-                            "History channel entries must use 'history' as the contentType")
+                            "History channel entries must use 'history' or 'history/<subtype>' as"
+                                    + " the contentType")
                     .asRuntimeException();
         }
 
