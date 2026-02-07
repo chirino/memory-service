@@ -19,7 +19,18 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.client.Client;
+import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @Path("/v1/conversations")
 @ApplicationScoped
@@ -30,6 +41,12 @@ public class AgentSseResource {
     @Inject ResponseResumer resumer;
     @Inject SecurityIdentity securityIdentity;
     @Inject ObjectMapper objectMapper;
+
+    @ConfigProperty(name = "memory-service.client.url")
+    Optional<String> clientUrl;
+
+    @ConfigProperty(name = "quarkus.rest-client.memory-service-client.url")
+    Optional<String> quarkusRestClientUrl;
 
     public AgentSseResource(HistoryRecordingAgent agent) {
         this.agent = agent;
@@ -55,8 +72,21 @@ public class AgentSseResource {
 
         Log.infof("Received SSE request for conversationId=%s", conversationId);
 
-        return agent.chatDetailed(conversationId, request.getMessage())
-                .map(this::encode)
+        // If there's an image attachment, use chatWithImage so the LLM can see it
+        String imageUrl = resolveFirstImageUrl(request.getAttachments());
+        Multi<ChatEvent> events;
+        if (imageUrl != null) {
+            // Build attachment metadata for history recording (references, not data URIs)
+            List<Map<String, Object>> attachmentMeta =
+                    buildAttachmentMetadata(request.getAttachments());
+            events =
+                    agent.chatWithImage(
+                            conversationId, request.getMessage(), imageUrl, attachmentMeta);
+        } else {
+            events = agent.chatDetailed(conversationId, request.getMessage());
+        }
+
+        return events.map(this::encode)
                 .onFailure()
                 .invoke(
                         failure ->
@@ -100,8 +130,90 @@ public class AgentSseResource {
         try {
             return objectMapper.writeValueAsString(chatEvent);
         } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
+            // Some ChatEvent subtypes (e.g. ChatCompletedEvent) contain non-serializable fields.
+            // Fall back to a minimal JSON representation.
+            Log.debugf(
+                    e,
+                    "Failed to serialize ChatEvent of type %s, using fallback",
+                    chatEvent.getClass().getSimpleName());
+            return "{\"eventType\":\""
+                    + chatEvent.getClass().getSimpleName().replace("Event", "")
+                    + "\"}";
         }
+    }
+
+    /**
+     * Build attachment metadata maps for history recording. These contain references (attachmentId,
+     * contentType, name) instead of the actual file data.
+     */
+    private List<Map<String, Object>> buildAttachmentMetadata(List<AttachmentRef> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (AttachmentRef att : attachments) {
+            if (att.getAttachmentId() == null || att.getAttachmentId().isBlank()) {
+                continue;
+            }
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("attachmentId", att.getAttachmentId());
+            if (att.getContentType() != null && !att.getContentType().isBlank()) {
+                meta.put("contentType", att.getContentType());
+            }
+            if (att.getName() != null && !att.getName().isBlank()) {
+                meta.put("name", att.getName());
+            }
+            result.add(meta);
+        }
+        return result;
+    }
+
+    /**
+     * Resolves the first attachment to a data URI that can be sent to the LLM. Downloads the
+     * attachment from the memory-service and base64-encodes it.
+     */
+    private String resolveFirstImageUrl(List<AttachmentRef> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return null;
+        }
+        for (AttachmentRef att : attachments) {
+            if (att.getAttachmentId() == null || att.getAttachmentId().isBlank()) {
+                continue;
+            }
+            try {
+                String baseUrl =
+                        clientUrl.orElseGet(
+                                () -> quarkusRestClientUrl.orElse("http://localhost:8080"));
+                String url = baseUrl + "/v1/attachments/" + att.getAttachmentId();
+                String bearer = bearerToken(securityIdentity);
+                Client client = ClientBuilder.newClient();
+                try {
+                    var req = client.target(url).request();
+                    if (bearer != null) {
+                        req = req.header("Authorization", "Bearer " + bearer);
+                    }
+                    Response response = req.get();
+                    if (response.getStatus() == 302) {
+                        // S3 redirect — use the signed URL directly (LLM can fetch it)
+                        return response.getHeaderString("Location");
+                    }
+                    if (response.getStatus() == 200) {
+                        String contentType = response.getHeaderString("Content-Type");
+                        if (contentType == null) {
+                            contentType = "application/octet-stream";
+                        }
+                        byte[] bytes = response.readEntity(InputStream.class).readAllBytes();
+                        String base64 = Base64.getEncoder().encodeToString(bytes);
+                        return "data:" + contentType + ";base64," + base64;
+                    }
+                } finally {
+                    client.close();
+                }
+            } catch (Exception e) {
+                Log.warnf(e, "Failed to resolve attachment %s", att.getAttachmentId());
+            }
+        }
+        return null;
     }
 
     /**
@@ -173,6 +285,7 @@ public class AgentSseResource {
     public static final class MessageRequest {
 
         private String message;
+        private java.util.List<AttachmentRef> attachments;
 
         public MessageRequest() {}
 
@@ -186,6 +299,47 @@ public class AgentSseResource {
 
         public void setMessage(String message) {
             this.message = message;
+        }
+
+        public java.util.List<AttachmentRef> getAttachments() {
+            return attachments;
+        }
+
+        public void setAttachments(java.util.List<AttachmentRef> attachments) {
+            this.attachments = attachments;
+        }
+    }
+
+    public static final class AttachmentRef {
+
+        private String attachmentId;
+        private String contentType;
+        private String name;
+
+        public AttachmentRef() {}
+
+        public String getAttachmentId() {
+            return attachmentId;
+        }
+
+        public void setAttachmentId(String attachmentId) {
+            this.attachmentId = attachmentId;
+        }
+
+        public String getContentType() {
+            return contentType;
+        }
+
+        public void setContentType(String contentType) {
+            this.contentType = contentType;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
         }
     }
 }

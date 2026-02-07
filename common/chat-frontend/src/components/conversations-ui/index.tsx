@@ -5,9 +5,10 @@
  * Provides a shadcn-style UI layer over the headless Conversation components.
  * This module handles the visual presentation while Conversation handles state management.
  */
-import { forwardRef, useState, useRef, useEffect } from "react";
+import { forwardRef, useState, useRef, useEffect, useCallback } from "react";
 import {
   Conversation,
+  type ChatAttachment,
   type RenderableConversationMessage,
   useConversationContext,
   useConversationInput,
@@ -16,7 +17,9 @@ import {
 import { Streamdown } from "streamdown";
 import { RichEventRenderer } from "@/components/rich-event-renderer";
 import type React from "react";
-import { MessageCircle, PenLine, Shuffle, ChevronRight, Send, MoreHorizontal, X } from "lucide-react";
+import { FileText, Image, Film, Volume2, MessageCircle, PenLine, Shuffle, ChevronRight, Send, MoreHorizontal, X, Paperclip, ExternalLink, Download } from "lucide-react";
+import { useAttachments, type PendingAttachment } from "@/hooks/useAttachments";
+import { getAccessToken } from "@/lib/auth";
 
 type ConversationsUIViewportProps = React.ComponentProps<typeof Conversation.Viewport>;
 
@@ -97,6 +100,123 @@ function formatMessageTime(createdAt?: string): string {
 }
 
 /**
+ * Extracts the attachment ID from an href like "/v1/attachments/{uuid}".
+ */
+function extractAttachmentId(attachment: ChatAttachment): string | undefined {
+  if (attachment.attachmentId) return attachment.attachmentId;
+  if (!attachment.href) return undefined;
+  const match = attachment.href.match(/\/v1\/attachments\/([0-9a-f-]{36})$/i);
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Fetches a signed download URL for a server-stored attachment.
+ * For external URLs (no attachment ID), returns the href directly.
+ */
+async function fetchSignedDownloadUrl(attachment: ChatAttachment): Promise<string | undefined> {
+  const attachmentId = extractAttachmentId(attachment);
+  if (!attachmentId) {
+    // External URL — return href directly
+    return attachment.href;
+  }
+  const token = getAccessToken();
+  const resp = await fetch(`/v1/attachments/${attachmentId}/download-url`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!resp.ok) {
+    console.error("Failed to get download URL:", resp.status);
+    return undefined;
+  }
+  const data = await resp.json();
+  return data.url;
+}
+
+/**
+ * Compact attachment chip for message bubbles.
+ * Shows file-type icon, filename, and preview/download action buttons.
+ * Uses signed download URLs so files open in new tabs without 401 errors.
+ */
+function AttachmentPreview({ attachment, isUserMessage }: { attachment: ChatAttachment; isUserMessage?: boolean }) {
+  const displayName = attachment.name || "Attachment";
+  const [isLoading, setIsLoading] = useState(false);
+  const hasLink = !!(attachment.href || attachment.attachmentId);
+
+  const handlePreview = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const url = await fetchSignedDownloadUrl(attachment);
+      if (url) {
+        window.open(url, "_blank");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const url = await fetchSignedDownloadUrl(attachment);
+      if (url) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = displayName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs ${
+        isUserMessage
+          ? "border-cream/20 bg-cream/10 text-cream"
+          : "border-stone/20 bg-white/60 text-ink"
+      }`}
+    >
+      <FileIcon contentType={attachment.contentType} className="h-3.5 w-3.5 shrink-0 opacity-60" />
+      <span className="max-w-[140px] truncate">{displayName}</span>
+      {hasLink && (
+        <>
+          <button
+            type="button"
+            onClick={handlePreview}
+            disabled={isLoading}
+            className={`ml-0.5 rounded-full p-0.5 transition-colors disabled:opacity-50 ${
+              isUserMessage
+                ? "text-cream/60 hover:bg-cream/15 hover:text-cream"
+                : "text-stone/60 hover:bg-black/10 hover:text-ink"
+            }`}
+            title="Preview"
+          >
+            <ExternalLink className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={isLoading}
+            className={`rounded-full p-0.5 transition-colors disabled:opacity-50 ${
+              isUserMessage
+                ? "text-cream/60 hover:bg-cream/15 hover:text-cream"
+                : "text-stone/60 hover:bg-black/10 hover:text-ink"
+            }`}
+            title="Download"
+          >
+            <Download className="h-3 w-3" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * Basic message row component with bubble styling.
  * Renders user/assistant messages with appropriate alignment and colors.
  * Does not include fork/edit UI - those should be added by consumers via the overlay prop.
@@ -136,11 +256,18 @@ function ConversationsUIMessageRow({
           >
             {children ?? (
               <>
+                {message.attachments && message.attachments.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {message.attachments.map((att, i) => (
+                      <AttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
+                    ))}
+                  </div>
+                )}
                 {message.events && message.events.length > 0 ? (
                   <RichEventRenderer events={message.events} isStreaming={isStreaming} />
-                ) : (
+                ) : message.content ? (
                   <Streamdown isAnimating={isStreaming}>{message.content}</Streamdown>
-                )}
+                ) : null}
                 {isStreaming && (
                   <span className="ml-1 inline-flex">
                     <span className="typing-dot h-1 w-1 rounded-full bg-stone" />
@@ -370,6 +497,59 @@ function ConversationsUIEmptyState({
   );
 }
 
+/**
+ * Returns the appropriate icon for a file based on its MIME type.
+ */
+function FileIcon({ contentType, className }: { contentType: string; className?: string }) {
+  const major = contentType.split("/")[0];
+  if (major === "image") return <Image className={className} />;
+  if (major === "video") return <Film className={className} />;
+  if (major === "audio") return <Volume2 className={className} />;
+  return <FileText className={className} />;
+}
+
+/**
+ * A chip representing a pending attachment in the composer strip.
+ * Shows file icon, name, progress bar during upload, and X button to remove.
+ */
+function AttachmentChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: PendingAttachment;
+  onRemove: (localId: string) => void;
+}) {
+  const isError = attachment.status === "error";
+  const isUploading = attachment.status === "uploading";
+
+  return (
+    <div
+      className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs ${
+        isError ? "border-terracotta/40 bg-terracotta/5 text-terracotta" : "border-stone/20 bg-mist text-ink"
+      }`}
+    >
+      <FileIcon contentType={attachment.contentType} className="h-3.5 w-3.5 shrink-0 opacity-60" />
+      <span className="max-w-[120px] truncate">{attachment.name}</span>
+      <button
+        type="button"
+        onClick={() => onRemove(attachment.localId)}
+        className="ml-0.5 rounded-full p-0.5 text-stone/60 transition-colors hover:bg-black/10 hover:text-ink"
+      >
+        <X className="h-3 w-3" />
+      </button>
+      {/* Progress bar overlay */}
+      {isUploading && (
+        <div className="absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden rounded-b-lg">
+          <div
+            className="h-full bg-sage transition-all duration-200"
+            style={{ width: `${attachment.progress}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 type ConversationsUIComposerProps = {
   placeholder?: string;
   disabled?: boolean;
@@ -384,6 +564,7 @@ type ConversationsUIComposerProps = {
 /**
  * Composer component with textarea input and action buttons.
  * Handles send/stop button logic based on streaming state.
+ * Supports drag-and-drop file uploads and a file picker button.
  */
 function ConversationsUIComposer({
   placeholder = "Type a message...",
@@ -397,6 +578,10 @@ function ConversationsUIComposer({
 }: ConversationsUIComposerProps) {
   const { value, submit } = useConversationInput();
   const { cancelStream, isBusy, conversationId } = useConversationStreaming();
+  const { attachments, addFiles, removeAttachment, resetAfterSend } = useAttachments();
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCancel = () => {
     if (isBusy) {
@@ -405,19 +590,123 @@ function ConversationsUIComposer({
     onCancel?.();
   };
 
-  const canSend = !disabled && value.trim() && conversationId;
+  const hasUploadedAttachments = attachments.some((a) => a.status === "uploaded");
+  const canSend = !disabled && (value.trim() || hasUploadedAttachments) && conversationId;
+
+  const handleSubmitWithAttachments = useCallback(
+    (submittedText?: string) => {
+      const attachmentRefs = attachments
+        .filter((a) => a.status === "uploaded" && a.attachmentId)
+        .map((a) => ({ attachmentId: a.attachmentId!, contentType: a.contentType, name: a.name }));
+      // Submit with attachment IDs (use submitted text if provided, otherwise current value)
+      submit(submittedText ?? value, attachmentRefs.length > 0 ? attachmentRefs : undefined);
+      // Reset local attachment state without deleting from server (they're now submitted)
+      if (attachmentRefs.length > 0) {
+        resetAfterSend();
+      }
+    },
+    [attachments, resetAfterSend, submit, value],
+  );
+
+  // Drag-and-drop handlers
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+      if (e.dataTransfer.files.length > 0) {
+        addFiles(e.dataTransfer.files);
+      }
+    },
+    [addFiles],
+  );
+
+  const handleFilePickerChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+        addFiles(e.target.files);
+      }
+      // Reset so the same file can be selected again
+      e.target.value = "";
+    },
+    [addFiles],
+  );
 
   return (
-    <div className={`border-t border-stone/10 bg-cream px-8 py-5 ${className ?? ""}`}>
+    <div
+      className={`border-t border-stone/10 bg-cream px-8 py-5 ${className ?? ""}`}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <div className="mx-auto max-w-3xl">
-        <div className="relative">
+        <div className={`relative rounded-2xl transition-colors ${isDragging ? "ring-2 ring-sage ring-offset-2" : ""}`}>
+          {/* Drop overlay */}
+          {isDragging && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-sage bg-sage/10">
+              <span className="text-sm font-medium text-sage">Drop files here</span>
+            </div>
+          )}
+
+          {/* Attachment strip */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 rounded-t-2xl bg-mist px-5 pt-3 pb-1">
+              {attachments.map((att) => (
+                <AttachmentChip key={att.localId} attachment={att} onRemove={removeAttachment} />
+              ))}
+            </div>
+          )}
+
           <Conversation.Input
             placeholder={placeholder}
             rows={3}
             disabled={disabled}
-            className={`w-full resize-none rounded-2xl border border-transparent bg-mist px-5 py-4 pr-24 text-[15px] transition-colors placeholder:text-stone/60 focus:border-stone/20 focus:outline-none disabled:opacity-50 ${inputClassName ?? ""}`}
+            onSubmit={(submittedValue: string) => handleSubmitWithAttachments(submittedValue)}
+            className={`w-full resize-none ${attachments.length > 0 ? "rounded-b-2xl rounded-t-none" : "rounded-2xl"} border border-transparent bg-mist px-5 py-4 pr-28 text-[15px] transition-colors placeholder:text-stone/60 focus:border-stone/20 focus:outline-none disabled:opacity-50 ${inputClassName ?? ""}`}
           />
           <div className="absolute bottom-3 right-3 flex items-center gap-2">
+            {/* File picker button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+              className="rounded-lg p-2 text-stone/60 transition-colors hover:bg-black/5 hover:text-ink disabled:opacity-50"
+              title="Attach files"
+            >
+              <Paperclip className="h-4.5 w-4.5" />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={handleFilePickerChange}
+            />
             {isBusy && (
               <button
                 type="button"
@@ -430,7 +719,7 @@ function ConversationsUIComposer({
             )}
             <button
               type="button"
-              onClick={() => submit()}
+              onClick={() => handleSubmitWithAttachments()}
               disabled={!canSend || isBusy}
               className="rounded-xl bg-ink p-2.5 text-cream shadow-lg shadow-ink/10 transition-colors hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -451,4 +740,5 @@ export const ConversationsUI = {
   MessageRow: ConversationsUIMessageRow,
   EmptyState: ConversationsUIEmptyState,
   Composer: ConversationsUIComposer,
+  AttachmentChip,
 };

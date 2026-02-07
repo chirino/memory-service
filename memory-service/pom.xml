@@ -44,6 +44,12 @@
       <artifactId>quarkus-data-encryption-dek</artifactId>
       <version>${project.version}</version>
     </dependency>
+
+    <!-- S3 FileStore support -->
+    <dependency>
+      <groupId>io.quarkiverse.amazonservices</groupId>
+      <artifactId>quarkus-amazon-s3</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-arc</artifactId>
@@ -153,6 +159,11 @@
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-smallrye-openapi</artifactId>
+    </dependency>
+    <!-- S3 HTTP client (required by quarkus-amazon-s3) -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>url-connection-client</artifactId>
     </dependency>
     <!-- Ensure deployment module is built and available for Quarkus extension processing -->
     <dependency>

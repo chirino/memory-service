@@ -1,6 +1,7 @@
 package example;
 
 import dev.langchain4j.service.MemoryId;
+import io.quarkiverse.langchain4j.ImageUrl;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.quarkus.test.Mock;
 import io.smallrye.mutiny.Multi;
@@ -22,5 +23,15 @@ public class MockCustomerSupportAgent implements Agent {
                         new ChatEvent.PartialResponseEvent("Hello"),
                         new ChatEvent.PartialResponseEvent("from"),
                         new ChatEvent.PartialResponseEvent("mock"));
+    }
+
+    @Override
+    public Multi<ChatEvent> chatWithImage(
+            @MemoryId String memoryId, String userMessage, @ImageUrl String imageUrl) {
+        return Multi.createFrom()
+                .items(
+                        new ChatEvent.PartialResponseEvent("Hello"),
+                        new ChatEvent.PartialResponseEvent("from"),
+                        new ChatEvent.PartialResponseEvent("mock with image"));
     }
 }

@@ -2,6 +2,10 @@ package io.github.chirino.memoryservice.history;
 
 import io.github.chirino.memoryservice.history.ResponseResumer.ResponseRecorder;
 import io.github.chirino.memoryservice.security.SecurityHelper;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClientRequest;
@@ -13,6 +17,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
 import org.springframework.core.Ordered;
 import org.springframework.lang.Nullable;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
@@ -42,7 +47,9 @@ public class ConversationHistoryCallAdvisor implements CallAdvisor {
             return chain.nextCall(request);
         }
         String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
-        safeAppendUserMessage(conversationId, resolveUserMessage(request), bearerToken);
+        List<Map<String, Object>> attachments = extractAttachments(request);
+        safeAppendUserMessage(
+                conversationId, resolveUserMessage(request), attachments, bearerToken);
         ResponseRecorder recorder = responseResumer.recorder(conversationId, bearerToken);
         ChatClientResponse response = chain.nextCall(request);
         try {
@@ -85,15 +92,52 @@ public class ConversationHistoryCallAdvisor implements CallAdvisor {
     }
 
     private void safeAppendUserMessage(
-            String conversationId, @Nullable String message, @Nullable String bearerToken) {
+            String conversationId,
+            @Nullable String message,
+            List<Map<String, Object>> attachments,
+            @Nullable String bearerToken) {
         if (!StringUtils.hasText(message)) {
             return;
         }
         try {
-            conversationStore.appendUserMessage(conversationId, message, bearerToken);
+            conversationStore.appendUserMessage(conversationId, message, attachments, bearerToken);
         } catch (Exception e) {
             LOG.debug("Failed to append user message for conversationId={}", conversationId, e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractAttachments(ChatClientRequest request) {
+        // Prefer explicit attachment metadata from the request context
+        Object explicit =
+                request.context().get(ConversationHistoryStreamAdvisor.ATTACHMENT_METADATA_KEY);
+        if (explicit instanceof List<?> list && !list.isEmpty()) {
+            return (List<Map<String, Object>>) list;
+        }
+
+        // Fall back to extracting from Media objects
+        Prompt prompt = request.prompt();
+        if (prompt == null || prompt.getUserMessage() == null) {
+            return List.of();
+        }
+        List<Media> media = prompt.getUserMessage().getMedia();
+        if (media == null || media.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> attachments = new ArrayList<>();
+        for (Media m : media) {
+            if (!(m.getData() instanceof String href)) {
+                continue;
+            }
+            Map<String, Object> att = new LinkedHashMap<>();
+            att.put("href", href);
+            att.put("contentType", m.getMimeType().toString());
+            if (m.getName() != null) {
+                att.put("name", m.getName());
+            }
+            attachments.add(att);
+        }
+        return attachments;
     }
 
     private String resolveConversationId(ChatClientRequest request) {

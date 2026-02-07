@@ -1,8 +1,10 @@
 package io.github.chirino.memory.history.runtime;
 
+import io.github.chirino.memory.history.annotations.Attachments;
 import io.github.chirino.memory.history.annotations.ConversationId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
+import io.quarkiverse.langchain4j.ImageUrl;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
 import jakarta.annotation.Priority;
@@ -14,6 +16,10 @@ import jakarta.interceptor.InvocationContext;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.jboss.logging.Logger;
 
 @RecordConversation
@@ -35,7 +41,10 @@ public class ConversationInterceptor {
         ConversationInvocation invocation = resolveInvocation(ctx);
 
         try {
-            store.appendUserMessage(invocation.conversationId(), invocation.userMessage());
+            store.appendUserMessage(
+                    invocation.conversationId(),
+                    invocation.userMessage(),
+                    invocation.attachments());
         } catch (RuntimeException e) {
             LOG.warnf(
                     e,
@@ -78,12 +87,15 @@ public class ConversationInterceptor {
         return false;
     }
 
+    @SuppressWarnings("unchecked")
     private ConversationInvocation resolveInvocation(InvocationContext ctx) {
         Object[] args = ctx.getParameters();
         Annotation[][] annotations = ctx.getMethod().getParameterAnnotations();
 
         String conversationId = null;
         String userMessage = null;
+        List<Map<String, Object>> explicitAttachments = null;
+        List<Map<String, Object>> imageUrlAttachments = new ArrayList<>();
 
         for (int i = 0; i < args.length; i++) {
             for (Annotation a : annotations[i]) {
@@ -93,6 +105,15 @@ public class ConversationInterceptor {
                 if (a instanceof UserMessage) {
                     userMessage = (String) args[i];
                 }
+                if (a instanceof Attachments && args[i] != null) {
+                    explicitAttachments = (List<Map<String, Object>>) args[i];
+                }
+                if (a instanceof ImageUrl && args[i] != null) {
+                    Map<String, Object> att = new LinkedHashMap<>();
+                    att.put("href", String.valueOf(args[i]));
+                    att.put("contentType", "image/*");
+                    imageUrlAttachments.add(att);
+                }
             }
         }
 
@@ -101,6 +122,10 @@ public class ConversationInterceptor {
                     "Missing @ConversationId or @UserMessage on intercepted method");
         }
 
-        return new ConversationInvocation(conversationId, userMessage);
+        // Prefer explicit @Attachments metadata over @ImageUrl-derived attachments
+        List<Map<String, Object>> attachments =
+                explicitAttachments != null ? explicitAttachments : imageUrlAttachments;
+
+        return new ConversationInvocation(conversationId, userMessage, attachments);
     }
 }

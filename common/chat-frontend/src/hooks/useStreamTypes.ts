@@ -8,10 +8,15 @@ export type StreamEvent =
   | { eventType: "IntermediateResponse"; chunk?: string }
   | { eventType: "ChatCompleted"; finishReason?: string };
 
+export type StreamAttachmentRef = {
+  attachmentId: string;
+};
+
 export type StreamStartParams = {
   sessionId: string;
   text: string;
   resetResume: boolean;
+  attachments?: StreamAttachmentRef[];
   onChunk: (chunk: string) => void;
   onEvent?: (event: StreamEvent) => void;
   onReplayFailed: () => void;

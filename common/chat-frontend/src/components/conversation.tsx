@@ -54,6 +54,17 @@ export type ChatEvent =
   | { eventType: "IntermediateResponse"; chunk?: string }
   | { eventType: "ChatCompleted"; finishReason?: string };
 
+// Attachment type for multi-modal content - references external or server-stored resources
+export type ChatAttachment = {
+  href?: string;          // External URL (Phase 1) or internal /v1/attachments/{id}
+  attachmentId?: string;  // Internal attachment reference (Phase 2)
+  contentType: string;
+  name?: string;
+  description?: string;
+  size?: number;
+  sha256?: string;
+};
+
 export type ConversationMessage = {
   id: string;
   conversationId: string;
@@ -70,12 +81,20 @@ export type ConversationMessage = {
   };
   // Rich event stream data (optional - present when AI response included tool calls, thinking, etc.)
   events?: ChatEvent[];
+  // Attachments (optional - present when message includes images, audio, video, or document references)
+  attachments?: ChatAttachment[];
 };
 
 export type ConversationStreamPhase = "idle" | "sending" | "streaming" | "completed" | "canceled" | "error";
 
+export type AttachmentRef = {
+  attachmentId: string;
+  contentType?: string;
+  name?: string;
+};
+
 export type ConversationController = {
-  startStream: (conversationId: string, text: string, callbacks: StreamCallbacks) => void | Promise<void>;
+  startStream: (conversationId: string, text: string, callbacks: StreamCallbacks, attachments?: AttachmentRef[]) => void | Promise<void>;
   resumeStream: (conversationId: string, callbacks: StreamCallbacks) => void | Promise<void>;
   cancelStream: (conversationId: string) => void | Promise<void>;
   selectConversation: (conversationId: string) => void | Promise<void>;
@@ -132,7 +151,7 @@ type ConversationContextValue = {
   state: ConversationState;
   controller: ConversationController;
   currentUserId: string | null | undefined;
-  sendMessage: (text: string) => void;
+  sendMessage: (text: string, attachments?: AttachmentRef[]) => void;
   resumeStream: (options?: { conversationId?: string | null }) => void;
   cancelStream: () => void;
   selectConversation: (conversationId: string) => void;
@@ -165,7 +184,7 @@ type ConversationMessageProps = {
 
 type ConversationInputProps = {
   onSubmit?: (value: string) => void;
-} & React.TextareaHTMLAttributes<HTMLTextAreaElement> &
+} & Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "onSubmit"> &
   AsChildProps;
 
 type ConversationActionsProps = {
@@ -435,7 +454,7 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
   }, []);
 
   const sendMessage = useCallback(
-    (text: string) => {
+    (text: string, attachments?: AttachmentRef[]) => {
       if (!state.conversationId) {
         return;
       }
@@ -444,7 +463,7 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
         return;
       }
       const trimmed = text.trim();
-      if (!trimmed) {
+      if (!trimmed && (!attachments || attachments.length === 0)) {
         return;
       }
       // Generate IDs upfront using controller's idFactory if available
@@ -459,12 +478,15 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
         content: trimmed,
         createdAt: new Date().toISOString(),
         userId: currentUserId,
+        attachments: attachments && attachments.length > 0
+          ? attachments.map((a) => ({ attachmentId: a.attachmentId, contentType: a.contentType ?? "application/octet-stream", name: a.name }))
+          : undefined,
       };
       dispatch({ type: "SEND_START", userMessage, streamId, pendingAssistantId });
       const callbacks = handleStreamCallbacks(streamId);
       // Wrap in try-catch to handle both sync throws and async rejections
       try {
-        void Promise.resolve(controller.startStream(state.conversationId, trimmed, callbacks)).catch((error) => {
+        void Promise.resolve(controller.startStream(state.conversationId, trimmed, callbacks, attachments)).catch((error) => {
           callbacks.onError?.(error);
         });
       } catch (error) {
@@ -807,8 +829,8 @@ export function useConversationInput() {
   return {
     value: state.inputValue,
     setValue: setInputValue,
-    // Accept optional value to avoid stale closure issues; falls back to current state
-    submit: (value?: string) => sendMessage(value ?? state.inputValue),
+    // Accept optional value and attachments to avoid stale closure issues; falls back to current state
+    submit: (value?: string, attachments?: AttachmentRef[]) => sendMessage(value ?? state.inputValue, attachments),
     reset: () => setInputValue(""),
   };
 }

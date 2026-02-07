@@ -101,6 +101,10 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Inject MemoryEntriesCacheSelector memoryCacheSelector;
 
+    @Inject io.github.chirino.memory.attachment.AttachmentStoreSelector attachmentStoreSelector;
+
+    @Inject io.github.chirino.memory.attachment.FileStoreSelector fileStoreSelector;
+
     @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
 
     private MemoryEntriesCache memoryEntriesCache;
@@ -316,7 +320,9 @@ public class PostgresMemoryStore implements MemoryStore {
         entry.setChannel(Channel.HISTORY);
         entry.setEpoch(null);
         entry.setContentType("history");
-        entry.setContent(encryptContent(toHistoryContent(request.getContent(), "USER")));
+        entry.setContent(
+                encryptContent(
+                        toHistoryContent(request.getContent(), "USER", request.getAttachments())));
         entry.setIndexedContent(request.getContent());
         entry.setConversationGroupId(conversation.getConversationGroup().getId());
         OffsetDateTime createdAt = OffsetDateTime.now();
@@ -1999,15 +2005,26 @@ public class PostgresMemoryStore implements MemoryStore {
 
     /**
      * Creates content blocks for history channel entries with the required format.
-     * @param text The message text
+     * @param text The message text (nullable if attachments present)
      * @param role Either "USER" or "AI"
-     * @return Content array with a single object containing text and role fields
+     * @param attachments Optional list of attachment objects
+     * @return Content array with a single object containing role and at least one of text or attachments
      */
-    private List<Object> toHistoryContent(String text, String role) {
-        if (text == null) {
+    private List<Object> toHistoryContent(
+            String text, String role, List<Map<String, Object>> attachments) {
+        Map<String, Object> block = new HashMap<>();
+        block.put("role", role);
+        if (text != null) {
+            block.put("text", text);
+        }
+        if (attachments != null && !attachments.isEmpty()) {
+            block.put("attachments", attachments);
+        }
+        if (block.size() <= 1) {
+            // Only role present, no content - return empty
             return Collections.emptyList();
         }
-        return List.of(Map.of("text", text, "role", role));
+        return List.of(block);
     }
 
     // Admin methods
@@ -2380,7 +2397,34 @@ public class PostgresMemoryStore implements MemoryStore {
                     "vector_store_delete", Map.of("conversationGroupId", groupId));
         }
 
-        // 2. Single DELETE statement - ON DELETE CASCADE handles all children
+        // 2. Delete FileStore blobs for attachments in these groups
+        try {
+            UUID[] groupUuids = groupIds.stream().map(UUID::fromString).toArray(UUID[]::new);
+            @SuppressWarnings("unchecked")
+            List<String> entryIds =
+                    entityManager
+                            .createNativeQuery(
+                                    "SELECT id::text FROM entries WHERE conversation_group_id ="
+                                            + " ANY(:ids)")
+                            .setParameter("ids", groupUuids)
+                            .getResultList();
+            if (!entryIds.isEmpty()) {
+                var attachmentStore = attachmentStoreSelector.getStore();
+                var fileStore = fileStoreSelector.getFileStore();
+                var attachments = attachmentStore.findByEntryIds(entryIds);
+                for (var att : attachments) {
+                    if (att.storageKey() != null) {
+                        fileStore.delete(att.storageKey());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf(
+                    "Failed to cleanup attachment blobs for groups %s: %s",
+                    groupIds, e.getMessage());
+        }
+
+        // 3. Single DELETE statement - ON DELETE CASCADE handles all children
         UUID[] uuids = groupIds.stream().map(UUID::fromString).toArray(UUID[]::new);
         entityManager
                 .createNativeQuery("DELETE FROM conversation_groups WHERE id = ANY(:ids)")

@@ -1,6 +1,7 @@
 package example;
 
 import dev.langchain4j.service.MemoryId;
+import io.quarkiverse.langchain4j.ImageUrl;
 import io.quarkiverse.langchain4j.RegisterAiService;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
@@ -13,4 +14,7 @@ public interface Agent {
     Multi<String> chat(@MemoryId String memoryId, String userMessage);
 
     Multi<ChatEvent> chatDetailed(@MemoryId String memoryId, String userMessage);
+
+    Multi<ChatEvent> chatWithImage(
+            @MemoryId String memoryId, String userMessage, @ImageUrl String imageUrl);
 }

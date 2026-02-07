@@ -107,6 +107,10 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Inject MemoryEntriesCacheSelector memoryCacheSelector;
 
+    @Inject io.github.chirino.memory.attachment.AttachmentStoreSelector attachmentStoreSelector;
+
+    @Inject io.github.chirino.memory.attachment.FileStoreSelector fileStoreSelector;
+
     @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
 
     private MemoryEntriesCache memoryEntriesCache;
@@ -326,7 +330,15 @@ public class MongoMemoryStore implements MemoryStore {
         m.epoch = null;
         m.contentType = "history";
         m.conversationGroupId = c.conversationGroupId;
-        m.decodedContent = List.of(Map.of("text", request.getContent(), "role", "USER"));
+        Map<String, Object> block = new HashMap<>();
+        block.put("role", "USER");
+        if (request.getContent() != null) {
+            block.put("text", request.getContent());
+        }
+        if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
+            block.put("attachments", request.getAttachments());
+        }
+        m.decodedContent = List.of(block);
         m.content = encryptContent(m.decodedContent);
         m.indexedContent = request.getContent();
         Instant createdAt = Instant.now();
@@ -2239,7 +2251,31 @@ public class MongoMemoryStore implements MemoryStore {
                     "vector_store_delete", Map.of("conversationGroupId", groupId));
         }
 
-        // 2. Delete from data store (explicit cascade - MongoDB has no ON DELETE CASCADE)
+        // 2. Delete FileStore blobs and attachment records for entries in these groups
+        try {
+            var attachmentStore = attachmentStoreSelector.getStore();
+            var fileStore = fileStoreSelector.getFileStore();
+            List<String> entryIds = new java.util.ArrayList<>();
+            for (Document doc :
+                    getEntryCollection()
+                            .find(Filters.in("conversationGroupId", groupIds))
+                            .projection(new Document("_id", 1))) {
+                entryIds.add(doc.getString("_id"));
+            }
+            if (!entryIds.isEmpty()) {
+                var attachments = attachmentStore.findByEntryIds(entryIds);
+                for (var att : attachments) {
+                    if (att.storageKey() != null) {
+                        fileStore.delete(att.storageKey());
+                    }
+                    attachmentStore.delete(att.id());
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("Failed to cleanup attachments for groups %s: %s", groupIds, e.getMessage());
+        }
+
+        // 3. Delete from data store (explicit cascade - MongoDB has no ON DELETE CASCADE)
         Bson filter = Filters.in("conversationGroupId", groupIds);
         Bson groupFilter = Filters.in("_id", groupIds);
 

@@ -183,3 +183,25 @@ CREATE INDEX IF NOT EXISTS idx_tasks_ready
 -- Unique partial index for singleton tasks (allows multiple NULL task_name values)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name
     ON tasks (task_name) WHERE task_name IS NOT NULL;
+
+------------------------------------------------------------
+-- Attachments
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS attachments (
+    id              UUID PRIMARY KEY,
+    storage_key     VARCHAR(255),
+    filename        VARCHAR(255),
+    content_type    VARCHAR(127) NOT NULL,
+    size            BIGINT,
+    sha256          VARCHAR(64),
+    user_id         TEXT NOT NULL,
+    entry_id        UUID REFERENCES entries(id) ON DELETE CASCADE,
+    expires_at      TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_expires_at
+    ON attachments(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_entry_id
+    ON attachments(entry_id) WHERE entry_id IS NOT NULL;

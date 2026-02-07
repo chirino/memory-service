@@ -488,3 +488,70 @@ message CheckConversationsResponse {
   // Conversation IDs with responses in progress (UUID as 16-byte big-endian binary each)
   repeated bytes conversation_ids = 1;
 }
+
+service AttachmentsService {
+  // Upload a file as a stream of chunks. First message must contain metadata.
+  // Subsequent messages contain file data chunks.
+  // Server responds once the upload is complete or an error occurs.
+  rpc UploadAttachment(stream UploadAttachmentRequest) returns (UploadAttachmentResponse);
+
+  // Retrieve attachment metadata (not the file content).
+  rpc GetAttachment(GetAttachmentRequest) returns (AttachmentInfo);
+
+  // Download a file as a stream of chunks.
+  rpc DownloadAttachment(DownloadAttachmentRequest) returns (stream DownloadAttachmentResponse);
+}
+
+message UploadAttachmentRequest {
+  oneof payload {
+    // First message: upload metadata (required)
+    UploadMetadata metadata = 1;
+    // Subsequent messages: file data chunks
+    bytes chunk = 2;
+  }
+}
+
+message UploadMetadata {
+  string filename = 1;
+  string content_type = 2;
+  // ISO 8601 duration (e.g., "PT1H"). Empty = server default.
+  string expires_in = 3;
+}
+
+message UploadAttachmentResponse {
+  string id = 1;
+  string href = 2;
+  string content_type = 3;
+  string filename = 4;
+  int64 size = 5;
+  string sha256 = 6;
+  string expires_at = 7;
+}
+
+message GetAttachmentRequest {
+  string id = 1;
+}
+
+message AttachmentInfo {
+  string id = 1;
+  string href = 2;
+  string content_type = 3;
+  string filename = 4;
+  int64 size = 5;
+  string sha256 = 6;
+  string expires_at = 7;
+  string created_at = 8;
+}
+
+message DownloadAttachmentRequest {
+  string id = 1;
+}
+
+message DownloadAttachmentResponse {
+  oneof payload {
+    // First message: attachment metadata
+    AttachmentInfo metadata = 1;
+    // Subsequent messages: file data chunks
+    bytes chunk = 2;
+  }
+}

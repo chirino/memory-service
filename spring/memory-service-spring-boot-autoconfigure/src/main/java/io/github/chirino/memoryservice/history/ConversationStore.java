@@ -33,10 +33,24 @@ public class ConversationStore {
 
     public void appendUserMessage(
             String conversationId, String content, @Nullable String bearerToken) {
+        appendUserMessage(conversationId, content, List.of(), bearerToken);
+    }
+
+    public void appendUserMessage(
+            String conversationId,
+            String content,
+            List<Map<String, Object>> attachments,
+            @Nullable String bearerToken) {
         if (!StringUtils.hasText(content)) {
             return;
         }
         CreateEntryRequest request = createRequest(content, "USER");
+        if (attachments != null && !attachments.isEmpty()) {
+            // Add attachments to the content block
+            @SuppressWarnings("unchecked")
+            Map<String, Object> block = (Map<String, Object>) request.getContent().get(0);
+            block.put("attachments", attachments);
+        }
         callAppend(conversationId, request, resolveBearerToken(bearerToken));
     }
 
