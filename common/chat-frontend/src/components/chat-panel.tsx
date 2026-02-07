@@ -3,6 +3,8 @@ import type React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Conversation,
+  type AttachmentRef,
+  type ChatAttachment,
   type ChatEvent,
   type ConversationController,
   type ConversationMessage,
@@ -15,8 +17,9 @@ import { ConversationsUI } from "@/components/conversations-ui";
 import type { ApiError, Conversation as ApiConversation, ConversationForkSummary, Entry } from "@/client";
 import { ConversationsService } from "@/client";
 import { useSseStream } from "@/hooks/useSseStream";
-import type { StreamStartParams } from "@/hooks/useStreamTypes";
-import { Check, Copy, Menu, Pencil, Trash2 } from "lucide-react";
+import type { StreamAttachmentRef, StreamStartParams } from "@/hooks/useStreamTypes";
+import { Check, Copy, Menu, Paperclip, Pencil, Trash2 } from "lucide-react";
+import { useAttachments } from "@/hooks/useAttachments";
 import { ShareButton } from "@/components/sharing";
 import { UserAvatar } from "@/components/user-avatar";
 import type { AuthUser } from "@/lib/auth";
@@ -49,6 +52,7 @@ type ChatPanelProps = {
 type PendingFork = {
   conversationId: string;
   message: string;
+  attachments?: AttachmentRef[];
 };
 
 type ConversationMeta = {
@@ -63,7 +67,7 @@ type ChatMessageRowProps = {
   onEditingTextChange: (value: string) => void;
   onEditStart: (message: ConversationMessage) => void;
   onEditCancel: () => void;
-  onForkSend: () => void;
+  onForkSend: (attachments?: AttachmentRef[]) => void;
   onCopy: (content: string) => void;
   copiedMessageId: string | null;
   composerDisabled: boolean;
@@ -113,6 +117,8 @@ function ChatMessageRow({
   const hasForks = forkOptionsCount > 1;
   const isCopied = copiedMessageId === message.id;
   const forkMenuRef = useRef<HTMLDivElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+  const { attachments: editAttachments, addFiles: editAddFiles, removeAttachment: editRemoveAttachment, clearAll: editClearAll } = useAttachments();
 
   // Close fork menu when clicking outside
   useEffect(() => {
@@ -132,11 +138,34 @@ function ChatMessageRow({
   }, [isForkMenuOpen, setOpenForkMenuMessageId, setActiveForkMenuMessageId]);
 
   if (isEditing) {
+    const handleEditCancel = () => {
+      editClearAll();
+      onEditCancel();
+    };
+
     return (
       <div key={message.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
         <div className={`w-full max-w-[75%] ${isUser ? "" : ""}`}>
-          {/* Edit mode */}
-          <div className="edit-glow rounded-2xl border-2 border-sage bg-cream px-5 py-4">
+          {/* Edit mode with drag-and-drop */}
+          <div
+            className="edit-glow rounded-2xl border-2 border-sage bg-cream px-5 py-4"
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.dataTransfer.files.length > 0) {
+                editAddFiles(e.dataTransfer.files);
+              }
+            }}
+          >
+            {/* Attachment strip for edit mode */}
+            {editAttachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {editAttachments.map((att) => (
+                  <ConversationsUI.AttachmentChip key={att.localId} attachment={att} onRemove={editRemoveAttachment} />
+                ))}
+              </div>
+            )}
             <textarea
               value={editingText}
               onChange={(event) => onEditingTextChange(event.target.value)}
@@ -146,7 +175,28 @@ function ChatMessageRow({
             <div className="mt-3 flex items-center justify-end gap-2 border-t border-stone/10 pt-3">
               <button
                 type="button"
-                onClick={onEditCancel}
+                onClick={() => editFileInputRef.current?.click()}
+                className="rounded-lg p-2 text-stone/60 transition-colors hover:bg-black/5 hover:text-ink"
+                title="Attach files"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+              <input
+                ref={editFileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    editAddFiles(e.target.files);
+                  }
+                  e.target.value = "";
+                }}
+              />
+              <div className="flex-1" />
+              <button
+                type="button"
+                onClick={handleEditCancel}
                 disabled={composerDisabled}
                 className="px-4 py-2 text-sm text-stone transition-colors hover:text-ink disabled:opacity-50"
               >
@@ -154,7 +204,12 @@ function ChatMessageRow({
               </button>
               <button
                 type="button"
-                onClick={onForkSend}
+                onClick={() => {
+                  const refs = editAttachments
+                    .filter((a) => a.status === "uploaded" && a.attachmentId)
+                    .map((a) => ({ attachmentId: a.attachmentId!, contentType: a.contentType, name: a.name }));
+                  onForkSend(refs.length > 0 ? refs : undefined);
+                }}
                 disabled={composerDisabled || !editingText.trim()}
                 className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-ink/90 disabled:opacity-50"
               >
@@ -275,18 +330,20 @@ function ChatMessageRow({
 type EntryContent = {
   text: string;
   events?: ChatEvent[];
+  attachments?: ChatAttachment[];
 };
 
 function entryContent(entry: Entry): EntryContent {
   const blocks = entry.content ?? [];
   const contentBlock = blocks.find((b) => {
     const block = b as { [key: string]: unknown } | undefined;
-    return block && (typeof block.text === "string" || Array.isArray(block.events));
-  }) as { text?: string; events?: ChatEvent[] } | undefined;
+    return block && (typeof block.text === "string" || Array.isArray(block.events) || Array.isArray(block.attachments));
+  }) as { text?: string; events?: ChatEvent[]; attachments?: ChatAttachment[] } | undefined;
 
   return {
     text: contentBlock?.text ?? "",
     events: contentBlock?.events,
+    attachments: contentBlock?.attachments,
   };
 }
 
@@ -445,11 +502,12 @@ function ChatPanelContent({
       return;
     }
     const trimmed = pending.message.trim();
+    const forkAttachments = pending.attachments;
     pendingForkRef.current = null;
     if (!trimmed) {
       return;
     }
-    submit(trimmed);
+    submit(trimmed, forkAttachments);
   }, [conversationId, stateConversationId, forking, isBusy, pendingForkRef, submit]);
 
   useEffect(() => {
@@ -714,7 +772,7 @@ function ChatPanelContent({
     setEditingText("");
   }, []);
 
-  const handleForkSend = useCallback(async () => {
+  const handleForkSend = useCallback(async (attachments?: AttachmentRef[]) => {
     const trimmed = editingText.trim();
     if (!trimmed || !editingMessage) {
       return;
@@ -735,6 +793,7 @@ function ChatPanelContent({
       pendingForkRef.current = {
         conversationId: response.id,
         message: trimmed,
+        attachments,
       };
       setEditingMessage(null);
       setEditingText("");
@@ -1168,7 +1227,7 @@ export function ChatPanel({
       if (!firstIndexByConversation.has(entry.conversationId)) {
         firstIndexByConversation.set(entry.conversationId, mapped.length);
       }
-      const { text, events } = entryContent(entry);
+      const { text, events, attachments } = entryContent(entry);
       mapped.push({
         id: entry.id,
         conversationId: entry.conversationId,
@@ -1177,6 +1236,7 @@ export function ChatPanel({
         createdAt: entry.createdAt,
         userId: entry.userId,
         events,
+        attachments,
       });
     });
 
@@ -1213,6 +1273,7 @@ export function ChatPanel({
         onComplete?: () => void;
         onError?: (error: unknown) => void;
       },
+      attachments?: StreamAttachmentRef[],
     ) => {
       const appendAssistantChunk = (chunk: string) => {
         if (!chunk.length) {
@@ -1238,6 +1299,7 @@ export function ChatPanel({
         sessionId: targetConversationId,
         text,
         resetResume,
+        attachments,
         onChunk: appendAssistantChunk,
         onEvent: handleEvent,
         onReplayFailed: () => {
@@ -1282,9 +1344,10 @@ export function ChatPanel({
 
   const controller = useMemo<ConversationController>(
     () => ({
-      startStream: async (targetConversationId, text, callbacks) => {
+      startStream: async (targetConversationId, text, callbacks, attachments) => {
         markConversationAsStreaming(targetConversationId);
-        startEventStream(targetConversationId, text, true, callbacks);
+        const streamAttachments = attachments?.map((a) => ({ attachmentId: a.attachmentId }));
+        startEventStream(targetConversationId, text, true, callbacks, streamAttachments);
       },
       resumeStream: async (targetConversationId, callbacks) => {
         markConversationAsStreaming(targetConversationId);

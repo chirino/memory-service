@@ -1,7 +1,7 @@
 # 037: Multi-Modal Input Requests in History Entries
 
 ## Status
-Draft
+Implemented (Phase 1 + Phase 2 + Phase 3 + Phase 4)
 
 ## Current State
 
@@ -229,7 +229,7 @@ function AttachmentPreview({ attachment }: { attachment: Attachment }) {
 
 ---
 
-## Phase 2: Embedded Attachment Storage (Future)
+## Phase 2: Embedded Attachment Storage
 
 ### Problem Statement
 
@@ -276,39 +276,59 @@ Introduce a `FileStore` interface to abstract file storage. The FileStore is a s
 ```java
 public interface FileStore {
     /**
-     * Store a file and return its storage key.
+     * Store file data and return the storage key and size.
+     * Implementations enforce the maxSize limit and may read the stream
+     * in chunks to bound memory usage.
      */
-    String store(InputStream data);
+    FileStoreResult store(InputStream data, long maxSize, String contentType)
+            throws FileStoreException;
 
-    /**
-     * Retrieve a file by storage key.
-     */
-    InputStream retrieve(String storageKey);
+    InputStream retrieve(String storageKey) throws FileStoreException;
 
-    /**
-     * Delete a file by storage key.
-     */
     void delete(String storageKey);
 
-    /**
-     * Generate a signed URL for direct access (if supported).
-     */
     Optional<URI> getSignedUrl(String storageKey, Duration expiry);
 }
+
+/** Result of storing a file in a FileStore. */
+public record FileStoreResult(String storageKey, long size) {}
 ```
 
 #### FileStore Implementations
 
-| Implementation | Use Case | Pros | Cons |
-|----------------|----------|------|------|
-| **S3-compatible** | Production, scalable | Scalable, CDN integration, signed URLs | External dependency |
-| **SQL BLOB** | Simple deployments | Single database, transactional | Size limits, DB load |
-| **Filesystem** | Development, testing | Simple, no deps | Not distributed, no access control |
-| **GridFS (MongoDB)** | MongoDB users | Integrated with document store | MongoDB-specific |
+| Implementation | Status | Use Case | Pros | Cons |
+|----------------|--------|----------|------|------|
+| **DatabaseFileStore** | Implemented | Simple deployments | Single database, no external deps | Size limits, DB load |
+| **S3FileStore** | Implemented | Production, scalable | Scalable, CDN integration, pre-signed URLs | External dependency |
+| **Filesystem** | Not implemented | Development, testing | Simple, no deps | Not distributed, no access control |
+
+A `FileStoreSelector` bean selects the active implementation based on the `memory-service.attachments.store` config property (`db` or `s3`).
+
+##### DatabaseFileStore Streaming Architecture
+
+The `DatabaseFileStore` uses true streaming to avoid loading entire files into memory:
+
+**PostgreSQL — LargeObject API + temp file buffering:**
+- **Upload**: The incoming stream is wrapped in a `CountingInputStream` (enforces `maxSize`) and written to a temp file. A short JDBC transaction then streams the temp file into a PostgreSQL Large Object via the pgjdbc `LargeObjectManager` API. The storage key is the Large Object OID (as a string). The `file_store_blobs` BYTEA table is not used.
+- **Download**: The Large Object is opened synchronously (so "not found" errors surface immediately), then a background virtual thread spools the data to a temp file via `TempFileSpool`. The returned `InputStream` reads from the temp file concurrently as it is being written — the JDBC connection is released as soon as the spool finishes, not held for the entire HTTP response.
+- **Delete**: `LargeObjectManager.delete(oid)` in a short transaction.
+
+**MongoDB — GridFS (direct streaming, no temp file):**
+- **Upload**: The incoming stream is wrapped in a `CountingInputStream` and passed directly to `GridFSBucket.uploadFromStream()`. GridFS handles chunking internally. The storage key is the GridFS `ObjectId` hex string.
+- **Download**: `GridFSBucket.openDownloadStream()` returns a streaming cursor. GridFS cursors are lightweight — they don't hold transactions or locks — so no temp file buffering is needed.
+- **Delete**: `GridFSBucket.delete(objectId)`.
+
+**Key utilities:**
+- **`CountingInputStream`**: Wraps an `InputStream`, counts bytes read, and throws `FileStoreException(FILE_TOO_LARGE)` if the count exceeds `maxSize`. Replaces the old `readWithLimit()` buffering approach.
+- **`TempFileSpool`**: Runs a producer in a background virtual thread, writing to a temp file via a `TrackingOutputStream` that auto-flushes every 32 KB and signals a shared `SpoolState`. The returned `SpoolInputStream` reads from the temp file concurrently using `RandomAccessFile`, blocking via `Lock`/`Condition` when caught up to the writer.
+
+##### S3FileStore Chunked Upload
+
+The `S3FileStore` uses S3 multipart upload for files larger than 5 MB, bounding memory to a single 5 MB chunk regardless of file size. Files ≤ 5 MB use a simple `PutObject`.
 
 #### Attachments Table
 
-The datastore maintains an `attachments` table that tracks files stored in the FileStore and their relationship to entries:
+The datastore maintains an `attachments` table that tracks files stored in the FileStore and their relationship to entries. PostgreSQL stores blob data in `pg_largeobject` (via the LargeObject API) and MongoDB uses GridFS collections — no separate blob table is needed.
 
 ```sql
 CREATE TABLE attachments (
@@ -364,6 +384,8 @@ Content-Type: multipart/form-data
 Returns: {
   "id": "att-abc123",
   "href": "/v1/attachments/att-abc123",
+  "contentType": "image/jpeg",
+  "filename": "photo.jpg",
   "size": 102400,
   "sha256": "e3b0c44298fc1c149afbf4c8996fb924...",
   "expiresAt": "2024-01-15T10:30:00Z"
@@ -385,43 +407,37 @@ Returns: Binary data with appropriate Content-Type
 
 **Referencing attachments in entries:**
 
-When creating an entry, reference pre-uploaded attachments by ID:
+When creating an entry, reference pre-uploaded attachments by `attachmentId` in the attachment object:
 ```json
 {
   "role": "USER",
   "text": "What is this?",
-  "attachments": ["att-abc123"]
+  "attachments": [
+    {
+      "attachmentId": "att-abc123",
+      "contentType": "image/jpeg",
+      "name": "photo.jpg"
+    }
+  ]
 }
 ```
 
-Or upload inline with entry creation using multipart:
-```http
-POST /v1/conversations/{conversationId}/entries
-Content-Type: multipart/form-data
-
-------FormBoundary
-Content-Disposition: form-data; name="message"
-Content-Type: application/json
-
-{"role": "USER", "text": "What is this?"}
-------FormBoundary
-Content-Disposition: form-data; name="attachment"; filename="image.jpg"
-Content-Type: image/jpeg
-
-<binary data>
-------FormBoundary--
-```
+The server rewrites `attachmentId` to `href` (e.g., `/v1/attachments/att-abc123`) **before** persisting the entry, so stored content always contains `href`. The attachment is then linked to the entry (setting `entry_id`, clearing `expires_at`) after the entry is persisted.
 
 **Configuration:**
 ```yaml
 memory-service:
   attachments:
-    max-size: 10MB                    # Maximum file size
+    max-size: 10485760                # Maximum file size in bytes (10MB)
     default-expires-in: PT1H          # Default expiration for pre-uploads (1 hour)
     max-expires-in: PT24H             # Maximum allowed expiration period (24 hours)
     upload-expires-in: PT1M           # Short expiration during upload (1 minute)
     upload-refresh-interval: PT30S    # How often to refresh expiresAt during upload
     cleanup-interval: PT5M            # How often to run cleanup job
+    store: db                         # FileStore implementation: "db" or "s3"
+    s3:
+      bucket: memory-service-attachments  # S3 bucket name (when store=s3)
+      # prefix: attachments/              # Optional S3 key prefix
 ```
 
 #### Recording Flow
@@ -603,36 +619,234 @@ void cleanupExpiredAttachments() {
 
 1. **Attachment lifecycle**: Attachments are deleted before entries are hard-deleted. The entry deletion flow must delete associated attachments (and their files) first.
 
-2. **Size limits**: Configurable via memory-service settings (e.g., `memory-service.attachments.max-size`). Uploads exceeding the limit return a clear error to the API caller.
+2. **Size limits**: Configurable via memory-service settings (e.g., `memory-service.attachments.max-size`). Enforced via `CountingInputStream` during streaming — the upload is rejected as soon as the limit is exceeded, without buffering the entire file first. The REST layer also wraps the upload in a `DigestInputStream` to compute SHA-256 on the fly.
 
-3. **Deduplication**: Delegated to the `FileStore` implementation. Some stores (e.g., S3 with content-addressed keys) may deduplicate; others won't. **Error handling**: If deduplication fails, the error must propagate to the API caller.
+3. **Deduplication**: Not currently implemented. Could be added to individual FileStore implementations in the future (e.g., content-addressed keys in S3).
 
-4. **Virus scanning**: Delegated to the `FileStore` implementation. Stores can integrate with scanning services (e.g., S3 Object Lambda, ClamAV). **Error handling**: If scanning detects malware or fails, the upload must be rejected with a clear error to the API caller.
+4. **Virus scanning**: Not currently implemented. Could be added to individual FileStore implementations in the future (e.g., S3 Object Lambda, ClamAV integration).
 
 5. **Format conversion**: No. Store files as-is. Clients can handle display optimization.
 
-6. **Signed URLs**: Generate on-demand when retrieving files. Note: S3 store is not in the initial implementation scope.
+6. **Signed URLs**: Generated on-demand when retrieving files. The S3FileStore supports pre-signed GET URLs (1-hour expiry); the DatabaseFileStore streams bytes directly.
 
-### Error Handling Requirements
+### Error Handling
 
-For size limits, deduplication, and virus scanning, the `FileStore` interface must define clear error types that propagate to API responses:
+The `FileStore` interface uses `FileStoreException` with an extensible error model. Each exception carries a string error code, HTTP status, human-readable message, and optional details map:
 
 ```java
-public sealed interface FileStoreError {
-    record FileTooLarge(long maxBytes, long actualBytes) implements FileStoreError {}
-    record MalwareDetected(String filename, String threatName) implements FileStoreError {}
-    record DeduplicationFailed(String reason) implements FileStoreError {}
-    record StorageError(String message, Throwable cause) implements FileStoreError {}
+public class FileStoreException extends RuntimeException {
+    // Well-known codes (implementations may define additional codes)
+    public static final String FILE_TOO_LARGE = "file_too_large";
+    public static final String STORAGE_ERROR = "storage_error";
+
+    private final String code;       // Error code sent to API user
+    private final int httpStatus;    // HTTP status code for the response
+    private final Map<String, Object> details;  // Additional context
 }
 ```
 
-API responses must translate these to appropriate HTTP status codes:
-| Error | HTTP Status | Response |
-|-------|-------------|----------|
-| `FileTooLarge` | 413 Payload Too Large | `{"error": "file_too_large", "maxBytes": 10485760, "actualBytes": 15000000}` |
-| `MalwareDetected` | 422 Unprocessable Entity | `{"error": "malware_detected", "filename": "...", "threat": "..."}` |
-| `DeduplicationFailed` | 500 Internal Server Error | `{"error": "storage_error", "message": "..."}` |
-| `StorageError` | 500 Internal Server Error | `{"error": "storage_error", "message": "..."}` |
+The REST layer forwards these fields directly to the API response without branching on specific codes. This means FileStore implementations can introduce new error codes (e.g., `malware_detected`, `quota_exceeded`) and they'll automatically flow through to API users with the correct HTTP status and details.
+
+Well-known error codes:
+
+| Code | HTTP Status | Details | Description |
+|------|-------------|---------|-------------|
+| `file_too_large` | 413 | `maxBytes`, `actualBytes` | File exceeds configured size limit |
+| `storage_error` | 500 | — | Generic storage backend failure |
+
+Size limits are enforced via `CountingInputStream` inside each FileStore implementation, which rejects the upload as soon as the limit is exceeded without buffering the full file.
+
+### Phase 3: gRPC Attachment API
+
+#### Problem Statement
+
+The REST attachment endpoints use HTTP multipart uploads, which don't have a gRPC equivalent. gRPC messages have a default 4 MB size limit and, even when increased, loading an entire file into a single protobuf message creates memory pressure proportional to file size on both client and server. Large attachments (images, documents, audio) can easily exceed 10 MB.
+
+The current REST implementation streams files through `DigestInputStream` (SHA-256) and `CountingInputStream` (size enforcement) without buffering the entire file in memory. The FileStore implementations also stream internally (LargeObject API for PostgreSQL, GridFS for MongoDB, multipart upload for S3). A gRPC streaming API would follow the same pattern, bridging the chunk stream to an `InputStream` for the existing FileStore interface.
+
+#### Design: Client-Streaming Upload
+
+Use **client streaming** for uploads. The client sends a stream of messages: the first message carries metadata, subsequent messages carry file data chunks. The server responds with a single unary response after the stream completes.
+
+```protobuf
+service AttachmentsService {
+  // Upload a file as a stream of chunks. First message must contain metadata.
+  // Subsequent messages contain file data chunks.
+  // Server responds once the upload is complete or an error occurs.
+  rpc UploadAttachment(stream UploadAttachmentRequest) returns (UploadAttachmentResponse);
+
+  // Retrieve attachment metadata (not the file content).
+  rpc GetAttachment(GetAttachmentRequest) returns (AttachmentInfo);
+
+  // Download a file as a stream of chunks.
+  rpc DownloadAttachment(DownloadAttachmentRequest) returns (stream DownloadAttachmentResponse);
+}
+
+message UploadAttachmentRequest {
+  oneof payload {
+    // First message: upload metadata (required)
+    UploadMetadata metadata = 1;
+    // Subsequent messages: file data chunks
+    bytes chunk = 2;
+  }
+}
+
+message UploadMetadata {
+  string filename = 1;
+  string content_type = 2;
+  // ISO 8601 duration (e.g., "PT1H"). Empty = server default.
+  string expires_in = 3;
+}
+
+message UploadAttachmentResponse {
+  string id = 1;
+  string href = 2;             // "/v1/attachments/{id}"
+  string content_type = 3;
+  string filename = 4;
+  int64 size = 5;
+  string sha256 = 6;
+  string expires_at = 7;       // ISO 8601 timestamp
+}
+
+message GetAttachmentRequest {
+  string id = 1;
+}
+
+message AttachmentInfo {
+  string id = 1;
+  string href = 2;
+  string content_type = 3;
+  string filename = 4;
+  int64 size = 5;
+  string sha256 = 6;
+  string expires_at = 7;
+  string created_at = 8;
+}
+
+message DownloadAttachmentRequest {
+  string id = 1;
+}
+
+message DownloadAttachmentResponse {
+  oneof payload {
+    // First message: attachment metadata
+    AttachmentInfo metadata = 1;
+    // Subsequent messages: file data chunks
+    bytes chunk = 2;
+  }
+}
+```
+
+#### Upload Flow
+
+```
+Client                                 Server
+  │                                      │
+  │─── UploadAttachmentRequest ─────────>│  metadata: {filename, content_type, expires_in}
+  │    (metadata)                        │  → Create attachment record (short expiresAt)
+  │                                      │  → Initialize SHA-256 digest
+  │                                      │
+  │─── UploadAttachmentRequest ─────────>│  chunk: <bytes 0..65535>
+  │    (chunk 1)                         │  → Write to FileStore, update digest
+  │                                      │
+  │─── UploadAttachmentRequest ─────────>│  chunk: <bytes 65536..131071>
+  │    (chunk 2)                         │  → Write to FileStore, update digest
+  │                                      │
+  │─── ... more chunks ... ─────────────>│
+  │                                      │
+  │─── (stream completes) ─────────────>│  → Finalize FileStore write
+  │                                      │  → Compute final SHA-256
+  │                                      │  → Update attachment record
+  │                                      │
+  │<── UploadAttachmentResponse ────────│  {id, href, size, sha256, expiresAt}
+  │                                      │
+```
+
+#### Download Flow
+
+```
+Client                                 Server
+  │                                      │
+  │─── DownloadAttachmentRequest ──────>│  {id: "att-123"}
+  │                                      │  → Verify access control
+  │                                      │  → Open FileStore stream
+  │                                      │
+  │<── DownloadAttachmentResponse ─────│  metadata: {id, content_type, filename, size, ...}
+  │    (metadata)                        │
+  │                                      │
+  │<── DownloadAttachmentResponse ─────│  chunk: <bytes 0..65535>
+  │    (chunk 1)                         │
+  │                                      │
+  │<── DownloadAttachmentResponse ─────│  chunk: <bytes 65536..131071>
+  │    (chunk 2)                         │
+  │                                      │
+  │<── ... more chunks ... ────────────│
+  │                                      │
+  │<── (stream completes) ────────────│
+  │                                      │
+```
+
+#### Key Design Decisions
+
+**1. Chunk size**: Recommended 64 KB per chunk. This balances gRPC framing overhead against memory usage. Clients may use smaller or larger chunks (up to the per-message limit), but 64 KB is a good default.
+
+**2. `oneof` for first-message metadata**: The `oneof payload` pattern distinguishes the metadata-only first message from data chunks. This is cleaner than the approach used in `StreamResponseTokenRequest` (where `conversation_id` is sent in the first message alongside data) because uploads have a distinct metadata phase.
+
+**3. Server-side buffering**: The gRPC service bridges the chunk stream to an `InputStream` and passes it to `FileStore.store()`. Each FileStore already handles streaming internally:
+
+| FileStore | Strategy | Memory |
+|-----------|----------|--------|
+| **S3** | S3 multipart upload with 5 MB chunks; simple PutObject for files ≤ 5 MB | Bounded to one 5 MB chunk |
+| **PostgreSQL** | `CountingInputStream` → temp file → LargeObject API in short transaction | Bounded by temp disk |
+| **MongoDB** | `CountingInputStream` → GridFS `uploadFromStream()` (chunked internally) | GridFS chunk size (255 KB default) |
+
+No FileStore implementation requires full in-memory buffering.
+
+**4. SHA-256 computation**: The digest is updated incrementally as each chunk arrives, so it never requires the full file in memory.
+
+**5. FileStore interface reuse**: The current `FileStore.store(InputStream, maxSize, contentType)` signature already supports streaming. The gRPC service implementation can bridge the chunk stream to an `InputStream` (e.g., using `PipedInputStream`/`PipedOutputStream` or by collecting chunks), so no FileStore changes are needed.
+
+**6. Error handling**: gRPC errors are mapped via `GrpcStatusMapper`:
+
+| FileStoreException code | gRPC Status |
+|------------------------|-------------|
+| `file_too_large` | `RESOURCE_EXHAUSTED` |
+| `storage_error` | `INTERNAL` |
+| Other codes | `INTERNAL` (with message) |
+
+Access control errors use `PERMISSION_DENIED` and `NOT_FOUND` as with existing services.
+
+**7. No signed URL redirect**: Unlike the REST `GET /v1/attachments/{id}` endpoint which can issue a 302 redirect to a signed S3 URL, gRPC doesn't support redirects. The gRPC download always streams bytes through the server. For performance-sensitive use cases, clients can use the REST endpoint's `href` for direct S3 access.
+
+#### Implementation Notes
+
+The gRPC service class follows the existing patterns:
+
+```java
+@GrpcService
+@Blocking
+public class AttachmentsGrpcService extends AbstractGrpcService {
+
+    @Inject AttachmentStoreSelector attachmentStoreSelector;
+    @Inject FileStoreSelector fileStoreSelector;
+    @Inject AttachmentConfig config;
+
+    public Uni<UploadAttachmentResponse> uploadAttachment(
+            Multi<UploadAttachmentRequest> requestStream) {
+        // Collect metadata from first message
+        // Stream chunks through SHA-256 digest
+        // Forward to FileStore
+        // Return response on completion
+    }
+
+    public Multi<DownloadAttachmentResponse> downloadAttachment(
+            DownloadAttachmentRequest request) {
+        // Verify access control
+        // Send metadata as first response
+        // Stream file chunks from FileStore
+    }
+}
+```
 
 ---
 
@@ -688,74 +902,133 @@ components:
 
 #### 1.2 Quarkus Implementation
 
-- [ ] Add `Attachment` record class
-- [ ] Update `ConversationStore.appendUserMessage()` to accept attachments
-- [ ] Add `@ImageUrl` parameter detection in `ConversationInterceptor`
-- [ ] Update example chat app to demonstrate image URL support
+- [x] Add `Attachment` record class
+- [x] Update `ConversationStore.appendUserMessage()` to accept attachments
+- [x] Add `@ImageUrl` parameter detection in `ConversationInterceptor`
+- [x] Update example chat app to demonstrate image URL support
 
 #### 1.3 Spring Implementation
 
-- [ ] Add `Attachment` record class
-- [ ] Update `ConversationStore.appendUserMessage()` to accept attachments
-- [ ] Add media extraction from `UserMessage` in advisor
-- [ ] Update example chat app to demonstrate image URL support
+- [x] Add `Attachment` record class
+- [x] Update `ConversationStore.appendUserMessage()` to accept attachments
+- [x] Add media extraction from `UserMessage` in advisor
+- [x] Update example chat app to demonstrate image URL support
 
 #### 1.4 Frontend
 
-- [ ] Add `AttachmentPreview` component
-- [ ] Update `MessageBubble` to render attachments
-- [ ] Support image, audio, video, and generic file previews
+- [x] Add `AttachmentPreview` component
+- [x] Update `MessageBubble` to render attachments
+- [x] Support image, audio, video, and generic file previews
 
-### Phase 2 Tasks (Future)
+### Phase 2 Tasks
 
 **Configuration:**
-- [ ] Add `memory-service.attachments.max-size` config property (default: 10MB)
-- [ ] Add `memory-service.attachments.default-expires-in` config property (default: PT1H)
-- [ ] Add `memory-service.attachments.max-expires-in` config property (default: PT24H)
-- [ ] Add `memory-service.attachments.upload-expires-in` config property (default: PT1M)
-- [ ] Add `memory-service.attachments.upload-refresh-interval` config property (default: PT30S)
-- [ ] Add `memory-service.attachments.cleanup-interval` config property (default: PT5M)
-- [ ] Add `memory-service.attachments.store` config to select FileStore implementation
+- [x] Add `memory-service.attachments.max-size` config property (default: 10MB)
+- [x] Add `memory-service.attachments.default-expires-in` config property (default: PT1H)
+- [x] Add `memory-service.attachments.max-expires-in` config property (default: PT24H)
+- [x] Add `memory-service.attachments.upload-expires-in` config property (default: PT1M)
+- [x] Add `memory-service.attachments.upload-refresh-interval` config property (default: PT30S)
+- [x] Add `memory-service.attachments.cleanup-interval` config property (default: PT5M)
+- [x] Add `memory-service.attachments.store` config to select FileStore implementation (`db` or `s3`)
+- [x] Add S3 configuration (bucket, prefix)
 
 **Attachments Table:**
-- [ ] Add `attachments` table with `entry_id` (nullable FK), `expires_at`, `sha256` columns
-- [ ] Add index on `expires_at` for efficient cleanup queries
-- [ ] Add `AttachmentRecord` entity class
+- [x] Add `attachments` table with `entry_id` (nullable FK), `expires_at`, `sha256` columns
+- [x] Attachments schema squashed into migration 1 (`schema.sql`); no separate blob table needed
+- [x] Add index on `expires_at` for efficient cleanup queries
+- [x] Add `AttachmentEntity` JPA entity and `MongoAttachment` document
+- [x] Add `AttachmentRepository`
 
 **FileStore:**
-- [ ] Define `FileStore` interface for file storage abstraction
-- [ ] Define `FileStoreError` sealed interface for typed errors
-- [ ] Implement SQL BLOB FileStore (PostgreSQL, MongoDB GridFS) - initial implementation
-- [ ] (Future) Implement S3 FileStore with signed URL generation
+- [x] Define `FileStore` interface (`store()` accepts `contentType` and returns `FileStoreResult` with storage key + size)
+- [x] Define `FileStoreException` with extensible string-based error codes
+- [x] Implement `CountingInputStream` for streaming size enforcement
+- [x] Implement `TempFileSpool` for concurrent temp file I/O (background virtual thread writer + concurrent reader)
+- [x] Implement `DatabaseFileStore` — PostgreSQL LargeObject API + temp file buffering; MongoDB GridFS
+- [x] Implement `S3FileStore` with chunked multipart upload (5 MB parts), content type metadata, and pre-signed URL generation
+- [x] Implement `FileStoreSelector` to choose implementation based on config
+- [x] REST upload uses `DigestInputStream` for on-the-fly SHA-256 (no buffering in REST layer)
+
+**AttachmentStore:**
+- [x] Define `AttachmentStore` interface for attachment metadata CRUD
+- [x] Implement `PostgresAttachmentStore` and `MongoAttachmentStore`
+- [x] Implement `AttachmentStoreSelector` to choose based on datastore type
 
 **API Endpoints:**
-- [ ] Add upload endpoint: `POST /v1/attachments?expiresIn=PT1H`
-- [ ] Add retrieval endpoint: `GET /v1/attachments/{id}`
-- [ ] Add entry creation with attachments: `POST /v1/conversations/{id}/entries` (multipart)
-- [ ] Add access control: uploader-only for unlinked, conversation READ for linked
+- [x] Add upload endpoint: `POST /v1/attachments?expiresIn=PT1H`
+- [x] Add retrieval endpoint: `GET /v1/attachments/{id}`
+- [x] Add `attachmentId` support in entry creation (rewritten to `href` before persistence)
+- [x] Add access control: uploader-only for unlinked, conversation-level for linked
 
 **Error Handling:**
-- [ ] Map `FileStoreError` to HTTP responses in REST layer
-- [ ] Add error response schemas to OpenAPI spec
-- [ ] Add validation for size limits before FileStore invocation
-- [ ] Validate `expiresIn` parameter against max-expires-in config
-
-**Upload Reliability:**
-- [ ] Refresh `expiresAt` periodically during upload (e.g., every 30 seconds)
-- [ ] Set final `expiresAt` on successful upload completion
-- [ ] On upload failure: delete partial file from FileStore, delete attachment record
-- [ ] Handle client disconnection during upload
+- [x] Map `FileStoreException` to HTTP responses in REST layer
+- [x] Add error response schemas to OpenAPI spec
+- [x] Add validation for size limits in both REST layer and FileStore
+- [x] Validate `expiresIn` parameter against max-expires-in config
 
 **Expired Attachment Cleanup:**
-- [ ] Add `findExpired()` query method to attachment store
-- [ ] Add scheduled cleanup job to delete expired attachments
-- [ ] Delete file from FileStore before deleting attachment record
+- [x] Add `findExpired()` query method to attachment store
+- [x] Add `AttachmentCleanupJob` scheduled cleanup job
+- [x] Delete file from FileStore before deleting attachment record
 
 **Lifecycle Management:**
-- [ ] Link attachment to entry: set `entry_id`, clear `expires_at`
-- [ ] Delete attachments (and files) before entry hard-deletion
-- [ ] Cascade attachment deletion when conversation entries are deleted
-- [ ] Update recording flow to store uploaded files
+- [x] Link attachment to entry: set `entry_id`, clear `expires_at`
+- [x] Cascade: delete FileStore blobs before conversation group hard-deletion (PostgreSQL + MongoDB)
+- [x] PostgreSQL: `ON DELETE CASCADE` handles attachment record cleanup when entries are deleted
+
+### Phase 3 Tasks
+
+**Proto Definitions:**
+- [x] Add `AttachmentsService` with `UploadAttachment`, `GetAttachment`, `DownloadAttachment` RPCs
+- [x] Add `UploadAttachmentRequest` with `oneof payload` (metadata or chunk)
+- [x] Add `UploadMetadata`, `UploadAttachmentResponse`, `GetAttachmentRequest`, `AttachmentInfo`
+- [x] Add `DownloadAttachmentRequest`, `DownloadAttachmentResponse` with `oneof payload` (metadata or chunk)
+- [x] Rebuild proto stubs via `./mvnw compile -pl quarkus/memory-service-proto-quarkus`
+
+**GrpcStatusMapper:**
+- [x] Add `FileStoreException` mapping (`FILE_TOO_LARGE` → `RESOURCE_EXHAUSTED`, others → `INTERNAL`)
+
+**AttachmentsGrpcService:**
+- [x] `uploadAttachment`: Client streaming → unary. Collect messages reactively, validate metadata, store via FileStore with SHA-256 digest
+- [x] `getAttachment`: Unary → unary. Lookup, access control, map to `AttachmentInfo`
+- [x] `downloadAttachment`: Unary → server streaming. Metadata first, then 64 KB chunks from FileStore
+
+**Tests:**
+- [x] Cucumber step definitions for gRPC attachment upload, download, and get metadata
+- [x] `attachments-grpc.feature` with upload, download, metadata, and access control scenarios
+
+### Phase 1.5: Frontend File Upload
+
+Adds drag-and-drop file upload to the chat frontend so users can attach files
+directly from the UI.
+
+**Backend Changes:**
+- `DELETE /v1/attachments/{id}` endpoint: allows the uploader to remove unlinked
+  attachments (returns 409 if already linked to an entry)
+- Quarkus & Spring example apps: streaming attachment proxy resources that forward
+  `POST`, `GET`, and `DELETE` requests to the memory-service without buffering file
+  content in memory
+
+**Frontend Changes:**
+- `useAttachments` hook: manages pending attachment state (upload via XHR with
+  progress, abort, server-side delete on remove)
+- `AttachmentChip` component: shows file icon, name, progress bar, and X button
+- `ConversationsUIComposer`: drag-and-drop zone, attachment strip above textarea,
+  paperclip file-picker button, attachment IDs included in message POST body
+- Edit/fork composer: same attachment capabilities in the inline edit textarea
+- `StreamStartParams.attachments`: optional `{ attachmentId }[]` forwarded in the
+  SSE POST body; Quarkus and Spring example chat endpoints accept and pass them to
+  the LLM
+
+**Phase 1.5 Tasks:**
+- [x] Add `DELETE /v1/attachments/{id}` to OpenAPI spec and `AttachmentsResource`
+- [x] Create `AttachmentsProxyResource` (Quarkus) — streaming HTTP proxy
+- [x] Create `AttachmentsProxyController` (Spring) — streaming WebClient proxy
+- [x] Create `useAttachments` hook (XHR upload with progress)
+- [x] Add `AttachmentChip` component and update Composer with drag-drop + strip
+- [x] Thread attachment IDs through `StreamStartParams` → `useSseStream` → backend
+- [x] Add `attachmentId` to Quarkus `MessageRequest` and Spring `AttachmentRef`
+- [x] Update edit/fork composer with attachment support
 
 ---
 
@@ -802,157 +1075,98 @@ Feature: Multi-modal history entries
     And the entry should not have attachments
 ```
 
-### Phase 2 Tests (Future)
+### Phase 2 Tests
 
-**FileStore Tests:**
-- FileStore unit tests for each implementation (S3, SQL, GridFS)
-- File upload/retrieval integration tests
-- Access control tests for attachment endpoints
-
-**Attachment Pre-Upload Tests:**
+**Implemented Cucumber tests** (`features/attachments-rest.feature`):
 
 ```gherkin
-Feature: Attachment pre-upload and linking
+Feature: Attachments REST API
 
-  Scenario: Pre-upload attachment with custom expiration
-    When I upload an attachment with expiresIn "PT2H"
-    Then the attachment should have an expiresAt approximately 2 hours from now
-    And the attachment should not be linked to an entry
+  Scenario: Upload a file attachment
+    When I upload a file "test.txt" with content type "text/plain" and content "Hello World"
+    Then the response status should be 201
+    And the response body field "id" should not be null
+    And the response body field "href" should not be null
+    And the response body field "contentType" should be "text/plain"
+    And the response body field "filename" should be "test.txt"
+    And the response body field "size" should be "11"
+    And the response body field "sha256" should not be null
+    And the response body field "expiresAt" should not be null
 
-  Scenario: Pre-upload attachment with default expiration
-    Given the default expiration is configured as "PT1H"
-    When I upload an attachment without specifying expiresIn
-    Then the attachment should have an expiresAt approximately 1 hour from now
+  Scenario: Retrieve an uploaded attachment
+    # Upload, then GET the binary content back
 
-  Scenario: Reject expiration exceeding maximum
-    Given the max expiration is configured as "PT24H"
-    When I upload an attachment with expiresIn "PT48H"
-    Then the response status should be 400
-    And the error should indicate the expiration exceeds the maximum
+  Scenario: Cannot retrieve unlinked attachment as different user
+    # Upload as alice, attempt GET as bob → 403
 
-  Scenario: Link pre-uploaded attachment to entry
-    Given I have pre-uploaded an attachment with expiresAt set
-    And a conversation exists
-    When I create an entry referencing the attachment
-    Then the attachment should be linked to the entry
-    And the attachment expiresAt should be null
+  Scenario: Link attachment to entry via attachmentId reference
+    # Upload, create entry with attachmentId, verify href is rewritten in response
 
-  Scenario: Only uploader can access unlinked attachment
-    Given user A uploads an attachment
-    When user B tries to retrieve the attachment
-    Then the response status should be 403
-
-  Scenario: Conversation readers can access linked attachment
-    Given user A uploads an attachment
-    And user A links the attachment to an entry in a conversation
-    And user B has READ access to the conversation
-    When user B retrieves the attachment
-    Then the response status should be 200
+  Scenario: History channel rejects attachment missing both href and attachmentId
+    # Entry with attachment missing both fields → 400
 ```
 
-**Expired Attachment Cleanup Tests:**
+**Future test areas:**
+- Expired attachment cleanup job verification
+- Upload reliability (long uploads, client disconnection)
+- Cascade deletion when conversation groups are hard-deleted
+- S3FileStore integration tests (`PostgresqlInfinispanS3CucumberTest` using LocalStack devservices)
 
-```gherkin
-Feature: Expired attachment cleanup
+---
 
-  Scenario: Cleanup job deletes expired attachments
-    Given I have an attachment with expiresAt in the past
-    And the attachment is not linked to an entry
-    When the cleanup job runs
-    Then the attachment record should be deleted
-    And the file should be deleted from the FileStore
+## Phase 4: Signed Download URLs
 
-  Scenario: Cleanup job preserves linked attachments
-    Given I have an attachment linked to an entry
-    And the attachment has no expiresAt
-    When the cleanup job runs
-    Then the attachment should still exist
+### Problem Statement
 
-  Scenario: Cleanup job preserves unexpired attachments
-    Given I have an unlinked attachment with expiresAt in the future
-    When the cleanup job runs
-    Then the attachment should still exist
-```
+When a user clicks a preview or download link for an attachment in the chat UI, the browser opens a new tab via `<a href>`. The new tab has no `Authorization` header because the app uses OIDC bearer tokens (no session cookies). This results in a 401 error.
 
-**Upload with Entry Tests:**
+### Solution
 
-```gherkin
-Feature: Upload attachment with entry creation
+Two new endpoints provide signed, time-limited download URLs:
 
-  Scenario: Upload file with entry creation
-    Given a conversation exists
-    When I create an entry with an attached file
-    Then the entry should be created with the attachment
-    And the attachment should be linked to the entry
-    And the attachment expiresAt should be null
+1. **`GET /v1/attachments/{id}/download-url`** (authenticated) — Returns a time-limited download URL.
+   - For S3 storage: returns the S3 pre-signed URL directly (already implemented in `S3FileStore.getSignedUrl()`).
+   - For DB storage: generates an HMAC-signed token encoding attachment ID + expiry.
 
-  Scenario: Failed entry creation cleans up attachment
-    Given a conversation exists
-    When I attempt to create an entry with an attached file
-    And the entry creation fails
-    Then the attachment should have a short expiresAt
-    And the cleanup job should eventually delete it
-```
+2. **`GET /v1/attachments/download/{token}/{filename}`** (unauthenticated) — Serves the file using a verified signed token.
 
-**Upload Reliability Tests:**
+### Token Signing (`DownloadUrlSigner`)
 
-```gherkin
-Feature: Upload reliability
+An `@ApplicationScoped` bean using HMAC-SHA256 for token generation and verification.
 
-  Scenario: Long upload refreshes expiration
-    Given I start uploading a large file
-    And the upload takes longer than the initial expiration period
-    Then the expiresAt should be refreshed during upload
-    And the upload should complete successfully
+**Token format**: Base64url-encoded `attachmentId.expiryEpochSeconds.hmacSignature`
 
-  Scenario: Client disconnection cleans up immediately
-    Given I start uploading a file
-    When the client disconnects mid-upload
-    Then the attachment record should be deleted
-    And no partial file should remain in the FileStore
+**Key management**:
+- Config: `memory-service.attachments.download-url-secret` (optional string)
+- If not set: generates a random 256-bit key at startup (ephemeral — URLs don't survive restart, acceptable for short-lived tokens)
+- If set: derives key via `SecretKeySpec`
 
-  Scenario: FileStore failure cleans up attachment record
-    Given I start uploading a file
-    And the attachment record is created
-    When the FileStore fails during upload
-    Then the attachment record should be deleted
+**Verification**: Decode, split on `.`, recompute HMAC, constant-time compare via `MessageDigest.isEqual()`, check expiry.
 
-  Scenario: Final expiration set on completion
-    When I upload an attachment with expiresIn "PT2H"
-    Then during upload the expiresAt should be short
-    And after completion the expiresAt should be approximately 2 hours from now
-```
+### Configuration
 
-**Error Handling Tests:**
+| Property | Default | Description |
+|----------|---------|-------------|
+| `memory-service.attachments.download-url-expires-in` | `PT5M` | Duration for signed download URLs |
+| `memory-service.attachments.download-url-secret` | (none) | Optional HMAC secret; random if unset |
 
-```gherkin
-Feature: Attachment upload error handling
+### Frontend Changes
 
-  Scenario: Reject file exceeding size limit
-    Given max attachment size is configured as 1MB
-    When I upload a 2MB file
-    Then the response status should be 413
-    And the error should be "file_too_large"
-    And the error should include maxBytes and actualBytes
+The `AttachmentPreview` component replaces direct `<a href>` links with click handlers that:
+1. Call `GET /v1/attachments/{id}/download-url` with the bearer token
+2. Open the returned signed URL in a new tab (preview) or trigger a download
 
-  Scenario: Reject malware-infected file
-    Given the attachment store has virus scanning enabled
-    When I upload a file containing malware
-    Then the response status should be 422
-    And the error should be "malware_detected"
-    And the error should include the threat name
+### Phase 4 Tasks
 
-  Scenario: Handle storage errors gracefully
-    Given the attachment store is unavailable
-    When I upload a file
-    Then the response status should be 500
-    And the error should be "storage_error"
-```
-
-**Lifecycle Tests:**
-- Attachment (and file) deleted before entry is hard-deleted
-- Attachments cascade-deleted when conversation entries are deleted
-- Attachment retained when entry is forked (reference copied)
+- [x] Create `DownloadUrlSigner` utility class (HMAC-SHA256 token generation/verification)
+- [x] Add config properties (`download-url-expires-in`, `download-url-secret`)
+- [x] Add `GET /v1/attachments/{id}/download-url` endpoint to `AttachmentsResource`
+- [x] Create `AttachmentDownloadResource` (unauthenticated download endpoint)
+- [x] Update OpenAPI spec with new endpoints and schema
+- [x] Update auth permissions (`application.properties`) to allow unauthenticated downloads
+- [x] Update Quarkus proxy (download-url proxy + download proxy resource + auth config)
+- [x] Update Spring proxy (download-url proxy + download proxy controller + security config)
+- [x] Update frontend `AttachmentPreview` to use signed download URLs
 
 ---
 

@@ -29,7 +29,10 @@ class SecurityConfig {
                                                 "/*.css",
                                                 "/*.ico")
                                         .permitAll()
-                                        // All API endpoints require authentication
+                                        // Signed download URLs are unauthenticated
+                                        .requestMatchers("/v1/attachments/download/**")
+                                        .permitAll()
+                                        // All other API endpoints require authentication
                                         .requestMatchers("/v1/**")
                                         .authenticated()
                                         .anyRequest()

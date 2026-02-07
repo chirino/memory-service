@@ -1,5 +1,6 @@
 package io.github.chirino.memory.grpc;
 
+import io.github.chirino.memory.attachment.FileStoreException;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
@@ -26,6 +27,15 @@ public final class GrpcStatusMapper {
             return Status.ALREADY_EXISTS
                     .withDescription(conflict.getMessage())
                     .asRuntimeException();
+        }
+        if (throwable instanceof FileStoreException fse) {
+            return switch (fse.getCode()) {
+                case FileStoreException.FILE_TOO_LARGE ->
+                        Status.RESOURCE_EXHAUSTED
+                                .withDescription(fse.getMessage())
+                                .asRuntimeException();
+                default -> Status.INTERNAL.withDescription(fse.getMessage()).asRuntimeException();
+            };
         }
         if (throwable instanceof IllegalArgumentException illegalArgument) {
             return Status.INVALID_ARGUMENT

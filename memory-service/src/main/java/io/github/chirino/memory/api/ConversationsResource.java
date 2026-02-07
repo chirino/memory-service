@@ -8,6 +8,8 @@ import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.attachment.AttachmentStore;
+import io.github.chirino.memory.attachment.AttachmentStoreSelector;
 import io.github.chirino.memory.client.model.Conversation;
 import io.github.chirino.memory.client.model.ConversationForkSummary;
 import io.github.chirino.memory.client.model.ConversationMembership;
@@ -63,6 +65,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +87,8 @@ public class ConversationsResource {
     private static final int MAX_REDIRECTS = 3;
 
     @Inject MemoryStoreSelector storeSelector;
+
+    @Inject AttachmentStoreSelector attachmentStoreSelector;
 
     @Inject SecurityIdentity identity;
 
@@ -266,6 +271,9 @@ public class ConversationsResource {
                 }
                 // Agents provide fully-typed content and channel directly
                 // Epoch is auto-calculated by the store for MEMORY channel entries
+                // Rewrite attachmentId → href before persisting so stored content has href
+                List<String> rewrittenIds =
+                        rewriteAttachmentIds(request.getContent(), currentUserId());
                 List<CreateEntryRequest> messages = List.of(request);
                 List<EntryDto> appended =
                         store().appendAgentEntries(
@@ -274,6 +282,9 @@ public class ConversationsResource {
                         appended != null && !appended.isEmpty()
                                 ? appended.get(appended.size() - 1)
                                 : null;
+                if (dto != null) {
+                    linkAttachmentsToEntry(rewrittenIds, dto.getId());
+                }
                 result = dto != null ? toClientEntry(dto) : null;
             } else {
                 // Users cannot set channel to MEMORY - only agents can
@@ -288,8 +299,15 @@ public class ConversationsResource {
                     return historyValidationError;
                 }
                 // Users: convert CreateEntryRequest to CreateUserEntryRequest
+                // Rewrite attachmentId → href before persisting
+                List<String> rewrittenIds =
+                        rewriteAttachmentIds(request.getContent(), currentUserId());
                 String textContent = extractTextFromContent(request.getContent());
-                if (textContent == null || textContent.isBlank()) {
+                List<Map<String, Object>> attachments =
+                        extractAttachmentsFromContent(request.getContent());
+                boolean hasText = textContent != null && !textContent.isBlank();
+                boolean hasAttachments = attachments != null && !attachments.isEmpty();
+                if (!hasText && !hasAttachments) {
                     io.github.chirino.memory.client.model.ErrorResponse error =
                             new io.github.chirino.memory.client.model.ErrorResponse();
                     error.setError("Message content is required");
@@ -297,10 +315,12 @@ public class ConversationsResource {
                     return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
                 }
                 CreateUserEntryRequest userRequest = new CreateUserEntryRequest();
-                userRequest.setContent(textContent);
+                userRequest.setContent(hasText ? textContent : null);
+                userRequest.setAttachments(hasAttachments ? attachments : null);
                 // Note: CreateEntryRequest doesn't have metadata, so we skip it
                 EntryDto dto =
                         store().appendUserEntry(currentUserId(), conversationId, userRequest);
+                linkAttachmentsToEntry(rewrittenIds, dto.getId());
                 result = toClientEntry(dto);
             }
             return Response.status(Response.Status.CREATED).entity(result).build();
@@ -596,9 +616,12 @@ public class ConversationsResource {
      * <p>History content blocks support:
      * <ul>
      *   <li>{@code role} (required): "USER" or "AI"</li>
-     *   <li>{@code text} (optional if events present): the message text</li>
-     *   <li>{@code events} (optional if text present): array of event objects (structure not validated)</li>
+     *   <li>{@code text} (optional): the message text</li>
+     *   <li>{@code events} (optional): array of event objects (structure not validated)</li>
+     *   <li>{@code attachments} (optional): array of attachment objects with href and contentType</li>
      * </ul>
+     *
+     * <p>At least one of {@code text}, {@code events}, or {@code attachments} must be present.
      */
     private Response validateHistoryEntry(CreateEntryRequest request) {
         // Only validate history channel entries
@@ -621,12 +644,12 @@ public class ConversationsResource {
             return badRequest("History channel entries must contain exactly 1 content object");
         }
 
-        // The object must have role and either text or events (or both)
+        // The object must have role and at least one of text, events, or attachments
         Object block = content.get(0);
         if (!(block instanceof Map)) {
             return badRequest(
-                    "History channel content must be an object with 'role' and either 'text' or"
-                            + " 'events' fields");
+                    "History channel content must be an object with 'role' and at least one of"
+                            + " 'text', 'events', or 'attachments'");
         }
 
         @SuppressWarnings("unchecked")
@@ -638,13 +661,16 @@ public class ConversationsResource {
                     "History channel content must have a 'role' field with value 'USER' or 'AI'");
         }
 
-        // Check for text and events - at least one must be present
+        // Check for text, events, and attachments - at least one must be present
         boolean hasText = blockMap.containsKey("text") && blockMap.get("text") != null;
         boolean hasEvents = blockMap.containsKey("events") && blockMap.get("events") != null;
+        boolean hasAttachments =
+                blockMap.containsKey("attachments") && blockMap.get("attachments") != null;
 
-        if (!hasText && !hasEvents) {
+        if (!hasText && !hasEvents && !hasAttachments) {
             return badRequest(
-                    "History channel content must have either a 'text' field or an 'events' array");
+                    "History channel content must have at least one of 'text', 'events', or"
+                            + " 'attachments'");
         }
 
         // Validate events is an array if present (no validation of individual event structure)
@@ -652,6 +678,46 @@ public class ConversationsResource {
             Object events = blockMap.get("events");
             if (!(events instanceof List)) {
                 return badRequest("History channel 'events' field must be an array");
+            }
+        }
+
+        // Validate attachments structure if present
+        if (hasAttachments) {
+            Object attachments = blockMap.get("attachments");
+            if (!(attachments instanceof List)) {
+                return badRequest("History channel 'attachments' field must be an array");
+            }
+            @SuppressWarnings("unchecked")
+            List<Object> attachmentList = (List<Object>) attachments;
+            for (int i = 0; i < attachmentList.size(); i++) {
+                Object att = attachmentList.get(i);
+                if (!(att instanceof Map)) {
+                    return badRequest(
+                            "History channel attachment at index " + i + " must be an object");
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> attMap = (Map<String, Object>) att;
+                boolean hasHref =
+                        attMap.get("href") != null && attMap.get("href") instanceof String;
+                boolean hasAttachmentId =
+                        attMap.get("attachmentId") != null
+                                && attMap.get("attachmentId") instanceof String;
+                if (!hasHref && !hasAttachmentId) {
+                    return badRequest(
+                            "History channel attachment at index "
+                                    + i
+                                    + " must have an 'href' or 'attachmentId' field");
+                }
+                // contentType is required for href attachments, optional for attachmentId
+                // (it's already stored on the attachment record)
+                if (hasHref
+                        && (attMap.get("contentType") == null
+                                || !(attMap.get("contentType") instanceof String))) {
+                    return badRequest(
+                            "History channel attachment at index "
+                                    + i
+                                    + " must have a 'contentType' field");
+                }
             }
         }
 
@@ -967,6 +1033,63 @@ public class ConversationsResource {
         return result;
     }
 
+    /**
+     * Rewrites attachmentId references to href URLs in the content, before persisting.
+     * Returns the list of attachment IDs that were rewritten.
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> rewriteAttachmentIds(List<Object> content, String userId) {
+        List<String> rewrittenIds = new ArrayList<>();
+        if (content == null) {
+            return rewrittenIds;
+        }
+        AttachmentStore attStore = attachmentStoreSelector.getStore();
+        for (Object block : content) {
+            if (!(block instanceof Map<?, ?> map)) {
+                continue;
+            }
+            Object attachments = map.get("attachments");
+            if (!(attachments instanceof List<?> list)) {
+                continue;
+            }
+            for (Object att : list) {
+                if (!(att instanceof Map<?, ?> attMap)) {
+                    continue;
+                }
+                Object attachmentIdObj = attMap.get("attachmentId");
+                if (attachmentIdObj instanceof String attachmentId) {
+                    var optAtt = attStore.findByIdForUser(attachmentId, userId);
+                    if (optAtt.isPresent()) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> mutableAttMap = (Map<String, Object>) attMap;
+                        mutableAttMap.put("href", "/v1/attachments/" + attachmentId);
+                        mutableAttMap.remove("attachmentId");
+                        var record = optAtt.get();
+                        if (!mutableAttMap.containsKey("contentType")) {
+                            mutableAttMap.put("contentType", record.contentType());
+                        }
+                        if (!mutableAttMap.containsKey("name") && record.filename() != null) {
+                            mutableAttMap.put("name", record.filename());
+                        }
+                        rewrittenIds.add(attachmentId);
+                    }
+                }
+            }
+        }
+        return rewrittenIds;
+    }
+
+    /** Links attachment records to the given entry after it has been persisted. */
+    private void linkAttachmentsToEntry(List<String> attachmentIds, String entryId) {
+        if (attachmentIds.isEmpty() || entryId == null) {
+            return;
+        }
+        AttachmentStore attStore = attachmentStoreSelector.getStore();
+        for (String attachmentId : attachmentIds) {
+            attStore.linkToEntry(attachmentId, entryId);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private String extractTextFromContent(List<Object> content) {
         if (content == null) {
@@ -983,6 +1106,22 @@ public class ConversationsResource {
                 }
             } else if (block instanceof String s && !s.isBlank()) {
                 return s;
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractAttachmentsFromContent(List<Object> content) {
+        if (content == null) {
+            return null;
+        }
+        for (Object block : content) {
+            if (block instanceof Map<?, ?> map) {
+                Object attachments = map.get("attachments");
+                if (attachments instanceof List<?> list && !list.isEmpty()) {
+                    return (List<Map<String, Object>>) (List<?>) list;
+                }
             }
         }
         return null;

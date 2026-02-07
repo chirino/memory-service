@@ -915,6 +915,219 @@ paths:
       security:
         - BearerAuth: []
 
+  ############################################################
+  # Attachments
+  ############################################################
+
+  /v1/attachments:
+    post:
+      tags: [Attachments]
+      summary: Upload a file attachment
+      description: |-
+        Uploads a binary file and stores it server-side. Returns an attachment
+        reference that can be included in conversation entries via the
+        `attachmentId` field.
+
+        Uploaded attachments expire after the specified duration unless they are
+        linked to an entry before expiration.
+      operationId: uploadAttachment
+      parameters:
+        - name: expiresIn
+          in: query
+          required: false
+          description: |-
+            ISO 8601 duration for how long the unlinked attachment should persist.
+            Defaults to 1 hour. Maximum 24 hours.
+          schema:
+            type: string
+            default: PT1H
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload.
+              required:
+                - file
+      responses:
+        '201':
+          description: Attachment uploaded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentUploadResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '413':
+          description: File too large.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/attachments/{id}:
+    get:
+      tags: [Attachments]
+      summary: Retrieve an attachment
+      description: |-
+        Downloads the binary content of an attachment.
+
+        - If the attachment is unlinked (not yet associated with an entry), only
+          the original uploader can access it.
+        - If linked to an entry, anyone with read access to the conversation can
+          access it.
+        - If the FileStore supports signed URLs (e.g., S3), a 302 redirect is
+          returned instead of streaming the bytes directly.
+      operationId: getAttachment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Attachment identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Attachment binary content.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '302':
+          description: Redirect to a signed URL for the attachment.
+        '403':
+          description: Access denied.
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    delete:
+      tags: [Attachments]
+      summary: Delete an unlinked attachment
+      description: |-
+        Deletes an attachment that has not yet been linked to an entry.
+
+        - Only the original uploader can delete an attachment.
+        - Only unlinked attachments (those without an `entryId`) can be deleted.
+        - Linked attachments return 409 Conflict since they are permanent.
+        - The file is removed from storage first, then the metadata record is deleted.
+      operationId: deleteAttachment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Attachment identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Attachment deleted.
+        '403':
+          description: Access denied (not the uploader).
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Attachment is linked to an entry and cannot be deleted.
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/attachments/{id}/download-url:
+    get:
+      tags: [Attachments]
+      summary: Get a signed download URL for an attachment
+      description: |-
+        Returns a time-limited, signed URL that can be used to download the
+        attachment without an Authorization header. This is useful for opening
+        files in new browser tabs or triggering downloads.
+
+        - For S3 storage: returns the S3 pre-signed URL directly.
+        - For DB storage: returns a server-relative URL with an HMAC-signed token.
+
+        Access control is the same as `GET /v1/attachments/{id}`.
+      operationId: getAttachmentDownloadUrl
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Attachment identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Signed download URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentDownloadUrlResponse'
+        '403':
+          description: Access denied.
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/attachments/download/{token}/{filename}:
+    get:
+      tags: [Attachments]
+      summary: Download an attachment via signed token
+      description: |-
+        Serves the binary content of an attachment using a time-limited signed
+        token. No authentication header is required.
+
+        The token is obtained from `GET /v1/attachments/{id}/download-url`.
+        Returns 403 if the token is invalid or expired.
+      operationId: downloadAttachmentByToken
+      parameters:
+        - name: token
+          in: path
+          required: true
+          description: Signed download token.
+          schema:
+            type: string
+        - name: filename
+          in: path
+          required: true
+          description: Filename for the download (used in Content-Disposition).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Attachment binary content.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Invalid or expired token.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1123,6 +1336,99 @@ components:
         - history
         - memory
 
+    Attachment:
+      type: object
+      description: |-
+        A reference to an attachment on a history entry. Supports two modes:
+
+        **External URL (Phase 1)**: Provide `href` and `contentType` to reference
+        an externally-hosted resource.
+
+        **Server-stored (Phase 2)**: Provide `attachmentId` to reference a file
+        previously uploaded via `POST /v1/attachments`. When the entry is created,
+        the server replaces `attachmentId` with an `href` pointing to
+        `/v1/attachments/{id}`.
+
+        At least one of `href` or `attachmentId` must be present.
+      properties:
+        href:
+          type: string
+          format: uri
+          description: URL to the attachment resource (external or server-relative).
+        attachmentId:
+          type: string
+          description: |-
+            ID of a previously uploaded attachment (from POST /v1/attachments).
+            When the entry is created, this is replaced with an href.
+        contentType:
+          type: string
+          description: MIME type of the attachment (e.g., "image/jpeg", "audio/mp3"). Required when href is provided directly.
+        name:
+          type: string
+          description: Optional display name for the attachment.
+        description:
+          type: string
+          description: Optional alt text or description.
+        size:
+          type: integer
+          format: int64
+          description: File size in bytes (set by server for uploaded attachments).
+        sha256:
+          type: string
+          description: SHA-256 hash of the file content (set by server for uploaded attachments).
+
+    AttachmentUploadResponse:
+      type: object
+      description: Response from uploading an attachment.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the uploaded attachment.
+        href:
+          type: string
+          description: Server-relative URL to retrieve the attachment.
+        contentType:
+          type: string
+          description: MIME type of the uploaded file.
+        filename:
+          type: string
+          nullable: true
+          description: Original filename of the uploaded file.
+        size:
+          type: integer
+          format: int64
+          description: File size in bytes.
+        sha256:
+          type: string
+          description: SHA-256 hash of the file content.
+        expiresAt:
+          type: string
+          format: date-time
+          description: When this unlinked attachment will expire and be deleted.
+      example:
+        id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        href: "/v1/attachments/7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        contentType: "image/jpeg"
+        filename: "photo.jpg"
+        size: 204800
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        expiresAt: "2025-01-28T11:30:00Z"
+
+    AttachmentDownloadUrlResponse:
+      type: object
+      description: Response containing a signed download URL for an attachment.
+      properties:
+        url:
+          type: string
+          description: The signed download URL. May be an absolute S3 URL or a server-relative path.
+        expiresIn:
+          type: integer
+          description: Number of seconds until the URL expires.
+      example:
+        url: "/v1/attachments/download/dG9rZW4.../photo.jpg"
+        expiresIn: 300
+
     Entry:
       type: object
       required:
@@ -1171,13 +1477,14 @@ components:
 
             The content array for history entries contains objects with:
             - `role` (string, required): Either `"USER"` or `"AI"`.
-            - `text` (string, optional): The message text. Required if `events` is not present.
-            - `events` (array, optional): Rich event objects for streaming details. Required if `text` is not present.
+            - `text` (string, optional): The message text. At least one of `text`, `events`, or `attachments` must be present.
+            - `events` (array, optional): Rich event objects for streaming details.
               Event structure is not validated by the server. For `history/lc4j`, events use an `eventType` field:
               - `PartialResponse`: Text chunk (`{eventType, chunk}`)
               - `PartialThinking`: Reasoning chunk (`{eventType, chunk}`)
               - `BeforeToolExecution`: Before tool call (`{eventType, toolName, input}`)
               - `ToolExecuted`: Tool result (`{eventType, toolName, output}`)
+            - `attachments` (array, optional): Array of `Attachment` objects referencing external resources (images, audio, video, documents).
 
             Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
             agent memory entries.
@@ -1189,7 +1496,7 @@ components:
             stores and returns them without interpretation.
 
             For history channel entries (contentType: `"history"`), each block
-            contains `text` and `role` fields.
+            contains `role` and at least one of `text`, `events`, or `attachments`.
           items: {}
         createdAt:
           type: string
@@ -1202,8 +1509,12 @@ components:
         epoch: null
         contentType: "history"
         content:
-          - text: "Here is a summary of what we discussed so far…"
-            role: "AI"
+          - text: "What breed is this dog?"
+            role: "USER"
+            attachments:
+              - href: "https://example.com/photos/my-dog.jpg"
+                contentType: "image/jpeg"
+                name: "my-dog.jpg"
         createdAt: "2025-01-10T14:40:12Z"
 
     CreateEntryRequest:
@@ -1234,13 +1545,14 @@ components:
 
             The content array for history entries must contain exactly 1 object with:
             - `role` (string, required): Either `"USER"` or `"AI"`.
-            - `text` (string, optional): The message text. Required if `events` is not present.
-            - `events` (array, optional): Rich event objects for streaming details. Required if `text` is not present.
+            - `text` (string, optional): The message text. At least one of `text`, `events`, or `attachments` must be present.
+            - `events` (array, optional): Rich event objects for streaming details.
               Event structure is not validated by the server. For `history/lc4j`, events use an `eventType` field:
               - `PartialResponse`: Text chunk (`{eventType, chunk}`)
               - `PartialThinking`: Reasoning chunk (`{eventType, chunk}`)
               - `BeforeToolExecution`: Before tool call (`{eventType, toolName, input}`)
               - `ToolExecuted`: Tool result (`{eventType, toolName, output}`)
+            - `attachments` (array, optional): Array of `Attachment` objects referencing external resources (images, audio, video, documents).
 
             Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
             agent memory entries.
@@ -1248,7 +1560,7 @@ components:
           type: array
           description: |-
             For history channel entries (contentType: `"history"` or `"history/<subtype>"`), each block
-            contains `role` and either `text` or `events` (or both).
+            contains `role` and at least one of `text`, `events`, or `attachments`.
           items: {}
         indexedContent:
           type: string

@@ -92,13 +92,17 @@ export function useSseStream(): StreamClient {
           } else {
             // Normal chat SSE: POST /v1/conversations/{conversationId}/chat
             url = `/v1/conversations/${encodeURIComponent(params.sessionId)}/chat`;
+            const body: Record<string, unknown> = { message: trimmedMessage };
+            if (params.attachments && params.attachments.length > 0) {
+              body.attachments = params.attachments;
+            }
             fetchOptions = {
               method: "POST",
               headers: {
                 ...baseHeaders,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({ message: trimmedMessage }),
+              body: JSON.stringify(body),
               signal: controller.signal,
             };
           }

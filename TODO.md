@@ -8,6 +8,7 @@
 * document admin apis
 * Brand the project and move it to an org/foundation.
 * Add support for python langchain /w user docs similar to the quarkus/spring support.
+* disable epoch eviction
 
 # Hardening Work
 

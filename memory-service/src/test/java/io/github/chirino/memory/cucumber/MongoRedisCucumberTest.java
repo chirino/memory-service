@@ -9,7 +9,7 @@ import io.quarkus.test.security.TestSecurity;
 @TestSecurity(user = "alice")
 @TestProfile(MongoRedisTestProfile.class)
 @CucumberOptions(
-        features = {"classpath:features", "classpath:features/mongodb", "classpath:features/redis"})
+        features = {"classpath:features", "classpath:features-mongodb", "classpath:features-redis"})
 public class MongoRedisCucumberTest extends CucumberQuarkusTest {
     public static void main(String[] args) {
         runMain(MongoRedisCucumberTest.class, args);

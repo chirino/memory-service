@@ -1,6 +1,10 @@
 package io.github.chirino.memoryservice.history;
 
 import io.github.chirino.memoryservice.history.ResponseResumer.ResponseRecorder;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
@@ -16,6 +20,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
 import org.springframework.core.Ordered;
 import org.springframework.lang.Nullable;
 import org.springframework.util.StringUtils;
@@ -58,7 +63,9 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
         if (!StringUtils.hasText(conversationId)) {
             return chain.nextCall(request);
         }
-        safeAppendUserMessage(conversationId, resolveUserMessage(request), bearerToken);
+        List<Map<String, Object>> attachments = extractAttachments(request);
+        safeAppendUserMessage(
+                conversationId, resolveUserMessage(request), attachments, bearerToken);
         ResponseRecorder recorder = responseResumer.recorder(conversationId, bearerToken);
         ChatClientResponse response = chain.nextCall(request);
         try {
@@ -97,12 +104,17 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
 
         Scheduler scheduler = Schedulers.boundedElastic();
 
+        List<Map<String, Object>> attachments = extractAttachments(request);
+
         return Mono.just(request)
                 .publishOn(scheduler)
                 .map(
                         req -> {
                             safeAppendUserMessage(
-                                    conversationId, resolveUserMessage(req), bearerToken);
+                                    conversationId,
+                                    resolveUserMessage(req),
+                                    attachments,
+                                    bearerToken);
                             return req;
                         })
                 .flatMapMany(
@@ -275,15 +287,58 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
     }
 
     private void safeAppendUserMessage(
-            String conversationId, @Nullable String message, @Nullable String bearerToken) {
+            String conversationId,
+            @Nullable String message,
+            List<Map<String, Object>> attachments,
+            @Nullable String bearerToken) {
         if (!StringUtils.hasText(message)) {
             return;
         }
         try {
-            conversationStore.appendUserMessage(conversationId, message, bearerToken);
+            conversationStore.appendUserMessage(conversationId, message, attachments, bearerToken);
         } catch (Exception e) {
             LOG.debug("Failed to append user message for conversationId={}", conversationId, e);
         }
+    }
+
+    /**
+     * Key for storing explicit attachment metadata in the advisor context. When present, these
+     * metadata maps (with attachmentId, contentType, name) are used for history recording instead of
+     * extracting from Media objects.
+     */
+    public static final String ATTACHMENT_METADATA_KEY = "conversation.attachments";
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractAttachments(ChatClientRequest request) {
+        // Prefer explicit attachment metadata from the request context
+        Object explicit = request.context().get(ATTACHMENT_METADATA_KEY);
+        if (explicit instanceof List<?> list && !list.isEmpty()) {
+            return (List<Map<String, Object>>) explicit;
+        }
+
+        // Fall back to extracting from Media objects
+        Prompt prompt = request.prompt();
+        if (prompt == null || prompt.getUserMessage() == null) {
+            return List.of();
+        }
+        List<Media> media = prompt.getUserMessage().getMedia();
+        if (media == null || media.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> attachments = new ArrayList<>();
+        for (Media m : media) {
+            if (!(m.getData() instanceof String href)) {
+                continue;
+            }
+            Map<String, Object> att = new LinkedHashMap<>();
+            att.put("href", href);
+            att.put("contentType", m.getMimeType().toString());
+            if (m.getName() != null) {
+                att.put("name", m.getName());
+            }
+            attachments.add(att);
+        }
+        return attachments;
     }
 
     private String resolveConversationId(ChatClientRequest request) {

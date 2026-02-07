@@ -29,6 +29,18 @@ services:
       timeout: 3s
       retries: 10
 
+  localstack:
+    image: localstack/localstack
+    environment:
+      SERVICES: s3
+    volumes:
+      - ./common/localstack/init-ready.d:/etc/localstack/init/ready.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
     command: ["start-dev", "--import-realm"]
@@ -90,6 +102,15 @@ services:
 
       # Prometheus URL for admin stats endpoints
       MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
+
+      # S3 attachment storage via LocalStack
+      MEMORY_SERVICE_ATTACHMENTS_STORE: s3
+      MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
+      QUARKUS_S3_ENDPOINT_OVERRIDE: http://localstack:4566
+      QUARKUS_S3_AWS_REGION: us-east-1
+      QUARKUS_S3_AWS_CREDENTIALS_TYPE: static
+      QUARKUS_S3_AWS_CREDENTIALS_STATIC_PROVIDER_ACCESS_KEY_ID: test
+      QUARKUS_S3_AWS_CREDENTIALS_STATIC_PROVIDER_SECRET_ACCESS_KEY: test
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,6 +119,8 @@ services:
       keycloak:
         condition: service_healthy
       prometheus:
+        condition: service_healthy
+      localstack:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/v1/health || exit 1"]

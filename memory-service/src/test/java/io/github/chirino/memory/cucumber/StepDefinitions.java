@@ -31,6 +31,8 @@ import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.grpc.v1.AcceptOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.AppendEntryRequest;
+import io.github.chirino.memory.grpc.v1.AttachmentInfo;
+import io.github.chirino.memory.grpc.v1.AttachmentsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
 import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
 import io.github.chirino.memory.grpc.v1.Conversation;
@@ -40,8 +42,11 @@ import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.DeleteConversationRequest;
 import io.github.chirino.memory.grpc.v1.DeleteMembershipRequest;
 import io.github.chirino.memory.grpc.v1.DeleteOwnershipTransferRequest;
+import io.github.chirino.memory.grpc.v1.DownloadAttachmentRequest;
+import io.github.chirino.memory.grpc.v1.DownloadAttachmentResponse;
 import io.github.chirino.memory.grpc.v1.EntriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
+import io.github.chirino.memory.grpc.v1.GetAttachmentRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.HealthResponse;
@@ -56,6 +61,7 @@ import io.github.chirino.memory.grpc.v1.ListMembershipsRequest;
 import io.github.chirino.memory.grpc.v1.ListMembershipsResponse;
 import io.github.chirino.memory.grpc.v1.ListOwnershipTransfersRequest;
 import io.github.chirino.memory.grpc.v1.ListUnindexedEntriesRequest;
+import io.github.chirino.memory.grpc.v1.MutinyAttachmentsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.MutinyResponseResumerServiceGrpc;
 import io.github.chirino.memory.grpc.v1.OwnershipTransfersServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
@@ -71,6 +77,9 @@ import io.github.chirino.memory.grpc.v1.SyncEntriesRequest;
 import io.github.chirino.memory.grpc.v1.SyncEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
 import io.github.chirino.memory.grpc.v1.UpdateMembershipRequest;
+import io.github.chirino.memory.grpc.v1.UploadAttachmentRequest;
+import io.github.chirino.memory.grpc.v1.UploadAttachmentResponse;
+import io.github.chirino.memory.grpc.v1.UploadMetadata;
 import io.github.chirino.memory.mongo.repo.MongoConversationGroupRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationOwnershipTransferRepository;
@@ -2435,6 +2444,7 @@ public class StepDefinitions {
             case "OwnershipTransfersService" ->
                     callOwnershipTransfersService(method, metadata, body);
             case "ResponseResumerService" -> callResponseResumerService(method, metadata, body);
+            case "AttachmentsService" -> callAttachmentsService(method, metadata, body);
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported gRPC service: " + service + " for method " + method);
@@ -2797,6 +2807,111 @@ public class StepDefinitions {
             default:
                 throw new IllegalArgumentException(
                         "Unsupported ResponseResumerService method: " + method);
+        }
+    }
+
+    // State for gRPC attachment streaming tests
+    private byte[] grpcDownloadContent;
+    private AttachmentInfo grpcDownloadMetadata;
+
+    private Message callAttachmentsService(String method, Metadata metadata, String body)
+            throws Exception {
+        switch (method) {
+            case "GetAttachment":
+                {
+                    var stub = AttachmentsServiceGrpc.newBlockingStub(grpcChannel);
+                    if (metadata != null) {
+                        stub =
+                                stub.withInterceptors(
+                                        MetadataUtils.newAttachHeadersInterceptor(metadata));
+                    }
+                    var requestBuilder = GetAttachmentRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.getAttachment(requestBuilder.build());
+                }
+            case "UploadAttachment":
+                {
+                    // Client streaming: use Mutiny stub
+                    var mutinyStub = MutinyAttachmentsServiceGrpc.newMutinyStub(grpcChannel);
+                    if (metadata != null) {
+                        mutinyStub =
+                                mutinyStub.withInterceptors(
+                                        MetadataUtils.newAttachHeadersInterceptor(metadata));
+                    }
+                    // Parse the body as UploadMetadata proto text to get metadata fields
+                    var metaBuilder = UploadMetadata.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, metaBuilder);
+                    }
+                    // Build the metadata-only request
+                    var metadataRequest =
+                            UploadAttachmentRequest.newBuilder()
+                                    .setMetadata(metaBuilder.build())
+                                    .build();
+                    // Stream just the metadata message (no chunks for this simple test path)
+                    var requestStream = io.smallrye.mutiny.Multi.createFrom().item(metadataRequest);
+
+                    CompletableFuture<UploadAttachmentResponse> responseFuture =
+                            new CompletableFuture<>();
+                    mutinyStub
+                            .uploadAttachment(requestStream)
+                            .subscribe()
+                            .with(responseFuture::complete, responseFuture::completeExceptionally);
+                    try {
+                        return responseFuture.get(10, TimeUnit.SECONDS);
+                    } catch (Exception e) {
+                        Throwable cause = e.getCause();
+                        if (cause instanceof StatusRuntimeException statusException) {
+                            throw statusException;
+                        }
+                        throw e;
+                    }
+                }
+            case "DownloadAttachment":
+                {
+                    // Server streaming: use blocking stub iterator
+                    var stub = AttachmentsServiceGrpc.newBlockingStub(grpcChannel);
+                    if (metadata != null) {
+                        stub =
+                                stub.withInterceptors(
+                                        MetadataUtils.newAttachHeadersInterceptor(metadata));
+                    }
+                    var requestBuilder = DownloadAttachmentRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    Iterator<DownloadAttachmentResponse> responses =
+                            stub.downloadAttachment(requestBuilder.build());
+
+                    // Collect: first = metadata, rest = chunks
+                    grpcDownloadMetadata = null;
+                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                    Message lastMessage = null;
+                    while (responses.hasNext()) {
+                        DownloadAttachmentResponse resp = responses.next();
+                        lastMessage = resp;
+                        if (resp.hasMetadata()) {
+                            grpcDownloadMetadata = resp.getMetadata();
+                        }
+                        if (resp.hasChunk()) {
+                            baos.write(resp.getChunk().toByteArray());
+                        }
+                    }
+                    grpcDownloadContent = baos.toByteArray();
+
+                    // Return the metadata as the gRPC message for assertions
+                    if (grpcDownloadMetadata != null) {
+                        return grpcDownloadMetadata;
+                    }
+                    return lastMessage != null
+                            ? lastMessage
+                            : DownloadAttachmentResponse.getDefaultInstance();
+                }
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported AttachmentsService method: " + method);
         }
     }
 
@@ -4023,5 +4138,256 @@ public class StepDefinitions {
                 "Multi-series should have at least " + minSeries + " series",
                 seriesCount,
                 greaterThan(minSeries - 1));
+    }
+
+    // ---- Attachment steps ----
+
+    @io.cucumber.java.en.When(
+            "I upload a file {string} with content type {string} and content {string}")
+    public void iUploadAFileWithContentTypeAndContent(
+            String filename, String contentType, String content) {
+        trackUsage();
+        var requestSpec = given().multiPart("file", filename, content.getBytes(), contentType);
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().post("/v1/attachments");
+    }
+
+    @io.cucumber.java.en.When("I call GET {string} expecting binary")
+    public void iCallGETExpectingBinary(String path) {
+        trackUsage();
+        String renderedPath = renderTemplate(path);
+        var requestSpec = given();
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().get(renderedPath);
+    }
+
+    @io.cucumber.java.en.Then("the binary response content should be {string}")
+    public void theBinaryResponseContentShouldBe(String expectedContent) {
+        trackUsage();
+        String body = lastResponse.getBody().asString();
+        assertThat("Binary response content", body, is(expectedContent));
+    }
+
+    @io.cucumber.java.en.Then("the response header {string} should contain {string}")
+    public void theResponseHeaderShouldContain(String headerName, String expectedValue) {
+        trackUsage();
+        String actual = lastResponse.getHeader(headerName);
+        assertThat(
+                "Response header " + headerName + " should contain " + expectedValue,
+                actual,
+                containsString(expectedValue));
+    }
+
+    @io.cucumber.java.en.Then("the response body field {string} should not be null")
+    public void theResponseBodyFieldShouldNotBeNull(String path) {
+        trackUsage();
+        JsonPath jsonPath = lastResponse.jsonPath();
+        Object value = jsonPath.get(path);
+        assertThat("Field " + path + " should not be null", value, is(notNullValue()));
+    }
+
+    @io.cucumber.java.en.Then("the response body field {string} should contain {string}")
+    public void theResponseBodyFieldShouldContain(String path, String expected) {
+        trackUsage();
+        String rendered = renderTemplate(expected);
+        JsonPath jsonPath = lastResponse.jsonPath();
+        String value = jsonPath.getString(path);
+        assertThat(
+                "Field " + path + " should contain " + rendered, value, containsString(rendered));
+    }
+
+    // ---- gRPC Attachment steps ----
+
+    @io.cucumber.java.en.When(
+            "I upload a file via gRPC with filename {string} content type {string} and content"
+                    + " {string}")
+    public void iUploadAFileViaGrpcWithFilenameContentTypeAndContent(
+            String filename, String contentType, String content) {
+        trackUsage();
+        if (grpcChannel == null) {
+            throw new IllegalStateException("gRPC channel is not initialized");
+        }
+        lastGrpcResponseJson = null;
+        lastGrpcJsonPath = null;
+        lastGrpcError = null;
+        try {
+            Metadata metadata = buildGrpcMetadata();
+            var mutinyStub = MutinyAttachmentsServiceGrpc.newMutinyStub(grpcChannel);
+            if (metadata != null) {
+                mutinyStub =
+                        mutinyStub.withInterceptors(
+                                MetadataUtils.newAttachHeadersInterceptor(metadata));
+            }
+
+            // Build metadata message
+            var metadataMsg =
+                    UploadMetadata.newBuilder()
+                            .setFilename(filename)
+                            .setContentType(contentType)
+                            .build();
+            var metadataRequest =
+                    UploadAttachmentRequest.newBuilder().setMetadata(metadataMsg).build();
+
+            // Build chunk messages (split content into chunks for realistic testing)
+            byte[] contentBytes = content.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            var requests = new ArrayList<UploadAttachmentRequest>();
+            requests.add(metadataRequest);
+            // Send content as a single chunk for simplicity
+            requests.add(
+                    UploadAttachmentRequest.newBuilder()
+                            .setChunk(com.google.protobuf.ByteString.copyFrom(contentBytes))
+                            .build());
+
+            var requestStream = io.smallrye.mutiny.Multi.createFrom().iterable(requests);
+
+            CompletableFuture<UploadAttachmentResponse> responseFuture = new CompletableFuture<>();
+            mutinyStub
+                    .uploadAttachment(requestStream)
+                    .subscribe()
+                    .with(responseFuture::complete, responseFuture::completeExceptionally);
+
+            UploadAttachmentResponse response = responseFuture.get(10, TimeUnit.SECONDS);
+            lastGrpcMessage = response;
+            lastGrpcServiceMethod = "AttachmentsService/UploadAttachment";
+            StringBuilder textBuilder = new StringBuilder();
+            TextFormat.printer().print(response, textBuilder);
+            lastGrpcResponseText = textBuilder.toString();
+            lastGrpcResponseJson =
+                    JsonFormat.printer().alwaysPrintFieldsWithNoPresence().print(response);
+            lastGrpcJsonPath = JsonPath.from(lastGrpcResponseJson);
+        } catch (StatusRuntimeException e) {
+            lastGrpcError = e;
+        } catch (Exception e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof StatusRuntimeException statusException) {
+                lastGrpcError = statusException;
+            } else {
+                throw new AssertionError("Failed to upload attachment via gRPC", e);
+            }
+        }
+    }
+
+    @io.cucumber.java.en.When("I download attachment {string} via gRPC")
+    public void iDownloadAttachmentViaGrpc(String attachmentId) {
+        trackUsage();
+        if (grpcChannel == null) {
+            throw new IllegalStateException("gRPC channel is not initialized");
+        }
+        lastGrpcResponseJson = null;
+        lastGrpcJsonPath = null;
+        lastGrpcError = null;
+        grpcDownloadMetadata = null;
+        grpcDownloadContent = null;
+        try {
+            String renderedId = renderTemplate(attachmentId);
+            Metadata metadata = buildGrpcMetadata();
+            var stub = AttachmentsServiceGrpc.newBlockingStub(grpcChannel);
+            if (metadata != null) {
+                stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+            }
+            var request = DownloadAttachmentRequest.newBuilder().setId(renderedId).build();
+            Iterator<DownloadAttachmentResponse> responses = stub.downloadAttachment(request);
+
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            while (responses.hasNext()) {
+                DownloadAttachmentResponse resp = responses.next();
+                if (resp.hasMetadata()) {
+                    grpcDownloadMetadata = resp.getMetadata();
+                }
+                if (resp.hasChunk()) {
+                    baos.write(resp.getChunk().toByteArray());
+                }
+            }
+            grpcDownloadContent = baos.toByteArray();
+
+            // Set the metadata as the gRPC response for field assertions
+            if (grpcDownloadMetadata != null) {
+                lastGrpcMessage = grpcDownloadMetadata;
+                StringBuilder textBuilder = new StringBuilder();
+                TextFormat.printer().print(grpcDownloadMetadata, textBuilder);
+                lastGrpcResponseText = textBuilder.toString();
+                lastGrpcResponseJson =
+                        JsonFormat.printer()
+                                .alwaysPrintFieldsWithNoPresence()
+                                .print(grpcDownloadMetadata);
+                lastGrpcJsonPath = JsonPath.from(lastGrpcResponseJson);
+            }
+        } catch (StatusRuntimeException e) {
+            lastGrpcError = e;
+        } catch (Exception e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof StatusRuntimeException statusException) {
+                lastGrpcError = statusException;
+            } else {
+                throw new AssertionError("Failed to download attachment via gRPC", e);
+            }
+        }
+    }
+
+    @io.cucumber.java.en.When("I get attachment {string} metadata via gRPC")
+    public void iGetAttachmentMetadataViaGrpc(String attachmentId) {
+        trackUsage();
+        if (grpcChannel == null) {
+            throw new IllegalStateException("gRPC channel is not initialized");
+        }
+        lastGrpcResponseJson = null;
+        lastGrpcJsonPath = null;
+        lastGrpcError = null;
+        try {
+            String renderedId = renderTemplate(attachmentId);
+            Metadata metadata = buildGrpcMetadata();
+            var stub = AttachmentsServiceGrpc.newBlockingStub(grpcChannel);
+            if (metadata != null) {
+                stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+            }
+            var request = GetAttachmentRequest.newBuilder().setId(renderedId).build();
+            AttachmentInfo response = stub.getAttachment(request);
+
+            lastGrpcMessage = response;
+            lastGrpcServiceMethod = "AttachmentsService/GetAttachment";
+            StringBuilder textBuilder = new StringBuilder();
+            TextFormat.printer().print(response, textBuilder);
+            lastGrpcResponseText = textBuilder.toString();
+            lastGrpcResponseJson =
+                    JsonFormat.printer().alwaysPrintFieldsWithNoPresence().print(response);
+            lastGrpcJsonPath = JsonPath.from(lastGrpcResponseJson);
+        } catch (StatusRuntimeException e) {
+            lastGrpcError = e;
+        } catch (Exception e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof StatusRuntimeException statusException) {
+                lastGrpcError = statusException;
+            } else {
+                throw new AssertionError("Failed to get attachment metadata via gRPC", e);
+            }
+        }
+    }
+
+    @io.cucumber.java.en.Then("the gRPC download content should be {string}")
+    public void theGrpcDownloadContentShouldBe(String expectedContent) {
+        trackUsage();
+        assertThat("gRPC download content should not be null", grpcDownloadContent, notNullValue());
+        String actual = new String(grpcDownloadContent, java.nio.charset.StandardCharsets.UTF_8);
+        assertThat("gRPC download content", actual, is(expectedContent));
+    }
+
+    @io.cucumber.java.en.Then("the gRPC download metadata field {string} should be {string}")
+    public void theGrpcDownloadMetadataFieldShouldBe(String fieldName, String expectedValue) {
+        trackUsage();
+        assertThat(
+                "gRPC download metadata should not be null", grpcDownloadMetadata, notNullValue());
+        String rendered = renderTemplate(expectedValue);
+        try {
+            String json =
+                    JsonFormat.printer()
+                            .alwaysPrintFieldsWithNoPresence()
+                            .print(grpcDownloadMetadata);
+            JsonPath jsonPath = JsonPath.from(json);
+            String actual = jsonPath.getString(fieldName);
+            assertThat("gRPC download metadata field " + fieldName, actual, is(rendered));
+        } catch (Exception e) {
+            throw new AssertionError(
+                    "Failed to read gRPC download metadata field: " + fieldName, e);
+        }
     }
 }

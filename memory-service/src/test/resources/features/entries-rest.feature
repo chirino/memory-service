@@ -343,7 +343,7 @@ Feature: Entries REST API
     Then the response status should be 400
     And the response body field "details.message" should be "History channel entries must contain exactly 1 content object"
 
-  Scenario: History channel entries must have text field
+  Scenario: History channel entries must have text, events, or attachments
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists
     When I call POST "/v1/conversations/${conversationId}/entries" with body:
@@ -355,7 +355,7 @@ Feature: Entries REST API
     }
     """
     Then the response status should be 400
-    And the response body field "details.message" should be "History channel content must have either a 'text' field or an 'events' array"
+    And the response body field "details.message" should be "History channel content must have at least one of 'text', 'events', or 'attachments'"
 
   Scenario: History channel entries must have valid role field
     Given I am authenticated as agent with API key "test-agent-key"
@@ -397,6 +397,149 @@ Feature: Entries REST API
     When I list memory entries for the conversation with epoch "1"
     Then the response status should be 200
     And the response should contain 2 entries
+
+  # Multi-modal attachment tests (Phase 1: external URL references)
+
+  Scenario: History channel accepts entry with text and attachments
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{
+        "role": "USER",
+        "text": "What breed is this dog?",
+        "attachments": [
+          {
+            "href": "https://example.com/photos/my-dog.jpg",
+            "contentType": "image/jpeg",
+            "name": "my-dog.jpg"
+          }
+        ]
+      }]
+    }
+    """
+    Then the response status should be 201
+    And the response body field "content[0].text" should be "What breed is this dog?"
+    And the response body field "content[0].attachments[0].href" should be "https://example.com/photos/my-dog.jpg"
+    And the response body field "content[0].attachments[0].contentType" should be "image/jpeg"
+    And the response body field "content[0].attachments[0].name" should be "my-dog.jpg"
+
+  Scenario: History channel accepts entry with attachments only (no text)
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{
+        "role": "USER",
+        "attachments": [
+          {
+            "href": "https://example.com/photos/image.png",
+            "contentType": "image/png"
+          }
+        ]
+      }]
+    }
+    """
+    Then the response status should be 201
+    And the response body field "content[0].attachments[0].href" should be "https://example.com/photos/image.png"
+
+  Scenario: History channel accepts entry with multiple attachments
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{
+        "role": "USER",
+        "text": "Compare these images",
+        "attachments": [
+          {
+            "href": "https://example.com/a.png",
+            "contentType": "image/png",
+            "name": "Product A"
+          },
+          {
+            "href": "https://example.com/b.png",
+            "contentType": "image/png",
+            "name": "Product B"
+          }
+        ]
+      }]
+    }
+    """
+    Then the response status should be 201
+    And the response body field "content[0].attachments[0].name" should be "Product A"
+    And the response body field "content[0].attachments[1].name" should be "Product B"
+
+  Scenario: History channel rejects attachment missing href and attachmentId
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{
+        "role": "USER",
+        "text": "Bad attachment",
+        "attachments": [
+          {
+            "contentType": "image/jpeg"
+          }
+        ]
+      }]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "details.message" should be "History channel attachment at index 0 must have an 'href' or 'attachmentId' field"
+
+  Scenario: History channel rejects attachment missing contentType
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{
+        "role": "USER",
+        "text": "Bad attachment",
+        "attachments": [
+          {
+            "href": "https://example.com/image.jpg"
+          }
+        ]
+      }]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "details.message" should be "History channel attachment at index 0 must have a 'contentType' field"
+
+  Scenario: History channel rejects non-array attachments field
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{
+        "role": "USER",
+        "text": "Bad attachment",
+        "attachments": "not-an-array"
+      }]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "details.message" should be "History channel 'attachments' field must be an array"
 
   # Test that history entries don't get epochs (they should have null epoch)
   Scenario: History entries have null epoch
