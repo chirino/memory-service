@@ -137,6 +137,10 @@
     @apply transition-colors;
   }
 
+  .sidebar-link-nested {
+    @apply pl-6; /* Additional left padding for 3rd level items */
+  }
+
   .sidebar-link-active {
     @apply bg-primary-50 dark:bg-primary-950 text-primary-700 dark:text-primary-300;
     @apply border-l-2 border-primary-600 dark:border-primary-400;
