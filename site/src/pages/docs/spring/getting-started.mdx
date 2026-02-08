@@ -31,6 +31,8 @@ This installs all project artifacts to your local Maven repository.
 
 ## Step 1: Create a Simple Spring AI App
 
+**Starting checkpoint**: View the complete code at [spring/examples/doc-checkpoints/01-basic-agent](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/01-basic-agent)
+
 First, let's create a new Spring Boot application. Use [Spring Initializr](https://start.spring.io/#!type=maven-project&language=java&platformVersion=3.5.10&packaging=jar&configurationFileFormat=properties&jvmVersion=21&groupId=com.example&artifactId=demo&name=demo&description=Demo%20project%20for%20Spring%20Boot&packageName=com.example.demo&dependencies=spring-ai-openai,web) to setup the project.
 Make sure to use Spring Boot 3.5 as that the latest version supported by Spring AI and add the OpenAI and Spring Web dependencies.
 
@@ -100,6 +102,8 @@ curl -NsSfX POST http://localhost:9090/chat \
 This works, but you may have noticed that the agent has no memory. Each request is independent. Let's add conversation memory.
 
 ## Step 2: Add Memory Service Starter
+
+**Starting checkpoint**: View the complete code at [spring/examples/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/02-with-memory)
 
 Add the Memory Service Spring Boot starter and OAuth2 resource server dependencies to your `pom.xml`:
 

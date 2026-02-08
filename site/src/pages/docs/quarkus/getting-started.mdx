@@ -32,6 +32,8 @@ This installs all project artifacts to your local Maven repository.
 
 ## Step 1: Create a Simple LangChain4j App
 
+**Starting checkpoint**: View the complete code at [quarkus/examples/doc-checkpoints/01-basic-agent](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/01-basic-agent)
+
 First, let's create a new [Quarkus](https://quarkus.io/get-started/) application with: 
 
 ```plain
@@ -127,6 +129,8 @@ curl -NsSfX POST http://localhost:9090/chat \
 This works, but you may have noticed that the agent has no memory.  Each request is independent.  Let's add conversation memory.
 
 ## Step 2: Add Memory Service Extension
+
+**Starting checkpoint**: View the complete code at [quarkus/examples/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/02-with-memory)
 
 Add the Memory Service extension to your `pom.xml`:
 
