@@ -289,22 +289,4 @@ public class MeteredMemoryStore implements MemoryStore {
         registry.timer("memory.store.operation", "operation", "hardDeleteConversationGroups")
                 .record(() -> delegate.hardDeleteConversationGroups(groupIds));
     }
-
-    @Override
-    public List<EpochKey> findEvictableEpochs(OffsetDateTime cutoff, int limit) {
-        return registry.timer("memory.store.operation", "operation", "findEvictableEpochs")
-                .record(() -> delegate.findEvictableEpochs(cutoff, limit));
-    }
-
-    @Override
-    public long countEvictableEpochEntries(OffsetDateTime cutoff) {
-        return registry.timer("memory.store.operation", "operation", "countEvictableEpochEntries")
-                .record(() -> delegate.countEvictableEpochEntries(cutoff));
-    }
-
-    @Override
-    public int deleteEntriesForEpochs(List<EpochKey> epochs) {
-        return registry.timer("memory.store.operation", "operation", "deleteEntriesForEpochs")
-                .record(() -> delegate.deleteEntriesForEpochs(epochs));
-    }
 }

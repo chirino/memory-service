@@ -1077,12 +1077,9 @@ components:
             type: string
             enum:
               - conversations
-              - memory_epochs
           description: |-
             Which resource types to evict.
             - conversations: Soft-deleted conversations past retention.
-            - memory_epochs: Entries from non-latest memory epochs past retention.
-              The latest epoch per (conversation, client) is always preserved.
           example: ["conversations"]
         justification:
           type: string

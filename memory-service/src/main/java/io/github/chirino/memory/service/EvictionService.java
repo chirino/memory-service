@@ -52,11 +52,6 @@ public class EvictionService {
                             store, cutoff, processed, totalEstimate, progressCallback);
         }
 
-        if (resourceTypes.contains("memory_epochs")) {
-            processed =
-                    evictMemoryEpochs(store, cutoff, processed, totalEstimate, progressCallback);
-        }
-
         // Final 100% progress
         if (progressCallback != null) {
             progressCallback.accept(100);
@@ -88,30 +83,6 @@ public class EvictionService {
         return processed;
     }
 
-    private long evictMemoryEpochs(
-            MemoryStore store,
-            OffsetDateTime cutoff,
-            long processed,
-            long totalEstimate,
-            Consumer<Integer> progressCallback) {
-        while (true) {
-            // Find a batch of evictable epochs
-            var batch = store.findEvictableEpochs(cutoff, batchSize);
-            if (batch.isEmpty()) {
-                break;
-            }
-
-            // Delete entries for these epochs (and queue vector store cleanup)
-            int deleted = store.deleteEntriesForEpochs(batch);
-
-            processed += deleted;
-            reportProgress(processed, totalEstimate, progressCallback);
-
-            sleepBetweenBatches();
-        }
-        return processed;
-    }
-
     private void reportProgress(long processed, long total, Consumer<Integer> callback) {
         if (callback != null && total > 0) {
             int progress = (int) Math.min(99, (processed * 100) / total);
@@ -124,9 +95,6 @@ public class EvictionService {
         long total = 0;
         if (resourceTypes.contains("conversations")) {
             total += store.countEvictableGroups(cutoff);
-        }
-        if (resourceTypes.contains("memory_epochs")) {
-            total += store.countEvictableEpochEntries(cutoff);
         }
         return total;
     }
