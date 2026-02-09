@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { X, Search, MessageSquare } from "lucide-react";
@@ -31,6 +32,12 @@ function SearchResultSkeleton() {
   );
 }
 
+function renderHighlights(text: string): ReactNode[] {
+  return text.split("**").map((part, i) =>
+    i % 2 === 1 ? <mark key={i} className="bg-yellow-200/60 text-ink">{part}</mark> : part
+  );
+}
+
 function SearchResultItem({ result, onClick }: { result: SearchResult; onClick: () => void }) {
   return (
     <button
@@ -42,7 +49,11 @@ function SearchResultItem({ result, onClick }: { result: SearchResult; onClick: 
         <MessageSquare className="mt-0.5 h-5 w-5 flex-shrink-0 text-stone" />
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-medium text-ink">{result.conversationTitle || "Untitled conversation"}</h3>
-          {result.highlights && <p className="mt-1 line-clamp-2 text-sm text-stone">{result.highlights}</p>}
+          {result.highlights && (
+            <p className="mt-1 line-clamp-2 text-sm text-stone">
+              {renderHighlights(result.highlights)}
+            </p>
+          )}
         </div>
       </div>
     </button>

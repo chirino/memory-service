@@ -196,6 +196,16 @@ public class MongoFullTextSearchRepository {
             highlight = highlight + "...";
         }
 
+        // Wrap matched query terms in **term** markers
+        for (String term : queryTerms) {
+            if (term.isEmpty()) {
+                continue;
+            }
+            highlight =
+                    highlight.replaceAll(
+                            "(?i)(" + java.util.regex.Pattern.quote(term) + ")", "**$1**");
+        }
+
         return highlight;
     }
 
