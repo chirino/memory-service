@@ -1,0 +1,84 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Conversation Forking
+description: Branch conversations to explore alternative paths.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide covers conversation forking — letting users branch off from any point in a conversation to explore alternative paths.
+
+> **New to forking concepts?**
+> Read [Forking](/docs/concepts/forking/) first to understand how conversation forking works. This guide focuses on the Quarkus implementation.
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/03-with-history)
+
+Make sure you've completed the previous guides:
+- [Getting Started](/docs/quarkus/getting-started/) - Basic memory service integration
+- [Conversation History](/docs/quarkus/conversation-history/) - History recording and APIs
+- curl and jq installed
+
+## Conversation Forking
+
+Conversation forking lets users branch off from any point in a conversation to explore alternative paths.
+Add these methods to the `ConversationsResource.java` to enable forking and listing forks:
+
+```java
+@POST
+@Path("/{conversationId}/entries/{entryId}/fork")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
+public Response forkConversationAtEntry(
+        @PathParam("conversationId") String conversationId,
+        @PathParam("entryId") String entryId,
+        String body) {
+    return proxy.forkConversationAtEntry(conversationId, entryId, body);
+}
+
+@GET
+@Path("/{conversationId}/forks")
+@Produces(MediaType.APPLICATION_JSON)
+public Response listConversationForks(@PathParam("conversationId") String conversationId) {
+    return proxy.listConversationForks(conversationId);
+}
+```
+
+The fork endpoint creates a new conversation that:
+- Copies all entries up to and excluding the specified entry
+- Creates a new conversation ID for the fork
+- Links the fork back to the original conversation
+
+Test it with curl:
+
+```bash
+# get the id of the first entry in the conversation
+FIRST_ENTRY_ID=$(curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
+  -H "Authorization: Bearer $(get-token)" | jq -r '.data[0].id')
+
+curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries/$FIRST_ENTRY_ID/fork \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Alternative approach"}' | jq
+```
+
+This will create a new conversation with the forkedAtConversationId `3579aac5-c86e-4b67-bbea-6ec1a3644942` and the title "Alternative approach", but you will have a new conversation ID.
+
+If you browse to [http://localhost:8080/?conversationId=da597b28-5ccd-4900-92e9-0aec57394523](http://localhost:8080/?conversationId=da597b28-5ccd-4900-92e9-0aec57394523)
+you will see that the first entry now has a fork. If you pick that fork you will see that the conversation history of the new fork is empty, because the selected entry is
+not part of the fork, and we had selected the first entry in the original conversation.
+
+## Complete Example
+
+**Completed code**: View the full implementation at [quarkus/examples/doc-checkpoints/04-conversation-forking](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/04-conversation-forking)
+
+For a complete working example with frontend, see the [quarkus/examples/chat-quarkus](https://github.com/chirino/memory-service/tree/main/quarkus/examples/chat-quarkus) directory in the repository.
+
+## Next Steps
+
+- [Response Resumption](/docs/quarkus/response-resumption/) - Streaming responses with resume and cancel support.
+- [Conversation Sharing](/docs/quarkus/sharing/) - Share conversations with other users.
+- [Dev Services](/docs/quarkus/dev-services/) - Automatic memory-service container startup for development and testing.

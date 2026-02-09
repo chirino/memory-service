@@ -1,10 +1,82 @@
 # Generated from test-scenarios.json (built from MDX)
 # DO NOT EDIT: This file is auto-generated
-Feature: Conversation History Tutorial
+Feature: Sharing Tutorial
 
   Background:
     Given the memory-service is running via docker compose
     And I set up authentication tokens
+
+  Scenario: Test 06-sharing
+    # From /docs/spring/sharing/
+    Given I have checkpoint "spring/examples/doc-checkpoints/06-sharing"
+    When I build the checkpoint
+    Then the build should succeed
+
+    When I start the checkpoint on port 10090
+    Then the application should be running
+
+    When I execute curl command:
+      """
+      curl -sSfX POST http://localhost:10090/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \
+      -H "Content-Type: text/plain" \
+      -H "Authorization: Bearer $(get-token)" \
+      -d "Hello, starting a conversation for sharing tests."
+      """
+    Then the response status should be 200
+
+    When I execute curl command:
+      """
+      # As bob (owner), list members of the conversation
+      curl -sSfX GET http://localhost:10090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \
+      -H "Authorization: Bearer $(get-token bob bob)" | jq
+      """
+    Then the response status should be 200
+    And the response body should be json:
+    """
+    {
+    "data": [
+    {
+    "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+    "userId": "bob",
+    "accessLevel": "owner",
+    "createdAt": "%{response.body.data[0].createdAt}"
+    }
+    ]
+    }
+    """
+
+    When I execute curl command:
+      """
+      # Share conversation with alice as a writer
+      curl -sSfX POST http://localhost:10090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \
+      -H "Authorization: Bearer $(get-token bob bob)" \
+      -H "Content-Type: application/json" \
+      -d '{
+      "userId": "alice",
+      "accessLevel": "writer"
+      }' | jq
+      """
+    Then the response status should be 201
+    And the response body should be json:
+    """
+    {
+    "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+    "userId": "alice",
+    "accessLevel": "writer",
+    "createdAt": "%{response.body.createdAt}"
+    }
+    """
+
+    When I execute curl command:
+      """
+      curl -sSfX POST http://localhost:10090/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \
+      -H "Authorization: Bearer $(get-token alice alice)" \
+      -H "Content-Type: text/plain" \
+      -d "Hi from Alice!"
+      """
+    Then the response status should be 200
+
+    When I stop the checkpoint
 
   Scenario: Test 03-with-history
     # From /docs/quarkus/conversation-history/
@@ -12,7 +84,7 @@ Feature: Conversation History Tutorial
     When I build the checkpoint
     Then the build should succeed
 
-    When I start the checkpoint on port 10090
+    When I start the checkpoint on port 10091
     Then the application should be running
 
     When I execute curl command:
@@ -31,7 +103,7 @@ Feature: Conversation History Tutorial
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -NsSfX POST http://localhost:10091/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: text/plain" \
       -H "Authorization: Bearer $(get-token)" \
       -d "Give me a random number between 1 and 100."
@@ -41,7 +113,7 @@ Feature: Conversation History Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX GET http://localhost:10090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/ \
+      curl -sSfX GET http://localhost:10091/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/ \
       -H "Authorization: Bearer $(get-token)" | jq
       """
     Then the response status should be 200
@@ -59,7 +131,7 @@ Feature: Conversation History Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX GET http://localhost:10090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
+      curl -sSfX GET http://localhost:10091/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
       -H "Authorization: Bearer $(get-token)" | jq
       """
     Then the response status should be 200
@@ -91,7 +163,7 @@ Feature: Conversation History Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX GET http://localhost:10090/v1/conversations \
+      curl -sSfX GET http://localhost:10091/v1/conversations \
       -H "Authorization: Bearer $(get-token)" | jq
       """
     Then the response status should be 200
@@ -100,37 +172,24 @@ Feature: Conversation History Tutorial
     {
     "data": [
     {
-    "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+    "id": "%{response.body.data[0].id}",
     "title": "%{response.body.data[0].title}",
     "ownerUserId": "bob",
     "createdAt": "%{response.body.data[0].createdAt}",
     "updatedAt": "%{response.body.data[0].updatedAt}",
     "accessLevel": "owner"
+    },
+    {
+    "id": "%{response.body.data[1].id}",
+    "title": "%{response.body.data[1].title}",
+    "ownerUserId": "bob",
+    "createdAt": "%{response.body.data[1].createdAt}",
+    "updatedAt": "%{response.body.data[1].updatedAt}",
+    "accessLevel": "owner"
     }
     ]
     }
     """
-
-    When I stop the checkpoint
-
-  Scenario: Test 04-advanced-features
-    # From /docs/quarkus/advanced-features/
-    Given I have checkpoint "quarkus/examples/doc-checkpoints/04-advanced-features"
-    When I build the checkpoint
-    Then the build should succeed
-
-    When I start the checkpoint on port 10091
-    Then the application should be running
-
-    When I execute curl command:
-      """
-      curl -NsSfX POST http://localhost:10091/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
-      -H "Content-Type: text/plain" \
-      -H "Authorization: Bearer $(get-token)" \
-      -d "Write a 4 paragraph story about a cat."
-      """
-    Then the response status should be 200
-    And the response should match pattern "\w+"
 
     When I stop the checkpoint
 
@@ -214,9 +273,9 @@ Feature: Conversation History Tutorial
 
     When I stop the checkpoint
 
-  Scenario: Test 05-sharing
-    # From /docs/quarkus/sharing/
-    Given I have checkpoint "quarkus/examples/doc-checkpoints/05-sharing"
+  Scenario: Test 05-response-resumption
+    # From /docs/quarkus/response-resumption/
+    Given I have checkpoint "quarkus/examples/doc-checkpoints/05-response-resumption"
     When I build the checkpoint
     Then the build should succeed
 
@@ -225,7 +284,28 @@ Feature: Conversation History Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX POST http://localhost:10094/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -NsSfX POST http://localhost:10094/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      -H "Content-Type: text/plain" \
+      -H "Authorization: Bearer $(get-token)" \
+      -d "Write a 4 paragraph story about a cat."
+      """
+    Then the response status should be 200
+    And the response should match pattern "\w+"
+
+    When I stop the checkpoint
+
+  Scenario: Test 06-sharing
+    # From /docs/quarkus/sharing/
+    Given I have checkpoint "quarkus/examples/doc-checkpoints/06-sharing"
+    When I build the checkpoint
+    Then the build should succeed
+
+    When I start the checkpoint on port 10095
+    Then the application should be running
+
+    When I execute curl command:
+      """
+      curl -sSfX POST http://localhost:10095/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: text/plain" \
       -H "Authorization: Bearer $(get-token)" \
       -d "Hello, starting a conversation for sharing tests."
@@ -235,7 +315,7 @@ Feature: Conversation History Tutorial
     When I execute curl command:
       """
       # As bob (owner), list members of the conversation
-      curl -sSfX GET http://localhost:10094/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
+      curl -sSfX GET http://localhost:10095/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
       -H "Authorization: Bearer $(get-token bob bob)" | jq
       """
     Then the response status should be 200
@@ -256,7 +336,7 @@ Feature: Conversation History Tutorial
     When I execute curl command:
       """
       # Share conversation with alice as a writer
-      curl -sSfX POST http://localhost:10094/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
+      curl -sSfX POST http://localhost:10095/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
       -H "Authorization: Bearer $(get-token bob bob)" \
       -H "Content-Type: application/json" \
       -d '{
@@ -277,33 +357,12 @@ Feature: Conversation History Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX POST http://localhost:10094/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -sSfX POST http://localhost:10095/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Authorization: Bearer $(get-token alice alice)" \
       -H "Content-Type: text/plain" \
       -d "Hi from Alice!"
       """
     Then the response status should be 200
-
-    When I stop the checkpoint
-
-  Scenario: Test 04-advanced-features
-    # From /docs/spring/advanced-features/
-    Given I have checkpoint "spring/examples/doc-checkpoints/04-advanced-features"
-    When I build the checkpoint
-    Then the build should succeed
-
-    When I start the checkpoint on port 10095
-    Then the application should be running
-
-    When I execute curl command:
-      """
-      curl -NsSfX POST http://localhost:10095/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
-      -H "Content-Type: text/plain" \
-      -H "Authorization: Bearer $(get-token)" \
-      -d "Write a 4 paragraph story about a cat."
-      """
-    Then the response status should be 200
-    And the response should match pattern "\w+"
 
     When I stop the checkpoint
 
@@ -451,9 +510,9 @@ Feature: Conversation History Tutorial
 
     When I stop the checkpoint
 
-  Scenario: Test 05-sharing
-    # From /docs/spring/sharing/
-    Given I have checkpoint "spring/examples/doc-checkpoints/05-sharing"
+  Scenario: Test 05-response-resumption
+    # From /docs/spring/response-resumption/
+    Given I have checkpoint "spring/examples/doc-checkpoints/05-response-resumption"
     When I build the checkpoint
     Then the build should succeed
 
@@ -462,64 +521,13 @@ Feature: Conversation History Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX POST http://localhost:10099/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \
+      curl -NsSfX POST http://localhost:10099/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: text/plain" \
       -H "Authorization: Bearer $(get-token)" \
-      -d "Hello, starting a conversation for sharing tests."
+      -d "Write a 4 paragraph story about a cat."
       """
     Then the response status should be 200
-
-    When I execute curl command:
-      """
-      # As bob (owner), list members of the conversation
-      curl -sSfX GET http://localhost:10099/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \
-      -H "Authorization: Bearer $(get-token bob bob)" | jq
-      """
-    Then the response status should be 200
-    And the response body should be json:
-    """
-    {
-    "data": [
-    {
-    "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
-    "userId": "bob",
-    "accessLevel": "owner",
-    "createdAt": "%{response.body.data[0].createdAt}"
-    }
-    ]
-    }
-    """
-
-    When I execute curl command:
-      """
-      # Share conversation with alice as a writer
-      curl -sSfX POST http://localhost:10099/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \
-      -H "Authorization: Bearer $(get-token bob bob)" \
-      -H "Content-Type: application/json" \
-      -d '{
-      "userId": "alice",
-      "accessLevel": "writer"
-      }' | jq
-      """
-    Then the response status should be 201
-    And the response body should be json:
-    """
-    {
-    "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
-    "userId": "alice",
-    "accessLevel": "writer",
-    "createdAt": "%{response.body.createdAt}"
-    }
-    """
-
-    When I execute curl command:
-      """
-      curl -sSfX POST http://localhost:10099/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \
-      -H "Authorization: Bearer $(get-token alice alice)" \
-      -H "Content-Type: text/plain" \
-      -d "Hi from Alice!"
-      """
-    Then the response status should be 200
+    And the response should match pattern "\w+"
 
     When I stop the checkpoint
 

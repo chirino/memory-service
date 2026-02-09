@@ -48,4 +48,4 @@ curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6e
 
 ## Next Step
 
-Continue to [checkpoint 04](../04-advanced-features/) for streaming, forking, and resumption.
+Continue to [checkpoint 04](../04-conversation-forking/) for conversation forking, or [checkpoint 05](../05-response-resumption/) for streaming and response resumption.
