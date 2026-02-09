@@ -358,9 +358,21 @@ public class PostgresMemoryStore implements MemoryStore {
                                         new ResourceNotFoundException(
                                                 "conversation", conversationId));
         ConversationGroupEntity conversationGroup = conversation.getConversationGroup();
-        ConversationMembershipEntity membership =
-                membershipRepository.createMembership(
-                        conversationGroup, request.getUserId(), request.getAccessLevel());
+
+        // Idempotent: if membership already exists, update access level if different
+        var existing =
+                membershipRepository.findMembership(conversationGroup.getId(), request.getUserId());
+        ConversationMembershipEntity membership;
+        if (existing.isPresent()) {
+            membership = existing.get();
+            if (membership.getAccessLevel() != request.getAccessLevel()) {
+                membership.setAccessLevel(request.getAccessLevel());
+            }
+        } else {
+            membership =
+                    membershipRepository.createMembership(
+                            conversationGroup, request.getUserId(), request.getAccessLevel());
+        }
 
         // Audit log the addition
         membershipAuditLogger.logAdd(

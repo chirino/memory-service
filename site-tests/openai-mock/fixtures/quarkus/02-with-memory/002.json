@@ -1,0 +1,15 @@
+{
+  "scenarioName" : "chat-sequence",
+  "requiredScenarioState" : "step-2",
+  "request" : {
+    "method" : "POST",
+    "urlPath" : "/v1/chat/completions"
+  },
+  "response" : {
+    "status" : 200,
+    "headers" : {
+      "Content-Type" : "application/json"
+    },
+    "body" : "{\n  \"id\": \"chatcmpl-D7MEI1ox7GWNN2lFL7QTxLvkqbhj9\",\n  \"object\": \"chat.completion\",\n  \"created\": 1770646118,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n  \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\": \"assistant\",\n        \"content\": \"You are Hiram! Beyond that, I don’t have any additional information about you unless you share more. How can I assist you further?\",\n        \"refusal\": null,\n        \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 111,\n    \"completion_tokens\": 29,\n    \"total_tokens\": 140,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\": {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\": 0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\": \"default\",\n  \"system_fingerprint\": \"fp_f4ae844694\"\n}\n"
+  }
+}

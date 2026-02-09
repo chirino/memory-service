@@ -3,7 +3,6 @@ package org.acme;
 import io.github.chirino.memory.history.annotations.ConversationId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
-import io.smallrye.mutiny.Multi;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -18,9 +17,7 @@ public class HistoryRecordingAgent {
     }
 
     @RecordConversation
-    public String chat(
-            @ConversationId String conversationId,
-            @UserMessage String userMessage) {
+    public String chat(@ConversationId String conversationId, @UserMessage String userMessage) {
         return agent.chat(conversationId, userMessage);
     }
 }

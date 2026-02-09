@@ -67,6 +67,23 @@
     @apply opacity-100 bg-green-600 hover:bg-green-600 text-white;
   }
 
+  /* View source button for CodeFromFile blocks */
+  .code-source-btn {
+    @apply absolute top-2 right-10 p-1.5 rounded-md opacity-0 transition-opacity;
+    @apply bg-gray-700 hover:bg-gray-600;
+    @apply focus:outline-none focus:ring-2 focus:ring-primary-500;
+    color: #d1d5db !important;
+    text-decoration: none !important;
+  }
+
+  .code-source-btn:hover {
+    color: #fff !important;
+  }
+
+  pre:hover .code-source-btn {
+    @apply opacity-100;
+  }
+
   code {
     @apply text-sm;
   }
@@ -135,6 +152,10 @@
     @apply block px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 rounded-md;
     @apply hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100;
     @apply transition-colors;
+  }
+
+  .sidebar-link-nested {
+    @apply pl-6; /* Additional left padding for 3rd level items */
   }
 
   .sidebar-link-active {

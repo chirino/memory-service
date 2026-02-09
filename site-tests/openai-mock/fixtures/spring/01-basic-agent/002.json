@@ -1,0 +1,15 @@
+{
+  "scenarioName" : "chat-sequence",
+  "requiredScenarioState" : "step-2",
+  "request" : {
+    "method" : "POST",
+    "urlPath" : "/v1/chat/completions"
+  },
+  "response" : {
+    "status" : 200,
+    "headers" : {
+      "Content-Type" : "application/json"
+    },
+    "body" : "{\n  \"id\": \"chatcmpl-D7MFMM2bhZD2lClP6aTSp4d51ET9N\",\n  \"object\": \"chat.completion\",\n  \"created\": 1770646184,\n  \"model\": \"gpt-4o-2024-08-06\",\n  \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\": \"assistant\",\n        \"content\": \"That's a profound question! Identity can be multifaceted, encompassing aspects like your name, personal experiences, relationships, beliefs, and roles in society. If you're asking in a more abstract or philosophical sense, it might involve reflecting on your values, purpose, and what makes you unique. If you have specific aspects of your identity you're curious about or exploring, feel free to share more!\",\n        \"refusal\": null,\n        \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 12,\n    \"completion_tokens\": 76,\n    \"total_tokens\": 88,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\": {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\": 0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\": \"default\",\n  \"system_fingerprint\": \"fp_009ac31db9\"\n}\n"
+  }
+}

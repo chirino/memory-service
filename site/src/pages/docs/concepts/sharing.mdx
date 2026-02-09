@@ -1,0 +1,271 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Sharing & Access Control
+description: Understanding conversation sharing, access levels, and ownership transfer in the Memory Service
+---
+
+# Sharing & Access Control
+
+The Memory Service provides a comprehensive access control system that allows conversations to be shared among multiple users with different permission levels. This enables collaborative use cases while maintaining security and proper authorization.
+
+## Overview
+
+Every conversation has:
+- **One owner** - The user who created the conversation or received ownership through a transfer
+- **Zero or more members** - Users who have been granted access with specific permission levels
+- **Access levels** - Hierarchical permissions that control what each member can do
+
+## Access Levels
+
+The Memory Service uses four hierarchical access levels:
+
+| Access Level | Can Read | Can Write | Can Share | Can Transfer Ownership | Notes |
+|-------------|----------|-----------|-----------|------------------------|-------|
+| **owner** | ✅ | ✅ | ✅ | ✅ | Only one owner per conversation |
+| **manager** | ✅ | ✅ | ✅ (limited) | ❌ | Can add/remove writer/reader members |
+| **writer** | ✅ | ✅ | ❌ | ❌ | Can participate in conversations |
+| **reader** | ✅ | ❌ | ❌ | ❌ | Read-only access |
+
+**Sharing constraints:**
+- Owners can assign any level except owner (manager, writer, reader)
+- Managers can only assign writer or reader levels
+- Writers and readers cannot share conversations
+- Ownership transfers are separate from membership management and require a two-step process
+
+### Owner
+
+The owner has full control over the conversation:
+- ✅ Read conversation entries
+- ✅ Write new entries (participate in the conversation)
+- ✅ Share with others at any level (manager, writer, reader)
+- ✅ Transfer ownership to another user
+- ✅ Delete the conversation
+
+**Key constraints:**
+- Only **one owner** per conversation
+- Ownership can only be transferred through a two-step process
+- When ownership is transferred, the previous owner automatically becomes a manager
+
+### Manager
+
+Managers can collaborate and invite others, but cannot transfer ownership:
+- ✅ Read conversation entries
+- ✅ Write new entries
+- ✅ Share with others (limited to writer and reader levels only)
+- ❌ Cannot assign manager level to others
+- ❌ Cannot transfer ownership
+- ❌ Cannot delete the conversation
+
+**Use cases:**
+- Team leads who can invite team members
+- Administrators who manage access but don't own the conversation
+- Trusted collaborators who can bring others into the conversation
+
+### Writer
+
+Writers can actively participate but cannot share:
+- ✅ Read conversation entries
+- ✅ Write new entries
+- ❌ Cannot share with others
+- ❌ Cannot modify access levels
+- ❌ Cannot transfer ownership
+
+**Use cases:**
+- Regular participants in a conversation
+- Contributors who should not have administrative privileges
+- Team members who collaborate but don't manage access
+
+### Reader
+
+Readers have read-only access:
+- ✅ Read conversation entries
+- ❌ Cannot write entries
+- ❌ Cannot share with others
+- ❌ Cannot modify anything
+
+**Use cases:**
+- Observers who need visibility but shouldn't participate
+- Auditors or reviewers
+- Users being onboarded before being given write access
+
+## Membership Management
+
+### Adding Members
+
+Owners and managers can add new members to a conversation by specifying:
+- **User ID** - The identifier of the user to add
+- **Access Level** - The permission level to grant
+
+**Constraints:**
+- Owners can assign: manager, writer, or reader
+- Managers can assign: writer or reader only
+- Writers and readers cannot add members
+
+### Updating Access Levels
+
+Members' access levels can be promoted or demoted:
+- Owners can change any member to manager, writer, or reader
+- Managers can change writer/reader members between those two levels
+- Cannot promote someone to owner (use ownership transfer instead)
+
+### Removing Members
+
+Owners and managers can remove members from conversations:
+- Once removed, the user loses all access
+- Removed users can be re-added later if needed
+- Cannot remove the owner (must transfer ownership first)
+
+## Ownership Transfer
+
+Ownership transfer is a **two-step process** to ensure both parties consent:
+
+### Step 1: Initiate Transfer
+
+The current owner creates a transfer request:
+- Specifies the conversation and the new owner (recipient)
+- Recipient must be an existing member of the conversation
+- Only one pending transfer can exist per conversation
+- Creates a transfer record with a unique ID
+
+### Step 2: Accept or Decline
+
+The recipient can then:
+- **Accept** the transfer:
+  - Becomes the new owner immediately
+  - Previous owner automatically becomes a manager
+  - Transfer record is deleted
+- **Decline** the transfer:
+  - Transfer is cancelled
+  - Ownership remains unchanged
+  - Transfer record is deleted
+
+Either party can cancel the transfer before acceptance.
+
+### Transfer Workflow
+
+```
+┌─────────────┐
+│ Bob (owner) │ Creates transfer → Alice (manager)
+└─────────────┘
+       ↓
+┌──────────────────────────────┐
+│ Pending Transfer             │
+│ - From: Bob                  │
+│ - To: Alice                  │
+│ - Conversation: conv-123     │
+└──────────────────────────────┘
+       ↓
+   Alice accepts
+       ↓
+┌─────────────────────────────┐
+│ After Transfer              │
+│ - Alice: owner              │
+│ - Bob: manager (automatic)  │
+└─────────────────────────────┘
+```
+
+## Security Considerations
+
+### Permission Enforcement
+
+All API operations enforce access levels:
+- Read operations require at least reader access
+- Write operations require at least writer access
+- Sharing operations require manager or owner access
+- Ownership transfer requires owner access
+
+### Preventing Privilege Escalation
+
+The system prevents users from granting themselves higher privileges:
+- Managers cannot promote themselves to owner
+- Managers cannot grant manager level to anyone
+- Users cannot modify their own access level
+- Ownership transfers require recipient acceptance
+
+### Audit Trail
+
+The system maintains records of:
+- Who shared the conversation
+- What access level was granted
+- When ownership transfers occurred
+- Who initiated and accepted transfers
+
+## Common Patterns
+
+### Team Collaboration
+
+```
+Owner: Project Lead
+├── Manager: Team Lead (can invite writers)
+├── Writer: Developer A
+├── Writer: Developer B
+└── Reader: Stakeholder (observing only)
+```
+
+### Handoff Workflow
+
+```
+1. Alice (owner) completes initial work
+2. Alice adds Bob as manager
+3. Alice initiates ownership transfer to Bob
+4. Bob accepts transfer
+5. Alice automatically becomes manager
+6. Bob now owns and can continue the work
+```
+
+### Hierarchical Access
+
+```
+Owner: Department Head
+├── Manager: Senior Engineer (can add writers/readers)
+│   ├── Writer: Junior Engineer A
+│   └── Writer: Junior Engineer B
+└── Manager: Product Manager
+    ├── Writer: Designer
+    └── Reader: External Consultant
+```
+
+## Implementation Guides
+
+For framework-specific implementations and code examples:
+
+- [Spring Boot Implementation](/docs/spring/sharing/) - Complete guide with Spring code examples
+- [Quarkus Implementation](/docs/quarkus/sharing/) - Complete guide with Quarkus code examples
+
+Both guides include:
+- REST endpoint implementations
+- Working curl examples with authentication
+- Multi-user testing scenarios
+- Real-world collaboration workflows
+
+## API Operations
+
+The Memory Service provides these sharing and ownership APIs:
+
+### Membership APIs
+- `GET /v1/conversations/{id}/memberships` - List all members
+- `POST /v1/conversations/{id}/memberships` - Add a member
+- `PATCH /v1/conversations/{id}/memberships/{userId}` - Update access level
+- `DELETE /v1/conversations/{id}/memberships/{userId}` - Remove a member
+
+### Ownership Transfer APIs
+- `GET /v1/ownership-transfers?role={role}` - List pending transfers
+- `POST /v1/ownership-transfers` - Initiate a transfer
+- `GET /v1/ownership-transfers/{id}` - Get transfer details
+- `POST /v1/ownership-transfers/{id}/accept` - Accept a transfer
+- `DELETE /v1/ownership-transfers/{id}` - Cancel/decline a transfer
+
+## Best Practices
+
+1. **Start with least privilege** - Grant reader access first, promote as needed
+2. **Use managers for delegation** - Let managers handle team membership
+3. **Transfer ownership deliberately** - Ensure recipient is ready and available
+4. **Document access decisions** - Track why users have specific access levels
+5. **Regular access reviews** - Periodically review and update member lists
+6. **Test permission boundaries** - Verify access controls work as expected
+
+## Related Concepts
+
+- [Conversations](/docs/concepts/conversations/) - Understanding conversation structure
+- [Entries](/docs/concepts/entries/) - How entries work in conversations
+- [Forking](/docs/concepts/forking/) - Creating conversation branches with access control

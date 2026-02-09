@@ -20,8 +20,7 @@ import jakarta.ws.rs.core.Response;
 @Blocking
 public class ConversationsResource {
 
-    @Inject
-    MemoryServiceProxy proxy;
+    @Inject MemoryServiceProxy proxy;
 
     @GET
     @Path("/{conversationId}")

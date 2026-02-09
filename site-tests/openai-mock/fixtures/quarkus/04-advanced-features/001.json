@@ -1,0 +1,21 @@
+{
+  "scenarioName" : "chat-sequence",
+  "requiredScenarioState" : "Started",
+  "request" : {
+    "method" : "POST",
+    "urlPath" : "/v1/chat/completions"
+  },
+  "response" : {
+    "status" : 200,
+    "headers" : {
+      "Content-Type" : "text/event-stream",
+      "Cache-Control" : "no-cache",
+      "Connection" : "keep-alive"
+    },
+    "body" : "data: {\"id\":\"chatcmpl-fixture-q04-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-q04-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Once upon a time, there was a curious little cat named Whiskers who loved to explore the garden behind her cozy cottage. Every morning, she would stretch lazily in the sunlight before venturing out to discover what new wonders the day might bring.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-q04-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\\n\\nOne particularly bright afternoon, Whiskers stumbled upon a mysterious path she had never seen before. It wound through a thicket of wildflowers and disappeared into a shady grove of ancient oak trees.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-q04-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\\n\\nAt the end of the path, she discovered a beautiful hidden pond where dragonflies danced across the water and frogs sang their evening chorus. Whiskers sat quietly by the edge, mesmerized by the peaceful scene.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-q04-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\\n\\nAs the sun began to set, painting the sky in shades of orange and pink, Whiskers made her way back home. She curled up by the fireplace, purring contentedly, already dreaming of tomorrow's adventure at her secret pond.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-q04-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+    "chunkedDribbleDelay" : {
+      "numberOfChunks" : 5,
+      "totalDuration" : 100
+    }
+  }
+}

@@ -1,0 +1,408 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Conversation Sharing
+description: Learn how to share conversations with other users and manage access control in your Quarkus application
+---
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+# Conversation Sharing
+
+This guide shows you how to implement conversation sharing and ownership transfer features in your Quarkus application using the Memory Service.
+
+> **💡 New to sharing concepts?**
+> Read [Sharing & Access Control](/docs/concepts/sharing/) first to understand access levels, membership management, and ownership transfers. This guide focuses on the Quarkus implementation.
+
+## Prerequisites
+
+- Complete the [Advanced Features](./advanced-features) guide (checkpoint 04)
+- Memory service running with authentication
+- Multiple test users in Keycloak (bob, alice, charlie)
+- Understanding of [access levels and sharing concepts](/docs/concepts/sharing/)
+
+## Membership Endpoints
+
+The membership endpoints are already available in checkpoint 05 through the `ConversationsResource`:
+
+```java
+@GET
+@Path("/{conversationId}/memberships")
+@Produces(MediaType.APPLICATION_JSON)
+public Response listConversationMemberships(@PathParam("conversationId") String conversationId) {
+    return proxy.listConversationMemberships(conversationId);
+}
+
+@POST
+@Path("/{conversationId}/memberships")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
+public Response shareConversation(
+        @PathParam("conversationId") String conversationId, String body) {
+    return proxy.shareConversation(conversationId, body);
+}
+
+@PATCH
+@Path("/{conversationId}/memberships/{userId}")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
+public Response updateConversationMembership(
+        @PathParam("conversationId") String conversationId,
+        @PathParam("userId") String userId,
+        String body) {
+    return proxy.updateConversationMembership(conversationId, userId, body);
+}
+
+@DELETE
+@Path("/{conversationId}/memberships/{userId}")
+public Response deleteConversationMembership(
+        @PathParam("conversationId") String conversationId, @PathParam("userId") String userId) {
+    return proxy.deleteConversationMembership(conversationId, userId);
+}
+```
+
+## Ownership Transfer Endpoints
+
+The ownership transfer endpoints are in the `OwnershipTransfersResource`:
+
+```java
+@GET
+@Produces(MediaType.APPLICATION_JSON)
+public Response listPendingTransfers(@QueryParam("role") String role) {
+    return proxy.listPendingTransfers(role);
+}
+
+@POST
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
+public Response createOwnershipTransfer(String body) {
+    return proxy.createOwnershipTransfer(body);
+}
+
+@GET
+@Path("/{transferId}")
+@Produces(MediaType.APPLICATION_JSON)
+public Response getTransfer(@PathParam("transferId") String transferId) {
+    return proxy.getTransfer(transferId);
+}
+
+@POST
+@Path("/{transferId}/accept")
+@Produces(MediaType.APPLICATION_JSON)
+public Response acceptTransfer(@PathParam("transferId") String transferId) {
+    return proxy.acceptTransfer(transferId);
+}
+
+@DELETE
+@Path("/{transferId}")
+public Response deleteTransfer(@PathParam("transferId") String transferId) {
+    return proxy.deleteTransfer(transferId);
+}
+```
+
+## Testing Membership Management
+
+### Setting Up Helper Functions
+
+First, create a helper function to get access tokens for different users:
+
+```bash
+# Get access token for a user
+function get-token() {
+  local username=${1:-bob}
+  local password=${2:-$username}
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=$username" \
+    -d "password=$password" \
+    | jq -r '.access_token'
+}
+```
+
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/05-sharing">
+
+First, create a conversation as bob so the membership endpoints have data to work with:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Hello, starting a conversation for sharing tests."
+```
+
+</CurlTest>
+
+### List Members
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be json:
+"""
+{
+  "data": [
+    {
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "accessLevel": "owner",
+      "createdAt": "%{response.body.data[0].createdAt}"
+    }
+  ]
+}
+"""
+`}>
+
+```bash
+# As bob (owner), list members of the conversation
+curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
+  -H "Authorization: Bearer $(get-token bob bob)" | jq
+```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "accessLevel": "owner",
+      "createdAt": "2025-01-10T14:32:05Z"
+    }
+  ]
+}
+```
+
+### Add a Member
+
+<CurlTest steps={`
+Then the response status should be 201
+And the response body should be json:
+"""
+{
+  "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "userId": "alice",
+  "accessLevel": "writer",
+  "createdAt": "%{response.body.createdAt}"
+}
+"""
+`}>
+
+```bash
+# Share conversation with alice as a writer
+curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
+  -H "Authorization: Bearer $(get-token bob bob)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "alice",
+    "accessLevel": "writer"
+  }' | jq
+```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "userId": "alice",
+  "accessLevel": "writer",
+  "createdAt": "2025-01-10T14:33:15Z"
+}
+```
+
+Alice can now read and write to the conversation:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Authorization: Bearer $(get-token alice alice)" \
+  -H "Content-Type: text/plain" \
+  -d "Hi from Alice!"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+### Update Access Level
+
+```bash
+# Promote alice from writer to manager
+curl -sSfX PATCH http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships/alice \
+  -H "Authorization: Bearer $(get-token bob bob)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accessLevel": "manager"
+  }' | jq
+
+# Now alice can share with others (but only assign writer/reader levels)
+curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
+  -H "Authorization: Bearer $(get-token alice alice)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "charlie",
+    "accessLevel": "reader"
+  }' | jq
+```
+
+### Remove a Member
+
+```bash
+# Remove charlie from the conversation
+curl -sSfX DELETE http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships/charlie \
+  -H "Authorization: Bearer $(get-token bob bob)"
+
+# charlie can no longer access the conversation
+curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Authorization: Bearer $(get-token charlie charlie)"
+# Returns 403 Forbidden
+```
+
+## Testing Ownership Transfers
+
+### Initiate a Transfer
+
+```bash
+# Bob (owner) wants to transfer ownership to alice
+curl -sSfX POST http://localhost:9090/v1/ownership-transfers \
+  -H "Authorization: Bearer $(get-token bob bob)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+    "newOwnerUserId": "alice"
+  }' | jq
+
+# Response includes the transfer ID:
+# {
+#   "id": "f3a8b2c1-1234-5678-9abc-def012345678",
+#   "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+#   "fromUserId": "bob",
+#   "toUserId": "alice",
+#   "createdAt": "2025-02-08T10:30:00Z"
+# }
+```
+
+### List Pending Transfers
+
+```bash
+# Alice sees transfers where she is the recipient
+curl -sSfX GET http://localhost:9090/v1/ownership-transfers?role=recipient \
+  -H "Authorization: Bearer $(get-token alice alice)" | jq
+
+# Bob sees transfers where he is the sender
+curl -sSfX GET http://localhost:9090/v1/ownership-transfers?role=sender \
+  -H "Authorization: Bearer $(get-token bob bob)" | jq
+
+# List all (sent or received)
+curl -sSfX GET http://localhost:9090/v1/ownership-transfers?role=all \
+  -H "Authorization: Bearer $(get-token alice alice)" | jq
+```
+
+### Accept a Transfer
+
+```bash
+# Alice accepts the transfer (use the transfer ID from the create response)
+TRANSFER_ID="f3a8b2c1-1234-5678-9abc-def012345678"
+curl -sSfX POST http://localhost:9090/v1/ownership-transfers/$TRANSFER_ID/accept \
+  -H "Authorization: Bearer $(get-token alice alice)"
+
+# Returns 204 No Content on success
+# Now alice is the owner and bob is a manager
+curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
+  -H "Authorization: Bearer $(get-token alice alice)" | jq
+
+# Response:
+# {
+#   "data": [
+#     { "userId": "alice", "accessLevel": "owner" },
+#     { "userId": "bob", "accessLevel": "manager" }
+#   ]
+# }
+```
+
+### Decline/Cancel a Transfer
+
+```bash
+# Alice can decline the transfer (or bob can cancel it)
+TRANSFER_ID="f3a8b2c1-1234-5678-9abc-def012345678"
+curl -sSfX DELETE http://localhost:9090/v1/ownership-transfers/$TRANSFER_ID \
+  -H "Authorization: Bearer $(get-token alice alice)"
+
+# Returns 204 No Content
+# The transfer is deleted and ownership remains with bob
+```
+
+## Multi-User Collaboration Example
+
+Here's a complete example showing a typical collaboration workflow:
+
+```bash
+# Bob creates a conversation and shares with alice as manager
+CONV_ID=$(uuidgen)
+
+curl -sSfX POST http://localhost:9090/chat/$CONV_ID \
+  -H "Authorization: Bearer $(get-token bob bob)" \
+  -H "Content-Type: application/json" \
+  -d '"Start conversation"'
+
+curl -sSfX POST http://localhost:9090/v1/conversations/$CONV_ID/memberships \
+  -H "Authorization: Bearer $(get-token bob bob)" \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "alice", "accessLevel": "manager"}'
+
+# Alice adds charlie as reader
+curl -sSfX POST http://localhost:9090/v1/conversations/$CONV_ID/memberships \
+  -H "Authorization: Bearer $(get-token alice alice)" \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "charlie", "accessLevel": "reader"}'
+
+# Charlie can read but not write
+curl -sSfX GET http://localhost:9090/v1/conversations/$CONV_ID/entries \
+  -H "Authorization: Bearer $(get-token charlie charlie)" | jq
+
+curl -sSfX POST http://localhost:9090/chat/$CONV_ID \
+  -H "Authorization: Bearer $(get-token charlie charlie)" \
+  -H "Content-Type: application/json" \
+  -d '"Try to write"'
+# Should fail with 403 Forbidden
+
+# Alice promotes charlie to writer
+curl -sSfX PATCH http://localhost:9090/v1/conversations/$CONV_ID/memberships/charlie \
+  -H "Authorization: Bearer $(get-token alice alice)" \
+  -H "Content-Type: application/json" \
+  -d '{"accessLevel": "writer"}'
+
+# Now charlie can write
+curl -sSfX POST http://localhost:9090/chat/$CONV_ID \
+  -H "Authorization: Bearer $(get-token charlie charlie)" \
+  -H "Content-Type: application/json" \
+  -d '"Now I can write!"'
+```
+
+## What's Next
+
+You've now learned how to:
+- Share conversations with different access levels
+- Manage conversation memberships
+- Transfer ownership between users
+- Build collaborative applications with proper access control
+
+For a production-ready example with a frontend, see the [chat-quarkus example](https://github.com/chirino/memory-service/tree/main/quarkus/examples/chat-quarkus).
+
+## Additional Resources
+
+- [API Reference](/api/sharing) - Complete API documentation
+- [Security Best Practices](/docs/security) - Learn about secure access control
+- [Chat Frontend Guide](/docs/chat-frontend) - Build a React frontend that uses sharing features

@@ -1,0 +1,22 @@
+{
+  "scenarioName" : "chat-sequence",
+  "requiredScenarioState" : "Started",
+  "newScenarioState" : "step-2",
+  "request" : {
+    "method" : "POST",
+    "urlPath" : "/v1/chat/completions"
+  },
+  "response" : {
+    "status" : 200,
+    "headers" : {
+      "Content-Type" : "text/event-stream",
+      "Cache-Control" : "no-cache",
+      "Connection" : "keep-alive"
+    },
+    "body" : "data: {\"id\":\"chatcmpl-fixture-q05-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-q05-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello! I'm ready to help with your sharing tests. What would you like to discuss?\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-q05-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+    "chunkedDribbleDelay" : {
+      "numberOfChunks" : 5,
+      "totalDuration" : 100
+    }
+  }
+}

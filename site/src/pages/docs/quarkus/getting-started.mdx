@@ -5,6 +5,9 @@ description: Step-by-step guide to integrating Memory Service with your Quarkus 
 ---
 import { Code } from 'astro:components';
 import { PROJECT_VERSION } from '../../../config';
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
 
 
 This guide walks you through integrating Memory Service with a Quarkus AI agent. You'll start with basic chat memory and can progressively add features in the follow-up guides.
@@ -43,88 +46,80 @@ cd example
 
 Add the LangChain4j OpenAI dependency to your `pom.xml`:
 
-```xml
-<dependency>
-  <groupId>io.quarkiverse.langchain4j</groupId>
-  <artifactId>quarkus-langchain4j-openai</artifactId>
-  <version>1.5.0.CR2</version>
-</dependency>
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/01-basic-agent/pom.xml"
+  lang="xml"
+  before={2}
+  after={2}
+>quarkus-langchain4j-openai</CodeFromFile>
 
 Create a simple AI service interface:
 
-```java
-package org.acme;
-
-import io.quarkiverse.langchain4j.RegisterAiService;
-import jakarta.enterprise.context.ApplicationScoped;
-
-@ApplicationScoped
-@RegisterAiService
-public interface Agent {
-    String chat(String userMessage);
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/01-basic-agent/src/main/java/org/acme/Agent.java"
+  lang="java"
+/>
 
 Create a REST resource to expose the agent:
 
-```java
-package org.acme;
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/01-basic-agent/src/main/java/org/acme/ChatResource.java"
+  lang="java"
+/>
 
-import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
+Configure your LLM in `application.properties` so it gets OpenAI credentials from the environment variables and change the HTTP port to 9090 to avoid conflict with services that will be started later:
 
-@Path("/chat")
-public class ChatResource {
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/01-basic-agent/src/main/resources/application.properties"
+  lang="properties"
+/>
 
-    @Inject
-    Agent agent;
 
-    @POST
-    @Consumes(MediaType.TEXT_PLAIN)
-    @Produces(MediaType.TEXT_PLAIN)
-    public String chat(String userMessage) {
-        return agent.chat(userMessage);
-    }
-}
-```
-
-Configure your LLM in `application.properties` so it gets OpenAI credentials from the environment variables:
-
-```properties
-quarkus.langchain4j.openai.api-key=${OPENAI_API_KEY}
-quarkus.langchain4j.openai.base-url=${OPENAI_BASE_URL:https://api.openai.com}/v1
-```
-
-Change the HTTP port to 9090 to avoid conflict with services that will be started later by updating `application.properties`:
-
-```properties
-quarkus.http.port=9090
-```
-
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/01-basic-agent">
 
 Run your agent:
 
 ```bash
 export OPENAI_API_KEY=your-api-key
+```
+```bash
 ./mvnw quarkus:dev
 ```
 
 Test it with curl:
 
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be text:
+"""
+I am Claude, an AI assistant created by Anthropic. I'm here to help answer questions and have conversations on a wide variety of topics. How can I assist you today?
+"""
+`}>
+
 ```bash
 curl -NsSfX POST http://localhost:9090/chat \
   -H "Content-Type: text/plain" \
   -d "Hi, I'm Hiram, who are you?"
+```
 
+</CurlTest>
+
+**Expected**: The agent responds but has no memory of your name.
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should not contain "Hiram"
+`}>
+
+```bash
 curl -NsSfX POST http://localhost:9090/chat \
   -H "Content-Type: text/plain" \
   -d "Who am I?"
 ```
+
+</CurlTest>
+
+</TestScenario>
 
 This works, but you may have noticed that the agent has no memory.  Each request is independent.  Let's add conversation memory.
 
@@ -143,70 +138,29 @@ Add the Memory Service extension to your `pom.xml`:
 
 Update the Agent interface to accept a conversation ID using the `@MemoryId` annotation:
 
-```java
-package org.acme;
-
-import dev.langchain4j.service.MemoryId;
-import io.quarkiverse.langchain4j.RegisterAiService;
-import jakarta.enterprise.context.ApplicationScoped;
-
-@ApplicationScoped
-@RegisterAiService
-public interface Agent {
-    String chat(@MemoryId String conversationId, String userMessage);
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/02-with-memory/src/main/java/org/acme/Agent.java"
+  lang="java"
+/>
 
 Update the REST resource to accept a conversation ID:
 
-```java
-package org.acme;
-
-import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
-
-@Path("/chat")
-public class ChatResource {
-
-    @Inject
-    Agent agent;
-
-    @POST
-    @Path("/{conversationId}")
-    @Consumes(MediaType.TEXT_PLAIN)
-    @Produces(MediaType.TEXT_PLAIN)
-    public String chat(
-            @PathParam("conversationId") String conversationId,
-            String userMessage) {
-        return agent.chat(conversationId, userMessage);
-    }
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/02-with-memory/src/main/java/org/acme/ChatResource.java"
+  lang="java"
+/>
 
 Start the Memory Service in Docker Compose following the [Getting Started](/docs/getting-started/) guide.
 
-Configure the agent to connect to the Memory Service by setting the `memory-service.client.url` and `memory-service.client.api-key` in `application.properties`:
+Configure the agent to connect to the Memory Service and configure OIDC authentication in `application.properties`:
 
-```properties
-memory-service.client.url=http://localhost:8082
-memory-service.client.api-key=agent-api-key-1
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/02-with-memory/src/main/resources/application.properties"
+  lang="properties"
+  after={11}
+># Memory Service Client</CodeFromFile>
 
-The ChatMemory provider for the Memory Service extension requires that the user request is authenticated.  Configure the OIDC configuration in `application.properties`:
-```properties
-quarkus.oidc.auth-server-url=http://localhost:8081/realms/memory-service
-quarkus.oidc.token-issuer=http://localhost:8081/realms/memory-service
-quarkus.oidc.client-id=memory-service-client
-quarkus.oidc.credentials.secret=change-me
-
-quarkus.http.auth.permission.authenticated.paths=/chat/*
-quarkus.http.auth.permission.authenticated.policy=authenticated
-```
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/02-with-memory">
 
 Run your agent again:
 
@@ -227,23 +181,46 @@ function get-token() {
     -d "username=bob" \
     -d "password=bob" \
     | jq -r '.access_token'
-}  
+}
 ```
 
 
 Test it with curl—now with conversation memory:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be text:
+"""
+Hi Hiram! I'm an AI created to help answer questions and provide information. How can I assist you today?
+"""
+`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Hi, I'm Hiram, who are you?"
+```
 
+</CurlTest>
+
+**Expected**: The agent now remembers your name from the previous message.
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hiram"
+`}>
+
+```bash
 curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Who am I?"
 ```
+
+</CurlTest>
+
+</TestScenario>
 
 The agent now remembers context within the same conversation ID!
 

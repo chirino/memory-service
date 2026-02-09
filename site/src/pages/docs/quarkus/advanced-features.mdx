@@ -5,6 +5,8 @@ description: Conversation forking, streaming responses, and response resumption.
 ---
 import { Code } from 'astro:components';
 import { PROJECT_VERSION } from '../../../config';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
 
 This guide continues from [Conversation History](/docs/quarkus/conversation-history/) and covers advanced features like forking, streaming, and response resumption.
 
@@ -147,7 +149,14 @@ public class ChatResource {
 
 ```
 
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/04-advanced-features">
+
 Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should match pattern "\\w+"
+`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
@@ -155,6 +164,10 @@ curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942
   -H "Authorization: Bearer $(get-token)" \
   -d "Write a 4 paragraph story about a cat."
 ```
+
+</CurlTest>
+
+</TestScenario>
 
 You should see the response streaming to your command line.
 

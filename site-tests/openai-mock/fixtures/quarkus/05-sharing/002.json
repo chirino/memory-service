@@ -1,0 +1,21 @@
+{
+  "scenarioName" : "chat-sequence",
+  "requiredScenarioState" : "step-2",
+  "request" : {
+    "method" : "POST",
+    "urlPath" : "/v1/chat/completions"
+  },
+  "response" : {
+    "status" : 200,
+    "headers" : {
+      "Content-Type" : "text/event-stream",
+      "Cache-Control" : "no-cache",
+      "Connection" : "keep-alive"
+    },
+    "body" : "data: {\"id\":\"chatcmpl-fixture-q05-002\",\"object\":\"chat.completion.chunk\",\"created\":1707440401,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-q05-002\",\"object\":\"chat.completion.chunk\",\"created\":1707440401,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi Alice! Great to hear from you. How can I help you today?\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-q05-002\",\"object\":\"chat.completion.chunk\",\"created\":1707440401,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+    "chunkedDribbleDelay" : {
+      "numberOfChunks" : 5,
+      "totalDuration" : 100
+    }
+  }
+}

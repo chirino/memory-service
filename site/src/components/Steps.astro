@@ -1,0 +1,27 @@
+---
+// Test step definitions for automated documentation testing.
+// Content is extracted during build by TestScenario.astro to generate Cucumber steps.
+// Hidden from rendered docs - the visible docs provide example output separately.
+//
+// Preferred usage (avoids markdown processing):
+//   <Steps steps={`
+//   Then the response status should be 200
+//   And the response should contain "hello"
+//   `} />
+//
+// Legacy usage (content gets markdown-processed then HTML-stripped):
+//   <Steps>
+//   Then the response status should be 200
+//   </Steps>
+interface Props {
+  steps?: string;
+}
+const { steps } = Astro.props;
+---
+{steps ? (
+  <div class="steps" hidden data-steps={steps}></div>
+) : (
+  <div class="steps" hidden>
+    <slot />
+  </div>
+)}

@@ -5,6 +5,7 @@ const currentPath = Astro.url.pathname;
 interface NavItem {
   label: string;
   href: string;
+  items?: NavItem[]; // Support 3rd level nesting
 }
 
 interface NavSection {
@@ -27,7 +28,7 @@ const navigation: NavSection[] = [
       { label: 'Conversations', href: '/docs/concepts/conversations/' },
       { label: 'Entries', href: '/docs/concepts/entries/' },
       { label: 'Forking', href: '/docs/concepts/forking/' },
-      
+      { label: 'Sharing & Access Control', href: '/docs/concepts/sharing/' },
     ],
   },
   {
@@ -35,7 +36,15 @@ const navigation: NavSection[] = [
     items: [
       { label: 'Getting Started', href: '/docs/quarkus/getting-started/' },
       { label: 'Conversation History', href: '/docs/quarkus/conversation-history/' },
-      { label: 'Advanced Features', href: '/docs/quarkus/advanced-features/' },
+      {
+        label: 'Advanced Features',
+        href: '/docs/quarkus/advanced-features/',
+        items: [
+          { label: 'Conversation Forking', href: '/docs/quarkus/advanced-features/#conversation-forking' },
+          { label: 'Response Resumption', href: '/docs/quarkus/advanced-features/#response-resumption' },
+        ]
+      },
+      { label: 'Conversation Sharing', href: '/docs/quarkus/sharing/' },
       { label: 'Dev Services', href: '/docs/quarkus/dev-services/' },
       // { label: 'Overview', href: '/docs/quarkus/overview/' },
       // { label: 'REST Client', href: '/docs/quarkus/rest-client/' },
@@ -48,7 +57,15 @@ const navigation: NavSection[] = [
     items: [
       { label: 'Getting Started', href: '/docs/spring/getting-started/' },
       { label: 'Conversation History', href: '/docs/spring/conversation-history/' },
-      { label: 'Advanced Features', href: '/docs/spring/advanced-features/' },
+      {
+        label: 'Advanced Features',
+        href: '/docs/spring/advanced-features/',
+        items: [
+          { label: 'Conversation Forking', href: '/docs/spring/advanced-features/#conversation-forking' },
+          { label: 'Response Resumption', href: '/docs/spring/advanced-features/#response-resumption' },
+        ]
+      },
+      { label: 'Conversation Sharing', href: '/docs/spring/sharing/' },
       { label: 'Docker Compose', href: '/docs/spring/docker-compose/' },
     ],
   },
@@ -103,6 +120,24 @@ function isActive(href: string) {
             >
               {item.label}
             </a>
+            {item.items && (
+              <ul class="space-y-1 mt-1">
+                {item.items.map(subItem => (
+                  <li>
+                    <a
+                      href={getFullHref(subItem.href)}
+                      class:list={[
+                        'sidebar-link sidebar-link-nested',
+                        isActive(subItem.href) && 'sidebar-link-active',
+                      ]}
+                      aria-current={isActive(subItem.href) ? 'page' : undefined}
+                    >
+                      {subItem.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
           </li>
         ))}
       </ul>

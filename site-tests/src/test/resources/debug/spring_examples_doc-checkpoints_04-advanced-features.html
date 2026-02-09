@@ -1,0 +1,7 @@
+<p>Test it with curl:</p><pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">curl</span><span style="color:#79B8FF"> -NsSfX</span><span style="color:#9ECBFF"> POST</span><span style="color:#9ECBFF"> http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Content-Type: text/plain&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Authorization: Bearer $(</span><span style="color:#B392F0">get-token</span><span style="color:#9ECBFF">)&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -d</span><span style="color:#9ECBFF"> &quot;Write a 4 paragraph story about a cat.&quot;</span></span></code></pre><div class="steps" hidden data-steps="
+Then the response status should be 200
+And the response should match pattern &#34;\w+&#34;
+"></div>

@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/v1/models"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"object\":\"list\",\"data\":[{\"id\":\"mock-gpt-markdown\",\"object\":\"model\",\"created\":1707440400,\"owned_by\":\"mock\"},{\"id\":\"gpt-4o\",\"object\":\"model\",\"created\":1707440400,\"owned_by\":\"mock\"},{\"id\":\"gpt-4\",\"object\":\"model\",\"created\":1707440400,\"owned_by\":\"mock\"},{\"id\":\"gpt-3.5-turbo\",\"object\":\"model\",\"created\":1707440400,\"owned_by\":\"mock\"}]}"
+  }
+}

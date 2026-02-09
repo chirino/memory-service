@@ -5,6 +5,9 @@ description: Record conversation history and expose APIs for frontend applicatio
 ---
 import { Code } from 'astro:components';
 import { PROJECT_VERSION } from '../../../config';
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
 
 This guide continues from [Getting Started](/docs/quarkus/getting-started/) and shows how to record conversation history and expose APIs for frontend applications.
 
@@ -26,34 +29,10 @@ To display conversation history in a frontend UI, wrap your agent with the `@Rec
 
 Create a wrapper class:
 
-```java
-package org.acme;
-
-import io.github.chirino.memory.history.annotations.ConversationId;
-import io.github.chirino.memory.history.annotations.RecordConversation;
-import io.github.chirino.memory.history.annotations.UserMessage;
-import io.smallrye.mutiny.Multi;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-
-@ApplicationScoped
-public class HistoryRecordingAgent {
-
-    private final Agent agent;
-
-    @Inject
-    public HistoryRecordingAgent(Agent agent) {
-        this.agent = agent;
-    }
-
-    @RecordConversation
-    public String chat(
-            @ConversationId String conversationId, 
-            @UserMessage String userMessage) {
-        return agent.chat(conversationId, userMessage);
-    }
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/03-with-history/src/main/java/org/acme/HistoryRecordingAgent.java"
+  lang="java"
+/>
 
 The `@RecordConversation` interceptor automatically:
 - Stores the user message before calling your method
@@ -63,16 +42,14 @@ Use `HistoryRecordingAgent` in your endpoints instead of calling `Agent` directl
 
 Update the `ChatResource.java`:
 
-```java
-@Path("/chat")
-public class ChatResource {
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/03-with-history/src/main/java/org/acme/ChatResource.java"
+  lang="java"
+  before={2}
+>@Inject HistoryRecordingAgent agent</CodeFromFile>
 
-    @Inject
-    HistoryRecordingAgent agent;
 
-... existing code ...
-```
-
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/03-with-history">
 
 Make sure you define a shell function that can get the bearer token for the bob user:
 
@@ -86,79 +63,50 @@ function get-token() {
     -d "username=bob" \
     -d "password=bob" \
     | jq -r '.access_token'
-}  
+}
 ```
 
 Now test it again.
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should match pattern "\\d+"
+`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
-  -d "Givem a random number between 1 and 100."
+  -d "Give me a random number between 1 and 100."
 ```
 
-This time when you browse to to the demo agent app at 
-[http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942) 
+</CurlTest>
+
+This time when you browse to to the demo agent app at
+[http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942)
 you should see the messages that were exchanged between you and the agent.
+
+</TestScenario>
 
 ## Expose Conversation Entries API
 
 To let the frontend load a conversation's entry history,
 add a jackson dependency to enable JSON serialization/deserialization to the `pom.xml`:
 
-```xml
-<dependency>
-    <groupId>io.quarkus</groupId>
-    <artifactId>quarkus-rest-jackson</artifactId>
-</dependency>
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/03-with-history/pom.xml"
+  lang="xml"
+  before={2}
+  after={1}
+>quarkus-rest-jackson</CodeFromFile>
 
 Then create a REST resource that proxies requests to Memory Service:
 
-```java
-package org.acme;
-
-import io.github.chirino.memory.client.model.Channel;
-import io.github.chirino.memory.runtime.MemoryServiceProxy;
-import io.smallrye.common.annotation.Blocking;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
-
-@Path("/v1/conversations")
-@ApplicationScoped
-@Blocking
-public class ConversationsResource {
-
-    @Inject
-    MemoryServiceProxy proxy;
-
-    @GET
-    @Path("/{conversationId}")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response getConversation(@PathParam("conversationId") String conversationId) {
-        return proxy.getConversation(conversationId);
-    }
-
-    @GET
-    @Path("/{conversationId}/entries")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response listConversationEntries(
-            @PathParam("conversationId") String conversationId,
-            @QueryParam("after") String after,
-            @QueryParam("limit") Integer limit) {
-        return proxy.listConversationEntries(
-                conversationId, after, limit, Channel.HISTORY, null, null);
-    }
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/03-with-history/src/main/java/org/acme/ConversationsResource.java"
+  lang="java"
+  after={38}
+>package org.acme</CodeFromFile>
 
 The `MemoryServiceProxy` is helper class that makes it easier to implement a JAXRS proxy to the memory service apis.  It handles:
 - Authentication with the memory service
@@ -166,41 +114,172 @@ The `MemoryServiceProxy` is helper class that makes it easier to implement a JAX
 
 The `Channel.HISTORY` parameter ensures you get entries from the history channel (recorded by `@RecordConversation`) rather than the memory channel (used by agents internally).
 
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/03-with-history">
+
 Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be json:
+"""
+{
+  "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "title": "%{response.body.title}",
+  "ownerUserId": "bob",
+  "createdAt": "%{response.body.createdAt}",
+  "updatedAt": "%{response.body.updatedAt}",
+  "accessLevel": "owner"
+}
+"""
+`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/ \
   -H "Authorization: Bearer $(get-token)" | jq
+```
 
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "title": "Give me a random number between 1 and 10",
+  "ownerUserId": "bob",
+  "createdAt": "2025-01-10T14:32:05Z",
+  "updatedAt": "2025-01-10T14:32:06Z",
+  "accessLevel": "owner"
+}
+```
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be json:
+"""
+{
+  "data": [
+    {
+      "id": "%{response.body.data[0].id}",
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Give me a random number between 1 and 100."}],
+      "createdAt": "%{response.body.data[0].createdAt}"
+    },
+    {
+      "id": "%{response.body.data[1].id}",
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "AI", "text": "%{response.body.data[1].content[0].text}"}],
+      "createdAt": "%{response.body.data[1].createdAt}"
+    }
+  ]
+}
+"""
+`}>
+
+```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "id": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Give me a random number between 1 and 100."}],
+      "createdAt": "2025-01-10T14:32:05Z"
+    },
+    {
+      "id": "267158af-48bf-4000-b25b-c4f9932a48f4",
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "AI", "text": "Sure! The random number is 42."}],
+      "createdAt": "2025-01-10T14:32:06Z"
+    }
+  ]
+}
+```
+
 You should see the conversation and entries that were exchanged between you and the agent.
+
+</TestScenario>
 
 ## Expose Conversation Listing API
 
 A more advanced frontend might want to list all conversations a user has had and display them in a list.
 To let users see all their conversations, add these methods to the `ConversationsResource.java`:
 
-```java
-@GET
-@Produces(MediaType.APPLICATION_JSON)
-public Response listConversations(
-        @QueryParam("mode") String mode,
-        @QueryParam("after") String after,
-        @QueryParam("limit") Integer limit,
-        @QueryParam("query") String query) {
-    return proxy.listConversations(mode, after, limit, query);
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/03-with-history/src/main/java/org/acme/ConversationsResource.java"
+  lang="java"
+  before={2}
+  after={6}
+>public Response listConversations</CodeFromFile>
+
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/03-with-history">
 
 Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be json:
+"""
+{
+  "data": [
+    {
+      "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "title": "%{response.body.data[0].title}",
+      "ownerUserId": "bob",
+      "createdAt": "%{response.body.data[0].createdAt}",
+      "updatedAt": "%{response.body.data[0].updatedAt}",
+      "accessLevel": "owner"
+    }
+  ]
+}
+"""
+`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "title": "Give me a random number between 1 and 10",
+      "ownerUserId": "bob",
+      "createdAt": "2025-01-10T14:32:05Z",
+      "updatedAt": "2025-01-10T14:32:06Z",
+      "accessLevel": "owner"
+    }
+  ]
+}
+```
+
+</TestScenario>
 
 The `listConversations` endpoint supports:
 - **Pagination** via `after` (cursor) and `limit` parameters

@@ -11,16 +11,13 @@ import jakarta.ws.rs.core.MediaType;
 @Path("/chat")
 public class ChatResource {
 
-    @Inject
-    Agent agent;
+    @Inject Agent agent;
 
     @POST
     @Path("/{conversationId}")
     @Consumes(MediaType.TEXT_PLAIN)
     @Produces(MediaType.TEXT_PLAIN)
-    public String chat(
-            @PathParam("conversationId") String conversationId,
-            String userMessage) {
+    public String chat(@PathParam("conversationId") String conversationId, String userMessage) {
         return agent.chat(conversationId, userMessage);
     }
 }
