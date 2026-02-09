@@ -81,7 +81,7 @@ public class CurlSteps {
                             + " "
                             + request.uri());
 
-            // Retry on transient failures (404/503) that occur during app startup
+            // Retry on transient failures (404/500/503) that occur during app startup
             int maxRetries = 5;
             int retryDelayMs = 3000;
             for (int attempt = 1; attempt <= maxRetries; attempt++) {
@@ -90,7 +90,7 @@ public class CurlSteps {
                 lastResponse = response.body();
                 lastStatusCode = response.statusCode();
 
-                if (lastStatusCode != 404 && lastStatusCode != 503) {
+                if (lastStatusCode != 404 && lastStatusCode != 500 && lastStatusCode != 503) {
                     break;
                 }
                 if (attempt < maxRetries) {

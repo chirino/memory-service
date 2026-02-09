@@ -15,14 +15,14 @@ This guide shows you how to implement conversation sharing and ownership transfe
 
 ## Prerequisites
 
-- Complete the [Advanced Features](./advanced-features) guide (checkpoint 04)
+- Complete the [Conversation Forking](./conversation-forking) and [Response Resumption](./response-resumption) guides
 - Memory service running with authentication
 - Multiple test users in Keycloak (bob, alice, charlie)
 - Understanding of [access levels and sharing concepts](/docs/concepts/sharing/)
 
 ## Membership Endpoints
 
-The membership endpoints are already available in checkpoint 05 through the `MemoryServiceProxyController`:
+The membership endpoints are already available in checkpoint 06 through the `MemoryServiceProxyController`:
 
 ```java
 @GetMapping("/{conversationId}/memberships")
@@ -105,7 +105,7 @@ function get-token() {
 }
 ```
 
-<TestScenario checkpoint="spring/examples/doc-checkpoints/05-sharing">
+<TestScenario checkpoint="spring/examples/doc-checkpoints/06-sharing">
 
 First, create a conversation as bob so the membership endpoints have data to work with:
 

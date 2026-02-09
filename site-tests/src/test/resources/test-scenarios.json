@@ -1,5 +1,61 @@
 [
   {
+    "checkpoint": "spring/examples/doc-checkpoints/06-sharing",
+    "sourceFile": "/docs/spring/sharing/",
+    "scenarios": [
+      {
+        "bash": "curl -sSfX POST http://localhost:9090/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \\\n  -H \"Content-Type: text/plain\" \\\n  -H \"Authorization: Bearer $(get-token)\" \\\n  -d \"Hello, starting a conversation for sharing tests.\"",
+        "expectations": [],
+        "customSteps": [
+          "Then the response status should be 200"
+        ]
+      },
+      {
+        "bash": "# As bob (owner), list members of the conversation\ncurl -sSfX GET http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \\\n  -H \"Authorization: Bearer $(get-token bob bob)\" | jq",
+        "expectations": [],
+        "customSteps": [
+          "Then the response status should be 200",
+          "And the response body should be json:",
+          "\"\"\"",
+          "{",
+          "\"data\": [",
+          "{",
+          "\"conversationId\": \"a1b2c3d4-e5f6-4789-abcd-ef0123456789\",",
+          "\"userId\": \"bob\",",
+          "\"accessLevel\": \"owner\",",
+          "\"createdAt\": \"%{response.body.data[0].createdAt}\"",
+          "}",
+          "]",
+          "}",
+          "\"\"\""
+        ]
+      },
+      {
+        "bash": "# Share conversation with alice as a writer\ncurl -sSfX POST http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \\\n  -H \"Authorization: Bearer $(get-token bob bob)\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"userId\": \"alice\",\n    \"accessLevel\": \"writer\"\n  }' | jq",
+        "expectations": [],
+        "customSteps": [
+          "Then the response status should be 201",
+          "And the response body should be json:",
+          "\"\"\"",
+          "{",
+          "\"conversationId\": \"a1b2c3d4-e5f6-4789-abcd-ef0123456789\",",
+          "\"userId\": \"alice\",",
+          "\"accessLevel\": \"writer\",",
+          "\"createdAt\": \"%{response.body.createdAt}\"",
+          "}",
+          "\"\"\""
+        ]
+      },
+      {
+        "bash": "curl -sSfX POST http://localhost:9090/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \\\n  -H \"Authorization: Bearer $(get-token alice alice)\" \\\n  -H \"Content-Type: text/plain\" \\\n  -d \"Hi from Alice!\"",
+        "expectations": [],
+        "customSteps": [
+          "Then the response status should be 200"
+        ]
+      }
+    ]
+  },
+  {
     "checkpoint": "quarkus/examples/doc-checkpoints/03-with-history",
     "sourceFile": "/docs/quarkus/conversation-history/",
     "scenarios": [
@@ -76,30 +132,24 @@
           "{",
           "\"data\": [",
           "{",
-          "\"id\": \"3579aac5-c86e-4b67-bbea-6ec1a3644942\",",
+          "\"id\": \"%{response.body.data[0].id}\",",
           "\"title\": \"%{response.body.data[0].title}\",",
           "\"ownerUserId\": \"bob\",",
           "\"createdAt\": \"%{response.body.data[0].createdAt}\",",
           "\"updatedAt\": \"%{response.body.data[0].updatedAt}\",",
           "\"accessLevel\": \"owner\"",
+          "},",
+          "{",
+          "\"id\": \"%{response.body.data[1].id}\",",
+          "\"title\": \"%{response.body.data[1].title}\",",
+          "\"ownerUserId\": \"bob\",",
+          "\"createdAt\": \"%{response.body.data[1].createdAt}\",",
+          "\"updatedAt\": \"%{response.body.data[1].updatedAt}\",",
+          "\"accessLevel\": \"owner\"",
           "}",
           "]",
           "}",
           "\"\"\""
-        ]
-      }
-    ]
-  },
-  {
-    "checkpoint": "quarkus/examples/doc-checkpoints/04-advanced-features",
-    "sourceFile": "/docs/quarkus/advanced-features/",
-    "scenarios": [
-      {
-        "bash": "curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \\\n  -H \"Content-Type: text/plain\" \\\n  -H \"Authorization: Bearer $(get-token)\" \\\n  -d \"Write a 4 paragraph story about a cat.\"",
-        "expectations": [],
-        "customSteps": [
-          "Then the response status should be 200",
-          "And the response should match pattern \"\\w+\""
         ]
       }
     ]
@@ -175,7 +225,21 @@
     ]
   },
   {
-    "checkpoint": "quarkus/examples/doc-checkpoints/05-sharing",
+    "checkpoint": "quarkus/examples/doc-checkpoints/05-response-resumption",
+    "sourceFile": "/docs/quarkus/response-resumption/",
+    "scenarios": [
+      {
+        "bash": "curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \\\n  -H \"Content-Type: text/plain\" \\\n  -H \"Authorization: Bearer $(get-token)\" \\\n  -d \"Write a 4 paragraph story about a cat.\"",
+        "expectations": [],
+        "customSteps": [
+          "Then the response status should be 200",
+          "And the response should match pattern \"\\w+\""
+        ]
+      }
+    ]
+  },
+  {
+    "checkpoint": "quarkus/examples/doc-checkpoints/06-sharing",
     "sourceFile": "/docs/quarkus/sharing/",
     "scenarios": [
       {
@@ -226,20 +290,6 @@
         "expectations": [],
         "customSteps": [
           "Then the response status should be 200"
-        ]
-      }
-    ]
-  },
-  {
-    "checkpoint": "spring/examples/doc-checkpoints/04-advanced-features",
-    "sourceFile": "/docs/spring/advanced-features/",
-    "scenarios": [
-      {
-        "bash": "curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \\\n  -H \"Content-Type: text/plain\" \\\n  -H \"Authorization: Bearer $(get-token)\" \\\n  -d \"Write a 4 paragraph story about a cat.\"",
-        "expectations": [],
-        "customSteps": [
-          "Then the response status should be 200",
-          "And the response should match pattern \"\\w+\""
         ]
       }
     ]
@@ -372,57 +422,15 @@
     ]
   },
   {
-    "checkpoint": "spring/examples/doc-checkpoints/05-sharing",
-    "sourceFile": "/docs/spring/sharing/",
+    "checkpoint": "spring/examples/doc-checkpoints/05-response-resumption",
+    "sourceFile": "/docs/spring/response-resumption/",
     "scenarios": [
       {
-        "bash": "curl -sSfX POST http://localhost:9090/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \\\n  -H \"Content-Type: text/plain\" \\\n  -H \"Authorization: Bearer $(get-token)\" \\\n  -d \"Hello, starting a conversation for sharing tests.\"",
-        "expectations": [],
-        "customSteps": [
-          "Then the response status should be 200"
-        ]
-      },
-      {
-        "bash": "# As bob (owner), list members of the conversation\ncurl -sSfX GET http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \\\n  -H \"Authorization: Bearer $(get-token bob bob)\" | jq",
+        "bash": "curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \\\n  -H \"Content-Type: text/plain\" \\\n  -H \"Authorization: Bearer $(get-token)\" \\\n  -d \"Write a 4 paragraph story about a cat.\"",
         "expectations": [],
         "customSteps": [
           "Then the response status should be 200",
-          "And the response body should be json:",
-          "\"\"\"",
-          "{",
-          "\"data\": [",
-          "{",
-          "\"conversationId\": \"a1b2c3d4-e5f6-4789-abcd-ef0123456789\",",
-          "\"userId\": \"bob\",",
-          "\"accessLevel\": \"owner\",",
-          "\"createdAt\": \"%{response.body.data[0].createdAt}\"",
-          "}",
-          "]",
-          "}",
-          "\"\"\""
-        ]
-      },
-      {
-        "bash": "# Share conversation with alice as a writer\ncurl -sSfX POST http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \\\n  -H \"Authorization: Bearer $(get-token bob bob)\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"userId\": \"alice\",\n    \"accessLevel\": \"writer\"\n  }' | jq",
-        "expectations": [],
-        "customSteps": [
-          "Then the response status should be 201",
-          "And the response body should be json:",
-          "\"\"\"",
-          "{",
-          "\"conversationId\": \"a1b2c3d4-e5f6-4789-abcd-ef0123456789\",",
-          "\"userId\": \"alice\",",
-          "\"accessLevel\": \"writer\",",
-          "\"createdAt\": \"%{response.body.createdAt}\"",
-          "}",
-          "\"\"\""
-        ]
-      },
-      {
-        "bash": "curl -sSfX POST http://localhost:9090/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \\\n  -H \"Authorization: Bearer $(get-token alice alice)\" \\\n  -H \"Content-Type: text/plain\" \\\n  -d \"Hi from Alice!\"",
-        "expectations": [],
-        "customSteps": [
-          "Then the response status should be 200"
+          "And the response should match pattern \"\\w+\""
         ]
       }
     ]
