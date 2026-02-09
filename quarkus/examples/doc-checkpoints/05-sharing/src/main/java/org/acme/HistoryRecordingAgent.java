@@ -18,7 +18,8 @@ public class HistoryRecordingAgent {
     }
 
     @RecordConversation
-    public Multi<String> chat(@ConversationId String conversationId, @UserMessage String userMessage) {
+    public Multi<String> chat(
+            @ConversationId String conversationId, @UserMessage String userMessage) {
         return agent.chat(conversationId, userMessage);
     }
 }

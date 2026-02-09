@@ -1,0 +1,16 @@
+{
+  "scenarioName" : "chat-sequence",
+  "requiredScenarioState" : "Started",
+  "newScenarioState" : "step-2",
+  "request" : {
+    "method" : "POST",
+    "urlPath" : "/v1/chat/completions"
+  },
+  "response" : {
+    "status" : 200,
+    "headers" : {
+      "Content-Type" : "application/json"
+    },
+    "body" : "{\n  \"id\": \"chatcmpl-D7MEHRP45QMe9x8qK9OPSdKAcfNPc\",\n  \"object\": \"chat.completion\",\n  \"created\": 1770646117,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n  \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\": \"assistant\",\n        \"content\": \"Hi Hiram! I’m an AI created to help answer questions and provide information. How can I assist you today?\",\n        \"refusal\": null,\n        \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 46,\n    \"completion_tokens\": 24,\n    \"total_tokens\": 70,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\": {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\": 0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\": \"default\",\n  \"system_fingerprint\": \"fp_f4ae844694\"\n}\n"
+  }
+}

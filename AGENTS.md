@@ -2,6 +2,14 @@
 
 A memory service for AI agents that stores messages exchanged with LLMs and users, supporting conversation replay and forking.
 
+**Self-Updating Knowledge:**
+When you discover something meaningful about this project during your work—architecture patterns, naming conventions, gotchas, dependency quirks, correct/incorrect assumptions in existing docs—update `CLAUDE.md` (or the relevant skill file) immediately so future sessions benefit without re-discovering it. Specifically:
+
+- **Add** newly learned project-specific facts (e.g., "the API layer uses X pattern", "tests require Y setup").
+- **Correct** any skill or doc content you find to be outdated or wrong.
+- **Refine trigger criteria** in skill descriptions if a skill was loaded but wasn't relevant to the task—tighten its description so it activates more precisely.
+- Keep updates concise and factual. Don't bloat files with obvious or generic information.
+
 ## Key Concepts
 - **User access control**: Conversations are owned by users with read/write/manager/owner access levels.
 - **User-facing API**: For chat frontends - list conversations, semantic search, get messages, fork conversations.
@@ -31,6 +39,7 @@ A memory service for AI agents that stores messages exchanged with LLMs and user
 
 **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`). Include test commands and config changes.
 
+
 ## Notes for AI Assistants
 
 **ALWAYS compile after changes**:
@@ -45,8 +54,4 @@ A memory service for AI agents that stores messages exchanged with LLMs and user
 
 **Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 
-## Skills
-
-- `/build-test` - Dev mode commands and debugging tips
-- `/testing` - Cucumber BDD patterns and failure reporting
-- `/openapi-workflow` - OpenAPI change workflow and client regeneration
+## Learned Facts

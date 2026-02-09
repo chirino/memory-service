@@ -36,7 +36,8 @@ class MemoryServiceProxyController {
             @RequestParam(required = false) String epoch,
             @RequestParam(required = false) String forks) {
         Channel channelEnum = channel != null ? Channel.fromValue(channel) : Channel.HISTORY;
-        return proxy.listConversationEntries(conversationId, after, limit, channelEnum, epoch, forks);
+        return proxy.listConversationEntries(
+                conversationId, after, limit, channelEnum, epoch, forks);
     }
 
     @GetMapping

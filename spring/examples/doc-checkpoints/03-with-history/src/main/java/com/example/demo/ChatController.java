@@ -33,21 +33,26 @@ public class ChatController {
     }
 
     @PostMapping("/chat/{conversationId}")
-    public String chat(
-            @PathVariable String conversationId,
-            @RequestBody String message) {
+    public String chat(@PathVariable String conversationId, @RequestBody String message) {
 
         String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
-        var chatMemoryAdvisor = MessageChatMemoryAdvisor.builder(MessageWindowChatMemory.builder()
-                .chatMemoryRepository(repositoryBuilder.build(bearerToken))
-                .build()).build();
+        var chatMemoryAdvisor =
+                MessageChatMemoryAdvisor.builder(
+                                MessageWindowChatMemory.builder()
+                                        .chatMemoryRepository(repositoryBuilder.build(bearerToken))
+                                        .build())
+                        .build();
         var historyAdvisor = historyAdvisorBuilder.build(bearerToken);
 
-        var chatClient = chatClientBuilder.clone()
-                .defaultSystem("You are a helpful assistant.")
-                .defaultAdvisors(historyAdvisor, chatMemoryAdvisor)
-                .defaultAdvisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
-                .build();
+        var chatClient =
+                chatClientBuilder
+                        .clone()
+                        .defaultSystem("You are a helpful assistant.")
+                        .defaultAdvisors(historyAdvisor, chatMemoryAdvisor)
+                        .defaultAdvisors(
+                                advisor ->
+                                        advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
+                        .build();
 
         return chatClient.prompt().user(message).call().content();
     }

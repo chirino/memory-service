@@ -5,6 +5,9 @@ description: Record conversation history and expose APIs for frontend applicatio
 ---
 import { Code } from 'astro:components';
 import { PROJECT_VERSION } from '../../../config';
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
 
 This guide continues from [Getting Started](/docs/spring/getting-started/) and shows how to record conversation history and expose APIs for frontend applications.
 
@@ -33,62 +36,10 @@ The Memory Service starter provides `ConversationHistoryStreamAdvisorBuilder` wh
 
 Update your controller to include the history advisor:
 
-```java
-package com.example.demo;
-
-import io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisorBuilder;
-import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryBuilder;
-import io.github.chirino.memoryservice.security.SecurityHelper;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.memory.MessageWindowChatMemory;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
-
-@RestController
-public class ChatController {
-    private final ChatClient.Builder chatClientBuilder;
-    private final MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder;
-    private final ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder;
-    private final OAuth2AuthorizedClientService authorizedClientService;
-
-    public ChatController(
-            ChatClient.Builder chatClientBuilder,
-            MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder,
-            ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder,
-            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
-        this.chatClientBuilder = chatClientBuilder;
-        this.repositoryBuilder = repositoryBuilder;
-        this.historyAdvisorBuilder = historyAdvisorBuilder;
-        this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
-    }
-
-    @PostMapping("/chat/{conversationId}")
-    public String chat(
-            @PathVariable String conversationId,
-            @RequestBody String message) {
-
-        String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
-        var chatMemoryAdvisor = MessageChatMemoryAdvisor.builder(MessageWindowChatMemory.builder()
-                .chatMemoryRepository(repositoryBuilder.build(bearerToken))
-                .build()).build();
-        var historyAdvisor = historyAdvisorBuilder.build(bearerToken);
-
-        var chatClient = chatClientBuilder.clone()
-                .defaultSystem("You are a helpful assistant.")
-                .defaultAdvisors(historyAdvisor, chatMemoryAdvisor)
-                .defaultAdvisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
-                .build();
-
-        return chatClient.prompt().user(message).call().content();
-    }
-}
-```
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/03-with-history/src/main/java/com/example/demo/ChatController.java"
+  lang="java"
+/>
 
 The `historyAdvisor` automatically records:
 - User messages before calling the LLM
@@ -100,7 +51,17 @@ Run your agent again:
 ./mvnw spring-boot:run
 ```
 
+<TestScenario checkpoint="spring/examples/doc-checkpoints/03-with-history">
+
 Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be text:
+"""
+Sure! Here's a random number between 1 and 100: **42**.
+"""
+`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
@@ -109,8 +70,12 @@ curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942
   -d "Give me a random number between 1 and 100."
 ```
 
-This time when you browse to to the demo agent app at 
-[http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942) 
+</CurlTest>
+
+</TestScenario>
+
+This time when you browse to to the demo agent app at
+[http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942)
 you should see the messages that were exchanged between you and the agent.
 
 ## Expose Conversation APIs
@@ -119,88 +84,150 @@ The Memory Service starter auto-configures a `MemoryServiceProxy` bean that make
 
 Create a REST controller that proxies requests to Memory Service:
 
-```java
-package com.example.demo;
-
-import io.github.chirino.memoryservice.client.MemoryServiceProxy;
-import io.github.chirino.memoryservice.client.model.Channel;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-
-@RestController
-@RequestMapping("/v1/conversations")
-class MemoryServiceProxyController {
-    private final MemoryServiceProxy proxy;
-
-    MemoryServiceProxyController(MemoryServiceProxy proxy) {
-        this.proxy = proxy;
-    }
-    
-    @GetMapping("/{conversationId}")
-    public ResponseEntity<?> getConversation(@PathVariable String conversationId) {
-        return proxy.getConversation(conversationId);
-    }
-
-    @GetMapping("/{conversationId}/entries")
-    public ResponseEntity<?> listConversationEntries(
-            @PathVariable String conversationId,
-            @RequestParam(required = false) String after,
-            @RequestParam(required = false) Integer limit,
-            @RequestParam(required = false) String channel,
-            @RequestParam(required = false) String epoch,
-            @RequestParam(required = false) String forks) {
-        Channel channelEnum = channel != null ? Channel.fromValue(channel) : Channel.HISTORY;
-        return proxy.listConversationEntries(conversationId, after, limit, channelEnum, epoch, forks);
-    }
-}
-```
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/03-with-history/src/main/java/com/example/demo/MemoryServiceProxyController.java"
+  lang="java"
+/>
 
 The `MemoryServiceProxy` also handles proper error handling and response mapping.
 
+<TestScenario checkpoint="spring/examples/doc-checkpoints/03-with-history">
+
 Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be json:
+"""
+{
+  "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "title": "%{response.body.title}",
+  "ownerUserId": "bob",
+  "createdAt": "%{response.body.createdAt}",
+  "updatedAt": "%{response.body.updatedAt}",
+  "lastMessagePreview": null,
+  "accessLevel": "owner",
+  "forkedAtEntryId": null,
+  "forkedAtConversationId": null
+}
+"""
+`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "title": "Give me a random number between 1 and 10",
+  "ownerUserId": "bob",
+  "createdAt": "2025-01-10T14:32:05Z",
+  "updatedAt": "2025-01-10T14:32:06Z",
+  "lastMessagePreview": null,
+  "accessLevel": "owner",
+  "forkedAtEntryId": null,
+  "forkedAtConversationId": null
+}
+```
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Give me a random number"
+And the response should contain "history"
+`}>
+
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "id": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "channel": "history",
+      "epoch": null,
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Give me a random number between 1 and 100."}],
+      "createdAt": "2025-01-10T14:32:05Z"
+    },
+    {
+      "id": "267158af-48bf-4000-b25b-c4f9932a48f4",
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "channel": "history",
+      "epoch": null,
+      "contentType": "history",
+      "content": [{"role": "AI", "text": "Sure! Here's a random number between 1 and 100: **42**."}],
+      "createdAt": "2025-01-10T14:32:06Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+</TestScenario>
+
 You should see the conversation and entries that were exchanged between you and the agent.
 
 ## Expose Conversation Listing API
 
-To let users see all their conversations, add the `listConversations` method to your `MemoryServiceProxyController`:
-
-```java
-@GetMapping
-public ResponseEntity<?> listConversations(
-        @RequestParam(value = "mode", required = false) String mode,
-        @RequestParam(value = "after", required = false) String after,
-        @RequestParam(value = "limit", required = false) Integer limit,
-        @RequestParam(value = "query", required = false) String query) {
-    return proxy.listConversations(mode, after, limit, query);
-}
-```
-
-The `listConversations` endpoint supports:
+The `MemoryServiceProxyController` already includes the `listConversations` method (shown in the full code above). This endpoint supports:
 - **Pagination** via `after` (cursor) and `limit` parameters
 - **Search** via the `query` parameter for filtering conversations
 - **Mode** for different listing modes (e.g., `owned`, `shared`)
 
+<TestScenario checkpoint="spring/examples/doc-checkpoints/03-with-history">
+
 Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "3579aac5-c86e-4b67-bbea-6ec1a3644942"
+And the response should contain "owner"
+And the response should contain "bob"
+`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "title": "Give me a random number between 1 and 10",
+      "ownerUserId": "bob",
+      "createdAt": "2025-01-10T14:32:05Z",
+      "updatedAt": "2025-01-10T14:32:06Z",
+      "lastMessagePreview": null,
+      "accessLevel": "owner"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+</TestScenario>
 
 ## Completed Checkpoint
 

@@ -10,8 +10,7 @@ import jakarta.ws.rs.core.MediaType;
 @Path("/chat")
 public class ChatResource {
 
-    @Inject
-    Agent agent;
+    @Inject Agent agent;
 
     @POST
     @Consumes(MediaType.TEXT_PLAIN)

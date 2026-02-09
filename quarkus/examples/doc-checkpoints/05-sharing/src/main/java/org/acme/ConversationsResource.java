@@ -22,8 +22,7 @@ import jakarta.ws.rs.core.Response;
 @Blocking
 public class ConversationsResource {
 
-    @Inject
-    MemoryServiceProxy proxy;
+    @Inject MemoryServiceProxy proxy;
 
     @GET
     @Path("/{conversationId}")
@@ -75,7 +74,8 @@ public class ConversationsResource {
     @GET
     @Path("/{conversationId}/memberships")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response listConversationMemberships(@PathParam("conversationId") String conversationId) {
+    public Response listConversationMemberships(
+            @PathParam("conversationId") String conversationId) {
         return proxy.listConversationMemberships(conversationId);
     }
 
@@ -102,7 +102,8 @@ public class ConversationsResource {
     @DELETE
     @Path("/{conversationId}/memberships/{userId}")
     public Response deleteConversationMembership(
-            @PathParam("conversationId") String conversationId, @PathParam("userId") String userId) {
+            @PathParam("conversationId") String conversationId,
+            @PathParam("userId") String userId) {
         return proxy.deleteConversationMembership(conversationId, userId);
     }
 }

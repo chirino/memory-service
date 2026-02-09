@@ -1,0 +1,25 @@
+---
+// Wraps a single curl command (bash code block) with its Cucumber test assertions.
+// The bash block is rendered normally for documentation; assertions are hidden and
+// extracted during build by TestScenario.astro for automated testing.
+//
+// Usage:
+//   <CurlTest steps={`
+//   Then the response status should be 200
+//   And the response should contain "hello"
+//   `}>
+//
+//   ```bash
+//   curl -sSfX GET http://localhost:9090/api/hello
+//   ```
+//
+//   </CurlTest>
+interface Props {
+  steps?: string;
+}
+const { steps } = Astro.props;
+---
+<div class="curl-test">
+  <slot />
+  {steps && <div class="steps" hidden data-steps={steps}></div>}
+</div>

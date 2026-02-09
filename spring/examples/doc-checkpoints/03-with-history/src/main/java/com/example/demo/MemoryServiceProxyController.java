@@ -3,7 +3,6 @@ package com.example.demo;
 import io.github.chirino.memoryservice.client.MemoryServiceProxy;
 import io.github.chirino.memoryservice.client.model.Channel;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,7 +32,8 @@ class MemoryServiceProxyController {
             @RequestParam(required = false) String epoch,
             @RequestParam(required = false) String forks) {
         Channel channelEnum = channel != null ? Channel.fromValue(channel) : Channel.HISTORY;
-        return proxy.listConversationEntries(conversationId, after, limit, channelEnum, epoch, forks);
+        return proxy.listConversationEntries(
+                conversationId, after, limit, channelEnum, epoch, forks);
     }
 
     @GetMapping

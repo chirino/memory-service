@@ -1,0 +1,21 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/chat/completions",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$[?(@.stream == true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache"
+    },
+    "body": "data: {\"id\":\"chatcmpl-mock123\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"{{jsonPath request.body '$.model'}}\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mock123\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"{{jsonPath request.body '$.model'}}\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"I am an AI assistant here to help you. \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mock123\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"{{jsonPath request.body '$.model'}}\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"How can I assist you today?\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mock123\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"{{jsonPath request.body '$.model'}}\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+    "transformers": ["response-template"]
+  },
+  "priority": 2
+}

@@ -1,5 +1,7 @@
 package org.acme;
 
+import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
+
 import io.github.chirino.memory.history.runtime.ResponseResumer;
 import io.github.chirino.memory.runtime.MemoryServiceProxy;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -15,10 +17,7 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-
 import java.util.List;
-
-import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 
 @Path("/v1/conversations")
 @ApplicationScoped
@@ -40,8 +39,7 @@ public class ResumeResource {
     @Path("/{conversationId}/resume")
     @Blocking
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    public Multi<String> resume(
-            @PathParam("conversationId") String conversationId) {
+    public Multi<String> resume(@PathParam("conversationId") String conversationId) {
         String bearerToken = bearerToken(securityIdentity);
         return resumer.replay(conversationId, bearerToken);
     }

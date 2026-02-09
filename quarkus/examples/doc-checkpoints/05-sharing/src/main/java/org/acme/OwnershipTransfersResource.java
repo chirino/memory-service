@@ -20,8 +20,7 @@ import jakarta.ws.rs.core.Response;
 @Blocking
 public class OwnershipTransfersResource {
 
-    @Inject
-    MemoryServiceProxy proxy;
+    @Inject MemoryServiceProxy proxy;
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)

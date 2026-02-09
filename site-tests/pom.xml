@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.chirino.memory-service</groupId>
+    <artifactId>memory-service-parent</artifactId>
+    <version>999-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>site-tests</artifactId>
+  <name>Memory Service :: Site Tests</name>
+
+  <properties>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <cucumber.version>7.15.0</cucumber.version>
+    <junit.version>5.10.1</junit.version>
+  </properties>
+
+  <dependencies>
+
+    <!-- For JSON parsing and comparison -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.16.1</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.java-diff-utils</groupId>
+      <artifactId>java-diff-utils</artifactId>
+      <version>4.15</version>
+    </dependency>
+    <dependency>
+      <groupId>io.rest-assured</groupId>
+      <artifactId>json-path</artifactId>
+      <version>5.3.0</version>
+    </dependency>
+    <!-- Cucumber -->
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-java</artifactId>
+      <version>${cucumber.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-junit-platform-engine</artifactId>
+      <version>${cucumber.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- JUnit 5 -->
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-suite</artifactId>
+      <version>1.10.1</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- WireMock standalone for OpenAI API mocking -->
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock-standalone</artifactId>
+      <version>3.11.0</version>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+    <plugins>
+
+      <!-- Run tests -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.3</version>
+        <configuration>
+          <!-- Must reuse forks: all scenarios share WireMock + Docker Compose state -->
+          <reuseForks>true</reuseForks>
+          <forkedProcessTimeoutInSeconds>600</forkedProcessTimeoutInSeconds>
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/DocTestRunner.java</include>
+          </includes>
+          <systemPropertyVariables>
+            <cucumber.publish.quiet>true</cucumber.publish.quiet>
+            <!-- Use standard Java logging instead of JBoss LogManager -->
+            <java.util.logging.manager>java.util.logging.LogManager</java.util.logging.manager>
+          </systemPropertyVariables>
+          <environmentVariables>
+            <SITE_TEST_RECORD>${env.SITE_TEST_RECORD}</SITE_TEST_RECORD>
+            <OPENAI_API_KEY>${env.OPENAI_API_KEY}</OPENAI_API_KEY>
+          </environmentVariables>
+        </configuration>
+      </plugin>
+      <!-- Step 1: Build the documentation site to generate test-scenarios.json -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <!-- Install npm dependencies -->
+          <execution>
+            <id>npm-install</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>generate-test-resources</phase>
+            <configuration>
+              <executable>npm</executable>
+              <arguments>
+                <argument>ci</argument>
+              </arguments>
+              <workingDirectory>../site</workingDirectory>
+            </configuration>
+          </execution>
+
+          <!-- Clean test-scenarios.json before build to prevent duplicates -->
+          <execution>
+            <id>clean-test-scenarios</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>generate-test-resources</phase>
+            <configuration>
+              <executable>rm</executable>
+              <arguments>
+                <argument>-f</argument>
+                <argument>src/test/resources/test-scenarios.json</argument>
+              </arguments>
+              <successCodes>
+                <successCode>0</successCode>
+                <successCode>1</successCode>
+                <!-- File doesn't exist -->
+              </successCodes>
+            </configuration>
+          </execution>
+
+          <!-- Build the site (generates test-scenarios.json) -->
+          <execution>
+            <id>npm-build</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>generate-test-resources</phase>
+            <configuration>
+              <executable>npm</executable>
+              <arguments>
+                <argument>run</argument>
+                <argument>build</argument>
+              </arguments>
+              <workingDirectory>../site</workingDirectory>
+            </configuration>
+          </execution>
+
+          <!-- Generate Cucumber feature files from test-scenarios.json -->
+          <execution>
+            <id>generate-features</id>
+            <goals>
+              <goal>java</goal>
+            </goals>
+            <phase>generate-test-resources</phase>
+            <configuration>
+              <mainClass>io.github.chirino.memoryservice.docstest.TestGeneratorMain</mainClass>
+              <classpathScope>compile</classpathScope>
+              <arguments>
+                <argument>site-tests/src/test/resources/test-scenarios.json</argument>
+                <argument>site-tests/src/test/resources/features</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

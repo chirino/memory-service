@@ -1,0 +1,14 @@
+<p>Run your agent:</p><pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#F97583">export</span><span style="color:#E1E4E8"> OPENAI_API_KEY</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">your-api-key</span></span></code></pre><pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">./mvnw</span><span style="color:#9ECBFF"> spring-boot:run</span></span></code></pre><p>Test it with curl:</p><pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">curl</span><span style="color:#79B8FF"> -NsSfX</span><span style="color:#9ECBFF"> POST</span><span style="color:#9ECBFF"> http://localhost:9090/chat</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Content-Type: application/json&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -d</span><span style="color:#9ECBFF"> &#39;&quot;Hi, I&#39;</span><span style="color:#79B8FF">\&#39;</span><span style="color:#9ECBFF">&#39;m Hiram, who are you?&quot;&#39;</span></span></code></pre><p><strong>Expected</strong>: Response should contain “I am”</p><div class="steps" hidden data-steps="
+Then the response status should be 200
+And the response body should be text:
+&#34;&#34;&#34;
+Hello Hiram! I'm an AI language model created by OpenAI, here to help answer questions and provide information on a wide range of topics. How can I assist you today?
+&#34;&#34;&#34;
+"></div><pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">curl</span><span style="color:#79B8FF"> -NsSfX</span><span style="color:#9ECBFF"> POST</span><span style="color:#9ECBFF"> http://localhost:9090/chat</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Content-Type: application/json&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -d</span><span style="color:#9ECBFF"> &#39;&quot;Who am I?&quot;&#39;</span></span></code></pre><p><strong>Expected</strong>: Response should NOT contain “Hiram”</p><div class="steps" hidden data-steps="
+Then the response status should be 200
+And the response should not contain &#34;Hiram&#34;
+"></div>

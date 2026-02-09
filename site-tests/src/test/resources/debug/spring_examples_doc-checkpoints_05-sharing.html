@@ -1,0 +1,38 @@
+<p>First, create a conversation as bob so the membership endpoints have data to work with:</p><pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#B392F0">curl</span><span style="color:#79B8FF"> -sSfX</span><span style="color:#9ECBFF"> POST</span><span style="color:#9ECBFF"> http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Content-Type: text/plain&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Authorization: Bearer $(</span><span style="color:#B392F0">get-token</span><span style="color:#9ECBFF">)&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -d</span><span style="color:#9ECBFF"> &quot;Hello, starting a conversation for sharing tests.&quot;</span></span></code></pre><div class="steps" hidden data-steps="
+Then the response status should be 200
+"></div><h3 id="list-members">List Members</h3><pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># As bob (owner), list members of the conversation</span></span>
+<span class="line"><span style="color:#B392F0">curl</span><span style="color:#79B8FF"> -sSfX</span><span style="color:#9ECBFF"> GET</span><span style="color:#9ECBFF"> http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Authorization: Bearer $(</span><span style="color:#B392F0">get-token</span><span style="color:#9ECBFF"> bob bob)&quot;</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> jq</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># Response shows bob as owner:</span></span>
+<span class="line"><span style="color:#6A737D"># {</span></span>
+<span class="line"><span style="color:#6A737D">#   &quot;data&quot;: [</span></span>
+<span class="line"><span style="color:#6A737D">#     {</span></span>
+<span class="line"><span style="color:#6A737D">#       &quot;conversationId&quot;: &quot;3579aac5-c86e-4b67-bbea-6ec1a3644942&quot;,</span></span>
+<span class="line"><span style="color:#6A737D">#       &quot;userId&quot;: &quot;bob&quot;,</span></span>
+<span class="line"><span style="color:#6A737D">#       &quot;accessLevel&quot;: &quot;owner&quot;</span></span>
+<span class="line"><span style="color:#6A737D">#     }</span></span>
+<span class="line"><span style="color:#6A737D">#   ]</span></span>
+<span class="line"><span style="color:#6A737D"># }</span></span></code></pre><div class="steps" hidden data-steps="
+Then the response status should be 200
+And the response should contain &#34;owner&#34;
+"></div><h3 id="add-a-member">Add a Member</h3><pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6A737D"># Share conversation with alice as a writer</span></span>
+<span class="line"><span style="color:#B392F0">curl</span><span style="color:#79B8FF"> -sSfX</span><span style="color:#9ECBFF"> POST</span><span style="color:#9ECBFF"> http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Authorization: Bearer $(</span><span style="color:#B392F0">get-token</span><span style="color:#9ECBFF"> bob bob)&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Content-Type: application/json&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -d</span><span style="color:#9ECBFF"> &#39;{</span></span>
+<span class="line"><span style="color:#9ECBFF">    &quot;userId&quot;: &quot;alice&quot;,</span></span>
+<span class="line"><span style="color:#9ECBFF">    &quot;accessLevel&quot;: &quot;writer&quot;</span></span>
+<span class="line"><span style="color:#9ECBFF">  }&#39;</span><span style="color:#F97583"> |</span><span style="color:#B392F0"> jq</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># alice can now read and write to the conversation</span></span>
+<span class="line"><span style="color:#B392F0">curl</span><span style="color:#79B8FF"> -sSfX</span><span style="color:#9ECBFF"> POST</span><span style="color:#9ECBFF"> http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Authorization: Bearer $(</span><span style="color:#B392F0">get-token</span><span style="color:#9ECBFF"> alice alice)&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -H</span><span style="color:#9ECBFF"> &quot;Content-Type: application/json&quot;</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  -d</span><span style="color:#9ECBFF"> &#39;&quot;Hi from Alice!&quot;&#39;</span></span></code></pre><div class="steps" hidden data-steps="
+Then the response status should be 200
+And the response should contain &#34;alice&#34;
+"></div>

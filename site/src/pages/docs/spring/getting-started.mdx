@@ -5,6 +5,9 @@ description: Step-by-step guide to integrating Memory Service with your Spring B
 ---
 import { Code } from 'astro:components';
 import { PROJECT_VERSION } from '../../../config';
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
 
 This guide walks you through integrating Memory Service with a Spring Boot AI agent. You'll start with basic chat memory and can progressively add features in the follow-up guides.
 
@@ -46,36 +49,19 @@ cd demo
 
 Create a simple REST controller:
 
-```java
-package com.example.demo;
-
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
-
-@RestController
-public class ChatController {
-    private final ChatClient chatClient;
-
-    public ChatController(ChatClient.Builder builder) {
-        this.chatClient = builder.build();
-    }
-
-    @PostMapping("/chat")
-    public String chat(@RequestBody String message) {
-        return chatClient.prompt().user(message).call().content();
-    }
-}
-```
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/01-basic-agent/src/main/java/com/example/demo/ChatController.java"
+  lang="java"
+/>
 
 Configure the server port and OpenAI credentials in `application.properties`:
 
-```properties
-server.port=9090
-spring.ai.openai.api-key=${OPENAI_API_KEY:}
-spring.ai.openai.base-url=${OPENAI_BASE_URL:https://api.openai.com}
-```
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/01-basic-agent/src/main/resources/application.properties"
+  lang="properties"
+/>
+
+<TestScenario checkpoint="spring/examples/doc-checkpoints/01-basic-agent">
 
 Run your agent:
 
@@ -88,16 +74,38 @@ export OPENAI_API_KEY=your-api-key
 
 Test it with curl:
 
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be text:
+"""
+Hello Hiram! I'm an AI language model created by OpenAI, here to help answer questions and provide information on a wide range of topics. How can I assist you today?
+"""
+`}>
+
 ```bash
 curl -NsSfX POST http://localhost:9090/chat \
   -H "Content-Type: application/json" \
   -d '"Hi, I'\''m Hiram, who are you?"'
 ```
+
+</CurlTest>
+
+**Expected**: The agent responds but has no memory of your name.
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should not contain "Hiram"
+`}>
+
 ```bash
 curl -NsSfX POST http://localhost:9090/chat \
   -H "Content-Type: application/json" \
   -d '"Who am I?"'
 ```
+
+</CurlTest>
+
+</TestScenario>
 
 This works, but you may have noticed that the agent has no memory. Each request is independent. Let's add conversation memory.
 
@@ -145,82 +153,19 @@ spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8081/realm
 
 Configure security. The configuration supports both browser-based OAuth2 login and Bearer token authentication:
 
-```java
-package com.example.demo;
-
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.web.SecurityFilterChain;
-
-@Configuration
-class SecurityConfig {
-
-    @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http.csrf(csrf -> csrf.disable())
-            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
-            .oauth2Login(oauth2 -> oauth2.defaultSuccessUrl("/", false))
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}))
-            .logout(logout -> logout.logoutSuccessUrl("/"));
-        return http.build();
-    }
-}
-```
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/02-with-memory/src/main/java/com/example/demo/SecurityConfig.java"
+  lang="java"
+/>
 
 Now let's update the controller to use chat memory. The Memory Service starter provides `MemoryServiceChatMemoryRepositoryBuilder` which you can use to build a `MessageWindowChatMemory`:
 
-```java
-package com.example.demo;
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/02-with-memory/src/main/java/com/example/demo/ChatController.java"
+  lang="java"
+/>
 
-import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryBuilder;
-import io.github.chirino.memoryservice.security.SecurityHelper;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.memory.MessageWindowChatMemory;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
-
-@RestController
-public class ChatController {
-    private final ChatClient.Builder chatClientBuilder;
-    private final MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder;
-    private final OAuth2AuthorizedClientService authorizedClientService;
-
-    public ChatController(
-            ChatClient.Builder chatClientBuilder,
-            MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder,
-            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
-        this.chatClientBuilder = chatClientBuilder;
-        this.repositoryBuilder = repositoryBuilder;
-        this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
-    }
-
-    @PostMapping("/chat/{conversationId}")
-    public String chat(
-            @PathVariable String conversationId,
-            @RequestBody String message) {
-
-        String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
-        MessageChatMemoryAdvisor chatMemoryAdvisor = MessageChatMemoryAdvisor.builder(MessageWindowChatMemory.builder()
-                .chatMemoryRepository(repositoryBuilder.build(bearerToken))
-                .build()).build();
-        
-        var chatClient = chatClientBuilder.clone()
-                .defaultSystem("You are a helpful assistant.")
-                .defaultAdvisors(chatMemoryAdvisor)
-                .defaultAdvisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
-                .build();
-
-        return chatClient.prompt().user(message).call().content();
-    }
-}
-```
+<TestScenario checkpoint="spring/examples/doc-checkpoints/02-with-memory">
 
 Run your agent again:
 
@@ -246,12 +191,29 @@ function get-token() {
 
 Test it with curl—now with conversation memory:
 
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be text:
+"""
+Hello Hiram! I'm an AI assistant here to help you with any questions or information you might need. How can I assist you today?
+"""
+`}>
+
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $(get-token)" \
   -d '"Hi, I'\''m Hiram, who are you?"'
 ```
+
+</CurlTest>
+
+**Expected**: The agent now remembers your name from the previous message.
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hiram"
+`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
@@ -260,10 +222,14 @@ curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942
   -d '"Who am I?"'
 ```
 
+</CurlTest>
+
+</TestScenario>
+
 The agent now remembers context within the same conversation ID!
 
 If you browse to the demo agent app at [http://localhost:8080/](http://localhost:8080/), you will see that a conversation has been created with the ID `3579aac5-c86e-4b67-bbea-6ec1a3644942`.
-But it won't show any messages.  That's because we are not yet storing what we call the history of the conversation.  The only thing being stored is the agent memory, and 
+But it won't show any messages.  That's because we are not yet storing what we call the history of the conversation.  The only thing being stored is the agent memory, and
 that's not typically what you want to display to a user in a UI.
 
 ## Next Steps

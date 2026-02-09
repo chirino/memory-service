@@ -3,6 +3,8 @@ layout: ../../../layouts/DocsLayout.astro
 title: Conversation Sharing
 description: Learn how to share conversations with other users and manage access control in your Quarkus application
 ---
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
 
 # Conversation Sharing
 
@@ -119,26 +121,79 @@ function get-token() {
 }
 ```
 
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/05-sharing">
+
+First, create a conversation as bob so the membership endpoints have data to work with:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Hello, starting a conversation for sharing tests."
+```
+
+</CurlTest>
+
 ### List Members
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be json:
+"""
+{
+  "data": [
+    {
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "accessLevel": "owner",
+      "createdAt": "%{response.body.data[0].createdAt}"
+    }
+  ]
+}
+"""
+`}>
 
 ```bash
 # As bob (owner), list members of the conversation
 curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
   -H "Authorization: Bearer $(get-token bob bob)" | jq
+```
 
-# Response shows bob as owner:
-# {
-#   "data": [
-#     {
-#       "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
-#       "userId": "bob",
-#       "accessLevel": "owner"
-#     }
-#   ]
-# }
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "userId": "bob",
+      "accessLevel": "owner",
+      "createdAt": "2025-01-10T14:32:05Z"
+    }
+  ]
+}
 ```
 
 ### Add a Member
+
+<CurlTest steps={`
+Then the response status should be 201
+And the response body should be json:
+"""
+{
+  "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "userId": "alice",
+  "accessLevel": "writer",
+  "createdAt": "%{response.body.createdAt}"
+}
+"""
+`}>
 
 ```bash
 # Share conversation with alice as a writer
@@ -149,13 +204,37 @@ curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6
     "userId": "alice",
     "accessLevel": "writer"
   }' | jq
+```
 
-# alice can now read and write to the conversation
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "userId": "alice",
+  "accessLevel": "writer",
+  "createdAt": "2025-01-10T14:33:15Z"
+}
+```
+
+Alice can now read and write to the conversation:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
 curl -sSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
   -H "Authorization: Bearer $(get-token alice alice)" \
-  -H "Content-Type: application/json" \
-  -d '"Hi from Alice!"'
+  -H "Content-Type: text/plain" \
+  -d "Hi from Alice!"
 ```
+
+</CurlTest>
+
+</TestScenario>
 
 ### Update Access Level
 

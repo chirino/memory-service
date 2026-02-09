@@ -1,0 +1,15 @@
+{
+  "scenarioName" : "chat-sequence",
+  "requiredScenarioState" : "step-2",
+  "request" : {
+    "method" : "POST",
+    "urlPath" : "/v1/chat/completions"
+  },
+  "response" : {
+    "status" : 200,
+    "headers" : {
+      "Content-Type" : "application/json"
+    },
+    "body" : "{\n  \"id\": \"chatcmpl-fixture-q01-002\",\n  \"object\": \"chat.completion\",\n  \"created\": 1707440401,\n  \"model\": \"mock-gpt-markdown\",\n  \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\": \"assistant\",\n        \"content\": \"That's a great question! I don't have information about your identity from our conversation so far. Could you tell me more about yourself?\",\n        \"refusal\": null,\n        \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 12,\n    \"completion_tokens\": 28,\n    \"total_tokens\": 40\n  }\n}\n"
+  }
+}

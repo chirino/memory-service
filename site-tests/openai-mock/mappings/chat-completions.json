@@ -1,0 +1,14 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/chat/completions"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"id\":\"chatcmpl-{{randomValue length=20 type='ALPHANUMERIC'}}\",\"object\":\"chat.completion\",\"created\":1707440400,\"model\":\"{{jsonPath request.body '$.model'}}\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"I am Claude, an AI assistant created by Anthropic. I'm here to help answer questions and have conversations on a wide variety of topics. How can I assist you today?\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":20,\"total_tokens\":30}}",
+    "transformers": ["response-template"]
+  }
+}
