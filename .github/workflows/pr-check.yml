@@ -38,10 +38,20 @@ jobs:
             ${{ runner.os }}-npm-
 
       - name: Build and test with Maven
-        run: ./mvnw -B verify
+        run: ./mvnw -B -q clean install
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            memory-service/target/cucumber-reports
+            **/target/surefire-reports
 
       - name: Build Docker images
         env:
           # otherwise compose will fail if OPENAI_API_KEY is not set 
           OPENAI_API_KEY: none 
         run: docker compose build
+

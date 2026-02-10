@@ -8,7 +8,13 @@ import io.quarkus.test.security.TestSecurity;
 
 @TestSecurity(user = "alice")
 @TestProfile(PostgresqlInfinispanS3TestProfile.class)
-@CucumberOptions(features = {"classpath:features/attachments-rest.feature"})
+@CucumberOptions(
+        features = {"classpath:features/attachments-rest.feature"},
+        plugin = {
+            "pretty",
+            "html:target/cucumber-reports/postgresql-infinispan-s3.html",
+            "json:target/cucumber-reports/postgresql-infinispan-s3.json"
+        })
 public class PostgresqlInfinispanS3CucumberTest extends CucumberQuarkusTest {
     public static void main(String[] args) {
         runMain(PostgresqlInfinispanS3CucumberTest.class, args);
