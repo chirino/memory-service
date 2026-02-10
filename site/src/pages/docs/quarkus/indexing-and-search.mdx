@@ -1,0 +1,176 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Indexing and Search
+description: Add search indexing and semantic search to your conversations.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide continues from [Conversation History](/docs/quarkus/conversation-history/) and shows how to add search indexing to your conversation history entries and expose a search API for frontend applications.
+
+## Prerequisites
+
+**Starting checkpoint**: View the code from the previous section at [quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/03-with-history)
+
+Make sure you've completed the [Conversation History](/docs/quarkus/conversation-history/) guide first. You should have:
+- Conversation history recording with `@RecordConversation`
+- Conversation APIs exposed via `ConversationsResource`
+- Memory Service running via Docker Compose
+
+## How Search Indexing Works
+
+When you record conversation history, message content is stored encrypted on disk. This is great for security, but it means the content can't be searched directly.
+
+To enable search, the Memory Service uses a separate `indexedContent` field on each history entry. This field stores a searchable (unencrypted) version of the message text. When an `IndexedContentProvider` bean is available, the history recorder automatically calls it to transform each message into indexed content before storing the entry.
+
+This design gives your application a chance to **redact sensitive information** before it's written to the search index in cleartext. For example, you might strip credit card numbers, social security numbers, or other PII from the indexed text while keeping the full content in the encrypted message.
+
+## Add an IndexedContentProvider
+
+To enable search indexing, create a bean that implements the `IndexedContentProvider` interface. The simplest implementation passes text through unchanged:
+
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/PassThroughIndexedContentProvider.java"
+  lang="java"
+/>
+
+The `IndexedContentProvider` interface has a single method:
+- **`getIndexedContent(String text, String role)`** — Transforms message text into content for the search index. The `role` parameter is either `"USER"` or `"AI"`. Return `null` to skip indexing for that message.
+
+The framework automatically discovers your `IndexedContentProvider` bean via CDI. When present, every message recorded by `@RecordConversation` will have its `indexedContent` field populated.
+
+### Custom Redaction
+
+For production applications, you'll likely want to redact sensitive information. Here's an example that strips credit card numbers:
+
+```java
+@ApplicationScoped
+public class RedactingIndexedContentProvider implements IndexedContentProvider {
+
+    @Override
+    public String getIndexedContent(String text, String role) {
+        // Redact credit card numbers before indexing
+        return text.replaceAll("\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b", "[REDACTED]");
+    }
+}
+```
+
+You can also return `null` to skip indexing entirely for certain messages — for example, you might choose not to index AI responses:
+
+```java
+@Override
+public String getIndexedContent(String text, String role) {
+    if ("AI".equals(role)) {
+        return null; // Don't index AI responses
+    }
+    return text;
+}
+```
+
+## Expose the Search API
+
+To let the frontend search across conversations, add a search endpoint to your `ConversationsResource`:
+
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/ConversationsResource.java"
+  lang="java"
+  before={2}
+  after={1}
+>public Response searchConversations</CodeFromFile>
+
+This endpoint accepts a JSON request body with the following fields:
+- **`query`** (required) — The search query text
+- **`searchType`** — `"auto"` (default), `"semantic"`, or `"fulltext"`
+- **`limit`** — Maximum number of results (default 20)
+- **`groupByConversation`** — Group results by conversation (default true)
+- **`includeEntry`** — Include the full entry in results (default true)
+
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/07-with-search">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+First, send a message so there's something to search for:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should match pattern "\\d+"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Give me a random number between 1 and 100."
+```
+
+</CurlTest>
+
+</TestScenario>
+
+Now search for it:
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '{"query": "random number"}' | jq
+```
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "conversationTitle": "Give me a random number between 1 and 100",
+      "entryId": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+      "score": 0.95,
+      "highlights": ["Give me a ==random number== between 1 and 100"],
+      "entry": {
+        "id": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+        "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+        "userId": "bob",
+        "channel": "history",
+        "contentType": "history",
+        "content": [{"role": "USER", "text": "Give me a random number between 1 and 100."}],
+        "createdAt": "2025-01-10T14:32:05Z"
+      }
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+Search results include:
+- **`conversationId`** and **`conversationTitle`** — For linking to the conversation
+- **`entryId`** — For deep-linking to a specific message
+- **`score`** — Relevance score
+- **`highlights`** — Matched text with `==highlight==` markers
+- **`entry`** — The full entry content (when `includeEntry` is true)
+
+## Completed Checkpoint
+
+**Completed code**: View the full implementation at [quarkus/examples/doc-checkpoints/07-with-search](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/07-with-search)
+
+## Next Steps
+
+Continue to:
+- [Conversation Forking](/docs/quarkus/conversation-forking/) — Branch conversations to explore alternative paths
+- [Response Resumption](/docs/quarkus/response-resumption/) — Streaming responses with resume and cancel support

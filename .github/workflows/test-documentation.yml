@@ -2,7 +2,8 @@ name: Test Documentation
 
 on:
   workflow_dispatch:
-
+env:
+  OPENAI_API_KEY: "not-used-in-tests"
 jobs:
   test-docs:
     runs-on: ubuntu-latest
@@ -34,17 +35,15 @@ jobs:
         run: ./mvnw clean install -DskipTests
 
       - name: Start Docker services
-        env:
-          OPENAI_API_KEY: "not-used-in-tests"
         run: docker compose up -d
 
       - name: Wait for memory-service
         run: |
-          timeout 120 bash -c 'until curl -sf http://localhost:8080/q/health/ready; do sleep 2; done'
+          timeout 240 bash -c 'until curl -sf http://localhost:8082/q/health/ready; do sleep 2; done'
 
       - name: Wait for Keycloak
         run: |
-          timeout 120 bash -c 'until curl -sf http://localhost:8081/health/ready; do sleep 2; done'
+          timeout 240 bash -c 'until curl -sf http://localhost:8081/health/ready; do sleep 2; done'
 
       - name: Run documentation tests (builds site and runs tests)
         run: ./mvnw test -pl site-tests -Ptest-docs

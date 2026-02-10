@@ -249,14 +249,6 @@ And the response body should be json:
       "createdAt": "%{response.body.data[0].createdAt}",
       "updatedAt": "%{response.body.data[0].updatedAt}",
       "accessLevel": "owner"
-    },
-    {
-      "id": "%{response.body.data[1].id}",
-      "title": "%{response.body.data[1].title}",
-      "ownerUserId": "bob",
-      "createdAt": "%{response.body.data[1].createdAt}",
-      "updatedAt": "%{response.body.data[1].updatedAt}",
-      "accessLevel": "owner"
     }
   ]
 }
@@ -282,14 +274,6 @@ Example response:
       "createdAt": "2025-01-10T14:32:05Z",
       "updatedAt": "2025-01-10T14:32:06Z",
       "accessLevel": "owner"
-    },
-    {
-      "id": "da597b28-5ccd-4900-92e9-0aec57394523",
-      "title": "Hello, starting a conversation for sharing",
-      "ownerUserId": "bob",
-      "createdAt": "2025-01-10T14:30:00Z",
-      "updatedAt": "2025-01-10T14:30:01Z",
-      "accessLevel": "owner"
     }
   ]
 }
@@ -309,5 +293,6 @@ The `listConversations` endpoint supports:
 ## Next Steps
 
 Continue to:
-- [Conversation Forking](/docs/quarkus/conversation-forking/) - Branch conversations to explore alternative paths
-- [Response Resumption](/docs/quarkus/response-resumption/) - Streaming responses with resume and cancel support
+- [Indexing and Search](/docs/quarkus/indexing-and-search/) — Add search indexing and semantic search to your conversations
+- [Conversation Forking](/docs/quarkus/conversation-forking/) — Branch conversations to explore alternative paths
+- [Response Resumption](/docs/quarkus/response-resumption/) — Streaming responses with resume and cancel support
