@@ -1,34 +1,10 @@
 # Generated from test-scenarios.json (built from MDX)
 # DO NOT EDIT: This file is auto-generated
-Feature: Indexing And Search Tutorial
+Feature: Conversation History Tutorial
 
   Background:
     Given the memory-service is running via docker compose
     And I set up authentication tokens
-
-  Scenario: Test 07-with-search
-    # From /docs/spring/indexing-and-search/
-    Given I have checkpoint "spring/examples/doc-checkpoints/07-with-search"
-    When I build the checkpoint
-    Then the build should succeed
-
-    When I start the checkpoint on port 10090
-    Then the application should be running
-
-    When I execute curl command:
-      """
-      curl -NsSfX POST http://localhost:10090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $(get-token)" \
-      -d "Give me a random number between 1 and 100."
-      """
-    Then the response status should be 200
-    And the response body should be text:
-    """
-    Sure! Here's a random number between 1 and 100: **42**.
-    """
-
-    When I stop the checkpoint
 
   Scenario: Test 03-with-history
     # From /docs/quarkus/conversation-history/
@@ -36,7 +12,7 @@ Feature: Indexing And Search Tutorial
     When I build the checkpoint
     Then the build should succeed
 
-    When I start the checkpoint on port 10091
+    When I start the checkpoint on port 10090
     Then the application should be running
 
     When I execute curl command:
@@ -55,7 +31,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10091/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -NsSfX POST http://localhost:10090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: text/plain" \
       -H "Authorization: Bearer $(get-token)" \
       -d "Give me a random number between 1 and 100."
@@ -65,7 +41,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX GET http://localhost:10091/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/ \
+      curl -sSfX GET http://localhost:10090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/ \
       -H "Authorization: Bearer $(get-token)" | jq
       """
     Then the response status should be 200
@@ -83,7 +59,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX GET http://localhost:10091/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
+      curl -sSfX GET http://localhost:10090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
       -H "Authorization: Bearer $(get-token)" | jq
       """
     Then the response status should be 200
@@ -115,7 +91,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX GET http://localhost:10091/v1/conversations \
+      curl -sSfX GET http://localhost:10090/v1/conversations \
       -H "Authorization: Bearer $(get-token)" | jq
       """
     Then the response status should be 200
@@ -143,12 +119,12 @@ Feature: Indexing And Search Tutorial
     When I build the checkpoint
     Then the build should succeed
 
-    When I start the checkpoint on port 10092
+    When I start the checkpoint on port 10091
     Then the application should be running
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10092/chat \
+      curl -NsSfX POST http://localhost:10091/chat \
       -H "Content-Type: text/plain" \
       -d "Hi, I'm Hiram, who are you?"
       """
@@ -160,7 +136,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10092/chat \
+      curl -NsSfX POST http://localhost:10091/chat \
       -H "Content-Type: text/plain" \
       -d "Who am I?"
       """
@@ -172,6 +148,54 @@ Feature: Indexing And Search Tutorial
   Scenario: Test 02-with-memory
     # From /docs/quarkus/getting-started/
     Given I have checkpoint "quarkus/examples/doc-checkpoints/02-with-memory"
+    When I build the checkpoint
+    Then the build should succeed
+
+    When I start the checkpoint on port 10092
+    Then the application should be running
+
+    When I execute curl command:
+      """
+      function get-token() {
+      curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "client_id=memory-service-client" \
+      -d "client_secret=change-me" \
+      -d "grant_type=password" \
+      -d "username=bob" \
+      -d "password=bob" \
+      | jq -r '.access_token'
+      }
+      """
+
+    When I execute curl command:
+      """
+      curl -NsSfX POST http://localhost:10092/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      -H "Content-Type: text/plain" \
+      -H "Authorization: Bearer $(get-token)" \
+      -d "Hi, I'm Hiram, who are you?"
+      """
+    Then the response status should be 200
+    And the response body should be text:
+    """
+    Hi Hiram! I'm an AI created to help answer questions and provide information. How can I assist you today?
+    """
+
+    When I execute curl command:
+      """
+      curl -NsSfX POST http://localhost:10092/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      -H "Content-Type: text/plain" \
+      -H "Authorization: Bearer $(get-token)" \
+      -d "Who am I?"
+      """
+    Then the response status should be 200
+    And the response should contain "Hiram"
+
+    When I stop the checkpoint
+
+  Scenario: Test 07-with-search
+    # From /docs/quarkus/indexing-and-search/
+    Given I have checkpoint "quarkus/examples/doc-checkpoints/07-with-search"
     When I build the checkpoint
     Then the build should succeed
 
@@ -197,54 +221,6 @@ Feature: Indexing And Search Tutorial
       curl -NsSfX POST http://localhost:10093/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: text/plain" \
       -H "Authorization: Bearer $(get-token)" \
-      -d "Hi, I'm Hiram, who are you?"
-      """
-    Then the response status should be 200
-    And the response body should be text:
-    """
-    Hi Hiram! I'm an AI created to help answer questions and provide information. How can I assist you today?
-    """
-
-    When I execute curl command:
-      """
-      curl -NsSfX POST http://localhost:10093/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
-      -H "Content-Type: text/plain" \
-      -H "Authorization: Bearer $(get-token)" \
-      -d "Who am I?"
-      """
-    Then the response status should be 200
-    And the response should contain "Hiram"
-
-    When I stop the checkpoint
-
-  Scenario: Test 07-with-search
-    # From /docs/quarkus/indexing-and-search/
-    Given I have checkpoint "quarkus/examples/doc-checkpoints/07-with-search"
-    When I build the checkpoint
-    Then the build should succeed
-
-    When I start the checkpoint on port 10094
-    Then the application should be running
-
-    When I execute curl command:
-      """
-      function get-token() {
-      curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
-      -H "Content-Type: application/x-www-form-urlencoded" \
-      -d "client_id=memory-service-client" \
-      -d "client_secret=change-me" \
-      -d "grant_type=password" \
-      -d "username=bob" \
-      -d "password=bob" \
-      | jq -r '.access_token'
-      }
-      """
-
-    When I execute curl command:
-      """
-      curl -NsSfX POST http://localhost:10094/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
-      -H "Content-Type: text/plain" \
-      -H "Authorization: Bearer $(get-token)" \
       -d "Give me a random number between 1 and 100."
       """
     Then the response status should be 200
@@ -258,12 +234,12 @@ Feature: Indexing And Search Tutorial
     When I build the checkpoint
     Then the build should succeed
 
-    When I start the checkpoint on port 10095
+    When I start the checkpoint on port 10094
     Then the application should be running
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10095/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -NsSfX POST http://localhost:10094/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: text/plain" \
       -H "Authorization: Bearer $(get-token)" \
       -d "Write a 4 paragraph story about a cat."
@@ -279,12 +255,12 @@ Feature: Indexing And Search Tutorial
     When I build the checkpoint
     Then the build should succeed
 
-    When I start the checkpoint on port 10096
+    When I start the checkpoint on port 10095
     Then the application should be running
 
     When I execute curl command:
       """
-      curl -sSfX POST http://localhost:10096/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -sSfX POST http://localhost:10095/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: text/plain" \
       -H "Authorization: Bearer $(get-token)" \
       -d "Hello, starting a conversation for sharing tests."
@@ -294,7 +270,7 @@ Feature: Indexing And Search Tutorial
     When I execute curl command:
       """
       # As bob (owner), list members of the conversation
-      curl -sSfX GET http://localhost:10096/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
+      curl -sSfX GET http://localhost:10095/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
       -H "Authorization: Bearer $(get-token bob bob)" | jq
       """
     Then the response status should be 200
@@ -315,7 +291,7 @@ Feature: Indexing And Search Tutorial
     When I execute curl command:
       """
       # Share conversation with alice as a writer
-      curl -sSfX POST http://localhost:10096/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
+      curl -sSfX POST http://localhost:10095/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/memberships \
       -H "Authorization: Bearer $(get-token bob bob)" \
       -H "Content-Type: application/json" \
       -d '{
@@ -336,7 +312,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX POST http://localhost:10096/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -sSfX POST http://localhost:10095/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Authorization: Bearer $(get-token alice alice)" \
       -H "Content-Type: text/plain" \
       -d "Hi from Alice!"
@@ -351,12 +327,12 @@ Feature: Indexing And Search Tutorial
     When I build the checkpoint
     Then the build should succeed
 
-    When I start the checkpoint on port 10097
+    When I start the checkpoint on port 10096
     Then the application should be running
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10097/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -NsSfX POST http://localhost:10096/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $(get-token)" \
       -d "Give me a random number between 1 and 100."
@@ -369,7 +345,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX GET http://localhost:10097/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -sSfX GET http://localhost:10096/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Authorization: Bearer $(get-token)" | jq
       """
     Then the response status should be 200
@@ -390,7 +366,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX GET http://localhost:10097/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
+      curl -sSfX GET http://localhost:10096/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
       -H "Authorization: Bearer $(get-token)" | jq
       """
     Then the response status should be 200
@@ -399,7 +375,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -sSfX GET http://localhost:10097/v1/conversations \
+      curl -sSfX GET http://localhost:10096/v1/conversations \
       -H "Authorization: Bearer $(get-token)" | jq
       """
     Then the response status should be 200
@@ -415,12 +391,12 @@ Feature: Indexing And Search Tutorial
     When I build the checkpoint
     Then the build should succeed
 
-    When I start the checkpoint on port 10098
+    When I start the checkpoint on port 10097
     Then the application should be running
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10098/chat \
+      curl -NsSfX POST http://localhost:10097/chat \
       -H "Content-Type: application/json" \
       -d '"Hi, I'\''m Hiram, who are you?"'
       """
@@ -432,7 +408,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10098/chat \
+      curl -NsSfX POST http://localhost:10097/chat \
       -H "Content-Type: application/json" \
       -d '"Who am I?"'
       """
@@ -447,7 +423,7 @@ Feature: Indexing And Search Tutorial
     When I build the checkpoint
     Then the build should succeed
 
-    When I start the checkpoint on port 10099
+    When I start the checkpoint on port 10098
     Then the application should be running
 
     When I execute curl command:
@@ -466,7 +442,7 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10099/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -NsSfX POST http://localhost:10098/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $(get-token)" \
       -d '"Hi, I'\''m Hiram, who are you?"'
@@ -479,13 +455,37 @@ Feature: Indexing And Search Tutorial
 
     When I execute curl command:
       """
-      curl -NsSfX POST http://localhost:10099/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      curl -NsSfX POST http://localhost:10098/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $(get-token)" \
       -d '"Who am I?"'
       """
     Then the response status should be 200
     And the response should contain "Hiram"
+
+    When I stop the checkpoint
+
+  Scenario: Test 07-with-search
+    # From /docs/spring/indexing-and-search/
+    Given I have checkpoint "spring/examples/doc-checkpoints/07-with-search"
+    When I build the checkpoint
+    Then the build should succeed
+
+    When I start the checkpoint on port 10099
+    Then the application should be running
+
+    When I execute curl command:
+      """
+      curl -NsSfX POST http://localhost:10099/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $(get-token)" \
+      -d "Give me a random number between 1 and 100."
+      """
+    Then the response status should be 200
+    And the response body should be text:
+    """
+    Sure! Here's a random number between 1 and 100: **42**.
+    """
 
     When I stop the checkpoint
 

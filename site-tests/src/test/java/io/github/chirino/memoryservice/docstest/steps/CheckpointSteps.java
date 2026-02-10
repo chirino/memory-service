@@ -7,8 +7,10 @@ import io.cucumber.java.After;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -113,16 +115,26 @@ public class CheckpointSteps {
         String pomFile = Paths.get(checkpointPath, "pom.xml").toString();
         ProcessBuilder pb =
                 new ProcessBuilder(
-                        mvnw.getAbsolutePath(), "clean", "package", "-DskipTests", "-f", pomFile);
+                        mvnw.getAbsolutePath(),
+                        "-B",
+                        "clean",
+                        "package",
+                        "-DskipTests",
+                        "-f",
+                        pomFile);
         pb.directory(projectRoot);
         pb.redirectErrorStream(true);
 
+        System.out.println("=== Building checkpoint: " + checkpointId + " ===");
+        System.out.println("Command: " + String.join(" ", pb.command()));
         Process process = pb.start();
+        pipeOutput(process, "build");
         lastExitCode = process.waitFor();
+        System.out.println(
+                "=== Build finished: " + checkpointId + " (exit code " + lastExitCode + ") ===");
 
         if (lastExitCode != 0) {
-            String output = new String(process.getInputStream().readAllBytes());
-            fail("Build failed:\n" + output);
+            fail("Build failed with exit code: " + lastExitCode + " (see build output above)");
         }
     }
 
@@ -137,21 +149,28 @@ public class CheckpointSteps {
             cmdParts[0] = mvnw.getAbsolutePath();
         }
 
-        String[] fullCmd = new String[cmdParts.length + 2];
-        System.arraycopy(cmdParts, 0, fullCmd, 0, cmdParts.length);
-        fullCmd[cmdParts.length] = "-f";
-        fullCmd[cmdParts.length + 1] = pomFile;
+        // Add -B flag after the mvnw command and -f <pom> at the end
+        String[] fullCmd = new String[cmdParts.length + 3];
+        fullCmd[0] = cmdParts[0];
+        fullCmd[1] = "-B";
+        System.arraycopy(cmdParts, 1, fullCmd, 2, cmdParts.length - 1);
+        fullCmd[fullCmd.length - 2] = "-f";
+        fullCmd[fullCmd.length - 1] = pomFile;
 
         ProcessBuilder pb = new ProcessBuilder(fullCmd);
         pb.directory(projectRoot);
         pb.redirectErrorStream(true);
 
+        System.out.println("=== Building checkpoint: " + checkpointId + " ===");
+        System.out.println("Command: " + String.join(" ", pb.command()));
         Process process = pb.start();
+        pipeOutput(process, "build");
         lastExitCode = process.waitFor();
+        System.out.println(
+                "=== Build finished: " + checkpointId + " (exit code " + lastExitCode + ") ===");
 
         if (lastExitCode != 0) {
-            String output = new String(process.getInputStream().readAllBytes());
-            fail("Build failed:\n" + output);
+            fail("Build failed with exit code: " + lastExitCode + " (see build output above)");
         }
     }
 
@@ -246,26 +265,20 @@ public class CheckpointSteps {
             pb.environment().put("OPENAI_MODEL", "mock-gpt-markdown");
         }
 
-        // Redirect output to files for debugging
-        File outputDir = new File(projectRoot, "site-tests/target");
-        outputDir.mkdirs();
-        File outputFile = new File(outputDir, "checkpoint-" + port + ".log");
-        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(outputFile));
         pb.redirectErrorStream(true);
 
         // Log the complete command with environment
         System.out.println("=== Starting Checkpoint ===");
-        System.out.println("Command: " + String.join(" ", pb.command()));
         System.out.println("Working directory: " + pb.directory());
-        System.out.println("Environment variables:");
-        System.out.println("  OPENAI_BASE_URL=" + pb.environment().get("OPENAI_BASE_URL"));
-        System.out.println("  OPENAI_API_KEY=" + pb.environment().get("OPENAI_API_KEY"));
-        System.out.println("  OPENAI_MODEL=" + pb.environment().get("OPENAI_MODEL"));
-        System.out.println("Output log: " + outputFile.getAbsolutePath());
+        System.out.println("Command: " + String.join(" ", pb.command()));
         System.out.println("========================");
 
         checkpointProcess = pb.start();
         long pid = checkpointProcess.pid();
+
+        // Pipe process output to System.out in a background thread
+        String prefix = "checkpoint:" + port;
+        pipeOutputAsync(checkpointProcess, prefix);
 
         // Track this process for cleanup
         synchronized (allProcesses) {
@@ -365,6 +378,33 @@ public class CheckpointSteps {
 
         System.out.println(
                 "Warning: Port " + port + " may still be in use after waiting " + timeout);
+    }
+
+    /** Reads all process output and prints it to System.out. Blocks until the stream closes. */
+    private static void pipeOutput(Process process, String prefix) throws IOException {
+        try (BufferedReader reader =
+                new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                System.out.println("[" + prefix + "] " + line);
+            }
+        }
+    }
+
+    /** Starts a daemon thread that pipes process output to System.out. */
+    private static void pipeOutputAsync(Process process, String prefix) {
+        Thread thread =
+                new Thread(
+                        () -> {
+                            try {
+                                pipeOutput(process, prefix);
+                            } catch (IOException e) {
+                                // Process was likely killed, ignore
+                            }
+                        });
+        thread.setDaemon(true);
+        thread.setName("output-pipe-" + prefix);
+        thread.start();
     }
 
     private void waitForPort(int port, Duration timeout) {
