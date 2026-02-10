@@ -1,22 +1,5 @@
 [
   {
-    "checkpoint": "spring/examples/doc-checkpoints/07-with-search",
-    "sourceFile": "/docs/spring/indexing-and-search/",
-    "scenarios": [
-      {
-        "bash": "curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Authorization: Bearer $(get-token)\" \\\n  -d \"Give me a random number between 1 and 100.\"",
-        "expectations": [],
-        "customSteps": [
-          "Then the response status should be 200",
-          "And the response body should be text:",
-          "\"\"\"",
-          "Sure! Here's a random number between 1 and 100: **42**.",
-          "\"\"\""
-        ]
-      }
-    ]
-  },
-  {
     "checkpoint": "quarkus/examples/doc-checkpoints/03-with-history",
     "sourceFile": "/docs/quarkus/conversation-history/",
     "scenarios": [
@@ -389,6 +372,23 @@
         "customSteps": [
           "Then the response status should be 200",
           "And the response should contain \"Hiram\""
+        ]
+      }
+    ]
+  },
+  {
+    "checkpoint": "spring/examples/doc-checkpoints/07-with-search",
+    "sourceFile": "/docs/spring/indexing-and-search/",
+    "scenarios": [
+      {
+        "bash": "curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Authorization: Bearer $(get-token)\" \\\n  -d \"Give me a random number between 1 and 100.\"",
+        "expectations": [],
+        "customSteps": [
+          "Then the response status should be 200",
+          "And the response body should be text:",
+          "\"\"\"",
+          "Sure! Here's a random number between 1 and 100: **42**.",
+          "\"\"\""
         ]
       }
     ]
