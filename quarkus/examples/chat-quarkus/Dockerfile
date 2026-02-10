@@ -37,7 +37,6 @@ COPY ./spring/examples/chat-spring/pom.xml ./spring/examples/chat-spring/pom.xml
 COPY ./spring/examples/pom.xml ./spring/examples/pom.xml
 COPY ./spring/memory-service-proto-spring/pom.xml ./spring/memory-service-proto-spring/pom.xml
 COPY ./spring/memory-service-rest-spring/pom.xml ./spring/memory-service-rest-spring/pom.xml
-COPY ./spring/memory-service-rest-spring/target/generated-sources/openapi/pom.xml ./spring/memory-service-rest-spring/target/generated-sources/openapi/pom.xml
 COPY ./spring/memory-service-spring-boot-autoconfigure/pom.xml ./spring/memory-service-spring-boot-autoconfigure/pom.xml
 COPY ./spring/memory-service-spring-boot-docker-compose-starter/pom.xml ./spring/memory-service-spring-boot-docker-compose-starter/pom.xml
 COPY ./spring/memory-service-spring-boot-starter/pom.xml ./spring/memory-service-spring-boot-starter/pom.xml
