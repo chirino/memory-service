@@ -30,9 +30,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Build memory-service
-        run: ./mvnw clean install -DskipTests
+          cache: 'npm'
+          cache-dependency-path: site/package-lock.json
 
       - name: Start Docker services
         run: docker compose up -d
@@ -46,7 +45,7 @@ jobs:
           timeout 240 bash -c 'until curl -sf http://localhost:8081/health/ready; do sleep 2; done'
 
       - name: Run documentation tests (builds site and runs tests)
-        run: ./mvnw test -pl site-tests -Ptest-docs
+        run: ./mvnw -B test -pl site-tests -Ptest-docs
 
       - name: Upload test results
         if: always()
