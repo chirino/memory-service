@@ -99,5 +99,5 @@ This returns all conversations in the same fork tree.
 
 ## Next Steps
 
-- Learn about [Semantic Search](/docs/concepts/semantic-search/)
+- Learn about [Indexing & Search](/docs/concepts/indexing-and-search/)
 - Explore the [API Contracts](/docs/api-contracts/)

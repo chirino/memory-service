@@ -26,11 +26,11 @@ Each entry contains:
   "conversationId": "conv_01HF8XH1XABCD1234EFGH5678",
   "userId": "user_1234",
   "channel": "history",
-  "contentType": "message",
+  "contentType": "history",
   "epoch": null,
   "content": [
     {
-      "type": "text",
+      "role": "USER",
       "text": "What's the weather like?"
     }
   ],
@@ -44,7 +44,7 @@ Each entry contains:
 | `conversationId` | ID of the parent conversation |
 | `userId` | Human user associated with the entry |
 | `channel` | Logical channel (`history`, `memory`, `transcript`) |
-| `contentType` | Type of content (e.g., `message`) |
+| `contentType` | Type of content (e.g., `history`, `history/lc4j`) |
 | `epoch` | Memory epoch number (for `memory` channel entries) |
 | `content` | Array of content blocks (opaque, agent-defined) |
 | `createdAt` | Creation timestamp |
@@ -57,8 +57,8 @@ curl -X POST http://localhost:8080/v1/conversations/{conversationId}/entries \
   -H "Authorization: Bearer <token>" \
   -d '{
     "channel": "history",
-    "contentType": "message",
-    "content": [{"type": "text", "text": "Hello!"}]
+    "contentType": "history",
+    "content": [{"role": "USER", "text": "Hello!"}]
   }'
 ```
 
@@ -70,8 +70,8 @@ Response:
   "conversationId": "conv_01HF8XH1XABCD1234EFGH5678",
   "userId": "user_1234",
   "channel": "history",
-  "contentType": "message",
-  "content": [{"type": "text", "text": "Hello!"}],
+  "contentType": "history",
+  "content": [{"role": "USER", "text": "Hello!"}],
   "createdAt": "2025-01-10T14:40:12Z"
 }
 ```
@@ -97,8 +97,8 @@ Response:
       "conversationId": "conv_01HF8XH1XABCD1234EFGH5678",
       "userId": "user_1234",
       "channel": "history",
-      "contentType": "message",
-      "content": [{"type": "text", "text": "Hello!"}],
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Hello!"}],
       "createdAt": "2025-01-10T14:40:12Z"
     }
   ],
@@ -179,5 +179,5 @@ curl "...?channel=memory&epoch=all"
 
 ## Next Steps
 
-- Learn about [Semantic Search](/docs/concepts/semantic-search/)
+- Learn about [Indexing & Search](/docs/concepts/indexing-and-search/)
 - Understand [Conversation Forking](/docs/concepts/forking/)

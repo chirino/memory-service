@@ -12,26 +12,7 @@ import CurlTest from '../../../components/CurlTest.astro';
 
 This guide walks you through integrating Memory Service with a Quarkus AI agent. You'll start with basic chat memory and can progressively add features in the follow-up guides.
 
-## Prerequisites
-
-- **Java 21** or later
-- **Maven** (or use the included `./mvnw` wrapper)
-- **Docker** (for Dev Services)
-- curl and jq installed
-
-## Build from Source
-
-> **Note:** This project is currently in the proof-of-concept (POC) phase and has not yet published any releases. You'll need to build it from source before using it in your project.
-
-Clone the repository and build all modules:
-
-```bash
-git clone https://github.com/chirino/memory-service.git
-cd memory-service
-./mvnw -DskipTests clean install
-```
-
-This installs all project artifacts to your local Maven repository.
+Make sure you've completed the [prerequisites](/docs/quarkus/) before starting this guide.
 
 ## Step 1: Create a Simple LangChain4j App
 

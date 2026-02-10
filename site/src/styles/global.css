@@ -144,14 +144,52 @@
     @apply mb-6;
   }
 
+  .sidebar-section-collapsed {
+    @apply mb-1;
+  }
+
+  .sidebar-section:has(+ .sidebar-section-collapsible) {
+    @apply mb-1;
+  }
+
   .sidebar-heading {
-    @apply text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 px-3;
+    @apply text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 px-3;
+  }
+
+  a.sidebar-heading {
+    @apply block no-underline hover:text-gray-900 dark:hover:text-gray-100 transition-colors border-l-2 border-transparent py-1.5 rounded-md;
+  }
+
+  a.sidebar-heading-collapsible {
+    @apply flex items-center gap-1;
+  }
+
+  a.sidebar-heading h3 {
+    @apply text-xs font-semibold uppercase tracking-wider mb-0;
+    color: inherit;
+  }
+
+  a.sidebar-heading-active {
+    @apply bg-primary-50 dark:bg-primary-950 text-primary-700 dark:text-primary-300;
+    @apply border-primary-600 dark:border-primary-400;
+  }
+
+  .sidebar-chevron {
+    @apply w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200;
+  }
+
+  .sidebar-chevron-expanded {
+    @apply rotate-90;
+  }
+
+  .sidebar-items-indented {
+    @apply ml-2 pl-2 border-l border-gray-200 dark:border-gray-700;
   }
 
   .sidebar-link {
     @apply block px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 rounded-md;
     @apply hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100;
-    @apply transition-colors;
+    @apply transition-colors border-l-2 border-transparent;
   }
 
   .sidebar-link-nested {
