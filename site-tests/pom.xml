@@ -76,6 +76,14 @@
   </dependencies>
 
   <build>
+    <testResources>
+      <testResource>
+        <directory>src/test/resources</directory>
+      </testResource>
+      <testResource>
+        <directory>target/generated-test-resources</directory>
+      </testResource>
+    </testResources>
     <plugins>
 
       <!-- Run tests -->
@@ -135,7 +143,7 @@
               <executable>rm</executable>
               <arguments>
                 <argument>-f</argument>
-                <argument>src/test/resources/test-scenarios.json</argument>
+                <argument>target/generated-test-resources/test-scenarios.json</argument>
               </arguments>
               <successCodes>
                 <successCode>0</successCode>
@@ -173,8 +181,8 @@
               <mainClass>io.github.chirino.memoryservice.docstest.TestGeneratorMain</mainClass>
               <classpathScope>compile</classpathScope>
               <arguments>
-                <argument>site-tests/src/test/resources/test-scenarios.json</argument>
-                <argument>site-tests/src/test/resources/features</argument>
+                <argument>site-tests/target/generated-test-resources/test-scenarios.json</argument>
+                <argument>site-tests/target/generated-test-resources/features</argument>
               </arguments>
             </configuration>
           </execution>

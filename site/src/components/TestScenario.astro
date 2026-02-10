@@ -26,7 +26,7 @@ try {
             };
 
             // Append to test scenarios file
-            const testDataDir = join(process.cwd(), '..', 'site-tests', 'src', 'test', 'resources');
+            const testDataDir = join(process.cwd(), '..', 'site-tests', 'target', 'generated-test-resources');
             const testDataFile = join(testDataDir, 'test-scenarios.json');
 
             if (!existsSync(testDataDir)) {

@@ -12,12 +12,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore Docker layer cache
-        uses: satackey/action-docker-layer-caching@v0.0.11
-        continue-on-error: true
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build the Container Images
-        run: docker compose build
+      - name: Build memory-service image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          tags: ghcr.io/chirino/memory-service:latest
+          load: true
+          cache-from: type=gha,scope=memory-service
+          cache-to: type=gha,mode=max,scope=memory-service
+
+      - name: Build demo-chat image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: quarkus/examples/chat-quarkus/Dockerfile
+          tags: ghcr.io/chirino/memory-service-demo-chat:latest
+          load: true
+          cache-from: type=gha,scope=demo-chat
+          cache-to: type=gha,mode=max,scope=demo-chat
 
       - name: Start the Containers
         run: docker compose up -d
