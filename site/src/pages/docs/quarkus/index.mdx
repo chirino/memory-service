@@ -1,0 +1,53 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Quarkus Guides
+description: Integrate Memory Service with your Quarkus AI application.
+---
+
+These guides walk you through integrating Memory Service with a **Quarkus** application using **LangChain4j**. Start with Getting Started to build a basic AI agent with persistent memory, then progressively add features like conversation history, search, forking, and more.
+
+## Prerequisites
+
+Before starting any of the tutorials below, make sure you have the following installed:
+
+- **Java 21** or later
+- **Maven** (or use the included `./mvnw` wrapper)
+- **Docker** (for Dev Services)
+- **curl** and **jq** installed
+
+### Build from Source
+
+> **Note:** This project is currently in the proof-of-concept (POC) phase and has not yet published any releases. You'll need to build it from source before using it in your project.
+
+Clone the repository and build all modules:
+
+```bash
+git clone https://github.com/chirino/memory-service.git
+cd memory-service
+./mvnw -DskipTests clean install
+```
+
+This installs all project artifacts to your local Maven repository.
+
+## Guides
+
+### [Getting Started](/docs/quarkus/getting-started/)
+Create a Quarkus AI agent and connect it to Memory Service for persistent conversation memory.
+
+### [Conversation History](/docs/quarkus/conversation-history/)
+Record conversation history and expose APIs for frontend applications to display messages.
+
+### [Indexing and Search](/docs/quarkus/indexing-and-search/)
+Add search indexing to your conversation history entries and expose a search API for frontend applications.
+
+### [Conversation Forking](/docs/quarkus/conversation-forking/)
+Let users branch off from any point in a conversation to explore alternative paths.
+
+### [Response Resumption](/docs/quarkus/response-resumption/)
+Implement streaming responses with resume and cancellation support, so users can reconnect after a disconnect.
+
+### [Conversation Sharing](/docs/quarkus/sharing/)
+Implement conversation sharing and ownership transfer between users.
+
+### [Dev Services](/docs/quarkus/dev-services/)
+Automatically start a Memory Service container in development mode, eliminating manual setup.

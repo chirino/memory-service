@@ -1,0 +1,53 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Spring Boot Guides
+description: Integrate Memory Service with your Spring Boot AI application.
+---
+
+These guides walk you through integrating Memory Service with a **Spring Boot** application using **Spring AI**. Start with Getting Started to build a basic AI agent with persistent memory, then progressively add features like conversation history, search, forking, and more.
+
+## Prerequisites
+
+Before starting any of the tutorials below, make sure you have the following installed:
+
+- **Java 21** or later
+- **Maven** (or use the included `./mvnw` wrapper)
+- **Docker** (for Memory Service)
+- **curl** and **jq** installed
+
+### Build from Source
+
+> **Note:** This project is currently in the proof-of-concept (POC) phase and has not yet published any releases. You'll need to build it from source before using it in your project.
+
+Clone the repository and build all modules:
+
+```bash
+git clone https://github.com/chirino/memory-service.git
+cd memory-service
+./mvnw -DskipTests clean install
+```
+
+This installs all project artifacts to your local Maven repository.
+
+## Guides
+
+### [Getting Started](/docs/spring/getting-started/)
+Create a Spring Boot AI agent and connect it to Memory Service for persistent conversation memory.
+
+### [Conversation History](/docs/spring/conversation-history/)
+Record conversation history and expose APIs for frontend applications to display messages.
+
+### [Indexing and Search](/docs/spring/indexing-and-search/)
+Add search indexing to your conversation history entries and expose a search API for frontend applications.
+
+### [Conversation Forking](/docs/spring/conversation-forking/)
+Let users branch off from any point in a conversation to explore alternative paths.
+
+### [Response Resumption](/docs/spring/response-resumption/)
+Implement streaming responses with resume and cancellation support, so users can reconnect after a disconnect.
+
+### [Conversation Sharing](/docs/spring/sharing/)
+Implement conversation sharing and ownership transfer between users.
+
+### [Docker Compose](/docs/spring/docker-compose/)
+Use Spring Boot's built-in Docker Compose support to automatically start Memory Service during development.
