@@ -29,6 +29,14 @@ jobs:
           java-version: 21
           cache: maven
 
+      - name: Cache npm packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('common/chat-frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
       - name: Build and test with Maven
         run: ./mvnw -B verify
 
