@@ -12,6 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Restore Docker layer cache
+        uses: satackey/action-docker-layer-caching@v0.0.11
+        continue-on-error: true
+
       - name: Build the Container Images
         run: docker compose build
 
@@ -39,48 +43,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-m2-
 
-      - name: Wait for memory-service
-        run: |
-          timeout 120 bash -c 'until curl -sf http://localhost:8082/v1/health; do sleep 2; done'
-      
-      - name: Wait for Keycloak
-        run: |
-          timeout 120 bash -c 'until curl -sf http://localhost:8081/health/ready; do sleep 2; done'
-
-      - name: Dump Docker Diagnostics
-        if: failure()
-        run: |
-          echo "=== Container Status ==="
-          docker compose ps -a
-          echo ""
-          echo "=== memory-service logs ==="
-          docker compose logs memory-service --tail=200
-          echo ""
-          echo "=== postgres logs ==="
-          docker compose logs postgres --tail=50
-          echo ""
-          echo "=== keycloak logs ==="
-          docker compose logs keycloak --tail=50
-          echo ""
-          echo "=== redis logs ==="
-          docker compose logs redis --tail=50
-          echo ""
-          echo "=== localstack logs ==="
-          docker compose logs localstack --tail=50
-          echo ""
-          echo "=== prometheus logs ==="
-          docker compose logs prometheus --tail=50
-
       - name: Run documentation tests (builds site and runs tests)
-        run: ./mvnw -B test -pl site-tests -Ptest-docs
+        run: ./mvnw -B test -pl site-tests -Psite-tests
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
-          path: site-tests/target/surefire-reports/
+          name: cucumber-reports
+          path: site-tests/target/cucumber-reports
 
-      - name: Stop Docker services
-        if: always()
-        run: docker compose down
