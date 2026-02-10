@@ -12,8 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start Docker services
-        run: docker compose build && docker compose up -d
+      - name: Build the Container Images
+        run: docker compose build
+
+      - name: Start the Containers
+        run: docker compose up -d
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -38,11 +41,44 @@ jobs:
 
       - name: Wait for memory-service
         run: |
-          timeout 240 bash -c 'until curl -sf http://localhost:8082/q/health/ready; do sleep 2; done'
+          timeout 120 bash -c 'until curl -sf http://localhost:8082/q/health/ready; do sleep 2; done'
+
+      - name: Dump docker diagnostics on memory-service failure
+        if: failure()
+        run: |
+          echo "=== Container Status ==="
+          docker compose ps -a
+          echo ""
+          echo "=== memory-service logs ==="
+          docker compose logs memory-service --tail=200
+          echo ""
+          echo "=== postgres logs ==="
+          docker compose logs postgres --tail=50
+          echo ""
+          echo "=== keycloak logs ==="
+          docker compose logs keycloak --tail=50
+          echo ""
+          echo "=== redis logs ==="
+          docker compose logs redis --tail=50
+          echo ""
+          echo "=== localstack logs ==="
+          docker compose logs localstack --tail=50
+          echo ""
+          echo "=== prometheus logs ==="
+          docker compose logs prometheus --tail=50
 
       - name: Wait for Keycloak
         run: |
-          timeout 240 bash -c 'until curl -sf http://localhost:8081/health/ready; do sleep 2; done'
+          timeout 120 bash -c 'until curl -sf http://localhost:8081/health/ready; do sleep 2; done'
+
+      - name: Dump docker diagnostics on Keycloak failure
+        if: failure()
+        run: |
+          echo "=== Container Status ==="
+          docker compose ps -a
+          echo ""
+          echo "=== keycloak logs ==="
+          docker compose logs keycloak --tail=200
 
       - name: Run documentation tests (builds site and runs tests)
         run: ./mvnw -B test -pl site-tests -Ptest-docs
