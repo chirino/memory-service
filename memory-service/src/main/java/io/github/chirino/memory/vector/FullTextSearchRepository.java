@@ -55,7 +55,7 @@ public class FullTextSearchRepository {
                             e.conversation_id,
                             ts_rank(e.indexed_content_tsv, to_tsquery('english', ?1)) AS score,
                             ts_headline('english', e.indexed_content, to_tsquery('english', ?1),
-                                'StartSel=<mark>, StopSel=</mark>, MaxWords=50, MinWords=20') AS highlight,
+                                'StartSel=**, StopSel=**, MaxWords=50, MinWords=20') AS highlight,
                             ROW_NUMBER() OVER (
                                 PARTITION BY e.conversation_id
                                 ORDER BY ts_rank(e.indexed_content_tsv, to_tsquery('english', ?1)) DESC
@@ -80,7 +80,7 @@ public class FullTextSearchRepository {
                         e.conversation_id,
                         ts_rank(e.indexed_content_tsv, to_tsquery('english', ?1)) AS score,
                         ts_headline('english', e.indexed_content, to_tsquery('english', ?1),
-                            'StartSel=<mark>, StopSel=</mark>, MaxWords=50, MinWords=20') AS highlight
+                            'StartSel=**, StopSel=**, MaxWords=50, MinWords=20') AS highlight
                     FROM entries e
                     JOIN conversations c ON c.id = e.conversation_id AND c.deleted_at IS NULL
                     JOIN conversation_groups cg ON cg.id = c.conversation_group_id AND cg.deleted_at IS NULL
@@ -193,7 +193,7 @@ public class FullTextSearchRepository {
                             e.conversation_id,
                             ts_rank(e.indexed_content_tsv, to_tsquery('english', ?1)) AS score,
                             ts_headline('english', e.indexed_content, to_tsquery('english', ?1),
-                                'StartSel=<mark>, StopSel=</mark>, MaxWords=50, MinWords=20') AS highlight,
+                                'StartSel=**, StopSel=**, MaxWords=50, MinWords=20') AS highlight,
                             ROW_NUMBER() OVER (
                                 PARTITION BY e.conversation_id
                                 ORDER BY ts_rank(e.indexed_content_tsv, to_tsquery('english', ?1)) DESC
@@ -221,7 +221,7 @@ public class FullTextSearchRepository {
                         e.conversation_id,
                         ts_rank(e.indexed_content_tsv, to_tsquery('english', ?1)) AS score,
                         ts_headline('english', e.indexed_content, to_tsquery('english', ?1),
-                            'StartSel=<mark>, StopSel=</mark>, MaxWords=50, MinWords=20') AS highlight
+                            'StartSel=**, StopSel=**, MaxWords=50, MinWords=20') AS highlight
                     FROM entries e
                     JOIN conversations c ON c.id = e.conversation_id
                     JOIN conversation_groups cg ON cg.id = c.conversation_group_id

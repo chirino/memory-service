@@ -488,6 +488,39 @@ public class DockerSteps {
             startDockerCompose();
             dockerAlreadyRunning = true;
         }
+
+        clearDatabase();
+    }
+
+    private void clearDatabase() {
+        try {
+            ProcessBuilder pb =
+                    new ProcessBuilder(
+                            "docker",
+                            "exec",
+                            "memory-service-postgres-1",
+                            "psql",
+                            "-U",
+                            "postgres",
+                            "-d",
+                            "memory_service",
+                            "-c",
+                            "TRUNCATE entries, attachments, conversation_memberships,"
+                                    + " conversation_ownership_transfers, conversations,"
+                                    + " conversation_groups, tasks CASCADE");
+            pb.directory(projectRoot);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            String output = new String(process.getInputStream().readAllBytes());
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                System.err.println("Warning: Failed to clear database: " + output);
+            } else {
+                System.out.println("Database cleared before scenario.");
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to clear database: " + e.getMessage());
+        }
     }
 
     @Given("the memory-service is running via docker compose")

@@ -1,8 +1,8 @@
 package com.example.demo;
 
+import io.github.chirino.memoryservice.client.MemoryServiceProxy;
 import io.github.chirino.memoryservice.history.ResponseResumer;
 import io.github.chirino.memoryservice.security.SecurityHelper;
-import io.github.chirino.memoryservice.client.MemoryServiceProxy;
 import java.io.IOException;
 import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
@@ -45,14 +45,20 @@ class ResumeController {
         String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
         SseEmitter emitter = new SseEmitter(0L);
 
-        Disposable subscription = responseResumer.replay(conversationId, bearerToken)
-                .subscribe(
-                        chunk -> safeSend(emitter, chunk),
-                        emitter::completeWithError,
-                        emitter::complete);
+        Disposable subscription =
+                responseResumer
+                        .replay(conversationId, bearerToken)
+                        .subscribe(
+                                chunk -> safeSend(emitter, chunk),
+                                emitter::completeWithError,
+                                emitter::complete);
 
         emitter.onCompletion(subscription::dispose);
-        emitter.onTimeout(() -> { subscription.dispose(); emitter.complete(); });
+        emitter.onTimeout(
+                () -> {
+                    subscription.dispose();
+                    emitter.complete();
+                });
         return emitter;
     }
 

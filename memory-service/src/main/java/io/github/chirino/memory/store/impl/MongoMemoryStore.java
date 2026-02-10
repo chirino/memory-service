@@ -1756,7 +1756,10 @@ public class MongoMemoryStore implements MemoryStore {
             snippet.append("...");
         }
 
-        return snippet.toString().trim();
+        // Wrap matched query in **query** markers
+        String result = snippet.toString().trim();
+        result = result.replaceAll("(?i)(" + java.util.regex.Pattern.quote(query) + ")", "**$1**");
+        return result;
     }
 
     private String inferTitleFromUserEntry(CreateUserEntryRequest request) {
