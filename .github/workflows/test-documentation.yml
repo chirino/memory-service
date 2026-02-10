@@ -43,6 +43,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-m2-
 
+      - name: Build JARs used by the documentation examples
+        run: ./mvnw -B install -DskipTests -am -pl :memory-service-spring-boot-docker-compose-starter,:memory-service-extension-deployment
+
       - name: Run documentation tests (builds site and runs tests)
         run: ./mvnw -B test -pl site-tests -Psite-tests
 
