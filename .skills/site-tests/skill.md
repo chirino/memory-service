@@ -11,9 +11,9 @@ autoTrigger:
 ```
 MDX docs (CurlTest/TestScenario components)
   → Astro build extracts test data
-  → site-tests/src/test/resources/test-scenarios.json
+  → site-tests/target/generated-test-resources/test-scenarios.json
   → TestGenerator.java creates .feature file
-  → site-tests/src/test/resources/features/documentation-tests.feature
+  → site-tests/target/generated-test-resources/features/documentation-tests.feature
   → Cucumber runs tests
 ```
 

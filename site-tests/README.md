@@ -36,11 +36,11 @@ test-scenarios.json
 1. **Site Build** (`npm run build` in `site/`)
    - Astro renders MDX files containing `<TestScenario>` components
    - `TestScenario.astro` extracts bash commands and expectations
-   - Writes structured test data to `site-tests/src/test/resources/test-scenarios.json`
+   - Writes structured test data to `site-tests/target/generated-test-resources/test-scenarios.json`
 
 2. **Test Generation** (`TestGenerator.java`)
    - Reads `test-scenarios.json`
-   - Generates Cucumber `.feature` files in `site-tests/src/test/resources/features/`
+   - Generates Cucumber `.feature` files in `site-tests/target/generated-test-resources/features/`
    - Each scenario gets a unique port to avoid conflicts
 
 3. **Test Execution** (`DocTestRunner.java`)
@@ -271,22 +271,14 @@ When updating documentation:
 
 1. **Edit MDX files** in `site/src/pages/docs/`
 2. **Run tests**: `./mvnw test -pl site-tests -Ptest-docs`
-3. **Check logs**: `site-tests/target/checkpoint-XXXX.log` for application output
+3. **Check logs**: Checkpoint output is piped to stdout with `[checkpoint:PORT]` prefixes
 4. **Iterate**: Fix any failures and re-run
 
 ### Debugging Failed Tests
 
 #### View Application Logs
 
-```bash
-tail -f site-tests/target/checkpoint-9090.log
-```
-
-Logs show:
-- Application startup
-- OpenAI API calls
-- Memory Service interactions
-- Error stack traces
+Checkpoint output is piped to stdout with `[checkpoint:PORT]` prefixes (e.g., `[checkpoint:10090]`). Build output uses `[build]` prefixes.
 
 #### Test Only Specific Checkpoint
 
@@ -490,7 +482,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-logs
-          path: site-tests/target/checkpoint-*.log
+          path: site-tests/target/surefire-reports/
 ```
 
 ### Path Filters
@@ -531,7 +523,7 @@ Or let the test framework handle it - it should auto-cleanup on next run.
 **Cause**: Application failed to start or WireMock mock not responding
 
 **Solutions**:
-1. Check application logs: `tail site-tests/target/checkpoint-10090.log`
+1. Check application logs in stdout (prefixed with `[checkpoint:PORT]`)
 2. Verify WireMock is running: `curl http://localhost:8090/__admin/mappings`
 3. Check WireMock mappings: `curl http://localhost:8090/v1/models`
 
