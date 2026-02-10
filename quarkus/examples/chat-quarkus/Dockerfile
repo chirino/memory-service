@@ -42,7 +42,7 @@ COPY ./spring/memory-service-spring-boot-docker-compose-starter/pom.xml ./spring
 COPY ./spring/memory-service-spring-boot-starter/pom.xml ./spring/memory-service-spring-boot-starter/pom.xml
 COPY ./spring/pom.xml ./spring/pom.xml
 
-RUN ./mvnw quarkus:go-offline
+RUN ./mvnw -B -q quarkus:go-offline
 
 # Copy the frontend build into the chat app resources
 COPY --chmod=755 --from=frontend-builder /build/dist ./quarkus/examples/chat-quarkus/src/main/resources/META-INF/resources
