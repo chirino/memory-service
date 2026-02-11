@@ -21,7 +21,6 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import jakarta.ws.rs.WebApplicationException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -57,7 +56,6 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
 
-        LOG.infof("getMessages(%s)", memoryId);
         Objects.requireNonNull(memoryId, "memoryId");
         ListConversationEntries200Response context;
         try {
@@ -104,18 +102,11 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         }
 
         LOG.infof(
-                "getMessages(%s)=>\n%s\nat: %s",
+                "getMessages(%s)=>\n%s",
                 memoryId,
-                result.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")),
-                stackTrace());
+                result.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")));
 
         return result;
-    }
-
-    private String stackTrace() {
-        return Arrays.stream(new Exception().getStackTrace())
-                .map(StackTraceElement::toString)
-                .collect(Collectors.joining("\n"));
     }
 
     @Override
@@ -127,10 +118,9 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         }
 
         LOG.infof(
-                "updateMessages(%s)=>\n%s\nat: %s",
+                "updateMessages(%s)=>\n%s",
                 memoryId,
-                messages.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")),
-                stackTrace());
+                messages.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")));
 
         // Build a single entry with all messages in the content array
         CreateEntryRequest syncEntry = toSyncEntryRequest(messages);
@@ -144,7 +134,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     @Override
     public void deleteMessages(Object memoryId) {
         Objects.requireNonNull(memoryId, "memoryId");
-        LOG.infof("deleteMessages(%s)\nat: %s", memoryId, stackTrace());
+        LOG.infof("deleteMessages(%s)", memoryId);
 
         // Sync with empty content to clear memory by creating an empty epoch
         CreateEntryRequest syncEntry = new CreateEntryRequest();

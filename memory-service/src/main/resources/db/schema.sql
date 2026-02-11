@@ -210,3 +210,7 @@ CREATE INDEX IF NOT EXISTS idx_attachments_storage_key
     ON attachments(storage_key) WHERE storage_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_deleted_at
     ON attachments(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_user_id
+    ON attachments(user_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_created_at_id
+    ON attachments(created_at DESC, id DESC);

@@ -1,13 +1,16 @@
 package io.github.chirino.memory.attachment;
 
+import io.github.chirino.memory.model.AdminAttachmentQuery;
 import io.github.chirino.memory.mongo.model.MongoAttachment;
 import io.github.chirino.memory.mongo.model.MongoEntry;
 import io.github.chirino.memory.mongo.repo.MongoEntryRepository;
 import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -157,6 +160,95 @@ public class MongoAttachmentStore implements AttachmentStore {
     public String getConversationGroupIdForEntry(String entryId) {
         MongoEntry entry = entryRepository.findById(entryId);
         return entry != null ? entry.conversationGroupId : null;
+    }
+
+    @Override
+    public List<AttachmentDto> adminList(AdminAttachmentQuery query) {
+        List<String> conditions = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+        int paramIndex = 1;
+
+        if (query.getUserId() != null) {
+            conditions.add("userId = ?" + paramIndex++);
+            params.add(query.getUserId());
+        }
+        if (query.getEntryId() != null) {
+            conditions.add("entryId = ?" + paramIndex++);
+            params.add(query.getEntryId());
+        }
+
+        Instant now = Instant.now();
+        switch (query.getStatus()) {
+            case LINKED -> conditions.add("entryId is not null");
+            case UNLINKED -> {
+                conditions.add(
+                        "entryId is null and (expiresAt is null or expiresAt >= ?"
+                                + paramIndex++
+                                + ")");
+                params.add(now);
+            }
+            case EXPIRED -> {
+                conditions.add("expiresAt is not null and expiresAt < ?" + paramIndex++);
+                params.add(now);
+            }
+            case ALL -> {} // no filter
+        }
+
+        if (query.getAfter() != null) {
+            MongoAttachment afterDoc = attachmentRepository.findById(query.getAfter());
+            if (afterDoc != null) {
+                conditions.add(
+                        "(createdAt < ?"
+                                + paramIndex++
+                                + " or (createdAt = ?"
+                                + paramIndex++
+                                + " and _id < ?"
+                                + paramIndex++
+                                + "))");
+                params.add(afterDoc.createdAt);
+                params.add(afterDoc.createdAt);
+                params.add(afterDoc.id);
+            }
+        }
+
+        Sort sort = Sort.descending("createdAt", "_id");
+
+        if (conditions.isEmpty()) {
+            return attachmentRepository.findAll(sort).page(0, query.getLimit()).stream()
+                    .map(this::toDto)
+                    .toList();
+        }
+
+        String queryStr = String.join(" and ", conditions);
+        return attachmentRepository
+                .find(queryStr, sort, params.toArray())
+                .page(0, query.getLimit())
+                .stream()
+                .map(this::toDto)
+                .toList();
+    }
+
+    @Override
+    public Optional<AttachmentDto> adminFindById(String id) {
+        // No deletedAt filter - returns soft-deleted records too
+        MongoAttachment doc = attachmentRepository.findById(id);
+        return doc != null ? Optional.of(toDto(doc)) : Optional.empty();
+    }
+
+    @Override
+    public long adminCountByStorageKey(String storageKey) {
+        return attachmentRepository.count("storageKey = ?1 and deletedAt is null", storageKey);
+    }
+
+    @Override
+    @Transactional
+    public void adminUnlinkFromEntry(String attachmentId) {
+        MongoAttachment doc = attachmentRepository.findById(attachmentId);
+        if (doc != null) {
+            doc.entryId = null;
+            doc.expiresAt = Instant.now().plusSeconds(300);
+            attachmentRepository.update(doc);
+        }
     }
 
     private MongoAttachment findActive(String id) {

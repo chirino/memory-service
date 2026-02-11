@@ -1,5 +1,6 @@
 package io.github.chirino.memory.attachment;
 
+import io.github.chirino.memory.model.AdminAttachmentQuery;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -34,4 +35,17 @@ public interface AttachmentStore {
     List<AttachmentDto> findByEntryIds(List<String> entryIds);
 
     String getConversationGroupIdForEntry(String entryId);
+
+    // Admin methods
+
+    List<AttachmentDto> adminList(AdminAttachmentQuery query);
+
+    /** Find by ID without ownership filter, includes soft-deleted records. */
+    Optional<AttachmentDto> adminFindById(String id);
+
+    /** Count of attachment records sharing the same storageKey. */
+    long adminCountByStorageKey(String storageKey);
+
+    /** Clear entryId and set expiresAt (for admin delete of linked attachments). */
+    void adminUnlinkFromEntry(String attachmentId);
 }
