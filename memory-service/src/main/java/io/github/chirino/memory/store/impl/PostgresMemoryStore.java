@@ -63,6 +63,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -1483,14 +1484,49 @@ public class PostgresMemoryStore implements MemoryStore {
             String userId, String conversationId, CreateEntryRequest entry, String clientId) {
         validateSyncEntry(entry);
         UUID cid = UUID.fromString(conversationId);
-        // Combined query: finds max epoch and lists entries in single round-trip
-        List<EntryEntity> latestEpochEntityList =
-                entryRepository.listMemoryEntriesAtLatestEpoch(cid, clientId);
-        List<EntryDto> latestEpochEntries =
-                latestEpochEntityList.stream().map(this::toEntryDto).collect(Collectors.toList());
-        // Extract epoch from entries (all entries in the list share the same epoch)
-        Long latestEpoch =
-                latestEpochEntityList.isEmpty() ? null : latestEpochEntityList.get(0).getEpoch();
+
+        // Load conversation to check if it's a fork
+        ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+
+        List<EntryDto> latestEpochEntries;
+        Long latestEpoch;
+
+        if (isFork(conversation)) {
+            // Fork-aware retrieval: include inherited parent entries for content comparison.
+            // Without this, prefix detection fails because the fork has no entries of its own
+            // initially, causing all incoming messages to be bundled into a single entry.
+            List<ForkAncestor> ancestry = buildAncestryStack(conversation);
+            UUID groupId = conversation.getConversationGroup().getId();
+            List<EntryEntity> allEntries =
+                    entryRepository.listByConversationGroup(groupId, null, null);
+            List<EntryEntity> filteredEntries =
+                    filterMemoryEntriesWithEpoch(
+                            allEntries, ancestry, clientId, MemoryEpochFilter.latest());
+            latestEpochEntries =
+                    filteredEntries.stream().map(this::toEntryDto).collect(Collectors.toList());
+            latestEpoch =
+                    filteredEntries.stream()
+                            .map(EntryEntity::getEpoch)
+                            .filter(Objects::nonNull)
+                            .max(Long::compare)
+                            .orElse(null);
+        } else {
+            // Combined query: finds max epoch and lists entries in single round-trip
+            List<EntryEntity> latestEpochEntityList =
+                    entryRepository.listMemoryEntriesAtLatestEpoch(cid, clientId);
+            latestEpochEntries =
+                    latestEpochEntityList.stream()
+                            .map(this::toEntryDto)
+                            .collect(Collectors.toList());
+            // Extract epoch from entries (all entries in the list share the same epoch)
+            latestEpoch =
+                    latestEpochEntityList.isEmpty()
+                            ? null
+                            : latestEpochEntityList.get(0).getEpoch();
+        }
 
         // Flatten content from all existing entries and get incoming content
         List<Object> existingContent = MemorySyncHelper.flattenContent(latestEpochEntries);

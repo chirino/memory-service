@@ -303,3 +303,144 @@ Feature: Conversation Forking REST API
     And the response should contain 2 entries
     And entry at index 0 should have content "H1"
     And entry at index 1 should have content "H3"
+
+  # Regression test: Memory sync on a forked conversation should append deltas like the parent,
+  # not bundle all inherited+new messages into a single entry.
+  # This reproduces the bug where syncAgentEntry() only checks the fork's own entries when
+  # comparing content (ignoring inherited parent entries), causing it to treat ALL incoming
+  # messages as new content and bundle them into one entry.
+  Scenario: Sync memory entries on forked conversation appends delta like parent
+    Given I am authenticated as agent with API key "test-agent-key"
+    And I have a conversation with title "Root Conversation"
+    And set "rootConversationId" to "${conversationId}"
+
+    # === Build parent conversation memory via sync (simulates langchain4j agent flow) ===
+
+    # User asks a question
+    When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
+    """
+    {"channel": "HISTORY", "contentType": "history", "content": [{"text": "Pick a number", "role": "USER"}]}
+    """
+    Then the response status should be 201
+
+    # Agent syncs memory: [USER1]
+    When I call POST "/v1/conversations/${rootConversationId}/entries/sync" with body:
+    """
+    {
+      "channel": "MEMORY",
+      "contentType": "LC4J",
+      "content": [{"type": "USER", "contents": [{"text": "Pick a number", "type": "TEXT"}]}]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epochIncremented" should be "false"
+
+    # Agent syncs memory: [USER1, AI1] — extends existing with AI response
+    When I call POST "/v1/conversations/${rootConversationId}/entries/sync" with body:
+    """
+    {
+      "channel": "MEMORY",
+      "contentType": "LC4J",
+      "content": [
+        {"type": "USER", "contents": [{"text": "Pick a number", "type": "TEXT"}]},
+        {"type": "AI", "text": "The number is 42."}
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epochIncremented" should be "false"
+
+    # Agent posts AI history response
+    When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
+    """
+    {"channel": "HISTORY", "contentType": "history", "content": [{"text": "The number is 42.", "role": "AI"}]}
+    """
+    Then the response status should be 201
+
+    # Verify parent has 2 individual memory entries at epoch 1
+    When I call GET "/v1/conversations/${rootConversationId}/entries?channel=MEMORY&epoch=latest"
+    Then the response status should be 200
+    And the response should contain 2 entries
+
+    # User sends a second message (this will be the fork point)
+    When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
+    """
+    {"channel": "HISTORY", "contentType": "history", "content": [{"text": "Next question", "role": "USER"}]}
+    """
+    Then the response status should be 201
+    And set "forkPointEntryId" to the json response field "id"
+
+    # === Fork before "Next question" — fork sees: H_USER1, M_USER1, M_AI1, H_AI1 ===
+    When I am authenticated as user "alice"
+    When I call POST "/v1/conversations/${rootConversationId}/entries/${forkPointEntryId}/fork" with body:
+    """
+    {"title": "Forked Conversation"}
+    """
+    Then the response status should be 201
+    And set "forkConversationId" to the json response field "id"
+
+    # === Simulate agent sync on forked conversation ===
+    When I am authenticated as agent with API key "test-agent-key"
+
+    # User sends message in fork
+    When I call POST "/v1/conversations/${forkConversationId}/entries" with body:
+    """
+    {"channel": "HISTORY", "contentType": "history", "content": [{"text": "Pick a color", "role": "USER"}]}
+    """
+    Then the response status should be 201
+
+    # Agent syncs memory for fork: [USER1, AI1, USER2]
+    # The agent retrieved [USER1, AI1] from parent memory, adds USER2.
+    # Expected: detect inherited [USER1, AI1] as prefix, append only delta [USER2]
+    When I call POST "/v1/conversations/${forkConversationId}/entries/sync" with body:
+    """
+    {
+      "channel": "MEMORY",
+      "contentType": "LC4J",
+      "content": [
+        {"type": "USER", "contents": [{"text": "Pick a number", "type": "TEXT"}]},
+        {"type": "AI", "text": "The number is 42."},
+        {"type": "USER", "contents": [{"text": "Pick a color", "type": "TEXT"}]}
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epochIncremented" should be "false"
+
+    # Verify: fork memory should have 3 entries (2 inherited + 1 new delta)
+    When I call GET "/v1/conversations/${forkConversationId}/entries?channel=MEMORY&epoch=latest"
+    Then the response status should be 200
+    And the response should contain 3 entries
+    # The 3rd entry (index 2) is the fork's new entry — it should contain ONLY the delta
+    # (1 content item: USER "Pick a color"), NOT all 3 messages bundled together.
+    # With the bug: data[2].content has 3 items (all messages); content[0] is "Pick a number"
+    # Correct:      data[2].content has 1 item (just the delta); content[0] is "Pick a color"
+    And the response body field "data[2].content[0].contents[0].text" should be "Pick a color"
+    And the response body field "data[2].content[1]" should be null
+
+    # Agent syncs memory for fork after AI response: [USER1, AI1, USER2, AI2]
+    When I call POST "/v1/conversations/${forkConversationId}/entries/sync" with body:
+    """
+    {
+      "channel": "MEMORY",
+      "contentType": "LC4J",
+      "content": [
+        {"type": "USER", "contents": [{"text": "Pick a number", "type": "TEXT"}]},
+        {"type": "AI", "text": "The number is 42."},
+        {"type": "USER", "contents": [{"text": "Pick a color", "type": "TEXT"}]},
+        {"type": "AI", "text": "How about blue?"}
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epochIncremented" should be "false"
+
+    # Final: fork memory should have 4 entries (2 inherited + 2 new deltas), all at epoch 1
+    When I call GET "/v1/conversations/${forkConversationId}/entries?channel=MEMORY&epoch=latest"
+    Then the response status should be 200
+    And the response should contain 4 entries
+    # Verify each entry has exactly 1 content item (individual messages, not bundled)
+    And the response body field "data[0].content[1]" should be null
+    And the response body field "data[1].content[1]" should be null
+    And the response body field "data[2].content[1]" should be null
+    And the response body field "data[3].content[1]" should be null
