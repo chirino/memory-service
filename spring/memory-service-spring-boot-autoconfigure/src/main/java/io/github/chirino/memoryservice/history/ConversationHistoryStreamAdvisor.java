@@ -302,18 +302,28 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
     }
 
     /**
-     * Key for storing explicit attachment metadata in the advisor context. When present, these
-     * metadata maps (with attachmentId, contentType, name) are used for history recording instead of
-     * extracting from Media objects.
+     * Key for storing an {@link Attachments} object in the advisor context. When present, the
+     * advisor extracts {@link Attachments#metadata()} for history recording.
      */
-    public static final String ATTACHMENT_METADATA_KEY = "conversation.attachments";
+    public static final String ATTACHMENTS_KEY = "conversation.attachments";
+
+    /**
+     * @deprecated Use {@link #ATTACHMENTS_KEY} with an {@link Attachments} object instead.
+     */
+    @Deprecated public static final String ATTACHMENT_METADATA_KEY = ATTACHMENTS_KEY;
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> extractAttachments(ChatClientRequest request) {
-        // Prefer explicit attachment metadata from the request context
-        Object explicit = request.context().get(ATTACHMENT_METADATA_KEY);
-        if (explicit instanceof List<?> list && !list.isEmpty()) {
-            return (List<Map<String, Object>>) explicit;
+        Object contextValue = request.context().get(ATTACHMENTS_KEY);
+
+        // Prefer Attachments object (new API)
+        if (contextValue instanceof Attachments attachmentsObj) {
+            return attachmentsObj.metadata();
+        }
+
+        // Support legacy List<Map<String, Object>> metadata
+        if (contextValue instanceof List<?> list && !list.isEmpty()) {
+            return (List<Map<String, Object>>) contextValue;
         }
 
         // Fall back to extracting from Media objects

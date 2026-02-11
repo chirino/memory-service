@@ -1,16 +1,15 @@
 package example.agent;
 
+import io.github.chirino.memoryservice.history.AttachmentRef;
+import io.github.chirino.memoryservice.history.AttachmentResolver;
+import io.github.chirino.memoryservice.history.Attachments;
 import io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisor;
 import io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisorBuilder;
 import io.github.chirino.memoryservice.history.ResponseResumer;
 import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryBuilder;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.io.IOException;
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -24,7 +23,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
-import org.springframework.util.MimeTypeUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,17 +44,20 @@ class AgentStreamController {
     private final ResponseResumer responseResumer;
     private final ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder;
     private final OAuth2AuthorizedClientService authorizedClientService;
+    private final AttachmentResolver attachmentResolver;
 
     AgentStreamController(
             ChatClient.Builder chatClientBuilder,
             MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder,
             ResponseResumer responseResumer,
             ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder,
+            AttachmentResolver attachmentResolver,
             ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
         this.chatClientBuilder = chatClientBuilder;
         this.repositoryBuilder = repositoryBuilder;
         this.responseResumer = responseResumer;
         this.historyAdvisorBuilder = historyAdvisorBuilder;
+        this.attachmentResolver = attachmentResolver;
         this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
     }
 
@@ -91,27 +92,25 @@ class AgentStreamController {
                                 MessageChatMemoryAdvisor.builder(chatMemory).build())
                         .build();
 
-        List<Media> mediaList = toMediaList(request.getAttachments());
-        List<Map<String, Object>> attachmentMeta =
-                buildAttachmentMetadata(request.getAttachments());
+        Attachments attachments = attachmentResolver.resolve(toRefs(request.getAttachments()));
+
         ChatClient.ChatClientRequestSpec requestSpec =
                 chatClient
                         .prompt()
                         .advisors(
                                 advisor -> {
                                     advisor.param(ChatMemory.CONVERSATION_ID, conversationId);
-                                    if (!attachmentMeta.isEmpty()) {
+                                    if (!attachments.isEmpty()) {
                                         advisor.param(
-                                                ConversationHistoryStreamAdvisor
-                                                        .ATTACHMENT_METADATA_KEY,
-                                                attachmentMeta);
+                                                ConversationHistoryStreamAdvisor.ATTACHMENTS_KEY,
+                                                attachments);
                                     }
                                 })
                         .user(
                                 spec -> {
                                     spec.text(request.getMessage());
-                                    if (!mediaList.isEmpty()) {
-                                        spec.media(mediaList.toArray(new Media[0]));
+                                    if (!attachments.media().isEmpty()) {
+                                        spec.media(attachments.media().toArray(new Media[0]));
                                     }
                                 });
 
@@ -164,6 +163,21 @@ class AgentStreamController {
         return emitter;
     }
 
+    private static List<AttachmentRef> toRefs(List<RequestAttachmentRef> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return List.of();
+        }
+        return attachments.stream()
+                .map(
+                        a ->
+                                new AttachmentRef(
+                                        a.getAttachmentId(),
+                                        a.getContentType(),
+                                        a.getName(),
+                                        a.getHref()))
+                .toList();
+    }
+
     private void safeSendChunk(String conversationId, SseEmitter emitter, TokenFrame frame) {
         try {
             emitter.send(SseEmitter.event().name("token").data(frame));
@@ -205,7 +219,7 @@ class AgentStreamController {
     public static final class MessageRequest {
 
         private String message;
-        private List<AttachmentRef> attachments;
+        private List<RequestAttachmentRef> attachments;
 
         public MessageRequest() {}
 
@@ -221,23 +235,23 @@ class AgentStreamController {
             this.message = message;
         }
 
-        public List<AttachmentRef> getAttachments() {
+        public List<RequestAttachmentRef> getAttachments() {
             return attachments;
         }
 
-        public void setAttachments(List<AttachmentRef> attachments) {
+        public void setAttachments(List<RequestAttachmentRef> attachments) {
             this.attachments = attachments;
         }
     }
 
-    public static final class AttachmentRef {
+    public static final class RequestAttachmentRef {
 
         private String href;
         private String attachmentId;
         private String contentType;
         private String name;
 
-        public AttachmentRef() {}
+        public RequestAttachmentRef() {}
 
         public String getHref() {
             return href;
@@ -270,51 +284,6 @@ class AgentStreamController {
         public void setName(String name) {
             this.name = name;
         }
-    }
-
-    private List<Map<String, Object>> buildAttachmentMetadata(List<AttachmentRef> attachments) {
-        if (attachments == null || attachments.isEmpty()) {
-            return List.of();
-        }
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (AttachmentRef att : attachments) {
-            if (!StringUtils.hasText(att.getAttachmentId())) {
-                continue;
-            }
-            Map<String, Object> meta = new LinkedHashMap<>();
-            meta.put("attachmentId", att.getAttachmentId());
-            if (StringUtils.hasText(att.getContentType())) {
-                meta.put("contentType", att.getContentType());
-            }
-            if (StringUtils.hasText(att.getName())) {
-                meta.put("name", att.getName());
-            }
-            result.add(meta);
-        }
-        return result;
-    }
-
-    private List<Media> toMediaList(List<AttachmentRef> attachments) {
-        if (attachments == null || attachments.isEmpty()) {
-            return List.of();
-        }
-        List<Media> result = new ArrayList<>();
-        for (AttachmentRef att : attachments) {
-            // Resolve href: prefer explicit href, fall back to attachmentId-based URL
-            String resolvedHref = att.getHref();
-            if (!StringUtils.hasText(resolvedHref) && StringUtils.hasText(att.getAttachmentId())) {
-                resolvedHref = "/v1/attachments/" + att.getAttachmentId();
-            }
-            if (!StringUtils.hasText(resolvedHref)) {
-                continue;
-            }
-            var mimeType =
-                    StringUtils.hasText(att.getContentType())
-                            ? MimeTypeUtils.parseMimeType(att.getContentType())
-                            : MimeTypeUtils.APPLICATION_OCTET_STREAM;
-            result.add(new Media(mimeType, URI.create(resolvedHref)));
-        }
-        return result;
     }
 
     private String extractContent(ChatClientResponse response) {
