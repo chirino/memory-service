@@ -14,6 +14,11 @@ import io.quarkus.test.security.TestSecurity;
             "classpath:features-grpc",
             "classpath:features-postgres",
             "classpath:features-infinispan"
+        },
+        plugin = {
+            "pretty",
+            "html:target/cucumber-reports/postgresql-infinispan.html",
+            "json:target/cucumber-reports/postgresql-infinispan.json"
         })
 public class PostgresqlInfinispanCucumberTest extends CucumberQuarkusTest {
     public static void main(String[] args) {

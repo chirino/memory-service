@@ -16,7 +16,7 @@ COPY quarkus/quarkus-data-encryption/runtime/pom.xml quarkus/quarkus-data-encryp
 COPY quarkus/quarkus-data-encryption/deployment/pom.xml quarkus/quarkus-data-encryption/deployment/
 COPY quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/
 COPY quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/
-RUN ./mvnw -Pmemory-service-only -P\!all-modules quarkus:go-offline
+RUN ./mvnw -B -q -Pmemory-service-only -P\!all-modules quarkus:go-offline
 
 # Copy the source code and build the app
 COPY . .
