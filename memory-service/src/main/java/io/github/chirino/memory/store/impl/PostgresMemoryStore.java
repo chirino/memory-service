@@ -1028,24 +1028,12 @@ public class PostgresMemoryStore implements MemoryStore {
             String clientId) {
         UUID conversationId = conversation.getId();
 
-        // For non-forked conversations, use existing efficient queries
-        if (!isFork(conversation)) {
-            LOG.infof(
-                    "getEntriesWithForkSupport: conversation %s is not a fork, using direct query",
-                    conversationId);
-            List<EntryEntity> entries =
-                    entryRepository.listByChannel(
-                            conversationId, afterEntryId, limit, channel, clientId);
-            return buildPagedEntries(conversationId.toString(), entries, limit);
-        }
-
         // Build ancestry stack for fork-aware retrieval
         List<ForkAncestor> ancestry = buildAncestryStack(conversation);
         UUID groupId = conversation.getConversationGroup().getId();
 
-        // Query all entries in the conversation group
-        List<EntryEntity> allEntries =
-                entryRepository.listByConversationGroup(groupId, channel, clientId);
+        // Query ALL entries in the group (need all channels for fork point tracking)
+        List<EntryEntity> allEntries = entryRepository.listByConversationGroup(groupId, null, null);
         LOG.infof(
                 "getEntriesWithForkSupport: fetched %d entries from group %s",
                 allEntries.size(), groupId);
@@ -1055,6 +1043,16 @@ public class PostgresMemoryStore implements MemoryStore {
         LOG.infof(
                 "getEntriesWithForkSupport: after ancestry filter, %d entries",
                 filteredEntries.size());
+
+        // Post-filter by channel and clientId (after ancestry is resolved)
+        if (channel != null) {
+            filteredEntries =
+                    filteredEntries.stream().filter(e -> e.getChannel() == channel).toList();
+        }
+        if (channel == Channel.MEMORY && clientId != null) {
+            filteredEntries =
+                    filteredEntries.stream().filter(e -> clientId.equals(e.getClientId())).toList();
+        }
 
         // Apply pagination
         List<EntryEntity> paginatedEntries = applyPagination(filteredEntries, afterEntryId, limit);
