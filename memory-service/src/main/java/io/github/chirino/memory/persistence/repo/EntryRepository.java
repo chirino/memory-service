@@ -56,7 +56,7 @@ public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID>
             baseQuery += " and m.channel = ?" + (params.size() + 1);
             params.add(channel);
         }
-        if (channel == Channel.MEMORY) {
+        if (channel == Channel.MEMORY && clientId != null) {
             baseQuery += " and m.clientId = ?" + (params.size() + 1);
             params.add(clientId);
         }

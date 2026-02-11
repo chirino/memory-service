@@ -120,6 +120,19 @@ Feature: Admin REST API
     Then the response status should be 200
     And the response should contain at least 1 items
 
+  Scenario: Admin can get memory channel entries from any conversation
+    # Create memory entries as an agent (which sets clientId).
+    # Agent auth defaults to user "alice", so use alice's conversation.
+    Given I am authenticated as agent with API key "test-agent-key"
+    And set "conversationId" to "${aliceConversationId}"
+    When I append an entry with content "Agent memory" and channel "MEMORY" and contentType "test.v1"
+    Then the response status should be 201
+    # Now query as admin - should see the memory entry without clientId filtering
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations/${aliceConversationId}/entries?channel=memory"
+    Then the response status should be 200
+    And the response should contain at least 1 items
+
   Scenario: Admin can get memberships for any conversation
     When I call GET "/v1/admin/conversations/${bobConversationId}/memberships"
     Then the response status should be 200
