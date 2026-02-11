@@ -737,3 +737,178 @@ export class SearchService {
     });
   }
 }
+
+export class AttachmentsService {
+  /**
+   * Upload a file attachment
+   * Uploads a binary file and stores it server-side. Returns an attachment
+   * reference that can be included in conversation entries via the
+   * `attachmentId` field.
+   *
+   * Uploaded attachments expire after the specified duration unless they are
+   * linked to an entry before expiration.
+   * @param data The data for the request.
+   * @param data.formData
+   * @param data.expiresIn ISO 8601 duration for how long the unlinked attachment should persist.
+   * Defaults to 1 hour. Maximum 24 hours.
+   * @returns ErrorResponse Error response
+   * @returns AttachmentUploadResponse Attachment uploaded successfully.
+   * @throws ApiError
+   */
+  public static uploadAttachment(
+    data: $OpenApiTs["/v1/attachments"]["post"]["req"],
+  ): CancelablePromise<
+    $OpenApiTs["/v1/attachments"]["post"]["res"][200] | $OpenApiTs["/v1/attachments"]["post"]["res"][201]
+  > {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/v1/attachments",
+      query: {
+        expiresIn: data.expiresIn,
+      },
+      formData: data.formData,
+      mediaType: "multipart/form-data",
+      errors: {
+        400: "Error response",
+        413: "File too large.",
+      },
+    });
+  }
+
+  /**
+   * Retrieve an attachment
+   * Downloads the binary content of an attachment.
+   *
+   * - If the attachment is unlinked (not yet associated with an entry), only
+   * the original uploader can access it.
+   * - If linked to an entry, anyone with read access to the conversation can
+   * access it.
+   * - If the FileStore supports signed URLs (e.g., S3), a 302 redirect is
+   * returned instead of streaming the bytes directly.
+   * @param data The data for the request.
+   * @param data.id Attachment identifier (UUID format).
+   * @returns binary Attachment binary content.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static getAttachment(
+    data: $OpenApiTs["/v1/attachments/{id}"]["get"]["req"],
+  ): CancelablePromise<
+    $OpenApiTs["/v1/attachments/{id}"]["get"]["res"][200] | $OpenApiTs["/v1/attachments/{id}"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/attachments/{id}",
+      path: {
+        id: data.id,
+      },
+      errors: {
+        302: "Redirect to a signed URL for the attachment.",
+        403: "Error response",
+        404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * Delete an unlinked attachment
+   * Deletes an attachment that has not yet been linked to an entry.
+   *
+   * - Only the original uploader can delete an attachment.
+   * - Only unlinked attachments (those without an `entryId`) can be deleted.
+   * - Linked attachments return 409 Conflict since they are permanent.
+   * - The file is removed from storage first, then the metadata record is deleted.
+   * @param data The data for the request.
+   * @param data.id Attachment identifier (UUID format).
+   * @returns ErrorResponse Error response
+   * @returns void Attachment deleted.
+   * @throws ApiError
+   */
+  public static deleteAttachment(
+    data: $OpenApiTs["/v1/attachments/{id}"]["delete"]["req"],
+  ): CancelablePromise<
+    $OpenApiTs["/v1/attachments/{id}"]["delete"]["res"][200] | $OpenApiTs["/v1/attachments/{id}"]["delete"]["res"][204]
+  > {
+    return __request(OpenAPI, {
+      method: "DELETE",
+      url: "/v1/attachments/{id}",
+      path: {
+        id: data.id,
+      },
+      errors: {
+        403: "Error response",
+        404: "Resource not found",
+        409: "Error response",
+      },
+    });
+  }
+
+  /**
+   * Get a signed download URL for an attachment
+   * Returns a time-limited, signed URL that can be used to download the
+   * attachment without an Authorization header. This is useful for opening
+   * files in new browser tabs or triggering downloads.
+   *
+   * - For S3 storage: returns the S3 pre-signed URL directly.
+   * - For DB storage: returns a server-relative URL with an HMAC-signed token.
+   *
+   * Access control is the same as `GET /v1/attachments/{id}`.
+   * @param data The data for the request.
+   * @param data.id Attachment identifier (UUID format).
+   * @returns AttachmentDownloadUrlResponse Signed download URL.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static getAttachmentDownloadUrl(
+    data: $OpenApiTs["/v1/attachments/{id}/download-url"]["get"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/attachments/{id}/download-url"]["get"]["res"][200]
+    | $OpenApiTs["/v1/attachments/{id}/download-url"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/attachments/{id}/download-url",
+      path: {
+        id: data.id,
+      },
+      errors: {
+        403: "Error response",
+        404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * Download an attachment via signed token
+   * Serves the binary content of an attachment using a time-limited signed
+   * token. No authentication header is required.
+   *
+   * The token is obtained from `GET /v1/attachments/{id}/download-url`.
+   * Returns 403 if the token is invalid or expired.
+   * @param data The data for the request.
+   * @param data.token Signed download token.
+   * @param data.filename Filename for the download (used in Content-Disposition).
+   * @returns binary Attachment binary content.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static downloadAttachmentByToken(
+    data: $OpenApiTs["/v1/attachments/download/{token}/{filename}"]["get"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/attachments/download/{token}/{filename}"]["get"]["res"][200]
+    | $OpenApiTs["/v1/attachments/download/{token}/{filename}"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/attachments/download/{token}/{filename}",
+      path: {
+        token: data.token,
+        filename: data.filename,
+      },
+      errors: {
+        403: "Invalid or expired token.",
+        404: "Resource not found",
+      },
+    });
+  }
+}

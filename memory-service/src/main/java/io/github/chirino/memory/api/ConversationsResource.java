@@ -19,7 +19,6 @@ import io.github.chirino.memory.client.model.CreateConversationRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
-import io.github.chirino.memory.client.model.ForkFromEntryRequest;
 import io.github.chirino.memory.client.model.IndexConversationsResponse;
 import io.github.chirino.memory.client.model.IndexEntryRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
@@ -318,7 +317,14 @@ public class ConversationsResource {
                 CreateUserEntryRequest userRequest = new CreateUserEntryRequest();
                 userRequest.setContent(hasText ? textContent : null);
                 userRequest.setAttachments(hasAttachments ? attachments : null);
-                // Note: CreateEntryRequest doesn't have metadata, so we skip it
+                userRequest.setForkedAtConversationId(
+                        request.getForkedAtConversationId() != null
+                                ? request.getForkedAtConversationId().toString()
+                                : null);
+                userRequest.setForkedAtEntryId(
+                        request.getForkedAtEntryId() != null
+                                ? request.getForkedAtEntryId().toString()
+                                : null);
                 EntryDto dto =
                         store().appendUserEntry(currentUserId(), conversationId, userRequest);
                 linkAttachmentsToEntry(rewrittenIds, dto.getId());
@@ -445,32 +451,6 @@ public class ConversationsResource {
         try {
             store().deleteMembership(currentUserId(), conversationId, userId);
             return Response.noContent().build();
-        } catch (ResourceNotFoundException e) {
-            return notFound(e);
-        } catch (AccessDeniedException e) {
-            return forbidden(e);
-        }
-    }
-
-    @POST
-    @Path("/conversations/{conversationId}/entries/{entryId}/fork")
-    public Response forkConversation(
-            @PathParam("conversationId") String conversationId,
-            @PathParam("entryId") String entryId,
-            ForkFromEntryRequest request) {
-        try {
-            if (request == null) {
-                request = new ForkFromEntryRequest();
-            }
-            io.github.chirino.memory.api.dto.ForkFromEntryRequest internal =
-                    new io.github.chirino.memory.api.dto.ForkFromEntryRequest();
-            internal.setTitle(request.getTitle());
-
-            ConversationDto dto =
-                    store().forkConversationAtEntry(
-                                    currentUserId(), conversationId, entryId, internal);
-            Conversation result = toClientConversation(dto);
-            return Response.status(Response.Status.CREATED).entity(result).build();
         } catch (ResourceNotFoundException e) {
             return notFound(e);
         } catch (AccessDeniedException e) {
@@ -1083,7 +1063,7 @@ public class ConversationsResource {
                         // Try general lookup (may be linked to another entry)
                         var optAny = attStore.findById(attachmentId);
                         if (optAny.isEmpty()) {
-                            continue;
+                            throw new ResourceNotFoundException("attachment", attachmentId);
                         }
                         record = optAny.get();
 

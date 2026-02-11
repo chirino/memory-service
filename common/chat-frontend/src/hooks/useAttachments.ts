@@ -3,25 +3,45 @@ import { getAccessToken } from "@/lib/auth";
 
 const EXTENSION_TYPES: Record<string, string> = {
   // Images
-  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
-  webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp", ico: "image/x-icon",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  bmp: "image/bmp",
+  ico: "image/x-icon",
   // Audio
-  mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac",
-  aac: "audio/aac", m4a: "audio/mp4", wma: "audio/x-ms-wma",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  flac: "audio/flac",
+  aac: "audio/aac",
+  m4a: "audio/mp4",
+  wma: "audio/x-ms-wma",
   // Video
-  mp4: "video/mp4", webm: "video/webm", mkv: "video/x-matroska",
-  avi: "video/x-msvideo", mov: "video/quicktime",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mkv: "video/x-matroska",
+  avi: "video/x-msvideo",
+  mov: "video/quicktime",
   // Documents
-  pdf: "application/pdf", doc: "application/msword",
+  pdf: "application/pdf",
+  doc: "application/msword",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xls: "application/vnd.ms-excel",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ppt: "application/vnd.ms-powerpoint",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  csv: "text/csv", txt: "text/plain", md: "text/markdown",
-  json: "application/json", xml: "application/xml",
+  csv: "text/csv",
+  txt: "text/plain",
+  md: "text/markdown",
+  json: "application/json",
+  xml: "application/xml",
   // Archives
-  zip: "application/zip", gz: "application/gzip", tar: "application/x-tar",
+  zip: "application/zip",
+  gz: "application/gzip",
+  tar: "application/x-tar",
 };
 
 function guessContentType(file: File): string {
@@ -87,9 +107,7 @@ export function useAttachments() {
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
             const progress = Math.round((event.loaded / event.total) * 100);
-            internalsRef.current = internalsRef.current.map((a) =>
-              a.localId === localId ? { ...a, progress } : a,
-            );
+            internalsRef.current = internalsRef.current.map((a) => (a.localId === localId ? { ...a, progress } : a));
             syncState();
           }
         };
@@ -151,9 +169,7 @@ export function useAttachments() {
         };
 
         xhr.onabort = () => {
-          internalsRef.current = internalsRef.current.filter(
-            (a) => a.localId !== localId,
-          );
+          internalsRef.current = internalsRef.current.filter((a) => a.localId !== localId);
           syncState();
         };
 
@@ -220,9 +236,7 @@ export function useAttachments() {
         });
       }
 
-      internalsRef.current = internalsRef.current.filter(
-        (a) => a.localId !== localId,
-      );
+      internalsRef.current = internalsRef.current.filter((a) => a.localId !== localId);
       syncState();
     },
     [syncState],
@@ -248,9 +262,7 @@ export function useAttachments() {
   }, [syncState]);
 
   const getUploadedIds = useCallback((): string[] => {
-    return internalsRef.current
-      .filter((a) => a.status === "uploaded" && a.attachmentId)
-      .map((a) => a.attachmentId!);
+    return internalsRef.current.filter((a) => a.status === "uploaded" && a.attachmentId).map((a) => a.attachmentId!);
   }, []);
 
   /** Reset state after send — does NOT delete uploaded attachments from the server. */

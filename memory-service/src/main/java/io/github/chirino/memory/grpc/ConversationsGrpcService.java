@@ -7,12 +7,10 @@ import io.github.chirino.memory.api.ConversationListMode;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
-import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.grpc.v1.Conversation;
 import io.github.chirino.memory.grpc.v1.ConversationsService;
 import io.github.chirino.memory.grpc.v1.CreateConversationRequest;
 import io.github.chirino.memory.grpc.v1.DeleteConversationRequest;
-import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
@@ -103,29 +101,6 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
                             String conversationId = byteStringToString(request.getConversationId());
                             store().deleteConversation(currentUserId(), conversationId);
                             return Empty.getDefaultInstance();
-                        })
-                .onFailure()
-                .transform(GrpcStatusMapper::map);
-    }
-
-    @Override
-    public Uni<Conversation> forkConversation(ForkConversationRequest request) {
-        return Uni.createFrom()
-                .item(
-                        () -> {
-                            String conversationId = byteStringToString(request.getConversationId());
-                            String entryId = byteStringToString(request.getEntryId());
-                            ForkFromEntryRequest internal = new ForkFromEntryRequest();
-                            if (request.getTitle() != null) {
-                                internal.setTitle(request.getTitle());
-                            }
-                            ConversationDto forked =
-                                    store().forkConversationAtEntry(
-                                                    currentUserId(),
-                                                    conversationId,
-                                                    entryId,
-                                                    internal);
-                            return GrpcDtoMapper.toProto(forked);
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);

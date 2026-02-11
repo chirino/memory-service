@@ -146,6 +146,19 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                             if (request.getEntry().hasIndexedContent()) {
                                 internal.setIndexedContent(request.getEntry().getIndexedContent());
                             }
+                            if (request.getEntry().hasForkedAtConversationId()) {
+                                internal.setForkedAtConversationId(
+                                        java.util.UUID.fromString(
+                                                byteStringToString(
+                                                        request.getEntry()
+                                                                .getForkedAtConversationId())));
+                            }
+                            if (request.getEntry().hasForkedAtEntryId()) {
+                                internal.setForkedAtEntryId(
+                                        java.util.UUID.fromString(
+                                                byteStringToString(
+                                                        request.getEntry().getForkedAtEntryId())));
+                            }
                             List<io.github.chirino.memory.api.dto.EntryDto> appended =
                                     store().appendAgentEntries(
                                                     currentUserId(),

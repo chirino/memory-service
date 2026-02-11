@@ -7,7 +7,6 @@ import io.github.chirino.memoryservice.client.api.SharingApi;
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
 import io.github.chirino.memoryservice.client.model.Channel;
 import io.github.chirino.memoryservice.client.model.CreateOwnershipTransferRequest;
-import io.github.chirino.memoryservice.client.model.ForkFromEntryRequest;
 import io.github.chirino.memoryservice.client.model.SearchConversationsRequest;
 import io.github.chirino.memoryservice.client.model.ShareConversationRequest;
 import io.github.chirino.memoryservice.client.model.UpdateConversationMembershipRequest;
@@ -100,25 +99,6 @@ public class MemoryServiceProxy {
         return execute(
                 api -> api.listConversationForksWithHttpInfo(toUuid(conversationId)),
                 HttpStatus.OK);
-    }
-
-    public ResponseEntity<?> forkConversationAtEntry(
-            String conversationId, String entryId, String body) {
-        try {
-            ForkFromEntryRequest request =
-                    StringUtils.hasText(body)
-                            ? OBJECT_MAPPER.readValue(body, ForkFromEntryRequest.class)
-                            : new ForkFromEntryRequest();
-            return execute(
-                    api ->
-                            api.forkConversationAtEntryWithHttpInfo(
-                                    toUuid(conversationId), toUuid(entryId), request),
-                    HttpStatus.OK);
-        } catch (Exception e) {
-            LOG.error("Error parsing fork request body", e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "Invalid request body"));
-        }
     }
 
     public ResponseEntity<?> shareConversation(String conversationId, String body) {

@@ -48,8 +48,23 @@ public class ConversationHistoryCallAdvisor implements CallAdvisor {
         }
         String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
         List<Map<String, Object>> attachments = extractAttachments(request);
+        String forkConvId =
+                (String)
+                        request.context()
+                                .get(
+                                        ConversationHistoryStreamAdvisor
+                                                .FORKED_AT_CONVERSATION_ID_KEY);
+        String forkEntryId =
+                (String)
+                        request.context()
+                                .get(ConversationHistoryStreamAdvisor.FORKED_AT_ENTRY_ID_KEY);
         safeAppendUserMessage(
-                conversationId, resolveUserMessage(request), attachments, bearerToken);
+                conversationId,
+                resolveUserMessage(request),
+                attachments,
+                bearerToken,
+                forkConvId,
+                forkEntryId);
         ResponseRecorder recorder = responseResumer.recorder(conversationId, bearerToken);
         ChatClientResponse response = chain.nextCall(request);
         try {
@@ -95,12 +110,20 @@ public class ConversationHistoryCallAdvisor implements CallAdvisor {
             String conversationId,
             @Nullable String message,
             List<Map<String, Object>> attachments,
-            @Nullable String bearerToken) {
+            @Nullable String bearerToken,
+            @Nullable String forkedAtConversationId,
+            @Nullable String forkedAtEntryId) {
         if (!StringUtils.hasText(message)) {
             return;
         }
         try {
-            conversationStore.appendUserMessage(conversationId, message, attachments, bearerToken);
+            conversationStore.appendUserMessage(
+                    conversationId,
+                    message,
+                    attachments,
+                    bearerToken,
+                    forkedAtConversationId,
+                    forkedAtEntryId);
         } catch (Exception e) {
             LOG.debug("Failed to append user message for conversationId={}", conversationId, e);
         }

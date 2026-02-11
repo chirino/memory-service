@@ -8,8 +8,8 @@ import {
   type ChatEvent,
   type ConversationController,
   type ConversationMessage,
+  type ForkMeta,
   type RenderableConversationMessage,
-  useConversationInput,
   useConversationMessages,
   useConversationStreaming,
 } from "@/components/conversation";
@@ -47,12 +47,6 @@ type ChatPanelProps = {
   onDeleteConversation?: (conversationId: string) => void;
   currentUserId?: string | null;
   currentUser?: AuthUser | null;
-};
-
-type PendingFork = {
-  conversationId: string;
-  message: string;
-  attachments?: AttachmentRef[];
 };
 
 type ConversationMeta = {
@@ -118,7 +112,14 @@ function ChatMessageRow({
   const isCopied = copiedMessageId === message.id;
   const forkMenuRef = useRef<HTMLDivElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
-  const { attachments: editAttachments, addFiles: editAddFiles, preloadExisting: editPreloadExisting, removeAttachment: editRemoveAttachment, clearAll: editClearAll } = useAttachments();
+  const {
+    attachments: editAttachments,
+    addFiles: editAddFiles,
+    preloadExisting: editPreloadExisting,
+    removeAttachment: editRemoveAttachment,
+    clearAll: editClearAll,
+    resetAfterSend: editResetAfterSend,
+  } = useAttachments();
 
   // When entering edit mode, pre-populate with the message's existing attachments
   const prevEditingRef = useRef(false);
@@ -170,7 +171,10 @@ function ChatMessageRow({
           {/* Edit mode with drag-and-drop */}
           <div
             className="edit-glow rounded-2xl border-2 border-sage bg-cream px-5 py-4"
-            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onDrop={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -229,6 +233,7 @@ function ChatMessageRow({
                   const refs = editAttachments
                     .filter((a) => a.status === "uploaded" && a.attachmentId)
                     .map((a) => ({ attachmentId: a.attachmentId!, contentType: a.contentType, name: a.name }));
+                  editResetAfterSend();
                   onForkSend(refs.length > 0 ? refs : undefined);
                 }}
                 disabled={composerDisabled || !editingText.trim()}
@@ -387,7 +392,6 @@ type ChatPanelContentProps = {
   conversationId: string | null;
   isResolvedConversation: boolean;
   resumableConversationIds?: Set<string>;
-  pendingForkRef: React.MutableRefObject<PendingFork | null>;
   hasResumedRef: React.MutableRefObject<Record<string, boolean>>;
   onSelectConversationId?: (conversationId: string) => void;
   queryClient: ReturnType<typeof useQueryClient>;
@@ -415,7 +419,6 @@ function ChatPanelContent({
   conversationId,
   isResolvedConversation,
   resumableConversationIds,
-  pendingForkRef,
   hasResumedRef,
   onSelectConversationId,
   queryClient,
@@ -434,8 +437,6 @@ function ChatPanelContent({
   const [menuOpen, setMenuOpen] = useState(false);
   const { messages } = useConversationMessages();
   const { resumeStream, isBusy } = useConversationStreaming();
-  const { submit } = useConversationInput();
-  const [forking, setForking] = useState(false);
   const [editingMessage, setEditingMessage] = useState<{ id: string; conversationId: string } | null>(null);
   const [editingText, setEditingText] = useState("");
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -482,10 +483,7 @@ function ChatPanelContent({
     if (stateConversationId !== conversationId) {
       return;
     }
-    if (pendingForkRef.current?.conversationId === conversationId) {
-      return;
-    }
-    if (isBusy || forking) {
+    if (isBusy) {
       return;
     }
     if (hasResumedRef.current[conversationId]) {
@@ -500,36 +498,13 @@ function ChatPanelContent({
   }, [
     conversationId,
     stateConversationId,
-    forking,
     hasResumedRef,
     isBusy,
     isResolvedConversation,
     messages,
-    pendingForkRef,
     resumableConversationIds,
     resumeStream,
   ]);
-
-  useEffect(() => {
-    const pending = pendingForkRef.current;
-    if (!conversationId || !pending || pending.conversationId !== conversationId) {
-      return;
-    }
-    // Wait for state to sync with prop before submitting to ensure correct conversation ID
-    if (stateConversationId !== conversationId) {
-      return;
-    }
-    if (isBusy || forking) {
-      return;
-    }
-    const trimmed = pending.message.trim();
-    const forkAttachments = pending.attachments;
-    pendingForkRef.current = null;
-    if (!trimmed) {
-      return;
-    }
-    submit(trimmed, forkAttachments);
-  }, [conversationId, stateConversationId, forking, isBusy, pendingForkRef, submit]);
 
   useEffect(() => {
     setEditingMessage(null);
@@ -793,45 +768,63 @@ function ChatPanelContent({
     setEditingText("");
   }, []);
 
-  const handleForkSend = useCallback(async (attachments?: AttachmentRef[]) => {
-    const trimmed = editingText.trim();
-    if (!trimmed || !editingMessage) {
-      return;
-    }
+  const forkIntentRef = useRef<{
+    conversationId: string;
+    message: string;
+    attachments?: AttachmentRef[];
+    forkMeta: ForkMeta;
+  } | null>(null);
 
-    setForking(true);
-    try {
-      const response = (await ConversationsService.forkConversationAtEntry({
-        conversationId: editingMessage.conversationId,
-        entryId: editingMessage.id,
-        requestBody: {},
-      })) as ApiConversation;
-
-      if (!response?.id) {
+  const handleForkSend = useCallback(
+    (attachments?: AttachmentRef[]) => {
+      const trimmed = editingText.trim();
+      if (!trimmed || !editingMessage) {
         return;
       }
 
-      pendingForkRef.current = {
-        conversationId: response.id,
+      const newConversationId = crypto.randomUUID();
+      const forkMeta: ForkMeta = {
+        forkedAtConversationId: editingMessage.conversationId,
+        forkedAtEntryId: editingMessage.id,
+      };
+
+      forkIntentRef.current = {
+        conversationId: newConversationId,
         message: trimmed,
         attachments,
+        forkMeta,
       };
       setEditingMessage(null);
       setEditingText("");
       setActiveForkMenuMessageId(null);
-      onSelectConversationId?.(response.id);
+      onSelectConversationId?.(newConversationId);
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });
       void queryClient.invalidateQueries({ queryKey: ["conversation-forks", editingMessage.conversationId] });
-    } catch (error) {
-      void error;
-    } finally {
-      setForking(false);
+    },
+    [editingMessage, editingText, onSelectConversationId, queryClient],
+  );
+
+  // Submit the fork message after conversation state has synced to the new ID
+  const { sendMessage } = useConversationStreaming();
+  useEffect(() => {
+    const intent = forkIntentRef.current;
+    if (!conversationId || !intent || intent.conversationId !== conversationId) {
+      return;
     }
-  }, [editingMessage, editingText, onSelectConversationId, pendingForkRef, queryClient]);
+    if (stateConversationId !== conversationId) {
+      return;
+    }
+    if (isBusy) {
+      return;
+    }
+    forkIntentRef.current = null;
+    sendMessage(intent.message, intent.attachments, intent.forkMeta);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, stateConversationId, isBusy]);
 
   // Readers can only view conversations, not send messages or edit
   const isReader = conversationQuery.data?.accessLevel === "reader";
-  const composerDisabled = isBusy || forking || canceling || isReader;
+  const composerDisabled = isBusy || canceling || isReader;
 
   // Get conversation title and start time
   const conversationTitle = conversationQuery.data?.title || "New conversation";
@@ -1111,7 +1104,6 @@ export function ChatPanel({
   const [canceling, setCanceling] = useState(false);
   const firstChunkEmittedRef = useRef<Record<string, boolean>>({});
   const hasResumedRef = useRef<Record<string, boolean>>({});
-  const pendingForkRef = useRef<PendingFork | null>(null);
 
   const sseStream = useSseStream();
   const queryClient = useQueryClient();
@@ -1295,6 +1287,8 @@ export function ChatPanel({
         onError?: (error: unknown) => void;
       },
       attachments?: StreamAttachmentRef[],
+      forkedAtConversationId?: string,
+      forkedAtEntryId?: string,
     ) => {
       const appendAssistantChunk = (chunk: string) => {
         if (!chunk.length) {
@@ -1321,6 +1315,8 @@ export function ChatPanel({
         text,
         resetResume,
         attachments,
+        forkedAtConversationId,
+        forkedAtEntryId,
         onChunk: appendAssistantChunk,
         onEvent: handleEvent,
         onReplayFailed: () => {
@@ -1365,10 +1361,18 @@ export function ChatPanel({
 
   const controller = useMemo<ConversationController>(
     () => ({
-      startStream: async (targetConversationId, text, callbacks, attachments) => {
+      startStream: async (targetConversationId, text, callbacks, attachments, forkMeta) => {
         markConversationAsStreaming(targetConversationId);
         const streamAttachments = attachments?.map((a) => ({ attachmentId: a.attachmentId }));
-        startEventStream(targetConversationId, text, true, callbacks, streamAttachments);
+        startEventStream(
+          targetConversationId,
+          text,
+          true,
+          callbacks,
+          streamAttachments,
+          forkMeta?.forkedAtConversationId,
+          forkMeta?.forkedAtEntryId,
+        );
       },
       resumeStream: async (targetConversationId, callbacks) => {
         markConversationAsStreaming(targetConversationId);
@@ -1409,7 +1413,6 @@ export function ChatPanel({
         conversationId={conversationId}
         isResolvedConversation={isResolvedConversation}
         resumableConversationIds={resumableConversationIds}
-        pendingForkRef={pendingForkRef}
         hasResumedRef={hasResumedRef}
         onSelectConversationId={onSelectConversationId}
         queryClient={queryClient}

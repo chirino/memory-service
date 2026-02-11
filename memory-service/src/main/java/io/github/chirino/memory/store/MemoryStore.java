@@ -9,7 +9,6 @@ import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
-import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
@@ -52,9 +51,6 @@ public interface MemoryStore {
             ShareConversationRequest request);
 
     void deleteMembership(String userId, String conversationId, String memberUserId);
-
-    ConversationDto forkConversationAtEntry(
-            String userId, String conversationId, String entryId, ForkFromEntryRequest request);
 
     List<ConversationForkSummaryDto> listForks(String userId, String conversationId);
 

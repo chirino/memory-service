@@ -4,10 +4,7 @@ import { getAccessToken } from "@/lib/auth";
 
 function isStreamEvent(obj: unknown): obj is StreamEvent {
   return (
-    typeof obj === "object" &&
-    obj !== null &&
-    "eventType" in obj &&
-    typeof (obj as StreamEvent).eventType === "string"
+    typeof obj === "object" && obj !== null && "eventType" in obj && typeof (obj as StreamEvent).eventType === "string"
   );
 }
 
@@ -95,6 +92,12 @@ export function useSseStream(): StreamClient {
             const body: Record<string, unknown> = { message: trimmedMessage };
             if (params.attachments && params.attachments.length > 0) {
               body.attachments = params.attachments;
+            }
+            if (params.forkedAtConversationId) {
+              body.forkedAtConversationId = params.forkedAtConversationId;
+            }
+            if (params.forkedAtEntryId) {
+              body.forkedAtEntryId = params.forkedAtEntryId;
             }
             fetchOptions = {
               method: "POST",

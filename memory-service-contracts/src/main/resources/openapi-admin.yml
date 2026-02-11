@@ -673,6 +673,11 @@ paths:
       responses:
         '200':
           description: Binary file content.
+          headers:
+            Cache-Control:
+              description: "Set to `private, no-store` for direct streams (DB storage)."
+              schema:
+                type: string
           content:
             application/octet-stream:
               schema:
@@ -680,6 +685,11 @@ paths:
                 format: binary
         '302':
           description: Redirect to signed download URL (S3-backed storage).
+          headers:
+            Cache-Control:
+              description: "Set to `private, max-age=<seconds>` matching the signed URL expiry."
+              schema:
+                type: string
         '404':
           $ref: '#/components/responses/NotFound'
         default:

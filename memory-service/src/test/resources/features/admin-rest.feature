@@ -185,13 +185,11 @@ Feature: Admin REST API
     }
     """
     And set "firstEntryId" to "${response.body.id}"
-    And I call POST "/v1/conversations/${bobConversationId}/entries/${firstEntryId}/fork" with body:
+    And I fork conversation "${bobConversationId}" at entry "${firstEntryId}" with request:
     """
-    {
-      "title": "Bob's Fork"
-    }
+    {}
     """
-    And set "forkConversationId" to "${response.body.id}"
+    And set "forkConversationId" to "${forkedConversationId}"
     # Add an entry to the fork to make it the most recently updated
     And I call POST "/v1/conversations/${forkConversationId}/entries" with body:
     """
@@ -218,13 +216,11 @@ Feature: Admin REST API
     }
     """
     And set "firstEntryId" to "${response.body.id}"
-    And I call POST "/v1/conversations/${bobConversationId}/entries/${firstEntryId}/fork" with body:
+    And I fork conversation "${bobConversationId}" at entry "${firstEntryId}" with request:
     """
-    {
-      "title": "Bob's Fork"
-    }
+    {}
     """
-    And set "forkConversationId" to "${response.body.id}"
+    And set "forkConversationId" to "${forkedConversationId}"
     # Now switch back to admin to test the admin API
     Given I am authenticated as admin user "alice"
     When I call GET "/v1/admin/conversations?mode=roots&userId=bob"
@@ -251,20 +247,16 @@ Feature: Admin REST API
     }
     """
     And set "secondEntryId" to "${response.body.id}"
-    And I call POST "/v1/conversations/${bobConversationId}/entries/${secondEntryId}/fork" with body:
+    And I fork conversation "${bobConversationId}" at entry "${secondEntryId}" with request:
     """
-    {
-      "title": "Bob's Fork 1"
-    }
+    {}
     """
-    And set "fork1Id" to "${response.body.id}"
-    And I call POST "/v1/conversations/${bobConversationId}/entries/${secondEntryId}/fork" with body:
+    And set "fork1Id" to "${forkedConversationId}"
+    And I fork conversation "${bobConversationId}" at entry "${secondEntryId}" with request:
     """
-    {
-      "title": "Bob's Fork 2"
-    }
+    {}
     """
-    And set "fork2Id" to "${response.body.id}"
+    And set "fork2Id" to "${forkedConversationId}"
     # Now switch back to admin to test the admin API
     Given I am authenticated as admin user "alice"
     When I call GET "/v1/admin/conversations/${bobConversationId}/forks"
@@ -286,11 +278,9 @@ Feature: Admin REST API
     }
     """
     And set "entryId" to "${response.body.id}"
-    And I call POST "/v1/conversations/${bobConversationId}/entries/${entryId}/fork" with body:
+    And I fork conversation "${bobConversationId}" at entry "${entryId}" with request:
     """
-    {
-      "title": "Fork for auditor test"
-    }
+    {}
     """
     # Now switch to auditor to test access
     Given I am authenticated as auditor user "charlie"

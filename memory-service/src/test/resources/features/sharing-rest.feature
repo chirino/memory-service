@@ -213,7 +213,7 @@ Feature: Conversation Sharing REST API
     """
     And set "entryId" to "${response.body.id}"
     When I fork the conversation at entry "${entryId}"
-    And set "forkConversationId" to "${response.body.id}"
+    And set "forkConversationId" to "${forkedConversationId}"
     And I share conversation "${forkConversationId}" with user "bob" with request:
     """
     {
@@ -244,7 +244,7 @@ Feature: Conversation Sharing REST API
     """
     And set "entryId" to "${response.body.id}"
     When I fork the conversation at entry "${entryId}"
-    And set "forkConversationId" to "${response.body.id}"
+    And set "forkConversationId" to "${forkedConversationId}"
     When I list memberships for conversation "${forkConversationId}"
     Then the response status should be 200
     And the response should contain at least 2 memberships

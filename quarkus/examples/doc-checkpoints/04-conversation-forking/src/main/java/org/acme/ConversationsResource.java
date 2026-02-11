@@ -5,9 +5,7 @@ import io.github.chirino.memory.runtime.MemoryServiceProxy;
 import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -48,17 +46,6 @@ public class ConversationsResource {
             @QueryParam("limit") Integer limit,
             @QueryParam("query") String query) {
         return proxy.listConversations(mode, after, limit, query);
-    }
-
-    @POST
-    @Path("/{conversationId}/entries/{entryId}/fork")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response forkConversationAtEntry(
-            @PathParam("conversationId") String conversationId,
-            @PathParam("entryId") String entryId,
-            String body) {
-        return proxy.forkConversationAtEntry(conversationId, entryId, body);
     }
 
     @GET

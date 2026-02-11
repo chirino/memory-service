@@ -203,9 +203,12 @@ public class AttachmentsResource {
         }
 
         // Check for signed URL redirect
-        Optional<URI> signedUrl = fileStore().getSignedUrl(att.storageKey(), Duration.ofHours(1));
+        Duration signedUrlExpiry = Duration.ofHours(1);
+        Optional<URI> signedUrl = fileStore().getSignedUrl(att.storageKey(), signedUrlExpiry);
         if (signedUrl.isPresent()) {
-            return Response.temporaryRedirect(signedUrl.get()).build();
+            return Response.temporaryRedirect(signedUrl.get())
+                    .header("Cache-Control", "private, max-age=" + signedUrlExpiry.toSeconds())
+                    .build();
         }
 
         // Stream bytes directly
@@ -220,6 +223,7 @@ public class AttachmentsResource {
                 builder.header(
                         "Content-Disposition", "inline; filename=\"" + att.filename() + "\"");
             }
+            builder.header("Cache-Control", "private, no-store");
             return builder.build();
         } catch (FileStoreException e) {
             return fileStoreErrorResponse(e);

@@ -73,6 +73,15 @@ public class ConversationStore {
 
     public void appendUserMessage(
             String conversationId, String content, List<Map<String, Object>> attachments) {
+        appendUserMessage(conversationId, content, attachments, null, null);
+    }
+
+    public void appendUserMessage(
+            String conversationId,
+            String content,
+            List<Map<String, Object>> attachments,
+            String forkedAtConversationId,
+            String forkedAtEntryId) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
         request.setContentType("history");
@@ -88,6 +97,12 @@ public class ConversationStore {
         }
         request.setContent(List.of(block));
         applyIndexedContent(request, content, "USER");
+        if (forkedAtConversationId != null) {
+            request.setForkedAtConversationId(UUID.fromString(forkedAtConversationId));
+        }
+        if (forkedAtEntryId != null) {
+            request.setForkedAtEntryId(UUID.fromString(forkedAtEntryId));
+        }
         conversationsApi(bearerToken(securityIdentity))
                 .appendConversationEntry(UUID.fromString(conversationId), request);
     }

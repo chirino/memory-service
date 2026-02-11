@@ -10,7 +10,6 @@ import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
-import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
@@ -293,24 +292,38 @@ public class PostgresMemoryStore implements MemoryStore {
         if (conversation == null) {
             conversation = new ConversationEntity();
             conversation.setId(cid);
-            conversation.setOwnerUserId(userId);
-            String inferredTitle = inferTitleFromUserEntry(request);
-            conversation.setTitle(encryptTitle(inferredTitle));
             conversation.setMetadata(Collections.emptyMap());
-            ConversationGroupEntity conversationGroup =
-                    conversationGroupRepository
-                            .findActiveById(cid)
-                            .orElseGet(
-                                    () -> {
-                                        ConversationGroupEntity group =
-                                                new ConversationGroupEntity();
-                                        group.setId(cid);
-                                        conversationGroupRepository.persist(group);
-                                        return group;
-                                    });
-            conversation.setConversationGroup(conversationGroup);
-            conversationRepository.persist(conversation);
-            membershipRepository.createMembership(conversationGroup, userId, AccessLevel.OWNER);
+
+            if (request.getForkedAtConversationId() != null
+                    && request.getForkedAtEntryId() != null) {
+                // Fork auto-creation: join parent's group instead of creating a new one
+                setupForkConversation(
+                        conversation,
+                        userId,
+                        request.getForkedAtConversationId(),
+                        request.getForkedAtEntryId(),
+                        inferTitleFromUserEntry(request));
+                conversationRepository.persist(conversation);
+                // No membership creation for forks — user already has membership via parent group
+            } else {
+                // Root conversation auto-creation
+                conversation.setOwnerUserId(userId);
+                conversation.setTitle(encryptTitle(inferTitleFromUserEntry(request)));
+                ConversationGroupEntity conversationGroup =
+                        conversationGroupRepository
+                                .findActiveById(cid)
+                                .orElseGet(
+                                        () -> {
+                                            ConversationGroupEntity group =
+                                                    new ConversationGroupEntity();
+                                            group.setId(cid);
+                                            conversationGroupRepository.persist(group);
+                                            return group;
+                                        });
+                conversation.setConversationGroup(conversationGroup);
+                conversationRepository.persist(conversation);
+                membershipRepository.createMembership(conversationGroup, userId, AccessLevel.OWNER);
+            }
         } else {
             UUID groupId = conversation.getConversationGroup().getId();
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);
@@ -436,38 +449,44 @@ public class PostgresMemoryStore implements MemoryStore {
         ownershipTransferRepository.deleteByConversationGroupAndToUser(groupId, memberUserId);
     }
 
-    @Override
-    @Transactional
-    public ConversationDto forkConversationAtEntry(
-            String userId, String conversationId, String entryId, ForkFromEntryRequest request) {
-        // Create a new fork conversation without copying entries.
-        UUID originalId = UUID.fromString(conversationId);
+    /**
+     * Sets up a conversation entity as a fork of an existing conversation.
+     * The fork joins the parent's ConversationGroup and sets fork pointers.
+     * The forkedAtEntryId on the entity is resolved to the entry BEFORE the target,
+     * so "fork at entry X" means "include entries before X, exclude X and after".
+     */
+    private void setupForkConversation(
+            ConversationEntity forkEntity,
+            String userId,
+            String parentConversationId,
+            String forkAtEntryId,
+            String inferredTitle) {
+        UUID originalId = UUID.fromString(parentConversationId);
         ConversationEntity originalEntity =
                 conversationRepository
                         .findActiveById(originalId)
                         .orElseThrow(
                                 () ->
                                         new ResourceNotFoundException(
-                                                "conversation", conversationId));
+                                                "conversation", parentConversationId));
         UUID groupId = originalEntity.getConversationGroup().getId();
         ensureHasAccess(groupId, userId, AccessLevel.WRITER);
 
         EntryEntity target =
                 entryRepository
-                        .findByIdOptional(UUID.fromString(entryId))
-                        .orElseThrow(() -> new ResourceNotFoundException("entry", entryId));
+                        .findByIdOptional(UUID.fromString(forkAtEntryId))
+                        .orElseThrow(() -> new ResourceNotFoundException("entry", forkAtEntryId));
         if (target.getConversation() == null
                 || !originalId.equals(target.getConversation().getId())) {
-            throw new ResourceNotFoundException("entry", entryId);
+            throw new ResourceNotFoundException("entry", forkAtEntryId);
         }
         if (target.getChannel() != Channel.HISTORY) {
             throw new AccessDeniedException("Forking is only allowed for history entries");
         }
 
         // Find the previous entry of ANY channel before the target entry.
-        // forkedAtEntryId is set to this previous entry - all parent entries up to and including
-        // forkedAtEntryId are visible to the fork. This makes "fork at entry X" mean "branch before
-        // X".
+        // forkedAtEntryId is set to this previous entry — all parent entries up to and including
+        // forkedAtEntryId are visible to the fork.
         EntryEntity previous =
                 entryRepository
                         .find(
@@ -480,26 +499,15 @@ public class PostgresMemoryStore implements MemoryStore {
                         .firstResult();
         UUID previousId = previous != null ? previous.getId() : null;
 
-        ConversationEntity forkEntity = new ConversationEntity();
         forkEntity.setOwnerUserId(originalEntity.getOwnerUserId());
         forkEntity.setTitle(
                 encryptTitle(
-                        request.getTitle() != null
-                                ? request.getTitle()
+                        inferredTitle != null
+                                ? inferredTitle
                                 : decryptTitle(originalEntity.getTitle())));
-        forkEntity.setMetadata(Collections.emptyMap());
         forkEntity.setConversationGroup(originalEntity.getConversationGroup());
         forkEntity.setForkedAtConversationId(originalEntity.getId());
         forkEntity.setForkedAtEntryId(previousId);
-        conversationRepository.persist(forkEntity);
-
-        return toConversationDto(
-                forkEntity,
-                membershipRepository
-                        .findMembership(groupId, userId)
-                        .map(ConversationMembershipEntity::getAccessLevel)
-                        .orElse(AccessLevel.READER),
-                null);
     }
 
     @Override
@@ -1361,26 +1369,50 @@ public class PostgresMemoryStore implements MemoryStore {
 
         // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
         if (conversation == null) {
+            // Check first entry for fork metadata
+            CreateEntryRequest firstEntry = entries.isEmpty() ? null : entries.get(0);
+            String forkConvId =
+                    firstEntry != null && firstEntry.getForkedAtConversationId() != null
+                            ? firstEntry.getForkedAtConversationId().toString()
+                            : null;
+            String forkEntryId =
+                    firstEntry != null && firstEntry.getForkedAtEntryId() != null
+                            ? firstEntry.getForkedAtEntryId().toString()
+                            : null;
+
             conversation = new ConversationEntity();
             conversation.setId(cid);
-            conversation.setOwnerUserId(userId);
-            String inferredTitle = inferTitleFromEntries(entries);
-            conversation.setTitle(encryptTitle(inferredTitle));
             conversation.setMetadata(Collections.emptyMap());
-            ConversationGroupEntity conversationGroup =
-                    conversationGroupRepository
-                            .findActiveById(cid)
-                            .orElseGet(
-                                    () -> {
-                                        ConversationGroupEntity group =
-                                                new ConversationGroupEntity();
-                                        group.setId(cid);
-                                        conversationGroupRepository.persist(group);
-                                        return group;
-                                    });
-            conversation.setConversationGroup(conversationGroup);
-            conversationRepository.persist(conversation);
-            membershipRepository.createMembership(conversationGroup, userId, AccessLevel.OWNER);
+
+            if (forkConvId != null && forkEntryId != null) {
+                // Fork auto-creation: join parent's group instead of creating a new one
+                setupForkConversation(
+                        conversation,
+                        userId,
+                        forkConvId,
+                        forkEntryId,
+                        inferTitleFromEntries(entries));
+                conversationRepository.persist(conversation);
+                // No membership creation for forks — user already has membership via parent group
+            } else {
+                // Root conversation auto-creation
+                conversation.setOwnerUserId(userId);
+                conversation.setTitle(encryptTitle(inferTitleFromEntries(entries)));
+                ConversationGroupEntity conversationGroup =
+                        conversationGroupRepository
+                                .findActiveById(cid)
+                                .orElseGet(
+                                        () -> {
+                                            ConversationGroupEntity group =
+                                                    new ConversationGroupEntity();
+                                            group.setId(cid);
+                                            conversationGroupRepository.persist(group);
+                                            return group;
+                                        });
+                conversation.setConversationGroup(conversationGroup);
+                conversationRepository.persist(conversation);
+                membershipRepository.createMembership(conversationGroup, userId, AccessLevel.OWNER);
+            }
         } else {
             UUID groupId = conversation.getConversationGroup().getId();
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);

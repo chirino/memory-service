@@ -232,6 +232,122 @@ export const $Channel = {
   enum: ["history", "memory"],
 } as const;
 
+export const $Attachment = {
+  type: "object",
+  description: `A reference to an attachment on a history entry. Supports two modes:
+
+**External URL (Phase 1)**: Provide \`href\` and \`contentType\` to reference
+an externally-hosted resource.
+
+**Server-stored (Phase 2)**: Provide \`attachmentId\` to reference a file
+previously uploaded via \`POST /v1/attachments\`. When the entry is created,
+the server replaces \`attachmentId\` with an \`href\` pointing to
+\`/v1/attachments/{id}\`.
+
+At least one of \`href\` or \`attachmentId\` must be present.`,
+  properties: {
+    href: {
+      type: "string",
+      format: "uri",
+      description: "URL to the attachment resource (external or server-relative).",
+    },
+    attachmentId: {
+      type: "string",
+      description: `ID of a previously uploaded attachment (from POST /v1/attachments).
+When the entry is created, this is replaced with an href.`,
+    },
+    contentType: {
+      type: "string",
+      description:
+        'MIME type of the attachment (e.g., "image/jpeg", "audio/mp3"). Required when href is provided directly.',
+    },
+    name: {
+      type: "string",
+      description: "Optional display name for the attachment.",
+    },
+    description: {
+      type: "string",
+      description: "Optional alt text or description.",
+    },
+    size: {
+      type: "integer",
+      format: "int64",
+      description: "File size in bytes (set by server for uploaded attachments).",
+    },
+    sha256: {
+      type: "string",
+      description: "SHA-256 hash of the file content (set by server for uploaded attachments).",
+    },
+  },
+} as const;
+
+export const $AttachmentUploadResponse = {
+  type: "object",
+  description: "Response from uploading an attachment.",
+  properties: {
+    id: {
+      type: "string",
+      format: "uuid",
+      description: "Unique identifier for the uploaded attachment.",
+    },
+    href: {
+      type: "string",
+      description: "Server-relative URL to retrieve the attachment.",
+    },
+    contentType: {
+      type: "string",
+      description: "MIME type of the uploaded file.",
+    },
+    filename: {
+      type: "string",
+      nullable: true,
+      description: "Original filename of the uploaded file.",
+    },
+    size: {
+      type: "integer",
+      format: "int64",
+      description: "File size in bytes.",
+    },
+    sha256: {
+      type: "string",
+      description: "SHA-256 hash of the file content.",
+    },
+    expiresAt: {
+      type: "string",
+      format: "date-time",
+      description: "When this unlinked attachment will expire and be deleted.",
+    },
+  },
+  example: {
+    id: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    href: "/v1/attachments/7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    contentType: "image/jpeg",
+    filename: "photo.jpg",
+    size: 204800,
+    sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    expiresAt: "2025-01-28T11:30:00Z",
+  },
+} as const;
+
+export const $AttachmentDownloadUrlResponse = {
+  type: "object",
+  description: "Response containing a signed download URL for an attachment.",
+  properties: {
+    url: {
+      type: "string",
+      description: "The signed download URL. May be an absolute S3 URL or a server-relative path.",
+    },
+    expiresIn: {
+      type: "integer",
+      description: "Number of seconds until the URL expires.",
+    },
+  },
+  example: {
+    url: "/v1/attachments/download/dG9rZW4.../photo.jpg",
+    expiresIn: 300,
+  },
+} as const;
+
 export const $Entry = {
   type: "object",
   required: ["id", "conversationId", "channel", "contentType", "content", "createdAt"],
@@ -268,11 +384,22 @@ the agent increments the epoch when starting a new memory version.`,
       type: "string",
       description: `Describes the schema/format of the content array.
 
-**History channel entries must use \`"history"\` as the contentType.**
-The content array for history entries contains objects with:
-- \`text\` (string): The message text.
-- \`role\` (string): Either \`"USER"\` or \`"AI"\`.
+**History channel entries must use \`"history"\` or \`"history/<subtype>"\` as the contentType.**
 
+Supported content types:
+- \`history\` - Simple text-only history entries
+- \`history/lc4j\` - LangChain4j rich event format (Quarkus)
+
+The content array for history entries contains objects with:
+- \`role\` (string, required): Either \`"USER"\` or \`"AI"\`.
+- \`text\` (string, optional): The message text. At least one of \`text\`, \`events\`, or \`attachments\` must be present.
+- \`events\` (array, optional): Rich event objects for streaming details.
+  Event structure is not validated by the server. For \`history/lc4j\`, events use an \`eventType\` field:
+  - \`PartialResponse\`: Text chunk (\`{eventType, chunk}\`)
+  - \`PartialThinking\`: Reasoning chunk (\`{eventType, chunk}\`)
+  - \`BeforeToolExecution\`: Before tool call (\`{eventType, toolName, input}\`)
+  - \`ToolExecuted\`: Tool result (\`{eventType, toolName, output}\`)
+- \`attachments\` (array, optional): Array of \`Attachment\` objects referencing external resources (images, audio, video, documents).
 
 Other contentTypes (e.g., \`"LC4J"\`, \`"SpringAI"\`) may be used for
 agent memory entries.`,
@@ -284,7 +411,7 @@ Different agents may use different schemas; the memory-service
 stores and returns them without interpretation.
 
 For history channel entries (contentType: \`"history"\`), each block
-contains \`text\` and \`role\` fields.`,
+contains \`role\` and at least one of \`text\`, \`events\`, or \`attachments\`.`,
       items: {},
     },
     createdAt: {
@@ -301,8 +428,15 @@ contains \`text\` and \`role\` fields.`,
     contentType: "history",
     content: [
       {
-        text: "Here is a summary of what we discussed so far…",
-        role: "AI",
+        text: "What breed is this dog?",
+        role: "USER",
+        attachments: [
+          {
+            href: "https://example.com/photos/my-dog.jpg",
+            contentType: "image/jpeg",
+            name: "my-dog.jpg",
+          },
+        ],
       },
     ],
     createdAt: "2025-01-10T14:40:12Z",
@@ -327,18 +461,30 @@ For agent entries, this is the user the agent is responding to.`,
       type: "string",
       description: `Describes the schema/format of the content array.
 
-**History channel entries must use \`"history"\` as the contentType.**
+**History channel entries must use \`"history"\` or \`"history/<subtype>"\` as the contentType.**
+
+Supported content types:
+- \`history\` - Simple text-only history entries
+- \`history/lc4j\` - LangChain4j rich event format (Quarkus)
+
 The content array for history entries must contain exactly 1 object with:
-- \`text\` (string): The message text.
-- \`role\` (string): Either \`"USER"\` or \`"AI"\`.
+- \`role\` (string, required): Either \`"USER"\` or \`"AI"\`.
+- \`text\` (string, optional): The message text. At least one of \`text\`, \`events\`, or \`attachments\` must be present.
+- \`events\` (array, optional): Rich event objects for streaming details.
+  Event structure is not validated by the server. For \`history/lc4j\`, events use an \`eventType\` field:
+  - \`PartialResponse\`: Text chunk (\`{eventType, chunk}\`)
+  - \`PartialThinking\`: Reasoning chunk (\`{eventType, chunk}\`)
+  - \`BeforeToolExecution\`: Before tool call (\`{eventType, toolName, input}\`)
+  - \`ToolExecuted\`: Tool result (\`{eventType, toolName, output}\`)
+- \`attachments\` (array, optional): Array of \`Attachment\` objects referencing external resources (images, audio, video, documents).
 
 Other contentTypes (e.g., \`"LC4J"\`, \`"SpringAI"\`) may be used for
 agent memory entries.`,
     },
     content: {
       type: "array",
-      description: `For history channel entries (contentType: \`"history"\`), each block
-contains \`text\` and \`role\` fields.`,
+      description: `For history channel entries (contentType: \`"history"\` or \`"history/<subtype>"\`), each block
+contains \`role\` and at least one of \`text\`, \`events\`, or \`attachments\`.`,
       items: {},
     },
     indexedContent: {
@@ -352,11 +498,35 @@ after creation. Returns 400 Bad Request if specified for non-history channels.`,
   example: {
     userId: "user_1234",
     channel: "history",
-    contentType: "history",
+    contentType: "history/lc4j",
     content: [
       {
-        text: "Based on your past chats, here are three possible approaches…",
+        text: "Let me check the weather for you. The weather in Seattle is 72°F.",
         role: "AI",
+        events: [
+          {
+            eventType: "PartialResponse",
+            chunk: "Let me check the weather for you.",
+          },
+          {
+            eventType: "BeforeToolExecution",
+            toolName: "get_weather",
+            input: {
+              city: "Seattle",
+            },
+          },
+          {
+            eventType: "ToolExecuted",
+            toolName: "get_weather",
+            output: {
+              temp: 72,
+            },
+          },
+          {
+            eventType: "PartialResponse",
+            chunk: "The weather in Seattle is 72°F.",
+          },
+        ],
       },
     ],
   },

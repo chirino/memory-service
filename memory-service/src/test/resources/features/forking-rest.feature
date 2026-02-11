@@ -16,24 +16,13 @@ Feature: Conversation Forking REST API
     And set "firstEntryId" to the json response field "data[0].id"
     When I fork the conversation at entry "${secondEntryId}" with request:
     """
-    {
-      "title": "Forked Conversation"
-    }
+    {}
     """
-    Then the response status should be 201
-    And the response body should be json:
-    """
-    {
-      "id": "${response.body.id}",
-      "title": "Forked Conversation",
-      "ownerUserId": "alice",
-      "createdAt": "${response.body.createdAt}",
-      "updatedAt": "${response.body.updatedAt}",
-      "accessLevel": "owner",
-      "forkedAtEntryId": "${firstEntryId}",
-      "forkedAtConversationId": "${conversationId}"
-    }
-    """
+    Then the response status should be 200
+    And the response body "forkedAtEntryId" should be "${firstEntryId}"
+    And the response body "forkedAtConversationId" should be "${conversationId}"
+    And the response body "ownerUserId" should be "alice"
+    And the response body "accessLevel" should be "owner"
 
   Scenario: Fork a conversation without title
     When I list entries for the conversation
@@ -42,10 +31,6 @@ Feature: Conversation Forking REST API
     """
     {}
     """
-    Then the response status should be 201
-    And the response body should contain "id"
-    And set "forkedConversationId" to the json response field "id"
-    When I get conversation "${forkedConversationId}"
     Then the response status should be 200
     And the response body should contain "forkedAtConversationId"
 
@@ -55,18 +40,14 @@ Feature: Conversation Forking REST API
     And set "firstEntryId" to the json response field "data[0].id"
     When I fork the conversation at entry "${secondEntryId}" with request:
     """
-    {
-      "title": "Fork 1"
-    }
+    {}
     """
-    And set "fork1Id" to the json response field "id"
+    And set "fork1Id" to "${forkedConversationId}"
     When I fork the conversation at entry "${secondEntryId}" with request:
     """
-    {
-      "title": "Fork 2"
-    }
+    {}
     """
-    And set "fork2Id" to the json response field "id"
+    And set "fork2Id" to "${forkedConversationId}"
     When I list forks for the conversation
     Then the response status should be 200
     And the response should contain at least 3 conversations
@@ -83,9 +64,7 @@ Feature: Conversation Forking REST API
   Scenario: Fork non-existent conversation
     When I fork conversation "00000000-0000-0000-0000-000000000000" at entry "00000000-0000-0000-0000-000000000001" with request:
     """
-    {
-      "title": "Fork"
-    }
+    {}
     """
     Then the response status should be 404
     And the response should contain error code "not_found"
@@ -93,9 +72,7 @@ Feature: Conversation Forking REST API
   Scenario: Fork at non-existent entry
     When I fork the conversation at entry "00000000-0000-0000-0000-000000000000" with request:
     """
-    {
-      "title": "Fork"
-    }
+    {}
     """
     Then the response status should be 404
     And the response should contain error code "not_found"
@@ -104,9 +81,7 @@ Feature: Conversation Forking REST API
     Given there is a conversation owned by "bob"
     When I fork that conversation at entry "00000000-0000-0000-0000-000000000000" with request:
     """
-    {
-      "title": "Fork"
-    }
+    {}
     """
     Then the response status should be 403
     And the response should contain error code "forbidden"
@@ -128,13 +103,10 @@ Feature: Conversation Forking REST API
     And set "firstEntryId" to the json response field "data[0].id"
     When I fork the conversation at entry "${firstEntryId}" with request:
     """
-    {
-      "title": "Forked Conversation"
-    }
+    {}
     """
-    And set "forkConversationId" to "${response.body.id}"
     And I authenticate as user "bob"
-    When I get conversation "${forkConversationId}"
+    When I get conversation "${forkedConversationId}"
     Then the response status should be 200
 
   # Regression test: Root conversation continues after fork - querying root returns only root entries
@@ -160,12 +132,10 @@ Feature: Conversation Forking REST API
     # Fork the conversation at entry D
     When I fork the conversation at entry "${entryD_Id}" with request:
     """
-    {
-      "title": "Forked Conversation"
-    }
+    {}
     """
-    Then the response status should be 201
-    And set "forkConversationId" to the json response field "id"
+    Then the response status should be 200
+    And set "forkConversationId" to "${forkedConversationId}"
 
     # Switch to agent to add entries (users can't add MEMORY entries)
     When I am authenticated as agent with API key "test-agent-key"
@@ -229,23 +199,24 @@ Feature: Conversation Forking REST API
     And entry at index 7 should have content "L"
 
     # Query the FORK conversation (default, no forks=all)
-    # Expected: Parent entries BEFORE fork point (A, B, C) + fork entries (E, F, G, H)
+    # Expected: Parent entries BEFORE fork point (A, B, C) + fork step entry + added entries (E, F, G, H)
     # Note: D is NOT included because fork at D means "branch before D"
     When I call GET "/v1/conversations/${forkConversationId}/entries"
     Then the response status should be 200
-    And the response should contain 7 entries
+    And the response should contain 8 entries
     And entry at index 0 should have content "A"
     And entry at index 1 should have content "B"
     And entry at index 2 should have content "C"
-    And entry at index 3 should have content "E"
-    And entry at index 4 should have content "F"
-    And entry at index 5 should have content "G"
-    And entry at index 6 should have content "H"
+    And entry at index 3 should have content "Fork message"
+    And entry at index 4 should have content "E"
+    And entry at index 5 should have content "F"
+    And entry at index 6 should have content "G"
+    And entry at index 7 should have content "H"
 
     # Query root with forks=all - should return ALL entries from both conversations
     When I call GET "/v1/conversations/${rootConversationId}/entries?forks=all"
     Then the response status should be 200
-    And the response should contain 12 entries
+    And the response should contain 13 entries
 
   # Regression test: Channel filtering must happen AFTER fork ancestry traversal, not at the DB level.
   # If the fork point entry (forkedAtEntryId) is in a different channel than the query filter,
@@ -274,10 +245,10 @@ Feature: Conversation Forking REST API
     When I am authenticated as user "alice"
     And I fork the conversation at entry "${entryH2_Id}" with request:
     """
-    {"title": "Channel Fork"}
+    {}
     """
-    Then the response status should be 201
-    And set "forkConversationId" to the json response field "id"
+    Then the response status should be 200
+    And set "forkConversationId" to "${forkedConversationId}"
 
     # Add a HISTORY entry to the fork
     When I am authenticated as agent with API key "test-agent-key"
@@ -288,21 +259,24 @@ Feature: Conversation Forking REST API
     Then the response status should be 201
 
     # Sanity check: all-channel query returns correct fork entries
+    # Includes: H1 (inherited), M1 (inherited), Fork message (from fork step), H3 (added)
     When I call GET "/v1/conversations/${forkConversationId}/entries"
     Then the response status should be 200
-    And the response should contain 3 entries
+    And the response should contain 4 entries
     And entry at index 0 should have content "H1"
     And entry at index 1 should have content "M1"
-    And entry at index 2 should have content "H3"
+    And entry at index 2 should have content "Fork message"
+    And entry at index 3 should have content "H3"
 
     # KEY TEST: Query fork with channel=HISTORY filter
     # Fork point M1 is MEMORY. If channel filter is applied at DB level, M1 is excluded,
     # ancestry traversal breaks, and we get wrong results (H1, H2 from root instead of H1, H3).
     When I call GET "/v1/conversations/${forkConversationId}/entries?channel=HISTORY"
     Then the response status should be 200
-    And the response should contain 2 entries
+    And the response should contain 3 entries
     And entry at index 0 should have content "H1"
-    And entry at index 1 should have content "H3"
+    And entry at index 1 should have content "Fork message"
+    And entry at index 2 should have content "H3"
 
   # Regression test: Memory sync on a forked conversation should append deltas like the parent,
   # not bundle all inherited+new messages into a single entry.
@@ -372,12 +346,13 @@ Feature: Conversation Forking REST API
 
     # === Fork before "Next question" — fork sees: H_USER1, M_USER1, M_AI1, H_AI1 ===
     When I am authenticated as user "alice"
-    When I call POST "/v1/conversations/${rootConversationId}/entries/${forkPointEntryId}/fork" with body:
+    And set "conversationId" to "${rootConversationId}"
+    And I fork the conversation at entry "${forkPointEntryId}" with request:
     """
-    {"title": "Forked Conversation"}
+    {}
     """
-    Then the response status should be 201
-    And set "forkConversationId" to the json response field "id"
+    Then the response status should be 200
+    And set "forkConversationId" to "${forkedConversationId}"
 
     # === Simulate agent sync on forked conversation ===
     When I am authenticated as agent with API key "test-agent-key"
