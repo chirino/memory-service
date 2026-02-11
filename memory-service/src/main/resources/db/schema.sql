@@ -198,10 +198,15 @@ CREATE TABLE IF NOT EXISTS attachments (
     user_id         TEXT NOT NULL,
     entry_id        UUID REFERENCES entries(id) ON DELETE CASCADE,
     expires_at      TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_expires_at
     ON attachments(expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_entry_id
     ON attachments(entry_id) WHERE entry_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_storage_key
+    ON attachments(storage_key) WHERE storage_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_deleted_at
+    ON attachments(deleted_at) WHERE deleted_at IS NOT NULL;

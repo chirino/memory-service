@@ -32,13 +32,15 @@ function guessContentType(file: File): string {
 
 export type PendingAttachment = {
   localId: string;
-  file: File;
+  file?: File;
   name: string;
   contentType: string;
   progress: number;
   status: "uploading" | "uploaded" | "error";
   attachmentId?: string;
   error?: string;
+  /** True for attachments pre-loaded from an existing entry (not freshly uploaded). */
+  isExistingReference?: boolean;
 };
 
 type InternalAttachment = PendingAttachment & {
@@ -169,6 +171,32 @@ export function useAttachments() {
     [syncState],
   );
 
+  /**
+   * Pre-populate the attachment list with existing attachments from a message.
+   * Used when editing/forking a message that already has attachments.
+   * These are marked as "uploaded" with their existing attachment ID so they
+   * can be sent as references without re-uploading.
+   */
+  const preloadExisting = useCallback(
+    (existing: Array<{ attachmentId: string; contentType: string; name?: string }>) => {
+      for (const att of existing) {
+        const localId = `att-${++nextLocalId}-${Date.now()}`;
+        const entry: InternalAttachment = {
+          localId,
+          name: att.name ?? "attachment",
+          contentType: att.contentType,
+          progress: 100,
+          status: "uploaded",
+          attachmentId: att.attachmentId,
+          isExistingReference: true,
+        };
+        internalsRef.current = [...internalsRef.current, entry];
+      }
+      syncState();
+    },
+    [syncState],
+  );
+
   const removeAttachment = useCallback(
     (localId: string) => {
       const entry = internalsRef.current.find((a) => a.localId === localId);
@@ -180,7 +208,8 @@ export function useAttachments() {
         return;
       }
 
-      if (entry.status === "uploaded" && entry.attachmentId) {
+      // Only delete from server if it was freshly uploaded (not an existing reference)
+      if (entry.status === "uploaded" && entry.attachmentId && !entry.isExistingReference) {
         // Fire-and-forget DELETE to clean up server-side
         const token = getAccessToken();
         fetch(`/v1/attachments/${entry.attachmentId}`, {
@@ -205,8 +234,8 @@ export function useAttachments() {
       if (entry.status === "uploading" && entry.xhr) {
         entry.xhr.abort();
       }
-      // Clean up uploaded but unsent attachments
-      if (entry.status === "uploaded" && entry.attachmentId) {
+      // Clean up uploaded but unsent attachments (not existing references)
+      if (entry.status === "uploaded" && entry.attachmentId && !entry.isExistingReference) {
         const token = getAccessToken();
         fetch(`/v1/attachments/${entry.attachmentId}`, {
           method: "DELETE",
@@ -239,6 +268,7 @@ export function useAttachments() {
   return {
     attachments,
     addFiles,
+    preloadExisting,
     removeAttachment,
     clearAll,
     getUploadedIds,

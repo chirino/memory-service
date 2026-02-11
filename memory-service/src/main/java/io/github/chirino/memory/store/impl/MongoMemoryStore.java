@@ -110,6 +110,8 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Inject io.github.chirino.memory.attachment.FileStoreSelector fileStoreSelector;
 
+    @Inject io.github.chirino.memory.attachment.AttachmentDeletionService attachmentDeletionService;
+
     @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
 
     private MemoryEntriesCache memoryEntriesCache;
@@ -2254,9 +2256,9 @@ public class MongoMemoryStore implements MemoryStore {
         }
 
         // 2. Delete FileStore blobs and attachment records for entries in these groups
+        //    (with ref-count safety for shared storage keys)
         try {
             var attachmentStore = attachmentStoreSelector.getStore();
-            var fileStore = fileStoreSelector.getFileStore();
             List<String> entryIds = new java.util.ArrayList<>();
             for (Document doc :
                     getEntryCollection()
@@ -2266,12 +2268,7 @@ public class MongoMemoryStore implements MemoryStore {
             }
             if (!entryIds.isEmpty()) {
                 var attachments = attachmentStore.findByEntryIds(entryIds);
-                for (var att : attachments) {
-                    if (att.storageKey() != null) {
-                        fileStore.delete(att.storageKey());
-                    }
-                    attachmentStore.delete(att.id());
-                }
+                attachmentDeletionService.deleteAttachments(attachments);
             }
         } catch (Exception e) {
             LOG.warnf("Failed to cleanup attachments for groups %s: %s", groupIds, e.getMessage());

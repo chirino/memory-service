@@ -8,6 +8,8 @@ public interface AttachmentStore {
 
     AttachmentDto create(String userId, String contentType, String filename, Instant expiresAt);
 
+    AttachmentDto createFromSource(String userId, AttachmentDto source);
+
     void updateAfterUpload(
             String id, String storageKey, long size, String sha256, Instant expiresAt);
 
@@ -23,5 +25,13 @@ public interface AttachmentStore {
 
     void delete(String id);
 
+    void softDelete(String id);
+
+    List<AttachmentDto> findSoftDeleted();
+
+    List<AttachmentDto> findByStorageKeyForUpdate(String storageKey);
+
     List<AttachmentDto> findByEntryIds(List<String> entryIds);
+
+    String getConversationGroupIdForEntry(String entryId);
 }

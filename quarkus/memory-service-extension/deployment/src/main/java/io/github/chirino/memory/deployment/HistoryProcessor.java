@@ -13,7 +13,8 @@ public class HistoryProcessor {
                         "io.github.chirino.memory.history.runtime.ConversationStore",
                         "io.github.chirino.memory.history.runtime.ConversationInterceptor",
                         "io.github.chirino.memory.history.runtime.NoopResponseResumer",
-                        "io.github.chirino.memory.history.runtime.GrpcResponseResumer")
+                        "io.github.chirino.memory.history.runtime.GrpcResponseResumer",
+                        "io.github.chirino.memory.history.runtime.AttachmentResolver")
                 .build();
     }
 }

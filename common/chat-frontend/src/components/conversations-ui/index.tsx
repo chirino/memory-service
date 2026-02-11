@@ -501,7 +501,7 @@ function ConversationsUIEmptyState({
  * Returns the appropriate icon for a file based on its MIME type.
  */
 function FileIcon({ contentType, className }: { contentType: string; className?: string }) {
-  const major = contentType.split("/")[0];
+  const major = contentType?.split("/")[0];
   if (major === "image") return <Image className={className} />;
   if (major === "video") return <Film className={className} />;
   if (major === "audio") return <Volume2 className={className} />;

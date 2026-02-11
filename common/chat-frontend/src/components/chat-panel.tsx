@@ -118,7 +118,28 @@ function ChatMessageRow({
   const isCopied = copiedMessageId === message.id;
   const forkMenuRef = useRef<HTMLDivElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
-  const { attachments: editAttachments, addFiles: editAddFiles, removeAttachment: editRemoveAttachment, clearAll: editClearAll } = useAttachments();
+  const { attachments: editAttachments, addFiles: editAddFiles, preloadExisting: editPreloadExisting, removeAttachment: editRemoveAttachment, clearAll: editClearAll } = useAttachments();
+
+  // When entering edit mode, pre-populate with the message's existing attachments
+  const prevEditingRef = useRef(false);
+  useEffect(() => {
+    if (isEditing && !prevEditingRef.current && message.attachments && message.attachments.length > 0) {
+      const existing = message.attachments
+        .filter((a) => a.href?.startsWith("/v1/attachments/"))
+        .map((a) => ({
+          attachmentId: a.href!.replace("/v1/attachments/", ""),
+          contentType: a.contentType,
+          name: a.name,
+        }));
+      if (existing.length > 0) {
+        editPreloadExisting(existing);
+      }
+    }
+    if (!isEditing && prevEditingRef.current) {
+      editClearAll();
+    }
+    prevEditingRef.current = isEditing;
+  }, [isEditing, message.attachments, editPreloadExisting, editClearAll]);
 
   // Close fork menu when clicking outside
   useEffect(() => {

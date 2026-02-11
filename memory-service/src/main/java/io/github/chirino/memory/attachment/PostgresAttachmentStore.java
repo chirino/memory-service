@@ -8,6 +8,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -35,9 +36,24 @@ public class PostgresAttachmentStore implements AttachmentStore {
 
     @Override
     @Transactional
+    public AttachmentDto createFromSource(String userId, AttachmentDto source) {
+        AttachmentEntity entity = new AttachmentEntity();
+        entity.setUserId(userId);
+        entity.setStorageKey(source.storageKey());
+        entity.setSha256(source.sha256());
+        entity.setSize(source.size());
+        entity.setContentType(source.contentType());
+        entity.setFilename(source.filename());
+        entity.setExpiresAt(OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5));
+        attachmentRepository.persist(entity);
+        return toDto(entity);
+    }
+
+    @Override
+    @Transactional
     public void updateAfterUpload(
             String id, String storageKey, long size, String sha256, Instant expiresAt) {
-        AttachmentEntity entity = attachmentRepository.findById(UUID.fromString(id));
+        AttachmentEntity entity = attachmentRepository.findActiveById(UUID.fromString(id));
         if (entity != null) {
             entity.setStorageKey(storageKey);
             entity.setSize(size);
@@ -48,7 +64,7 @@ public class PostgresAttachmentStore implements AttachmentStore {
 
     @Override
     public Optional<AttachmentDto> findById(String id) {
-        AttachmentEntity entity = attachmentRepository.findById(UUID.fromString(id));
+        AttachmentEntity entity = attachmentRepository.findActiveById(UUID.fromString(id));
         return entity != null ? Optional.of(toDto(entity)) : Optional.empty();
     }
 
@@ -62,7 +78,8 @@ public class PostgresAttachmentStore implements AttachmentStore {
     @Override
     @Transactional
     public void linkToEntry(String attachmentId, String entryId) {
-        AttachmentEntity entity = attachmentRepository.findById(UUID.fromString(attachmentId));
+        AttachmentEntity entity =
+                attachmentRepository.findActiveById(UUID.fromString(attachmentId));
         if (entity != null) {
             EntryEntity entryEntity = entryRepository.findById(UUID.fromString(entryId));
             entity.setEntry(entryEntity);
@@ -89,9 +106,36 @@ public class PostgresAttachmentStore implements AttachmentStore {
     }
 
     @Override
+    @Transactional
+    public void softDelete(String id) {
+        AttachmentEntity entity = attachmentRepository.findActiveById(UUID.fromString(id));
+        if (entity != null) {
+            entity.setDeletedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        }
+    }
+
+    @Override
+    public List<AttachmentDto> findSoftDeleted() {
+        return attachmentRepository.findSoftDeleted().stream().map(this::toDto).toList();
+    }
+
+    @Override
+    public List<AttachmentDto> findByStorageKeyForUpdate(String storageKey) {
+        return attachmentRepository.findByStorageKeyForUpdate(storageKey).stream()
+                .map(this::toDto)
+                .toList();
+    }
+
+    @Override
     public List<AttachmentDto> findByEntryIds(List<String> entryIds) {
         List<UUID> uuids = entryIds.stream().map(UUID::fromString).toList();
         return attachmentRepository.findByEntryIds(uuids).stream().map(this::toDto).toList();
+    }
+
+    @Override
+    public String getConversationGroupIdForEntry(String entryId) {
+        EntryEntity entry = entryRepository.findById(UUID.fromString(entryId));
+        return entry != null ? entry.getConversationGroupId().toString() : null;
     }
 
     private AttachmentDto toDto(AttachmentEntity entity) {
@@ -105,6 +149,7 @@ public class PostgresAttachmentStore implements AttachmentStore {
                 entity.getUserId(),
                 entity.getEntry() != null ? entity.getEntry().getId().toString() : null,
                 entity.getExpiresAt() != null ? entity.getExpiresAt().toInstant() : null,
-                entity.getCreatedAt() != null ? entity.getCreatedAt().toInstant() : null);
+                entity.getCreatedAt() != null ? entity.getCreatedAt().toInstant() : null,
+                entity.getDeletedAt() != null ? entity.getDeletedAt().toInstant() : null);
     }
 }

@@ -104,6 +104,8 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Inject io.github.chirino.memory.attachment.FileStoreSelector fileStoreSelector;
 
+    @Inject io.github.chirino.memory.attachment.AttachmentDeletionService attachmentDeletionService;
+
     @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
 
     private MemoryEntriesCache memoryEntriesCache;
@@ -2408,7 +2410,7 @@ public class PostgresMemoryStore implements MemoryStore {
                     "vector_store_delete", Map.of("conversationGroupId", groupId));
         }
 
-        // 2. Delete FileStore blobs for attachments in these groups
+        // 2. Delete FileStore blobs for attachments in these groups (with ref-count safety)
         try {
             UUID[] groupUuids = groupIds.stream().map(UUID::fromString).toArray(UUID[]::new);
             @SuppressWarnings("unchecked")
@@ -2421,13 +2423,8 @@ public class PostgresMemoryStore implements MemoryStore {
                             .getResultList();
             if (!entryIds.isEmpty()) {
                 var attachmentStore = attachmentStoreSelector.getStore();
-                var fileStore = fileStoreSelector.getFileStore();
                 var attachments = attachmentStore.findByEntryIds(entryIds);
-                for (var att : attachments) {
-                    if (att.storageKey() != null) {
-                        fileStore.delete(att.storageKey());
-                    }
-                }
+                attachmentDeletionService.deleteAttachments(attachments);
             }
         } catch (Exception e) {
             LOG.warnf(

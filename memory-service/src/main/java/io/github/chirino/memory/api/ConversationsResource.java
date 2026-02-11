@@ -8,6 +8,7 @@ import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.attachment.AttachmentDto;
 import io.github.chirino.memory.attachment.AttachmentStore;
 import io.github.chirino.memory.attachment.AttachmentStoreSelector;
 import io.github.chirino.memory.client.model.Conversation;
@@ -273,7 +274,7 @@ public class ConversationsResource {
                 // Epoch is auto-calculated by the store for MEMORY channel entries
                 // Rewrite attachmentId → href before persisting so stored content has href
                 List<String> rewrittenIds =
-                        rewriteAttachmentIds(request.getContent(), currentUserId());
+                        rewriteAttachmentIds(request.getContent(), currentUserId(), conversationId);
                 List<CreateEntryRequest> messages = List.of(request);
                 List<EntryDto> appended =
                         store().appendAgentEntries(
@@ -301,7 +302,7 @@ public class ConversationsResource {
                 // Users: convert CreateEntryRequest to CreateUserEntryRequest
                 // Rewrite attachmentId → href before persisting
                 List<String> rewrittenIds =
-                        rewriteAttachmentIds(request.getContent(), currentUserId());
+                        rewriteAttachmentIds(request.getContent(), currentUserId(), conversationId);
                 String textContent = extractTextFromContent(request.getContent());
                 List<Map<String, Object>> attachments =
                         extractAttachmentsFromContent(request.getContent());
@@ -1035,15 +1036,26 @@ public class ConversationsResource {
 
     /**
      * Rewrites attachmentId references to href URLs in the content, before persisting.
-     * Returns the list of attachment IDs that were rewritten.
+     * Returns the list of attachment IDs that were rewritten (new IDs for shared references).
+     *
+     * <p>If an attachment is already linked to another entry (e.g., from a parent conversation),
+     * a new attachment record is created sharing the same storage blob, and the new ID is used.
+     *
+     * @param content the content blocks to scan for attachmentId references
+     * @param userId the current user ID
+     * @param targetConversationId the conversation the entry is being appended to
      */
     @SuppressWarnings("unchecked")
-    private List<String> rewriteAttachmentIds(List<Object> content, String userId) {
+    private List<String> rewriteAttachmentIds(
+            List<Object> content, String userId, String targetConversationId) {
         List<String> rewrittenIds = new ArrayList<>();
         if (content == null) {
             return rewrittenIds;
         }
         AttachmentStore attStore = attachmentStoreSelector.getStore();
+        // Lazily resolved target conversation group ID (for same-group validation)
+        String targetGroupId = null;
+
         for (Object block : content) {
             if (!(block instanceof Map<?, ?> map)) {
                 continue;
@@ -1058,21 +1070,62 @@ public class ConversationsResource {
                 }
                 Object attachmentIdObj = attMap.get("attachmentId");
                 if (attachmentIdObj instanceof String attachmentId) {
+                    // First try user-owned lookup (unlinked attachments)
                     var optAtt = attStore.findByIdForUser(attachmentId, userId);
-                    if (optAtt.isPresent()) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> mutableAttMap = (Map<String, Object>) attMap;
-                        mutableAttMap.put("href", "/v1/attachments/" + attachmentId);
-                        mutableAttMap.remove("attachmentId");
-                        var record = optAtt.get();
-                        if (!mutableAttMap.containsKey("contentType")) {
-                            mutableAttMap.put("contentType", record.contentType());
+                    AttachmentDto record;
+                    String effectiveId;
+
+                    if (optAtt.isPresent() && optAtt.get().entryId() == null) {
+                        // Unlinked attachment owned by user — existing flow
+                        record = optAtt.get();
+                        effectiveId = attachmentId;
+                    } else {
+                        // Try general lookup (may be linked to another entry)
+                        var optAny = attStore.findById(attachmentId);
+                        if (optAny.isEmpty()) {
+                            continue;
                         }
-                        if (!mutableAttMap.containsKey("name") && record.filename() != null) {
-                            mutableAttMap.put("name", record.filename());
+                        record = optAny.get();
+
+                        if (record.entryId() == null) {
+                            // Unlinked but not owned by this user — skip
+                            continue;
                         }
-                        rewrittenIds.add(attachmentId);
+
+                        // Already linked — validate same conversation group
+                        String sourceGroupId =
+                                attStore.getConversationGroupIdForEntry(record.entryId());
+                        if (sourceGroupId == null) {
+                            continue;
+                        }
+                        if (targetGroupId == null) {
+                            // Resolve target group lazily
+                            ConversationDto targetConv =
+                                    store().getConversation(userId, targetConversationId);
+                            targetGroupId = targetConv.getConversationGroupId();
+                        }
+                        if (!sourceGroupId.equals(targetGroupId)) {
+                            throw new AccessDeniedException(
+                                    "Cannot reference attachments from a different conversation"
+                                            + " group");
+                        }
+
+                        // Create a new attachment record sharing the same blob
+                        AttachmentDto newAtt = attStore.createFromSource(userId, record);
+                        effectiveId = newAtt.id();
                     }
+
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> mutableAttMap = (Map<String, Object>) attMap;
+                    mutableAttMap.put("href", "/v1/attachments/" + effectiveId);
+                    mutableAttMap.remove("attachmentId");
+                    if (!mutableAttMap.containsKey("contentType")) {
+                        mutableAttMap.put("contentType", record.contentType());
+                    }
+                    if (!mutableAttMap.containsKey("name") && record.filename() != null) {
+                        mutableAttMap.put("name", record.filename());
+                    }
+                    rewrittenIds.add(effectiveId);
                 }
             }
         }
