@@ -67,6 +67,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -1360,14 +1361,47 @@ public class MongoMemoryStore implements MemoryStore {
     public SyncResult syncAgentEntry(
             String userId, String conversationId, CreateEntryRequest entry, String clientId) {
         validateSyncEntry(entry);
-        // Combined method: finds max epoch and lists entries
-        List<MongoEntry> latestEpochEntityList =
-                entryRepository.listMemoryEntriesAtLatestEpoch(conversationId, clientId);
-        List<EntryDto> latestEpochEntries =
-                latestEpochEntityList.stream().map(this::toEntryDto).collect(Collectors.toList());
-        // Extract epoch from entries (all entries in the list share the same epoch)
-        Long latestEpoch =
-                latestEpochEntityList.isEmpty() ? null : latestEpochEntityList.get(0).epoch;
+
+        // Load conversation to check if it's a fork
+        MongoConversation conversation = conversationRepository.findById(conversationId);
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+
+        List<EntryDto> latestEpochEntries;
+        Long latestEpoch;
+
+        if (isFork(conversation)) {
+            // Fork-aware retrieval: include inherited parent entries for content comparison.
+            // Without this, prefix detection fails because the fork has no entries of its own
+            // initially, causing all incoming messages to be bundled into a single entry.
+            List<ForkAncestor> ancestry = buildAncestryStack(conversation);
+            String groupId = conversation.conversationGroupId;
+            List<MongoEntry> allEntries =
+                    entryRepository.listByConversationGroup(groupId, null, null);
+            List<MongoEntry> filteredEntries =
+                    filterMemoryEntriesWithEpoch(
+                            allEntries, ancestry, clientId, MemoryEpochFilter.latest());
+            latestEpochEntries =
+                    filteredEntries.stream().map(this::toEntryDto).collect(Collectors.toList());
+            latestEpoch =
+                    filteredEntries.stream()
+                            .map(e -> e.epoch)
+                            .filter(Objects::nonNull)
+                            .max(Long::compare)
+                            .orElse(null);
+        } else {
+            // Combined method: finds max epoch and lists entries
+            List<MongoEntry> latestEpochEntityList =
+                    entryRepository.listMemoryEntriesAtLatestEpoch(conversationId, clientId);
+            latestEpochEntries =
+                    latestEpochEntityList.stream()
+                            .map(this::toEntryDto)
+                            .collect(Collectors.toList());
+            // Extract epoch from entries (all entries in the list share the same epoch)
+            latestEpoch =
+                    latestEpochEntityList.isEmpty() ? null : latestEpochEntityList.get(0).epoch;
+        }
 
         // Flatten content from all existing entries and get incoming content
         List<Object> existingContent = MemorySyncHelper.flattenContent(latestEpochEntries);
