@@ -246,3 +246,60 @@ Feature: Conversation Forking REST API
     When I call GET "/v1/conversations/${rootConversationId}/entries?forks=all"
     Then the response status should be 200
     And the response should contain 12 entries
+
+  # Regression test: Channel filtering must happen AFTER fork ancestry traversal, not at the DB level.
+  # If the fork point entry (forkedAtEntryId) is in a different channel than the query filter,
+  # the DB-level filter removes it, breaking ancestry chain detection. The algorithm then never
+  # transitions from parent to fork conversation, returning wrong entries entirely.
+  Scenario: Channel filter on forked conversation preserves fork point from different channel
+    Given I am authenticated as user "alice"
+    And I have a conversation with title "Channel Fork Test"
+    And set "rootConversationId" to "${conversationId}"
+
+    # Create entries with mixed channels: HISTORY, MEMORY, HISTORY
+    And the conversation has an entry "H1" in channel "HISTORY"
+    And the conversation has an entry "M1" in channel "MEMORY"
+    And the conversation has an entry "H2" in channel "HISTORY"
+
+    # Get entry IDs (agent auth can see all channels)
+    When I am authenticated as agent with API key "test-agent-key"
+    And I list entries for the conversation
+    Then the response should contain 3 entries
+    And entry at index 0 should have content "H1"
+    And entry at index 1 should have content "M1"
+    And entry at index 2 should have content "H2"
+    And set "entryH2_Id" to the json response field "data[2].id"
+
+    # Fork at H2 → forkedAtEntryId = M1 (a MEMORY entry)
+    When I am authenticated as user "alice"
+    And I fork the conversation at entry "${entryH2_Id}" with request:
+    """
+    {"title": "Channel Fork"}
+    """
+    Then the response status should be 201
+    And set "forkConversationId" to the json response field "id"
+
+    # Add a HISTORY entry to the fork
+    When I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${forkConversationId}/entries" with body:
+    """
+    {"channel": "HISTORY", "contentType": "history", "content": [{"text": "H3", "role": "USER"}]}
+    """
+    Then the response status should be 201
+
+    # Sanity check: all-channel query returns correct fork entries
+    When I call GET "/v1/conversations/${forkConversationId}/entries"
+    Then the response status should be 200
+    And the response should contain 3 entries
+    And entry at index 0 should have content "H1"
+    And entry at index 1 should have content "M1"
+    And entry at index 2 should have content "H3"
+
+    # KEY TEST: Query fork with channel=HISTORY filter
+    # Fork point M1 is MEMORY. If channel filter is applied at DB level, M1 is excluded,
+    # ancestry traversal breaks, and we get wrong results (H1, H2 from root instead of H1, H3).
+    When I call GET "/v1/conversations/${forkConversationId}/entries?channel=HISTORY"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "H1"
+    And entry at index 1 should have content "H3"

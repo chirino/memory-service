@@ -955,24 +955,12 @@ public class MongoMemoryStore implements MemoryStore {
             String clientId) {
         String conversationId = conversation.id;
 
-        // For non-forked conversations, use existing efficient queries
-        if (!isFork(conversation)) {
-            LOG.infof(
-                    "getEntriesWithForkSupport: conversation %s is not a fork, using direct query",
-                    conversationId);
-            List<MongoEntry> entries =
-                    entryRepository.listByChannel(
-                            conversationId, afterEntryId, limit, channel, clientId);
-            return buildPagedEntries(conversationId, entries, limit);
-        }
-
         // Build ancestry stack for fork-aware retrieval
         List<ForkAncestor> ancestry = buildAncestryStack(conversation);
         String groupId = conversation.conversationGroupId;
 
-        // Query all entries in the conversation group
-        List<MongoEntry> allEntries =
-                entryRepository.listByConversationGroup(groupId, channel, clientId);
+        // Query ALL entries in the group (need all channels for fork point tracking)
+        List<MongoEntry> allEntries = entryRepository.listByConversationGroup(groupId, null, null);
         LOG.infof(
                 "getEntriesWithForkSupport: fetched %d entries from group %s",
                 allEntries.size(), groupId);
@@ -982,6 +970,15 @@ public class MongoMemoryStore implements MemoryStore {
         LOG.infof(
                 "getEntriesWithForkSupport: after ancestry filter, %d entries",
                 filteredEntries.size());
+
+        // Post-filter by channel and clientId (after ancestry is resolved)
+        if (channel != null) {
+            filteredEntries = filteredEntries.stream().filter(e -> e.channel == channel).toList();
+        }
+        if (channel == Channel.MEMORY && clientId != null) {
+            filteredEntries =
+                    filteredEntries.stream().filter(e -> clientId.equals(e.clientId)).toList();
+        }
 
         // Apply pagination
         List<MongoEntry> paginatedEntries = applyPagination(filteredEntries, afterEntryId, limit);
