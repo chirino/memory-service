@@ -13,7 +13,6 @@ import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
-import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
@@ -301,24 +300,39 @@ public class MongoMemoryStore implements MemoryStore {
         if (c == null) {
             c = new MongoConversation();
             c.id = conversationId;
-            c.conversationGroupId = conversationId;
-            MongoConversationGroup existingGroup =
-                    conversationGroupRepository.findById(conversationId);
-            if (existingGroup == null || existingGroup.deletedAt != null) {
-                MongoConversationGroup group = new MongoConversationGroup();
-                group.id = conversationId;
-                group.createdAt = Instant.now();
-                conversationGroupRepository.persist(group);
-            }
-            c.ownerUserId = userId;
-            String inferredTitle = inferTitleFromUserEntry(request);
-            c.title = encryptTitle(inferredTitle);
             c.metadata = Collections.emptyMap();
             Instant now = Instant.now();
             c.createdAt = now;
             c.updatedAt = now;
-            conversationRepository.persist(c);
-            membershipRepository.createMembership(c.conversationGroupId, userId, AccessLevel.OWNER);
+
+            if (request.getForkedAtConversationId() != null
+                    && request.getForkedAtEntryId() != null) {
+                // Fork auto-creation: join parent's group instead of creating a new one
+                setupForkConversation(
+                        c,
+                        userId,
+                        request.getForkedAtConversationId(),
+                        request.getForkedAtEntryId(),
+                        inferTitleFromUserEntry(request));
+                conversationRepository.persist(c);
+                // No membership creation for forks — user already has membership via parent group
+            } else {
+                // Root conversation auto-creation
+                c.conversationGroupId = conversationId;
+                MongoConversationGroup existingGroup =
+                        conversationGroupRepository.findById(conversationId);
+                if (existingGroup == null || existingGroup.deletedAt != null) {
+                    MongoConversationGroup group = new MongoConversationGroup();
+                    group.id = conversationId;
+                    group.createdAt = Instant.now();
+                    conversationGroupRepository.persist(group);
+                }
+                c.ownerUserId = userId;
+                c.title = encryptTitle(inferTitleFromUserEntry(request));
+                conversationRepository.persist(c);
+                membershipRepository.createMembership(
+                        c.conversationGroupId, userId, AccessLevel.OWNER);
+            }
         } else {
             String groupId = c.conversationGroupId;
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);
@@ -432,32 +446,39 @@ public class MongoMemoryStore implements MemoryStore {
         ownershipTransferRepository.deleteByConversationGroupAndToUser(groupId, memberUserId);
     }
 
-    @Override
-    @Transactional
-    public ConversationDto forkConversationAtEntry(
-            String userId, String conversationId, String entryId, ForkFromEntryRequest request) {
-        MongoConversation original = conversationRepository.findById(conversationId);
+    /**
+     * Sets up a conversation document as a fork of an existing conversation.
+     * The fork joins the parent's conversation group and sets fork pointers.
+     * The forkedAtEntryId on the document is resolved to the entry BEFORE the target,
+     * so "fork at entry X" means "include entries before X, exclude X and after".
+     */
+    private void setupForkConversation(
+            MongoConversation forkDoc,
+            String userId,
+            String parentConversationId,
+            String forkAtEntryId,
+            String inferredTitle) {
+        MongoConversation original = conversationRepository.findById(parentConversationId);
         if (original == null || original.deletedAt != null) {
-            throw new ResourceNotFoundException("conversation", conversationId);
+            throw new ResourceNotFoundException("conversation", parentConversationId);
         }
         String groupId = original.conversationGroupId;
         ensureHasAccess(groupId, userId, AccessLevel.WRITER);
 
         MongoEntry target =
                 entryRepository
-                        .findByIdOptional(entryId)
-                        .orElseThrow(() -> new ResourceNotFoundException("entry", entryId));
-        if (!conversationId.equals(target.conversationId)) {
-            throw new ResourceNotFoundException("entry", entryId);
+                        .findByIdOptional(forkAtEntryId)
+                        .orElseThrow(() -> new ResourceNotFoundException("entry", forkAtEntryId));
+        if (!parentConversationId.equals(target.conversationId)) {
+            throw new ResourceNotFoundException("entry", forkAtEntryId);
         }
         if (target.channel != Channel.HISTORY) {
             throw new AccessDeniedException("Forking is only allowed for history entries");
         }
 
         // Find the previous entry of ANY channel before the target entry.
-        // forkedAtEntryId is set to this previous entry - all parent entries up to and including
-        // forkedAtEntryId are visible to the fork. This makes "fork at entry X" mean "branch before
-        // X".
+        // forkedAtEntryId is set to this previous entry — all parent entries up to and including
+        // forkedAtEntryId are visible to the fork.
         MongoEntry previous =
                 entryRepository
                         .find(
@@ -467,35 +488,17 @@ public class MongoMemoryStore implements MemoryStore {
                                         .descending()
                                         .and("id")
                                         .descending(),
-                                conversationId,
+                                parentConversationId,
                                 target.createdAt,
                                 target.id)
                         .firstResult();
 
-        MongoConversation fork = new MongoConversation();
-        fork.id = UUID.randomUUID().toString();
-        fork.ownerUserId = original.ownerUserId;
-        fork.title =
-                encryptTitle(
-                        request.getTitle() != null
-                                ? request.getTitle()
-                                : decryptTitle(original.title));
-        fork.metadata = Collections.emptyMap();
-        fork.conversationGroupId = original.conversationGroupId;
-        fork.forkedAtConversationId = original.id;
-        fork.forkedAtEntryId = previous != null ? previous.id : null;
-        Instant now = Instant.now();
-        fork.createdAt = now;
-        fork.updatedAt = now;
-        conversationRepository.persist(fork);
-
-        return toConversationDto(
-                fork,
-                membershipRepository
-                        .findMembership(groupId, userId)
-                        .map(m -> m.accessLevel)
-                        .orElse(AccessLevel.READER),
-                null);
+        forkDoc.ownerUserId = original.ownerUserId;
+        forkDoc.title =
+                encryptTitle(inferredTitle != null ? inferredTitle : decryptTitle(original.title));
+        forkDoc.conversationGroupId = original.conversationGroupId;
+        forkDoc.forkedAtConversationId = original.id;
+        forkDoc.forkedAtEntryId = previous != null ? previous.id : null;
     }
 
     @Override
@@ -1249,26 +1252,47 @@ public class MongoMemoryStore implements MemoryStore {
 
         // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
         if (c == null) {
+            // Check first entry for fork metadata
+            CreateEntryRequest firstEntry = entries.isEmpty() ? null : entries.get(0);
+            String forkConvId =
+                    firstEntry != null && firstEntry.getForkedAtConversationId() != null
+                            ? firstEntry.getForkedAtConversationId().toString()
+                            : null;
+            String forkEntryId =
+                    firstEntry != null && firstEntry.getForkedAtEntryId() != null
+                            ? firstEntry.getForkedAtEntryId().toString()
+                            : null;
+
             c = new MongoConversation();
             c.id = conversationId;
-            c.conversationGroupId = conversationId;
-            MongoConversationGroup existingGroup =
-                    conversationGroupRepository.findById(conversationId);
-            if (existingGroup == null || existingGroup.deletedAt != null) {
-                MongoConversationGroup group = new MongoConversationGroup();
-                group.id = conversationId;
-                group.createdAt = Instant.now();
-                conversationGroupRepository.persist(group);
-            }
-            c.ownerUserId = userId;
-            String inferredTitle = inferTitleFromEntries(entries);
-            c.title = encryptTitle(inferredTitle);
             c.metadata = Collections.emptyMap();
             Instant now = Instant.now();
             c.createdAt = now;
             c.updatedAt = now;
-            conversationRepository.persist(c);
-            membershipRepository.createMembership(c.conversationGroupId, userId, AccessLevel.OWNER);
+
+            if (forkConvId != null && forkEntryId != null) {
+                // Fork auto-creation: join parent's group instead of creating a new one
+                setupForkConversation(
+                        c, userId, forkConvId, forkEntryId, inferTitleFromEntries(entries));
+                conversationRepository.persist(c);
+                // No membership creation for forks — user already has membership via parent group
+            } else {
+                // Root conversation auto-creation
+                c.conversationGroupId = conversationId;
+                MongoConversationGroup existingGroup =
+                        conversationGroupRepository.findById(conversationId);
+                if (existingGroup == null || existingGroup.deletedAt != null) {
+                    MongoConversationGroup group = new MongoConversationGroup();
+                    group.id = conversationId;
+                    group.createdAt = Instant.now();
+                    conversationGroupRepository.persist(group);
+                }
+                c.ownerUserId = userId;
+                c.title = encryptTitle(inferTitleFromEntries(entries));
+                conversationRepository.persist(c);
+                membershipRepository.createMembership(
+                        c.conversationGroupId, userId, AccessLevel.OWNER);
+            }
         } else {
             String groupId = c.conversationGroupId;
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);

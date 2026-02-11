@@ -56,8 +56,8 @@ export type ChatEvent =
 
 // Attachment type for multi-modal content - references external or server-stored resources
 export type ChatAttachment = {
-  href?: string;          // External URL (Phase 1) or internal /v1/attachments/{id}
-  attachmentId?: string;  // Internal attachment reference (Phase 2)
+  href?: string; // External URL (Phase 1) or internal /v1/attachments/{id}
+  attachmentId?: string; // Internal attachment reference (Phase 2)
   contentType: string;
   name?: string;
   description?: string;
@@ -93,8 +93,19 @@ export type AttachmentRef = {
   name?: string;
 };
 
+export type ForkMeta = {
+  forkedAtConversationId: string;
+  forkedAtEntryId: string;
+};
+
 export type ConversationController = {
-  startStream: (conversationId: string, text: string, callbacks: StreamCallbacks, attachments?: AttachmentRef[]) => void | Promise<void>;
+  startStream: (
+    conversationId: string,
+    text: string,
+    callbacks: StreamCallbacks,
+    attachments?: AttachmentRef[],
+    forkMeta?: ForkMeta,
+  ) => void | Promise<void>;
   resumeStream: (conversationId: string, callbacks: StreamCallbacks) => void | Promise<void>;
   cancelStream: (conversationId: string) => void | Promise<void>;
   selectConversation: (conversationId: string) => void | Promise<void>;
@@ -151,7 +162,7 @@ type ConversationContextValue = {
   state: ConversationState;
   controller: ConversationController;
   currentUserId: string | null | undefined;
-  sendMessage: (text: string, attachments?: AttachmentRef[]) => void;
+  sendMessage: (text: string, attachments?: AttachmentRef[], forkMeta?: ForkMeta) => void;
   resumeStream: (options?: { conversationId?: string | null }) => void;
   cancelStream: () => void;
   selectConversation: (conversationId: string) => void;
@@ -454,7 +465,7 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
   }, []);
 
   const sendMessage = useCallback(
-    (text: string, attachments?: AttachmentRef[]) => {
+    (text: string, attachments?: AttachmentRef[], forkMeta?: ForkMeta) => {
       if (!state.conversationId) {
         return;
       }
@@ -478,17 +489,24 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
         content: trimmed,
         createdAt: new Date().toISOString(),
         userId: currentUserId,
-        attachments: attachments && attachments.length > 0
-          ? attachments.map((a) => ({ attachmentId: a.attachmentId, contentType: a.contentType ?? "application/octet-stream", name: a.name }))
-          : undefined,
+        attachments:
+          attachments && attachments.length > 0
+            ? attachments.map((a) => ({
+                attachmentId: a.attachmentId,
+                contentType: a.contentType ?? "application/octet-stream",
+                name: a.name,
+              }))
+            : undefined,
       };
       dispatch({ type: "SEND_START", userMessage, streamId, pendingAssistantId });
       const callbacks = handleStreamCallbacks(streamId);
       // Wrap in try-catch to handle both sync throws and async rejections
       try {
-        void Promise.resolve(controller.startStream(state.conversationId, trimmed, callbacks, attachments)).catch((error) => {
-          callbacks.onError?.(error);
-        });
+        void Promise.resolve(controller.startStream(state.conversationId, trimmed, callbacks, attachments, forkMeta)).catch(
+          (error) => {
+            callbacks.onError?.(error);
+          },
+        );
       } catch (error) {
         callbacks.onError?.(error);
       }
@@ -829,8 +847,9 @@ export function useConversationInput() {
   return {
     value: state.inputValue,
     setValue: setInputValue,
-    // Accept optional value and attachments to avoid stale closure issues; falls back to current state
-    submit: (value?: string, attachments?: AttachmentRef[]) => sendMessage(value ?? state.inputValue, attachments),
+    // Accept optional value, attachments, and fork metadata to avoid stale closure issues; falls back to current state
+    submit: (value?: string, attachments?: AttachmentRef[], forkMeta?: ForkMeta) =>
+      sendMessage(value ?? state.inputValue, attachments, forkMeta),
     reset: () => setInputValue(""),
   };
 }

@@ -105,6 +105,18 @@ class AgentStreamController {
                                                 ConversationHistoryStreamAdvisor.ATTACHMENTS_KEY,
                                                 attachments);
                                     }
+                                    if (StringUtils.hasText(request.getForkedAtConversationId())) {
+                                        advisor.param(
+                                                ConversationHistoryStreamAdvisor
+                                                        .FORKED_AT_CONVERSATION_ID_KEY,
+                                                request.getForkedAtConversationId());
+                                    }
+                                    if (StringUtils.hasText(request.getForkedAtEntryId())) {
+                                        advisor.param(
+                                                ConversationHistoryStreamAdvisor
+                                                        .FORKED_AT_ENTRY_ID_KEY,
+                                                request.getForkedAtEntryId());
+                                    }
                                 })
                         .user(
                                 spec -> {
@@ -220,6 +232,8 @@ class AgentStreamController {
 
         private String message;
         private List<RequestAttachmentRef> attachments;
+        private String forkedAtConversationId;
+        private String forkedAtEntryId;
 
         public MessageRequest() {}
 
@@ -241,6 +255,22 @@ class AgentStreamController {
 
         public void setAttachments(List<RequestAttachmentRef> attachments) {
             this.attachments = attachments;
+        }
+
+        public String getForkedAtConversationId() {
+            return forkedAtConversationId;
+        }
+
+        public void setForkedAtConversationId(String forkedAtConversationId) {
+            this.forkedAtConversationId = forkedAtConversationId;
+        }
+
+        public String getForkedAtEntryId() {
+            return forkedAtEntryId;
+        }
+
+        public void setForkedAtEntryId(String forkedAtEntryId) {
+            this.forkedAtEntryId = forkedAtEntryId;
         }
     }
 

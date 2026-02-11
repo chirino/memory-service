@@ -1,6 +1,8 @@
 package io.github.chirino.memory.history.runtime;
 
 import io.github.chirino.memory.history.annotations.ConversationId;
+import io.github.chirino.memory.history.annotations.ForkedAtConversationId;
+import io.github.chirino.memory.history.annotations.ForkedAtEntryId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
 import io.quarkiverse.langchain4j.ImageUrl;
@@ -43,7 +45,9 @@ public class ConversationInterceptor {
             store.appendUserMessage(
                     invocation.conversationId(),
                     invocation.userMessage(),
-                    invocation.attachments());
+                    invocation.attachments(),
+                    invocation.forkedAtConversationId(),
+                    invocation.forkedAtEntryId());
         } catch (RuntimeException e) {
             LOG.warnf(
                     e,
@@ -95,6 +99,8 @@ public class ConversationInterceptor {
         String userMessage = null;
         Attachments attachmentsObj = null;
         List<Map<String, Object>> imageUrlAttachments = new ArrayList<>();
+        String forkedAtConversationId = null;
+        String forkedAtEntryId = null;
 
         for (int i = 0; i < args.length; i++) {
             // Detect Attachments by parameter type
@@ -108,6 +114,12 @@ public class ConversationInterceptor {
                 }
                 if (a instanceof UserMessage) {
                     userMessage = (String) args[i];
+                }
+                if (a instanceof ForkedAtConversationId) {
+                    forkedAtConversationId = (String) args[i];
+                }
+                if (a instanceof ForkedAtEntryId) {
+                    forkedAtEntryId = (String) args[i];
                 }
                 if (a instanceof ImageUrl && args[i] != null) {
                     Map<String, Object> att = new LinkedHashMap<>();
@@ -127,6 +139,7 @@ public class ConversationInterceptor {
         List<Map<String, Object>> attachments =
                 attachmentsObj != null ? attachmentsObj.metadata() : imageUrlAttachments;
 
-        return new ConversationInvocation(conversationId, userMessage, attachments);
+        return new ConversationInvocation(
+                conversationId, userMessage, attachments, forkedAtConversationId, forkedAtEntryId);
     }
 }

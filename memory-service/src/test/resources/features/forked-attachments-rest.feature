@@ -33,10 +33,9 @@ Feature: Forked Attachments REST API
     And set "firstEntryId" to the json response field "data[0].id"
     When I fork the conversation at entry "${firstEntryId}" with request:
     """
-    {"title": "Forked Conversation"}
+    {}
     """
-    Then the response status should be 201
-    And set "forkedConversationId" to the json response field "id"
+    Then the response status should be 200
     # Create a new entry in the fork referencing the same attachment
     When I call POST "/v1/conversations/${forkedConversationId}/entries" with body:
     """
@@ -86,8 +85,7 @@ Feature: Forked Attachments REST API
     """
     {}
     """
-    Then the response status should be 201
-    And set "forkedConversationId" to the json response field "id"
+    Then the response status should be 200
     Given I am authenticated as user "alice"
     When I call POST "/v1/conversations/${forkedConversationId}/entries" with body:
     """
@@ -126,10 +124,9 @@ Feature: Forked Attachments REST API
     # Fork and create a second reference
     When I fork the conversation at entry "${entry1Id}" with request:
     """
-    {"title": "Fork with shared attachment"}
+    {}
     """
-    Then the response status should be 201
-    And set "forkedConversationId" to the json response field "id"
+    Then the response status should be 200
     When I call POST "/v1/conversations/${forkedConversationId}/entries" with body:
     """
     {
@@ -259,10 +256,9 @@ Feature: Forked Attachments REST API
     And set "firstEntryId" to the json response field "data[0].id"
     When I fork the conversation at entry "${firstEntryId}" with request:
     """
-    {"title": "Fork with mixed attachments"}
+    {}
     """
-    Then the response status should be 201
-    And set "forkedConversationId" to the json response field "id"
+    Then the response status should be 200
     # Upload a fresh attachment for the forked entry
     When I upload a file "new-doc.pdf" with content type "application/pdf" and content "fresh-pdf-data"
     Then the response status should be 201
@@ -336,8 +332,7 @@ Feature: Forked Attachments REST API
     """
     {}
     """
-    Then the response status should be 201
-    And set "forkedConversationId" to the json response field "id"
+    Then the response status should be 200
     # Upload a new attachment
     When I upload a file "notes.txt" with content type "text/plain" and content "my-notes"
     Then the response status should be 201

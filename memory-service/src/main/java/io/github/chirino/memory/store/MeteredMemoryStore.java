@@ -9,7 +9,6 @@ import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
 import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
-import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
@@ -105,16 +104,6 @@ public class MeteredMemoryStore implements MemoryStore {
     public void deleteMembership(String userId, String conversationId, String memberUserId) {
         registry.timer("memory.store.operation", "operation", "deleteMembership")
                 .record(() -> delegate.deleteMembership(userId, conversationId, memberUserId));
-    }
-
-    @Override
-    public ConversationDto forkConversationAtEntry(
-            String userId, String conversationId, String entryId, ForkFromEntryRequest request) {
-        return registry.timer("memory.store.operation", "operation", "forkConversationAtEntry")
-                .record(
-                        () ->
-                                delegate.forkConversationAtEntry(
-                                        userId, conversationId, entryId, request));
     }
 
     @Override

@@ -1,110 +1,101 @@
 Feature: Conversation Forking gRPC API
   As a client of the memory service
-  I want to fork conversations at specific entries via gRPC
-  So that I can create alternative conversation branches using gRPC
+  I want to fork conversations and verify fork data via gRPC
+  So that I can create alternative conversation branches and query them using gRPC
 
   Background:
     Given I am authenticated as user "alice"
     And I have a conversation with title "Base Conversation"
+    And set "parentConversationId" to "${conversationId}"
     And the conversation has an entry "First entry"
     And the conversation has an entry "Second entry"
     And the conversation has an entry "Third entry"
 
-  Scenario: Fork a conversation at an entry via gRPC
+  Scenario: Fork a conversation and verify via gRPC
     When I list entries for the conversation
     And set "secondEntryId" to the json response field "data[1].id"
     And set "firstEntryId" to the json response field "data[0].id"
-    When I send gRPC request "ConversationsService/ForkConversation" with body:
-    """
-    conversation_id: "${conversationId}"
-    entry_id: "${secondEntryId}"
-    title: "Forked Conversation"
-    """
-    Then the gRPC response should not have an error
-    And the gRPC response field "id" should not be null
-    And the gRPC response field "title" should be "Forked Conversation"
-    And the gRPC response field "forkedAtEntryId" should be "${firstEntryId}"
-    And the gRPC response field "forkedAtConversationId" should be "${conversationId}"
-    And the gRPC response field "title" should be "Forked Conversation"
-    And the gRPC response field "ownerUserId" should be "alice"
-    And the gRPC response field "accessLevel" should be "OWNER"
-
-  Scenario: Fork a conversation without title via gRPC
-    When I list entries for the conversation
-    And set "firstEntryId" to the json response field "data[0].id"
-    When I send gRPC request "ConversationsService/ForkConversation" with body:
-    """
-    conversation_id: "${conversationId}"
-    entry_id: "${firstEntryId}"
-    """
-    Then the gRPC response should not have an error
-    And the gRPC response field "id" should not be null
-    And set "forkedConversationId" to the gRPC response field "id"
+    When I fork the conversation at entry "${secondEntryId}"
+    Then the response status should be 200
+    And set "forkedConversationId" to "${forkedConversationId}"
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
     conversation_id: "${forkedConversationId}"
     """
     Then the gRPC response should not have an error
-    And the gRPC response field "forkedAtConversationId" should be "${conversationId}"
+    And the gRPC response field "id" should be "${forkedConversationId}"
+    And the gRPC response field "forkedAtEntryId" should be "${firstEntryId}"
+    And the gRPC response field "forkedAtConversationId" should be "${parentConversationId}"
+    And the gRPC response field "ownerUserId" should be "alice"
+    And the gRPC response field "accessLevel" should be "OWNER"
+
+  Scenario: Fork a conversation and verify entries via gRPC
+    When I list entries for the conversation
+    And set "secondEntryId" to the json response field "data[1].id"
+    When I fork the conversation at entry "${secondEntryId}"
+    Then the response status should be 200
+    And set "forkedConversationId" to "${forkedConversationId}"
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${forkedConversationId}"
+    channel: HISTORY
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "entries" should not be null
+
+  Scenario: Fork via gRPC AppendEntry with fork metadata
+    When I list entries for the conversation
+    And set "secondEntryId" to the json response field "data[1].id"
+    And set "firstEntryId" to the json response field "data[0].id"
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee01"
+    entry {
+      user_id: "alice"
+      channel: HISTORY
+      content_type: "history"
+      content {
+        struct_value {
+          fields {
+            key: "role"
+            value { string_value: "USER" }
+          }
+          fields {
+            key: "text"
+            value { string_value: "Fork message" }
+          }
+        }
+      }
+      forked_at_conversation_id: "${parentConversationId}"
+      forked_at_entry_id: "${secondEntryId}"
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should not be null
+    # Verify the fork conversation was created correctly
+    When I send gRPC request "ConversationsService/GetConversation" with body:
+    """
+    conversation_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee01"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "forkedAtEntryId" should be "${firstEntryId}"
+    And the gRPC response field "forkedAtConversationId" should be "${parentConversationId}"
 
   Scenario: List forks for a conversation via gRPC
     When I list entries for the conversation
     And set "secondEntryId" to the json response field "data[1].id"
-    And set "firstEntryId" to the json response field "data[0].id"
-    When I send gRPC request "ConversationsService/ForkConversation" with body:
-    """
-    conversation_id: "${conversationId}"
-    entry_id: "${secondEntryId}"
-    title: "Fork 1"
-    """
-    And set "fork1Id" to the gRPC response field "id"
-    When I send gRPC request "ConversationsService/ForkConversation" with body:
-    """
-    conversation_id: "${conversationId}"
-    entry_id: "${secondEntryId}"
-    title: "Fork 2"
-    """
-    And set "fork2Id" to the gRPC response field "id"
+    When I fork the conversation at entry "${secondEntryId}"
+    And set "fork1Id" to "${forkedConversationId}"
+    When I fork the conversation at entry "${secondEntryId}"
+    And set "fork2Id" to "${forkedConversationId}"
     When I send gRPC request "ConversationsService/ListForks" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${parentConversationId}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "forks" should not be null
-    # The response includes the original conversation (forks[0]) plus the 2 forks
-    # Check that forks[1] and forks[2] are the actual forks
-    And the gRPC response field "forks[1].forkedAtEntryId" should be "${firstEntryId}"
-    And the gRPC response field "forks[1].forkedAtConversationId" should be "${conversationId}"
-    And the gRPC response field "forks[2].forkedAtEntryId" should be "${firstEntryId}"
-    And the gRPC response field "forks[2].forkedAtConversationId" should be "${conversationId}"
-
-  Scenario: Fork non-existent conversation via gRPC
-    When I send gRPC request "ConversationsService/ForkConversation" with body:
-    """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
-    entry_id: "00000000-0000-0000-0000-000000000001"
-    title: "Fork"
-    """
-    Then the gRPC response should have status "NOT_FOUND"
-
-  Scenario: Fork at non-existent entry via gRPC
-    When I send gRPC request "ConversationsService/ForkConversation" with body:
-    """
-    conversation_id: "${conversationId}"
-    entry_id: "00000000-0000-0000-0000-000000000000"
-    title: "Fork"
-    """
-    Then the gRPC response should have status "NOT_FOUND"
-
-  Scenario: Fork conversation without access via gRPC
-    Given there is a conversation owned by "bob"
-    When I send gRPC request "ConversationsService/ForkConversation" with body:
-    """
-    conversation_id: "${conversationId}"
-    entry_id: "00000000-0000-0000-0000-000000000000"
-    title: "Fork"
-    """
-    Then the gRPC response should have status "PERMISSION_DENIED"
 
   Scenario: List forks for non-existent conversation via gRPC
     When I send gRPC request "ConversationsService/ListForks" with body:

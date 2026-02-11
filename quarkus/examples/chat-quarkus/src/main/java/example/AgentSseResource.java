@@ -62,7 +62,13 @@ public class AgentSseResource {
 
         Attachments attachments = attachmentResolver.resolve(toRefs(request.getAttachments()));
 
-        Multi<ChatEvent> events = agent.chat(conversationId, request.getMessage(), attachments);
+        Multi<ChatEvent> events =
+                agent.chat(
+                        conversationId,
+                        request.getMessage(),
+                        attachments,
+                        request.getForkedAtConversationId(),
+                        request.getForkedAtEntryId());
 
         return events.map(this::encode)
                 .onFailure()
@@ -130,6 +136,8 @@ public class AgentSseResource {
 
         private String message;
         private List<RequestAttachmentRef> attachments;
+        private String forkedAtConversationId;
+        private String forkedAtEntryId;
 
         public MessageRequest() {}
 
@@ -151,6 +159,22 @@ public class AgentSseResource {
 
         public void setAttachments(List<RequestAttachmentRef> attachments) {
             this.attachments = attachments;
+        }
+
+        public String getForkedAtConversationId() {
+            return forkedAtConversationId;
+        }
+
+        public void setForkedAtConversationId(String forkedAtConversationId) {
+            this.forkedAtConversationId = forkedAtConversationId;
+        }
+
+        public String getForkedAtEntryId() {
+            return forkedAtEntryId;
+        }
+
+        public void setForkedAtEntryId(String forkedAtEntryId) {
+            this.forkedAtEntryId = forkedAtEntryId;
         }
     }
 

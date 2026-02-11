@@ -131,14 +131,6 @@ message DeleteConversationRequest {
   bytes conversation_id = 1;
 }
 
-message ForkConversationRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
-  // Entry ID to fork at (UUID as 16-byte big-endian binary)
-  bytes entry_id = 2;
-  string title = 3;
-}
-
 message ListForksRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
@@ -165,6 +157,10 @@ message CreateEntryRequest {
   repeated google.protobuf.Value content = 5;
   // Optional text to index for search (history channel only)
   optional string indexed_content = 6;
+  // Fork metadata: if the target conversation doesn't exist yet, auto-create
+  // it as a fork of forked_at_conversation_id at forked_at_entry_id.
+  optional bytes forked_at_conversation_id = 7;  // UUID as 16-byte big-endian
+  optional bytes forked_at_entry_id = 8;          // UUID as 16-byte big-endian
 }
 
 message SyncEntriesRequest {
@@ -386,7 +382,6 @@ service ConversationsService {
   rpc GetConversation(GetConversationRequest) returns (Conversation);
   // DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
   rpc DeleteConversation(DeleteConversationRequest) returns (google.protobuf.Empty);
-  rpc ForkConversation(ForkConversationRequest) returns (Conversation);
   rpc ListForks(ListForksRequest) returns (ListForksResponse);
 }
 

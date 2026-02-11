@@ -178,10 +178,12 @@ public class AdminAttachmentsResource {
             }
 
             // Check for signed URL redirect (S3)
-            Optional<URI> signedUrl =
-                    fileStore().getSignedUrl(att.storageKey(), Duration.ofHours(1));
+            Duration signedUrlExpiry = Duration.ofHours(1);
+            Optional<URI> signedUrl = fileStore().getSignedUrl(att.storageKey(), signedUrlExpiry);
             if (signedUrl.isPresent()) {
-                return Response.temporaryRedirect(signedUrl.get()).build();
+                return Response.temporaryRedirect(signedUrl.get())
+                        .header("Cache-Control", "private, max-age=" + signedUrlExpiry.toSeconds())
+                        .build();
             }
 
             // Stream bytes directly
@@ -195,6 +197,7 @@ public class AdminAttachmentsResource {
                 builder.header(
                         "Content-Disposition", "inline; filename=\"" + att.filename() + "\"");
             }
+            builder.header("Cache-Control", "private, no-store");
             return builder.build();
         } catch (AccessDeniedException e) {
             return forbidden(e);

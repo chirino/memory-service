@@ -1,6 +1,8 @@
 package example;
 
 import io.github.chirino.memory.history.annotations.ConversationId;
+import io.github.chirino.memory.history.annotations.ForkedAtConversationId;
+import io.github.chirino.memory.history.annotations.ForkedAtEntryId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
 import io.github.chirino.memory.history.runtime.Attachments;
@@ -23,7 +25,9 @@ public class HistoryRecordingAgent {
     public Multi<ChatEvent> chat(
             @ConversationId String conversationId,
             @UserMessage String userMessage,
-            Attachments attachments) {
+            Attachments attachments,
+            @ForkedAtConversationId String forkedAtConversationId,
+            @ForkedAtEntryId String forkedAtEntryId) {
         return agent.chat(conversationId, userMessage, attachments.contents());
     }
 }

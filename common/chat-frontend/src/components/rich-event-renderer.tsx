@@ -189,7 +189,12 @@ function ToolCallPending({ name, input }: ToolCallPendingProps) {
         <Loader2 className="h-4 w-4 animate-spin text-sage" />
         <Wrench className="h-4 w-4 text-sage" />
         <span className="font-medium text-ink">Calling {name}</span>
-        {hasInput && (isExpanded ? <ChevronDown className="ml-auto h-4 w-4 text-stone" /> : <ChevronRight className="ml-auto h-4 w-4 text-stone" />)}
+        {hasInput &&
+          (isExpanded ? (
+            <ChevronDown className="ml-auto h-4 w-4 text-stone" />
+          ) : (
+            <ChevronRight className="ml-auto h-4 w-4 text-stone" />
+          ))}
       </button>
       {isExpanded && hasInput && (
         <div className="border-t border-sage/20 px-3 py-2">
@@ -228,7 +233,12 @@ function ToolCallResult({ name, input, output }: ToolCallResultProps) {
         <Wrench className="h-4 w-4 text-sage" />
         <span className="font-medium text-ink">{name}</span>
         <span className="text-xs text-stone">completed</span>
-        {hasDetails && (isExpanded ? <ChevronDown className="ml-auto h-4 w-4 text-stone" /> : <ChevronRight className="ml-auto h-4 w-4 text-stone" />)}
+        {hasDetails &&
+          (isExpanded ? (
+            <ChevronDown className="ml-auto h-4 w-4 text-stone" />
+          ) : (
+            <ChevronRight className="ml-auto h-4 w-4 text-stone" />
+          ))}
       </button>
       {isExpanded && (
         <div className="space-y-2 border-t border-sage/20 px-3 py-2">
@@ -273,7 +283,12 @@ function ContentFetchedBlock({ source, content }: ContentFetchedBlockProps) {
       >
         <span className="text-xs text-stone">📄 Retrieved content</span>
         {source && <span className="truncate text-xs font-medium text-ink">{source}</span>}
-        {content && (isExpanded ? <ChevronDown className="ml-auto h-4 w-4 text-stone" /> : <ChevronRight className="ml-auto h-4 w-4 text-stone" />)}
+        {content &&
+          (isExpanded ? (
+            <ChevronDown className="ml-auto h-4 w-4 text-stone" />
+          ) : (
+            <ChevronRight className="ml-auto h-4 w-4 text-stone" />
+          ))}
       </button>
       {isExpanded && content && (
         <div className="border-t border-stone/10 px-3 py-2">

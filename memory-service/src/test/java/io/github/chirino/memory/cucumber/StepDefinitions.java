@@ -45,7 +45,6 @@ import io.github.chirino.memory.grpc.v1.DeleteOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.DownloadAttachmentRequest;
 import io.github.chirino.memory.grpc.v1.DownloadAttachmentResponse;
 import io.github.chirino.memory.grpc.v1.EntriesServiceGrpc;
-import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetAttachmentRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetOwnershipTransferRequest;
@@ -1331,33 +1330,44 @@ public class StepDefinitions {
     @io.cucumber.java.en.When("I fork the conversation at entry {string}")
     public void iForkTheConversationAtEntry(String entryId) {
         trackUsage();
-        // Fork without a request body (uses empty JSON object)
         iForkTheConversationAtEntryWithRequest(entryId, "{}");
     }
 
     @io.cucumber.java.en.When("I fork the conversation at entry {string} with request:")
     public void iForkTheConversationAtEntryWithRequest(String entryId, String requestBody) {
         trackUsage();
-        String rendered = renderTemplate(requestBody);
-        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        requestSpec = authenticateRequest(requestSpec);
+        // Generate new conversation ID for the fork
+        String newConversationId = java.util.UUID.randomUUID().toString();
         String renderedEntryId = renderTemplate(entryId);
-        // Remove quotes if present (from template rendering)
         if (renderedEntryId.startsWith("\"") && renderedEntryId.endsWith("\"")) {
             renderedEntryId = renderedEntryId.substring(1, renderedEntryId.length() - 1);
         }
-        this.lastResponse =
-                requestSpec
-                        .when()
-                        .post(
-                                "/v1/conversations/{id}/entries/{eid}/fork",
-                                conversationId,
-                                renderedEntryId);
-        if (lastResponse.getStatusCode() == 201) {
-            String id = lastResponse.jsonPath().getString("id");
-            if (id != null) {
-                contextVariables.put("forkedConversationId", id);
-            }
+        // Build entry body with fork metadata — the server auto-creates the fork conversation
+        String entryBody =
+                "{"
+                        + "\"forkedAtConversationId\": \""
+                        + conversationId
+                        + "\","
+                        + "\"forkedAtEntryId\": \""
+                        + renderedEntryId
+                        + "\","
+                        + "\"channel\": \"HISTORY\","
+                        + "\"contentType\": \"history\","
+                        + "\"content\": [{\"role\": \"USER\", \"text\": \"Fork message\"}]"
+                        + "}";
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(entryBody);
+        requestSpec = authenticateRequest(requestSpec);
+        var entryResponse =
+                requestSpec.when().post("/v1/conversations/{id}/entries", newConversationId);
+        if (entryResponse.getStatusCode() == 201) {
+            contextVariables.put("forkedConversationId", newConversationId);
+            // GET the new conversation so lastResponse is the Conversation object
+            var getSpec = given();
+            getSpec = authenticateRequest(getSpec);
+            this.lastResponse = getSpec.when().get("/v1/conversations/{id}", newConversationId);
+        } else {
+            // On error, expose the entry creation response for assertions
+            this.lastResponse = entryResponse;
         }
     }
 
@@ -1365,18 +1375,10 @@ public class StepDefinitions {
     public void iForkConversationAtEntryWithRequest(
             String convId, String entryId, String requestBody) {
         trackUsage();
-        String rendered = renderTemplate(requestBody);
-        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        requestSpec = authenticateRequest(requestSpec);
-        String renderedEntryId = renderTemplate(entryId);
-        // Remove quotes if present (from template rendering)
-        if (renderedEntryId.startsWith("\"") && renderedEntryId.endsWith("\"")) {
-            renderedEntryId = renderedEntryId.substring(1, renderedEntryId.length() - 1);
-        }
-        this.lastResponse =
-                requestSpec
-                        .when()
-                        .post("/v1/conversations/{id}/entries/{eid}/fork", convId, renderedEntryId);
+        String savedConversationId = conversationId;
+        conversationId = renderTemplate(convId);
+        iForkTheConversationAtEntryWithRequest(entryId, requestBody);
+        conversationId = savedConversationId;
     }
 
     @io.cucumber.java.en.When("I fork that conversation at entry {string} with request:")
@@ -2332,7 +2334,6 @@ public class StepDefinitions {
             case "ConversationsService/CreateConversation" -> Conversation.newBuilder();
             case "ConversationsService/GetConversation" -> Conversation.newBuilder();
             case "ConversationsService/DeleteConversation" -> Empty.newBuilder();
-            case "ConversationsService/ForkConversation" -> Conversation.newBuilder();
             case "ConversationsService/ListForks" -> ListForksResponse.newBuilder();
             case "ConversationsService/TransferOwnership" -> Empty.newBuilder();
             case "ConversationMembershipsService/ListMemberships" ->
@@ -2582,21 +2583,6 @@ public class StepDefinitions {
                         TextFormat.merge(body, requestBuilder);
                     }
                     return stub.deleteConversation(requestBuilder.build());
-                }
-            case "ForkConversation":
-                {
-                    var requestBuilder = ForkConversationRequest.newBuilder();
-                    if (body != null && !body.isBlank()) {
-                        TextFormat.merge(body, requestBuilder);
-                    }
-                    Message response = stub.forkConversation(requestBuilder.build());
-                    if (response instanceof Conversation) {
-                        Conversation conv = (Conversation) response;
-                        if (conv.getId() != null && !conv.getId().isEmpty()) {
-                            contextVariables.put("forkedConversationId", conv.getId());
-                        }
-                    }
-                    return response;
                 }
             case "ListForks":
                 {
