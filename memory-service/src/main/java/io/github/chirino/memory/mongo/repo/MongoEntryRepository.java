@@ -54,7 +54,7 @@ public class MongoEntryRepository implements PanacheMongoRepositoryBase<MongoEnt
                         // If the cursor is from a different channel, ignore it and fall through
                     } else {
                         if (channel != null) {
-                            if (channel == Channel.MEMORY) {
+                            if (channel == Channel.MEMORY && clientId != null) {
                                 return find(
                                                 "conversationId = ?1 and channel = ?2 and clientId"
                                                         + " = ?3 and createdAt > ?4",
@@ -89,7 +89,7 @@ public class MongoEntryRepository implements PanacheMongoRepositoryBase<MongoEnt
         }
 
         if (channel != null) {
-            if (channel == Channel.MEMORY) {
+            if (channel == Channel.MEMORY && clientId != null) {
                 return find(
                                 "conversationId = ?1 and channel = ?2 and clientId = ?3",
                                 sort,
