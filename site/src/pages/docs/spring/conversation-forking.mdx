@@ -23,42 +23,39 @@ Make sure you've completed the previous guides:
 
 ## Conversation Forking
 
-Conversation forking lets users branch off from any point in a conversation to explore alternative paths. Add these methods to the `MemoryServiceProxyController` to enable forking and listing forks:
+Conversation forking lets users branch off from any point in a conversation to explore alternative paths.
+
+### Listing Forks
+
+Add this method to the `MemoryServiceProxyController` to list forks for a conversation:
 
 ```java
-@PostMapping("/{conversationId}/entries/{entryId}/fork")
-public ResponseEntity<?> forkConversationAtEntry(
-        @PathVariable String conversationId,
-        @PathVariable String entryId,
-        @RequestBody(required = false) String body) {
-    return proxy.forkConversationAtEntry(conversationId, entryId, body);
-}
-
 @GetMapping("/{conversationId}/forks")
 public ResponseEntity<?> listConversationForks(@PathVariable String conversationId) {
     return proxy.listConversationForks(conversationId);
 }
 ```
 
-The fork endpoint creates a new conversation that:
-- Copies all entries up to and excluding the specified entry
-- Creates a new conversation ID for the fork
-- Links the fork back to the original conversation
+### How Forking Works
 
-Test it with curl:
+Forks are created implicitly when the first entry is appended to a new conversation with fork metadata. In Spring, the `ConversationHistoryStreamAdvisor` reads fork metadata from advisor params and includes it in the entry request.
 
-```bash
-# Get the id of the first entry in the conversation
-FIRST_ENTRY_ID=$(curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
-  -H "Authorization: Bearer $(get-token)" | jq -r '.data[0].id')
+Pass fork metadata from your controller using the advisor param keys:
 
-curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries/$FIRST_ENTRY_ID/fork \
-  -H "Authorization: Bearer $(get-token)" \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Alternative approach"}' | jq
+```java
+import static io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisor.FORKED_AT_CONVERSATION_ID_KEY;
+import static io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisor.FORKED_AT_ENTRY_ID_KEY;
+
+// In your chat/stream handler:
+if (StringUtils.hasText(request.getForkedAtConversationId())) {
+    advisor.param(FORKED_AT_CONVERSATION_ID_KEY, request.getForkedAtConversationId());
+}
+if (StringUtils.hasText(request.getForkedAtEntryId())) {
+    advisor.param(FORKED_AT_ENTRY_ID_KEY, request.getForkedAtEntryId());
+}
 ```
 
-This will create a new conversation with the `forkedAtConversationId` set to the original conversation ID and the title "Alternative approach", but with a new conversation ID.
+When the frontend sends a chat request with fork metadata, the advisor includes `forkedAtConversationId` and `forkedAtEntryId` in the `CreateEntryRequest`. If the target conversation doesn't exist yet, the memory service auto-creates it as a fork of the original conversation at the specified entry.
 
 ## Complete Example
 

@@ -264,32 +264,43 @@ abstract class AbstractMemoryServiceTest {
         u3.setContent("Entry 3");
         memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u3);
 
-        // Fork at the second entry (forkedAtEntryId becomes m1, the entry BEFORE m2)
-        String forkedId =
-                given().contentType(MediaType.APPLICATION_JSON)
-                        .body(Map.of("title", "Forked Conversation"))
-                        .when()
-                        .post(
-                                "/v1/conversations/{cid}/entries/{eid}/fork",
+        // Fork at the second entry by creating an entry on a new conversation with fork metadata
+        String forkedId = java.util.UUID.randomUUID().toString();
+        given().contentType(MediaType.APPLICATION_JSON)
+                .body(
+                        Map.of(
+                                "channel",
+                                "HISTORY",
+                                "contentType",
+                                "history",
+                                "content",
+                                List.of(Map.of("role", "USER", "text", "Fork message")),
+                                "forkedAtConversationId",
                                 conversationId,
-                                m2.getId())
-                        .then()
-                        .statusCode(201)
-                        .body("title", is("Forked Conversation"))
-                        .body("forkedAtConversationId", is(conversationId))
-                        .body("forkedAtEntryId", is(m1.getId()))
-                        .extract()
-                        .path("id");
+                                "forkedAtEntryId",
+                                m2.getId()))
+                .when()
+                .post("/v1/conversations/{id}/entries", forkedId)
+                .then()
+                .statusCode(201);
 
-        // Fork should include parent entries up to the fork point (Entry 1)
-        // No entries are copied - instead, queries for the fork include parent entries
+        // Verify fork conversation metadata
+        given().when()
+                .get("/v1/conversations/{id}", forkedId)
+                .then()
+                .statusCode(200)
+                .body("forkedAtConversationId", is(conversationId))
+                .body("forkedAtEntryId", is(m1.getId()));
+
+        // Fork should include parent entries up to the fork point (Entry 1) plus the fork message
         given().when()
                 .get("/v1/conversations/{id}/entries", forkedId)
                 .then()
                 .statusCode(200)
-                .body("data", hasSize(1))
+                .body("data", hasSize(2))
                 .body("data[0].id", is(m1.getId()))
-                .body("data[0].content[0].text", is("Entry 1"));
+                .body("data[0].content[0].text", is("Entry 1"))
+                .body("data[1].content[0].text", is("Fork message"));
     }
 
     @Test

@@ -98,13 +98,6 @@ export type ShareConversationRequest = {
   createdAt?: string;
 };
 
-export type ForkFromEntryRequest = {
-  /**
-   * Optional title for the new forked conversation.
-   */
-  title?: string | null;
-};
-
 /**
  * Logical channel of the entry within the conversation.
  */
@@ -304,6 +297,14 @@ export type CreateEntryRequest = {
    * after creation. Returns 400 Bad Request if specified for non-history channels.
    */
   indexedContent?: string | null;
+  /**
+   * If the target conversation doesn't exist yet, auto-create it as a fork of this conversation. Ignored when the conversation already exists.
+   */
+  forkedAtConversationId?: string;
+  /**
+   * Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Required when forkedAtConversationId is set.
+   */
+  forkedAtEntryId?: string;
 };
 
 export type SyncEntryResponse = {
@@ -637,35 +638,6 @@ export type $OpenApiTs = {
          * Error response
          */
         200: ErrorResponse;
-        /**
-         * Resource not found
-         */
-        404: ErrorResponse;
-      };
-    };
-  };
-  "/v1/conversations/{conversationId}/entries/{entryId}/fork": {
-    post: {
-      req: {
-        /**
-         * Conversation identifier (UUID format).
-         */
-        conversationId: string;
-        /**
-         * Entry identifier (UUID format).
-         */
-        entryId: string;
-        requestBody?: ForkFromEntryRequest;
-      };
-      res: {
-        /**
-         * Error response
-         */
-        200: ErrorResponse;
-        /**
-         * The newly created forked conversation.
-         */
-        201: Conversation;
         /**
          * Resource not found
          */
