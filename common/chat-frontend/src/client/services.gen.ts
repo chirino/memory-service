@@ -256,43 +256,6 @@ export class ConversationsService {
   }
 
   /**
-   * Fork a conversation at a given user entry
-   * Creates a new conversation that replays history up to just before the selected
-   * user entry and then diverges starting at that point.
-   *
-   * The fork point must be an existing user-authored entry; in the new forked
-   * conversation that original entry is not present and the next user entry
-   * is supplied by the caller in a follow-up request.
-   * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
-   * @param data.entryId Entry identifier (UUID format).
-   * @param data.requestBody
-   * @returns ErrorResponse Error response
-   * @returns Conversation The newly created forked conversation.
-   * @throws ApiError
-   */
-  public static forkConversationAtEntry(
-    data: $OpenApiTs["/v1/conversations/{conversationId}/entries/{entryId}/fork"]["post"]["req"],
-  ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}/entries/{entryId}/fork"]["post"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}/entries/{entryId}/fork"]["post"]["res"][201]
-  > {
-    return __request(OpenAPI, {
-      method: "POST",
-      url: "/v1/conversations/{conversationId}/entries/{entryId}/fork",
-      path: {
-        conversationId: data.conversationId,
-        entryId: data.entryId,
-      },
-      body: data.requestBody,
-      mediaType: "application/json",
-      errors: {
-        404: "Resource not found",
-      },
-    });
-  }
-
-  /**
    * List forks for a conversation
    * Returns all forked conversations that share the same root conversation as the
    * given conversation. Each fork entry includes the message id at which it forked

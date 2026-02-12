@@ -25,18 +25,25 @@ The forked conversation:
 
 ## Creating a Fork
 
+A fork is created implicitly when you append the first entry to a new conversation with fork metadata. Include `forkedAtConversationId` and `forkedAtEntryId` in the entry request body — if the target conversation doesn't exist yet, the service auto-creates it as a fork.
+
 ### Using the REST API
 
-Fork at a specific entry by calling the fork endpoint with the entry ID:
-
 ```bash
-curl -X POST "http://localhost:8080/v1/conversations/{conversationId}/entries/{entryId}/fork" \
+# Append an entry to a new conversation ID with fork metadata
+curl -X POST "http://localhost:8080/v1/conversations/{newConversationId}/entries" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
-  -d '{"title": "Alternative approach"}'
+  -d '{
+    "forkedAtConversationId": "{originalConversationId}",
+    "forkedAtEntryId": "{entryId}",
+    "channel": "history",
+    "contentType": "history",
+    "content": [{"role": "USER", "text": "A different question"}]
+  }'
 ```
 
-The fork point must be an existing user-authored entry. The forked conversation will contain history up to (but not including) that entry.
+The forked conversation inherits entries from the original up to (but not including) the specified entry.
 
 ## Fork Properties
 
@@ -94,7 +101,6 @@ This returns all conversations in the same fork tree.
 
 ## Limitations
 
-- Fork point must be an existing user-authored entry
 - The forked entry itself is not included in the new conversation
 
 ## Next Steps

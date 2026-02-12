@@ -215,17 +215,6 @@ export const $ShareConversationRequest = {
   },
 } as const;
 
-export const $ForkFromEntryRequest = {
-  type: "object",
-  properties: {
-    title: {
-      type: "string",
-      nullable: true,
-      description: "Optional title for the new forked conversation.",
-    },
-  },
-} as const;
-
 export const $Channel = {
   type: "string",
   description: "Logical channel of the entry within the conversation.",
@@ -493,6 +482,18 @@ contains \`role\` and at least one of \`text\`, \`events\`, or \`attachments\`.`
       description: `Optional text to index for search. Only valid for entries in the history
 channel. If provided, the entry will be indexed for search immediately
 after creation. Returns 400 Bad Request if specified for non-history channels.`,
+    },
+    forkedAtConversationId: {
+      type: "string",
+      format: "uuid",
+      description:
+        "If the target conversation doesn't exist yet, auto-create it as a fork of this conversation. Ignored when the conversation already exists.",
+    },
+    forkedAtEntryId: {
+      type: "string",
+      format: "uuid",
+      description:
+        "Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Required when forkedAtConversationId is set.",
     },
   },
   example: {

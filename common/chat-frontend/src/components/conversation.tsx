@@ -502,11 +502,11 @@ function useConversationProviderValue(props: ConversationRootProps): Conversatio
       const callbacks = handleStreamCallbacks(streamId);
       // Wrap in try-catch to handle both sync throws and async rejections
       try {
-        void Promise.resolve(controller.startStream(state.conversationId, trimmed, callbacks, attachments, forkMeta)).catch(
-          (error) => {
-            callbacks.onError?.(error);
-          },
-        );
+        void Promise.resolve(
+          controller.startStream(state.conversationId, trimmed, callbacks, attachments, forkMeta),
+        ).catch((error) => {
+          callbacks.onError?.(error);
+        });
       } catch (error) {
         callbacks.onError?.(error);
       }

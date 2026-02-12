@@ -130,21 +130,6 @@ Mono<Void> result = conversationsApi.deleteConversation("conversation-id");
 result.block();
 ```
 
-### Fork Conversation
-
-```java
-import io.github.chirino.memoryservice.client.model.ForkFromMessageRequest;
-
-ForkFromMessageRequest request = new ForkFromMessageRequest();
-request.setTitle("Alternative approach");
-
-Mono<Conversation> forked = conversationsApi.forkConversationAtMessage(
-    "original-id",
-    "message-id",
-    request
-);
-```
-
 ## Messages API
 
 ### List Messages
