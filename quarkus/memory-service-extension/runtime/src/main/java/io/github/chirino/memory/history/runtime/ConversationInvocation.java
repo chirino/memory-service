@@ -4,4 +4,8 @@ import java.util.List;
 import java.util.Map;
 
 public record ConversationInvocation(
-        String conversationId, String userMessage, List<Map<String, Object>> attachments) {}
+        String conversationId,
+        String userMessage,
+        List<Map<String, Object>> attachments,
+        String forkedAtConversationId,
+        String forkedAtEntryId) {}

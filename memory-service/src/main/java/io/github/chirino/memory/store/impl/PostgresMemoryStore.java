@@ -8,9 +8,7 @@ import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
-import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
-import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
@@ -63,6 +61,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -103,6 +102,8 @@ public class PostgresMemoryStore implements MemoryStore {
     @Inject io.github.chirino.memory.attachment.AttachmentStoreSelector attachmentStoreSelector;
 
     @Inject io.github.chirino.memory.attachment.FileStoreSelector fileStoreSelector;
+
+    @Inject io.github.chirino.memory.attachment.AttachmentDeletionService attachmentDeletionService;
 
     @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
 
@@ -280,59 +281,6 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    @Transactional
-    public EntryDto appendUserEntry(
-            String userId, String conversationId, CreateUserEntryRequest request) {
-        UUID cid = UUID.fromString(conversationId);
-        ConversationEntity conversation = conversationRepository.findActiveById(cid).orElse(null);
-
-        // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
-        if (conversation == null) {
-            conversation = new ConversationEntity();
-            conversation.setId(cid);
-            conversation.setOwnerUserId(userId);
-            String inferredTitle = inferTitleFromUserEntry(request);
-            conversation.setTitle(encryptTitle(inferredTitle));
-            conversation.setMetadata(Collections.emptyMap());
-            ConversationGroupEntity conversationGroup =
-                    conversationGroupRepository
-                            .findActiveById(cid)
-                            .orElseGet(
-                                    () -> {
-                                        ConversationGroupEntity group =
-                                                new ConversationGroupEntity();
-                                        group.setId(cid);
-                                        conversationGroupRepository.persist(group);
-                                        return group;
-                                    });
-            conversation.setConversationGroup(conversationGroup);
-            conversationRepository.persist(conversation);
-            membershipRepository.createMembership(conversationGroup, userId, AccessLevel.OWNER);
-        } else {
-            UUID groupId = conversation.getConversationGroup().getId();
-            ensureHasAccess(groupId, userId, AccessLevel.WRITER);
-        }
-
-        EntryEntity entry = new EntryEntity();
-        entry.setConversation(conversation);
-        entry.setUserId(userId);
-        entry.setChannel(Channel.HISTORY);
-        entry.setEpoch(null);
-        entry.setContentType("history");
-        entry.setContent(
-                encryptContent(
-                        toHistoryContent(request.getContent(), "USER", request.getAttachments())));
-        entry.setIndexedContent(request.getContent());
-        entry.setConversationGroupId(conversation.getConversationGroup().getId());
-        OffsetDateTime createdAt = OffsetDateTime.now();
-        entry.setCreatedAt(createdAt);
-        entryRepository.persist(entry);
-        conversationRepository.update(
-                "updatedAt = ?1 where id = ?2", createdAt, conversation.getId());
-        return toEntryDto(entry);
-    }
-
-    @Override
     public List<ConversationMembershipDto> listMemberships(String userId, String conversationId) {
         UUID cid = UUID.fromString(conversationId);
         UUID groupId = resolveGroupId(cid);
@@ -433,38 +381,44 @@ public class PostgresMemoryStore implements MemoryStore {
         ownershipTransferRepository.deleteByConversationGroupAndToUser(groupId, memberUserId);
     }
 
-    @Override
-    @Transactional
-    public ConversationDto forkConversationAtEntry(
-            String userId, String conversationId, String entryId, ForkFromEntryRequest request) {
-        // Create a new fork conversation without copying entries.
-        UUID originalId = UUID.fromString(conversationId);
+    /**
+     * Sets up a conversation entity as a fork of an existing conversation.
+     * The fork joins the parent's ConversationGroup and sets fork pointers.
+     * The forkedAtEntryId on the entity is resolved to the entry BEFORE the target,
+     * so "fork at entry X" means "include entries before X, exclude X and after".
+     */
+    private void setupForkConversation(
+            ConversationEntity forkEntity,
+            String userId,
+            String parentConversationId,
+            String forkAtEntryId,
+            String inferredTitle) {
+        UUID originalId = UUID.fromString(parentConversationId);
         ConversationEntity originalEntity =
                 conversationRepository
                         .findActiveById(originalId)
                         .orElseThrow(
                                 () ->
                                         new ResourceNotFoundException(
-                                                "conversation", conversationId));
+                                                "conversation", parentConversationId));
         UUID groupId = originalEntity.getConversationGroup().getId();
         ensureHasAccess(groupId, userId, AccessLevel.WRITER);
 
         EntryEntity target =
                 entryRepository
-                        .findByIdOptional(UUID.fromString(entryId))
-                        .orElseThrow(() -> new ResourceNotFoundException("entry", entryId));
+                        .findByIdOptional(UUID.fromString(forkAtEntryId))
+                        .orElseThrow(() -> new ResourceNotFoundException("entry", forkAtEntryId));
         if (target.getConversation() == null
                 || !originalId.equals(target.getConversation().getId())) {
-            throw new ResourceNotFoundException("entry", entryId);
+            throw new ResourceNotFoundException("entry", forkAtEntryId);
         }
         if (target.getChannel() != Channel.HISTORY) {
             throw new AccessDeniedException("Forking is only allowed for history entries");
         }
 
         // Find the previous entry of ANY channel before the target entry.
-        // forkedAtEntryId is set to this previous entry - all parent entries up to and including
-        // forkedAtEntryId are visible to the fork. This makes "fork at entry X" mean "branch before
-        // X".
+        // forkedAtEntryId is set to this previous entry — all parent entries up to and including
+        // forkedAtEntryId are visible to the fork.
         EntryEntity previous =
                 entryRepository
                         .find(
@@ -477,26 +431,15 @@ public class PostgresMemoryStore implements MemoryStore {
                         .firstResult();
         UUID previousId = previous != null ? previous.getId() : null;
 
-        ConversationEntity forkEntity = new ConversationEntity();
         forkEntity.setOwnerUserId(originalEntity.getOwnerUserId());
         forkEntity.setTitle(
                 encryptTitle(
-                        request.getTitle() != null
-                                ? request.getTitle()
+                        inferredTitle != null
+                                ? inferredTitle
                                 : decryptTitle(originalEntity.getTitle())));
-        forkEntity.setMetadata(Collections.emptyMap());
         forkEntity.setConversationGroup(originalEntity.getConversationGroup());
         forkEntity.setForkedAtConversationId(originalEntity.getId());
         forkEntity.setForkedAtEntryId(previousId);
-        conversationRepository.persist(forkEntity);
-
-        return toConversationDto(
-                forkEntity,
-                membershipRepository
-                        .findMembership(groupId, userId)
-                        .map(ConversationMembershipEntity::getAccessLevel)
-                        .orElse(AccessLevel.READER),
-                null);
     }
 
     @Override
@@ -1026,24 +969,12 @@ public class PostgresMemoryStore implements MemoryStore {
             String clientId) {
         UUID conversationId = conversation.getId();
 
-        // For non-forked conversations, use existing efficient queries
-        if (!isFork(conversation)) {
-            LOG.infof(
-                    "getEntriesWithForkSupport: conversation %s is not a fork, using direct query",
-                    conversationId);
-            List<EntryEntity> entries =
-                    entryRepository.listByChannel(
-                            conversationId, afterEntryId, limit, channel, clientId);
-            return buildPagedEntries(conversationId.toString(), entries, limit);
-        }
-
         // Build ancestry stack for fork-aware retrieval
         List<ForkAncestor> ancestry = buildAncestryStack(conversation);
         UUID groupId = conversation.getConversationGroup().getId();
 
-        // Query all entries in the conversation group
-        List<EntryEntity> allEntries =
-                entryRepository.listByConversationGroup(groupId, channel, clientId);
+        // Query ALL entries in the group (need all channels for fork point tracking)
+        List<EntryEntity> allEntries = entryRepository.listByConversationGroup(groupId, null, null);
         LOG.infof(
                 "getEntriesWithForkSupport: fetched %d entries from group %s",
                 allEntries.size(), groupId);
@@ -1053,6 +984,16 @@ public class PostgresMemoryStore implements MemoryStore {
         LOG.infof(
                 "getEntriesWithForkSupport: after ancestry filter, %d entries",
                 filteredEntries.size());
+
+        // Post-filter by channel and clientId (after ancestry is resolved)
+        if (channel != null) {
+            filteredEntries =
+                    filteredEntries.stream().filter(e -> e.getChannel() == channel).toList();
+        }
+        if (channel == Channel.MEMORY && clientId != null) {
+            filteredEntries =
+                    filteredEntries.stream().filter(e -> clientId.equals(e.getClientId())).toList();
+        }
 
         // Apply pagination
         List<EntryEntity> paginatedEntries = applyPagination(filteredEntries, afterEntryId, limit);
@@ -1349,7 +1290,7 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public List<EntryDto> appendAgentEntries(
+    public List<EntryDto> appendMemoryEntries(
             String userId,
             String conversationId,
             List<CreateEntryRequest> entries,
@@ -1360,26 +1301,50 @@ public class PostgresMemoryStore implements MemoryStore {
 
         // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
         if (conversation == null) {
+            // Check first entry for fork metadata
+            CreateEntryRequest firstEntry = entries.isEmpty() ? null : entries.get(0);
+            String forkConvId =
+                    firstEntry != null && firstEntry.getForkedAtConversationId() != null
+                            ? firstEntry.getForkedAtConversationId().toString()
+                            : null;
+            String forkEntryId =
+                    firstEntry != null && firstEntry.getForkedAtEntryId() != null
+                            ? firstEntry.getForkedAtEntryId().toString()
+                            : null;
+
             conversation = new ConversationEntity();
             conversation.setId(cid);
-            conversation.setOwnerUserId(userId);
-            String inferredTitle = inferTitleFromEntries(entries);
-            conversation.setTitle(encryptTitle(inferredTitle));
             conversation.setMetadata(Collections.emptyMap());
-            ConversationGroupEntity conversationGroup =
-                    conversationGroupRepository
-                            .findActiveById(cid)
-                            .orElseGet(
-                                    () -> {
-                                        ConversationGroupEntity group =
-                                                new ConversationGroupEntity();
-                                        group.setId(cid);
-                                        conversationGroupRepository.persist(group);
-                                        return group;
-                                    });
-            conversation.setConversationGroup(conversationGroup);
-            conversationRepository.persist(conversation);
-            membershipRepository.createMembership(conversationGroup, userId, AccessLevel.OWNER);
+
+            if (forkConvId != null && forkEntryId != null) {
+                // Fork auto-creation: join parent's group instead of creating a new one
+                setupForkConversation(
+                        conversation,
+                        userId,
+                        forkConvId,
+                        forkEntryId,
+                        inferTitleFromEntries(entries));
+                conversationRepository.persist(conversation);
+                // No membership creation for forks — user already has membership via parent group
+            } else {
+                // Root conversation auto-creation
+                conversation.setOwnerUserId(userId);
+                conversation.setTitle(encryptTitle(inferTitleFromEntries(entries)));
+                ConversationGroupEntity conversationGroup =
+                        conversationGroupRepository
+                                .findActiveById(cid)
+                                .orElseGet(
+                                        () -> {
+                                            ConversationGroupEntity group =
+                                                    new ConversationGroupEntity();
+                                            group.setId(cid);
+                                            conversationGroupRepository.persist(group);
+                                            return group;
+                                        });
+                conversation.setConversationGroup(conversationGroup);
+                conversationRepository.persist(conversation);
+                membershipRepository.createMembership(conversationGroup, userId, AccessLevel.OWNER);
+            }
         } else {
             UUID groupId = conversation.getConversationGroup().getId();
             ensureHasAccess(groupId, userId, AccessLevel.WRITER);
@@ -1419,7 +1384,6 @@ public class PostgresMemoryStore implements MemoryStore {
         for (CreateEntryRequest req : entries) {
             EntryEntity entity = new EntryEntity();
             entity.setConversation(conversation);
-            entity.setUserId(req.getUserId());
             entity.setClientId(clientId);
             Channel channel;
             if (req.getChannel() != null) {
@@ -1429,6 +1393,12 @@ public class PostgresMemoryStore implements MemoryStore {
                 channel = io.github.chirino.memory.model.Channel.MEMORY;
             }
             entity.setChannel(channel);
+            // For HISTORY entries, default userId to the authenticated user
+            String entryUserId = req.getUserId();
+            if (entryUserId == null && channel == Channel.HISTORY) {
+                entryUserId = userId;
+            }
+            entity.setUserId(entryUserId);
 
             // Set epoch based on channel type
             // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
@@ -1439,9 +1409,16 @@ public class PostgresMemoryStore implements MemoryStore {
                 entity.setEpoch(null);
             }
 
-            entity.setContentType(req.getContentType() != null ? req.getContentType() : "message");
+            String defaultContentType = (channel == Channel.HISTORY) ? "history" : "message";
+            entity.setContentType(
+                    req.getContentType() != null ? req.getContentType() : defaultContentType);
             entity.setContent(encryptContent(req.getContent()));
-            entity.setIndexedContent(req.getIndexedContent());
+            // For HISTORY entries, default indexedContent to text extracted from content
+            String indexedContent = req.getIndexedContent();
+            if (indexedContent == null && channel == Channel.HISTORY && req.getContent() != null) {
+                indexedContent = extractSearchText(req.getContent());
+            }
+            entity.setIndexedContent(indexedContent);
             entity.setConversationGroupId(conversation.getConversationGroup().getId());
             OffsetDateTime createdAt = OffsetDateTime.now();
             entity.setCreatedAt(createdAt);
@@ -1458,14 +1435,14 @@ public class PostgresMemoryStore implements MemoryStore {
             created.add(toEntryDto(entity));
         }
         // Flush to ensure entries are visible to subsequent queries (e.g., cache updates)
-        LOG.infof("appendAgentEntries: flushing %d entries to database", created.size());
+        LOG.infof("appendMemoryEntries: flushing %d entries to database", created.size());
         entryRepository.flush();
-        LOG.infof("appendAgentEntries: flush completed");
+        LOG.infof("appendMemoryEntries: flush completed");
 
         // Invalidate/update cache if MEMORY entries were created
         if (hasMemoryEntries && clientId != null) {
             LOG.infof(
-                    "appendAgentEntries: updating cache for conversationId=%s, clientId=%s",
+                    "appendMemoryEntries: updating cache for conversationId=%s, clientId=%s",
                     conversationId, clientId);
             updateCacheWithLatestEntries(cid, clientId);
         }
@@ -1483,14 +1460,49 @@ public class PostgresMemoryStore implements MemoryStore {
             String userId, String conversationId, CreateEntryRequest entry, String clientId) {
         validateSyncEntry(entry);
         UUID cid = UUID.fromString(conversationId);
-        // Combined query: finds max epoch and lists entries in single round-trip
-        List<EntryEntity> latestEpochEntityList =
-                entryRepository.listMemoryEntriesAtLatestEpoch(cid, clientId);
-        List<EntryDto> latestEpochEntries =
-                latestEpochEntityList.stream().map(this::toEntryDto).collect(Collectors.toList());
-        // Extract epoch from entries (all entries in the list share the same epoch)
-        Long latestEpoch =
-                latestEpochEntityList.isEmpty() ? null : latestEpochEntityList.get(0).getEpoch();
+
+        // Load conversation to check if it's a fork
+        ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
+        if (conversation == null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+
+        List<EntryDto> latestEpochEntries;
+        Long latestEpoch;
+
+        if (isFork(conversation)) {
+            // Fork-aware retrieval: include inherited parent entries for content comparison.
+            // Without this, prefix detection fails because the fork has no entries of its own
+            // initially, causing all incoming messages to be bundled into a single entry.
+            List<ForkAncestor> ancestry = buildAncestryStack(conversation);
+            UUID groupId = conversation.getConversationGroup().getId();
+            List<EntryEntity> allEntries =
+                    entryRepository.listByConversationGroup(groupId, null, null);
+            List<EntryEntity> filteredEntries =
+                    filterMemoryEntriesWithEpoch(
+                            allEntries, ancestry, clientId, MemoryEpochFilter.latest());
+            latestEpochEntries =
+                    filteredEntries.stream().map(this::toEntryDto).collect(Collectors.toList());
+            latestEpoch =
+                    filteredEntries.stream()
+                            .map(EntryEntity::getEpoch)
+                            .filter(Objects::nonNull)
+                            .max(Long::compare)
+                            .orElse(null);
+        } else {
+            // Combined query: finds max epoch and lists entries in single round-trip
+            List<EntryEntity> latestEpochEntityList =
+                    entryRepository.listMemoryEntriesAtLatestEpoch(cid, clientId);
+            latestEpochEntries =
+                    latestEpochEntityList.stream()
+                            .map(this::toEntryDto)
+                            .collect(Collectors.toList());
+            // Extract epoch from entries (all entries in the list share the same epoch)
+            latestEpoch =
+                    latestEpochEntityList.isEmpty()
+                            ? null
+                            : latestEpochEntityList.get(0).getEpoch();
+        }
 
         // Flatten content from all existing entries and get incoming content
         List<Object> existingContent = MemorySyncHelper.flattenContent(latestEpochEntries);
@@ -1507,7 +1519,7 @@ public class PostgresMemoryStore implements MemoryStore {
             Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
             CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
             List<EntryDto> appended =
-                    appendAgentEntries(
+                    appendMemoryEntries(
                             userId, conversationId, List.of(toAppend), clientId, nextEpoch);
             // Update cache with new epoch entries
             updateCacheWithLatestEntries(cid, clientId);
@@ -1548,7 +1560,7 @@ public class PostgresMemoryStore implements MemoryStore {
             Long epochToUse = latestEpoch != null ? latestEpoch : 1L;
             CreateEntryRequest deltaEntry = MemorySyncHelper.withContent(entry, deltaContent);
             List<EntryDto> appended =
-                    appendAgentEntries(
+                    appendMemoryEntries(
                             userId, conversationId, List.of(deltaEntry), clientId, epochToUse);
             // Update cache with appended entry
             updateCacheWithLatestEntries(cid, clientId);
@@ -1562,7 +1574,7 @@ public class PostgresMemoryStore implements MemoryStore {
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
         CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
         List<EntryDto> appended =
-                appendAgentEntries(userId, conversationId, List.of(toAppend), clientId, nextEpoch);
+                appendMemoryEntries(userId, conversationId, List.of(toAppend), clientId, nextEpoch);
         // Update cache with new epoch entries
         updateCacheWithLatestEntries(cid, clientId);
         result.setEpoch(nextEpoch);
@@ -1807,18 +1819,6 @@ public class PostgresMemoryStore implements MemoryStore {
         return null;
     }
 
-    private String inferTitleFromUserEntry(CreateUserEntryRequest request) {
-        if (request == null) {
-            return null;
-        }
-        String rawContent = request.getContent();
-        if (rawContent == null || rawContent.isBlank()) {
-            return null;
-        }
-        String extractedText = tryExtractTextFromJson(rawContent);
-        return abbreviateTitle(extractedText);
-    }
-
     private String inferTitleFromEntries(List<CreateEntryRequest> entries) {
         if (entries == null || entries.isEmpty()) {
             return null;
@@ -2021,23 +2021,6 @@ public class PostgresMemoryStore implements MemoryStore {
      * @param attachments Optional list of attachment objects
      * @return Content array with a single object containing role and at least one of text or attachments
      */
-    private List<Object> toHistoryContent(
-            String text, String role, List<Map<String, Object>> attachments) {
-        Map<String, Object> block = new HashMap<>();
-        block.put("role", role);
-        if (text != null) {
-            block.put("text", text);
-        }
-        if (attachments != null && !attachments.isEmpty()) {
-            block.put("attachments", attachments);
-        }
-        if (block.size() <= 1) {
-            // Only role present, no content - return empty
-            return Collections.emptyList();
-        }
-        return List.of(block);
-    }
-
     // Admin methods
 
     @Override
@@ -2408,7 +2391,7 @@ public class PostgresMemoryStore implements MemoryStore {
                     "vector_store_delete", Map.of("conversationGroupId", groupId));
         }
 
-        // 2. Delete FileStore blobs for attachments in these groups
+        // 2. Delete FileStore blobs for attachments in these groups (with ref-count safety)
         try {
             UUID[] groupUuids = groupIds.stream().map(UUID::fromString).toArray(UUID[]::new);
             @SuppressWarnings("unchecked")
@@ -2421,13 +2404,8 @@ public class PostgresMemoryStore implements MemoryStore {
                             .getResultList();
             if (!entryIds.isEmpty()) {
                 var attachmentStore = attachmentStoreSelector.getStore();
-                var fileStore = fileStoreSelector.getFileStore();
                 var attachments = attachmentStore.findByEntryIds(entryIds);
-                for (var att : attachments) {
-                    if (att.storageKey() != null) {
-                        fileStore.delete(att.storageKey());
-                    }
-                }
+                attachmentDeletionService.deleteAttachments(attachments);
             }
         } catch (Exception e) {
             LOG.warnf(

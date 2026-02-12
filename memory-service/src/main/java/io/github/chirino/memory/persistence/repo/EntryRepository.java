@@ -15,31 +15,6 @@ public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID>
 
     private static final Logger LOG = Logger.getLogger(EntryRepository.class);
 
-    public List<EntryEntity> listUserVisible(UUID conversationId, String afterEntryId, int limit) {
-        String baseQuery =
-                "from EntryEntity m where m.conversation.id = ?1 and m.channel = ?2 and"
-                        + " m.conversation.deletedAt IS NULL and"
-                        + " m.conversation.conversationGroup.deletedAt IS NULL";
-        if (afterEntryId != null) {
-            UUID afterId = UUID.fromString(afterEntryId);
-            EntryEntity afterEntry = findById(afterId);
-            if (afterEntry != null
-                    && afterEntry.getConversation() != null
-                    && conversationId.equals(afterEntry.getConversation().getId())) {
-                return find(
-                                baseQuery + " and m.createdAt > ?3 order by m.createdAt, m.id",
-                                conversationId,
-                                Channel.HISTORY,
-                                afterEntry.getCreatedAt())
-                        .page(0, limit)
-                        .list();
-            }
-        }
-        return find(baseQuery + " order by m.createdAt, m.id", conversationId, Channel.HISTORY)
-                .page(0, limit)
-                .list();
-    }
-
     public List<EntryEntity> listByChannel(
             UUID conversationId, String afterEntryId, int limit, Channel channel, String clientId) {
         LOG.infof(
@@ -56,7 +31,7 @@ public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID>
             baseQuery += " and m.channel = ?" + (params.size() + 1);
             params.add(channel);
         }
-        if (channel == Channel.MEMORY) {
+        if (channel == Channel.MEMORY && clientId != null) {
             baseQuery += " and m.clientId = ?" + (params.size() + 1);
             params.add(clientId);
         }
@@ -146,11 +121,6 @@ public class EntryRepository implements PanacheRepositoryBase<EntryEntity, UUID>
         List<EntryEntity> result = find(query, params.toArray()).page(0, limit).list();
         LOG.infof("listMemoryEntriesAtLatestEpoch: found %d entries", result.size());
         return result;
-    }
-
-    public List<EntryEntity> listMemoryEntriesByEpoch(
-            UUID conversationId, Long epoch, String clientId) {
-        return listMemoryEntriesByEpoch(conversationId, null, Integer.MAX_VALUE, epoch, clientId);
     }
 
     public List<EntryEntity> listMemoryEntriesByEpoch(

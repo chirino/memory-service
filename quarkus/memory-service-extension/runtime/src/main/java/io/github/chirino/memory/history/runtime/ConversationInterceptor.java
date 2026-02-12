@@ -1,7 +1,8 @@
 package io.github.chirino.memory.history.runtime;
 
-import io.github.chirino.memory.history.annotations.Attachments;
 import io.github.chirino.memory.history.annotations.ConversationId;
+import io.github.chirino.memory.history.annotations.ForkedAtConversationId;
+import io.github.chirino.memory.history.annotations.ForkedAtEntryId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
 import io.quarkiverse.langchain4j.ImageUrl;
@@ -44,7 +45,9 @@ public class ConversationInterceptor {
             store.appendUserMessage(
                     invocation.conversationId(),
                     invocation.userMessage(),
-                    invocation.attachments());
+                    invocation.attachments(),
+                    invocation.forkedAtConversationId(),
+                    invocation.forkedAtEntryId());
         } catch (RuntimeException e) {
             LOG.warnf(
                     e,
@@ -87,17 +90,24 @@ public class ConversationInterceptor {
         return false;
     }
 
-    @SuppressWarnings("unchecked")
     private ConversationInvocation resolveInvocation(InvocationContext ctx) {
         Object[] args = ctx.getParameters();
         Annotation[][] annotations = ctx.getMethod().getParameterAnnotations();
+        Class<?>[] paramTypes = ctx.getMethod().getParameterTypes();
 
         String conversationId = null;
         String userMessage = null;
-        List<Map<String, Object>> explicitAttachments = null;
+        Attachments attachmentsObj = null;
         List<Map<String, Object>> imageUrlAttachments = new ArrayList<>();
+        String forkedAtConversationId = null;
+        String forkedAtEntryId = null;
 
         for (int i = 0; i < args.length; i++) {
+            // Detect Attachments by parameter type
+            if (paramTypes[i] == Attachments.class && args[i] != null) {
+                attachmentsObj = (Attachments) args[i];
+            }
+
             for (Annotation a : annotations[i]) {
                 if (a instanceof ConversationId) {
                     conversationId = (String) args[i];
@@ -105,8 +115,11 @@ public class ConversationInterceptor {
                 if (a instanceof UserMessage) {
                     userMessage = (String) args[i];
                 }
-                if (a instanceof Attachments && args[i] != null) {
-                    explicitAttachments = (List<Map<String, Object>>) args[i];
+                if (a instanceof ForkedAtConversationId) {
+                    forkedAtConversationId = (String) args[i];
+                }
+                if (a instanceof ForkedAtEntryId) {
+                    forkedAtEntryId = (String) args[i];
                 }
                 if (a instanceof ImageUrl && args[i] != null) {
                     Map<String, Object> att = new LinkedHashMap<>();
@@ -122,10 +135,11 @@ public class ConversationInterceptor {
                     "Missing @ConversationId or @UserMessage on intercepted method");
         }
 
-        // Prefer explicit @Attachments metadata over @ImageUrl-derived attachments
+        // Prefer Attachments object metadata over @ImageUrl-derived attachments
         List<Map<String, Object>> attachments =
-                explicitAttachments != null ? explicitAttachments : imageUrlAttachments;
+                attachmentsObj != null ? attachmentsObj.metadata() : imageUrlAttachments;
 
-        return new ConversationInvocation(conversationId, userMessage, attachments);
+        return new ConversationInvocation(
+                conversationId, userMessage, attachments, forkedAtConversationId, forkedAtEntryId);
     }
 }

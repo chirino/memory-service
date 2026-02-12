@@ -38,7 +38,7 @@ The above handles starting all depdencies of the memory-service in containers.
 
 Run the chat-quarkus in dev mode, but firsts compile it's dependencies..
 ```bash
-./mvnw -T 1C install -pl ':chat-quarkus' -am -DskipTests && \
+./mvnw -T 1C install -pl ':memory-service-extension-deployment' -am -DskipTests && \
     ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
 ```
 

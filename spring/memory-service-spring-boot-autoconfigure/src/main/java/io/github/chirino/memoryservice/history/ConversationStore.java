@@ -41,6 +41,16 @@ public class ConversationStore {
             String content,
             List<Map<String, Object>> attachments,
             @Nullable String bearerToken) {
+        appendUserMessage(conversationId, content, attachments, bearerToken, null, null);
+    }
+
+    public void appendUserMessage(
+            String conversationId,
+            String content,
+            List<Map<String, Object>> attachments,
+            @Nullable String bearerToken,
+            @Nullable String forkedAtConversationId,
+            @Nullable String forkedAtEntryId) {
         if (!StringUtils.hasText(content)) {
             return;
         }
@@ -50,6 +60,12 @@ public class ConversationStore {
             @SuppressWarnings("unchecked")
             Map<String, Object> block = (Map<String, Object>) request.getContent().get(0);
             block.put("attachments", attachments);
+        }
+        if (forkedAtConversationId != null) {
+            request.forkedAtConversationId(UUID.fromString(forkedAtConversationId));
+        }
+        if (forkedAtEntryId != null) {
+            request.forkedAtEntryId(UUID.fromString(forkedAtEntryId));
         }
         callAppend(conversationId, request, resolveBearerToken(bearerToken));
     }

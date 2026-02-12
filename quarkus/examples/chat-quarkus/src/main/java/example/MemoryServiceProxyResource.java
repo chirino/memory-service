@@ -62,17 +62,6 @@ public class MemoryServiceProxyResource {
                 conversationId, after, limit, Channel.HISTORY, null, "all");
     }
 
-    @POST
-    @Path("/{conversationId}/entries/{entryId}/fork")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response forkConversationAtEntry(
-            @PathParam("conversationId") String conversationId,
-            @PathParam("entryId") String entryId,
-            String body) {
-        return proxy.forkConversationAtEntry(conversationId, entryId, body);
-    }
-
     @GET
     @Path("/{conversationId}/forks")
     @Produces(MediaType.APPLICATION_JSON)

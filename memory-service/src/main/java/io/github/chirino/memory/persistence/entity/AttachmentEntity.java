@@ -47,6 +47,9 @@ public class AttachmentEntity {
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
+
     @PrePersist
     public void prePersist() {
         if (id == null) {
@@ -135,5 +138,13 @@ public class AttachmentEntity {
 
     public void setCreatedAt(OffsetDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public OffsetDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(OffsetDateTime deletedAt) {
+        this.deletedAt = deletedAt;
     }
 }

@@ -507,6 +507,233 @@ paths:
         - BearerAuth: []
 
   ############################################################
+  # Admin Attachments
+  ############################################################
+
+  /v1/admin/attachments:
+    get:
+      tags: [Admin]
+      summary: List all attachments across users (admin/auditor)
+      description: |-
+        Lists attachments across all users with filtering and pagination.
+        Requires auditor or admin role.
+      operationId: adminListAttachments
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          description: Filter by uploader user ID.
+          schema:
+            type: string
+        - name: entryId
+          in: query
+          required: false
+          description: Filter by linked entry ID.
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          description: "Filter by status: linked, unlinked, expired, or all."
+          schema:
+            type: string
+            enum: [linked, unlinked, expired, all]
+            default: all
+        - name: after
+          in: query
+          required: false
+          description: Cursor for pagination (UUID of last item).
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of attachments to return (max 200).
+          schema:
+            type: integer
+            default: 50
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of attachments.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminAttachment'
+                  nextCursor:
+                    type: string
+                    nullable: true
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/attachments/{id}:
+    get:
+      tags: [Admin]
+      summary: Get attachment metadata (admin/auditor)
+      description: |-
+        Returns metadata for any attachment, including soft-deleted records.
+        Requires auditor or admin role.
+      operationId: adminGetAttachment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Attachment identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Attachment metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAttachment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    delete:
+      tags: [Admin]
+      summary: Delete any attachment (admin only)
+      description: |-
+        Deletes any attachment regardless of ownership or link status.
+        Uses reference-counting for shared storage keys.
+        Requires admin role.
+      operationId: adminDeleteAttachment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Attachment identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminActionRequest'
+      responses:
+        '204':
+          description: Attachment deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/attachments/{id}/content:
+    get:
+      tags: [Admin]
+      summary: Download attachment content (admin/auditor)
+      description: |-
+        Streams the binary content of any attachment, bypassing ownership checks.
+        For S3-backed storage, returns a 302 redirect to a signed URL.
+        Requires auditor or admin role.
+      operationId: adminGetAttachmentContent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Attachment identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Binary file content.
+          headers:
+            Cache-Control:
+              description: "Set to `private, no-store` for direct streams (DB storage)."
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '302':
+          description: Redirect to signed download URL (S3-backed storage).
+          headers:
+            Cache-Control:
+              description: "Set to `private, max-age=<seconds>` matching the signed URL expiry."
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/admin/attachments/{id}/download-url:
+    get:
+      tags: [Admin]
+      summary: Get signed download URL for any attachment (admin/auditor)
+      description: |-
+        Returns a time-limited signed URL for downloading any attachment
+        without authentication. Requires auditor or admin role.
+      operationId: adminGetAttachmentDownloadUrl
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Attachment identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Signed download URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDownloadUrlResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  ############################################################
   # Admin Stats
   ############################################################
 
@@ -1183,4 +1410,52 @@ components:
           description: Time series data points for this label.
           items:
             $ref: '#/components/schemas/TimeSeriesDataPoint'
+
+    AdminAttachment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        storageKey:
+          type: string
+        filename:
+          type: string
+        contentType:
+          type: string
+        size:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+        userId:
+          type: string
+        entryId:
+          type: string
+          format: uuid
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        refCount:
+          type: integer
+          description: Number of attachment records sharing the same storage blob.
+
+    AdminDownloadUrlResponse:
+      type: object
+      properties:
+        url:
+          type: string
+          description: Time-limited signed URL for downloading the attachment.
+        expiresIn:
+          type: integer
+          description: URL validity duration in seconds.
 

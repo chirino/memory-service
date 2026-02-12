@@ -98,17 +98,103 @@ export type ShareConversationRequest = {
   createdAt?: string;
 };
 
-export type ForkFromEntryRequest = {
-  /**
-   * Optional title for the new forked conversation.
-   */
-  title?: string | null;
-};
-
 /**
  * Logical channel of the entry within the conversation.
  */
 export type Channel = "history" | "memory";
+
+/**
+ * A reference to an attachment on a history entry. Supports two modes:
+ *
+ * **External URL (Phase 1)**: Provide `href` and `contentType` to reference
+ * an externally-hosted resource.
+ *
+ * **Server-stored (Phase 2)**: Provide `attachmentId` to reference a file
+ * previously uploaded via `POST /v1/attachments`. When the entry is created,
+ * the server replaces `attachmentId` with an `href` pointing to
+ * `/v1/attachments/{id}`.
+ *
+ * At least one of `href` or `attachmentId` must be present.
+ */
+export type Attachment = {
+  /**
+   * URL to the attachment resource (external or server-relative).
+   */
+  href?: string;
+  /**
+   * ID of a previously uploaded attachment (from POST /v1/attachments).
+   * When the entry is created, this is replaced with an href.
+   */
+  attachmentId?: string;
+  /**
+   * MIME type of the attachment (e.g., "image/jpeg", "audio/mp3"). Required when href is provided directly.
+   */
+  contentType?: string;
+  /**
+   * Optional display name for the attachment.
+   */
+  name?: string;
+  /**
+   * Optional alt text or description.
+   */
+  description?: string;
+  /**
+   * File size in bytes (set by server for uploaded attachments).
+   */
+  size?: number;
+  /**
+   * SHA-256 hash of the file content (set by server for uploaded attachments).
+   */
+  sha256?: string;
+};
+
+/**
+ * Response from uploading an attachment.
+ */
+export type AttachmentUploadResponse = {
+  /**
+   * Unique identifier for the uploaded attachment.
+   */
+  id?: string;
+  /**
+   * Server-relative URL to retrieve the attachment.
+   */
+  href?: string;
+  /**
+   * MIME type of the uploaded file.
+   */
+  contentType?: string;
+  /**
+   * Original filename of the uploaded file.
+   */
+  filename?: string | null;
+  /**
+   * File size in bytes.
+   */
+  size?: number;
+  /**
+   * SHA-256 hash of the file content.
+   */
+  sha256?: string;
+  /**
+   * When this unlinked attachment will expire and be deleted.
+   */
+  expiresAt?: string;
+};
+
+/**
+ * Response containing a signed download URL for an attachment.
+ */
+export type AttachmentDownloadUrlResponse = {
+  /**
+   * The signed download URL. May be an absolute S3 URL or a server-relative path.
+   */
+  url?: string;
+  /**
+   * Number of seconds until the URL expires.
+   */
+  expiresIn?: number;
+};
 
 export type Entry = {
   /**
@@ -135,11 +221,22 @@ export type Entry = {
   /**
    * Describes the schema/format of the content array.
    *
-   * **History channel entries must use `"history"` as the contentType.**
-   * The content array for history entries contains objects with:
-   * - `text` (string): The message text.
-   * - `role` (string): Either `"USER"` or `"AI"`.
+   * **History channel entries must use `"history"` or `"history/<subtype>"` as the contentType.**
    *
+   * Supported content types:
+   * - `history` - Simple text-only history entries
+   * - `history/lc4j` - LangChain4j rich event format (Quarkus)
+   *
+   * The content array for history entries contains objects with:
+   * - `role` (string, required): Either `"USER"` or `"AI"`.
+   * - `text` (string, optional): The message text. At least one of `text`, `events`, or `attachments` must be present.
+   * - `events` (array, optional): Rich event objects for streaming details.
+   * Event structure is not validated by the server. For `history/lc4j`, events use an `eventType` field:
+   * - `PartialResponse`: Text chunk (`{eventType, chunk}`)
+   * - `PartialThinking`: Reasoning chunk (`{eventType, chunk}`)
+   * - `BeforeToolExecution`: Before tool call (`{eventType, toolName, input}`)
+   * - `ToolExecuted`: Tool result (`{eventType, toolName, output}`)
+   * - `attachments` (array, optional): Array of `Attachment` objects referencing external resources (images, audio, video, documents).
    *
    * Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
    * agent memory entries.
@@ -151,7 +248,7 @@ export type Entry = {
    * stores and returns them without interpretation.
    *
    * For history channel entries (contentType: `"history"`), each block
-   * contains `text` and `role` fields.
+   * contains `role` and at least one of `text`, `events`, or `attachments`.
    */
   content: Array<unknown>;
   createdAt: string;
@@ -168,18 +265,30 @@ export type CreateEntryRequest = {
   /**
    * Describes the schema/format of the content array.
    *
-   * **History channel entries must use `"history"` as the contentType.**
+   * **History channel entries must use `"history"` or `"history/<subtype>"` as the contentType.**
+   *
+   * Supported content types:
+   * - `history` - Simple text-only history entries
+   * - `history/lc4j` - LangChain4j rich event format (Quarkus)
+   *
    * The content array for history entries must contain exactly 1 object with:
-   * - `text` (string): The message text.
-   * - `role` (string): Either `"USER"` or `"AI"`.
+   * - `role` (string, required): Either `"USER"` or `"AI"`.
+   * - `text` (string, optional): The message text. At least one of `text`, `events`, or `attachments` must be present.
+   * - `events` (array, optional): Rich event objects for streaming details.
+   * Event structure is not validated by the server. For `history/lc4j`, events use an `eventType` field:
+   * - `PartialResponse`: Text chunk (`{eventType, chunk}`)
+   * - `PartialThinking`: Reasoning chunk (`{eventType, chunk}`)
+   * - `BeforeToolExecution`: Before tool call (`{eventType, toolName, input}`)
+   * - `ToolExecuted`: Tool result (`{eventType, toolName, output}`)
+   * - `attachments` (array, optional): Array of `Attachment` objects referencing external resources (images, audio, video, documents).
    *
    * Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
    * agent memory entries.
    */
   contentType: string;
   /**
-   * For history channel entries (contentType: `"history"`), each block
-   * contains `text` and `role` fields.
+   * For history channel entries (contentType: `"history"` or `"history/<subtype>"`), each block
+   * contains `role` and at least one of `text`, `events`, or `attachments`.
    */
   content: Array<unknown>;
   /**
@@ -188,6 +297,14 @@ export type CreateEntryRequest = {
    * after creation. Returns 400 Bad Request if specified for non-history channels.
    */
   indexedContent?: string | null;
+  /**
+   * If the target conversation doesn't exist yet, auto-create it as a fork of this conversation. Ignored when the conversation already exists.
+   */
+  forkedAtConversationId?: string;
+  /**
+   * Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Required when forkedAtConversationId is set.
+   */
+  forkedAtEntryId?: string;
 };
 
 export type SyncEntryResponse = {
@@ -528,35 +645,6 @@ export type $OpenApiTs = {
       };
     };
   };
-  "/v1/conversations/{conversationId}/entries/{entryId}/fork": {
-    post: {
-      req: {
-        /**
-         * Conversation identifier (UUID format).
-         */
-        conversationId: string;
-        /**
-         * Entry identifier (UUID format).
-         */
-        entryId: string;
-        requestBody?: ForkFromEntryRequest;
-      };
-      res: {
-        /**
-         * Error response
-         */
-        200: ErrorResponse;
-        /**
-         * The newly created forked conversation.
-         */
-        201: Conversation;
-        /**
-         * Resource not found
-         */
-        404: ErrorResponse;
-      };
-    };
-  };
   "/v1/conversations/{conversationId}/forks": {
     get: {
       req: {
@@ -878,6 +966,151 @@ export type $OpenApiTs = {
          * Error response
          */
         403: ErrorResponse;
+      };
+    };
+  };
+  "/v1/attachments": {
+    post: {
+      req: {
+        /**
+         * ISO 8601 duration for how long the unlinked attachment should persist.
+         * Defaults to 1 hour. Maximum 24 hours.
+         */
+        expiresIn?: string;
+        formData: {
+          /**
+           * The file to upload.
+           */
+          file: Blob | File;
+        };
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Attachment uploaded successfully.
+         */
+        201: AttachmentUploadResponse;
+        /**
+         * Error response
+         */
+        400: ErrorResponse;
+        /**
+         * File too large.
+         */
+        413: ErrorResponse;
+      };
+    };
+  };
+  "/v1/attachments/{id}": {
+    get: {
+      req: {
+        /**
+         * Attachment identifier (UUID format).
+         */
+        id: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Redirect to a signed URL for the attachment.
+         */
+        302: string;
+        /**
+         * Error response
+         */
+        403: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
+    delete: {
+      req: {
+        /**
+         * Attachment identifier (UUID format).
+         */
+        id: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Attachment deleted.
+         */
+        204: void;
+        /**
+         * Error response
+         */
+        403: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+        /**
+         * Error response
+         */
+        409: ErrorResponse;
+      };
+    };
+  };
+  "/v1/attachments/{id}/download-url": {
+    get: {
+      req: {
+        /**
+         * Attachment identifier (UUID format).
+         */
+        id: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Error response
+         */
+        403: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
+  };
+  "/v1/attachments/download/{token}/{filename}": {
+    get: {
+      req: {
+        /**
+         * Filename for the download (used in Content-Disposition).
+         */
+        filename: string;
+        /**
+         * Signed download token.
+         */
+        token: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Invalid or expired token.
+         */
+        403: unknown;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
       };
     };
   };

@@ -13,7 +13,6 @@ import io.github.chirino.memory.client.model.Channel;
 import io.github.chirino.memory.client.model.CreateConversationRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.CreateOwnershipTransferRequest;
-import io.github.chirino.memory.client.model.ForkFromEntryRequest;
 import io.github.chirino.memory.client.model.IndexEntryRequest;
 import io.github.chirino.memory.client.model.SearchConversationsRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
@@ -86,27 +85,6 @@ public class MemoryServiceProxy {
                 OK,
                 "Error listing entries for history %s",
                 conversationId);
-    }
-
-    public Response forkConversationAtEntry(String conversationId, String entryId, String body) {
-        try {
-            ForkFromEntryRequest request =
-                    body == null || body.isBlank()
-                            ? new ForkFromEntryRequest()
-                            : OBJECT_MAPPER.readValue(body, ForkFromEntryRequest.class);
-            return execute(
-                    () ->
-                            conversationsApi()
-                                    .forkConversationAtEntry(
-                                            toUuid(conversationId), toUuid(entryId), request),
-                    OK,
-                    "Error forking history %s at entry %s",
-                    conversationId,
-                    entryId);
-        } catch (Exception e) {
-            LOG.errorf(e, "Error parsing fork request body");
-            return handleException(e);
-        }
     }
 
     public Response listConversationForks(String conversationId) {

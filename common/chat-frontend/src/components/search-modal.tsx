@@ -34,7 +34,13 @@ function SearchResultSkeleton() {
 
 function renderHighlights(text: string): ReactNode[] {
   return text.split("**").map((part, i) =>
-    i % 2 === 1 ? <mark key={i} className="bg-yellow-200/60 text-ink">{part}</mark> : part
+    i % 2 === 1 ? (
+      <mark key={i} className="bg-yellow-200/60 text-ink">
+        {part}
+      </mark>
+    ) : (
+      part
+    ),
   );
 }
 
@@ -50,9 +56,7 @@ function SearchResultItem({ result, onClick }: { result: SearchResult; onClick: 
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-medium text-ink">{result.conversationTitle || "Untitled conversation"}</h3>
           {result.highlights && (
-            <p className="mt-1 line-clamp-2 text-sm text-stone">
-              {renderHighlights(result.highlights)}
-            </p>
+            <p className="mt-1 line-clamp-2 text-sm text-stone">{renderHighlights(result.highlights)}</p>
           )}
         </div>
       </div>

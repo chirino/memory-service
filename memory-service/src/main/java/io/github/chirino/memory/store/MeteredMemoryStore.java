@@ -7,9 +7,7 @@ import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
-import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
-import io.github.chirino.memory.api.dto.ForkFromEntryRequest;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
@@ -69,13 +67,6 @@ public class MeteredMemoryStore implements MemoryStore {
     }
 
     @Override
-    public EntryDto appendUserEntry(
-            String userId, String conversationId, CreateUserEntryRequest request) {
-        return registry.timer("memory.store.operation", "operation", "appendUserEntry")
-                .record(() -> delegate.appendUserEntry(userId, conversationId, request));
-    }
-
-    @Override
     public List<ConversationMembershipDto> listMemberships(String userId, String conversationId) {
         return registry.timer("memory.store.operation", "operation", "listMemberships")
                 .record(() -> delegate.listMemberships(userId, conversationId));
@@ -105,16 +96,6 @@ public class MeteredMemoryStore implements MemoryStore {
     public void deleteMembership(String userId, String conversationId, String memberUserId) {
         registry.timer("memory.store.operation", "operation", "deleteMembership")
                 .record(() -> delegate.deleteMembership(userId, conversationId, memberUserId));
-    }
-
-    @Override
-    public ConversationDto forkConversationAtEntry(
-            String userId, String conversationId, String entryId, ForkFromEntryRequest request) {
-        return registry.timer("memory.store.operation", "operation", "forkConversationAtEntry")
-                .record(
-                        () ->
-                                delegate.forkConversationAtEntry(
-                                        userId, conversationId, entryId, request));
     }
 
     @Override
@@ -179,16 +160,16 @@ public class MeteredMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<EntryDto> appendAgentEntries(
+    public List<EntryDto> appendMemoryEntries(
             String userId,
             String conversationId,
             List<CreateEntryRequest> entries,
             String clientId,
             Long epoch) {
-        return registry.timer("memory.store.operation", "operation", "appendAgentEntries")
+        return registry.timer("memory.store.operation", "operation", "appendMemoryEntries")
                 .record(
                         () ->
-                                delegate.appendAgentEntries(
+                                delegate.appendMemoryEntries(
                                         userId, conversationId, entries, clientId, epoch));
     }
 

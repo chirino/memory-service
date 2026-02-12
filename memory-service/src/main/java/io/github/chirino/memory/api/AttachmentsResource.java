@@ -1,5 +1,6 @@
 package io.github.chirino.memory.api;
 
+import io.github.chirino.memory.attachment.AttachmentDeletionService;
 import io.github.chirino.memory.attachment.AttachmentDto;
 import io.github.chirino.memory.attachment.AttachmentStore;
 import io.github.chirino.memory.attachment.AttachmentStoreSelector;
@@ -52,6 +53,8 @@ public class AttachmentsResource {
     @Inject FileStoreSelector fileStoreSelector;
 
     @Inject AttachmentConfig config;
+
+    @Inject AttachmentDeletionService deletionService;
 
     @Inject DownloadUrlSigner downloadUrlSigner;
 
@@ -200,9 +203,12 @@ public class AttachmentsResource {
         }
 
         // Check for signed URL redirect
-        Optional<URI> signedUrl = fileStore().getSignedUrl(att.storageKey(), Duration.ofHours(1));
+        Duration signedUrlExpiry = Duration.ofHours(1);
+        Optional<URI> signedUrl = fileStore().getSignedUrl(att.storageKey(), signedUrlExpiry);
         if (signedUrl.isPresent()) {
-            return Response.temporaryRedirect(signedUrl.get()).build();
+            return Response.temporaryRedirect(signedUrl.get())
+                    .header("Cache-Control", "private, max-age=" + signedUrlExpiry.toSeconds())
+                    .build();
         }
 
         // Stream bytes directly
@@ -217,6 +223,7 @@ public class AttachmentsResource {
                 builder.header(
                         "Content-Disposition", "inline; filename=\"" + att.filename() + "\"");
             }
+            builder.header("Cache-Control", "private, no-store");
             return builder.build();
         } catch (FileStoreException e) {
             return fileStoreErrorResponse(e);
@@ -329,17 +336,8 @@ public class AttachmentsResource {
                     .build();
         }
 
-        // Delete from FileStore first, then AttachmentStore
-        try {
-            if (att.storageKey() != null) {
-                fileStore().delete(att.storageKey());
-            }
-        } catch (Exception e) {
-            LOG.warnf(e, "Failed to delete file from store for attachment %s", id);
-            // Continue with metadata deletion even if file deletion fails
-        }
-
-        attachmentStore().delete(id);
+        // Delete with ref-count safety for shared storage keys
+        deletionService.deleteAttachment(id);
         return Response.noContent().build();
     }
 
