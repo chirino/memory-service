@@ -4,7 +4,7 @@ title: Core Concepts
 description: Key concepts and architecture of the Memory Service.
 ---
 
-These pages explain the foundational ideas behind Memory Service. Understanding these concepts will help you get the most out of the framework-specific guides.
+These pages explain the foundational ideas and APIs behind Memory Service. Understanding these concepts will help you get the most out of the framework-specific guides.
 
 ## Concepts
 
@@ -14,11 +14,17 @@ The fundamental unit of organization. A conversation is a container for a sequen
 ### [Entries](/docs/concepts/entries/)
 The individual units of communication within a conversation. Entries are organized into channels (`history` and `memory`) and stored with full metadata.
 
+### [Attachments](/docs/concepts/attachments/)
+Include binary files — images, audio, video, documents — in conversation entries with server-managed upload, access control, signed download URLs, and automatic lifecycle management.
+
 ### [Forking](/docs/concepts/forking/)
 Create a new conversation branch from any point in an existing conversation, preserving the original while exploring alternative paths.
 
 ### [Indexing & Search](/docs/concepts/indexing-and-search/)
 Find relevant messages across conversations using full-text keyword matching or semantic similarity search.
+
+### [Response Resumption](/docs/concepts/response-resumption/)
+Reconnect after a disconnect and pick up a streaming response where it left off, with automatic token buffering and multi-instance redirect.
 
 ### [Sharing & Access Control](/docs/concepts/sharing/)
 Share conversations among multiple users with hierarchical permission levels — read, write, manager, and owner.
