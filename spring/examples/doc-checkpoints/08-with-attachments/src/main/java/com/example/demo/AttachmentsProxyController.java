@@ -1,4 +1,4 @@
-package example.agent;
+package com.example.demo;
 
 import io.github.chirino.memoryservice.client.MemoryServiceProxy;
 import org.springframework.http.MediaType;

@@ -19,12 +19,22 @@ import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.client.Client;
+import jakarta.ws.rs.client.ClientBuilder;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.server.multipart.FormValue;
+import org.jboss.resteasy.reactive.server.multipart.MultipartFormDataInput;
 
 /**
  * Helper class to make it easier to implement a JAXRS proxy to the memory service apis.
@@ -259,6 +269,258 @@ public class MemoryServiceProxy {
             return handleException(e);
         }
     }
+
+    // ---- Attachment operations (raw HTTP, no generated client) ----
+
+    /**
+     * Uploads an attachment to the memory service using streaming multipart.
+     *
+     * @param input      the multipart form data containing a "file" field
+     * @param expiresIn  optional expiration duration (e.g. "300s")
+     * @return the upstream JSON response with attachment metadata
+     */
+    public Response uploadAttachment(MultipartFormDataInput input, String expiresIn) {
+        var fileEntry = input.getValues().get("file");
+        if (fileEntry == null || fileEntry.isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "No file provided"))
+                    .build();
+        }
+
+        FormValue formValue = fileEntry.iterator().next();
+        if (!formValue.isFileItem()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "The 'file' field must be a file upload"))
+                    .build();
+        }
+
+        String contentType =
+                formValue.getHeaders().getFirst("Content-Type") != null
+                        ? formValue.getHeaders().getFirst("Content-Type")
+                        : "application/octet-stream";
+        String filename = formValue.getFileName();
+
+        try {
+            InputStream fileStream = formValue.getFileItem().getInputStream();
+
+            StringBuilder url =
+                    new StringBuilder(memoryServiceApiBuilder.getBaseUrl())
+                            .append("/v1/attachments");
+            if (expiresIn != null && !expiresIn.isBlank()) {
+                url.append("?expiresIn=").append(expiresIn);
+            }
+
+            String boundary = "----Boundary" + UUID.randomUUID().toString().replace("-", "");
+            HttpURLConnection conn =
+                    (HttpURLConnection) URI.create(url.toString()).toURL().openConnection();
+            conn.setDoOutput(true);
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+            conn.setChunkedStreamingMode(8192);
+
+            String bearer = bearerToken(securityIdentity);
+            if (bearer != null) {
+                conn.setRequestProperty("Authorization", "Bearer " + bearer);
+            }
+
+            try (OutputStream out = conn.getOutputStream()) {
+                String partHeader =
+                        "--"
+                                + boundary
+                                + "\r\n"
+                                + "Content-Disposition: form-data; name=\"file\"; filename=\""
+                                + (filename != null ? filename : "upload")
+                                + "\"\r\n"
+                                + "Content-Type: "
+                                + contentType
+                                + "\r\n\r\n";
+                out.write(partHeader.getBytes(StandardCharsets.UTF_8));
+
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = fileStream.read(buf)) != -1) {
+                    out.write(buf, 0, n);
+                }
+
+                String partFooter = "\r\n--" + boundary + "--\r\n";
+                out.write(partFooter.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+            }
+
+            int status = conn.getResponseCode();
+            String responseBody;
+            try (InputStream respStream =
+                    status >= 400 ? conn.getErrorStream() : conn.getInputStream()) {
+                responseBody =
+                        respStream != null
+                                ? new String(respStream.readAllBytes(), StandardCharsets.UTF_8)
+                                : "";
+            }
+            conn.disconnect();
+
+            return Response.status(status)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(responseBody)
+                    .build();
+        } catch (Exception e) {
+            LOG.errorf(e, "Error uploading attachment");
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of("error", "Upload proxy failed: " + e.getMessage()))
+                    .build();
+        }
+    }
+
+    /**
+     * Retrieves an attachment by ID. Handles 302 redirects (e.g. S3 presigned URLs).
+     */
+    public Response retrieveAttachment(String id) {
+        Client client = ClientBuilder.newClient();
+        try {
+            String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + id;
+            jakarta.ws.rs.client.Invocation.Builder req = client.target(url).request();
+
+            String bearer = bearerToken(securityIdentity);
+            if (bearer != null) {
+                req = req.header("Authorization", "Bearer " + bearer);
+            }
+
+            Response upstream = req.get();
+
+            if (upstream.getStatus() == 302) {
+                String location = upstream.getHeaderString("Location");
+                return Response.temporaryRedirect(URI.create(location)).build();
+            }
+
+            if (upstream.getStatus() == 200) {
+                InputStream body = upstream.readEntity(InputStream.class);
+                Response.ResponseBuilder builder = Response.ok(body);
+                String ct = upstream.getHeaderString("Content-Type");
+                if (ct != null) {
+                    builder.header("Content-Type", ct);
+                }
+                String cl = upstream.getHeaderString("Content-Length");
+                if (cl != null) {
+                    builder.header("Content-Length", cl);
+                }
+                String cd = upstream.getHeaderString("Content-Disposition");
+                if (cd != null) {
+                    builder.header("Content-Disposition", cd);
+                }
+                return builder.build();
+            }
+
+            return Response.status(upstream.getStatus())
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(upstream.readEntity(String.class))
+                    .build();
+        } finally {
+            client.close();
+        }
+    }
+
+    /**
+     * Gets a signed download URL for an attachment.
+     */
+    public Response getAttachmentDownloadUrl(String id) {
+        Client client = ClientBuilder.newClient();
+        try {
+            String url =
+                    memoryServiceApiBuilder.getBaseUrl()
+                            + "/v1/attachments/"
+                            + id
+                            + "/download-url";
+            jakarta.ws.rs.client.Invocation.Builder req = client.target(url).request();
+
+            String bearer = bearerToken(securityIdentity);
+            if (bearer != null) {
+                req = req.header("Authorization", "Bearer " + bearer);
+            }
+
+            Response upstream = req.get();
+
+            return Response.status(upstream.getStatus())
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(upstream.readEntity(String.class))
+                    .build();
+        } finally {
+            client.close();
+        }
+    }
+
+    /**
+     * Deletes an attachment by ID.
+     */
+    public Response deleteAttachment(String id) {
+        Client client = ClientBuilder.newClient();
+        try {
+            String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + id;
+            jakarta.ws.rs.client.Invocation.Builder req = client.target(url).request();
+
+            String bearer = bearerToken(securityIdentity);
+            if (bearer != null) {
+                req = req.header("Authorization", "Bearer " + bearer);
+            }
+
+            Response upstream = req.delete();
+
+            if (upstream.getStatus() == 204) {
+                return Response.noContent().build();
+            }
+
+            return Response.status(upstream.getStatus())
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(upstream.readEntity(String.class))
+                    .build();
+        } finally {
+            client.close();
+        }
+    }
+
+    /**
+     * Downloads an attachment using a signed token. No authentication required.
+     */
+    public Response downloadAttachmentByToken(String token, String filename) {
+        Client client = ClientBuilder.newClient();
+        try {
+            String url =
+                    memoryServiceApiBuilder.getBaseUrl()
+                            + "/v1/attachments/download/"
+                            + token
+                            + "/"
+                            + filename;
+            Response upstream = client.target(url).request().get();
+
+            if (upstream.getStatus() == 200) {
+                InputStream body = upstream.readEntity(InputStream.class);
+                Response.ResponseBuilder builder = Response.ok(body);
+                String ct = upstream.getHeaderString("Content-Type");
+                if (ct != null) {
+                    builder.header("Content-Type", ct);
+                }
+                String cl = upstream.getHeaderString("Content-Length");
+                if (cl != null) {
+                    builder.header("Content-Length", cl);
+                }
+                String cd = upstream.getHeaderString("Content-Disposition");
+                if (cd != null) {
+                    builder.header("Content-Disposition", cd);
+                }
+                String cc = upstream.getHeaderString("Cache-Control");
+                if (cc != null) {
+                    builder.header("Cache-Control", cc);
+                }
+                return builder.build();
+            }
+
+            return Response.status(upstream.getStatus())
+                    .entity(upstream.readEntity(String.class))
+                    .build();
+        } finally {
+            client.close();
+        }
+    }
+
+    // ---- Private helpers ----
 
     /**
      * Helper method that executes an API call with proper error handling and security

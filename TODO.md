@@ -7,7 +7,7 @@
 * make chat-quarkus us the package/class names used in the checkpoint examples.
 * rename x-resumer-redirect-host, x-resumer-redirect-port headers.
 * StreamResponseTokenRequest.token -> StreamResponseTokenRequest.content
-* simplify the StreamResponseTokenResponse and ReplayResponseTokensResponse type. 
+* simplify the StreamResponseTokenResponse and ReplayResponseTokensResponse type.
 
 
 # Hardening Work

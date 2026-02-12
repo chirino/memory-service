@@ -53,6 +53,9 @@ public class CurlSteps {
 
     @When("I execute curl command:")
     public void executeCurl(String curlCommand) throws Exception {
+        // Execute shell setup commands (e.g., echo for file creation) before curl
+        executeSetupCommands(curlCommand);
+
         // Build environment with system properties and context variables
         Map<String, String> environment = buildEnvironment();
 
@@ -169,6 +172,20 @@ public class CurlSteps {
                         throw new AssertionError("Response is not valid JSON: " + lastResponse, e);
                     }
                 });
+    }
+
+    @Then("set {string} to the json response field {string}")
+    public void setContextVariableToJsonResponseField(String variableName, String path) {
+        if (lastResponse == null) {
+            throw new AssertionError("No HTTP response has been received");
+        }
+        JsonPath jsonPath = JsonPath.from(lastResponse);
+        Object value = jsonPath.get(path);
+        if (value == null) {
+            throw new AssertionError(
+                    "JSON response field '" + path + "' is null or does not exist");
+        }
+        contextVariables.put(variableName, value);
     }
 
     @Then("the response should match pattern {string}")
@@ -403,6 +420,30 @@ public class CurlSteps {
             return OBJECT_MAPPER.writeValueAsString(contextVariables);
         } catch (JsonProcessingException e) {
             return "{}";
+        }
+    }
+
+    /**
+     * Executes shell setup commands that appear before curl commands in a bash block.
+     * Handles echo commands for file creation (e.g., {@code echo "content" > /tmp/file.txt}).
+     */
+    private void executeSetupCommands(String bashBlock) {
+        for (String line : bashBlock.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("echo ")) {
+                try {
+                    System.out.println("  Executing setup: " + trimmed);
+                    ProcessBuilder pb = new ProcessBuilder("bash", "-c", trimmed);
+                    pb.redirectErrorStream(true);
+                    Process process = pb.start();
+                    int exit = process.waitFor();
+                    if (exit != 0) {
+                        System.out.println("  Warning: setup command exited with code " + exit);
+                    }
+                } catch (Exception e) {
+                    System.out.println("  Warning: setup command failed: " + e.getMessage());
+                }
+            }
         }
     }
 
