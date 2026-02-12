@@ -221,7 +221,7 @@ Feature: Conversations REST API
     """
     And set "entryId" to "${response.body.id}"
     When I fork the conversation at entry "${entryId}"
-    And set "forkConversationId" to "${response.body.id}"
+    And set "forkConversationId" to "${forkedConversationId}"
     And I delete conversation "${rootConversationId}"
     Then the response status should be 204
     When I get conversation "${rootConversationId}"
@@ -241,7 +241,7 @@ Feature: Conversations REST API
     """
     And set "entryId" to "${response.body.id}"
     When I fork the conversation at entry "${entryId}"
-    And set "forkConversationId" to "${response.body.id}"
+    And set "forkConversationId" to "${forkedConversationId}"
     And I delete conversation "${forkConversationId}"
     Then the response status should be 204
     When I get conversation "${rootConversationId}"
@@ -270,7 +270,7 @@ Feature: Conversations REST API
     And set "secondEntryId" to "${response.body.id}"
     # Create a fork from the root conversation
     When I fork the conversation at entry "${secondEntryId}"
-    And set "forkConversationId" to "${response.body.id}"
+    And set "forkConversationId" to "${forkedConversationId}"
     # Update the fork by adding an entry (this makes it the most recently updated)
     And set "conversationId" to "${forkConversationId}"
     And I append an entry to the conversation:
@@ -298,7 +298,7 @@ Feature: Conversations REST API
     """
     And set "entryId" to "${response.body.id}"
     When I fork the conversation at entry "${entryId}"
-    And set "forkConversationId" to "${response.body.id}"
+    And set "forkConversationId" to "${forkedConversationId}"
     When I list conversations with mode "roots"
     Then the response status should be 200
     And the response should contain 1 conversation

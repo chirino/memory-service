@@ -17,6 +17,8 @@ export type StreamStartParams = {
   text: string;
   resetResume: boolean;
   attachments?: StreamAttachmentRef[];
+  forkedAtConversationId?: string;
+  forkedAtEntryId?: string;
   onChunk: (chunk: string) => void;
   onEvent?: (event: StreamEvent) => void;
   onReplayFailed: () => void;

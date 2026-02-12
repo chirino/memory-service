@@ -17,7 +17,22 @@ import {
 import { Streamdown } from "streamdown";
 import { RichEventRenderer } from "@/components/rich-event-renderer";
 import type React from "react";
-import { FileText, Image, Film, Volume2, MessageCircle, PenLine, Shuffle, ChevronRight, Send, MoreHorizontal, X, Paperclip, ExternalLink, Download } from "lucide-react";
+import {
+  FileText,
+  Image,
+  Film,
+  Volume2,
+  MessageCircle,
+  PenLine,
+  Shuffle,
+  ChevronRight,
+  Send,
+  MoreHorizontal,
+  X,
+  Paperclip,
+  ExternalLink,
+  Download,
+} from "lucide-react";
 import { useAttachments, type PendingAttachment } from "@/hooks/useAttachments";
 import { getAccessToken } from "@/lib/auth";
 
@@ -175,9 +190,7 @@ function AttachmentPreview({ attachment, isUserMessage }: { attachment: ChatAtta
   return (
     <div
       className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs ${
-        isUserMessage
-          ? "border-cream/20 bg-cream/10 text-cream"
-          : "border-stone/20 bg-white/60 text-ink"
+        isUserMessage ? "border-cream/20 bg-cream/10 text-cream" : "border-stone/20 bg-white/60 text-ink"
       }`}
     >
       <FileIcon contentType={attachment.contentType} className="h-3.5 w-3.5 shrink-0 opacity-60" />
@@ -501,7 +514,7 @@ function ConversationsUIEmptyState({
  * Returns the appropriate icon for a file based on its MIME type.
  */
 function FileIcon({ contentType, className }: { contentType: string; className?: string }) {
-  const major = contentType.split("/")[0];
+  const major = contentType?.split("/")[0];
   if (major === "image") return <Image className={className} />;
   if (major === "video") return <Film className={className} />;
   if (major === "audio") return <Volume2 className={className} />;
@@ -540,10 +553,7 @@ function AttachmentChip({
       {/* Progress bar overlay */}
       {isUploading && (
         <div className="absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden rounded-b-lg">
-          <div
-            className="h-full bg-sage transition-all duration-200"
-            style={{ width: `${attachment.progress}%` }}
-          />
+          <div className="h-full bg-sage transition-all duration-200" style={{ width: `${attachment.progress}%` }} />
         </div>
       )}
     </div>
@@ -675,7 +685,7 @@ function ConversationsUIComposer({
 
           {/* Attachment strip */}
           {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 rounded-t-2xl bg-mist px-5 pt-3 pb-1">
+            <div className="flex flex-wrap gap-1.5 rounded-t-2xl bg-mist px-5 pb-1 pt-3">
               {attachments.map((att) => (
                 <AttachmentChip key={att.localId} attachment={att} onRemove={removeAttachment} />
               ))}
@@ -700,13 +710,7 @@ function ConversationsUIComposer({
             >
               <Paperclip className="h-4.5 w-4.5" />
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={handleFilePickerChange}
-            />
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilePickerChange} />
             {isBusy && (
               <button
                 type="button"

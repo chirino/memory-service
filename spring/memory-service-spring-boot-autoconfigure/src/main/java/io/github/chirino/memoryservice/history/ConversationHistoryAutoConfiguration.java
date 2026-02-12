@@ -77,4 +77,10 @@ public class ConversationHistoryAutoConfiguration {
     public ResponseResumer noopResponseResumer() {
         return ResponseResumer.noop();
     }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AttachmentResolver attachmentResolver() {
+        return new AttachmentResolver();
+    }
 }

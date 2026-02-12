@@ -18,4 +18,5 @@ public class MongoAttachment {
     public String entryId;
     public Instant expiresAt;
     public Instant createdAt;
+    public Instant deletedAt;
 }

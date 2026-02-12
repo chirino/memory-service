@@ -26,7 +26,6 @@ import com.jayway.jsonpath.InvalidPathException;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
-import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.grpc.v1.AcceptOwnershipTransferRequest;
@@ -45,7 +44,6 @@ import io.github.chirino.memory.grpc.v1.DeleteOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.DownloadAttachmentRequest;
 import io.github.chirino.memory.grpc.v1.DownloadAttachmentResponse;
 import io.github.chirino.memory.grpc.v1.EntriesServiceGrpc;
-import io.github.chirino.memory.grpc.v1.ForkConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetAttachmentRequest;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.chirino.memory.grpc.v1.GetOwnershipTransferRequest;
@@ -471,9 +469,14 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("the conversation has an entry {string}")
     public void theConversationHasAnEntry(String content) {
         trackUsage();
-        CreateUserEntryRequest request = new CreateUserEntryRequest();
-        request.setContent(content);
-        memoryStoreSelector.getStore().appendUserEntry(currentUserId, conversationId, request);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        currentUserId,
+                        conversationId,
+                        List.of(createHistoryEntry(content)),
+                        "test-client",
+                        null);
     }
 
     @io.cucumber.java.en.Given("the conversation has {int} entries")
@@ -511,7 +514,7 @@ public class StepDefinitions {
         // Pass null for epoch - the store will auto-calculate for memory entries
         memoryStoreSelector
                 .getStore()
-                .appendAgentEntries(
+                .appendMemoryEntries(
                         currentUserId, conversationId, List.of(request), resolveClientId(), null);
         // Small delay to ensure entries have distinct timestamps for deterministic ordering
         try {
@@ -530,11 +533,11 @@ public class StepDefinitions {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
         request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
-        // Epoch is now passed as a parameter to appendAgentEntries, not set on request
+        // Epoch is now passed as a parameter to appendMemoryEntries, not set on request
         request.setContentType(contentType);
         memoryStoreSelector
                 .getStore()
-                .appendAgentEntries(
+                .appendMemoryEntries(
                         currentUserId,
                         conversationId,
                         List.of(request),
@@ -1331,33 +1334,44 @@ public class StepDefinitions {
     @io.cucumber.java.en.When("I fork the conversation at entry {string}")
     public void iForkTheConversationAtEntry(String entryId) {
         trackUsage();
-        // Fork without a request body (uses empty JSON object)
         iForkTheConversationAtEntryWithRequest(entryId, "{}");
     }
 
     @io.cucumber.java.en.When("I fork the conversation at entry {string} with request:")
     public void iForkTheConversationAtEntryWithRequest(String entryId, String requestBody) {
         trackUsage();
-        String rendered = renderTemplate(requestBody);
-        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        requestSpec = authenticateRequest(requestSpec);
+        // Generate new conversation ID for the fork
+        String newConversationId = java.util.UUID.randomUUID().toString();
         String renderedEntryId = renderTemplate(entryId);
-        // Remove quotes if present (from template rendering)
         if (renderedEntryId.startsWith("\"") && renderedEntryId.endsWith("\"")) {
             renderedEntryId = renderedEntryId.substring(1, renderedEntryId.length() - 1);
         }
-        this.lastResponse =
-                requestSpec
-                        .when()
-                        .post(
-                                "/v1/conversations/{id}/entries/{eid}/fork",
-                                conversationId,
-                                renderedEntryId);
-        if (lastResponse.getStatusCode() == 201) {
-            String id = lastResponse.jsonPath().getString("id");
-            if (id != null) {
-                contextVariables.put("forkedConversationId", id);
-            }
+        // Build entry body with fork metadata — the server auto-creates the fork conversation
+        String entryBody =
+                "{"
+                        + "\"forkedAtConversationId\": \""
+                        + conversationId
+                        + "\","
+                        + "\"forkedAtEntryId\": \""
+                        + renderedEntryId
+                        + "\","
+                        + "\"channel\": \"HISTORY\","
+                        + "\"contentType\": \"history\","
+                        + "\"content\": [{\"role\": \"USER\", \"text\": \"Fork message\"}]"
+                        + "}";
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(entryBody);
+        requestSpec = authenticateRequest(requestSpec);
+        var entryResponse =
+                requestSpec.when().post("/v1/conversations/{id}/entries", newConversationId);
+        if (entryResponse.getStatusCode() == 201) {
+            contextVariables.put("forkedConversationId", newConversationId);
+            // GET the new conversation so lastResponse is the Conversation object
+            var getSpec = given();
+            getSpec = authenticateRequest(getSpec);
+            this.lastResponse = getSpec.when().get("/v1/conversations/{id}", newConversationId);
+        } else {
+            // On error, expose the entry creation response for assertions
+            this.lastResponse = entryResponse;
         }
     }
 
@@ -1365,18 +1379,10 @@ public class StepDefinitions {
     public void iForkConversationAtEntryWithRequest(
             String convId, String entryId, String requestBody) {
         trackUsage();
-        String rendered = renderTemplate(requestBody);
-        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
-        requestSpec = authenticateRequest(requestSpec);
-        String renderedEntryId = renderTemplate(entryId);
-        // Remove quotes if present (from template rendering)
-        if (renderedEntryId.startsWith("\"") && renderedEntryId.endsWith("\"")) {
-            renderedEntryId = renderedEntryId.substring(1, renderedEntryId.length() - 1);
-        }
-        this.lastResponse =
-                requestSpec
-                        .when()
-                        .post("/v1/conversations/{id}/entries/{eid}/fork", convId, renderedEntryId);
+        String savedConversationId = conversationId;
+        conversationId = renderTemplate(convId);
+        iForkTheConversationAtEntryWithRequest(entryId, requestBody);
+        conversationId = savedConversationId;
     }
 
     @io.cucumber.java.en.When("I fork that conversation at entry {string} with request:")
@@ -2332,7 +2338,6 @@ public class StepDefinitions {
             case "ConversationsService/CreateConversation" -> Conversation.newBuilder();
             case "ConversationsService/GetConversation" -> Conversation.newBuilder();
             case "ConversationsService/DeleteConversation" -> Empty.newBuilder();
-            case "ConversationsService/ForkConversation" -> Conversation.newBuilder();
             case "ConversationsService/ListForks" -> ListForksResponse.newBuilder();
             case "ConversationsService/TransferOwnership" -> Empty.newBuilder();
             case "ConversationMembershipsService/ListMemberships" ->
@@ -2582,21 +2587,6 @@ public class StepDefinitions {
                         TextFormat.merge(body, requestBuilder);
                     }
                     return stub.deleteConversation(requestBuilder.build());
-                }
-            case "ForkConversation":
-                {
-                    var requestBuilder = ForkConversationRequest.newBuilder();
-                    if (body != null && !body.isBlank()) {
-                        TextFormat.merge(body, requestBuilder);
-                    }
-                    Message response = stub.forkConversation(requestBuilder.build());
-                    if (response instanceof Conversation) {
-                        Conversation conv = (Conversation) response;
-                        if (conv.getId() != null && !conv.getId().isEmpty()) {
-                            contextVariables.put("forkedConversationId", conv.getId());
-                        }
-                    }
-                    return response;
                 }
             case "ListForks":
                 {
@@ -3274,9 +3264,10 @@ public class StepDefinitions {
                 convId = conversationId;
             }
         }
-        CreateUserEntryRequest request = new CreateUserEntryRequest();
-        request.setContent(content);
-        memoryStoreSelector.getStore().appendUserEntry(ownerId, convId, request);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        ownerId, convId, List.of(createHistoryEntry(content)), "test-client", null);
     }
 
     @io.cucumber.java.en.Given("the conversation owned by {string} is deleted")
@@ -3916,12 +3907,22 @@ public class StepDefinitions {
             throw new IllegalStateException("No conversation available");
         }
         String userId = currentUserId != null ? currentUserId : "alice";
-        CreateUserEntryRequest request1 = new CreateUserEntryRequest();
-        request1.setContent("Entry 1");
-        memoryStoreSelector.getStore().appendUserEntry(userId, conversationId, request1);
-        CreateUserEntryRequest request2 = new CreateUserEntryRequest();
-        request2.setContent("Entry 2");
-        memoryStoreSelector.getStore().appendUserEntry(userId, conversationId, request2);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        userId,
+                        conversationId,
+                        List.of(createHistoryEntry("Entry 1")),
+                        "test-client",
+                        null);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        userId,
+                        conversationId,
+                        List.of(createHistoryEntry("Entry 2")),
+                        "test-client",
+                        null);
     }
 
     @io.cucumber.java.en.Given("the conversation is shared with user {string}")
@@ -3968,13 +3969,13 @@ public class StepDefinitions {
             CreateEntryRequest request = new CreateEntryRequest();
             request.setContent(List.of(Map.of("type", "text", "text", content)));
             request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
-            // Epoch is now passed as a parameter to appendAgentEntries, not set on request
+            // Epoch is now passed as a parameter to appendMemoryEntries, not set on request
             request.setContentType("message");
 
             var entries =
                     memoryStoreSelector
                             .getStore()
-                            .appendAgentEntries(
+                            .appendMemoryEntries(
                                     currentUserId,
                                     conversationId,
                                     List.of(request),
@@ -4389,5 +4390,13 @@ public class StepDefinitions {
             throw new AssertionError(
                     "Failed to read gRPC download metadata field: " + fieldName, e);
         }
+    }
+
+    private static CreateEntryRequest createHistoryEntry(String text) {
+        CreateEntryRequest req = new CreateEntryRequest();
+        req.setChannel(CreateEntryRequest.ChannelEnum.HISTORY);
+        req.setContentType("history");
+        req.setContent(List.of(Map.of("role", "USER", "text", text)));
+        return req;
     }
 }

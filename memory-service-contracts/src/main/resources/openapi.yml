@@ -345,53 +345,6 @@ paths:
       security:
         - BearerAuth: []
 
-  /v1/conversations/{conversationId}/entries/{entryId}/fork:
-    post:
-      tags: [Conversations]
-      summary: Fork a conversation at a given user entry
-      description: |-
-        Creates a new conversation that replays history up to just before the selected
-        user entry and then diverges starting at that point.
-
-        The fork point must be an existing user-authored entry; in the new forked
-        conversation that original entry is not present and the next user entry
-        is supplied by the caller in a follow-up request.
-      operationId: forkConversationAtEntry
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          description: Conversation identifier (UUID format).
-          schema:
-            type: string
-            format: uuid
-        - name: entryId
-          in: path
-          required: true
-          description: Entry identifier (UUID format).
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ForkFromEntryRequest'
-      responses:
-        '201':
-          description: The newly created forked conversation.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Conversation'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-      security:
-        - BearerAuth: []
-
   /v1/conversations/{conversationId}/forks:
     get:
       tags: [Conversations]
@@ -999,6 +952,11 @@ paths:
       responses:
         '200':
           description: Attachment binary content.
+          headers:
+            Cache-Control:
+              description: "Set to `private, no-store` for direct streams (DB storage)."
+              schema:
+                type: string
           content:
             application/octet-stream:
               schema:
@@ -1006,6 +964,11 @@ paths:
                 format: binary
         '302':
           description: Redirect to a signed URL for the attachment.
+          headers:
+            Cache-Control:
+              description: "Set to `private, max-age=<seconds>` matching the signed URL expiry."
+              schema:
+                type: string
         '403':
           description: Access denied.
           $ref: '#/components/responses/Error'
@@ -1116,6 +1079,11 @@ paths:
       responses:
         '200':
           description: Attachment binary content.
+          headers:
+            Cache-Control:
+              description: "Set to `private, max-age=<seconds>` where max-age matches the remaining token validity."
+              schema:
+                type: string
           content:
             application/octet-stream:
               schema:
@@ -1320,14 +1288,6 @@ components:
         createdAt:
           type: string
           format: date-time
-
-    ForkFromEntryRequest:
-      type: object
-      properties:
-        title:
-          type: string
-          nullable: true
-          description: Optional title for the new forked conversation.
 
     Channel:
       type: string
@@ -1569,6 +1529,19 @@ components:
             Optional text to index for search. Only valid for entries in the history
             channel. If provided, the entry will be indexed for search immediately
             after creation. Returns 400 Bad Request if specified for non-history channels.
+        forkedAtConversationId:
+          type: string
+          format: uuid
+          description: >-
+            If the target conversation doesn't exist yet, auto-create it as a fork
+            of this conversation. Ignored when the conversation already exists.
+        forkedAtEntryId:
+          type: string
+          format: uuid
+          description: >-
+            Entry ID marking the fork point. Entries before this point are inherited;
+            entries at and after this point are excluded. Required when
+            forkedAtConversationId is set.
       example:
         userId: "user_1234"
         channel: "history"

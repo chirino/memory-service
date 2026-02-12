@@ -9,9 +9,9 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
-import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
@@ -106,13 +106,23 @@ abstract class AbstractMemoryServiceTest {
         //         .body("code", is("forbidden"));
 
         // Seed a couple of user entries directly via the store
-        CreateUserEntryRequest u1 = new CreateUserEntryRequest();
-        u1.setContent("Hello world from Alice");
-        memoryStoreSelector.getStore().appendUserEntry("alice", conversationId, u1);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        "alice",
+                        conversationId,
+                        List.of(createHistoryEntry("Hello world from Alice")),
+                        "test-client",
+                        null);
 
-        CreateUserEntryRequest u2 = new CreateUserEntryRequest();
-        u2.setContent("Second user entry with keyword alpha");
-        memoryStoreSelector.getStore().appendUserEntry("alice", conversationId, u2);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        "alice",
+                        conversationId,
+                        List.of(createHistoryEntry("Second user entry with keyword alpha")),
+                        "test-client",
+                        null);
 
         // User-visible entries should be listed in order
         JsonPath entriesJson =
@@ -144,7 +154,7 @@ abstract class AbstractMemoryServiceTest {
 
         memoryStoreSelector
                 .getStore()
-                .appendAgentEntries("alice", conversationId, List.of(a1, a2), "test-agent", null);
+                .appendMemoryEntries("alice", conversationId, List.of(a1, a2), "test-agent", null);
 
         // Agent view of entries should include all entries
         given().header("X-API-Key", "test-agent-key")
@@ -252,44 +262,75 @@ abstract class AbstractMemoryServiceTest {
                         .extract()
                         .path("id");
 
-        CreateUserEntryRequest u1 = new CreateUserEntryRequest();
-        u1.setContent("Entry 1");
-        EntryDto m1 = memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u1);
-
-        CreateUserEntryRequest u2 = new CreateUserEntryRequest();
-        u2.setContent("Entry 2 - fork point");
-        EntryDto m2 = memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u2);
-
-        CreateUserEntryRequest u3 = new CreateUserEntryRequest();
-        u3.setContent("Entry 3");
-        memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u3);
-
-        // Fork at the second entry (forkedAtEntryId becomes m1, the entry BEFORE m2)
-        String forkedId =
-                given().contentType(MediaType.APPLICATION_JSON)
-                        .body(Map.of("title", "Forked Conversation"))
-                        .when()
-                        .post(
-                                "/v1/conversations/{cid}/entries/{eid}/fork",
+        List<EntryDto> r1 =
+                memoryStoreSelector
+                        .getStore()
+                        .appendMemoryEntries(
+                                "forker",
                                 conversationId,
-                                m2.getId())
-                        .then()
-                        .statusCode(201)
-                        .body("title", is("Forked Conversation"))
-                        .body("forkedAtConversationId", is(conversationId))
-                        .body("forkedAtEntryId", is(m1.getId()))
-                        .extract()
-                        .path("id");
+                                List.of(createHistoryEntry("Entry 1")),
+                                "test-client",
+                                null);
+        EntryDto m1 = r1.get(0);
 
-        // Fork should include parent entries up to the fork point (Entry 1)
-        // No entries are copied - instead, queries for the fork include parent entries
+        List<EntryDto> r2 =
+                memoryStoreSelector
+                        .getStore()
+                        .appendMemoryEntries(
+                                "forker",
+                                conversationId,
+                                List.of(createHistoryEntry("Entry 2 - fork point")),
+                                "test-client",
+                                null);
+        EntryDto m2 = r2.get(0);
+
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        "forker",
+                        conversationId,
+                        List.of(createHistoryEntry("Entry 3")),
+                        "test-client",
+                        null);
+
+        // Fork at the second entry by creating an entry on a new conversation with fork metadata
+        String forkedId = java.util.UUID.randomUUID().toString();
+        given().contentType(MediaType.APPLICATION_JSON)
+                .header("X-API-Key", "test-agent-key")
+                .body(
+                        Map.of(
+                                "channel",
+                                "HISTORY",
+                                "contentType",
+                                "history",
+                                "content",
+                                List.of(Map.of("role", "USER", "text", "Fork message")),
+                                "forkedAtConversationId",
+                                conversationId,
+                                "forkedAtEntryId",
+                                m2.getId()))
+                .when()
+                .post("/v1/conversations/{id}/entries", forkedId)
+                .then()
+                .statusCode(201);
+
+        // Verify fork conversation metadata
+        given().when()
+                .get("/v1/conversations/{id}", forkedId)
+                .then()
+                .statusCode(200)
+                .body("forkedAtConversationId", is(conversationId))
+                .body("forkedAtEntryId", is(m1.getId()));
+
+        // Fork should include parent entries up to the fork point (Entry 1) plus the fork message
         given().when()
                 .get("/v1/conversations/{id}/entries", forkedId)
                 .then()
                 .statusCode(200)
-                .body("data", hasSize(1))
+                .body("data", hasSize(2))
                 .body("data[0].id", is(m1.getId()))
-                .body("data[0].content[0].text", is("Entry 1"));
+                .body("data[0].content[0].text", is("Entry 1"))
+                .body("data[1].content[0].text", is("Fork message"));
     }
 
     @Test
@@ -351,5 +392,13 @@ abstract class AbstractMemoryServiceTest {
         mongoMembershipRepository.get().deleteAll();
         mongoOwnershipTransferRepository.get().deleteAll();
         mongoConversationRepository.get().deleteAll();
+    }
+
+    protected static CreateEntryRequest createHistoryEntry(String text) {
+        CreateEntryRequest req = new CreateEntryRequest();
+        req.setChannel(CreateEntryRequest.ChannelEnum.HISTORY);
+        req.setContentType("history");
+        req.setContent(List.of(Map.of("role", "USER", "text", text)));
+        return req;
     }
 }

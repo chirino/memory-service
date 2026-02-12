@@ -55,14 +55,6 @@ class MemoryServiceProxyController {
                 conversationId, after, limit, channelEnum, epoch, forks);
     }
 
-    @PostMapping("/{conversationId}/entries/{entryId}/fork")
-    public ResponseEntity<?> forkConversationAtEntry(
-            @PathVariable String conversationId,
-            @PathVariable String entryId,
-            @RequestBody(required = false) String body) {
-        return proxy.forkConversationAtEntry(conversationId, entryId, body);
-    }
-
     @GetMapping("/{conversationId}/forks")
     public ResponseEntity<?> listConversationForks(@PathVariable String conversationId) {
         return proxy.listConversationForks(conversationId);

@@ -1,16 +1,15 @@
 package example;
 
-import io.github.chirino.memory.history.annotations.Attachments;
 import io.github.chirino.memory.history.annotations.ConversationId;
+import io.github.chirino.memory.history.annotations.ForkedAtConversationId;
+import io.github.chirino.memory.history.annotations.ForkedAtEntryId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
-import io.quarkiverse.langchain4j.ImageUrl;
+import io.github.chirino.memory.history.runtime.Attachments;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.util.List;
-import java.util.Map;
 
 @ApplicationScoped
 public class HistoryRecordingAgent {
@@ -23,23 +22,12 @@ public class HistoryRecordingAgent {
     }
 
     @RecordConversation
-    public Multi<String> chat(
-            @ConversationId String conversationId, @UserMessage String userMessage) {
-        return agent.chat(conversationId, userMessage);
-    }
-
-    @RecordConversation
-    public Multi<ChatEvent> chatDetailed(
-            @ConversationId String conversationId, @UserMessage String userMessage) {
-        return agent.chatDetailed(conversationId, userMessage);
-    }
-
-    @RecordConversation
-    public Multi<ChatEvent> chatWithImage(
+    public Multi<ChatEvent> chat(
             @ConversationId String conversationId,
             @UserMessage String userMessage,
-            @ImageUrl String imageUrl,
-            @Attachments List<Map<String, Object>> attachments) {
-        return agent.chatWithImage(conversationId, userMessage, imageUrl);
+            Attachments attachments,
+            @ForkedAtConversationId String forkedAtConversationId,
+            @ForkedAtEntryId String forkedAtEntryId) {
+        return agent.chat(conversationId, userMessage, attachments.contents());
     }
 }

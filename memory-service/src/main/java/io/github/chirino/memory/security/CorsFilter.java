@@ -14,36 +14,36 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 /**
  * Vert.x route filter that handles CORS preflight and response headers.
  * Runs before authentication (priority 10) to allow OPTIONS requests without credentials.
- * Enabled when quarkus.http.cors is true and origins are configured.
+ * Enabled when memory-service.cors.enabled is true and origins are configured.
  */
 @Singleton
 public class CorsFilter {
 
-    @ConfigProperty(name = "quarkus.http.cors", defaultValue = "false")
+    @ConfigProperty(name = "memory-service.cors.enabled", defaultValue = "false")
     boolean corsEnabled;
 
-    @ConfigProperty(name = "quarkus.http.cors.origins")
+    @ConfigProperty(name = "memory-service.cors.origins")
     Optional<Set<String>> corsOrigins;
 
     @ConfigProperty(
-            name = "quarkus.http.cors.methods",
+            name = "memory-service.cors.methods",
             defaultValue = "GET,POST,PUT,PATCH,DELETE,OPTIONS")
     String corsMethods;
 
     @ConfigProperty(
-            name = "quarkus.http.cors.headers",
+            name = "memory-service.cors.headers",
             defaultValue = "accept,authorization,content-type,x-requested-with")
     String corsHeaders;
 
-    @ConfigProperty(name = "quarkus.http.cors.exposed-headers", defaultValue = "")
+    @ConfigProperty(name = "memory-service.cors.exposed-headers", defaultValue = "")
     String corsExposedHeaders;
 
     @ConfigProperty(
-            name = "quarkus.http.cors.access-control-allow-credentials",
+            name = "memory-service.cors.access-control-allow-credentials",
             defaultValue = "true")
     boolean corsAllowCredentials;
 
-    @ConfigProperty(name = "quarkus.http.cors.access-control-max-age", defaultValue = "86400")
+    @ConfigProperty(name = "memory-service.cors.access-control-max-age", defaultValue = "86400")
     String corsMaxAge;
 
     @RouteFilter(10000)
