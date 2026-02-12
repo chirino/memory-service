@@ -26,7 +26,6 @@ import com.jayway.jsonpath.InvalidPathException;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
-import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.grpc.v1.AcceptOwnershipTransferRequest;
@@ -470,9 +469,14 @@ public class StepDefinitions {
     @io.cucumber.java.en.Given("the conversation has an entry {string}")
     public void theConversationHasAnEntry(String content) {
         trackUsage();
-        CreateUserEntryRequest request = new CreateUserEntryRequest();
-        request.setContent(content);
-        memoryStoreSelector.getStore().appendUserEntry(currentUserId, conversationId, request);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        currentUserId,
+                        conversationId,
+                        List.of(createHistoryEntry(content)),
+                        "test-client",
+                        null);
     }
 
     @io.cucumber.java.en.Given("the conversation has {int} entries")
@@ -510,7 +514,7 @@ public class StepDefinitions {
         // Pass null for epoch - the store will auto-calculate for memory entries
         memoryStoreSelector
                 .getStore()
-                .appendAgentEntries(
+                .appendMemoryEntries(
                         currentUserId, conversationId, List.of(request), resolveClientId(), null);
         // Small delay to ensure entries have distinct timestamps for deterministic ordering
         try {
@@ -529,11 +533,11 @@ public class StepDefinitions {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setContent(List.of(Map.of("type", "text", "text", content)));
         request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
-        // Epoch is now passed as a parameter to appendAgentEntries, not set on request
+        // Epoch is now passed as a parameter to appendMemoryEntries, not set on request
         request.setContentType(contentType);
         memoryStoreSelector
                 .getStore()
-                .appendAgentEntries(
+                .appendMemoryEntries(
                         currentUserId,
                         conversationId,
                         List.of(request),
@@ -3260,9 +3264,10 @@ public class StepDefinitions {
                 convId = conversationId;
             }
         }
-        CreateUserEntryRequest request = new CreateUserEntryRequest();
-        request.setContent(content);
-        memoryStoreSelector.getStore().appendUserEntry(ownerId, convId, request);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        ownerId, convId, List.of(createHistoryEntry(content)), "test-client", null);
     }
 
     @io.cucumber.java.en.Given("the conversation owned by {string} is deleted")
@@ -3902,12 +3907,22 @@ public class StepDefinitions {
             throw new IllegalStateException("No conversation available");
         }
         String userId = currentUserId != null ? currentUserId : "alice";
-        CreateUserEntryRequest request1 = new CreateUserEntryRequest();
-        request1.setContent("Entry 1");
-        memoryStoreSelector.getStore().appendUserEntry(userId, conversationId, request1);
-        CreateUserEntryRequest request2 = new CreateUserEntryRequest();
-        request2.setContent("Entry 2");
-        memoryStoreSelector.getStore().appendUserEntry(userId, conversationId, request2);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        userId,
+                        conversationId,
+                        List.of(createHistoryEntry("Entry 1")),
+                        "test-client",
+                        null);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        userId,
+                        conversationId,
+                        List.of(createHistoryEntry("Entry 2")),
+                        "test-client",
+                        null);
     }
 
     @io.cucumber.java.en.Given("the conversation is shared with user {string}")
@@ -3954,13 +3969,13 @@ public class StepDefinitions {
             CreateEntryRequest request = new CreateEntryRequest();
             request.setContent(List.of(Map.of("type", "text", "text", content)));
             request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
-            // Epoch is now passed as a parameter to appendAgentEntries, not set on request
+            // Epoch is now passed as a parameter to appendMemoryEntries, not set on request
             request.setContentType("message");
 
             var entries =
                     memoryStoreSelector
                             .getStore()
-                            .appendAgentEntries(
+                            .appendMemoryEntries(
                                     currentUserId,
                                     conversationId,
                                     List.of(request),
@@ -4375,5 +4390,13 @@ public class StepDefinitions {
             throw new AssertionError(
                     "Failed to read gRPC download metadata field: " + fieldName, e);
         }
+    }
+
+    private static CreateEntryRequest createHistoryEntry(String text) {
+        CreateEntryRequest req = new CreateEntryRequest();
+        req.setChannel(CreateEntryRequest.ChannelEnum.HISTORY);
+        req.setContentType("history");
+        req.setContent(List.of(Map.of("role", "USER", "text", text)));
+        return req;
     }
 }

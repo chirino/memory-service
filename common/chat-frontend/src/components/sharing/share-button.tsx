@@ -31,7 +31,7 @@ export function ShareButton({ conversationId, conversationTitle, currentUserId, 
         <span>Share</span>
       </button>
 
-      {conversationId && (
+      {conversationId && isModalOpen && (
         <ShareModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}

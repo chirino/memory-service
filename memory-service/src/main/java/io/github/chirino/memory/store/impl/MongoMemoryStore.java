@@ -11,7 +11,6 @@ import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
-import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
@@ -285,84 +284,6 @@ public class MongoMemoryStore implements MemoryStore {
             throw new AccessDeniedException("Only owner or manager can delete conversation");
         }
         softDeleteConversationGroup(groupId, userId);
-    }
-
-    @Override
-    @Transactional
-    public EntryDto appendUserEntry(
-            String userId, String conversationId, CreateUserEntryRequest request) {
-        MongoConversation c = conversationRepository.findById(conversationId);
-        if (c != null && c.deletedAt != null) {
-            c = null; // Treat soft-deleted as non-existent for auto-create
-        }
-
-        // Auto-create conversation if it doesn't exist (optimized for 95% case where it exists)
-        if (c == null) {
-            c = new MongoConversation();
-            c.id = conversationId;
-            c.metadata = Collections.emptyMap();
-            Instant now = Instant.now();
-            c.createdAt = now;
-            c.updatedAt = now;
-
-            if (request.getForkedAtConversationId() != null
-                    && request.getForkedAtEntryId() != null) {
-                // Fork auto-creation: join parent's group instead of creating a new one
-                setupForkConversation(
-                        c,
-                        userId,
-                        request.getForkedAtConversationId(),
-                        request.getForkedAtEntryId(),
-                        inferTitleFromUserEntry(request));
-                conversationRepository.persist(c);
-                // No membership creation for forks — user already has membership via parent group
-            } else {
-                // Root conversation auto-creation
-                c.conversationGroupId = conversationId;
-                MongoConversationGroup existingGroup =
-                        conversationGroupRepository.findById(conversationId);
-                if (existingGroup == null || existingGroup.deletedAt != null) {
-                    MongoConversationGroup group = new MongoConversationGroup();
-                    group.id = conversationId;
-                    group.createdAt = Instant.now();
-                    conversationGroupRepository.persist(group);
-                }
-                c.ownerUserId = userId;
-                c.title = encryptTitle(inferTitleFromUserEntry(request));
-                conversationRepository.persist(c);
-                membershipRepository.createMembership(
-                        c.conversationGroupId, userId, AccessLevel.OWNER);
-            }
-        } else {
-            String groupId = c.conversationGroupId;
-            ensureHasAccess(groupId, userId, AccessLevel.WRITER);
-        }
-
-        MongoEntry m = new MongoEntry();
-        m.id = UUID.randomUUID().toString();
-        m.conversationId = conversationId;
-        m.userId = userId;
-        m.channel = Channel.HISTORY;
-        m.epoch = null;
-        m.contentType = "history";
-        m.conversationGroupId = c.conversationGroupId;
-        Map<String, Object> block = new HashMap<>();
-        block.put("role", "USER");
-        if (request.getContent() != null) {
-            block.put("text", request.getContent());
-        }
-        if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
-            block.put("attachments", request.getAttachments());
-        }
-        m.decodedContent = List.of(block);
-        m.content = encryptContent(m.decodedContent);
-        m.indexedContent = request.getContent();
-        Instant createdAt = Instant.now();
-        m.createdAt = createdAt;
-        entryRepository.persist(m);
-        c.updatedAt = createdAt;
-        conversationRepository.persistOrUpdate(c);
-        return toEntryDto(m);
     }
 
     @Override
@@ -1239,7 +1160,7 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
-    public List<EntryDto> appendAgentEntries(
+    public List<EntryDto> appendMemoryEntries(
             String userId,
             String conversationId,
             List<CreateEntryRequest> entries,
@@ -1333,13 +1254,18 @@ public class MongoMemoryStore implements MemoryStore {
             MongoEntry m = new MongoEntry();
             m.id = UUID.randomUUID().toString();
             m.conversationId = conversationId;
-            m.userId = req.getUserId();
             m.clientId = clientId;
             Channel channel =
                     req.getChannel() != null
                             ? Channel.fromString(req.getChannel().value())
                             : Channel.MEMORY;
             m.channel = channel;
+            // For HISTORY entries, default userId to the authenticated user
+            String entryUserId = req.getUserId();
+            if (entryUserId == null && channel == Channel.HISTORY) {
+                entryUserId = userId;
+            }
+            m.userId = entryUserId;
 
             // Set epoch based on channel type
             // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
@@ -1350,10 +1276,17 @@ public class MongoMemoryStore implements MemoryStore {
                 m.epoch = null;
             }
 
-            m.contentType = req.getContentType() != null ? req.getContentType() : "message";
+            String defaultContentType = (channel == Channel.HISTORY) ? "history" : "message";
+            m.contentType =
+                    req.getContentType() != null ? req.getContentType() : defaultContentType;
             m.decodedContent = req.getContent();
             m.content = encryptContent(m.decodedContent);
-            m.indexedContent = req.getIndexedContent();
+            // For HISTORY entries, default indexedContent to text extracted from content
+            String indexedContent = req.getIndexedContent();
+            if (indexedContent == null && channel == Channel.HISTORY && req.getContent() != null) {
+                indexedContent = extractSearchText(req.getContent());
+            }
+            m.indexedContent = indexedContent;
             m.conversationGroupId = c.conversationGroupId;
             Instant createdAt = Instant.now();
             m.createdAt = createdAt;
@@ -1368,7 +1301,7 @@ public class MongoMemoryStore implements MemoryStore {
         // Invalidate/update cache if MEMORY entries were created
         if (hasMemoryEntries && clientId != null) {
             LOG.infof(
-                    "appendAgentEntries: updating cache for conversationId=%s, clientId=%s",
+                    "appendMemoryEntries: updating cache for conversationId=%s, clientId=%s",
                     conversationId, clientId);
             updateCacheWithLatestEntries(conversationId, clientId);
         }
@@ -1444,7 +1377,7 @@ public class MongoMemoryStore implements MemoryStore {
             Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
             CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
             List<EntryDto> appended =
-                    appendAgentEntries(
+                    appendMemoryEntries(
                             userId, conversationId, List.of(toAppend), clientId, nextEpoch);
             // Update cache with new epoch entries
             updateCacheWithLatestEntries(conversationId, clientId);
@@ -1474,7 +1407,7 @@ public class MongoMemoryStore implements MemoryStore {
             Long epochToUse = latestEpoch != null ? latestEpoch : 1L;
             CreateEntryRequest deltaEntry = MemorySyncHelper.withContent(entry, deltaContent);
             List<EntryDto> appended =
-                    appendAgentEntries(
+                    appendMemoryEntries(
                             userId, conversationId, List.of(deltaEntry), clientId, epochToUse);
             // Update cache with appended entry
             updateCacheWithLatestEntries(conversationId, clientId);
@@ -1488,7 +1421,7 @@ public class MongoMemoryStore implements MemoryStore {
         Long nextEpoch = MemorySyncHelper.nextEpoch(latestEpoch);
         CreateEntryRequest toAppend = MemorySyncHelper.withContent(entry, incomingContent);
         List<EntryDto> appended =
-                appendAgentEntries(userId, conversationId, List.of(toAppend), clientId, nextEpoch);
+                appendMemoryEntries(userId, conversationId, List.of(toAppend), clientId, nextEpoch);
         // Update cache with new epoch entries
         updateCacheWithLatestEntries(conversationId, clientId);
         result.setEpoch(nextEpoch);
@@ -1817,18 +1750,6 @@ public class MongoMemoryStore implements MemoryStore {
         String result = snippet.toString().trim();
         result = result.replaceAll("(?i)(" + java.util.regex.Pattern.quote(query) + ")", "**$1**");
         return result;
-    }
-
-    private String inferTitleFromUserEntry(CreateUserEntryRequest request) {
-        if (request == null) {
-            return null;
-        }
-        String rawContent = request.getContent();
-        if (rawContent == null || rawContent.isBlank()) {
-            return null;
-        }
-        String extractedText = tryExtractTextFromJson(rawContent);
-        return abbreviateTitle(extractedText);
     }
 
     private String inferTitleFromEntries(List<CreateEntryRequest> entries) {
