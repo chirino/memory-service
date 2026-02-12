@@ -120,7 +120,7 @@ const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${site
       });
 
       // Add copy buttons to code blocks
-      document.querySelectorAll('pre').forEach(pre => {
+      document.querySelectorAll('pre:not(.mermaid)').forEach(pre => {
         // Create copy button
         const btn = document.createElement('button');
         btn.className = 'code-copy-btn';
@@ -153,6 +153,89 @@ const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${site
 
         pre.appendChild(btn);
       });
+    </script>
+
+    <script type="module">
+      const mermaidBlocks = document.querySelectorAll('pre.mermaid');
+      if (mermaidBlocks.length > 0) {
+        const { default: mermaid } = await import(
+          'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'
+        );
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const darkVars = {
+          background: '#111827',
+          primaryColor: '#3730a3',
+          primaryTextColor: '#e0e7ff',
+          primaryBorderColor: '#6366f1',
+          secondaryColor: '#134e4a',
+          secondaryTextColor: '#ccfbf1',
+          secondaryBorderColor: '#2dd4bf',
+          tertiaryColor: '#1e1b4b',
+          tertiaryTextColor: '#e0e7ff',
+          lineColor: '#818cf8',
+          textColor: '#f1f5f9',
+          mainBkg: '#3730a3',
+          nodeBorder: '#6366f1',
+          clusterBkg: '#1e1b4b',
+          clusterBorder: '#4338ca',
+          titleColor: '#f1f5f9',
+          actorBkg: '#312e81',
+          actorBorder: '#6366f1',
+          actorTextColor: '#f1f5f9',
+          actorLineColor: '#818cf8',
+          signalColor: '#818cf8',
+          signalTextColor: '#f1f5f9',
+          noteBkgColor: '#134e4a',
+          noteTextColor: '#ccfbf1',
+          noteBorderColor: '#2dd4bf',
+          activationBkgColor: '#3730a3',
+          activationBorderColor: '#818cf8',
+          loopTextColor: '#e0e7ff',
+          labelBoxBkgColor: '#1e1b4b',
+          labelBoxBorderColor: '#4338ca',
+          labelTextColor: '#e0e7ff',
+        };
+        const lightVars = {
+          background: '#ffffff',
+          primaryColor: '#e0e7ff',
+          primaryTextColor: '#312e81',
+          primaryBorderColor: '#6366f1',
+          secondaryColor: '#ccfbf1',
+          secondaryTextColor: '#134e4a',
+          secondaryBorderColor: '#14b8a6',
+          tertiaryColor: '#eef2ff',
+          tertiaryTextColor: '#3730a3',
+          lineColor: '#6366f1',
+          textColor: '#1e293b',
+          mainBkg: '#e0e7ff',
+          nodeBorder: '#6366f1',
+          clusterBkg: '#eef2ff',
+          clusterBorder: '#818cf8',
+          titleColor: '#312e81',
+          actorBkg: '#e0e7ff',
+          actorBorder: '#6366f1',
+          actorTextColor: '#312e81',
+          actorLineColor: '#6366f1',
+          signalColor: '#6366f1',
+          signalTextColor: '#1e293b',
+          noteBkgColor: '#ccfbf1',
+          noteTextColor: '#134e4a',
+          noteBorderColor: '#14b8a6',
+          activationBkgColor: '#e0e7ff',
+          activationBorderColor: '#818cf8',
+          loopTextColor: '#3730a3',
+          labelBoxBkgColor: '#eef2ff',
+          labelBoxBorderColor: '#818cf8',
+          labelTextColor: '#3730a3',
+        };
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'base',
+          fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+          themeVariables: isDark ? darkVars : lightVars,
+        });
+        await mermaid.run({ nodes: mermaidBlocks });
+      }
     </script>
   </body>
 </html>
