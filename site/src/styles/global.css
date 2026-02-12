@@ -52,6 +52,17 @@
     @apply rounded-lg border border-gray-200 dark:border-gray-700 relative;
   }
 
+  /* Mermaid diagram containers — hidden until rendered to prevent flash of raw text */
+  pre.mermaid {
+    @apply bg-white dark:bg-gray-900 p-4 text-center;
+    visibility: hidden;
+    min-height: 100px;
+  }
+
+  pre.mermaid[data-processed="true"] {
+    visibility: visible;
+  }
+
   /* Copy button for code blocks */
   .code-copy-btn {
     @apply absolute top-2 right-2 p-1.5 rounded-md opacity-0 transition-opacity;

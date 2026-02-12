@@ -1,14 +1,14 @@
 # TODO List
 
-* Figure out how muli-modal content should be handled.
-    * this will likely impact our history handling APIS.
-* Improve the langchain4j memory interface: Switch to the langchain4j MemoryChatStore once https://github.com/langchain4j/langchain4j/pull/4416 is released.
-* document sharing: concepts and spring/quarkus howtos
 * document index/search apis: concepts and spring/quarkus howtos (provide RAG example).
 * document admin apis
 * Brand the project and move it to an org/foundation.
 * Add support for python langchain /w user docs similar to the quarkus/spring support.
-* disable epoch eviction
+* make chat-quarkus us the package/class names used in the checkpoint examples.
+* rename x-resumer-redirect-host, x-resumer-redirect-port headers.
+* StreamResponseTokenRequest.token -> StreamResponseTokenRequest.content
+* simplify the StreamResponseTokenResponse and ReplayResponseTokensResponse type. 
+
 
 # Hardening Work
 
@@ -28,7 +28,9 @@
 # Need Dev Feedback for:
 
 * Can the @RecordConversation bits be moved into Quarkus Langchain4j? https://github.com/quarkiverse/quarkus-langchain4j/issues/2068#issuecomment-3816044002
+   * We have added addional features to the interceptor that might not fit into a generic interceptor: thinks like forking support.
 * Do we need MORE multi-tenancy support?  What would it look like? Groups / Orgs?
 * Allow runtime configured agents/api-keys?
 * How useful is the current index/search feature?
 * Do we need to support anonymous user conversations?
+* Better name for: ResponseResumerService ?

@@ -6,9 +6,11 @@ info:
     Memory Service for AI agents.
 
     The service stores all entries exchanged between agents, users, and
-    other actors, supports replay and forking of conversations, and exposes
-    user-facing and agent-facing APIs. Conversation access is controlled by
-    per-user permissions (owner, manager, writer, reader).
+    other actors, supports replay and forking of conversations. Agent apps
+    mediate all operations between end users and the memory service. Some
+    APIs are designed to be safely exposed to frontend apps (e.g., SPAs).
+    Conversation access is controlled by per-user permissions (owner,
+    manager, writer, reader).
 tags:
   - name: Conversations
     description: APIs for listing, reading, writing, and sharing conversations (user and agent views).

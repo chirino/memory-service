@@ -39,13 +39,13 @@ docker compose up -d
 ```
 
 This will start:
-- **Demo Agent** for an AI chat interface
-- **Memory Service** this project's service (used by the demo agent)
-- **Keycloak** for authentication (used by the memory service and demo agent)
+- **Demo Chat App** for an AI chat interface
+- **Memory Service** this project's service (used by the demo chat app)
+- **Keycloak** for authentication (used by the memory service and demo chat app)
 - **PostgreSQL** for data and vector storage (used by the memory service)
 - **Redis** for caching (used by the memory service)
 
-### 4. Access the Demo Agent
+### 4. Access the Demo Chat App
 
 Open `http://localhost:8080` in your browser and sign in with:
 - Username: `bob`
