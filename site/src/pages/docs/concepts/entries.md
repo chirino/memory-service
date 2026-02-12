@@ -14,7 +14,7 @@ Entries are organized into logical channels within a conversation:
 |---------|-------------|
 | `history` | User-visible conversation between users and agents |
 | `memory` | Agent memory entries, scoped to the calling client ID |
-| `transcript` | Transcript index entries (not visible in user-facing lists) |
+| `transcript` | Transcript index entries (not visible in agent API lists) |
 
 ## Entry Structure
 

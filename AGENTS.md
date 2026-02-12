@@ -11,9 +11,10 @@ When you discover something meaningful about this project during your work—arc
 - Keep updates concise and factual. Don't bloat files with obvious or generic information.
 
 ## Key Concepts
+- **Agent apps mediate all operations**: Agent apps are the primary consumers. They sit between end users and the memory service, mediating all interactions.
+- **Agent API**: For agent apps - manage conversations, append entries, retrieve context for LLMs, summarization. Some agent APIs are designed to be safely exposed to frontend apps (e.g., SPAs) for features like listing conversations, semantic search, viewing messages, and forking.
+- **Admin API**: For administrative operations and system management.
 - **User access control**: Conversations are owned by users with read/write/manager/owner access levels.
-- **User-facing API**: For chat frontends - list conversations, semantic search, get messages, fork conversations.
-- **Agent-facing API**: For retrieving context for LLMs, including summarization support.
 - **Data stores**: PostgreSQL, MongoDB; Redis, Infinispan (caching); PGVector, MongoDB (vector search).
 
 ## Quick Reference
