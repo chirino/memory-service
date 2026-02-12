@@ -116,6 +116,33 @@ MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT=PT30S
 MEMORY_SERVICE_RESPONSE_RESUMER_ENABLED=false
 ```
 
+## Attachment Storage
+
+Configure file attachment storage, size limits, and lifecycle.
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory-service.attachments.store` | `db`, `s3` | `db` | Storage backend for uploaded files |
+| `memory-service.attachments.max-size` | bytes | `10485760` (10 MB) | Maximum file size per upload |
+| `memory-service.attachments.default-expires-in` | duration | `PT1H` | Default TTL for unlinked attachments |
+| `memory-service.attachments.max-expires-in` | duration | `PT24H` | Maximum allowed TTL clients can request |
+| `memory-service.attachments.cleanup-interval` | duration | `PT5M` | How often the cleanup job runs to delete expired unlinked attachments |
+| `memory-service.attachments.download-url-expires-in` | duration | `PT5M` | Signed download URL expiry |
+
+### S3 Storage
+
+When using S3 as the attachment storage backend:
+
+```bash
+# Select S3 storage
+MEMORY_SERVICE_ATTACHMENTS_STORE=s3
+
+# S3 bucket configuration
+MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET=memory-service-attachments
+```
+
+See [Attachments](/docs/concepts/attachments/) for details on how attachments work.
+
 ## Vector Store Configuration
 
 For semantic search capabilities, configure a vector store and embedding settings.
