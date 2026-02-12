@@ -51,6 +51,10 @@ public class MemoryServiceApiBuilder {
         return new MemoryServiceApiBuilder(baseUrl, apiKey, bearerToken);
     }
 
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
     public <T> T build(Class<T> clazz) {
         RestClientBuilder builder = RestClientBuilder.newBuilder().baseUri(URI.create(baseUrl));
         if (apiKey != null && !apiKey.isBlank()) {

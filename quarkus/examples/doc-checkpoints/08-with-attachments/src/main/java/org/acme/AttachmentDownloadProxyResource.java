@@ -1,4 +1,4 @@
-package example;
+package org.acme;
 
 import io.github.chirino.memory.runtime.MemoryServiceProxy;
 import io.smallrye.common.annotation.Blocking;
