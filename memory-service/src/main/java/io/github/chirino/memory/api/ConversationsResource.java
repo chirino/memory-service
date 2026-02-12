@@ -4,7 +4,6 @@ import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
-import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SyncResult;
@@ -113,6 +112,13 @@ public class ConversationsResource {
 
     private String currentUserId() {
         return identity.getPrincipal().getName();
+    }
+
+    private String resolveClientId() {
+        if (apiKeyContext != null && apiKeyContext.hasValidApiKey()) {
+            return apiKeyContext.getClientId();
+        }
+        return null;
     }
 
     @GET
@@ -250,86 +256,62 @@ public class ConversationsResource {
     @Path("/conversations/{conversationId}/entries")
     public Response appendEntry(
             @PathParam("conversationId") String conversationId, CreateEntryRequest request) {
+        boolean explicitHistory = request.getChannel() == CreateEntryRequest.ChannelEnum.HISTORY;
+        boolean isHistoryChannel = request.getChannel() == null || explicitHistory;
+        // Ensure channel is explicitly set so the store doesn't default to MEMORY
+        if (isHistoryChannel && request.getChannel() == null) {
+            request.setChannel(CreateEntryRequest.ChannelEnum.HISTORY);
+        }
+        String clientId = resolveClientId();
+        if (!isHistoryChannel && (clientId == null || clientId.isBlank())) {
+            return forbidden(new AccessDeniedException("Client id is required"));
+        }
+        LOG.infof(
+                "appendEntry: conversationId=%s, user=%s, clientId=%s, channel=%s,"
+                        + " forkedAtConversationId=%s, forkedAtEntryId=%s",
+                conversationId,
+                currentUserId(),
+                clientId,
+                request.getChannel(),
+                request.getForkedAtConversationId(),
+                request.getForkedAtEntryId());
         try {
-            Entry result;
-            if (apiKeyContext != null && apiKeyContext.hasValidApiKey()) {
-                String clientId = apiKeyContext.getClientId();
-                if (clientId == null || clientId.isBlank()) {
-                    return forbidden(
-                            new AccessDeniedException("Client id is required for agent messages"));
+            if (explicitHistory) {
+                // Explicit HISTORY channel: validate format
+                Response historyValidationError = validateHistoryEntry(request);
+                if (historyValidationError != null) {
+                    return historyValidationError;
                 }
-                // indexedContent is only allowed on history channel
-                if (request.getIndexedContent() != null
-                        && !request.getIndexedContent().isBlank()
-                        && request.getChannel() != CreateEntryRequest.ChannelEnum.HISTORY) {
+            } else if (!isHistoryChannel) {
+                // Non-history channels: indexedContent not allowed
+                if (request.getIndexedContent() != null && !request.getIndexedContent().isBlank()) {
                     return badRequest("indexedContent is only allowed on history channel");
                 }
-                // Validate history channel entry format
-                Response historyValidationError = validateHistoryEntry(request);
-                if (historyValidationError != null) {
-                    return historyValidationError;
-                }
-                // Agents provide fully-typed content and channel directly
-                // Epoch is auto-calculated by the store for MEMORY channel entries
-                // Rewrite attachmentId → href before persisting so stored content has href
-                List<String> rewrittenIds =
-                        rewriteAttachmentIds(request.getContent(), currentUserId(), conversationId);
-                List<CreateEntryRequest> messages = List.of(request);
-                List<EntryDto> appended =
-                        store().appendAgentEntries(
-                                        currentUserId(), conversationId, messages, clientId, null);
-                EntryDto dto =
-                        appended != null && !appended.isEmpty()
-                                ? appended.get(appended.size() - 1)
-                                : null;
-                if (dto != null) {
-                    linkAttachmentsToEntry(rewrittenIds, dto.getId());
-                }
-                result = dto != null ? toClientEntry(dto) : null;
-            } else {
-                // Users cannot set channel to MEMORY - only agents can
-                if (request.getChannel() == CreateEntryRequest.ChannelEnum.MEMORY) {
-                    return forbidden(
-                            new AccessDeniedException(
-                                    "Only agents can append messages to the MEMORY channel"));
-                }
-                // Validate history channel entry format
-                Response historyValidationError = validateHistoryEntry(request);
-                if (historyValidationError != null) {
-                    return historyValidationError;
-                }
-                // Users: convert CreateEntryRequest to CreateUserEntryRequest
-                // Rewrite attachmentId → href before persisting
-                List<String> rewrittenIds =
-                        rewriteAttachmentIds(request.getContent(), currentUserId(), conversationId);
-                String textContent = extractTextFromContent(request.getContent());
-                List<Map<String, Object>> attachments =
-                        extractAttachmentsFromContent(request.getContent());
-                boolean hasText = textContent != null && !textContent.isBlank();
-                boolean hasAttachments = attachments != null && !attachments.isEmpty();
-                if (!hasText && !hasAttachments) {
-                    io.github.chirino.memory.client.model.ErrorResponse error =
-                            new io.github.chirino.memory.client.model.ErrorResponse();
-                    error.setError("Message content is required");
-                    error.setCode("invalid_request");
-                    return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
-                }
-                CreateUserEntryRequest userRequest = new CreateUserEntryRequest();
-                userRequest.setContent(hasText ? textContent : null);
-                userRequest.setAttachments(hasAttachments ? attachments : null);
-                userRequest.setForkedAtConversationId(
-                        request.getForkedAtConversationId() != null
-                                ? request.getForkedAtConversationId().toString()
-                                : null);
-                userRequest.setForkedAtEntryId(
-                        request.getForkedAtEntryId() != null
-                                ? request.getForkedAtEntryId().toString()
-                                : null);
-                EntryDto dto =
-                        store().appendUserEntry(currentUserId(), conversationId, userRequest);
-                linkAttachmentsToEntry(rewrittenIds, dto.getId());
-                result = toClientEntry(dto);
             }
+            // Resolve fork parent ID for attachment rewriting
+            String forkParentId =
+                    request.getForkedAtConversationId() != null
+                            ? request.getForkedAtConversationId().toString()
+                            : null;
+            // Rewrite attachmentId -> href before persisting
+            List<String> rewrittenIds =
+                    rewriteAttachmentIds(
+                            request.getContent(), currentUserId(), conversationId, forkParentId);
+            List<EntryDto> appended =
+                    store().appendMemoryEntries(
+                                    currentUserId(),
+                                    conversationId,
+                                    List.of(request),
+                                    clientId,
+                                    null);
+            EntryDto dto =
+                    appended != null && !appended.isEmpty()
+                            ? appended.get(appended.size() - 1)
+                            : null;
+            if (dto != null) {
+                linkAttachmentsToEntry(rewrittenIds, dto.getId());
+            }
+            Entry result = dto != null ? toClientEntry(dto) : null;
             return Response.status(Response.Status.CREATED).entity(result).build();
         } catch (ResourceNotFoundException e) {
             return notFound(e);
@@ -342,11 +324,7 @@ public class ConversationsResource {
     @Path("/conversations/{conversationId}/entries/sync")
     public Response syncMemoryEntries(
             @PathParam("conversationId") String conversationId, CreateEntryRequest request) {
-        if (apiKeyContext == null || !apiKeyContext.hasValidApiKey()) {
-            return forbidden(
-                    new AccessDeniedException("Agent API key is required to sync memory messages"));
-        }
-        String clientId = apiKeyContext.getClientId();
+        String clientId = resolveClientId();
         if (clientId == null || clientId.isBlank()) {
             return forbidden(
                     new AccessDeniedException("Client id is required to sync memory messages"));
@@ -603,6 +581,9 @@ public class ConversationsResource {
      * </ul>
      *
      * <p>At least one of {@code text}, {@code events}, or {@code attachments} must be present.
+     */
+    /**
+     * Checks if the first content block has role "USER".
      */
     private Response validateHistoryEntry(CreateEntryRequest request) {
         // Only validate history channel entries
@@ -1027,7 +1008,10 @@ public class ConversationsResource {
      */
     @SuppressWarnings("unchecked")
     private List<String> rewriteAttachmentIds(
-            List<Object> content, String userId, String targetConversationId) {
+            List<Object> content,
+            String userId,
+            String targetConversationId,
+            String forkedAtConversationId) {
         List<String> rewrittenIds = new ArrayList<>();
         if (content == null) {
             return rewrittenIds;
@@ -1079,10 +1063,26 @@ public class ConversationsResource {
                             continue;
                         }
                         if (targetGroupId == null) {
-                            // Resolve target group lazily
-                            ConversationDto targetConv =
-                                    store().getConversation(userId, targetConversationId);
-                            targetGroupId = targetConv.getConversationGroupId();
+                            // Resolve target group lazily; for fork-on-first-entry the
+                            // target conversation doesn't exist yet, so fall back to
+                            // the fork parent's group.
+                            try {
+                                ConversationDto targetConv =
+                                        store().getConversation(userId, targetConversationId);
+                                targetGroupId = targetConv.getConversationGroupId();
+                            } catch (ResourceNotFoundException e) {
+                                if (forkedAtConversationId != null) {
+                                    LOG.infof(
+                                            "Target conversation %s not found, resolving"
+                                                    + " group from fork parent %s",
+                                            targetConversationId, forkedAtConversationId);
+                                    ConversationDto parentConv =
+                                            store().getConversation(userId, forkedAtConversationId);
+                                    targetGroupId = parentConv.getConversationGroupId();
+                                } else {
+                                    throw e;
+                                }
+                            }
                         }
                         if (!sourceGroupId.equals(targetGroupId)) {
                             throw new AccessDeniedException(
@@ -1124,42 +1124,6 @@ public class ConversationsResource {
     }
 
     @SuppressWarnings("unchecked")
-    private String extractTextFromContent(List<Object> content) {
-        if (content == null) {
-            return null;
-        }
-        for (Object block : content) {
-            if (block == null) {
-                continue;
-            }
-            if (block instanceof Map<?, ?> map) {
-                Object text = map.get("text");
-                if (text instanceof String s && !s.isBlank()) {
-                    return s;
-                }
-            } else if (block instanceof String s && !s.isBlank()) {
-                return s;
-            }
-        }
-        return null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> extractAttachmentsFromContent(List<Object> content) {
-        if (content == null) {
-            return null;
-        }
-        for (Object block : content) {
-            if (block instanceof Map<?, ?> map) {
-                Object attachments = map.get("attachments");
-                if (attachments instanceof List<?> list && !list.isEmpty()) {
-                    return (List<Map<String, Object>>) (List<?>) list;
-                }
-            }
-        }
-        return null;
-    }
-
     private OffsetDateTime parseDate(String value) {
         if (value == null) {
             return null;

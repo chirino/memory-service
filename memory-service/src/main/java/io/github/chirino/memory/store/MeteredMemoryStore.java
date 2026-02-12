@@ -7,7 +7,6 @@ import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
-import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
@@ -65,13 +64,6 @@ public class MeteredMemoryStore implements MemoryStore {
     public void deleteConversation(String userId, String conversationId) {
         registry.timer("memory.store.operation", "operation", "deleteConversation")
                 .record(() -> delegate.deleteConversation(userId, conversationId));
-    }
-
-    @Override
-    public EntryDto appendUserEntry(
-            String userId, String conversationId, CreateUserEntryRequest request) {
-        return registry.timer("memory.store.operation", "operation", "appendUserEntry")
-                .record(() -> delegate.appendUserEntry(userId, conversationId, request));
     }
 
     @Override
@@ -168,16 +160,16 @@ public class MeteredMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<EntryDto> appendAgentEntries(
+    public List<EntryDto> appendMemoryEntries(
             String userId,
             String conversationId,
             List<CreateEntryRequest> entries,
             String clientId,
             Long epoch) {
-        return registry.timer("memory.store.operation", "operation", "appendAgentEntries")
+        return registry.timer("memory.store.operation", "operation", "appendMemoryEntries")
                 .record(
                         () ->
-                                delegate.appendAgentEntries(
+                                delegate.appendMemoryEntries(
                                         userId, conversationId, entries, clientId, epoch));
     }
 

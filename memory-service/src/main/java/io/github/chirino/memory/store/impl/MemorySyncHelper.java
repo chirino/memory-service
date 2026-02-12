@@ -119,7 +119,7 @@ public final class MemorySyncHelper {
 
     /**
      * Creates a CreateEntryRequest with the specified content.
-     * The epoch is NOT set on the request - it should be passed separately to appendAgentEntries.
+     * The epoch is NOT set on the request - it should be passed separately to appendMemoryEntries.
      */
     public static CreateEntryRequest withContent(
             CreateEntryRequest original, List<Object> content) {
@@ -182,7 +182,7 @@ public final class MemorySyncHelper {
 
     /**
      * Creates copies of CreateEntryRequests for the MEMORY channel.
-     * Note: Epoch is NOT set on the requests - it should be passed separately to appendAgentEntries.
+     * Note: Epoch is NOT set on the requests - it should be passed separately to appendMemoryEntries.
      */
     public static List<CreateEntryRequest> copyForMemoryChannel(
             List<CreateEntryRequest> originals) {

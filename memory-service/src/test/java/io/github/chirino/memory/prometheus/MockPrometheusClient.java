@@ -57,7 +57,7 @@ public class MockPrometheusClient implements PrometheusClient {
                     ]
                   },
                   {
-                    "metric": {"operation": "appendAgentEntries"},
+                    "metric": {"operation": "appendMemoryEntries"},
                     "values": [
                       [1704067200, "0.045"],
                       [1704067260, "0.052"],

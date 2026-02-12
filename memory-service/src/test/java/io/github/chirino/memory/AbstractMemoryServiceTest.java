@@ -9,9 +9,9 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
-import io.github.chirino.memory.api.dto.CreateUserEntryRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
+import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
@@ -106,13 +106,23 @@ abstract class AbstractMemoryServiceTest {
         //         .body("code", is("forbidden"));
 
         // Seed a couple of user entries directly via the store
-        CreateUserEntryRequest u1 = new CreateUserEntryRequest();
-        u1.setContent("Hello world from Alice");
-        memoryStoreSelector.getStore().appendUserEntry("alice", conversationId, u1);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        "alice",
+                        conversationId,
+                        List.of(createHistoryEntry("Hello world from Alice")),
+                        "test-client",
+                        null);
 
-        CreateUserEntryRequest u2 = new CreateUserEntryRequest();
-        u2.setContent("Second user entry with keyword alpha");
-        memoryStoreSelector.getStore().appendUserEntry("alice", conversationId, u2);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        "alice",
+                        conversationId,
+                        List.of(createHistoryEntry("Second user entry with keyword alpha")),
+                        "test-client",
+                        null);
 
         // User-visible entries should be listed in order
         JsonPath entriesJson =
@@ -144,7 +154,7 @@ abstract class AbstractMemoryServiceTest {
 
         memoryStoreSelector
                 .getStore()
-                .appendAgentEntries("alice", conversationId, List.of(a1, a2), "test-agent", null);
+                .appendMemoryEntries("alice", conversationId, List.of(a1, a2), "test-agent", null);
 
         // Agent view of entries should include all entries
         given().header("X-API-Key", "test-agent-key")
@@ -252,21 +262,41 @@ abstract class AbstractMemoryServiceTest {
                         .extract()
                         .path("id");
 
-        CreateUserEntryRequest u1 = new CreateUserEntryRequest();
-        u1.setContent("Entry 1");
-        EntryDto m1 = memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u1);
+        List<EntryDto> r1 =
+                memoryStoreSelector
+                        .getStore()
+                        .appendMemoryEntries(
+                                "forker",
+                                conversationId,
+                                List.of(createHistoryEntry("Entry 1")),
+                                "test-client",
+                                null);
+        EntryDto m1 = r1.get(0);
 
-        CreateUserEntryRequest u2 = new CreateUserEntryRequest();
-        u2.setContent("Entry 2 - fork point");
-        EntryDto m2 = memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u2);
+        List<EntryDto> r2 =
+                memoryStoreSelector
+                        .getStore()
+                        .appendMemoryEntries(
+                                "forker",
+                                conversationId,
+                                List.of(createHistoryEntry("Entry 2 - fork point")),
+                                "test-client",
+                                null);
+        EntryDto m2 = r2.get(0);
 
-        CreateUserEntryRequest u3 = new CreateUserEntryRequest();
-        u3.setContent("Entry 3");
-        memoryStoreSelector.getStore().appendUserEntry("forker", conversationId, u3);
+        memoryStoreSelector
+                .getStore()
+                .appendMemoryEntries(
+                        "forker",
+                        conversationId,
+                        List.of(createHistoryEntry("Entry 3")),
+                        "test-client",
+                        null);
 
         // Fork at the second entry by creating an entry on a new conversation with fork metadata
         String forkedId = java.util.UUID.randomUUID().toString();
         given().contentType(MediaType.APPLICATION_JSON)
+                .header("X-API-Key", "test-agent-key")
                 .body(
                         Map.of(
                                 "channel",
@@ -362,5 +392,13 @@ abstract class AbstractMemoryServiceTest {
         mongoMembershipRepository.get().deleteAll();
         mongoOwnershipTransferRepository.get().deleteAll();
         mongoConversationRepository.get().deleteAll();
+    }
+
+    protected static CreateEntryRequest createHistoryEntry(String text) {
+        CreateEntryRequest req = new CreateEntryRequest();
+        req.setChannel(CreateEntryRequest.ChannelEnum.HISTORY);
+        req.setContentType("history");
+        req.setContent(List.of(Map.of("role", "USER", "text", text)));
+        return req;
     }
 }

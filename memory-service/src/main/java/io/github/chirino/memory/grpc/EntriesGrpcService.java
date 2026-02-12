@@ -160,7 +160,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                                         request.getEntry().getForkedAtEntryId())));
                             }
                             List<io.github.chirino.memory.api.dto.EntryDto> appended =
-                                    store().appendAgentEntries(
+                                    store().appendMemoryEntries(
                                                     currentUserId(),
                                                     conversationId,
                                                     List.of(internal),
