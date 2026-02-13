@@ -212,36 +212,14 @@ type ToolCallPendingProps = {
 /**
  * Displays a tool call in progress with spinning indicator.
  */
-function ToolCallPending({ name, input }: ToolCallPendingProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const hasInput = input !== undefined && input !== null;
-
+function ToolCallPending({ name }: ToolCallPendingProps) {
   return (
     <div className="my-2 rounded-lg border border-sage/30 bg-sage/5">
-      <button
-        type="button"
-        onClick={() => hasInput && setIsExpanded(!isExpanded)}
-        disabled={!hasInput}
-        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
-          hasInput ? "cursor-pointer hover:bg-sage/10" : "cursor-default"
-        }`}
-      >
+      <div className="flex items-center gap-2 px-3 py-2 text-sm">
         <Loader2 className="h-4 w-4 animate-spin text-sage" />
         <Wrench className="h-4 w-4 text-sage" />
         <span className="font-medium text-ink">{getToolDisplayName(name)}</span>
-        {hasInput &&
-          (isExpanded ? (
-            <ChevronDown className="ml-auto h-4 w-4 text-stone" />
-          ) : (
-            <ChevronRight className="ml-auto h-4 w-4 text-stone" />
-          ))}
-      </button>
-      {isExpanded && hasInput && (
-        <div className="border-t border-sage/20 px-3 py-2">
-          <div className="text-xs text-stone">Input:</div>
-          <pre className="mt-1 overflow-x-auto rounded bg-mist/50 p-2 text-xs text-ink">{formatJson(input)}</pre>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -255,47 +233,15 @@ type ToolCallResultProps = {
 /**
  * Displays a completed tool call with expandable input/output.
  */
-function ToolCallResult({ name, input, output }: ToolCallResultProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const hasDetails = (input !== undefined && input !== null) || (output !== undefined && output !== null);
-
+function ToolCallResult({ name }: ToolCallResultProps) {
   return (
     <div className="my-2 rounded-lg border border-sage/30 bg-sage/10">
-      <button
-        type="button"
-        onClick={() => hasDetails && setIsExpanded(!isExpanded)}
-        disabled={!hasDetails}
-        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
-          hasDetails ? "cursor-pointer hover:bg-sage/20" : "cursor-default"
-        }`}
-      >
+      <div className="flex items-center gap-2 px-3 py-2 text-sm">
         <CheckCircle2 className="h-4 w-4 text-sage" />
         <Wrench className="h-4 w-4 text-sage" />
         <span className="font-medium text-ink">{getToolDisplayName(name)}</span>
         <span className="text-xs text-stone">completed</span>
-        {hasDetails &&
-          (isExpanded ? (
-            <ChevronDown className="ml-auto h-4 w-4 text-stone" />
-          ) : (
-            <ChevronRight className="ml-auto h-4 w-4 text-stone" />
-          ))}
-      </button>
-      {isExpanded && (
-        <div className="space-y-2 border-t border-sage/20 px-3 py-2">
-          {input !== undefined && input !== null && (
-            <div>
-              <div className="text-xs text-stone">Input:</div>
-              <pre className="mt-1 overflow-x-auto rounded bg-mist/50 p-2 text-xs text-ink">{formatJson(input)}</pre>
-            </div>
-          )}
-          {output !== undefined && output !== null && (
-            <div>
-              <div className="text-xs text-stone">Output:</div>
-              <pre className="mt-1 overflow-x-auto rounded bg-cream p-2 text-xs text-ink">{formatJson(output)}</pre>
-            </div>
-          )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -339,19 +285,3 @@ function ContentFetchedBlock({ source, content }: ContentFetchedBlockProps) {
   );
 }
 
-function formatJson(value: unknown): string {
-  try {
-    if (typeof value === "string") {
-      // Try to parse as JSON for pretty printing
-      try {
-        const parsed = JSON.parse(value);
-        return JSON.stringify(parsed, null, 2);
-      } catch {
-        return value;
-      }
-    }
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}

@@ -20,6 +20,7 @@
 * review all config key names: keep them consistent and simple.
 * test/find the message size limits of the app.
     * use that info to protect against DOS: huge api requests .
+* define maxium lengths for all fields.
 
 # Performance Related
 
