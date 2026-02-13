@@ -210,6 +210,52 @@ public class MemoryServiceProxy {
     // ---- Attachment operations (raw HTTP, no generated client) ----
 
     /**
+     * Creates an attachment from a source URL by forwarding the JSON request to the memory service.
+     */
+    public ResponseEntity<?> createAttachmentFromUrl(Map<String, Object> request) {
+        try {
+            String bearer = resolveBearerToken(null);
+
+            WebClient.RequestBodySpec req =
+                    getAttachmentWebClient()
+                            .post()
+                            .uri("/v1/attachments")
+                            .contentType(MediaType.APPLICATION_JSON);
+
+            if (StringUtils.hasText(bearer)) {
+                req = req.header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer);
+            }
+
+            var upstream =
+                    req.bodyValue(request)
+                            .exchangeToMono(
+                                    response ->
+                                            response.bodyToMono(String.class)
+                                                    .defaultIfEmpty("")
+                                                    .map(
+                                                            responseBody ->
+                                                                    ResponseEntity.status(
+                                                                                    response
+                                                                                            .statusCode())
+                                                                            .contentType(
+                                                                                    MediaType
+                                                                                            .APPLICATION_JSON)
+                                                                            .body(
+                                                                                    (Object)
+                                                                                            responseBody)))
+                            .block(resolveTimeout());
+
+            return upstream != null
+                    ? upstream
+                    : ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        } catch (Exception e) {
+            LOG.error("Error creating attachment from URL", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Create from URL proxy failed: " + e.getMessage()));
+        }
+    }
+
+    /**
      * Uploads an attachment to the memory service using streaming multipart.
      *
      * @param file      the multipart file from the request

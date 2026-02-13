@@ -37,8 +37,8 @@ export function RichEventRenderer({ events, isStreaming = false }: RichEventRend
 type EventGroup =
   | { type: "text"; content: string }
   | { type: "thinking"; content: string }
-  | { type: "tool-pending"; toolName: string; input?: unknown }
-  | { type: "tool-result"; toolName: string; input?: unknown; output?: unknown }
+  | { type: "tool-pending"; id?: string; toolName: string; input?: unknown }
+  | { type: "tool-result"; id?: string; toolName: string; input?: unknown; output?: unknown }
   | { type: "content-fetched"; source?: string; content?: string }
   | { type: "other"; event: ChatEvent };
 
@@ -46,6 +46,16 @@ function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
   const groups: EventGroup[] = [];
   let currentTextBuffer = "";
   let currentThinkingBuffer = "";
+
+  // Build a lookup of completed tool executions by id so we can merge them
+  // with their corresponding BeforeToolExecution events.
+  const completedTools = new Map<string, { toolName: string; input?: unknown; output?: unknown }>();
+  const consumedToolExecutedIds = new Set<string>();
+  for (const event of events) {
+    if (event.eventType === "ToolExecuted" && event.id) {
+      completedTools.set(event.id, { toolName: event.toolName, input: event.input, output: event.output });
+    }
+  }
 
   const flushText = () => {
     if (currentTextBuffer) {
@@ -71,15 +81,33 @@ function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
         flushText();
         currentThinkingBuffer += event.chunk;
         break;
-      case "BeforeToolExecution":
+      case "BeforeToolExecution": {
         flushText();
         flushThinking();
-        groups.push({ type: "tool-pending", toolName: event.toolName, input: event.input });
+        // If we have a matching ToolExecuted, render as completed directly
+        const completed = event.id ? completedTools.get(event.id) : undefined;
+        if (completed && event.id) {
+          consumedToolExecutedIds.add(event.id);
+          groups.push({
+            type: "tool-result",
+            id: event.id,
+            toolName: completed.toolName,
+            input: completed.input,
+            output: completed.output,
+          });
+        } else {
+          groups.push({ type: "tool-pending", id: event.id, toolName: event.toolName, input: event.input });
+        }
         break;
+      }
       case "ToolExecuted":
+        // Skip if already consumed by a matching BeforeToolExecution
+        if (event.id && consumedToolExecutedIds.has(event.id)) {
+          break;
+        }
         flushText();
         flushThinking();
-        groups.push({ type: "tool-result", toolName: event.toolName, input: event.input, output: event.output });
+        groups.push({ type: "tool-result", id: event.id, toolName: event.toolName, input: event.input, output: event.output });
         break;
       case "ContentFetched":
         flushText();
@@ -188,7 +216,7 @@ function ToolCallPending({ name, input }: ToolCallPendingProps) {
       >
         <Loader2 className="h-4 w-4 animate-spin text-sage" />
         <Wrench className="h-4 w-4 text-sage" />
-        <span className="font-medium text-ink">Calling {name}</span>
+        <span className="font-medium text-ink">{name}</span>
         {hasInput &&
           (isExpanded ? (
             <ChevronDown className="ml-auto h-4 w-4 text-stone" />

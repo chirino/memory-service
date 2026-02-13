@@ -48,8 +48,8 @@ type ConversationAuthor = "user" | "assistant" | "system";
 export type ChatEvent =
   | { eventType: "PartialResponse"; chunk: string }
   | { eventType: "PartialThinking"; chunk: string }
-  | { eventType: "BeforeToolExecution"; toolName: string; input?: unknown }
-  | { eventType: "ToolExecuted"; toolName: string; input?: unknown; output?: unknown }
+  | { eventType: "BeforeToolExecution"; id?: string; toolName: string; input?: unknown }
+  | { eventType: "ToolExecuted"; id?: string; toolName: string; input?: unknown; output?: unknown }
   | { eventType: "ContentFetched"; source?: string; content?: string }
   | { eventType: "IntermediateResponse"; chunk?: string }
   | { eventType: "ChatCompleted"; finishReason?: string };

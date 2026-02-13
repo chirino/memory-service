@@ -45,6 +45,7 @@ class AgentStreamController {
     private final ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder;
     private final OAuth2AuthorizedClientService authorizedClientService;
     private final AttachmentResolver attachmentResolver;
+    private final ImageGenerationTool imageGenerationTool;
 
     AgentStreamController(
             ChatClient.Builder chatClientBuilder,
@@ -52,13 +53,15 @@ class AgentStreamController {
             ResponseResumer responseResumer,
             ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder,
             AttachmentResolver attachmentResolver,
-            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
+            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider,
+            ObjectProvider<ImageGenerationTool> imageGenerationToolProvider) {
         this.chatClientBuilder = chatClientBuilder;
         this.repositoryBuilder = repositoryBuilder;
         this.responseResumer = responseResumer;
         this.historyAdvisorBuilder = historyAdvisorBuilder;
         this.attachmentResolver = attachmentResolver;
         this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
+        this.imageGenerationTool = imageGenerationToolProvider.getIfAvailable();
     }
 
     @PostMapping(
@@ -83,14 +86,17 @@ class AgentStreamController {
         var repository = repositoryBuilder.build(bearerToken);
         var chatMemory = MessageWindowChatMemory.builder().chatMemoryRepository(repository).build();
 
-        var chatClient =
+        var builder =
                 chatClientBuilder
                         .clone()
                         .defaultSystem("You are a helpful assistant.")
                         .defaultAdvisors(
                                 historyAdvisor,
-                                MessageChatMemoryAdvisor.builder(chatMemory).build())
-                        .build();
+                                MessageChatMemoryAdvisor.builder(chatMemory).build());
+        if (imageGenerationTool != null) {
+            builder = builder.defaultTools(imageGenerationTool);
+        }
+        var chatClient = builder.build();
 
         Attachments attachments = attachmentResolver.resolve(toRefs(request.getAttachments()));
 
