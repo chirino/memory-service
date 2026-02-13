@@ -12,6 +12,18 @@ import { Streamdown } from "streamdown";
 import { ChevronDown, ChevronRight, Loader2, Wrench, CheckCircle2, Brain } from "lucide-react";
 import type { ChatEvent } from "@/components/conversation";
 
+/**
+ * Maps tool IDs to human-readable labels for display.
+ * When a tool event's name matches a key here, the label is shown instead.
+ */
+const TOOL_DISPLAY_LABELS: Record<string, string> = {
+  generateImage: "Generating an image...",
+};
+
+function getToolDisplayName(toolName: string): string {
+  return TOOL_DISPLAY_LABELS[toolName] ?? toolName;
+}
+
 export type RichEventRendererProps = {
   events: ChatEvent[];
   isStreaming?: boolean;
@@ -216,7 +228,7 @@ function ToolCallPending({ name, input }: ToolCallPendingProps) {
       >
         <Loader2 className="h-4 w-4 animate-spin text-sage" />
         <Wrench className="h-4 w-4 text-sage" />
-        <span className="font-medium text-ink">{name}</span>
+        <span className="font-medium text-ink">{getToolDisplayName(name)}</span>
         {hasInput &&
           (isExpanded ? (
             <ChevronDown className="ml-auto h-4 w-4 text-stone" />
@@ -259,7 +271,7 @@ function ToolCallResult({ name, input, output }: ToolCallResultProps) {
       >
         <CheckCircle2 className="h-4 w-4 text-sage" />
         <Wrench className="h-4 w-4 text-sage" />
-        <span className="font-medium text-ink">{name}</span>
+        <span className="font-medium text-ink">{getToolDisplayName(name)}</span>
         <span className="text-xs text-stone">completed</span>
         {hasDetails &&
           (isExpanded ? (
