@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -27,6 +28,8 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.AbstractOAuth2Token;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
@@ -49,6 +52,8 @@ public class MemoryServiceProxy {
     private final WebClient.Builder webClientBuilder;
     private final OAuth2AuthorizedClientService authorizedClientService;
 
+    private volatile WebClient attachmentWebClient;
+
     public MemoryServiceProxy(
             MemoryServiceClientProperties properties,
             WebClient.Builder webClientBuilder,
@@ -56,6 +61,13 @@ public class MemoryServiceProxy {
         this.properties = properties;
         this.webClientBuilder = (webClientBuilder != null) ? webClientBuilder : WebClient.builder();
         this.authorizedClientService = authorizedClientService;
+    }
+
+    private WebClient getAttachmentWebClient() {
+        if (attachmentWebClient == null) {
+            attachmentWebClient = webClientBuilder.baseUrl(properties.getBaseUrl()).build();
+        }
+        return attachmentWebClient;
     }
 
     public ResponseEntity<?> listConversations(
@@ -193,6 +205,329 @@ public class MemoryServiceProxy {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", "Invalid request body"));
         }
+    }
+
+    // ---- Attachment operations (raw HTTP, no generated client) ----
+
+    /**
+     * Uploads an attachment to the memory service using streaming multipart.
+     *
+     * @param file      the multipart file from the request
+     * @param expiresIn optional expiration duration (e.g. "300s")
+     * @return the upstream JSON response with attachment metadata
+     */
+    public ResponseEntity<?> uploadAttachment(MultipartFile file, String expiresIn) {
+        try {
+            String bearer = resolveBearerToken(null);
+
+            WebClient.RequestBodySpec req =
+                    getAttachmentWebClient()
+                            .post()
+                            .uri(
+                                    uriBuilder -> {
+                                        uriBuilder.path("/v1/attachments");
+                                        if (StringUtils.hasText(expiresIn)) {
+                                            uriBuilder.queryParam("expiresIn", expiresIn);
+                                        }
+                                        return uriBuilder.build();
+                                    })
+                            .contentType(MediaType.MULTIPART_FORM_DATA);
+
+            if (StringUtils.hasText(bearer)) {
+                req = req.header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer);
+            }
+
+            var body =
+                    BodyInserters.fromMultipartData(
+                            "file",
+                            new InputStreamResource(file.getInputStream()) {
+                                @Override
+                                public String getFilename() {
+                                    return file.getOriginalFilename();
+                                }
+
+                                @Override
+                                public long contentLength() {
+                                    return file.getSize();
+                                }
+                            });
+
+            var upstream =
+                    req.body(body)
+                            .exchangeToMono(
+                                    response ->
+                                            response.bodyToMono(String.class)
+                                                    .defaultIfEmpty("")
+                                                    .map(
+                                                            responseBody ->
+                                                                    ResponseEntity.status(
+                                                                                    response
+                                                                                            .statusCode())
+                                                                            .contentType(
+                                                                                    MediaType
+                                                                                            .APPLICATION_JSON)
+                                                                            .body(
+                                                                                    (Object)
+                                                                                            responseBody)))
+                            .block(resolveTimeout());
+
+            return upstream != null
+                    ? upstream
+                    : ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+
+        } catch (Exception e) {
+            LOG.error("Error uploading attachment", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Upload proxy failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Retrieves an attachment by ID. Handles 302 redirects (e.g. S3 presigned URLs).
+     */
+    public ResponseEntity<?> retrieveAttachment(String id) {
+        String bearer = resolveBearerToken(null);
+
+        var upstream =
+                getAttachmentWebClient()
+                        .get()
+                        .uri("/v1/attachments/{id}", id)
+                        .headers(
+                                h -> {
+                                    if (StringUtils.hasText(bearer)) {
+                                        h.setBearerAuth(bearer);
+                                    }
+                                })
+                        .exchangeToMono(
+                                response -> {
+                                    HttpStatus status =
+                                            HttpStatus.resolve(response.statusCode().value());
+
+                                    if (status == HttpStatus.FOUND) {
+                                        String location =
+                                                response
+                                                        .headers()
+                                                        .header(HttpHeaders.LOCATION)
+                                                        .stream()
+                                                        .findFirst()
+                                                        .orElse("");
+                                        return Mono.just(
+                                                ResponseEntity.status(HttpStatus.FOUND)
+                                                        .header(HttpHeaders.LOCATION, location)
+                                                        .<Object>build());
+                                    }
+
+                                    if (status == HttpStatus.OK) {
+                                        return response.bodyToMono(byte[].class)
+                                                .defaultIfEmpty(new byte[0])
+                                                .map(
+                                                        bytes -> {
+                                                            var builder = ResponseEntity.ok();
+                                                            response
+                                                                    .headers()
+                                                                    .header(
+                                                                            HttpHeaders
+                                                                                    .CONTENT_TYPE)
+                                                                    .stream()
+                                                                    .findFirst()
+                                                                    .ifPresent(
+                                                                            ct ->
+                                                                                    builder.header(
+                                                                                            HttpHeaders
+                                                                                                    .CONTENT_TYPE,
+                                                                                            ct));
+                                                            response
+                                                                    .headers()
+                                                                    .header(
+                                                                            HttpHeaders
+                                                                                    .CONTENT_DISPOSITION)
+                                                                    .stream()
+                                                                    .findFirst()
+                                                                    .ifPresent(
+                                                                            cd ->
+                                                                                    builder.header(
+                                                                                            HttpHeaders
+                                                                                                    .CONTENT_DISPOSITION,
+                                                                                            cd));
+                                                            return (Object) builder.body(bytes);
+                                                        });
+                                    }
+
+                                    return response.bodyToMono(String.class)
+                                            .defaultIfEmpty("")
+                                            .map(
+                                                    errorBody ->
+                                                            (Object)
+                                                                    ResponseEntity.status(
+                                                                                    response
+                                                                                            .statusCode())
+                                                                            .contentType(
+                                                                                    MediaType
+                                                                                            .APPLICATION_JSON)
+                                                                            .body(errorBody));
+                                })
+                        .block(resolveTimeout());
+
+        return upstream != null
+                ? (ResponseEntity<?>) upstream
+                : ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    }
+
+    /**
+     * Gets a signed download URL for an attachment.
+     */
+    public ResponseEntity<?> getAttachmentDownloadUrl(String id) {
+        String bearer = resolveBearerToken(null);
+
+        var upstream =
+                getAttachmentWebClient()
+                        .get()
+                        .uri("/v1/attachments/{id}/download-url", id)
+                        .headers(
+                                h -> {
+                                    if (StringUtils.hasText(bearer)) {
+                                        h.setBearerAuth(bearer);
+                                    }
+                                })
+                        .exchangeToMono(
+                                response ->
+                                        response.bodyToMono(String.class)
+                                                .defaultIfEmpty("")
+                                                .map(
+                                                        responseBody ->
+                                                                ResponseEntity.status(
+                                                                                response
+                                                                                        .statusCode())
+                                                                        .contentType(
+                                                                                MediaType
+                                                                                        .APPLICATION_JSON)
+                                                                        .body(
+                                                                                (Object)
+                                                                                        responseBody)))
+                        .block(resolveTimeout());
+
+        return upstream != null
+                ? upstream
+                : ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    }
+
+    /**
+     * Deletes an attachment by ID.
+     */
+    public ResponseEntity<?> deleteAttachment(String id) {
+        String bearer = resolveBearerToken(null);
+
+        var upstream =
+                getAttachmentWebClient()
+                        .delete()
+                        .uri("/v1/attachments/{id}", id)
+                        .headers(
+                                h -> {
+                                    if (StringUtils.hasText(bearer)) {
+                                        h.setBearerAuth(bearer);
+                                    }
+                                })
+                        .exchangeToMono(
+                                response -> {
+                                    if (response.statusCode().value() == 204) {
+                                        return Mono.just(
+                                                ResponseEntity.noContent().<Object>build());
+                                    }
+                                    return response.bodyToMono(String.class)
+                                            .defaultIfEmpty("")
+                                            .map(
+                                                    responseBody ->
+                                                            ResponseEntity.status(
+                                                                            response.statusCode())
+                                                                    .contentType(
+                                                                            MediaType
+                                                                                    .APPLICATION_JSON)
+                                                                    .body((Object) responseBody));
+                                })
+                        .block(resolveTimeout());
+
+        return upstream != null
+                ? upstream
+                : ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    }
+
+    /**
+     * Downloads an attachment using a signed token. No authentication required.
+     */
+    public ResponseEntity<?> downloadAttachmentByToken(String token, String filename) {
+        var upstream =
+                getAttachmentWebClient()
+                        .get()
+                        .uri("/v1/attachments/download/{token}/{filename}", token, filename)
+                        .exchangeToMono(
+                                response -> {
+                                    HttpStatus status =
+                                            HttpStatus.resolve(response.statusCode().value());
+
+                                    if (status == HttpStatus.OK) {
+                                        return response.bodyToMono(byte[].class)
+                                                .defaultIfEmpty(new byte[0])
+                                                .map(
+                                                        bytes -> {
+                                                            var builder = ResponseEntity.ok();
+                                                            response
+                                                                    .headers()
+                                                                    .header(
+                                                                            HttpHeaders
+                                                                                    .CONTENT_TYPE)
+                                                                    .stream()
+                                                                    .findFirst()
+                                                                    .ifPresent(
+                                                                            ct ->
+                                                                                    builder.header(
+                                                                                            HttpHeaders
+                                                                                                    .CONTENT_TYPE,
+                                                                                            ct));
+                                                            response
+                                                                    .headers()
+                                                                    .header(
+                                                                            HttpHeaders
+                                                                                    .CONTENT_DISPOSITION)
+                                                                    .stream()
+                                                                    .findFirst()
+                                                                    .ifPresent(
+                                                                            cd ->
+                                                                                    builder.header(
+                                                                                            HttpHeaders
+                                                                                                    .CONTENT_DISPOSITION,
+                                                                                            cd));
+                                                            response
+                                                                    .headers()
+                                                                    .header(
+                                                                            HttpHeaders
+                                                                                    .CACHE_CONTROL)
+                                                                    .stream()
+                                                                    .findFirst()
+                                                                    .ifPresent(
+                                                                            cc ->
+                                                                                    builder.header(
+                                                                                            HttpHeaders
+                                                                                                    .CACHE_CONTROL,
+                                                                                            cc));
+                                                            return (Object) builder.body(bytes);
+                                                        });
+                                    }
+
+                                    return response.bodyToMono(String.class)
+                                            .defaultIfEmpty("")
+                                            .map(
+                                                    errorBody ->
+                                                            (Object)
+                                                                    ResponseEntity.status(
+                                                                                    response
+                                                                                            .statusCode())
+                                                                            .body(errorBody));
+                                })
+                        .block(resolveTimeout());
+
+        return upstream != null
+                ? (ResponseEntity<?>) upstream
+                : ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
     }
 
     private ConversationsApi conversationsApi(@Nullable String explicitBearerToken) {

@@ -1,0 +1,216 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Attachments
+description: Proxy attachment upload, download, and management APIs from your agent app.
+---
+import { Code } from 'astro:components';
+import { PROJECT_VERSION } from '../../../config';
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide covers proxying attachment operations — upload, download, signed URLs, and deletion — from your agent app to the Memory Service.
+
+> **New to attachment concepts?**
+> Read [Attachments](/docs/concepts/attachments/) first to understand the attachment lifecycle, external URL references vs server-stored files, and how attachments link to conversation entries. This guide focuses on the Quarkus implementation.
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/03-with-history)
+
+Make sure you've completed the previous guides:
+- [Getting Started](/docs/quarkus/getting-started/) - Basic memory service integration
+- [Conversation History](/docs/quarkus/conversation-history/) - History recording and APIs
+
+## Why Proxy Attachments?
+
+Agent apps mediate all interactions between end users and the Memory Service. Your frontend cannot call the Memory Service directly — it sends requests to your agent app, which forwards them with proper authentication.
+
+The `MemoryServiceProxy` helper already handles the complexity of multipart uploads, binary downloads, redirect handling, and bearer token propagation for attachments. You just need to create thin JAX-RS resources that delegate to it:
+
+- **`AttachmentsProxyResource`** — Authenticated proxy for upload, download, download-url, and delete
+- **`AttachmentDownloadProxyResource`** — Unauthenticated proxy for signed download URLs (used by browser `<img>`, `<audio>`, `<video>` tags)
+
+## Add Attachment Proxy Endpoints
+
+Create `AttachmentsProxyResource.java` to proxy authenticated attachment operations to the Memory Service:
+
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/08-with-attachments/src/main/java/org/acme/AttachmentsProxyResource.java"
+  lang="java"
+/>
+
+Each method is a one-liner delegation to `MemoryServiceProxy`, which handles:
+
+- **Streaming upload** — Forwards multipart file uploads without buffering the entire file in memory.
+- **Bearer token propagation** — Extracts the user's bearer token and forwards it to the Memory Service for authorization.
+- **Redirect handling** — The `retrieveAttachment()` method handles 302 redirects for S3 presigned URLs.
+- **Response forwarding** — Content-Type, Content-Length, and Content-Disposition headers are forwarded from the Memory Service response.
+
+## Add Signed Download Proxy
+
+Browser elements like `<img>`, `<audio>`, and `<video>` tags cannot send Authorization headers. The Memory Service solves this with signed download URLs that embed a time-limited token in the URL path. This proxy forwards those unauthenticated requests.
+
+Create `AttachmentDownloadProxyResource.java`:
+
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/08-with-attachments/src/main/java/org/acme/AttachmentDownloadProxyResource.java"
+  lang="java"
+/>
+
+This endpoint requires no bearer token — the signed token in the URL path provides authorization.
+
+## Update Security Configuration
+
+Update `application.properties` to allow unauthenticated access to the signed download path while requiring authentication for all other `/v1/*` endpoints:
+
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/08-with-attachments/src/main/resources/application.properties"
+  lang="properties"
+  before={1}
+  after={1}
+>quarkus.http.auth.permission.attachment-download.paths</CodeFromFile>
+
+The `attachment-download` permission must allow unauthenticated access to `/v1/attachments/download/*` since signed URLs are meant to be used without an Authorization header. The `api` permission requires authentication on all other `/v1/*` endpoints. Quarkus matches the most specific path first, so the order in the properties file doesn't matter.
+
+<TestScenario checkpoint="quarkus/examples/doc-checkpoints/08-with-attachments">
+
+## Testing
+
+Make sure you define the bearer token helper:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+### Upload an Attachment
+
+<CurlTest steps={`
+Then the response status should be 201
+And set "ATTACHMENT_ID" to the json response field "id"
+And the response body should be json:
+"""
+{
+  "id": "%{response.body.id}",
+  "href": "%{response.body.href}",
+  "contentType": "text/plain",
+  "filename": "test-upload.txt",
+  "size": %{response.body.size},
+  "sha256": "%{response.body.sha256}",
+  "expiresAt": "%{response.body.expiresAt}"
+}
+"""
+`}>
+
+```bash
+echo "Hello, attachments!" > /tmp/test-upload.txt
+curl -sSfX POST http://localhost:9090/v1/attachments \
+  -H "Authorization: Bearer $(get-token)" \
+  -F "file=@/tmp/test-upload.txt" | jq
+```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "href": "/v1/attachments/7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "contentType": "text/plain",
+  "filename": "test-upload.txt",
+  "size": 21,
+  "sha256": "a1b2c3d4...",
+  "expiresAt": "2025-01-28T11:30:00Z"
+}
+```
+
+Save the attachment ID for subsequent commands:
+
+```bash
+ATTACHMENT_ID="<id from the response above>"
+```
+
+### Get a Signed Download URL
+
+<CurlTest steps={`
+Then the response status should be 200
+And set "DOWNLOAD_URL" to the json response field "url"
+And the response body should be json:
+"""
+{
+  "url": "%{response.body.url}",
+  "expiresIn": %{response.body.expiresIn}
+}
+"""
+`}>
+
+```bash
+curl -sSfX GET "http://localhost:9090/v1/attachments/${ATTACHMENT_ID}/download-url" \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "url": "/v1/attachments/download/dG9rZW4.../test-upload.txt",
+  "expiresIn": 300
+}
+```
+
+### Download via Signed URL (No Auth Required)
+
+Use the `url` from the previous response — no Authorization header needed:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be text:
+"""
+Hello, attachments!
+"""
+`}>
+
+```bash
+curl -sSf "http://localhost:9090${DOWNLOAD_URL}"
+```
+
+</CurlTest>
+
+### Delete an Attachment
+
+<CurlTest steps={`
+Then the response status should be 204
+`}>
+
+```bash
+curl -sSfX DELETE "http://localhost:9090/v1/attachments/${ATTACHMENT_ID}" \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Complete Example
+
+**Completed code**: View the full implementation at [quarkus/examples/doc-checkpoints/08-with-attachments](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/08-with-attachments)
+
+For a complete working example with attachments integrated into the chat flow (including multi-modal LLM support), see the [quarkus/examples/chat-quarkus](https://github.com/chirino/memory-service/tree/main/quarkus/examples/chat-quarkus) directory.
+
+## Next Steps
+
+- [Conversation Forking](/docs/quarkus/conversation-forking/) — Branch conversations to explore alternative paths
+- [Response Resumption](/docs/quarkus/response-resumption/) — Streaming responses with resume and cancel support
+- [Conversation Sharing](/docs/quarkus/sharing/) — Share conversations with other users
