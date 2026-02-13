@@ -139,7 +139,17 @@ MEMORY_SERVICE_ATTACHMENTS_STORE=s3
 
 # S3 bucket configuration
 MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET=memory-service-attachments
+
+# Optional: proxy downloads through memory service instead of returning S3 pre-signed URLs.
+# Use this when S3 is on an internal network not reachable by browsers.
+MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=false
 ```
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory-service.attachments.s3.bucket` | string | `memory-service-attachments` | S3 bucket name |
+| `memory-service.attachments.s3.prefix` | string | _(none)_ | Optional key prefix for S3 objects |
+| `memory-service.attachments.s3.direct-download` | `true`, `false` | `true` | When `true`, download URLs point directly at S3 (pre-signed). When `false`, downloads are proxied through the memory service — use this when S3 is on an internal network not reachable by browsers. |
 
 See [Attachments](/docs/concepts/attachments/) for details on how attachments work.
 
