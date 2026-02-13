@@ -19,4 +19,6 @@ public class MongoAttachment {
     public Instant expiresAt;
     public Instant createdAt;
     public Instant deletedAt;
+    public String status = "ready";
+    public String sourceUrl;
 }

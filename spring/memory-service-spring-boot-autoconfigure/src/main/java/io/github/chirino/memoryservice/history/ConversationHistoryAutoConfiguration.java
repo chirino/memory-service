@@ -83,4 +83,10 @@ public class ConversationHistoryAutoConfiguration {
     public AttachmentResolver attachmentResolver() {
         return new AttachmentResolver();
     }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ToolAttachmentExtractor toolAttachmentExtractor() {
+        return new DefaultToolAttachmentExtractor();
+    }
 }

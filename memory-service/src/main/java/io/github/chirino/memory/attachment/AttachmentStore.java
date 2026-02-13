@@ -14,6 +14,15 @@ public interface AttachmentStore {
     void updateAfterUpload(
             String id, String storageKey, long size, String sha256, Instant expiresAt);
 
+    AttachmentDto createFromUrl(
+            String userId,
+            String contentType,
+            String filename,
+            String sourceUrl,
+            Instant expiresAt);
+
+    void updateStatus(String id, String status);
+
     Optional<AttachmentDto> findById(String id);
 
     Optional<AttachmentDto> findByIdForUser(String id, String userId);

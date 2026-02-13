@@ -35,23 +35,24 @@ public class ConversationStore {
     @Inject ResponseResumer resumer;
     @Inject Instance<IndexedContentProvider> indexedContentProviderInstance;
     @Inject ObjectMapper objectMapper;
+    @Inject Instance<ToolAttachmentExtractor> toolAttachmentExtractorInstance;
 
     private SecurityIdentity resolveIdentity() {
         if (identityAssociation != null) {
             SecurityIdentity resolved = identityAssociation.getIdentity();
             if (resolved != null && !resolved.isAnonymous()) {
-                LOG.infof(
+                LOG.debugf(
                         "Resolved identity from association: type=%s",
                         resolved.getClass().getName());
                 return resolved;
             }
         }
         if (securityIdentity != null) {
-            LOG.infof(
+            LOG.debugf(
                     "Resolved identity from injected identity: type=%s",
                     securityIdentity.getClass().getName());
         } else {
-            LOG.info("Resolved identity from injected identity: <none>");
+            LOG.debug("Resolved identity from injected identity: <none>");
         }
         return securityIdentity;
     }
@@ -158,6 +159,17 @@ public class ConversationStore {
     public Multi<ChatEvent> appendAgentEvents(String conversationId, Multi<ChatEvent> eventMulti) {
         SecurityIdentity resolvedIdentity = resolveIdentity();
         String bearerToken = bearerToken(resolvedIdentity);
+        ToolAttachmentExtractor extractor =
+                toolAttachmentExtractorInstance != null
+                                && toolAttachmentExtractorInstance.isResolvable()
+                        ? toolAttachmentExtractorInstance.get()
+                        : null;
+        LOG.debugf(
+                "appendAgentEvents: extractor=%s (instance=%s, resolvable=%s)",
+                extractor != null ? extractor.getClass().getSimpleName() : "null",
+                toolAttachmentExtractorInstance != null,
+                toolAttachmentExtractorInstance != null
+                        && toolAttachmentExtractorInstance.isResolvable());
         return ConversationEventStreamAdapter.wrap(
                 conversationId,
                 eventMulti,
@@ -166,13 +178,12 @@ public class ConversationStore {
                 objectMapper,
                 resolvedIdentity,
                 identityAssociation,
-                bearerToken);
+                bearerToken,
+                extractor);
     }
 
     /**
      * Store an agent message with rich event data using "history/lc4j" content type.
-     *
-     * <p>The history/lc4j content type supports LangChain4j event format: {role, text?, events?}
      *
      * @param conversationId the conversation ID
      * @param finalText the accumulated response text
@@ -181,6 +192,24 @@ public class ConversationStore {
      */
     public void appendAgentMessageWithEvents(
             String conversationId, String finalText, List<JsonNode> events, String bearerToken) {
+        appendAgentMessageWithEvents(conversationId, finalText, events, List.of(), bearerToken);
+    }
+
+    /**
+     * Store an agent message with rich event data and tool-generated attachments.
+     *
+     * @param conversationId the conversation ID
+     * @param finalText the accumulated response text
+     * @param events the coalesced event list
+     * @param attachments tool-generated attachment references
+     * @param bearerToken the bearer token for API calls
+     */
+    public void appendAgentMessageWithEvents(
+            String conversationId,
+            String finalText,
+            List<JsonNode> events,
+            List<Map<String, Object>> attachments,
+            String bearerToken) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
         request.setContentType("history/lc4j");
@@ -198,6 +227,9 @@ public class ConversationStore {
         Map<String, Object> block = new HashMap<>();
         block.put("role", "AI");
         block.put("events", eventObjects);
+        if (attachments != null && !attachments.isEmpty()) {
+            block.put("attachments", attachments);
+        }
         request.setContent(List.of(block));
 
         applyIndexedContent(request, finalText, "AI");
