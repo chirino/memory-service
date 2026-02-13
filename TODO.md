@@ -9,7 +9,7 @@
 * StreamResponseTokenRequest.token -> StreamResponseTokenRequest.content
 * simplify the StreamResponseTokenResponse and ReplayResponseTokensResponse type.
 * config option to disable passthrough s3 signed download url (for when endpoint is private)
-
+* move the ChatEvent json serializer to quarkus
 
 # Hardening Work
 

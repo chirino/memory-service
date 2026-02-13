@@ -311,8 +311,11 @@ public final class ConversationEventStreamAdapter {
      * Build JSON for any ChatEvent type. LangChain4j types use method-style accessors
      * with private fields, and some contain unserializable types (Supplier, AtomicReference),
      * so we always build JSON manually rather than relying on Jackson auto-detection.
+     *
+     * <p>This method is also used by SSE endpoints to ensure consistent serialization
+     * between the streamed events and the stored history.
      */
-    private static String buildEventJson(ChatEvent event, ObjectMapper objectMapper) {
+    public static String buildEventJson(ChatEvent event, ObjectMapper objectMapper) {
         Map<String, Object> json = new LinkedHashMap<>();
         String eventType = event.getEventType() != null ? event.getEventType().name() : "Unknown";
         json.put("eventType", eventType);
