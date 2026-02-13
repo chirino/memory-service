@@ -17,6 +17,7 @@ import io.github.chirino.memory.client.model.IndexEntryRequest;
 import io.github.chirino.memory.client.model.SearchConversationsRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest;
+import io.github.chirino.memory.history.runtime.AttachmentResolver;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.client.Client;
@@ -276,6 +277,14 @@ public class MemoryServiceProxy {
      * Creates an attachment from a source URL by forwarding the JSON request to the memory service.
      */
     public Response createAttachmentFromUrl(Map<String, Object> request) {
+        Object ct = request.get("contentType");
+        String reqContentType = ct instanceof String ? (String) ct : null;
+        if (reqContentType != null && !AttachmentResolver.isSupportedContentType(reqContentType)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(Map.of("error", "Unsupported file type: " + reqContentType))
+                    .build();
+        }
         try {
             String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments";
             String jsonBody = OBJECT_MAPPER.writeValueAsString(request);
@@ -345,6 +354,13 @@ public class MemoryServiceProxy {
                         ? formValue.getHeaders().getFirst("Content-Type")
                         : "application/octet-stream";
         String filename = formValue.getFileName();
+
+        if (!AttachmentResolver.isSupportedContentType(contentType)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(Map.of("error", "Unsupported file type: " + contentType))
+                    .build();
+        }
 
         try {
             InputStream fileStream = formValue.getFileItem().getInputStream();
