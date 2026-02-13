@@ -1,8 +1,12 @@
 package io.github.chirino.memoryservice.docstest;
 
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -65,13 +69,21 @@ public class CurlParser {
             builder.header(header.getKey(), value);
         }
 
-        // Extract body
-        String body = extractBody(normalized);
-        if (body != null) {
-            body = replaceEnvironmentVariables(body);
-            builder.method(method, BodyPublishers.ofString(body));
+        // Check for multipart form data (-F) first, then regular body (-d)
+        List<String[]> formFields = extractFormFields(normalized);
+        if (!formFields.isEmpty()) {
+            String boundary = "----JavaBoundary" + System.currentTimeMillis();
+            builder.header("Content-Type", "multipart/form-data; boundary=" + boundary);
+            byte[] multipartBody = buildMultipartBody(formFields, boundary);
+            builder.method(method, BodyPublishers.ofByteArray(multipartBody));
         } else {
-            builder.method(method, BodyPublishers.noBody());
+            String body = extractBody(normalized);
+            if (body != null) {
+                body = replaceEnvironmentVariables(body);
+                builder.method(method, BodyPublishers.ofString(body));
+            } else {
+                builder.method(method, BodyPublishers.noBody());
+            }
         }
 
         // Set timeout
@@ -222,8 +234,8 @@ public class CurlParser {
     }
 
     private String extractMethod(String curl) {
-        // Look for -X METHOD or --request METHOD
-        Pattern pattern = Pattern.compile("-X\\s*([A-Z]+)|--request\\s+([A-Z]+)");
+        // Look for -X METHOD, --request METHOD, or combined flags like -sSfX DELETE
+        Pattern pattern = Pattern.compile("-[a-zA-Z]*X\\s+([A-Z]+)|--request\\s+([A-Z]+)");
         Matcher matcher = pattern.matcher(curl);
 
         if (matcher.find()) {
@@ -234,8 +246,11 @@ public class CurlParser {
             return method;
         }
 
-        // Default to POST if there's a body, otherwise GET
-        if (curl.contains("-d ") || curl.contains("--data")) {
+        // Default to POST if there's a body or form data, otherwise GET
+        if (curl.contains("-d ")
+                || curl.contains("--data")
+                || curl.contains("-F ")
+                || curl.contains("--form ")) {
             return "POST";
         }
 
@@ -319,6 +334,60 @@ public class CurlParser {
         }
 
         return body.toString();
+    }
+
+    /**
+     * Extracts -F/--form fields from a curl command.
+     * Returns a list of [name, value] pairs where value may start with @ for file uploads.
+     */
+    private List<String[]> extractFormFields(String curl) {
+        List<String[]> fields = new ArrayList<>();
+        Pattern pattern = Pattern.compile("(?:-F|--form)\\s+['\"]([^=]+)=([^'\"]+)['\"]");
+        Matcher matcher = pattern.matcher(curl);
+        while (matcher.find()) {
+            fields.add(new String[] {matcher.group(1), matcher.group(2)});
+        }
+        return fields;
+    }
+
+    /**
+     * Builds a multipart/form-data request body from form fields.
+     * Handles file uploads (values starting with @) by reading the file.
+     */
+    private byte[] buildMultipartBody(List<String[]> fields, String boundary) throws Exception {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        for (String[] field : fields) {
+            String name = field[0];
+            String value = replaceEnvironmentVariables(field[1]);
+            baos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            if (value.startsWith("@")) {
+                Path filePath = Path.of(value.substring(1));
+                String filename = filePath.getFileName().toString();
+                baos.write(
+                        ("Content-Disposition: form-data; name=\""
+                                        + name
+                                        + "\"; filename=\""
+                                        + filename
+                                        + "\"\r\n")
+                                .getBytes(StandardCharsets.UTF_8));
+                String contentType = java.net.URLConnection.guessContentTypeFromName(filename);
+                if (contentType == null) {
+                    contentType = "application/octet-stream";
+                }
+                baos.write(
+                        ("Content-Type: " + contentType + "\r\n\r\n")
+                                .getBytes(StandardCharsets.UTF_8));
+                baos.write(Files.readAllBytes(filePath));
+            } else {
+                baos.write(
+                        ("Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n")
+                                .getBytes(StandardCharsets.UTF_8));
+                baos.write(value.getBytes(StandardCharsets.UTF_8));
+            }
+            baos.write("\r\n".getBytes(StandardCharsets.UTF_8));
+        }
+        baos.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return baos.toByteArray();
     }
 
     private String replaceEnvironmentVariables(String text) {
