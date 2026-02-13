@@ -1,50 +1,50 @@
-Feature: Response Resumer gRPC API
+Feature: Response Recorder gRPC API
   As a client of the memory service
-  I want to stream, replay, and check response tokens via gRPC
+  I want to record, replay, and check response recordings via gRPC
   So that I can resume interrupted agent responses
 
   Background:
     Given I am authenticated as user "alice"
-    And I have a conversation with title "Response Resumer Test"
+    And I have a conversation with title "Response Recorder Test"
 
-  Scenario: Check if response resumer is enabled
-    When I send gRPC request "ResponseResumerService/IsEnabled" with body:
+  Scenario: Check if response recorder is enabled
+    When I send gRPC request "ResponseRecorderService/IsEnabled" with body:
     """
     """
     Then the gRPC response should not have an error
     And the gRPC response field "enabled" should not be null
 
-  Scenario: Check if conversation has response in progress when none exists
-    When I send gRPC request "ResponseResumerService/CheckConversations" with body:
+  Scenario: Check if conversation has recording in progress when none exists
+    When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
     conversation_ids: "${conversationId}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "conversationIds" should be "[]"
 
-  Scenario: Check response in progress for non-existent conversation
-    When I send gRPC request "ResponseResumerService/CheckConversations" with body:
+  Scenario: Check recording in progress for non-existent conversation
+    When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
     conversation_ids: "00000000-0000-0000-0000-000000000000"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "conversationIds" should be "[]"
 
-  Scenario: Check response in progress without access
+  Scenario: Check recording in progress without access
     Given there is a conversation owned by "bob"
-    When I send gRPC request "ResponseResumerService/CheckConversations" with body:
+    When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
     conversation_ids: "${conversationId}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "conversationIds" should be "[]"
 
-  Scenario: Check multiple conversations for responses in progress
+  Scenario: Check multiple conversations for recordings in progress
     Given I have a conversation with title "Conversation 1"
     And I set context variable "conversationId1" to "${conversationId}"
     And I have a conversation with title "Conversation 2"
     And I set context variable "conversationId2" to "${conversationId}"
-    When I send gRPC request "ResponseResumerService/CheckConversations" with body:
+    When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
     conversation_ids: "${conversationId1}"
     conversation_ids: "${conversationId2}"
@@ -57,7 +57,7 @@ Feature: Response Resumer gRPC API
     And I set context variable "myConversationId" to "${conversationId}"
     Given there is a conversation owned by "bob"
     And I set context variable "bobConversationId" to "${conversationId}"
-    When I send gRPC request "ResponseResumerService/CheckConversations" with body:
+    When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
     conversation_ids: "${myConversationId}"
     conversation_ids: "${bobConversationId}"
@@ -65,34 +65,33 @@ Feature: Response Resumer gRPC API
     Then the gRPC response should not have an error
     And the gRPC response field "conversationIds" should not be null
 
-  Scenario: Stream response tokens for a conversation
-    When I send gRPC request "ResponseResumerService/StreamResponseTokens" with body:
+  Scenario: Record response content for a conversation
+    When I send gRPC request "ResponseRecorderService/Record" with body:
     """
     conversation_id: "${conversationId}"
-    token: "Hello"
+    content: "Hello"
     complete: true
     """
     Then the gRPC response should not have an error
-    And the gRPC response field "success" should be true
-    And the gRPC response field "currentOffset" should be 5
+    And the gRPC response field "status" should be "RECORD_STATUS_SUCCESS"
 
-  Scenario: Stream multiple response tokens
+  Scenario: Record multiple response content chunks
     Given I have streamed tokens "Hello World!" to the conversation
-    # This scenario tests that multiple tokens can be streamed in a single request
-    # The iHaveStreamedTokensToTheConversation step handles streaming all tokens
+    # This scenario tests that multiple content chunks can be streamed in a single request
+    # The iHaveStreamedTokensToTheConversation step handles streaming all content
     # in a single gRPC stream, which is the correct way to use the API
 
-  Scenario: Replay response tokens while stream is in progress
+  Scenario: Replay response while recording is in progress
     Given I start streaming tokens "Hello World" to the conversation with 50ms delay and keep the stream open for 1500ms
     And I wait for the response stream to send at least 2 tokens
     When I replay response tokens from the beginning in a second session and collect tokens "Hello World"
     Then the replay should start before the stream completes
     And I wait for the response stream to complete
 
-  Scenario: Cancel an in-progress response stream
+  Scenario: Cancel an in-progress recording
     Given I start streaming tokens "Hello cancel" to the conversation with 50ms delay and keep the stream open until canceled
     And I wait for the response stream to send at least 2 tokens
-    When I send gRPC request "ResponseResumerService/CancelResponse" with body:
+    When I send gRPC request "ResponseRecorderService/Cancel" with body:
     """
     conversation_id: "${conversationId}"
     """
@@ -100,52 +99,52 @@ Feature: Response Resumer gRPC API
     And the gRPC response field "accepted" should be true
     And I wait for the response stream to complete
 
-  Scenario: Stream response tokens without conversation_id
-    When I send gRPC request "ResponseResumerService/StreamResponseTokens" with body:
+  Scenario: Record without conversation_id
+    When I send gRPC request "ResponseRecorderService/Record" with body:
     """
-    token: "Hello"
+    content: "Hello"
     complete: false
     """
     Then the gRPC response should have status "INVALID_ARGUMENT"
 
-  Scenario: Stream response tokens without access
+  Scenario: Record without access
     Given there is a conversation owned by "bob"
-    When I send gRPC request "ResponseResumerService/StreamResponseTokens" with body:
+    When I send gRPC request "ResponseRecorderService/Record" with body:
     """
     conversation_id: "${conversationId}"
-    token: "Hello"
+    content: "Hello"
     complete: false
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
-  Scenario: Stream response tokens for non-existent conversation
-    When I send gRPC request "ResponseResumerService/StreamResponseTokens" with body:
+  Scenario: Record for non-existent conversation
+    When I send gRPC request "ResponseRecorderService/Record" with body:
     """
     conversation_id: "00000000-0000-0000-0000-000000000000"
-    token: "Hello"
+    content: "Hello"
     complete: false
     """
     Then the gRPC response should have status "NOT_FOUND"
 
-  Scenario: Replay response tokens from beginning
+  Scenario: Replay from beginning
     Given I have streamed tokens "Hello World" to the conversation
-    When I send gRPC request "ResponseResumerService/ReplayResponseTokens" with body:
+    When I send gRPC request "ResponseRecorderService/Replay" with body:
     """
     conversation_id: "${conversationId}"
     """
     Then the gRPC response should not have an error
     # Note: Server streaming responses need special handling in step definitions
 
-  Scenario: Replay response tokens without access
+  Scenario: Replay without access
     Given there is a conversation owned by "bob"
-    When I send gRPC request "ResponseResumerService/ReplayResponseTokens" with body:
+    When I send gRPC request "ResponseRecorderService/Replay" with body:
     """
     conversation_id: "${conversationId}"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
-  Scenario: Replay response tokens for non-existent conversation
-    When I send gRPC request "ResponseResumerService/ReplayResponseTokens" with body:
+  Scenario: Replay for non-existent conversation
+    When I send gRPC request "ResponseRecorderService/Replay" with body:
     """
     conversation_id: "00000000-0000-0000-0000-000000000000"
     """

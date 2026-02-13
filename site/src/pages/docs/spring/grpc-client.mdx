@@ -192,25 +192,25 @@ messages.streamMessages(request, new StreamObserver<Message>() {
 
 ## Response Resumption
 
-The `responseResumerService()` provides async streaming for response resumption. This is used internally by the `ResponseResumer` bean, but you can also use it directly:
+The `responseRecorderService()` provides async streaming for response recording and resumption. This is used internally by the `ResponseResumer` bean, but you can also use it directly:
 
 ```java
-import io.github.chirino.memory.grpc.v1.ResponseResumerServiceGrpc;
-import io.github.chirino.memory.grpc.v1.ReplayResponseRequest;
+import io.github.chirino.memory.grpc.v1.ResponseRecorderServiceGrpc;
+import io.github.chirino.memory.grpc.v1.ReplayRequest;
 import reactor.core.publisher.Flux;
 
-ResponseResumerServiceGrpc.ResponseResumerServiceStub resumer = 
-    stubs.responseResumerService();
+ResponseRecorderServiceGrpc.ResponseRecorderServiceStub recorder =
+    stubs.responseRecorderService();
 
-ReplayResponseRequest request = ReplayResponseRequest.newBuilder()
-    .setConversationId("my-conversation")
+ReplayRequest request = ReplayRequest.newBuilder()
+    .setConversationId(UuidHelper.toBytes(conversationId))
     .build();
 
 // Convert gRPC stream to Reactor Flux
 Flux<String> responseFlux = Flux.create(sink -> {
-    resumer.replayResponse(request, new StreamObserver<ReplayResponseResponse>() {
+    recorder.replay(request, new StreamObserver<ReplayResponse>() {
         @Override
-        public void onNext(ReplayResponseResponse response) {
+        public void onNext(ReplayResponse response) {
             sink.next(response.getContent());
         }
 
