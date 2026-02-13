@@ -71,7 +71,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
             if (status == 404) {
-                LOG.infof(
+                LOG.debugf(
                         "Treating status %d for conversationId=%s as empty memory",
                         status, memoryId);
                 return new ArrayList<>();
@@ -101,10 +101,10 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
             }
         }
 
-        LOG.infof(
-                "getMessages(%s)=>\n%s",
-                memoryId,
-                result.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")));
+        // LOG.debugf(
+        //         "getMessages(%s)=>\n%s",
+        //         memoryId,
+        //         result.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")));
 
         return result;
     }
@@ -113,19 +113,19 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
         Objects.requireNonNull(memoryId, "memoryId");
         if (messages == null || messages.isEmpty()) {
-            LOG.infof("Skipping sync for empty memory update on conversationId=%s", memoryId);
+            LOG.debugf("Skipping sync for empty memory update on conversationId=%s", memoryId);
             return;
         }
 
-        LOG.infof(
-                "updateMessages(%s)=>\n%s",
-                memoryId,
-                messages.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")));
+        // LOG.debugf(
+        //         "updateMessages(%s)=>\n%s",
+        //         memoryId,
+        //         messages.stream().map(ChatMessage::toString).collect(Collectors.joining("\n")));
 
         // Build a single entry with all messages in the content array
         CreateEntryRequest syncEntry = toSyncEntryRequest(messages);
         if (syncEntry.getContent() == null || syncEntry.getContent().isEmpty()) {
-            LOG.infof("Skipping sync for empty memory update on conversationId=%s", memoryId);
+            LOG.debugf("Skipping sync for empty memory update on conversationId=%s", memoryId);
             return;
         }
         conversationsApi().syncConversationMemory(UUID.fromString(memoryId.toString()), syncEntry);
@@ -134,7 +134,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     @Override
     public void deleteMessages(Object memoryId) {
         Objects.requireNonNull(memoryId, "memoryId");
-        LOG.infof("deleteMessages(%s)", memoryId);
+        LOG.debugf("deleteMessages(%s)", memoryId);
 
         // Sync with empty content to clear memory by creating an empty epoch
         CreateEntryRequest syncEntry = new CreateEntryRequest();
