@@ -1,0 +1,8 @@
+# Lychee link checker configuration for site-tests
+# See https://lychee.cli.rs/configuration/
+
+# Exclude patterns for links that are valid in production but not in local builds
+exclude = [
+    # GitHub Pages base path — only exists in deployed builds
+    "file:///input/memory-service/",
+]
