@@ -1260,12 +1260,7 @@ public class MongoMemoryStore implements MemoryStore {
                             ? Channel.fromString(req.getChannel().value())
                             : Channel.MEMORY;
             m.channel = channel;
-            // For HISTORY entries, default userId to the authenticated user
-            String entryUserId = req.getUserId();
-            if (entryUserId == null && channel == Channel.HISTORY) {
-                entryUserId = userId;
-            }
-            m.userId = entryUserId;
+            m.userId = req.getUserId();
 
             // Set epoch based on channel type
             // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
