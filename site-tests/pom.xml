@@ -170,6 +170,34 @@
             </configuration>
           </execution>
 
+          <!-- Validate links in the built site -->
+          <execution>
+            <id>lychee-link-check</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>generate-test-resources</phase>
+            <configuration>
+              <executable>docker</executable>
+              <arguments>
+                <argument>run</argument>
+                <argument>--rm</argument>
+                <argument>-v</argument>
+                <argument>${project.basedir}/../site/dist:/input</argument>
+                <argument>-v</argument>
+                <argument>${project.basedir}/.lychee.toml:/lychee.toml</argument>
+                <argument>lycheeverse/lychee</argument>
+                <argument>--no-progress</argument>
+                <argument>--offline</argument>
+                <argument>--root-dir</argument>
+                <argument>/input</argument>
+                <argument>--config</argument>
+                <argument>/lychee.toml</argument>
+                <argument>/input</argument>
+              </arguments>
+            </configuration>
+          </execution>
+
           <!-- Generate Cucumber feature files from test-scenarios.json -->
           <execution>
             <id>generate-features</id>
