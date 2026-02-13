@@ -140,12 +140,19 @@ export function useAttachments() {
               );
             }
           } else {
+            let errorMsg = `Upload failed (${xhr.status})`;
+            try {
+              const body = JSON.parse(xhr.responseText);
+              if (body.error) errorMsg = body.error;
+            } catch {
+              // ignore parse errors, use default message
+            }
             internalsRef.current = internalsRef.current.map((a) =>
               a.localId === localId
                 ? {
                     ...a,
                     status: "error" as const,
-                    error: `Upload failed (${xhr.status})`,
+                    error: errorMsg,
                     xhr: undefined,
                   }
                 : a,
