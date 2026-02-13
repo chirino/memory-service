@@ -22,7 +22,7 @@ import { Check, Copy, Menu, Paperclip, Pencil, Trash2 } from "lucide-react";
 import { useAttachments } from "@/hooks/useAttachments";
 import { ShareButton } from "@/components/sharing";
 import { UserAvatar } from "@/components/user-avatar";
-import type { AuthUser } from "@/lib/auth";
+import { getAccessToken, type AuthUser } from "@/lib/auth";
 import { createForkView, type EntryAndForkInfo, type ForkOption } from "@/lib/conversation";
 
 type ListUserEntriesResponse = {
@@ -1384,7 +1384,15 @@ export function ChatPanel({
         }
         setCanceling(true);
         try {
-          await ConversationsService.deleteConversationResponse({ conversationId: targetConversationId });
+          const headers: Record<string, string> = {};
+          const token = getAccessToken();
+          if (token) {
+            headers["Authorization"] = `Bearer ${token}`;
+          }
+          await fetch(`/v1/conversations/${encodeURIComponent(targetConversationId)}/cancel`, {
+            method: "POST",
+            headers,
+          });
         } catch (error) {
           void error;
         } finally {
