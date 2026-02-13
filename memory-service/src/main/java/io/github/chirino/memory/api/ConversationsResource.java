@@ -262,6 +262,10 @@ public class ConversationsResource {
         if (isHistoryChannel && request.getChannel() == null) {
             request.setChannel(CreateEntryRequest.ChannelEnum.HISTORY);
         }
+        Response userIdError = validateAndResolveUserId(request);
+        if (userIdError != null) {
+            return userIdError;
+        }
         String clientId = resolveClientId();
         if (!isHistoryChannel && (clientId == null || clientId.isBlank())) {
             return forbidden(new AccessDeniedException("Client id is required"));
@@ -331,6 +335,10 @@ public class ConversationsResource {
         }
         if (request == null) {
             return badRequest("entry request is required");
+        }
+        Response userIdError = validateAndResolveUserId(request);
+        if (userIdError != null) {
+            return userIdError;
         }
         if (request.getChannel() == null
                 || request.getChannel() != CreateEntryRequest.ChannelEnum.MEMORY) {
@@ -551,6 +559,26 @@ public class ConversationsResource {
                             .toList());
         }
         return Response.ok(result).build();
+    }
+
+    /**
+     * Validates and resolves the userId on a CreateEntryRequest.
+     * If userId is set, it must match the authenticated principal.
+     * If userId is missing, it is defaulted to the authenticated principal.
+     *
+     * @return an error Response if validation fails, or null if valid
+     */
+    private Response validateAndResolveUserId(CreateEntryRequest request) {
+        String requestUserId = request.getUserId();
+        String authenticatedUserId = currentUserId();
+        if (requestUserId != null && !requestUserId.isBlank()) {
+            if (!requestUserId.equals(authenticatedUserId)) {
+                return badRequest("userId does not match the authenticated user");
+            }
+        } else {
+            request.setUserId(authenticatedUserId);
+        }
+        return null;
     }
 
     private Response badRequest(String message) {

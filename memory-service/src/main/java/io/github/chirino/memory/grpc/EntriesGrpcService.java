@@ -135,7 +135,9 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                             // Validate history channel entry format
                             validateHistoryEntry(request.getEntry());
                             CreateEntryRequest internal = new CreateEntryRequest();
-                            internal.setUserId(request.getEntry().getUserId());
+                            String rawUserId = request.getEntry().getUserId();
+                            internal.setUserId(
+                                    rawUserId == null || rawUserId.isBlank() ? null : rawUserId);
                             io.github.chirino.memory.model.Channel requestChannel =
                                     GrpcDtoMapper.fromProtoChannel(request.getEntry().getChannel());
                             internal.setChannel(GrpcDtoMapper.toCreateEntryChannel(requestChannel));
@@ -159,6 +161,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                                 byteStringToString(
                                                         request.getEntry().getForkedAtEntryId())));
                             }
+                            validateAndResolveUserId(internal);
                             List<io.github.chirino.memory.api.dto.EntryDto> appended =
                                     store().appendMemoryEntries(
                                                     currentUserId(),
@@ -217,6 +220,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                         .asRuntimeException();
                             }
                             CreateEntryRequest internal = toClientCreateEntry(grpcEntry);
+                            validateAndResolveUserId(internal);
                             SyncResult result =
                                     store().syncAgentEntry(
                                                     currentUserId(),
