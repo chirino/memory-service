@@ -12,7 +12,7 @@ public class ResponseResumerBackendProducer {
     private static final Duration RESPONSE_TTL = Duration.ofSeconds(10);
     private static final Duration RESPONSE_REFRESH = Duration.ofSeconds(5);
 
-    @ConfigProperty(name = "memory-service.response-resumer.temp-dir")
+    @ConfigProperty(name = "memory-service.temp-dir")
     Optional<String> tempDir;
 
     @ConfigProperty(

@@ -48,6 +48,12 @@ Run the chat-quarkus in dev mode, but firsts compile it's dependencies..
 ./mvnw -DskipTests -am -pl :memory-service-spring-boot-docker-compose-starter clean install && ./mvnw -pl :chat-spring spring-boot:run
 ```
 
+If you don't want it to start the memory-service in a container on boot then run this before starting it:
+
+```bash
+export SPRING_DOCKER_COMPOSE_ENABLED=false
+```
+
 ###
 
 Testing the APIs with curl

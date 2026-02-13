@@ -15,6 +15,10 @@ import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -27,7 +31,8 @@ import org.jboss.logging.Logger;
 /**
  * Resolves {@link AttachmentRef} references into {@link Attachments} by downloading each attachment
  * from the memory-service and converting it to the appropriate LangChain4j {@link Content} type
- * based on MIME type.
+ * based on MIME type. Downloads are streamed to a temp file to avoid buffering large attachments in
+ * memory.
  */
 @ApplicationScoped
 public class AttachmentResolver {
@@ -41,6 +46,9 @@ public class AttachmentResolver {
 
     @ConfigProperty(name = "quarkus.rest-client.memory-service-client.url")
     Optional<String> quarkusRestClientUrl;
+
+    @ConfigProperty(name = "memory-service.client.temp-dir")
+    Optional<String> tempDir;
 
     /**
      * Resolves a list of attachment references into an {@link Attachments} object containing both
@@ -109,9 +117,8 @@ public class AttachmentResolver {
                 if (contentType == null) {
                     contentType = "application/octet-stream";
                 }
-                byte[] bytes = response.readEntity(InputStream.class).readAllBytes();
-                String base64 = Base64.getEncoder().encodeToString(bytes);
-                return toContentFromBase64(contentType, base64);
+                return streamToTempFileAndConvert(
+                        response.readEntity(InputStream.class), contentType);
             }
             LOG.warnf(
                     "Unexpected status %d downloading attachment %s",
@@ -120,6 +127,33 @@ public class AttachmentResolver {
             client.close();
         }
         return null;
+    }
+
+    /**
+     * Streams response body to a temp file, then base64-encodes from the file. This avoids
+     * buffering the entire attachment in memory.
+     */
+    private Content streamToTempFileAndConvert(InputStream body, String contentType)
+            throws IOException {
+        Path dir = resolveTempDir();
+        Path tempFile = Files.createTempFile(dir, "attachment-", ".tmp");
+        try {
+            try (OutputStream out = Files.newOutputStream(tempFile)) {
+                body.transferTo(out);
+            }
+            byte[] bytes = Files.readAllBytes(tempFile);
+            String base64 = Base64.getEncoder().encodeToString(bytes);
+            return toContentFromBase64(contentType, base64);
+        } finally {
+            Files.deleteIfExists(tempFile);
+        }
+    }
+
+    private Path resolveTempDir() {
+        if (tempDir.isPresent()) {
+            return Paths.get(tempDir.get());
+        }
+        return Paths.get(System.getProperty("java.io.tmpdir"));
     }
 
     static Content toContentFromUrl(String contentType, String url) {

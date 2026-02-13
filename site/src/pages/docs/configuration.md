@@ -17,6 +17,7 @@ These are the core server configuration options:
 | `memory-service.datastore.type` | `postgres`, `mongo`, `mongodb` | `postgres` | Database backend for storing conversations |
 | `memory-service.cache.type` | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching (used by response resumer and future cache features) |
 | `memory-service.vector.type` | `none`, `pgvector`, `postgres`, `mongo`, `mongodb` | `none` | Vector store for semantic search |
+| `memory-service.temp-dir` | path | system temp dir | Directory for temporary files (attachment downloads, response resumer, etc.) |
 
 ## Database Configuration
 
@@ -78,7 +79,6 @@ The Response Resumer enables clients to reconnect to in-progress streaming respo
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `memory-service.response-resumer.enabled` | `true`, `false` | auto-detect | Enable/disable response resumer (auto-enabled when cache.type is redis or infinispan) |
-| `memory-service.response-resumer.temp-dir` | path | system temp dir | Directory for temporary response files |
 | `memory-service.response-resumer.temp-file-retention` | duration | `PT30M` | How long to retain temp files |
 | `memory-service.grpc-advertised-address` | `host:port` | auto-detected | Address clients use to reconnect (for multi-instance deployments) |
 

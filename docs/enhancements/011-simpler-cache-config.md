@@ -23,7 +23,7 @@ memory-service.cache.type = none (default)
 memory-service.response-resumer = none | redis | infinispan
 memory-service.response-resumer.redis.client = <optional client name>
 memory-service.response-resumer.infinispan.startup-timeout = PT30S
-memory-service.response-resumer.temp-dir = <optional path>
+memory-service.temp-dir = <optional path>
 memory-service.response-resumer.temp-file-retention = PT30M
 ```
 
@@ -60,7 +60,7 @@ memory-service.cache.type = none | redis | infinispan
 
 # Response resumer settings (feature toggle + operational config)
 memory-service.response-resumer.enabled = true | false (default: auto-detect based on cache.type)
-memory-service.response-resumer.temp-dir = <optional path>
+memory-service.temp-dir = <optional path>
 memory-service.response-resumer.temp-file-retention = PT30M
 
 # Backend-specific settings (moved under cache.*)
