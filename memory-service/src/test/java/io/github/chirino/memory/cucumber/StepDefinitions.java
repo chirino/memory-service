@@ -475,7 +475,7 @@ public class StepDefinitions {
                 .appendMemoryEntries(
                         currentUserId,
                         conversationId,
-                        List.of(createHistoryEntry(content)),
+                        List.of(createHistoryEntry(currentUserId, content)),
                         "test-client",
                         null);
     }
@@ -503,6 +503,7 @@ public class StepDefinitions {
                 CreateEntryRequest.ChannelEnum.fromString(channel.toLowerCase());
         request.setChannel(channelEnum);
         request.setContentType(contentType);
+        request.setUserId(currentUserId);
 
         // History channel entries must use "history" contentType and {text, role} structure
         if (channelEnum == CreateEntryRequest.ChannelEnum.HISTORY) {
@@ -536,6 +537,7 @@ public class StepDefinitions {
         request.setChannel(CreateEntryRequest.ChannelEnum.MEMORY);
         // Epoch is now passed as a parameter to appendMemoryEntries, not set on request
         request.setContentType(contentType);
+        request.setUserId(currentUserId);
         memoryStoreSelector
                 .getStore()
                 .appendMemoryEntries(
@@ -3223,7 +3225,11 @@ public class StepDefinitions {
         memoryStoreSelector
                 .getStore()
                 .appendMemoryEntries(
-                        ownerId, convId, List.of(createHistoryEntry(content)), "test-client", null);
+                        ownerId,
+                        convId,
+                        List.of(createHistoryEntry(ownerId, content)),
+                        "test-client",
+                        null);
     }
 
     @io.cucumber.java.en.Given("the conversation owned by {string} is deleted")
@@ -3868,7 +3874,7 @@ public class StepDefinitions {
                 .appendMemoryEntries(
                         userId,
                         conversationId,
-                        List.of(createHistoryEntry("Entry 1")),
+                        List.of(createHistoryEntry(userId, "Entry 1")),
                         "test-client",
                         null);
         memoryStoreSelector
@@ -3876,7 +3882,7 @@ public class StepDefinitions {
                 .appendMemoryEntries(
                         userId,
                         conversationId,
-                        List.of(createHistoryEntry("Entry 2")),
+                        List.of(createHistoryEntry(userId, "Entry 2")),
                         "test-client",
                         null);
     }
@@ -4348,10 +4354,11 @@ public class StepDefinitions {
         }
     }
 
-    private static CreateEntryRequest createHistoryEntry(String text) {
+    private static CreateEntryRequest createHistoryEntry(String userId, String text) {
         CreateEntryRequest req = new CreateEntryRequest();
         req.setChannel(CreateEntryRequest.ChannelEnum.HISTORY);
         req.setContentType("history");
+        req.setUserId(userId);
         req.setContent(List.of(Map.of("role", "USER", "text", text)));
         return req;
     }

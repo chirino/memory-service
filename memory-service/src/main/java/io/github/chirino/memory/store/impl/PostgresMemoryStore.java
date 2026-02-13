@@ -1393,12 +1393,7 @@ public class PostgresMemoryStore implements MemoryStore {
                 channel = io.github.chirino.memory.model.Channel.MEMORY;
             }
             entity.setChannel(channel);
-            // For HISTORY entries, default userId to the authenticated user
-            String entryUserId = req.getUserId();
-            if (entryUserId == null && channel == Channel.HISTORY) {
-                entryUserId = userId;
-            }
-            entity.setUserId(entryUserId);
+            entity.setUserId(req.getUserId());
 
             // Set epoch based on channel type
             // INVARIANT: Memory channel entries must ALWAYS have a non-null epoch.
