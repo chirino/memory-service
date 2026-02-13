@@ -3,7 +3,7 @@ package io.github.chirino.memoryservice.grpc;
 import io.github.chirino.memory.grpc.v1.ConversationMembershipsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.EntriesServiceGrpc;
-import io.github.chirino.memory.grpc.v1.ResponseResumerServiceGrpc;
+import io.github.chirino.memory.grpc.v1.ResponseRecorderServiceGrpc;
 import io.github.chirino.memory.grpc.v1.SearchServiceGrpc;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
 import io.grpc.ManagedChannel;
@@ -62,7 +62,8 @@ public final class MemoryServiceGrpcClients {
                 membershipsService;
         private final EntriesServiceGrpc.EntriesServiceBlockingStub entriesService;
         private final SearchServiceGrpc.SearchServiceBlockingStub searchService;
-        private final ResponseResumerServiceGrpc.ResponseResumerServiceStub responseResumerService;
+        private final ResponseRecorderServiceGrpc.ResponseRecorderServiceStub
+                responseRecorderService;
 
         public MemoryServiceStubs(ManagedChannel channel) {
             this.channel = channel;
@@ -71,7 +72,7 @@ public final class MemoryServiceGrpcClients {
             this.membershipsService = ConversationMembershipsServiceGrpc.newBlockingStub(channel);
             this.entriesService = EntriesServiceGrpc.newBlockingStub(channel);
             this.searchService = SearchServiceGrpc.newBlockingStub(channel);
-            this.responseResumerService = ResponseResumerServiceGrpc.newStub(channel);
+            this.responseRecorderService = ResponseRecorderServiceGrpc.newStub(channel);
         }
 
         public SystemServiceGrpc.SystemServiceBlockingStub systemService() {
@@ -95,8 +96,8 @@ public final class MemoryServiceGrpcClients {
             return searchService;
         }
 
-        public ResponseResumerServiceGrpc.ResponseResumerServiceStub responseResumerService() {
-            return responseResumerService;
+        public ResponseRecorderServiceGrpc.ResponseRecorderServiceStub responseRecorderService() {
+            return responseRecorderService;
         }
 
         @Override

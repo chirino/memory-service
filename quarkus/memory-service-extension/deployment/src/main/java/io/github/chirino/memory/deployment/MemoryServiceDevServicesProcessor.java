@@ -59,19 +59,21 @@ public class MemoryServiceDevServicesProcessor {
                     if (apiKey != null) {
                         config.put("memory-service.client.api-key", apiKey);
                     }
-                    String grpcHost = resultConfig.get("quarkus.grpc.clients.responseresumer.host");
+                    String grpcHost =
+                            resultConfig.get("quarkus.grpc.clients.responserecorder.host");
                     if (grpcHost != null) {
-                        config.put("quarkus.grpc.clients.responseresumer.host", grpcHost);
+                        config.put("quarkus.grpc.clients.responserecorder.host", grpcHost);
                     }
-                    String grpcPort = resultConfig.get("quarkus.grpc.clients.responseresumer.port");
+                    String grpcPort =
+                            resultConfig.get("quarkus.grpc.clients.responserecorder.port");
                     if (grpcPort != null) {
-                        config.put("quarkus.grpc.clients.responseresumer.port", grpcPort);
+                        config.put("quarkus.grpc.clients.responserecorder.port", grpcPort);
                     }
                     String grpcPlainText =
-                            resultConfig.get("quarkus.grpc.clients.responseresumer.plain-text");
+                            resultConfig.get("quarkus.grpc.clients.responserecorder.plain-text");
                     if (grpcPlainText != null) {
                         config.put(
-                                "quarkus.grpc.clients.responseresumer.plain-text", grpcPlainText);
+                                "quarkus.grpc.clients.responserecorder.plain-text", grpcPlainText);
                     }
                 }
             }
@@ -171,13 +173,13 @@ public class MemoryServiceDevServicesProcessor {
         // Configure gRPC client using host, port, and TLS settings (as per Quarkus gRPC client
         // configuration)
         configProviders.put(
-                "quarkus.grpc.clients.responseresumer.host",
+                "quarkus.grpc.clients.responserecorder.host",
                 (Function<Startable, String>) s -> parseHost(getConnectionInfo(s)));
         configProviders.put(
-                "quarkus.grpc.clients.responseresumer.port",
+                "quarkus.grpc.clients.responserecorder.port",
                 (Function<Startable, String>) s -> parsePort(getConnectionInfo(s)));
         configProviders.put(
-                "quarkus.grpc.clients.responseresumer.plain-text",
+                "quarkus.grpc.clients.responserecorder.plain-text",
                 (Function<Startable, String>) s -> parsePlainText(getConnectionInfo(s)));
 
         if (generatedApiKey) {

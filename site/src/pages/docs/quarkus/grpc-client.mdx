@@ -45,7 +45,7 @@ The Memory Service gRPC API is split into multiple services:
 | `ConversationMembershipsService` | Sharing and membership management |
 | `OwnershipTransfersService` | Ownership transfer operations |
 | `SearchService` | Semantic search and indexing |
-| `ResponseResumerService` | Streaming response resumption |
+| `ResponseRecorderService` | Streaming response recording and resumption |
 | `SystemService` | Health checks |
 
 ## UUID Handling
@@ -261,33 +261,33 @@ for (SearchResult result : response.getResultsList()) {
 }
 ```
 
-## Response Resumer (Streaming)
+## Response Recorder (Streaming)
 
-The `ResponseResumerService` handles streaming response resumption for interrupted connections:
+The `ResponseRecorderService` handles streaming response recording and resumption for interrupted connections:
 
 ```java
-@GrpcClient("responseresumer")
-ResponseResumerServiceGrpc.ResponseResumerServiceStub resumerClient;
+@GrpcClient("responserecorder")
+ResponseRecorderServiceGrpc.ResponseRecorderServiceStub recorderClient;
 
-// Check if response resumer is enabled
-IsEnabledResponse enabled = resumerClient.isEnabled(Empty.getDefaultInstance());
+// Check if response recorder is enabled
+IsEnabledResponse enabled = recorderClient.isEnabled(Empty.getDefaultInstance());
 
-// Check which conversations have responses in progress
-CheckConversationsResponse check = resumerClient.checkConversations(
-    CheckConversationsRequest.newBuilder()
+// Check which conversations have recordings in progress
+CheckRecordingsResponse check = recorderClient.checkRecordings(
+    CheckRecordingsRequest.newBuilder()
         .addConversationIds(UuidHelper.toBytes(conversationId))
         .build()
 );
 
 // Replay response tokens
-resumerClient.replayResponseTokens(
-    ReplayResponseTokensRequest.newBuilder()
+recorderClient.replay(
+    ReplayRequest.newBuilder()
         .setConversationId(UuidHelper.toBytes(conversationId))
         .build(),
-    new StreamObserver<ReplayResponseTokensResponse>() {
+    new StreamObserver<ReplayResponse>() {
         @Override
-        public void onNext(ReplayResponseTokensResponse response) {
-            System.out.print(response.getToken());
+        public void onNext(ReplayResponse response) {
+            System.out.print(response.getContent());
         }
 
         @Override
@@ -340,7 +340,7 @@ quarkus.grpc.clients.conversations.tls.trust-certificate-pem.certs=ca.pem
 
 Choose gRPC over REST when you need:
 
-- **Streaming** - Real-time response resumption with `ResponseResumerService`
+- **Streaming** - Real-time response recording and resumption with `ResponseRecorderService`
 - **High throughput** - Binary protocol is more efficient
 - **Strong typing** - Generated stubs catch errors at compile time
 - **Bi-directional communication** - Full duplex streaming for response recording
