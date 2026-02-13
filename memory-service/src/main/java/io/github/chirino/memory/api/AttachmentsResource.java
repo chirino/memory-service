@@ -1,6 +1,7 @@
 package io.github.chirino.memory.api;
 
 import io.github.chirino.memory.attachment.AttachmentDeletionService;
+import io.github.chirino.memory.attachment.AttachmentDownloadService;
 import io.github.chirino.memory.attachment.AttachmentDto;
 import io.github.chirino.memory.attachment.AttachmentStore;
 import io.github.chirino.memory.attachment.AttachmentStoreSelector;
@@ -57,6 +58,8 @@ public class AttachmentsResource {
     @Inject AttachmentDeletionService deletionService;
 
     @Inject DownloadUrlSigner downloadUrlSigner;
+
+    @Inject AttachmentDownloadService downloadService;
 
     private AttachmentStore attachmentStore() {
         return attachmentStoreSelector.getStore();
@@ -148,6 +151,7 @@ public class AttachmentsResource {
             response.put("size", storeResult.size());
             response.put("sha256", sha256Hex);
             response.put("expiresAt", finalExpiresAt.toString());
+            response.put("status", "ready");
 
             return Response.status(Response.Status.CREATED).entity(response).build();
         } catch (FileStoreException e) {
@@ -160,6 +164,41 @@ public class AttachmentsResource {
                     .entity(errorResponse("Upload failed", "internal_error", Map.of()))
                     .build();
         }
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response createFromUrl(Map<String, Object> request) {
+        String sourceUrl = (String) request.get("sourceUrl");
+        String contentType = (String) request.get("contentType");
+        String name = (String) request.get("name");
+
+        if (sourceUrl == null || sourceUrl.isBlank()) {
+            return badRequest("sourceUrl is required");
+        }
+        if (contentType == null || contentType.isBlank()) {
+            contentType = "application/octet-stream";
+        }
+
+        Instant expiresAt = Instant.now().plus(config.getDefaultExpiresIn());
+        AttachmentDto record =
+                attachmentStore()
+                        .createFromUrl(currentUserId(), contentType, name, sourceUrl, expiresAt);
+
+        // Start async download
+        downloadService.downloadAsync(record.id(), sourceUrl, contentType);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", record.id());
+        response.put("href", "/v1/attachments/" + record.id());
+        response.put("contentType", contentType);
+        response.put("filename", name);
+        response.put("sourceUrl", sourceUrl);
+        response.put("status", "downloading");
+        response.put("expiresAt", expiresAt.toString());
+
+        return Response.status(Response.Status.CREATED).entity(response).build();
     }
 
     @GET
@@ -192,7 +231,34 @@ public class AttachmentsResource {
         // For simplicity, we allow access if it has an entryId (the entry listing already
         // enforces conversation-level access control).
 
+        // If still downloading, redirect to sourceUrl
+        if ("downloading".equals(att.status()) && att.sourceUrl() != null) {
+            return Response.temporaryRedirect(URI.create(att.sourceUrl()))
+                    .header("Cache-Control", "no-cache")
+                    .build();
+        }
+
         if (att.storageKey() == null) {
+            if ("uploading".equals(att.status())) {
+                return Response.status(Response.Status.CONFLICT)
+                        .type(MediaType.APPLICATION_JSON)
+                        .entity(
+                                errorResponse(
+                                        "Upload in progress",
+                                        "upload_in_progress",
+                                        Map.of("message", "Attachment is still being uploaded")))
+                        .build();
+            }
+            if ("failed".equals(att.status())) {
+                return Response.status(422)
+                        .type(MediaType.APPLICATION_JSON)
+                        .entity(
+                                errorResponse(
+                                        "Download failed",
+                                        "download_failed",
+                                        Map.of("message", "Attachment download failed")))
+                        .build();
+            }
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(
                             errorResponse(
@@ -256,6 +322,35 @@ public class AttachmentsResource {
                                         Map.of("message", "Access denied to this attachment")))
                         .build();
             }
+        }
+
+        // Status-aware behavior
+        if ("uploading".equals(att.status())) {
+            return Response.status(Response.Status.CONFLICT)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(
+                            errorResponse(
+                                    "Upload in progress",
+                                    "upload_in_progress",
+                                    Map.of("message", "Attachment is still being uploaded")))
+                    .build();
+        }
+        if ("downloading".equals(att.status()) && att.sourceUrl() != null) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("url", att.sourceUrl());
+            response.put("expiresIn", 0);
+            response.put("status", "downloading");
+            return Response.ok(response).build();
+        }
+        if ("failed".equals(att.status())) {
+            return Response.status(422)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(
+                            errorResponse(
+                                    "Download failed",
+                                    "download_failed",
+                                    Map.of("message", "Attachment download failed")))
+                    .build();
         }
 
         if (att.storageKey() == null) {

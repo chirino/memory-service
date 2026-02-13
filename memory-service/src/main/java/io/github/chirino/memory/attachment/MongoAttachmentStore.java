@@ -31,6 +31,7 @@ public class MongoAttachmentStore implements AttachmentStore {
         doc.userId = userId;
         doc.contentType = contentType;
         doc.filename = filename;
+        doc.status = "uploading";
         doc.expiresAt = expiresAt;
         doc.createdAt = Instant.now();
         attachmentRepository.persist(doc);
@@ -48,6 +49,7 @@ public class MongoAttachmentStore implements AttachmentStore {
         doc.size = source.size();
         doc.contentType = source.contentType();
         doc.filename = source.filename();
+        doc.status = "ready";
         doc.expiresAt = Instant.now().plusSeconds(300);
         doc.createdAt = Instant.now();
         attachmentRepository.persist(doc);
@@ -63,7 +65,39 @@ public class MongoAttachmentStore implements AttachmentStore {
             doc.storageKey = storageKey;
             doc.size = size;
             doc.sha256 = sha256;
+            doc.status = "ready";
             doc.expiresAt = expiresAt;
+            attachmentRepository.update(doc);
+        }
+    }
+
+    @Override
+    @Transactional
+    public AttachmentDto createFromUrl(
+            String userId,
+            String contentType,
+            String filename,
+            String sourceUrl,
+            Instant expiresAt) {
+        MongoAttachment doc = new MongoAttachment();
+        doc.id = UUID.randomUUID().toString();
+        doc.userId = userId;
+        doc.contentType = contentType;
+        doc.filename = filename;
+        doc.sourceUrl = sourceUrl;
+        doc.status = "downloading";
+        doc.expiresAt = expiresAt;
+        doc.createdAt = Instant.now();
+        attachmentRepository.persist(doc);
+        return toDto(doc);
+    }
+
+    @Override
+    @Transactional
+    public void updateStatus(String id, String status) {
+        MongoAttachment doc = findActive(id);
+        if (doc != null) {
+            doc.status = status;
             attachmentRepository.update(doc);
         }
     }
@@ -271,7 +305,9 @@ public class MongoAttachmentStore implements AttachmentStore {
                 doc.entryId,
                 doc.expiresAt,
                 doc.createdAt,
-                doc.deletedAt);
+                doc.deletedAt,
+                doc.status,
+                doc.sourceUrl);
     }
 
     @ApplicationScoped

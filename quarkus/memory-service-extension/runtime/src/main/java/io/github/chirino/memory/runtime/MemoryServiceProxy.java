@@ -273,6 +273,52 @@ public class MemoryServiceProxy {
     // ---- Attachment operations (raw HTTP, no generated client) ----
 
     /**
+     * Creates an attachment from a source URL by forwarding the JSON request to the memory service.
+     */
+    public Response createAttachmentFromUrl(Map<String, Object> request) {
+        try {
+            String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments";
+            String jsonBody = OBJECT_MAPPER.writeValueAsString(request);
+
+            HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+            conn.setDoOutput(true);
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+
+            String bearer = bearerToken(securityIdentity);
+            if (bearer != null) {
+                conn.setRequestProperty("Authorization", "Bearer " + bearer);
+            }
+
+            try (OutputStream out = conn.getOutputStream()) {
+                out.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+            }
+
+            int status = conn.getResponseCode();
+            String responseBody;
+            try (InputStream respStream =
+                    status >= 400 ? conn.getErrorStream() : conn.getInputStream()) {
+                responseBody =
+                        respStream != null
+                                ? new String(respStream.readAllBytes(), StandardCharsets.UTF_8)
+                                : "";
+            }
+            conn.disconnect();
+
+            return Response.status(status)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(responseBody)
+                    .build();
+        } catch (Exception e) {
+            LOG.errorf(e, "Error creating attachment from URL");
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of("error", "Create from URL proxy failed: " + e.getMessage()))
+                    .build();
+        }
+    }
+
+    /**
      * Uploads an attachment to the memory service using streaming multipart.
      *
      * @param input      the multipart form data containing a "file" field

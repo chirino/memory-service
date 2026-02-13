@@ -17,6 +17,7 @@ Feature: Attachments REST API
     And the response body field "size" should be "11"
     And the response body field "sha256" should not be null
     And the response body field "expiresAt" should not be null
+    And the response body field "status" should be "ready"
 
   Scenario: Retrieve an uploaded attachment
     When I upload a file "hello.txt" with content type "text/plain" and content "Hello Retrieval"

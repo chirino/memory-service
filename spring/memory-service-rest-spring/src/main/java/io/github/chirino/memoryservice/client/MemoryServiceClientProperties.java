@@ -21,6 +21,7 @@ public class MemoryServiceClientProperties {
     private Duration timeout = Duration.ofSeconds(30);
     private boolean logRequests = false;
     private boolean withCredentials = true;
+    private String tempDir;
     private Map<String, String> defaultHeaders = new LinkedHashMap<>();
 
     public String getBaseUrl() {
@@ -77,6 +78,14 @@ public class MemoryServiceClientProperties {
 
     public void setWithCredentials(boolean withCredentials) {
         this.withCredentials = withCredentials;
+    }
+
+    public String getTempDir() {
+        return tempDir;
+    }
+
+    public void setTempDir(String tempDir) {
+        this.tempDir = tempDir;
     }
 
     public Map<String, String> getDefaultHeaders() {

@@ -50,6 +50,12 @@ public class AttachmentEntity {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
+    @Column(name = "status", nullable = false, length = 20)
+    private String status = "ready";
+
+    @Column(name = "source_url", length = 2048)
+    private String sourceUrl;
+
     @PrePersist
     public void prePersist() {
         if (id == null) {
@@ -146,5 +152,21 @@ public class AttachmentEntity {
 
     public void setDeletedAt(OffsetDateTime deletedAt) {
         this.deletedAt = deletedAt;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getSourceUrl() {
+        return sourceUrl;
+    }
+
+    public void setSourceUrl(String sourceUrl) {
+        this.sourceUrl = sourceUrl;
     }
 }

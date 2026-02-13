@@ -10,7 +10,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.util.List;
 
 @ApplicationScoped
-@RegisterAiService()
+@RegisterAiService(tools = ImageGenerationTool.class)
 public interface Agent {
 
     Multi<ChatEvent> chat(

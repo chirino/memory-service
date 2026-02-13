@@ -80,7 +80,18 @@ public class ConversationHistoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AttachmentResolver attachmentResolver() {
-        return new AttachmentResolver();
+    public AttachmentResolver attachmentResolver(
+            MemoryServiceClientProperties properties,
+            ObjectProvider<WebClient.Builder> webClientBuilderProvider,
+            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
+        WebClient.Builder builder = webClientBuilderProvider.getIfAvailable(WebClient::builder);
+        return new AttachmentResolver(
+                properties, builder, authorizedClientServiceProvider.getIfAvailable());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ToolAttachmentExtractor toolAttachmentExtractor() {
+        return new DefaultToolAttachmentExtractor();
     }
 }
