@@ -6,7 +6,9 @@ This document describes the API and data model of the Memory Service. The goal i
 
 For detailed design specifications on specific features, see:
 
+- **[Architecture](architecture.md)**: System context, component overview, store abstractions, request flows, and module structure.
 - **[Entry Data Model](entry-data-model.md)**: Detailed documentation of how entries are stored and retrieved, including channels, memory epochs, conversation forking, and multi-agent support.
+- **[Database Design](db-design.md)**: PostgreSQL schema UML diagram, table descriptions, and key design patterns (access control, soft deletes, encryption, full-text search).
 
 ## High-level Responsibilities
 
