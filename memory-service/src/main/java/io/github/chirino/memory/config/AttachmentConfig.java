@@ -1,5 +1,6 @@
 package io.github.chirino.memory.config;
 
+import io.quarkus.runtime.configuration.MemorySize;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Duration;
 import java.util.Optional;
@@ -8,8 +9,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @ApplicationScoped
 public class AttachmentConfig {
 
-    @ConfigProperty(name = "memory-service.attachments.max-size", defaultValue = "10485760")
-    long maxSize;
+    @ConfigProperty(name = "memory-service.attachments.max-size", defaultValue = "10M")
+    MemorySize maxSize;
 
     @ConfigProperty(name = "memory-service.attachments.default-expires-in", defaultValue = "PT1H")
     Duration defaultExpiresIn;
@@ -48,7 +49,7 @@ public class AttachmentConfig {
     Optional<String> downloadUrlSecret;
 
     public long getMaxSize() {
-        return maxSize;
+        return maxSize.asLongValue();
     }
 
     public Duration getDefaultExpiresIn() {

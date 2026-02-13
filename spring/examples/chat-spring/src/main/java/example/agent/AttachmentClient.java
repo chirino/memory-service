@@ -2,13 +2,14 @@ package example.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
-import io.github.chirino.memoryservice.security.SecurityHelper;
+import io.github.chirino.memoryservice.client.MemoryServiceClients;
+import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -23,16 +24,27 @@ public class AttachmentClient {
     private static final Logger LOG = LoggerFactory.getLogger(AttachmentClient.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final WebClient webClient;
-    private final OAuth2AuthorizedClientService authorizedClientService;
+    private final MemoryServiceClientProperties properties;
+    private final WebClient.Builder webClientBuilder;
+
+    /**
+     * Holds a bearer token captured on the HTTP request thread so it can be used later on background
+     * threads (e.g. Reactor's boundedElastic) where SecurityContextHolder is empty.
+     */
+    private final AtomicReference<String> cachedBearerToken = new AtomicReference<>();
 
     public AttachmentClient(
-            MemoryServiceClientProperties properties,
-            WebClient.Builder webClientBuilder,
-            org.springframework.beans.factory.ObjectProvider<OAuth2AuthorizedClientService>
-                    authorizedClientServiceProvider) {
-        this.webClient = webClientBuilder.baseUrl(properties.getBaseUrl()).build();
-        this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
+            MemoryServiceClientProperties properties, WebClient.Builder webClientBuilder) {
+        this.properties = properties;
+        this.webClientBuilder = webClientBuilder;
+    }
+
+    /**
+     * Capture the bearer token on the HTTP request thread so that background tool invocations can
+     * authenticate with the memory-service.
+     */
+    public void setBearerToken(String token) {
+        cachedBearerToken.set(token);
     }
 
     /**
@@ -46,26 +58,25 @@ public class AttachmentClient {
     @SuppressWarnings("unchecked")
     public Map<String, Object> createFromUrl(String sourceUrl, String contentType, String name) {
         try {
-            String bearer = SecurityHelper.bearerToken(authorizedClientService);
-
             Map<String, String> body =
-                    Map.of(
-                            "sourceUrl", sourceUrl,
-                            "contentType", contentType,
-                            "name", name);
+                    Map.of("sourceUrl", sourceUrl, "contentType", contentType, "name", name);
 
+            WebClient webClient = createWebClient();
             WebClient.RequestBodySpec req =
                     webClient.post().uri("/v1/attachments").contentType(MediaType.APPLICATION_JSON);
 
+            String bearer = cachedBearerToken.get();
             if (StringUtils.hasText(bearer)) {
                 req = req.header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer);
             }
 
+            Duration timeout =
+                    properties.getTimeout() != null
+                            ? properties.getTimeout()
+                            : Duration.ofSeconds(30);
+
             String responseBody =
-                    req.bodyValue(body)
-                            .retrieve()
-                            .bodyToMono(String.class)
-                            .block(java.time.Duration.ofSeconds(30));
+                    req.bodyValue(body).retrieve().bodyToMono(String.class).block(timeout);
 
             if (responseBody != null) {
                 return MAPPER.readValue(responseBody, Map.class);
@@ -75,5 +86,11 @@ public class AttachmentClient {
             LOG.error("Error creating attachment from URL: {}", sourceUrl, e);
             return null;
         }
+    }
+
+    private WebClient createWebClient() {
+        var builder = MemoryServiceClients.createWebClient(properties, webClientBuilder, null);
+        builder.baseUrl(properties.getBaseUrl());
+        return builder.build();
     }
 }

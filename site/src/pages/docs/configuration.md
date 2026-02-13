@@ -123,7 +123,7 @@ Configure file attachment storage, size limits, and lifecycle.
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `memory-service.attachments.store` | `db`, `s3` | `db` | Storage backend for uploaded files |
-| `memory-service.attachments.max-size` | bytes | `10485760` (10 MB) | Maximum file size per upload |
+| `memory-service.attachments.max-size` | memory size | `10M` | Maximum file size per upload (e.g., `10M`, `512K`, `1G`). The HTTP body size limit is auto-derived as 2x this value. |
 | `memory-service.attachments.default-expires-in` | duration | `PT1H` | Default TTL for unlinked attachments |
 | `memory-service.attachments.max-expires-in` | duration | `PT24H` | Maximum allowed TTL clients can request |
 | `memory-service.attachments.cleanup-interval` | duration | `PT5M` | How often the cleanup job runs to delete expired unlinked attachments |

@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.security.oauth2.client.ReactiveOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.reactive.function.client.ServerOAuth2AuthorizedClientExchangeFilterFunction;
@@ -27,6 +28,27 @@ public final class MemoryServiceClients {
             WebClient.Builder webClientBuilder,
             @Nullable ReactiveOAuth2AuthorizedClientManager authorizedClientManager) {
 
+        WebClient build =
+                createWebClient(properties, webClientBuilder, authorizedClientManager).build();
+        ApiClient apiClient = new ApiClient(build);
+        apiClient.setBasePath(properties.getBaseUrl());
+        if (StringUtils.hasText(properties.getApiKey())) {
+            apiClient.addDefaultHeader("X-API-Key", properties.getApiKey());
+        }
+        if (StringUtils.hasText(properties.getBearerToken())) {
+            apiClient.setBearerToken(properties.getBearerToken());
+        }
+        properties
+                .getDefaultHeaders()
+                .forEach((name, value) -> apiClient.addDefaultHeader(name, value));
+        return apiClient;
+    }
+
+    @NonNull
+    public static WebClient.Builder createWebClient(
+            MemoryServiceClientProperties properties,
+            WebClient.Builder webClientBuilder,
+            @Nullable ReactiveOAuth2AuthorizedClientManager authorizedClientManager) {
         WebClient.Builder builder = webClientBuilder.clone();
 
         if (properties.getTimeout() != null) {
@@ -53,18 +75,7 @@ public final class MemoryServiceClients {
                     }
                 });
 
-        ApiClient apiClient = new ApiClient(builder.build());
-        apiClient.setBasePath(properties.getBaseUrl());
-        if (StringUtils.hasText(properties.getApiKey())) {
-            apiClient.addDefaultHeader("X-API-Key", properties.getApiKey());
-        }
-        if (StringUtils.hasText(properties.getBearerToken())) {
-            apiClient.setBearerToken(properties.getBearerToken());
-        }
-        properties
-                .getDefaultHeaders()
-                .forEach((name, value) -> apiClient.addDefaultHeader(name, value));
-        return apiClient;
+        return builder;
     }
 
     private static HttpClient buildHttpClient(MemoryServiceClientProperties properties) {

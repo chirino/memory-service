@@ -10,6 +10,8 @@ import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryB
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -45,6 +47,7 @@ class AgentStreamController {
     private final ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder;
     private final OAuth2AuthorizedClientService authorizedClientService;
     private final AttachmentResolver attachmentResolver;
+    private final AttachmentClient attachmentClient;
     private final ImageGenerationTool imageGenerationTool;
 
     AgentStreamController(
@@ -54,6 +57,7 @@ class AgentStreamController {
             ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder,
             AttachmentResolver attachmentResolver,
             ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider,
+            ObjectProvider<AttachmentClient> attachmentClientProvider,
             ObjectProvider<ImageGenerationTool> imageGenerationToolProvider) {
         this.chatClientBuilder = chatClientBuilder;
         this.repositoryBuilder = repositoryBuilder;
@@ -61,6 +65,7 @@ class AgentStreamController {
         this.historyAdvisorBuilder = historyAdvisorBuilder;
         this.attachmentResolver = attachmentResolver;
         this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
+        this.attachmentClient = attachmentClientProvider.getIfAvailable();
         this.imageGenerationTool = imageGenerationToolProvider.getIfAvailable();
     }
 
@@ -79,17 +84,32 @@ class AgentStreamController {
         }
 
         // Capture bearer token on the HTTP request thread before any reactive processing.
-        // This token is passed to both the history advisor and the memory repository
-        // since SecurityContext is not available on worker threads.
+        // This token is passed to both the history advisor, the memory repository, and the
+        // attachment client since SecurityContext is not available on worker threads.
         String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
-        var historyAdvisor = historyAdvisorBuilder.build(bearerToken);
+        if (attachmentClient != null) {
+            attachmentClient.setBearerToken(bearerToken);
+        }
+
+        // Shared per-request collector for tool-produced attachments. Tools add to this list
+        // during execution and the history advisor links them to the AI response entry.
+        CopyOnWriteArrayList<Map<String, Object>> toolAttachments = new CopyOnWriteArrayList<>();
+        if (imageGenerationTool != null) {
+            imageGenerationTool.setToolAttachments(toolAttachments);
+        }
+
+        var historyAdvisor = historyAdvisorBuilder.build(bearerToken, toolAttachments);
         var repository = repositoryBuilder.build(bearerToken);
         var chatMemory = MessageWindowChatMemory.builder().chatMemoryRepository(repository).build();
 
         var builder =
                 chatClientBuilder
                         .clone()
-                        .defaultSystem("You are a helpful assistant.")
+                        .defaultSystem(
+                                "You are a helpful assistant. When you use a tool that generates an"
+                                    + " image, the image is automatically displayed as an"
+                                    + " attachment. Never include image URLs, links, or markdown"
+                                    + " image syntax in your response.")
                         .defaultAdvisors(
                                 historyAdvisor,
                                 MessageChatMemoryAdvisor.builder(chatMemory).build());
