@@ -8,9 +8,9 @@ Memory Service is configured entirely through environment variables. This approa
 
 > **Note:** Environment variables follow Quarkus conventions. Property names like `memory-service.datastore.type` become `MEMORY_SERVICE_DATASTORE_TYPE` as environment variables (dots and hyphens become underscores, all uppercase).
 
-## Memory Service Configuration
+## Server Configuration
 
-These are the core Memory Service configuration options:
+These are the core server configuration options:
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|

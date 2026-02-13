@@ -35,6 +35,7 @@ echo "OPENAI_API_KEY=your-api-key-here" > .env
 ### 3. Deploy with Docker Compose
 
 ```bash
+docker compose build
 docker compose up -d
 ```
 
@@ -44,6 +45,8 @@ This will start:
 - **Keycloak** for authentication (used by the memory service and demo chat app)
 - **PostgreSQL** for data and vector storage (used by the memory service)
 - **Redis** for caching (used by the memory service)
+- **Prometheus** for metrics collection
+- **Grafana** for metrics dashboards
 
 ### 4. Access the Demo Chat App
 
@@ -58,18 +61,20 @@ Keycloak is pre-configured with these test users:
 | Username | Password | Role |
 |----------|----------|------|
 | bob | bob | user |
-| alice | alice | user |
+| alice | alice | user, admin |
+| charlie | charlie | user |
 
 ## Things to notice in the Demo.
 
 * You can fork any user entry and switch between forks
-* Agent memory stays consistent with the fork your on.  Ask it to recall previous fact you have told it.
-* Streaming responses survice browser page reloads.  You can even switch to a diferent device and still view the response that is currently being generated.
+* Agent memory stays consistent with the fork you're on.  Ask it to recall previous fact you have told it.
+* Streaming responses survive browser page reloads.  You can even switch to a different device and still view the response that is currently being generated.
 * Users can see a list of all their previous conversations.
 
 ## Next Steps
 
-- Learn about [Configuration Options](/docs/configuration/)
-- Understand [Core Concepts](/docs/concepts/conversations/)
-- Explore [Framework Integrations](/docs/apis/frameworks/quarkus/)
-- Review [Deployment Options](/docs/deployment/kubernetes/)
+- Understand [Core Concepts](/docs/concepts/)
+- Explore Developer Guides for
+  * [Quarkus Langchain4j](/docs/quarkus/)
+  * [Spring AI](/docs/spring/)
+- Learn about [Server Configuration Options](/docs/configuration/)
