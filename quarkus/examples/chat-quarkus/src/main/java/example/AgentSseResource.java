@@ -2,11 +2,11 @@ package example;
 
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.history.runtime.AttachmentRef;
 import io.github.chirino.memory.history.runtime.AttachmentResolver;
 import io.github.chirino.memory.history.runtime.Attachments;
+import io.github.chirino.memory.history.runtime.ConversationEventStreamAdapter;
 import io.github.chirino.memory.history.runtime.ResponseResumer;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.quarkus.logging.Log;
@@ -108,19 +108,7 @@ public class AgentSseResource {
     }
 
     private String encode(ChatEvent chatEvent) {
-        try {
-            return objectMapper.writeValueAsString(chatEvent);
-        } catch (JsonProcessingException e) {
-            // Some ChatEvent subtypes (e.g. ChatCompletedEvent) contain non-serializable fields.
-            // Fall back to a minimal JSON representation.
-            Log.debugf(
-                    e,
-                    "Failed to serialize ChatEvent of type %s, using fallback",
-                    chatEvent.getClass().getSimpleName());
-            return "{\"eventType\":\""
-                    + chatEvent.getClass().getSimpleName().replace("Event", "")
-                    + "\"}";
-        }
+        return ConversationEventStreamAdapter.buildEventJson(chatEvent, objectMapper);
     }
 
     private static List<AttachmentRef> toRefs(List<RequestAttachmentRef> attachments) {
