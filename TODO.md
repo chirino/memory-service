@@ -4,10 +4,6 @@
 * document admin apis
 * Brand the project and move it to an org/foundation.
 * Add support for python langchain /w user docs similar to the quarkus/spring support.
-* make chat-quarkus us the package/class names used in the checkpoint examples.
-* rename x-resumer-redirect-host, x-resumer-redirect-port headers.
-* StreamResponseTokenRequest.token -> StreamResponseTokenRequest.content
-* simplify the StreamResponseTokenResponse and ReplayResponseTokensResponse type.
 * config option to disable passthrough s3 signed download url (for when endpoint is private)
 * move the ChatEvent json serializer to quarkus
 
@@ -35,4 +31,3 @@
 * Allow runtime configured agents/api-keys?
 * How useful is the current index/search feature?
 * Do we need to support anonymous user conversations?
-* Better name for: ResponseResumerService ?

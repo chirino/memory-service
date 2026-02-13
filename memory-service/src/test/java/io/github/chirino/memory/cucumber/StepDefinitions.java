@@ -32,8 +32,8 @@ import io.github.chirino.memory.grpc.v1.AcceptOwnershipTransferRequest;
 import io.github.chirino.memory.grpc.v1.AppendEntryRequest;
 import io.github.chirino.memory.grpc.v1.AttachmentInfo;
 import io.github.chirino.memory.grpc.v1.AttachmentsServiceGrpc;
-import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
-import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
+import io.github.chirino.memory.grpc.v1.CancelRecordRequest;
+import io.github.chirino.memory.grpc.v1.CheckRecordingsRequest;
 import io.github.chirino.memory.grpc.v1.Conversation;
 import io.github.chirino.memory.grpc.v1.ConversationMembership;
 import io.github.chirino.memory.grpc.v1.ConversationMembershipsServiceGrpc;
@@ -60,17 +60,18 @@ import io.github.chirino.memory.grpc.v1.ListMembershipsResponse;
 import io.github.chirino.memory.grpc.v1.ListOwnershipTransfersRequest;
 import io.github.chirino.memory.grpc.v1.ListUnindexedEntriesRequest;
 import io.github.chirino.memory.grpc.v1.MutinyAttachmentsServiceGrpc;
-import io.github.chirino.memory.grpc.v1.MutinyResponseResumerServiceGrpc;
+import io.github.chirino.memory.grpc.v1.MutinyResponseRecorderServiceGrpc;
 import io.github.chirino.memory.grpc.v1.OwnershipTransfersServiceGrpc;
-import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
-import io.github.chirino.memory.grpc.v1.ReplayResponseTokensResponse;
-import io.github.chirino.memory.grpc.v1.ResponseResumerServiceGrpc;
+import io.github.chirino.memory.grpc.v1.RecordRequest;
+import io.github.chirino.memory.grpc.v1.RecordResponse;
+import io.github.chirino.memory.grpc.v1.RecordStatus;
+import io.github.chirino.memory.grpc.v1.ReplayRequest;
+import io.github.chirino.memory.grpc.v1.ReplayResponse;
+import io.github.chirino.memory.grpc.v1.ResponseRecorderServiceGrpc;
 import io.github.chirino.memory.grpc.v1.SearchEntriesRequest;
 import io.github.chirino.memory.grpc.v1.SearchEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SearchServiceGrpc;
 import io.github.chirino.memory.grpc.v1.ShareConversationRequest;
-import io.github.chirino.memory.grpc.v1.StreamResponseTokenRequest;
-import io.github.chirino.memory.grpc.v1.StreamResponseTokenResponse;
 import io.github.chirino.memory.grpc.v1.SyncEntriesRequest;
 import io.github.chirino.memory.grpc.v1.SyncEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
@@ -347,7 +348,7 @@ public class StepDefinitions {
     private Message lastGrpcMessage;
     private String lastGrpcServiceMethod;
     private String lastGrpcResponseText;
-    private CompletableFuture<StreamResponseTokenResponse> inProgressStreamResponse;
+    private CompletableFuture<RecordResponse> inProgressStreamResponse;
     private CountDownLatch streamStartedLatch;
     private AtomicInteger streamedTokenCount;
     private String replayedTokens;
@@ -550,7 +551,7 @@ public class StepDefinitions {
         trackUsage();
         // Stream tokens character by character to simulate token streaming
         Metadata metadata = buildGrpcMetadata();
-        var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+        var mutinyStub = MutinyResponseRecorderServiceGrpc.newMutinyStub(grpcChannel);
         if (metadata != null) {
             mutinyStub =
                     mutinyStub.withInterceptors(
@@ -558,14 +559,14 @@ public class StepDefinitions {
         }
 
         // Create a stream of token requests
-        var tokenRequests = new java.util.ArrayList<StreamResponseTokenRequest>();
+        var tokenRequests = new java.util.ArrayList<RecordRequest>();
         for (int i = 0; i < tokens.length(); i++) {
             String token = String.valueOf(tokens.charAt(i));
-            var requestBuilder = StreamResponseTokenRequest.newBuilder();
+            var requestBuilder = RecordRequest.newBuilder();
             if (i == 0) {
                 requestBuilder.setConversationId(stringToByteString(conversationId));
             }
-            requestBuilder.setToken(token);
+            requestBuilder.setContent(token);
             requestBuilder.setComplete(i == tokens.length() - 1);
             tokenRequests.add(requestBuilder.build());
         }
@@ -575,12 +576,7 @@ public class StepDefinitions {
 
         // Await the response with a timeout to prevent hanging
         try {
-            mutinyStub
-                    .streamResponseTokens(requestStream)
-                    .collect()
-                    .last()
-                    .await()
-                    .atMost(java.time.Duration.ofSeconds(10));
+            mutinyStub.record(requestStream).await().atMost(java.time.Duration.ofSeconds(10));
         } catch (Exception e) {
             throw new AssertionError("Failed to stream response tokens: " + e.getMessage(), e);
         }
@@ -592,7 +588,7 @@ public class StepDefinitions {
     public void iStartStreamingTokensToTheConversationWithDelay(
             String tokens, int delayMs, int holdOpenMs) throws Exception {
         Metadata metadata = buildGrpcMetadata();
-        var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+        var mutinyStub = MutinyResponseRecorderServiceGrpc.newMutinyStub(grpcChannel);
         if (metadata != null) {
             trackUsage();
             mutinyStub =
@@ -606,11 +602,10 @@ public class StepDefinitions {
         streamCompletedAtNs.set(0);
         replayFinishedAtNs.set(0);
         replayFirstTokenAtNs.set(0);
-        AtomicReference<StreamResponseTokenResponse> lastResponse = new AtomicReference<>();
 
         var requestStream =
                 io.smallrye.mutiny.Multi.createFrom()
-                        .<StreamResponseTokenRequest>emitter(
+                        .<RecordRequest>emitter(
                                 emitter -> {
                                     Thread thread =
                                             new Thread(
@@ -623,15 +618,14 @@ public class StepDefinitions {
                                                                         String.valueOf(
                                                                                 tokens.charAt(i));
                                                                 var requestBuilder =
-                                                                        StreamResponseTokenRequest
-                                                                                .newBuilder();
+                                                                        RecordRequest.newBuilder();
                                                                 if (i == 0) {
                                                                     requestBuilder
                                                                             .setConversationId(
                                                                                     stringToByteString(
                                                                                             conversationId));
                                                                 }
-                                                                requestBuilder.setToken(token);
+                                                                requestBuilder.setContent(token);
                                                                 requestBuilder.setComplete(false);
                                                                 emitter.emit(
                                                                         requestBuilder.build());
@@ -648,8 +642,7 @@ public class StepDefinitions {
                                                                 Thread.sleep(holdOpenMs);
                                                             }
                                                             emitter.emit(
-                                                                    StreamResponseTokenRequest
-                                                                            .newBuilder()
+                                                                    RecordRequest.newBuilder()
                                                                             .setComplete(true)
                                                                             .build());
                                                             emitter.complete();
@@ -660,25 +653,20 @@ public class StepDefinitions {
                                                             emitter.fail(e);
                                                         }
                                                     },
-                                                    "response-resumer-stream");
+                                                    "response-recorder-stream");
                                     thread.setDaemon(true);
                                     thread.start();
                                 });
 
         mutinyStub
-                .streamResponseTokens(requestStream)
+                .record(requestStream)
                 .subscribe()
                 .with(
-                        lastResponse::set,
-                        inProgressStreamResponse::completeExceptionally,
-                        () -> {
-                            StreamResponseTokenResponse response = lastResponse.get();
-                            if (response == null) {
-                                response = StreamResponseTokenResponse.newBuilder().build();
-                            }
+                        response -> {
                             streamCompletedAtNs.compareAndSet(0, System.nanoTime());
                             inProgressStreamResponse.complete(response);
-                        });
+                        },
+                        inProgressStreamResponse::completeExceptionally);
     }
 
     @io.cucumber.java.en.Given(
@@ -687,7 +675,7 @@ public class StepDefinitions {
     public void iStartStreamingTokensToTheConversationUntilCanceled(String tokens, int delayMs)
             throws Exception {
         Metadata metadata = buildGrpcMetadata();
-        var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+        var mutinyStub = MutinyResponseRecorderServiceGrpc.newMutinyStub(grpcChannel);
         if (metadata != null) {
             trackUsage();
             mutinyStub =
@@ -703,15 +691,12 @@ public class StepDefinitions {
 
         AtomicBoolean canceled = new AtomicBoolean(false);
         AtomicBoolean completed = new AtomicBoolean(false);
-        AtomicReference<
-                        io.smallrye.mutiny.subscription.MultiEmitter<
-                                ? super StreamResponseTokenRequest>>
+        AtomicReference<io.smallrye.mutiny.subscription.MultiEmitter<? super RecordRequest>>
                 emitterRef = new AtomicReference<>();
-        AtomicReference<StreamResponseTokenResponse> lastResponse = new AtomicReference<>();
 
         var requestStream =
                 io.smallrye.mutiny.Multi.createFrom()
-                        .<StreamResponseTokenRequest>emitter(
+                        .<RecordRequest>emitter(
                                 emitter -> {
                                     emitterRef.set(emitter);
                                     Thread thread =
@@ -728,15 +713,14 @@ public class StepDefinitions {
                                                                         String.valueOf(
                                                                                 tokens.charAt(i));
                                                                 var requestBuilder =
-                                                                        StreamResponseTokenRequest
-                                                                                .newBuilder();
+                                                                        RecordRequest.newBuilder();
                                                                 if (i == 0) {
                                                                     requestBuilder
                                                                             .setConversationId(
                                                                                     stringToByteString(
                                                                                             conversationId));
                                                                 }
-                                                                requestBuilder.setToken(token);
+                                                                requestBuilder.setContent(token);
                                                                 requestBuilder.setComplete(false);
                                                                 emitter.emit(
                                                                         requestBuilder.build());
@@ -755,8 +739,7 @@ public class StepDefinitions {
                                                             if (completed.compareAndSet(
                                                                     false, true)) {
                                                                 emitter.emit(
-                                                                        StreamResponseTokenRequest
-                                                                                .newBuilder()
+                                                                        RecordRequest.newBuilder()
                                                                                 .setComplete(true)
                                                                                 .build());
                                                                 emitter.complete();
@@ -768,38 +751,31 @@ public class StepDefinitions {
                                                             emitter.fail(e);
                                                         }
                                                     },
-                                                    "response-resumer-stream");
+                                                    "response-recorder-stream");
                                     thread.setDaemon(true);
                                     thread.start();
                                 });
 
+        // record() returns Uni<RecordResponse> - server completes the Uni when
+        // recording finishes (or is cancelled via a separate Cancel RPC)
         mutinyStub
-                .streamResponseTokens(requestStream)
+                .record(requestStream)
                 .subscribe()
                 .with(
                         response -> {
-                            lastResponse.set(response);
-                            if (response.getCancelRequested()) {
+                            if (response.getStatus() == RecordStatus.RECORD_STATUS_CANCELLED) {
                                 canceled.set(true);
                                 var emitter = emitterRef.get();
                                 if (emitter != null && completed.compareAndSet(false, true)) {
                                     emitter.emit(
-                                            StreamResponseTokenRequest.newBuilder()
-                                                    .setComplete(true)
-                                                    .build());
+                                            RecordRequest.newBuilder().setComplete(true).build());
                                     emitter.complete();
                                 }
                             }
-                        },
-                        inProgressStreamResponse::completeExceptionally,
-                        () -> {
-                            StreamResponseTokenResponse response = lastResponse.get();
-                            if (response == null) {
-                                response = StreamResponseTokenResponse.newBuilder().build();
-                            }
                             streamCompletedAtNs.compareAndSet(0, System.nanoTime());
                             inProgressStreamResponse.complete(response);
-                        });
+                        },
+                        inProgressStreamResponse::completeExceptionally);
     }
 
     @io.cucumber.java.en.Given("I wait for the response stream to send at least {int} tokens")
@@ -833,7 +809,7 @@ public class StepDefinitions {
         }
 
         Metadata metadata = buildGrpcMetadata();
-        var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+        var mutinyStub = MutinyResponseRecorderServiceGrpc.newMutinyStub(grpcChannel);
         if (metadata != null) {
             mutinyStub =
                     mutinyStub.withInterceptors(
@@ -841,16 +817,16 @@ public class StepDefinitions {
         }
 
         var request =
-                ReplayResponseTokensRequest.newBuilder()
+                ReplayRequest.newBuilder()
                         .setConversationId(stringToByteString(conversationId))
                         .build();
 
         int expectedCount = expectedTokens.length();
-        List<ReplayResponseTokensResponse> responses;
+        List<ReplayResponse> responses;
         try {
             responses =
                     mutinyStub
-                            .replayResponseTokens(request)
+                            .replay(request)
                             .onItem()
                             .invoke(
                                     response ->
@@ -868,8 +844,8 @@ public class StepDefinitions {
         }
 
         StringBuilder received = new StringBuilder();
-        for (ReplayResponseTokensResponse response : responses) {
-            received.append(response.getToken());
+        for (ReplayResponse response : responses) {
+            received.append(response.getContent());
         }
 
         replayedTokens = received.toString();
@@ -2448,7 +2424,7 @@ public class StepDefinitions {
                     callConversationMembershipsService(method, metadata, body);
             case "OwnershipTransfersService" ->
                     callOwnershipTransfersService(method, metadata, body);
-            case "ResponseResumerService" -> callResponseResumerService(method, metadata, body);
+            case "ResponseRecorderService" -> callResponseRecorderService(method, metadata, body);
             case "AttachmentsService" -> callAttachmentsService(method, metadata, body);
             default ->
                     throw new IllegalArgumentException(
@@ -2702,9 +2678,9 @@ public class StepDefinitions {
         }
     }
 
-    private Message callResponseResumerService(String method, Metadata metadata, String body)
+    private Message callResponseRecorderService(String method, Metadata metadata, String body)
             throws Exception {
-        var stub = ResponseResumerServiceGrpc.newBlockingStub(grpcChannel);
+        var stub = ResponseRecorderServiceGrpc.newBlockingStub(grpcChannel);
         if (metadata != null) {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
@@ -2713,33 +2689,30 @@ public class StepDefinitions {
                 {
                     return stub.isEnabled(Empty.newBuilder().build());
                 }
-            case "CheckConversations":
+            case "CheckRecordings":
                 {
-                    var requestBuilder = CheckConversationsRequest.newBuilder();
+                    var requestBuilder = CheckRecordingsRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.checkConversations(requestBuilder.build());
+                    return stub.checkRecordings(requestBuilder.build());
                 }
-            case "CancelResponse":
+            case "Cancel":
                 {
-                    var requestBuilder = CancelResponseRequest.newBuilder();
+                    var requestBuilder = CancelRecordRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    return stub.cancelResponse(requestBuilder.build());
+                    return stub.cancel(requestBuilder.build());
                 }
-            case "StreamResponseTokens":
+            case "Record":
                 {
-                    // Note: This is a client streaming call, but we'll handle a single request
-                    // for testing purposes. In production, this would be a stream of requests.
-                    var requestBuilder = StreamResponseTokenRequest.newBuilder();
+                    // Client streaming call - send a single request for simple test scenarios
+                    var requestBuilder = RecordRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    // For blocking stub, we can only send one request at a time
-                    // The actual implementation expects a stream, but for testing we'll send one
-                    var mutinyStub = MutinyResponseResumerServiceGrpc.newMutinyStub(grpcChannel);
+                    var mutinyStub = MutinyResponseRecorderServiceGrpc.newMutinyStub(grpcChannel);
                     if (metadata != null) {
                         mutinyStub =
                                 mutinyStub.withInterceptors(
@@ -2747,56 +2720,39 @@ public class StepDefinitions {
                     }
                     var request = requestBuilder.build();
                     var requestStream = io.smallrye.mutiny.Multi.createFrom().item(request);
-                    CompletableFuture<StreamResponseTokenResponse> responseFuture =
-                            new CompletableFuture<>();
-                    mutinyStub
-                            .streamResponseTokens(requestStream)
-                            .subscribe()
-                            .with(
-                                    response -> {
-                                        if (!responseFuture.isDone()) {
-                                            responseFuture.complete(response);
-                                        }
-                                    },
-                                    responseFuture::completeExceptionally,
-                                    () -> {
-                                        if (!responseFuture.isDone()) {
-                                            responseFuture.complete(
-                                                    StreamResponseTokenResponse.newBuilder()
-                                                            .build());
-                                        }
-                                    });
                     try {
-                        return responseFuture.get(10, TimeUnit.SECONDS);
+                        return mutinyStub
+                                .record(requestStream)
+                                .await()
+                                .atMost(java.time.Duration.ofSeconds(10));
                     } catch (Exception e) {
-                        Throwable cause = e.getCause();
+                        Throwable cause = e;
+                        if (cause.getCause() instanceof StatusRuntimeException statusException) {
+                            throw statusException;
+                        }
                         if (cause instanceof StatusRuntimeException statusException) {
                             throw statusException;
                         }
                         throw e;
                     }
                 }
-            case "ReplayResponseTokens":
+            case "Replay":
                 {
-                    // Note: This is a server streaming call. For testing, we'll get the first
-                    // response.
-                    var requestBuilder = ReplayResponseTokensRequest.newBuilder();
+                    // Server streaming call - get the first response for simple test scenarios
+                    var requestBuilder = ReplayRequest.newBuilder();
                     if (body != null && !body.isBlank()) {
                         TextFormat.merge(body, requestBuilder);
                     }
-                    // For blocking stub, we can iterate through the stream
                     var request = requestBuilder.build();
-                    Iterator<ReplayResponseTokensResponse> responses =
-                            stub.replayResponseTokens(request);
+                    Iterator<ReplayResponse> responses = stub.replay(request);
                     if (responses.hasNext()) {
                         return responses.next();
                     }
-                    // Return an empty response if no tokens
-                    return ReplayResponseTokensResponse.newBuilder().build();
+                    return ReplayResponse.newBuilder().build();
                 }
             default:
                 throw new IllegalArgumentException(
-                        "Unsupported ResponseResumerService method: " + method);
+                        "Unsupported ResponseRecorderService method: " + method);
         }
     }
 

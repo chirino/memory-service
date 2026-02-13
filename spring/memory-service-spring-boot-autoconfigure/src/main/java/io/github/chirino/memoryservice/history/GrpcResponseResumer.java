@@ -3,16 +3,17 @@ package io.github.chirino.memoryservice.history;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Empty;
-import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
-import io.github.chirino.memory.grpc.v1.CancelResponseResponse;
-import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
-import io.github.chirino.memory.grpc.v1.CheckConversationsResponse;
+import io.github.chirino.memory.grpc.v1.CancelRecordRequest;
+import io.github.chirino.memory.grpc.v1.CancelRecordResponse;
+import io.github.chirino.memory.grpc.v1.CheckRecordingsRequest;
+import io.github.chirino.memory.grpc.v1.CheckRecordingsResponse;
 import io.github.chirino.memory.grpc.v1.IsEnabledResponse;
-import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
-import io.github.chirino.memory.grpc.v1.ReplayResponseTokensResponse;
-import io.github.chirino.memory.grpc.v1.ResponseResumerServiceGrpc;
-import io.github.chirino.memory.grpc.v1.StreamResponseTokenRequest;
-import io.github.chirino.memory.grpc.v1.StreamResponseTokenResponse;
+import io.github.chirino.memory.grpc.v1.RecordRequest;
+import io.github.chirino.memory.grpc.v1.RecordResponse;
+import io.github.chirino.memory.grpc.v1.RecordStatus;
+import io.github.chirino.memory.grpc.v1.ReplayRequest;
+import io.github.chirino.memory.grpc.v1.ReplayResponse;
+import io.github.chirino.memory.grpc.v1.ResponseRecorderServiceGrpc;
 import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
 import io.github.chirino.memoryservice.grpc.MemoryServiceGrpcClients;
 import io.github.chirino.memoryservice.security.SecurityHelper;
@@ -74,22 +75,22 @@ public class GrpcResponseResumer implements ResponseResumer {
 
     @Override
     public Flux<String> replay(String conversationId, @Nullable String bearerToken) {
-        final long[] tokenCount = {0};
         return Flux.<String>create(
                         sink -> {
-                            ReplayResponseTokensRequest request =
-                                    ReplayResponseTokensRequest.newBuilder()
+                            ReplayRequest request =
+                                    ReplayRequest.newBuilder()
                                             .setConversationId(toByteString(conversationId))
                                             .build();
                             stub(bearerToken)
-                                    .replayResponseTokens(
+                                    .replay(
                                             request,
                                             new StreamObserver<>() {
                                                 @Override
-                                                public void onNext(
-                                                        ReplayResponseTokensResponse response) {
-                                                    tokenCount[0]++;
-                                                    sink.next(response.getToken());
+                                                public void onNext(ReplayResponse response) {
+                                                    String content = response.getContent();
+                                                    if (content != null && !content.isEmpty()) {
+                                                        sink.next(content);
+                                                    }
                                                 }
 
                                                 @Override
@@ -144,12 +145,11 @@ public class GrpcResponseResumer implements ResponseResumer {
         try {
             List<ByteString> byteStringIds =
                     conversationIds.stream().map(GrpcResponseResumer::toByteString).toList();
-            CheckConversationsRequest request =
-                    CheckConversationsRequest.newBuilder()
+            CheckRecordingsRequest request =
+                    CheckRecordingsRequest.newBuilder()
                             .addAllConversationIds(byteStringIds)
                             .build();
-            CheckConversationsResponse response =
-                    blockingStub(bearerToken).checkConversations(request);
+            CheckRecordingsResponse response = blockingStub(bearerToken).checkRecordings(request);
             List<String> resumable = new ArrayList<>();
             for (ByteString bs : response.getConversationIdsList()) {
                 String id = fromByteString(bs);
@@ -164,10 +164,10 @@ public class GrpcResponseResumer implements ResponseResumer {
                     || status.getCode() == Status.Code.NOT_FOUND) {
                 return List.of();
             }
-            LOG.warn("Failed to check conversations", e);
+            LOG.warn("Failed to check recordings", e);
             return List.of();
         } catch (Exception e) {
-            LOG.warn("Failed to check conversations", e);
+            LOG.warn("Failed to check recordings", e);
             return List.of();
         }
     }
@@ -178,7 +178,7 @@ public class GrpcResponseResumer implements ResponseResumer {
             IsEnabledResponse response = blockingStub(null).isEnabled(Empty.getDefaultInstance());
             return response.getEnabled();
         } catch (Exception e) {
-            LOG.warn("Failed to check if response resumer is enabled", e);
+            LOG.warn("Failed to check if response recorder is enabled", e);
             return false;
         }
     }
@@ -189,12 +189,12 @@ public class GrpcResponseResumer implements ResponseResumer {
             LOG.warn("Cancel request skipped: no conversationId provided");
             return;
         }
-        CancelResponseRequest request =
-                CancelResponseRequest.newBuilder()
+        CancelRecordRequest request =
+                CancelRecordRequest.newBuilder()
                         .setConversationId(toByteString(conversationId))
                         .build();
         try {
-            CancelResponseResponse response = blockingStub(bearerToken).cancelResponse(request);
+            CancelRecordResponse response = blockingStub(bearerToken).cancel(request);
             if (!response.getAccepted()) {
                 LOG.warn("Cancel request was not accepted for conversationId={}", conversationId);
             }
@@ -203,21 +203,21 @@ public class GrpcResponseResumer implements ResponseResumer {
         }
     }
 
-    private ResponseResumerServiceGrpc.ResponseResumerServiceStub stub(
+    private ResponseRecorderServiceGrpc.ResponseRecorderServiceStub stub(
             @Nullable String bearerToken) {
         Metadata metadata = buildMetadata(bearerToken);
         if (metadata.keys().isEmpty()) {
-            return stubs.responseResumerService();
+            return stubs.responseRecorderService();
         }
-        return stubs.responseResumerService()
+        return stubs.responseRecorderService()
                 .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
     }
 
-    private ResponseResumerServiceGrpc.ResponseResumerServiceBlockingStub blockingStub(
+    private ResponseRecorderServiceGrpc.ResponseRecorderServiceBlockingStub blockingStub(
             @Nullable String bearerToken) {
         Metadata metadata = buildMetadata(bearerToken);
-        ResponseResumerServiceGrpc.ResponseResumerServiceBlockingStub stub =
-                ResponseResumerServiceGrpc.newBlockingStub(channel);
+        ResponseRecorderServiceGrpc.ResponseRecorderServiceBlockingStub stub =
+                ResponseRecorderServiceGrpc.newBlockingStub(channel);
         if (!metadata.keys().isEmpty()) {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
         }
@@ -263,33 +263,35 @@ public class GrpcResponseResumer implements ResponseResumer {
 
     private final class GrpcResponseRecorder implements ResponseRecorder {
 
-        private final ResponseResumerServiceGrpc.ResponseResumerServiceStub service;
+        private final ResponseRecorderServiceGrpc.ResponseRecorderServiceStub service;
         private final String conversationId;
         private final Sinks.Many<ResponseCancelSignal> cancelSink =
                 Sinks.many().multicast().onBackpressureBuffer();
-        private final StreamObserver<StreamResponseTokenRequest> requestObserver;
+        private final StreamObserver<RecordRequest> requestObserver;
         private final AtomicBoolean firstMessage = new AtomicBoolean(true);
         private final AtomicBoolean completed = new AtomicBoolean(false);
 
         GrpcResponseRecorder(
-                ResponseResumerServiceGrpc.ResponseResumerServiceStub service,
+                ResponseRecorderServiceGrpc.ResponseRecorderServiceStub service,
                 String conversationId) {
             this.service = service;
             this.conversationId = conversationId;
             this.requestObserver =
-                    this.service.streamResponseTokens(
+                    this.service.record(
                             new StreamObserver<>() {
                                 @Override
-                                public void onNext(StreamResponseTokenResponse response) {
-                                    if (response.getCancelRequested()) {
+                                public void onNext(RecordResponse response) {
+                                    if (response.getStatus()
+                                            == RecordStatus.RECORD_STATUS_CANCELLED) {
                                         cancelSink.tryEmitNext(ResponseCancelSignal.CANCEL);
                                     }
+                                    cancelSink.tryEmitComplete();
                                 }
 
                                 @Override
                                 public void onError(Throwable t) {
                                     LOG.warn(
-                                            "Response stream error for conversationId={}",
+                                            "Record stream error for conversationId={}",
                                             conversationId,
                                             t);
                                     cancelSink.tryEmitError(t);
@@ -307,8 +309,7 @@ public class GrpcResponseResumer implements ResponseResumer {
             if (token == null || token.isBlank() || completed.get()) {
                 return;
             }
-            StreamResponseTokenRequest.Builder builder =
-                    StreamResponseTokenRequest.newBuilder().setToken(token);
+            RecordRequest.Builder builder = RecordRequest.newBuilder().setContent(token);
             if (firstMessage.compareAndSet(true, false)) {
                 builder.setConversationId(toByteString(conversationId));
             }
@@ -320,8 +321,7 @@ public class GrpcResponseResumer implements ResponseResumer {
             if (!completed.compareAndSet(false, true)) {
                 return;
             }
-            StreamResponseTokenRequest.Builder builder =
-                    StreamResponseTokenRequest.newBuilder().setComplete(true);
+            RecordRequest.Builder builder = RecordRequest.newBuilder().setComplete(true);
             if (firstMessage.compareAndSet(true, false)) {
                 builder.setConversationId(toByteString(conversationId));
             }

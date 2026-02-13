@@ -14,16 +14,16 @@ import org.eclipse.microprofile.config.spi.ConfigSource;
  *
  * <p>This source has ordinal 150 - higher than application.properties (100)
  * but lower than environment variables (300), so explicit env var overrides
- * like {@code QUARKUS_GRPC_CLIENTS_RESPONSERESUMER_HOST} still take precedence.
+ * like {@code QUARKUS_GRPC_CLIENTS_RESPONSERECORDER_HOST} still take precedence.
  *
  * @see GrpcFromUrlConfigSourceFactory
  * @see <a href="https://quarkus.io/guides/grpc-service-consumption">Quarkus gRPC Client Guide</a>
  */
 public class GrpcFromUrlConfigSource implements ConfigSource {
 
-    static final String GRPC_HOST = "quarkus.grpc.clients.responseresumer.host";
-    static final String GRPC_PORT = "quarkus.grpc.clients.responseresumer.port";
-    static final String GRPC_PLAIN_TEXT = "quarkus.grpc.clients.responseresumer.plain-text";
+    static final String GRPC_HOST = "quarkus.grpc.clients.responserecorder.host";
+    static final String GRPC_PORT = "quarkus.grpc.clients.responserecorder.port";
+    static final String GRPC_PLAIN_TEXT = "quarkus.grpc.clients.responserecorder.plain-text";
     static final Set<String> PROPERTY_NAMES = Set.of(GRPC_HOST, GRPC_PORT, GRPC_PLAIN_TEXT);
 
     private final Map<String, String> properties;

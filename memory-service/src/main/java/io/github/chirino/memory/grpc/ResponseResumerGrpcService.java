@@ -4,16 +4,17 @@ import static io.github.chirino.memory.grpc.UuidUtils.byteStringToString;
 
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.api.dto.ConversationDto;
-import io.github.chirino.memory.grpc.v1.CancelResponseRequest;
-import io.github.chirino.memory.grpc.v1.CancelResponseResponse;
-import io.github.chirino.memory.grpc.v1.CheckConversationsRequest;
-import io.github.chirino.memory.grpc.v1.CheckConversationsResponse;
+import io.github.chirino.memory.grpc.v1.CancelRecordRequest;
+import io.github.chirino.memory.grpc.v1.CancelRecordResponse;
+import io.github.chirino.memory.grpc.v1.CheckRecordingsRequest;
+import io.github.chirino.memory.grpc.v1.CheckRecordingsResponse;
 import io.github.chirino.memory.grpc.v1.IsEnabledResponse;
-import io.github.chirino.memory.grpc.v1.ReplayResponseTokensRequest;
-import io.github.chirino.memory.grpc.v1.ReplayResponseTokensResponse;
-import io.github.chirino.memory.grpc.v1.ResponseResumerService;
-import io.github.chirino.memory.grpc.v1.StreamResponseTokenRequest;
-import io.github.chirino.memory.grpc.v1.StreamResponseTokenResponse;
+import io.github.chirino.memory.grpc.v1.RecordRequest;
+import io.github.chirino.memory.grpc.v1.RecordResponse;
+import io.github.chirino.memory.grpc.v1.RecordStatus;
+import io.github.chirino.memory.grpc.v1.ReplayRequest;
+import io.github.chirino.memory.grpc.v1.ReplayResponse;
+import io.github.chirino.memory.grpc.v1.ResponseRecorderService;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.resumer.AdvertisedAddress;
 import io.github.chirino.memory.resumer.ResponseResumerBackend;
@@ -21,21 +22,18 @@ import io.github.chirino.memory.resumer.ResponseResumerRedirectException;
 import io.github.chirino.memory.resumer.ResponseResumerSelector;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
-import io.grpc.Metadata;
 import io.grpc.Status;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.Cancellable;
-import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.inject.Inject;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -44,13 +42,9 @@ import org.jboss.logging.Logger;
 @GrpcService
 @Blocking
 public class ResponseResumerGrpcService extends AbstractGrpcService
-        implements ResponseResumerService {
+        implements ResponseRecorderService {
 
     private static final Logger LOG = Logger.getLogger(ResponseResumerGrpcService.class);
-    private static final Metadata.Key<String> REDIRECT_HOST_HEADER =
-            Metadata.Key.of("x-resumer-redirect-host", Metadata.ASCII_STRING_MARSHALLER);
-    private static final Metadata.Key<String> REDIRECT_PORT_HEADER =
-            Metadata.Key.of("x-resumer-redirect-port", Metadata.ASCII_STRING_MARSHALLER);
 
     @Inject ResponseResumerSelector resumerSelector;
 
@@ -64,23 +58,21 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
     int httpPort;
 
     @Override
-    public Multi<StreamResponseTokenResponse> streamResponseTokens(
-            Multi<StreamResponseTokenRequest> tokenStream) {
+    public Uni<RecordResponse> record(Multi<RecordRequest> requestStream) {
         ResponseResumerBackend backend = resumerSelector.getBackend();
         if (!backend.enabled()) {
-            LOG.infof("Response resumer is not enabled");
-            return Multi.createFrom()
+            LOG.infof("Response recorder is not enabled");
+            return Uni.createFrom()
                     .item(
-                            StreamResponseTokenResponse.newBuilder()
-                                    .setSuccess(false)
-                                    .setErrorMessage("Response resumer is not enabled")
+                            RecordResponse.newBuilder()
+                                    .setStatus(RecordStatus.RECORD_STATUS_ERROR)
+                                    .setErrorMessage("Response recorder is not enabled")
                                     .build());
         }
 
-        return Multi.createFrom()
-                .<StreamResponseTokenResponse>emitter(
-                        emitter -> {
-                            AtomicLong currentOffset = new AtomicLong(0);
+        return Uni.createFrom()
+                .emitter(
+                        uniEmitter -> {
                             AtomicBoolean initialized = new AtomicBoolean(false);
                             AtomicBoolean completed = new AtomicBoolean(false);
                             AtomicReference<ResponseResumerBackend.ResponseRecorder> recorderRef =
@@ -91,7 +83,7 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                     new AtomicReference<>();
 
                             Cancellable tokenSubscription =
-                                    tokenStream
+                                    requestStream
                                             .subscribe()
                                             .with(
                                                     request -> {
@@ -103,8 +95,8 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                                                                     .getConversationId());
                                                             if (conversationId == null
                                                                     || conversationId.isBlank()) {
-                                                                failStream(
-                                                                        emitter,
+                                                                failRecord(
+                                                                        uniEmitter,
                                                                         tokenSubscriptionRef,
                                                                         cancelSubscription,
                                                                         recorderRef,
@@ -123,8 +115,8 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                                                         conversationId,
                                                                         AccessLevel.WRITER);
                                                             } catch (AccessDeniedException e) {
-                                                                failStream(
-                                                                        emitter,
+                                                                failRecord(
+                                                                        uniEmitter,
                                                                         tokenSubscriptionRef,
                                                                         cancelSubscription,
                                                                         recorderRef,
@@ -139,8 +131,8 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                                                                 .asRuntimeException());
                                                                 return;
                                                             } catch (ResourceNotFoundException e) {
-                                                                failStream(
-                                                                        emitter,
+                                                                failRecord(
+                                                                        uniEmitter,
                                                                         tokenSubscriptionRef,
                                                                         cancelSubscription,
                                                                         recorderRef,
@@ -189,22 +181,17 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                                                                             recorder
                                                                                                     .complete();
                                                                                         }
-                                                                                        emitter
-                                                                                                .emit(
-                                                                                                        StreamResponseTokenResponse
+                                                                                        uniEmitter
+                                                                                                .complete(
+                                                                                                        RecordResponse
                                                                                                                 .newBuilder()
-                                                                                                                .setSuccess(
-                                                                                                                        true)
-                                                                                                                .setCurrentOffset(
-                                                                                                                        currentOffset
-                                                                                                                                .get())
-                                                                                                                .setCancelRequested(
-                                                                                                                        true)
+                                                                                                                .setStatus(
+                                                                                                                        RecordStatus
+                                                                                                                                .RECORD_STATUS_CANCELLED)
                                                                                                                 .build());
-                                                                                        emitter
-                                                                                                .complete();
                                                                                     },
-                                                                                    emitter::fail);
+                                                                                    uniEmitter
+                                                                                            ::fail);
                                                             cancelSubscription.set(cancelWatch);
                                                         }
 
@@ -213,29 +200,30 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                                         if (recorder == null) {
                                                             return;
                                                         }
-                                                        String token = request.getToken();
-                                                        if (token != null && !token.isEmpty()) {
-                                                            recorder.record(token);
-                                                            currentOffset.addAndGet(token.length());
+                                                        String content = request.getContent();
+                                                        if (content != null && !content.isEmpty()) {
+                                                            recorder.record(content);
                                                         }
                                                         if (request.getComplete()
                                                                 && completed.compareAndSet(
                                                                         false, true)) {
                                                             recorder.complete();
-                                                            emitter.emit(
-                                                                    StreamResponseTokenResponse
-                                                                            .newBuilder()
-                                                                            .setSuccess(true)
-                                                                            .setCurrentOffset(
-                                                                                    currentOffset
-                                                                                            .get())
+                                                            Cancellable cancelHandle =
+                                                                    cancelSubscription.get();
+                                                            if (cancelHandle != null) {
+                                                                cancelHandle.cancel();
+                                                            }
+                                                            uniEmitter.complete(
+                                                                    RecordResponse.newBuilder()
+                                                                            .setStatus(
+                                                                                    RecordStatus
+                                                                                            .RECORD_STATUS_SUCCESS)
                                                                             .build());
-                                                            emitter.complete();
                                                         }
                                                     },
                                                     failure ->
-                                                            failStream(
-                                                                    emitter,
+                                                            failRecord(
+                                                                    uniEmitter,
                                                                     tokenSubscriptionRef,
                                                                     cancelSubscription,
                                                                     recorderRef,
@@ -248,53 +236,27 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                                             if (recorder != null) {
                                                                 recorder.complete();
                                                             }
-                                                            emitter.emit(
-                                                                    StreamResponseTokenResponse
-                                                                            .newBuilder()
-                                                                            .setSuccess(true)
-                                                                            .setCurrentOffset(
-                                                                                    currentOffset
-                                                                                            .get())
+                                                            Cancellable cancelHandle =
+                                                                    cancelSubscription.get();
+                                                            if (cancelHandle != null) {
+                                                                cancelHandle.cancel();
+                                                            }
+                                                            uniEmitter.complete(
+                                                                    RecordResponse.newBuilder()
+                                                                            .setStatus(
+                                                                                    RecordStatus
+                                                                                            .RECORD_STATUS_SUCCESS)
                                                                             .build());
-                                                            emitter.complete();
                                                         }
                                                     });
 
                             tokenSubscriptionRef.set(tokenSubscription);
-
-                            emitter.onTermination(
-                                    () -> {
-                                        tokenSubscription.cancel();
-                                        Cancellable cancelWatch = cancelSubscription.get();
-                                        if (cancelWatch != null) {
-                                            cancelWatch.cancel();
-                                        }
-                                    });
-                        })
-                .onFailure()
-                .transform(
-                        failure -> {
-                            Throwable rootCause =
-                                    failure.getCause() != null ? failure.getCause() : failure;
-                            if (rootCause instanceof java.util.NoSuchElementException) {
-                                return Status.INVALID_ARGUMENT
-                                        .withDescription("At least one request message is required")
-                                        .asRuntimeException();
-                            }
-                            if (failure instanceof io.grpc.StatusRuntimeException) {
-                                return failure;
-                            }
-                            LOG.warnf(failure, "Failed to stream response tokens");
-                            return Status.INTERNAL
-                                    .withDescription(
-                                            "Failed to stream response tokens: "
-                                                    + failure.getMessage())
-                                    .asRuntimeException();
                         });
     }
 
-    private static void failStream(
-            MultiEmitter<? super StreamResponseTokenResponse> emitter,
+    @SuppressWarnings("unchecked")
+    private static void failRecord(
+            io.smallrye.mutiny.subscription.UniEmitter<? super RecordResponse> uniEmitter,
             AtomicReference<Cancellable> tokenSubscriptionRef,
             AtomicReference<Cancellable> cancelSubscription,
             AtomicReference<ResponseResumerBackend.ResponseRecorder> recorderRef,
@@ -315,15 +277,14 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
         if (recorder != null) {
             recorder.complete();
         }
-        emitter.fail(failure);
+        uniEmitter.fail(failure);
     }
 
     @Override
-    public Multi<ReplayResponseTokensResponse> replayResponseTokens(
-            ReplayResponseTokensRequest request) {
+    public Multi<ReplayResponse> replay(ReplayRequest request) {
         ResponseResumerBackend backend = resumerSelector.getBackend();
         if (!backend.enabled()) {
-            LOG.infof("Response resumer is not enabled");
+            LOG.infof("Response recorder is not enabled");
             return Multi.createFrom().empty();
         }
 
@@ -354,47 +315,49 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                                     .asRuntimeException());
         }
 
-        AtomicLong currentOffset = new AtomicLong(0);
         String finalConversationId = conversationId;
 
         return backend.replay(finalConversationId, resolveAdvertisedAddress())
                 .onItem()
-                .transform(
-                        token -> {
-                            long offset = currentOffset.addAndGet(token.length());
-                            return ReplayResponseTokensResponse.newBuilder()
-                                    .setToken(token)
-                                    .setOffset(offset)
-                                    .build();
-                        })
+                .transform(content -> ReplayResponse.newBuilder().setContent(content).build())
                 .onFailure()
-                .transform(
+                .recoverWithMulti(
                         e -> {
                             if (e instanceof ResponseResumerRedirectException redirect) {
-                                return toRedirectStatus(redirect);
+                                AdvertisedAddress target = redirect.target();
+                                String address = target != null ? target.authority() : null;
+                                return Multi.createFrom()
+                                        .item(
+                                                ReplayResponse.newBuilder()
+                                                        .setRedirectAddress(
+                                                                address != null ? address : "")
+                                                        .build());
                             }
                             if (e instanceof io.grpc.StatusRuntimeException) {
-                                return e;
+                                return Multi.createFrom().failure(e);
                             }
                             LOG.warnf(
                                     e,
                                     "Failed to replay response tokens for conversation %s",
                                     finalConversationId);
-                            return Status.INTERNAL
-                                    .withDescription(
-                                            "Failed to replay response tokens: " + e.getMessage())
-                                    .asRuntimeException();
+                            return Multi.createFrom()
+                                    .failure(
+                                            Status.INTERNAL
+                                                    .withDescription(
+                                                            "Failed to replay response tokens: "
+                                                                    + e.getMessage())
+                                                    .asRuntimeException());
                         });
     }
 
     @Override
-    public Uni<CancelResponseResponse> cancelResponse(CancelResponseRequest request) {
+    public Uni<CancelRecordResponse> cancel(CancelRecordRequest request) {
         ResponseResumerBackend backend = resumerSelector.getBackend();
         if (!backend.enabled()) {
             return Uni.createFrom()
                     .failure(
                             Status.FAILED_PRECONDITION
-                                    .withDescription("Response resumer is not enabled")
+                                    .withDescription("Response recorder is not enabled")
                                     .asRuntimeException());
         }
 
@@ -427,11 +390,18 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
         try {
             backend.requestCancel(conversationId, resolveAdvertisedAddress());
         } catch (ResponseResumerRedirectException redirect) {
-            return Uni.createFrom().failure(toRedirectStatus(redirect));
+            AdvertisedAddress target = redirect.target();
+            String address = target != null ? target.authority() : "";
+            return Uni.createFrom()
+                    .item(
+                            CancelRecordResponse.newBuilder()
+                                    .setAccepted(false)
+                                    .setRedirectAddress(address)
+                                    .build());
         }
         waitForResponseCompletion(conversationId, backend, Duration.ofSeconds(30));
 
-        return Uni.createFrom().item(CancelResponseResponse.newBuilder().setAccepted(true).build());
+        return Uni.createFrom().item(CancelRecordResponse.newBuilder().setAccepted(true).build());
     }
 
     @Override
@@ -442,11 +412,11 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
     }
 
     @Override
-    public Uni<CheckConversationsResponse> checkConversations(CheckConversationsRequest request) {
+    public Uni<CheckRecordingsResponse> checkRecordings(CheckRecordingsRequest request) {
         ResponseResumerBackend backend = resumerSelector.getBackend();
         if (!backend.enabled()) {
-            LOG.infof("Response resumer is not enabled");
-            return Uni.createFrom().item(CheckConversationsResponse.newBuilder().build());
+            LOG.infof("Response recorder is not enabled");
+            return Uni.createFrom().item(CheckRecordingsResponse.newBuilder().build());
         }
 
         List<String> conversationIds =
@@ -454,7 +424,7 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
                         .map(UuidUtils::byteStringToString)
                         .collect(Collectors.toList());
         if (conversationIds.isEmpty()) {
-            return Uni.createFrom().item(CheckConversationsResponse.newBuilder().build());
+            return Uni.createFrom().item(CheckRecordingsResponse.newBuilder().build());
         }
 
         // Filter conversations the user has access to
@@ -474,7 +444,7 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
 
         return Uni.createFrom()
                 .item(
-                        CheckConversationsResponse.newBuilder()
+                        CheckRecordingsResponse.newBuilder()
                                 .addAllConversationIds(
                                         inProgress.stream()
                                                 .map(UuidUtils::stringToByteString)
@@ -560,17 +530,5 @@ public class ResponseResumerGrpcService extends AbstractGrpcService
         } catch (Exception e) {
             return "localhost";
         }
-    }
-
-    private static Throwable toRedirectStatus(ResponseResumerRedirectException redirect) {
-        Metadata trailers = new Metadata();
-        AdvertisedAddress target = redirect.target();
-        if (target != null) {
-            trailers.put(REDIRECT_HOST_HEADER, target.host());
-            trailers.put(REDIRECT_PORT_HEADER, Integer.toString(target.port()));
-        }
-        return Status.UNAVAILABLE
-                .withDescription("Response resumer redirect")
-                .asRuntimeException(trailers);
     }
 }

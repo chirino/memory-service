@@ -419,68 +419,73 @@ service SearchService {
   rpc ListUnindexedEntries(ListUnindexedEntriesRequest) returns (ListUnindexedEntriesResponse);
 }
 
-service ResponseResumerService {
-  // Stream response tokens for a conversation
-  rpc StreamResponseTokens(stream StreamResponseTokenRequest) returns (stream StreamResponseTokenResponse);
+service ResponseRecorderService {
+  // Record response content for a conversation (client streaming, unary response)
+  rpc Record(stream RecordRequest) returns (RecordResponse);
 
-  // Replay cached response tokens from a resume position
-  rpc ReplayResponseTokens(ReplayResponseTokensRequest) returns (stream ReplayResponseTokensResponse);
+  // Replay a recording of a conversation
+  rpc Replay(ReplayRequest) returns (stream ReplayResponse);
 
-  // Cancel an in-progress response
-  rpc CancelResponse(CancelResponseRequest) returns (CancelResponseResponse);
+  // Cancel an in-progress recording
+  rpc Cancel(CancelRecordRequest) returns (CancelRecordResponse);
 
-  // Check if response resumer is enabled
+  // Check if response recorder is enabled
   rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
 
-  // Check which conversations have responses in progress
-  rpc CheckConversations(CheckConversationsRequest) returns (CheckConversationsResponse);
+  // Check which conversations have active recordings
+  rpc CheckRecordings(CheckRecordingsRequest) returns (CheckRecordingsResponse);
 }
 
-message StreamResponseTokenRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary, only in first message)
+enum RecordStatus {
+  RECORD_STATUS_UNSPECIFIED = 0;
+  RECORD_STATUS_SUCCESS = 1;
+  RECORD_STATUS_CANCELLED = 2;
+  RECORD_STATUS_ERROR = 3;
+}
+
+message RecordRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary, required in first message)
   bytes conversation_id = 1;
-  string token = 2;            // Token content
+  string content = 2;          // Content chunk
   bool complete = 3;           // Set to true in final message
 }
 
-message StreamResponseTokenResponse {
-  bool success = 1;
-  string error_message = 2;    // Only set if success=false
-  int64 current_offset = 3;    // Current cumulative byte offset
-  bool cancel_requested = 4;   // True if server requests cancellation
+message RecordResponse {
+  RecordStatus status = 1;
+  string error_message = 2;    // Only set when status = ERROR
 }
 
-message ReplayResponseTokensRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
-  // Field 2 (resume_position) removed - always replays from beginning
-}
-
-message ReplayResponseTokensResponse {
-  string token = 1;
-  int64 offset = 2;            // Cumulative byte offset after this token
-}
-
-message CancelResponseRequest {
+message ReplayRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
 }
 
-message CancelResponseResponse {
+message ReplayResponse {
+  string content = 1;              // Content chunk
+  string redirect_address = 2;    // Set when redirect is needed (format: "host:port")
+}
+
+message CancelRecordRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+}
+
+message CancelRecordResponse {
   bool accepted = 1;
+  string redirect_address = 2;    // Set when redirect is needed (format: "host:port")
 }
 
 message IsEnabledResponse {
   bool enabled = 1;
 }
 
-message CheckConversationsRequest {
+message CheckRecordingsRequest {
   // Conversation identifiers (UUID as 16-byte big-endian binary each)
   repeated bytes conversation_ids = 1;
 }
 
-message CheckConversationsResponse {
-  // Conversation IDs with responses in progress (UUID as 16-byte big-endian binary each)
+message CheckRecordingsResponse {
+  // Conversation IDs with active recordings (UUID as 16-byte big-endian binary each)
   repeated bytes conversation_ids = 1;
 }
 
