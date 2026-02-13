@@ -381,11 +381,19 @@ function ConversationsUIMessageRow({
                         </div>
                       )}
                       {imageAtts.length > 0 && (
-                        <div className="mb-2 flex flex-wrap gap-2">
-                          {imageAtts.map((att, i) => (
-                            <ImageAttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
-                          ))}
-                        </div>
+                        isUser ? (
+                          <div className="mb-2 flex flex-wrap gap-1.5">
+                            {imageAtts.map((att, i) => (
+                              <AttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mb-2 flex flex-wrap gap-2">
+                            {imageAtts.map((att, i) => (
+                              <ImageAttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
+                            ))}
+                          </div>
+                        )
                       )}
                     </>
                   );
@@ -651,12 +659,14 @@ function AttachmentChip({
 
   return (
     <div
-      className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs ${
+      className={`group relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs ${
         isError ? "border-terracotta/40 bg-terracotta/5 text-terracotta" : "border-stone/20 bg-mist text-ink"
       }`}
     >
       <FileIcon contentType={attachment.contentType} className="h-3.5 w-3.5 shrink-0 opacity-60" />
-      <span className="max-w-[120px] truncate">{attachment.name}</span>
+      <span className="max-w-[120px] truncate group-hover:max-w-none">
+        {isError && attachment.error ? attachment.error : attachment.name}
+      </span>
       <button
         type="button"
         onClick={() => onRemove(attachment.localId)}

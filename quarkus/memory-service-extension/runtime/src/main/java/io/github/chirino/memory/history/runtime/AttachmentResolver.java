@@ -156,6 +156,26 @@ public class AttachmentResolver {
         return Paths.get(System.getProperty("java.io.tmpdir"));
     }
 
+    /**
+     * Returns true if the given content type is supported for LLM delivery.
+     */
+    public static boolean isSupportedContentType(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        return contentType.startsWith("image/")
+                || contentType.startsWith("audio/")
+                || contentType.startsWith("video/")
+                || contentType.equals("application/pdf");
+    }
+
+    /**
+     * Returns a human-readable description of supported content types for error messages.
+     */
+    public static String supportedContentTypesDescription() {
+        return "images (image/*), audio (audio/*), video (video/*), and PDF (application/pdf)";
+    }
+
     static Content toContentFromUrl(String contentType, String url) {
         if (contentType == null) {
             // Default to image for URL-based content (most common case for S3 redirects)
