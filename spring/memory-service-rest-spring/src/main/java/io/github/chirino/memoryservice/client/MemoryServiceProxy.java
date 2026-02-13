@@ -10,12 +10,18 @@ import io.github.chirino.memoryservice.client.model.CreateOwnershipTransferReque
 import io.github.chirino.memoryservice.client.model.SearchConversationsRequest;
 import io.github.chirino.memoryservice.client.model.ShareConversationRequest;
 import io.github.chirino.memoryservice.client.model.UpdateConversationMembershipRequest;
+import java.io.IOException;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -30,9 +36,12 @@ import org.springframework.security.oauth2.core.AbstractOAuth2Token;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Spring helper that mirrors the Quarkus {@code MemoryServiceProxy}, wrapping the generated REST
@@ -52,8 +61,6 @@ public class MemoryServiceProxy {
     private final WebClient.Builder webClientBuilder;
     private final OAuth2AuthorizedClientService authorizedClientService;
 
-    private volatile WebClient attachmentWebClient;
-
     public MemoryServiceProxy(
             MemoryServiceClientProperties properties,
             WebClient.Builder webClientBuilder,
@@ -63,11 +70,57 @@ public class MemoryServiceProxy {
         this.authorizedClientService = authorizedClientService;
     }
 
-    private WebClient getAttachmentWebClient() {
-        if (attachmentWebClient == null) {
-            attachmentWebClient = webClientBuilder.baseUrl(properties.getBaseUrl()).build();
+    private WebClient createWebClient() {
+        var builder = MemoryServiceClients.createWebClient(properties, webClientBuilder, null);
+        builder.baseUrl(properties.getBaseUrl());
+        return builder.build();
+    }
+
+    /**
+     * Streams a reactive body flux into an {@link InputStreamResource} suitable for Spring MVC.
+     * Uses a pipe so data flows from the WebClient's Netty I/O thread (via a bounded-elastic
+     * scheduler to avoid blocking the event loop) to the servlet thread without buffering the
+     * entire response in memory.
+     */
+    private ResponseEntity<?> streamBinaryResponse(ClientResponse response, String... headerNames) {
+        try {
+            PipedOutputStream pos = new PipedOutputStream();
+            PipedInputStream pis = new PipedInputStream(pos, 65536);
+
+            Flux<DataBuffer> bodyFlux = response.bodyToFlux(DataBuffer.class);
+            bodyFlux.publishOn(Schedulers.boundedElastic())
+                    .doOnNext(
+                            dataBuffer -> {
+                                try {
+                                    byte[] bytes = new byte[dataBuffer.readableByteCount()];
+                                    dataBuffer.read(bytes);
+                                    pos.write(bytes);
+                                } catch (IOException e) {
+                                    throw new UncheckedIOException(e);
+                                } finally {
+                                    DataBufferUtils.release(dataBuffer);
+                                }
+                            })
+                    .doFinally(
+                            signal -> {
+                                try {
+                                    pos.close();
+                                } catch (IOException ignored) {
+                                }
+                            })
+                    .subscribe();
+
+            var builder = ResponseEntity.ok();
+            for (String name : headerNames) {
+                response.headers().header(name).stream()
+                        .findFirst()
+                        .ifPresent(value -> builder.header(name, value));
+            }
+            return builder.body(new InputStreamResource(pis));
+        } catch (IOException e) {
+            LOG.error("Failed to create streaming pipe", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-        return attachmentWebClient;
     }
 
     public ResponseEntity<?> listConversations(
@@ -217,7 +270,7 @@ public class MemoryServiceProxy {
             String bearer = resolveBearerToken(null);
 
             WebClient.RequestBodySpec req =
-                    getAttachmentWebClient()
+                    createWebClient()
                             .post()
                             .uri("/v1/attachments")
                             .contentType(MediaType.APPLICATION_JSON);
@@ -265,9 +318,8 @@ public class MemoryServiceProxy {
     public ResponseEntity<?> uploadAttachment(MultipartFile file, String expiresIn) {
         try {
             String bearer = resolveBearerToken(null);
-
             WebClient.RequestBodySpec req =
-                    getAttachmentWebClient()
+                    createWebClient()
                             .post()
                             .uri(
                                     uriBuilder -> {
@@ -330,12 +382,13 @@ public class MemoryServiceProxy {
 
     /**
      * Retrieves an attachment by ID. Handles 302 redirects (e.g. S3 presigned URLs).
+     * Binary content is streamed through a pipe without buffering in memory.
      */
     public ResponseEntity<?> retrieveAttachment(String id) {
         String bearer = resolveBearerToken(null);
 
         var upstream =
-                getAttachmentWebClient()
+                createWebClient()
                         .get()
                         .uri("/v1/attachments/{id}", id)
                         .headers(
@@ -357,46 +410,25 @@ public class MemoryServiceProxy {
                                                         .stream()
                                                         .findFirst()
                                                         .orElse("");
-                                        return Mono.just(
-                                                ResponseEntity.status(HttpStatus.FOUND)
-                                                        .header(HttpHeaders.LOCATION, location)
-                                                        .<Object>build());
+                                        return response.releaseBody()
+                                                .thenReturn(
+                                                        (Object)
+                                                                ResponseEntity.status(
+                                                                                HttpStatus.FOUND)
+                                                                        .header(
+                                                                                HttpHeaders
+                                                                                        .LOCATION,
+                                                                                location)
+                                                                        .build());
                                     }
 
                                     if (status == HttpStatus.OK) {
-                                        return response.bodyToMono(byte[].class)
-                                                .defaultIfEmpty(new byte[0])
-                                                .map(
-                                                        bytes -> {
-                                                            var builder = ResponseEntity.ok();
-                                                            response
-                                                                    .headers()
-                                                                    .header(
-                                                                            HttpHeaders
-                                                                                    .CONTENT_TYPE)
-                                                                    .stream()
-                                                                    .findFirst()
-                                                                    .ifPresent(
-                                                                            ct ->
-                                                                                    builder.header(
-                                                                                            HttpHeaders
-                                                                                                    .CONTENT_TYPE,
-                                                                                            ct));
-                                                            response
-                                                                    .headers()
-                                                                    .header(
-                                                                            HttpHeaders
-                                                                                    .CONTENT_DISPOSITION)
-                                                                    .stream()
-                                                                    .findFirst()
-                                                                    .ifPresent(
-                                                                            cd ->
-                                                                                    builder.header(
-                                                                                            HttpHeaders
-                                                                                                    .CONTENT_DISPOSITION,
-                                                                                            cd));
-                                                            return (Object) builder.body(bytes);
-                                                        });
+                                        return Mono.just(
+                                                (Object)
+                                                        streamBinaryResponse(
+                                                                response,
+                                                                HttpHeaders.CONTENT_TYPE,
+                                                                HttpHeaders.CONTENT_DISPOSITION));
                                     }
 
                                     return response.bodyToMono(String.class)
@@ -426,7 +458,7 @@ public class MemoryServiceProxy {
         String bearer = resolveBearerToken(null);
 
         var upstream =
-                getAttachmentWebClient()
+                createWebClient()
                         .get()
                         .uri("/v1/attachments/{id}/download-url", id)
                         .headers(
@@ -464,7 +496,7 @@ public class MemoryServiceProxy {
         String bearer = resolveBearerToken(null);
 
         var upstream =
-                getAttachmentWebClient()
+                createWebClient()
                         .delete()
                         .uri("/v1/attachments/{id}", id)
                         .headers(
@@ -499,10 +531,11 @@ public class MemoryServiceProxy {
 
     /**
      * Downloads an attachment using a signed token. No authentication required.
+     * Binary content is streamed through a pipe without buffering in memory.
      */
     public ResponseEntity<?> downloadAttachmentByToken(String token, String filename) {
         var upstream =
-                getAttachmentWebClient()
+                createWebClient()
                         .get()
                         .uri("/v1/attachments/download/{token}/{filename}", token, filename)
                         .exchangeToMono(
@@ -511,52 +544,13 @@ public class MemoryServiceProxy {
                                             HttpStatus.resolve(response.statusCode().value());
 
                                     if (status == HttpStatus.OK) {
-                                        return response.bodyToMono(byte[].class)
-                                                .defaultIfEmpty(new byte[0])
-                                                .map(
-                                                        bytes -> {
-                                                            var builder = ResponseEntity.ok();
-                                                            response
-                                                                    .headers()
-                                                                    .header(
-                                                                            HttpHeaders
-                                                                                    .CONTENT_TYPE)
-                                                                    .stream()
-                                                                    .findFirst()
-                                                                    .ifPresent(
-                                                                            ct ->
-                                                                                    builder.header(
-                                                                                            HttpHeaders
-                                                                                                    .CONTENT_TYPE,
-                                                                                            ct));
-                                                            response
-                                                                    .headers()
-                                                                    .header(
-                                                                            HttpHeaders
-                                                                                    .CONTENT_DISPOSITION)
-                                                                    .stream()
-                                                                    .findFirst()
-                                                                    .ifPresent(
-                                                                            cd ->
-                                                                                    builder.header(
-                                                                                            HttpHeaders
-                                                                                                    .CONTENT_DISPOSITION,
-                                                                                            cd));
-                                                            response
-                                                                    .headers()
-                                                                    .header(
-                                                                            HttpHeaders
-                                                                                    .CACHE_CONTROL)
-                                                                    .stream()
-                                                                    .findFirst()
-                                                                    .ifPresent(
-                                                                            cc ->
-                                                                                    builder.header(
-                                                                                            HttpHeaders
-                                                                                                    .CACHE_CONTROL,
-                                                                                            cc));
-                                                            return (Object) builder.body(bytes);
-                                                        });
+                                        return Mono.just(
+                                                (Object)
+                                                        streamBinaryResponse(
+                                                                response,
+                                                                HttpHeaders.CONTENT_TYPE,
+                                                                HttpHeaders.CONTENT_DISPOSITION,
+                                                                HttpHeaders.CACHE_CONTROL));
                                     }
 
                                     return response.bodyToMono(String.class)

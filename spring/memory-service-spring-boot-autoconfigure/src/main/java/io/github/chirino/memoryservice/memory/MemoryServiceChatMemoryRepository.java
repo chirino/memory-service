@@ -244,7 +244,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
     private Message createMessage(String role, String text) {
         MessageType messageType;
         try {
-            messageType = MessageType.fromValue(role);
+            messageType = MessageType.fromValue(role.toLowerCase());
         } catch (IllegalArgumentException e) {
             LOG.warn("Unknown message role: {}", role);
             return null;

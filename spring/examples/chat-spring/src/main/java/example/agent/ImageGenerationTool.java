@@ -1,6 +1,9 @@
 package example.agent;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.image.ImageModel;
@@ -22,9 +25,21 @@ public class ImageGenerationTool {
     private final ImageModel imageModel;
     private final AttachmentClient attachmentClient;
 
+    /**
+     * Per-request list where created attachments are collected so the history advisor can link them
+     * to the AI response entry. Set by the controller before each request.
+     */
+    private final AtomicReference<List<Map<String, Object>>> toolAttachments =
+            new AtomicReference<>();
+
     public ImageGenerationTool(ImageModel imageModel, AttachmentClient attachmentClient) {
         this.imageModel = imageModel;
         this.attachmentClient = attachmentClient;
+    }
+
+    /** Set the per-request attachment collector. Call this on the servlet thread before streaming. */
+    public void setToolAttachments(List<Map<String, Object>> attachments) {
+        toolAttachments.set(attachments);
     }
 
     @Tool(
@@ -60,11 +75,25 @@ public class ImageGenerationTool {
                 return "{\"error\": \"Failed to create attachment from generated image\"}";
             }
 
-            // Return JSON with attachment info so the recording layer can link it.
+            String attachmentId = String.valueOf(attachment.get("id"));
+
+            // Report the attachment to the per-request collector so the history advisor
+            // can link it to the AI response entry.
+            List<Map<String, Object>> collector = toolAttachments.get();
+            if (collector != null) {
+                Map<String, Object> meta = new LinkedHashMap<>();
+                meta.put("attachmentId", attachmentId);
+                meta.put("contentType", "image/png");
+                meta.put("name", name);
+                meta.put("href", "/v1/attachments/" + attachmentId);
+                collector.add(meta);
+            }
+
+            // Return JSON with attachment info so the LLM knows the image was stored.
             // Intentionally omit href so the LLM doesn't embed image URLs in its response.
             return String.format(
                     "{\"attachmentId\": \"%s\", \"contentType\": \"image/png\", \"name\": \"%s\"}",
-                    attachment.get("id"), escapeJson(name));
+                    attachmentId, escapeJson(name));
         } catch (Exception e) {
             LOG.error("Failed to generate image for prompt: {}", prompt, e);
             return "{\"error\": \"Image generation failed: " + escapeJson(e.getMessage()) + "\"}";

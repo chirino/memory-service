@@ -2,6 +2,7 @@ package io.github.chirino.memoryservice.history;
 
 import io.github.chirino.memoryservice.history.ResponseResumer.ResponseRecorder;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,13 +49,28 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
     private final ResponseResumer responseResumer;
     private final String bearerToken;
 
+    /**
+     * Thread-safe list where tools can deposit attachment metadata during execution. The advisor
+     * passes these to {@link ConversationStore#appendAgentMessage} when recording the AI response.
+     */
+    private final List<Map<String, Object>> toolAttachments;
+
     public ConversationHistoryStreamAdvisor(
             ConversationStore conversationStore,
             ResponseResumer responseResumer,
             @Nullable String bearerToken) {
+        this(conversationStore, responseResumer, bearerToken, Collections.emptyList());
+    }
+
+    public ConversationHistoryStreamAdvisor(
+            ConversationStore conversationStore,
+            ResponseResumer responseResumer,
+            @Nullable String bearerToken,
+            List<Map<String, Object>> toolAttachments) {
         this.conversationStore = conversationStore;
         this.responseResumer = responseResumer;
         this.bearerToken = bearerToken;
+        this.toolAttachments = toolAttachments;
     }
 
     @Override
@@ -90,7 +106,8 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
             return;
         }
         try {
-            conversationStore.appendAgentMessage(conversationId, content, bearerToken);
+            conversationStore.appendAgentMessage(
+                    conversationId, content, toolAttachments, bearerToken);
             conversationStore.markCompleted(conversationId);
         } catch (Exception e) {
             LOG.debug(
@@ -216,6 +233,7 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
                                                             conversationStore.appendAgentMessage(
                                                                     conversationId,
                                                                     buffer.toString(),
+                                                                    toolAttachments,
                                                                     bearerToken);
                                                             conversationStore.markCompleted(
                                                                     conversationId);
@@ -288,7 +306,8 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
             return;
         }
         try {
-            conversationStore.appendAgentMessage(conversationId, buffer.toString(), bearerToken);
+            conversationStore.appendAgentMessage(
+                    conversationId, buffer.toString(), toolAttachments, bearerToken);
             conversationStore.markCompleted(conversationId);
         } catch (Exception e) {
             LOG.debug("Failed to append final agent message", e);

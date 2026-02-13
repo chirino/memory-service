@@ -42,6 +42,12 @@ Run the chat-quarkus in dev mode, but firsts compile it's dependencies..
     ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
 ```
 
+## Running memeory-service and chat-string /w docker compose 
+
+```bash
+./mvnw -DskipTests -am -pl :memory-service-spring-boot-docker-compose-starter clean install && ./mvnw -pl :chat-spring spring-boot:run
+```
+
 ###
 
 Testing the APIs with curl

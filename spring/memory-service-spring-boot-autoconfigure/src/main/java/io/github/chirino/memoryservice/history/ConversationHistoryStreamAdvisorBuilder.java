@@ -1,5 +1,7 @@
 package io.github.chirino.memoryservice.history;
 
+import java.util.List;
+import java.util.Map;
 import org.springframework.lang.Nullable;
 
 /**
@@ -32,5 +34,21 @@ public class ConversationHistoryStreamAdvisorBuilder {
     public ConversationHistoryStreamAdvisor build(@Nullable String bearerToken) {
         return new ConversationHistoryStreamAdvisor(
                 conversationStore, responseResumer, bearerToken);
+    }
+
+    /**
+     * Builds a new {@link ConversationHistoryStreamAdvisor} with the given bearer token and a
+     * shared list for collecting tool-produced attachments.
+     *
+     * @param bearerToken the OAuth2 bearer token to use for memory-service API calls, or null if
+     *     not available
+     * @param toolAttachments a thread-safe list that tools populate with attachment metadata during
+     *     execution; the advisor links these to the AI response entry
+     * @return a new advisor instance configured with the token and attachment collector
+     */
+    public ConversationHistoryStreamAdvisor build(
+            @Nullable String bearerToken, List<Map<String, Object>> toolAttachments) {
+        return new ConversationHistoryStreamAdvisor(
+                conversationStore, responseResumer, bearerToken, toolAttachments);
     }
 }
