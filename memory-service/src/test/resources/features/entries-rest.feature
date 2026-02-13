@@ -77,6 +77,7 @@ Feature: Entries REST API
     {
       "id": "${response.body.id}",
       "conversationId": "${conversationId}",
+      "userId": "alice",
       "channel": "memory",
       "epoch": 1,
       "contentType": "test.v1",
@@ -540,6 +541,65 @@ Feature: Entries REST API
     """
     Then the response status should be 400
     And the response body field "details.message" should be "History channel 'attachments' field must be an array"
+
+  Scenario: Append entry with mismatched userId is rejected
+    Given I am authenticated as user "alice"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "userId": "bob",
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"text": "Impersonation attempt", "role": "USER"}]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "details.message" should be "userId does not match the authenticated user"
+
+  Scenario: Append entry without userId defaults to authenticated user
+    Given I am authenticated as user "alice"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"text": "Hello from Alice", "role": "USER"}]
+    }
+    """
+    Then the response status should be 201
+    And the response body field "userId" should be "alice"
+
+  Scenario: Append entry with matching userId is accepted
+    Given I am authenticated as user "alice"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "userId": "alice",
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"text": "Hello from Alice", "role": "USER"}]
+    }
+    """
+    Then the response status should be 201
+    And the response body field "userId" should be "alice"
+
+  Scenario: Sync entry with mismatched userId is rejected
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I sync memory entries with request:
+    """
+    {
+      "userId": "bob",
+      "channel": "MEMORY",
+      "contentType": "test.v1",
+      "content": [{"type": "text", "text": "Impersonation attempt"}]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "details.message" should be "userId does not match the authenticated user"
 
   # Test that history entries don't get epochs (they should have null epoch)
   Scenario: History entries have null epoch
