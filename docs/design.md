@@ -341,7 +341,7 @@ The gRPC API (`memory_service.proto`) provides equivalent functionality to the R
 - **OwnershipTransfersService**: `ListOwnershipTransfers`, `GetOwnershipTransfer`, `CreateOwnershipTransfer`, `AcceptOwnershipTransfer`, `DeleteOwnershipTransfer`
 - **EntriesService**: `ListEntries`, `AppendEntry`, `SyncEntries`
 - **SearchService**: `SearchConversations`, `IndexConversations`, `ListUnindexedEntries`
-- **ResponseResumerService**: `StreamResponseTokens`, `ReplayResponseTokens`, `CancelResponse`, `IsEnabled`, `CheckConversations`
+- **ResponseRecorderService**: `Record`, `Replay`, `Cancel`, `IsEnabled`, `CheckRecordings`
 
 UUID fields are represented as 16-byte big-endian binary values in protobuf messages.
 

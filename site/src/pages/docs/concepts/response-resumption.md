@@ -8,7 +8,7 @@ Response resumption lets users reconnect after a disconnect and pick up a stream
 
 ## How It Works
 
-When an agent generates a streaming response, it sends each token to the Memory Service via the `ResponseResumerService` gRPC API. The Memory Service buffers these tokens. Frontend clients consume the stream through the agent app's REST/SSE endpoints. If a client disconnects and reconnects, the agent app asks the Memory Service to replay the buffered tokens from the beginning, and the client catches up.
+When an agent generates a streaming response, it sends each token to the Memory Service via the `ResponseRecorderService` gRPC API. The Memory Service buffers these tokens. Frontend clients consume the stream through the agent app's REST/SSE endpoints. If a client disconnects and reconnects, the agent app asks the Memory Service to replay the buffered tokens from the beginning, and the client catches up.
 
 ```mermaid
 sequenceDiagram
@@ -20,23 +20,23 @@ sequenceDiagram
     Agent->>Agent: Call LLM (streaming)
 
     loop For each token from LLM
-        Agent->>MS: StreamResponseTokens (gRPC)
-        MS-->>Agent: StreamResponseTokenResponse
+        Agent->>MS: Record (gRPC client stream)
         Agent-->>Browser: SSE token
     end
-    Agent->>MS: StreamResponseTokens (complete=true)
+    Agent->>MS: Record (complete=true)
+    MS-->>Agent: RecordResponse
 
     Note over Browser: User disconnects (reload, network issue)
 
     Browser->>Agent: GET /conversations/{id}/resume
-    Agent->>MS: ReplayResponseTokens (gRPC)
+    Agent->>MS: Replay (gRPC)
     MS-->>Agent: Stream of buffered tokens
     Agent-->>Browser: SSE tokens (catch up + live)
 ```
 
 ### Multi-Instance Redirect
 
-When the Memory Service runs as multiple instances, the tokens for a given conversation are buffered on whichever instance the agent streamed them to. If a replay or cancel request arrives at a different instance, that instance returns a gRPC `UNAVAILABLE` status with custom trailing metadata containing the correct host and port. This is **not** a standard gRPC feature — raw gRPC clients will simply see an `UNAVAILABLE` error. The Quarkus and Spring client libraries provided by Memory Service handle this automatically, parsing the redirect metadata and retrying against the correct instance (up to 3 times).
+When the Memory Service runs as multiple instances, the tokens for a given conversation are buffered on whichever instance the agent streamed them to. If a replay or cancel request arrives at a different instance, that instance returns a response with a `redirect_address` field containing the correct `host:port`. This is **not** a standard gRPC feature — raw gRPC clients will need to handle this field manually. The Quarkus and Spring client libraries provided by Memory Service handle this automatically, parsing the redirect address and retrying against the correct instance (up to 3 times).
 
 ```mermaid
 sequenceDiagram
@@ -46,25 +46,24 @@ sequenceDiagram
 
     Note over Agent,MS1: Agent streamed tokens to Instance A
 
-    Agent->>MS2: ReplayResponseTokens (gRPC)
-    MS2-->>Agent: UNAVAILABLE + redirect headers<br/>(x-resumer-redirect-host, x-resumer-redirect-port)
-    Agent->>MS1: ReplayResponseTokens (gRPC, redirected)
+    Agent->>MS2: Replay (gRPC)
+    MS2-->>Agent: ReplayResponse with redirect_address="instanceA:9000"
+    Agent->>MS1: Replay (gRPC, redirected)
     MS1-->>Agent: Stream of buffered tokens
 ```
 
-The client library handles up to 3 consecutive redirects automatically. The same redirect mechanism applies to `CancelResponse` requests.
+The client library handles up to 3 consecutive redirects automatically. The same redirect mechanism applies to `Cancel` requests.
 
 ## gRPC Service
 
-The `ResponseResumerService` provides five operations:
+The `ResponseRecorderService` provides five operations:
 
-### StreamResponseTokens
+### Record
 
-Bidirectional streaming RPC used by the agent app to send response tokens to the Memory Service for buffering.
+Client-streaming RPC with a unary response, used by the agent app to send response tokens to the Memory Service for buffering.
 
 ```protobuf
-rpc StreamResponseTokens(stream StreamResponseTokenRequest)
-    returns (stream StreamResponseTokenResponse);
+rpc Record(stream RecordRequest) returns (RecordResponse);
 ```
 
 **Request stream** — the agent sends one message per token:
@@ -72,27 +71,33 @@ rpc StreamResponseTokens(stream StreamResponseTokenRequest)
 | Field | Type | Description |
 |-------|------|-------------|
 | `conversation_id` | `bytes` | UUID (16-byte big-endian). Required in the **first** message only. |
-| `token` | `string` | The token content. |
+| `content` | `string` | The token content. |
 | `complete` | `bool` | Set to `true` in the **final** message to signal the response is finished. |
 
-**Response stream** — the server acknowledges each token:
+**Response** — returned when the stream completes or is cancelled:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `success` | `bool` | Whether the token was recorded. |
-| `error_message` | `string` | Set only when `success` is `false`. |
-| `current_offset` | `int64` | Cumulative byte offset after this token. |
-| `cancel_requested` | `bool` | `true` if a user requested cancellation — the agent should stop generating. |
+| `status` | `RecordStatus` | `RECORD_STATUS_SUCCESS`, `RECORD_STATUS_CANCELLED`, or `RECORD_STATUS_ERROR`. |
+| `error_message` | `string` | Set only when `status` is `RECORD_STATUS_ERROR`. |
 
-The agent should monitor `cancel_requested` on each response. When it becomes `true`, the agent should stop calling the LLM and close the stream.
+The `RecordStatus` enum values:
 
-### ReplayResponseTokens
+| Value | Description |
+|-------|-------------|
+| `RECORD_STATUS_UNSPECIFIED` | Default/unset. |
+| `RECORD_STATUS_SUCCESS` | Recording completed normally. |
+| `RECORD_STATUS_CANCELLED` | A user requested cancellation — the agent should stop generating. |
+| `RECORD_STATUS_ERROR` | An error occurred during recording. |
+
+When the server returns `RECORD_STATUS_CANCELLED`, the agent should stop calling the LLM.
+
+### Replay
 
 Server-streaming RPC that replays all buffered tokens for a conversation.
 
 ```protobuf
-rpc ReplayResponseTokens(ReplayResponseTokensRequest)
-    returns (stream ReplayResponseTokensResponse);
+rpc Replay(ReplayRequest) returns (stream ReplayResponse);
 ```
 
 **Request:**
@@ -105,20 +110,19 @@ rpc ReplayResponseTokens(ReplayResponseTokensRequest)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `token` | `string` | Token content. |
-| `offset` | `int64` | Cumulative byte offset after this token. |
+| `content` | `string` | Token content. |
+| `redirect_address` | `string` | If set, the tokens are on another instance. Format: `host:port`. |
 
 If the response is still in progress, the replay stream stays open and delivers new tokens as they arrive. Once the response completes, the stream closes.
 
-If the tokens are buffered on a different instance, the server returns gRPC status `UNAVAILABLE` with `x-resumer-redirect-host` and `x-resumer-redirect-port` in the trailing metadata.
+If the tokens are buffered on a different instance, the first response message will contain a `redirect_address` field with the `host:port` of the correct instance.
 
-### CancelResponse
+### Cancel
 
 Unary RPC that requests cancellation of an in-progress response.
 
 ```protobuf
-rpc CancelResponse(CancelResponseRequest)
-    returns (CancelResponseResponse);
+rpc Cancel(CancelRecordRequest) returns (CancelRecordResponse);
 ```
 
 **Request:**
@@ -132,18 +136,19 @@ rpc CancelResponse(CancelResponseRequest)
 | Field | Type | Description |
 |-------|------|-------------|
 | `accepted` | `bool` | `true` if the cancellation was accepted. |
+| `redirect_address` | `string` | If set, the recording is on another instance. Format: `host:port`. |
 
-After cancellation is accepted, the server waits (up to 30 seconds) for the agent's `StreamResponseTokens` call to finish, then the `cancel_requested` flag is set on the next `StreamResponseTokenResponse` so the agent knows to stop.
+After cancellation is accepted, the server completes the agent's `Record` call with `RecordStatus.RECORD_STATUS_CANCELLED`, signaling the agent to stop.
 
-Like `ReplayResponseTokens`, this operation returns a redirect if the tokens are buffered on a different instance.
+Like `Replay`, this operation returns a `redirect_address` if the tokens are buffered on a different instance.
 
-### CheckConversations
+### CheckRecordings
 
 Unary RPC to check which conversations have responses currently in progress.
 
 ```protobuf
-rpc CheckConversations(CheckConversationsRequest)
-    returns (CheckConversationsResponse);
+rpc CheckRecordings(CheckRecordingsRequest)
+    returns (CheckRecordingsResponse);
 ```
 
 **Request:**
@@ -162,7 +167,7 @@ This is useful for frontends that need to show a "response in progress" indicato
 
 ### IsEnabled
 
-Unary RPC to check whether the response resumer is available.
+Unary RPC to check whether the response recorder is available.
 
 ```protobuf
 rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
@@ -178,24 +183,24 @@ rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
 
 A typical agent app integrates response resumption as follows:
 
-1. **Start streaming** — When the agent receives a chat request, it calls the LLM with streaming enabled and opens a `StreamResponseTokens` gRPC stream to the Memory Service.
+1. **Start streaming** — When the agent receives a chat request, it calls the LLM with streaming enabled and opens a `Record` gRPC stream to the Memory Service.
 
 2. **Forward tokens** — As each token arrives from the LLM, the agent sends it to both the Memory Service (for buffering) and the client (via SSE or similar).
 
-3. **Monitor cancellation** — On each `StreamResponseTokenResponse`, the agent checks `cancel_requested`. If `true`, it stops the LLM call and sends `complete=true`.
+3. **Monitor cancellation** — When the `Record` call completes with `RecordStatus.RECORD_STATUS_CANCELLED`, the agent stops the LLM call.
 
 4. **Complete the stream** — After the last token, the agent sends a final message with `complete=true` and closes the gRPC stream.
 
-5. **Handle resume requests** — When a client reconnects, the agent calls `ReplayResponseTokens` and forwards the replayed tokens to the client. If the response is still in progress, the replay stream stays open and delivers new tokens live.
+5. **Handle resume requests** — When a client reconnects, the agent calls `Replay` and forwards the replayed tokens to the client. If the response is still in progress, the replay stream stays open and delivers new tokens live.
 
-6. **Handle cancel requests** — When a user clicks "stop", the agent calls `CancelResponse`. The Memory Service signals the streaming agent via `cancel_requested`.
+6. **Handle cancel requests** — When a user clicks "stop", the agent calls `Cancel`. The Memory Service signals the streaming agent by completing the `Record` call with `RECORD_STATUS_CANCELLED`.
 
 ## Access Control
 
-- **StreamResponseTokens** requires `WRITER` access to the conversation (or a valid API key).
-- **ReplayResponseTokens** requires `READER` access.
-- **CancelResponse** requires `WRITER` access (API key auth is not accepted for cancel).
-- **CheckConversations** requires `READER` access; conversations the user cannot access are silently excluded from the response.
+- **Record** requires `WRITER` access to the conversation (or a valid API key).
+- **Replay** requires `READER` access.
+- **Cancel** requires `WRITER` access (API key auth is not accepted for cancel).
+- **CheckRecordings** requires `READER` access; conversations the user cannot access are silently excluded from the response.
 
 ## Next Steps
 

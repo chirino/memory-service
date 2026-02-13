@@ -10,9 +10,10 @@ import org.junit.jupiter.api.Test;
  */
 class GrpcFromUrlConfigSourceTest {
 
-    private static final String GRPC_HOST = "quarkus.grpc.clients.responseresumer.host";
-    private static final String GRPC_PORT = "quarkus.grpc.clients.responseresumer.port";
-    private static final String GRPC_PLAIN_TEXT = "quarkus.grpc.clients.responseresumer.plain-text";
+    private static final String GRPC_HOST = "quarkus.grpc.clients.responserecorder.host";
+    private static final String GRPC_PORT = "quarkus.grpc.clients.responserecorder.port";
+    private static final String GRPC_PLAIN_TEXT =
+            "quarkus.grpc.clients.responserecorder.plain-text";
 
     private GrpcFromUrlConfigSource createSource(String url) {
         Map<String, String> props = GrpcFromUrlConfigSource.parseUrl(url);
