@@ -72,10 +72,23 @@ public class ConversationStore {
 
     public void appendAgentMessage(
             String conversationId, String content, @Nullable String bearerToken) {
+        appendAgentMessage(conversationId, content, List.of(), bearerToken);
+    }
+
+    public void appendAgentMessage(
+            String conversationId,
+            String content,
+            List<Map<String, Object>> attachments,
+            @Nullable String bearerToken) {
         if (!StringUtils.hasText(content)) {
             return;
         }
         CreateEntryRequest request = createRequest(content, "AI");
+        if (attachments != null && !attachments.isEmpty()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> block = (Map<String, Object>) request.getContent().get(0);
+            block.put("attachments", attachments);
+        }
         callAppend(conversationId, request, resolveBearerToken(bearerToken));
     }
 
@@ -94,6 +107,15 @@ public class ConversationStore {
             String finalText,
             List<Map<String, Object>> events,
             @Nullable String bearerToken) {
+        appendAgentMessageWithEvents(conversationId, finalText, events, List.of(), bearerToken);
+    }
+
+    public void appendAgentMessageWithEvents(
+            String conversationId,
+            String finalText,
+            List<Map<String, Object>> events,
+            List<Map<String, Object>> attachments,
+            @Nullable String bearerToken) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.channel(Channel.HISTORY);
         request.contentType("history/lc4j");
@@ -105,6 +127,9 @@ public class ConversationStore {
         Map<String, Object> block = new HashMap<>();
         block.put("role", "AI");
         block.put("events", events);
+        if (attachments != null && !attachments.isEmpty()) {
+            block.put("attachments", attachments);
+        }
         request.content(List.of(block));
 
         if (indexedContentProvider != null) {

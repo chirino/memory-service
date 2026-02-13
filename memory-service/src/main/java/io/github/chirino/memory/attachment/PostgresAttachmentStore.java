@@ -35,6 +35,7 @@ public class PostgresAttachmentStore implements AttachmentStore {
         entity.setUserId(userId);
         entity.setContentType(contentType);
         entity.setFilename(filename);
+        entity.setStatus("uploading");
         entity.setExpiresAt(expiresAt != null ? expiresAt.atOffset(ZoneOffset.UTC) : null);
         attachmentRepository.persist(entity);
         return toDto(entity);
@@ -50,6 +51,7 @@ public class PostgresAttachmentStore implements AttachmentStore {
         entity.setSize(source.size());
         entity.setContentType(source.contentType());
         entity.setFilename(source.filename());
+        entity.setStatus("ready");
         entity.setExpiresAt(OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5));
         attachmentRepository.persist(entity);
         return toDto(entity);
@@ -64,7 +66,36 @@ public class PostgresAttachmentStore implements AttachmentStore {
             entity.setStorageKey(storageKey);
             entity.setSize(size);
             entity.setSha256(sha256);
+            entity.setStatus("ready");
             entity.setExpiresAt(expiresAt != null ? expiresAt.atOffset(ZoneOffset.UTC) : null);
+        }
+    }
+
+    @Override
+    @Transactional
+    public AttachmentDto createFromUrl(
+            String userId,
+            String contentType,
+            String filename,
+            String sourceUrl,
+            Instant expiresAt) {
+        AttachmentEntity entity = new AttachmentEntity();
+        entity.setUserId(userId);
+        entity.setContentType(contentType);
+        entity.setFilename(filename);
+        entity.setSourceUrl(sourceUrl);
+        entity.setStatus("downloading");
+        entity.setExpiresAt(expiresAt != null ? expiresAt.atOffset(ZoneOffset.UTC) : null);
+        attachmentRepository.persist(entity);
+        return toDto(entity);
+    }
+
+    @Override
+    @Transactional
+    public void updateStatus(String id, String status) {
+        AttachmentEntity entity = attachmentRepository.findActiveById(UUID.fromString(id));
+        if (entity != null) {
+            entity.setStatus(status);
         }
     }
 
@@ -233,6 +264,8 @@ public class PostgresAttachmentStore implements AttachmentStore {
                 entity.getEntry() != null ? entity.getEntry().getId().toString() : null,
                 entity.getExpiresAt() != null ? entity.getExpiresAt().toInstant() : null,
                 entity.getCreatedAt() != null ? entity.getCreatedAt().toInstant() : null,
-                entity.getDeletedAt() != null ? entity.getDeletedAt().toInstant() : null);
+                entity.getDeletedAt() != null ? entity.getDeletedAt().toInstant() : null,
+                entity.getStatus(),
+                entity.getSourceUrl());
     }
 }

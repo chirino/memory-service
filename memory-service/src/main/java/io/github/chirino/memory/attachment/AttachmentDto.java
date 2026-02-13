@@ -13,4 +13,6 @@ public record AttachmentDto(
         String entryId,
         Instant expiresAt,
         Instant createdAt,
-        Instant deletedAt) {}
+        Instant deletedAt,
+        String status,
+        String sourceUrl) {}

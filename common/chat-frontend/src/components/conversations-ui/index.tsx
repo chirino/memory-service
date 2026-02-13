@@ -147,6 +147,105 @@ async function fetchSignedDownloadUrl(attachment: ChatAttachment): Promise<strin
 }
 
 /**
+ * Returns true if the attachment is an image based on its contentType.
+ */
+function isImageAttachment(attachment: ChatAttachment): boolean {
+  return attachment.contentType?.split("/")[0] === "image";
+}
+
+/**
+ * Inline image preview for image attachments in message bubbles.
+ * Renders the image with max 50% width and hover overlay buttons
+ * for opening in a new tab or downloading.
+ */
+function ImageAttachmentPreview({ attachment, isUserMessage }: { attachment: ChatAttachment; isUserMessage?: boolean }) {
+  const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
+  const displayName = attachment.name || "Image";
+
+  // Load the image URL on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const url = await fetchSignedDownloadUrl(attachment);
+      if (!cancelled && url) {
+        setImageUrl(url);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [attachment]);
+
+  const handlePreview = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const url = await fetchSignedDownloadUrl(attachment);
+      if (url) window.open(url, "_blank");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const url = await fetchSignedDownloadUrl(attachment);
+      if (url) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = displayName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="group/img relative inline-block max-w-[50%]">
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={attachment.description || displayName}
+          className="rounded-lg"
+          style={{ maxWidth: "100%", height: "auto" }}
+        />
+      ) : (
+        <div className={`flex h-24 w-32 items-center justify-center rounded-lg ${
+          isUserMessage ? "bg-cream/10" : "bg-black/5"
+        }`}>
+          <Image className={`h-6 w-6 animate-pulse ${isUserMessage ? "text-cream/40" : "text-stone/40"}`} />
+        </div>
+      )}
+      {/* Hover overlay with action buttons */}
+      <div className="absolute left-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover/img:opacity-100">
+        <button
+          type="button"
+          onClick={handlePreview}
+          disabled={isLoading}
+          className="rounded-md bg-black/60 p-1.5 text-white backdrop-blur-sm transition-colors hover:bg-black/80 disabled:opacity-50"
+          title="Open in new tab"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={isLoading}
+          className="rounded-md bg-black/60 p-1.5 text-white backdrop-blur-sm transition-colors hover:bg-black/80 disabled:opacity-50"
+          title="Download"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Compact attachment chip for message bubbles.
  * Shows file-type icon, filename, and preview/download action buttons.
  * Uses signed download URLs so files open in new tabs without 401 errors.
@@ -269,13 +368,28 @@ function ConversationsUIMessageRow({
           >
             {children ?? (
               <>
-                {message.attachments && message.attachments.length > 0 && (
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {message.attachments.map((att, i) => (
-                      <AttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
-                    ))}
-                  </div>
-                )}
+                {message.attachments && message.attachments.length > 0 && (() => {
+                  const nonImageAtts = message.attachments.filter((a) => !isImageAttachment(a));
+                  const imageAtts = message.attachments.filter((a) => isImageAttachment(a));
+                  return (
+                    <>
+                      {nonImageAtts.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          {nonImageAtts.map((att, i) => (
+                            <AttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
+                          ))}
+                        </div>
+                      )}
+                      {imageAtts.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          {imageAtts.map((att, i) => (
+                            <ImageAttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
                 {message.events && message.events.length > 0 ? (
                   <RichEventRenderer events={message.events} isStreaming={isStreaming} />
                 ) : message.content ? (

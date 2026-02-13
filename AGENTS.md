@@ -36,6 +36,8 @@ When you discover something meaningful about this project during your work—arc
 
 **Coding style**: Java 4-space indent, UTF-8, constructor injection. Packages `io.github.chirino`, classes `PascalCase`, methods/fields `camelCase`.
 
+**Error observability**: All 500-level errors MUST produce a full stack trace in the server logs. The `GlobalExceptionMapper` in `memory-service/src/main/java/.../api/GlobalExceptionMapper.java` catches unhandled exceptions and logs them with `LOG.errorf(e, ...)`. When adding new endpoints or error paths, never swallow exceptions silently — always log the stack trace for server errors.
+
 **Security**: Don't commit secrets; use env vars or Quarkus config (`QUARKUS_*`).
 
 **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`). Include test commands and config changes.
