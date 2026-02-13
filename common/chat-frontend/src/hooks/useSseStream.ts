@@ -87,8 +87,8 @@ export function useSseStream(): StreamClient {
               signal: controller.signal,
             };
           } else {
-            // Normal chat SSE: POST /v1/conversations/{conversationId}/chat
-            url = `/v1/conversations/${encodeURIComponent(params.sessionId)}/chat`;
+            // Normal chat SSE: POST /chat/{conversationId}
+            url = `/chat/${encodeURIComponent(params.sessionId)}`;
             const body: Record<string, unknown> = { message: trimmedMessage };
             if (params.attachments && params.attachments.length > 0) {
               body.attachments = params.attachments;
