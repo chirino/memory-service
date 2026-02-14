@@ -211,6 +211,54 @@
     @apply bg-primary-50 dark:bg-primary-950 text-primary-700 dark:text-primary-300;
     @apply border-l-2 border-primary-600 dark:border-primary-400;
   }
+
+  /* Config format toggle bar */
+  .config-toggle {
+    @apply sticky z-30 flex items-center gap-3 py-2 px-3 mb-6 rounded-lg;
+    @apply bg-gray-50/95 dark:bg-surface-900/95 backdrop-blur;
+    @apply border border-gray-200 dark:border-gray-700;
+    top: 4.5rem;
+  }
+
+  .config-toggle-label {
+    @apply text-sm font-medium text-gray-500 dark:text-gray-400;
+  }
+
+  .config-toggle-buttons {
+    @apply inline-flex rounded-md overflow-hidden border border-gray-300 dark:border-gray-600;
+  }
+
+  .config-toggle-btn {
+    @apply px-3 py-1 text-xs font-medium transition-colors cursor-pointer;
+    @apply bg-white dark:bg-surface-800 text-gray-600 dark:text-gray-400;
+    @apply hover:bg-gray-100 dark:hover:bg-gray-700;
+  }
+
+  .config-toggle-btn + .config-toggle-btn {
+    @apply border-l border-gray-300 dark:border-gray-600;
+  }
+
+  html[data-config-format="property"] .config-toggle-btn[data-format="property"],
+  html[data-config-format="env"] .config-toggle-btn[data-format="env"] {
+    @apply bg-primary-600 text-white;
+  }
+
+  html[data-config-format="property"] .config-toggle-btn[data-format="property"]:hover,
+  html[data-config-format="env"] .config-toggle-btn[data-format="env"]:hover {
+    @apply bg-primary-700;
+  }
+
+  /* Config format switching — inline keys */
+  code.cfg-prop { display: none; }
+
+  html[data-config-format="property"] code.cfg-prop { display: inline; }
+  html[data-config-format="property"] code.cfg-env { display: none; }
+
+  /* Config format switching — code blocks */
+  .config-block .cfg-prop { display: none; }
+
+  html[data-config-format="property"] .config-block .cfg-prop { display: block; }
+  html[data-config-format="property"] .config-block .cfg-env { display: none; }
 }
 
 /* Utility layer for custom utilities */

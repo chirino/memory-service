@@ -1,0 +1,16 @@
+---
+import { Code } from 'astro:components';
+import { toEnvBlock } from '../utils/config-format';
+
+interface Props {
+  property: string;
+  env?: string;
+}
+
+const { property, env } = Astro.props;
+const envContent = env || toEnvBlock(property);
+---
+<div class="config-block">
+  <div class="cfg-prop"><Code code={property} lang="properties" /></div>
+  <div class="cfg-env"><Code code={envContent} lang="bash" /></div>
+</div>

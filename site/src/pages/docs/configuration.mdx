@@ -1,12 +1,18 @@
 ---
 layout: ../../layouts/DocsLayout.astro
 title: Configuration
-description: Configure Memory Service databases, vector stores, and authentication using environment variables.
+description: Configure Memory Service databases, vector stores, and authentication using environment variables or application properties.
 ---
 
-Memory Service is configured entirely through environment variables. This approach works consistently across all deployment methods—Docker, Kubernetes, or bare metal.
+import ConfigToggle from '../../components/ConfigToggle.astro';
+import Cfg from '../../components/Cfg.astro';
+import ConfigBlock from '../../components/ConfigBlock.astro';
 
-> **Note:** Environment variables follow Quarkus conventions. Property names like `memory-service.datastore.type` become `MEMORY_SERVICE_DATASTORE_TYPE` as environment variables (dots and hyphens become underscores, all uppercase).
+Memory Service is configured through environment variables or application properties. Use the toggle below to switch between formats.
+
+<ConfigToggle />
+
+> **Tip:** Your format preference is saved across visits. Environment variables follow Quarkus conventions: dots and hyphens become underscores, all uppercase.
 
 ## Server Configuration
 
@@ -14,10 +20,10 @@ These are the core server configuration options:
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `memory-service.datastore.type` | `postgres`, `mongo`, `mongodb` | `postgres` | Database backend for storing conversations |
-| `memory-service.cache.type` | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching (used by response resumer and future cache features) |
-| `memory-service.vector.type` | `none`, `pgvector`, `postgres`, `mongo`, `mongodb` | `none` | Vector store for semantic search |
-| `memory-service.temp-dir` | path | system temp dir | Directory for temporary files (attachment downloads, response resumer, etc.) |
+| <Cfg p="memory-service.datastore.type" /> | `postgres`, `mongo`, `mongodb` | `postgres` | Database backend for storing conversations |
+| <Cfg p="memory-service.cache.type" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching (used by response resumer and future cache features) |
+| <Cfg p="memory-service.vector.type" /> | `none`, `pgvector`, `postgres`, `mongo`, `mongodb` | `none` | Vector store for semantic search |
+| <Cfg p="memory-service.temp-dir" /> | path | system temp dir | Directory for temporary files (attachment downloads, response resumer, etc.) |
 
 ## Database Configuration
 
@@ -25,27 +31,23 @@ Memory Service supports multiple database backends for storing conversation data
 
 ### PostgreSQL (Recommended)
 
-```bash
-# Select PostgreSQL as the datastore
-MEMORY_SERVICE_DATASTORE_TYPE=postgres
+<ConfigBlock property={`# Select PostgreSQL as the datastore
+memory-service.datastore.type=postgres
 
 # PostgreSQL connection
-QUARKUS_DATASOURCE_DB_KIND=postgresql
-QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://localhost:5432/memoryservice
-QUARKUS_DATASOURCE_USERNAME=postgres
-QUARKUS_DATASOURCE_PASSWORD=postgres
-```
+quarkus.datasource.db-kind=postgresql
+quarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/memoryservice
+quarkus.datasource.username=postgres
+quarkus.datasource.password=postgres`} />
 
 ### MongoDB
 
-```bash
-# Select MongoDB as the datastore
-MEMORY_SERVICE_DATASTORE_TYPE=mongo
+<ConfigBlock property={`# Select MongoDB as the datastore
+memory-service.datastore.type=mongo
 
 # MongoDB connection
-QUARKUS_MONGODB_CONNECTION_STRING=mongodb://localhost:27017
-QUARKUS_MONGODB_DATABASE=memoryservice
-```
+quarkus.mongodb.connection-string=mongodb://localhost:27017
+quarkus.mongodb.database=memoryservice`} />
 
 ## Cache Configuration
 
@@ -53,9 +55,9 @@ Memory Service uses a unified cache configuration for all cache-dependent featur
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `memory-service.cache.type` | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching |
-| `memory-service.cache.redis.client` | client name | default | Optional: specify a named Redis client |
-| `memory-service.cache.infinispan.startup-timeout` | duration | `PT30S` | Startup timeout for Infinispan connection |
+| <Cfg p="memory-service.cache.type" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching |
+| <Cfg p="memory-service.cache.redis.client" /> | client name | default | Optional: specify a named Redis client |
+| <Cfg p="memory-service.cache.infinispan.startup-timeout" /> | duration | `PT30S` | Startup timeout for Infinispan connection |
 
 ### Memory Entries Cache
 
@@ -63,7 +65,7 @@ When a cache backend is configured, Memory Service caches memory entries to redu
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `memory-service.cache.epoch.ttl` | duration | `PT10M` | TTL for cached memory entries (sliding window - refreshed on access) |
+| <Cfg p="memory-service.cache.epoch.ttl" /> | duration | `PT10M` | TTL for cached memory entries (sliding window - refreshed on access) |
 
 Features of the memory entries cache:
 
@@ -78,43 +80,39 @@ The Response Resumer enables clients to reconnect to in-progress streaming respo
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `memory-service.response-resumer.enabled` | `true`, `false` | auto-detect | Enable/disable response resumer (auto-enabled when cache.type is redis or infinispan) |
-| `memory-service.response-resumer.temp-file-retention` | duration | `PT30M` | How long to retain temp files |
-| `memory-service.grpc-advertised-address` | `host:port` | auto-detected | Address clients use to reconnect (for multi-instance deployments) |
+| <Cfg p="memory-service.response-resumer.enabled" /> | `true`, `false` | auto-detect | Enable/disable response resumer (auto-enabled when cache.type is redis or infinispan) |
+| <Cfg p="memory-service.response-resumer.temp-file-retention" /> | duration | `PT30M` | How long to retain temp files |
+| <Cfg p="memory-service.grpc-advertised-address" /> | `host:port` | auto-detected | Address clients use to reconnect (for multi-instance deployments) |
 
 ### Redis Backend
 
-```bash
-# Enable Redis cache (response resumer will automatically use it)
-MEMORY_SERVICE_CACHE_TYPE=redis
+<ConfigBlock property={`# Enable Redis cache (response resumer will automatically use it)
+memory-service.cache.type=redis
 
 # Redis connection
-QUARKUS_REDIS_HOSTS=redis://localhost:6379
+quarkus.redis.hosts=redis://localhost:6379
 
 # Optional: specify a named Redis client
-MEMORY_SERVICE_CACHE_REDIS_CLIENT=my-redis-client
+memory-service.cache.redis.client=my-redis-client
 
 # Optional: disable response resumer even with cache enabled
-MEMORY_SERVICE_RESPONSE_RESUMER_ENABLED=false
-```
+memory-service.response-resumer.enabled=false`} />
 
 ### Infinispan Backend
 
-```bash
-# Enable Infinispan cache (response resumer will automatically use it)
-MEMORY_SERVICE_CACHE_TYPE=infinispan
+<ConfigBlock property={`# Enable Infinispan cache (response resumer will automatically use it)
+memory-service.cache.type=infinispan
 
 # Infinispan connection
-QUARKUS_INFINISPAN_CLIENT_HOSTS=localhost:11222
-QUARKUS_INFINISPAN_CLIENT_USERNAME=admin
-QUARKUS_INFINISPAN_CLIENT_PASSWORD=password
+quarkus.infinispan-client.hosts=localhost:11222
+quarkus.infinispan-client.username=admin
+quarkus.infinispan-client.password=password
 
 # Optional: startup timeout for Infinispan connection
-MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT=PT30S
+memory-service.cache.infinispan.startup-timeout=PT30S
 
 # Optional: disable response resumer even with cache enabled
-MEMORY_SERVICE_RESPONSE_RESUMER_ENABLED=false
-```
+memory-service.response-resumer.enabled=false`} />
 
 ## Attachment Storage
 
@@ -122,34 +120,22 @@ Configure file attachment storage, size limits, and lifecycle.
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `memory-service.attachments.store` | `db`, `s3` | `db` | Storage backend for uploaded files |
-| `memory-service.attachments.max-size` | memory size | `10M` | Maximum file size per upload (e.g., `10M`, `512K`, `1G`). The HTTP body size limit is auto-derived as 2x this value. |
-| `memory-service.attachments.default-expires-in` | duration | `PT1H` | Default TTL for unlinked attachments |
-| `memory-service.attachments.max-expires-in` | duration | `PT24H` | Maximum allowed TTL clients can request |
-| `memory-service.attachments.cleanup-interval` | duration | `PT5M` | How often the cleanup job runs to delete expired unlinked attachments |
-| `memory-service.attachments.download-url-expires-in` | duration | `PT5M` | Signed download URL expiry |
+| <Cfg p="memory-service.attachments.store" /> | `db`, `s3` | `db` | Storage backend for uploaded files |
+| <Cfg p="memory-service.attachments.max-size" /> | memory size | `10M` | Maximum file size per upload (e.g., `10M`, `512K`, `1G`). The HTTP body size limit is auto-derived as 2x this value. |
+| <Cfg p="memory-service.attachments.default-expires-in" /> | duration | `PT1H` | Default TTL for unlinked attachments |
+| <Cfg p="memory-service.attachments.max-expires-in" /> | duration | `PT24H` | Maximum allowed TTL clients can request |
+| <Cfg p="memory-service.attachments.cleanup-interval" /> | duration | `PT5M` | How often the cleanup job runs to delete expired unlinked attachments |
+| <Cfg p="memory-service.attachments.download-url-expires-in" /> | duration | `PT5M` | Signed download URL expiry |
 
 ### S3 Storage
 
 When using S3 as the attachment storage backend:
 
-```bash
-# Select S3 storage
-MEMORY_SERVICE_ATTACHMENTS_STORE=s3
+<ConfigBlock property={`# Select S3 storage
+memory-service.attachments.store=s3
 
 # S3 bucket configuration
-MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET=memory-service-attachments
-
-# Optional: proxy downloads through memory service instead of returning S3 pre-signed URLs.
-# Use this when S3 is on an internal network not reachable by browsers.
-MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=false
-```
-
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| `memory-service.attachments.s3.bucket` | string | `memory-service-attachments` | S3 bucket name |
-| `memory-service.attachments.s3.prefix` | string | _(none)_ | Optional key prefix for S3 objects |
-| `memory-service.attachments.s3.direct-download` | `true`, `false` | `true` | When `true`, download URLs point directly at S3 (pre-signed). When `false`, downloads are proxied through the memory service — use this when S3 is on an internal network not reachable by browsers. |
+memory-service.attachments.s3.bucket=memory-service-attachments`} />
 
 See [Attachments](/docs/concepts/attachments/) for details on how attachments work.
 
@@ -161,42 +147,41 @@ For semantic search capabilities, configure a vector store and embedding setting
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `memory.embedding.type` | `none`, `hash` | `hash` | Embedding algorithm (`hash` is a simple built-in implementation) |
-| `memory.embedding.dimension` | integer | `256` | Vector dimension size |
+| <Cfg p="memory.embedding.type" /> | `none`, `hash` | `hash` | Embedding algorithm (`hash` is a simple built-in implementation) |
+| <Cfg p="memory.embedding.dimension" /> | integer | `256` | Vector dimension size |
 
 ### pgvector (PostgreSQL)
 
 When using PostgreSQL with the pgvector extension:
 
-```bash
-# Enable pgvector for semantic search
-MEMORY_SERVICE_VECTOR_TYPE=pgvector
+<ConfigBlock property={`# Enable pgvector for semantic search
+memory-service.vector.type=pgvector
 
 # Embedding configuration
-MEMORY_EMBEDDING_TYPE=hash
-MEMORY_EMBEDDING_DIMENSION=256
-```
+memory.embedding.type=hash
+memory.embedding.dimension=256`} />
 
 ### MongoDB Atlas Vector Search
 
-```bash
-# Enable MongoDB vector search
-MEMORY_SERVICE_VECTOR_TYPE=mongodb
+<ConfigBlock property={`# Enable MongoDB vector search
+memory-service.vector.type=mongodb
 
 # Embedding configuration
-MEMORY_EMBEDDING_TYPE=hash
-MEMORY_EMBEDDING_DIMENSION=256
-```
+memory.embedding.type=hash
+memory.embedding.dimension=256`} />
 
 ## API Key Authentication
 
 Memory Service supports API key authentication for trusted agents. Configure API keys by client ID:
 
-```bash
-# Format: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=key1,key2,...
+<ConfigBlock
+  property={`# Format: memory-service.api-keys.<client-id>=key1,key2,...
+memory-service.api-keys.agent-a=agent-a-key-1,agent-a-key-2
+memory-service.api-keys.agent-b=agent-b-key-1`}
+  env={`# Format: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=key1,key2,...
 MEMORY_SERVICE_API_KEYS_AGENT_A=agent-a-key-1,agent-a-key-2
-MEMORY_SERVICE_API_KEYS_AGENT_B=agent-b-key-1
-```
+MEMORY_SERVICE_API_KEYS_AGENT_B=agent-b-key-1`}
+/>
 
 Clients include the API key in requests via the `X-API-Key` header.
 
@@ -204,12 +189,10 @@ Clients include the API key in requests via the `X-API-Key` header.
 
 Memory Service supports OIDC authentication via Keycloak or any compliant provider.
 
-```bash
-# OIDC configuration
-QUARKUS_OIDC_AUTH_SERVER_URL=http://localhost:8180/realms/memory-service
-QUARKUS_OIDC_CLIENT_ID=memory-service
-QUARKUS_OIDC_CREDENTIALS_SECRET=your-client-secret
-```
+<ConfigBlock property={`# OIDC configuration
+quarkus.oidc.auth-server-url=http://localhost:8180/realms/memory-service
+quarkus.oidc.client-id=memory-service
+quarkus.oidc.credentials.secret=your-client-secret`} />
 
 ## Admin Access Configuration
 
@@ -237,20 +220,18 @@ provider uses different role names (e.g., `administrator` instead of `admin`).
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `memory-service.roles.admin.oidc.role` | _(none)_ | OIDC role name that maps to the internal `admin` role |
-| `memory-service.roles.auditor.oidc.role` | _(none)_ | OIDC role name that maps to the internal `auditor` role |
-| `memory-service.roles.indexer.oidc.role` | _(none)_ | OIDC role name that maps to the internal `indexer` role |
+| <Cfg p="memory-service.roles.admin.oidc.role" /> | _(none)_ | OIDC role name that maps to the internal `admin` role |
+| <Cfg p="memory-service.roles.auditor.oidc.role" /> | _(none)_ | OIDC role name that maps to the internal `auditor` role |
+| <Cfg p="memory-service.roles.indexer.oidc.role" /> | _(none)_ | OIDC role name that maps to the internal `indexer` role |
 
-```bash
-# Map OIDC "administrator" role to internal "admin" role
-MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE=administrator
+<ConfigBlock property={`# Map OIDC "administrator" role to internal "admin" role
+memory-service.roles.admin.oidc.role=administrator
 
 # Map OIDC "manager" role to internal "auditor" role
-MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE=manager
+memory-service.roles.auditor.oidc.role=manager
 
 # Map OIDC "transcript-indexer" role to internal "indexer" role
-MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE=transcript-indexer
-```
+memory-service.roles.indexer.oidc.role=transcript-indexer`} />
 
 #### User-Based Assignment
 
@@ -258,15 +239,13 @@ Assign roles directly to user IDs (matched against the OIDC token principal name
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `memory-service.roles.admin.users` | _(empty)_ | Comma-separated list of user IDs with admin access |
-| `memory-service.roles.auditor.users` | _(empty)_ | Comma-separated list of user IDs with auditor access |
-| `memory-service.roles.indexer.users` | _(empty)_ | Comma-separated list of user IDs with indexer access |
+| <Cfg p="memory-service.roles.admin.users" /> | _(empty)_ | Comma-separated list of user IDs with admin access |
+| <Cfg p="memory-service.roles.auditor.users" /> | _(empty)_ | Comma-separated list of user IDs with auditor access |
+| <Cfg p="memory-service.roles.indexer.users" /> | _(empty)_ | Comma-separated list of user IDs with indexer access |
 
-```bash
-MEMORY_SERVICE_ROLES_ADMIN_USERS=alice,bob
-MEMORY_SERVICE_ROLES_AUDITOR_USERS=charlie,dave
-MEMORY_SERVICE_ROLES_INDEXER_USERS=indexer-user
-```
+<ConfigBlock property={`memory-service.roles.admin.users=alice,bob
+memory-service.roles.auditor.users=charlie,dave
+memory-service.roles.indexer.users=indexer-user`} />
 
 #### Client-Based Assignment (API Key)
 
@@ -275,15 +254,13 @@ The client ID is resolved from the `X-API-Key` header via the existing API key c
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `memory-service.roles.admin.clients` | _(empty)_ | Comma-separated list of API key client IDs with admin access |
-| `memory-service.roles.auditor.clients` | _(empty)_ | Comma-separated list of API key client IDs with auditor access |
-| `memory-service.roles.indexer.clients` | _(empty)_ | Comma-separated list of API key client IDs with indexer access |
+| <Cfg p="memory-service.roles.admin.clients" /> | _(empty)_ | Comma-separated list of API key client IDs with admin access |
+| <Cfg p="memory-service.roles.auditor.clients" /> | _(empty)_ | Comma-separated list of API key client IDs with auditor access |
+| <Cfg p="memory-service.roles.indexer.clients" /> | _(empty)_ | Comma-separated list of API key client IDs with indexer access |
 
-```bash
-MEMORY_SERVICE_ROLES_ADMIN_CLIENTS=admin-agent
-MEMORY_SERVICE_ROLES_AUDITOR_CLIENTS=monitoring-agent,audit-agent
-MEMORY_SERVICE_ROLES_INDEXER_CLIENTS=indexer-service,summarizer-agent
-```
+<ConfigBlock property={`memory-service.roles.admin.clients=admin-agent
+memory-service.roles.auditor.clients=monitoring-agent,audit-agent
+memory-service.roles.indexer.clients=indexer-service,summarizer-agent`} />
 
 ### Audit Logging
 
@@ -292,34 +269,28 @@ Each request can include a `justification` field explaining why the admin action
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `memory-service.admin.require-justification` | `true`, `false` | `false` | When `true`, all admin API calls must include a `justification` or receive `400 Bad Request` |
+| <Cfg p="memory-service.admin.require-justification" /> | `true`, `false` | `false` | When `true`, all admin API calls must include a `justification` or receive `400 Bad Request` |
 
-```bash
-# Require justification for all admin operations
-MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION=true
-```
+<ConfigBlock property={`# Require justification for all admin operations
+memory-service.admin.require-justification=true`} />
 
 To route admin audit logs to a separate file or external system, configure the Quarkus
 logging category:
 
-```bash
-# Set admin audit log level
-QUARKUS_LOG_CATEGORY__IO_GITHUB_CHIRINO_MEMORY_ADMIN_AUDIT__LEVEL=INFO
-```
+<ConfigBlock property={`# Set admin audit log level
+quarkus.log.category."io.github.chirino.memory.admin.audit".level=INFO`} />
 
 ## Server Configuration
 
-```bash
-# HTTP port (default: 8080)
-QUARKUS_HTTP_PORT=8080
+<ConfigBlock property={`# HTTP port (default: 8080)
+quarkus.http.port=8080
 
 # gRPC port (uses HTTP port when use-separate-server=false)
-QUARKUS_GRPC_SERVER_USE_SEPARATE_SERVER=false
+quarkus.grpc.server.use-separate-server=false
 
 # Enable CORS
-MEMORY_SERVICE_CORS_ENABLED=true
-MEMORY_SERVICE_CORS_ORIGINS=http://localhost:3000
-```
+memory-service.cors.enabled=true
+memory-service.cors.origins=http://localhost:3000`} />
 
 ## Production Recommendations
 
@@ -327,26 +298,20 @@ For production deployments, consider the following environment variables:
 
 ### Connection Pooling
 
-```bash
-# Database connection pool
-QUARKUS_DATASOURCE_JDBC_MAX_SIZE=20
-QUARKUS_DATASOURCE_JDBC_MIN_SIZE=5
-```
+<ConfigBlock property={`# Database connection pool
+quarkus.datasource.jdbc.max-size=20
+quarkus.datasource.jdbc.min-size=5`} />
 
 ### Health Checks
 
-```bash
-# Enable health endpoints
-QUARKUS_HEALTH_EXTENSIONS_ENABLED=true
-```
+<ConfigBlock property={`# Enable health endpoints
+quarkus.health.extensions.enabled=true`} />
 
 ### Logging
 
-```bash
-# Set log level
-QUARKUS_LOG_LEVEL=INFO
-QUARKUS_LOG_CATEGORY__IO_GITHUB_CHIRINO__LEVEL=DEBUG
-```
+<ConfigBlock property={`# Set log level
+quarkus.log.level=INFO
+quarkus.log.category."io.github.chirino".level=DEBUG`} />
 
 ## Monitoring
 
@@ -356,13 +321,11 @@ Memory Service exposes Prometheus metrics and provides admin stats endpoints tha
 
 Memory Service exposes metrics in Prometheus format at `/q/metrics`:
 
-```bash
-# Enable Prometheus metrics endpoint (enabled by default)
-QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED=true
+<ConfigBlock property={`# Enable Prometheus metrics endpoint (enabled by default)
+quarkus.micrometer.export.prometheus.enabled=true
 
 # Metrics endpoint path (default: /q/metrics)
-QUARKUS_MICROMETER_EXPORT_PROMETHEUS_PATH=/q/metrics
-```
+quarkus.micrometer.export.prometheus.path=/q/metrics`} />
 
 ### Application Tag
 
@@ -424,14 +387,12 @@ Memory Service provides `/v1/admin/stats/*` endpoints that query Prometheus for 
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `memory-service.prometheus.url` | URL | _(none)_ | Prometheus server URL for admin stats queries |
+| <Cfg p="memory-service.prometheus.url" /> | URL | _(none)_ | Prometheus server URL for admin stats queries |
 
-```bash
-# Configure Prometheus URL for admin stats endpoints
-MEMORY_SERVICE_PROMETHEUS_URL=http://prometheus:9090
-```
+<ConfigBlock property={`# Configure Prometheus URL for admin stats endpoints
+memory-service.prometheus.url=http://prometheus:9090`} />
 
-When `memory-service.prometheus.url` is not configured, admin stats endpoints return **501 Not Implemented**. All other Memory Service functionality works normally.
+When <Cfg p="memory-service.prometheus.url" /> is not configured, admin stats endpoints return **501 Not Implemented**. All other Memory Service functionality works normally.
 
 #### Available Stats Endpoints
 
@@ -461,7 +422,7 @@ These are automatically provided by Quarkus Micrometer:
 
 #### Cache Metrics (When Cache Enabled)
 
-Available when `memory-service.cache.type` is `redis` or `infinispan`:
+Available when <Cfg p="memory-service.cache.type" /> is `redis` or `infinispan`:
 
 | Metric | Type | Description |
 |--------|------|-------------|

@@ -1,0 +1,35 @@
+---
+---
+<div class="config-toggle not-prose">
+  <span class="config-toggle-label">Config format</span>
+  <div class="config-toggle-buttons">
+    <button data-format="property" class="config-toggle-btn">Properties</button>
+    <button data-format="env" class="config-toggle-btn">Env Vars</button>
+  </div>
+</div>
+
+<script is:inline>
+  (function() {
+    var f;
+    try { f = localStorage.getItem('config-format'); } catch(e) {}
+    document.documentElement.setAttribute('data-config-format', f || 'env');
+  })();
+</script>
+
+<script>
+  document.querySelectorAll('.config-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const format = btn.getAttribute('data-format');
+      if (format) {
+        document.documentElement.setAttribute('data-config-format', format);
+        try { localStorage.setItem('config-format', format); } catch(e) {}
+      }
+    });
+  });
+</script>
+
+<style>
+  .config-toggle ~ :global(:is(h2, h3, h4, h5, h6)) {
+    scroll-margin-top: 7rem !important;
+  }
+</style>
