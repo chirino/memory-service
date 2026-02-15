@@ -151,6 +151,7 @@ services:
       MEMORY_SERVICE_CLIENT_API_KEY: agent-api-key-1
       QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080/realms/memory-service
       QUARKUS_OIDC_TOKEN_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
+      KEYCLOAK_FRONTEND_URL: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}
       KEYCLOAK_CLIENT_SECRET: change-me
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY env var must be set}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}

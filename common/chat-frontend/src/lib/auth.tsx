@@ -3,10 +3,57 @@ import { AuthProvider as OidcAuthProvider, useAuth as useOidcAuth, hasAuthParams
 import { WebStorageStateStore, type User } from "oidc-client-ts";
 import { OpenAPI } from "@/client";
 
-// OIDC Configuration with sensible defaults for local development
-const keycloakUrl = import.meta.env.VITE_KEYCLOAK_URL || "http://localhost:8081";
-const keycloakRealm = import.meta.env.VITE_KEYCLOAK_REALM || "memory-service";
-const keycloakClientId = import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "frontend";
+// Frontend config fetched from the backend at /config.json
+interface FrontendConfig {
+  keycloakUrl: string;
+  keycloakRealm: string;
+  keycloakClientId: string;
+}
+
+let configCache: FrontendConfig | null = null;
+let configPromise: Promise<FrontendConfig> | null = null;
+
+function fetchConfig(): Promise<FrontendConfig> {
+  if (!configPromise) {
+    configPromise = fetch("/config.json")
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load /config.json: ${res.status}`);
+        return res.json();
+      })
+      .then((config: FrontendConfig) => {
+        configCache = config;
+        return config;
+      });
+  }
+  return configPromise;
+}
+
+function buildOidcConfig(config: FrontendConfig) {
+  const isSecure = typeof window !== "undefined" && window.isSecureContext;
+  const disablePKCE = !isSecure;
+  return {
+    authority: `${config.keycloakUrl}/realms/${config.keycloakRealm}`,
+    client_id: config.keycloakClientId,
+    redirect_uri: typeof window !== "undefined" ? window.location.origin : "",
+    post_logout_redirect_uri: typeof window !== "undefined" ? window.location.origin : "",
+    scope: "openid profile email",
+    userStore: typeof window !== "undefined" ? new WebStorageStateStore({ store: window.localStorage }) : undefined,
+    automaticSilentRenew: false,
+    // PKCE requires Crypto.subtle which is only available in secure contexts (HTTPS or localhost).
+    // Auto-disable when the page is served over plain HTTP.
+    disablePKCE,
+    onSigninCallback: () => {
+      const savedUrl = getAndClearPreLoginUrl();
+      if (savedUrl) {
+        const url = new URL(savedUrl);
+        const newUrl = url.pathname + (url.searchParams.toString() ? "?" + url.searchParams.toString() : "");
+        window.history.replaceState({}, document.title, newUrl);
+      } else {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    },
+  };
+}
 
 // Key for storing pre-login URL in sessionStorage
 const PRE_LOGIN_URL_KEY = "auth_pre_login_url";
@@ -32,35 +79,6 @@ function getAndClearPreLoginUrl(): string | null {
   return savedUrl;
 }
 
-const oidcConfig = {
-  authority: `${keycloakUrl}/realms/${keycloakRealm}`,
-  client_id: keycloakClientId,
-  redirect_uri: typeof window !== "undefined" ? window.location.origin : "",
-  post_logout_redirect_uri: typeof window !== "undefined" ? window.location.origin : "",
-  scope: "openid profile email",
-  // Use localStorage to persist tokens across browser sessions
-  userStore: typeof window !== "undefined" ? new WebStorageStateStore({ store: window.localStorage }) : undefined,
-  // Disable automatic silent renewal - we handle renewal on-demand when API calls are made
-  // This ensures tokens are only renewed when the user is actively using the app
-  automaticSilentRenew: false,
-  onSigninCallback: () => {
-    // Restore the pre-login URL if we saved one (to preserve query params like conversationId)
-    const savedUrl = getAndClearPreLoginUrl();
-    if (savedUrl) {
-      // Use the saved URL (which has the original query params)
-      const url = new URL(savedUrl);
-      const newUrl = url.pathname + (url.searchParams.toString() ? "?" + url.searchParams.toString() : "");
-      window.history.replaceState({}, document.title, newUrl);
-    } else {
-      // No saved URL - just clean up OIDC params from current URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-  },
-};
-
-// Check if OIDC is configured (set VITE_KEYCLOAK_URL="" to disable)
-const isOidcConfigured = keycloakUrl !== "";
-
 // Auth context type
 export interface AuthUser {
   userId: string;
@@ -77,6 +95,8 @@ interface AuthContextValue {
   login: () => void;
   logout: () => void;
   clearSessionAndLogin: () => Promise<void>;
+  authError: string | null;
+  setAuthError: (error: string | null) => void;
 }
 
 const AuthContext = React.createContext<AuthContextValue | undefined>(undefined);
@@ -176,6 +196,7 @@ export function getAccessToken(): string | undefined {
 function OidcAuthContextProvider({ children }: { children: React.ReactNode }) {
   const auth = useOidcAuth();
   const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+  const [authError, setAuthError] = React.useState<string | null>(null);
 
   // Auto sign-in if we have auth params (returning from IdP)
   const { signinRedirect, signinSilent, removeUser, isAuthenticated, isLoading, activeNavigator } = auth;
@@ -227,6 +248,8 @@ function OidcAuthContextProvider({ children }: { children: React.ReactNode }) {
     },
     logout: () => auth.signoutRedirect(),
     clearSessionAndLogin,
+    authError,
+    setAuthError,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -243,17 +266,56 @@ function MockAuthProvider({ children }: { children: React.ReactNode }) {
     login: () => console.log("Mock login"),
     logout: () => console.log("Mock logout"),
     clearSessionAndLogin: async () => console.log("Mock clear session and login"),
+    authError: null,
+    setAuthError: () => {},
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// Main Auth Provider - uses OIDC if configured, mock otherwise
+// Main Auth Provider - fetches config from backend, then initializes OIDC
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  if (!isOidcConfigured) {
+  const [config, setConfig] = React.useState<FrontendConfig | null>(configCache);
+  const [error, setError] = React.useState<Error | null>(null);
+
+  React.useEffect(() => {
+    if (config) return;
+    fetchConfig().then(setConfig).catch(setError);
+  }, [config]);
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-cream">
+        <div className="max-w-md p-8 text-center">
+          <h1 className="mb-2 font-serif text-2xl text-ink">Configuration Unavailable</h1>
+          <p className="mb-6 text-stone">Unable to load application configuration. Please try again later.</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-ink/90"
+          >
+            Try Again
+          </button>
+          <p className="mt-4 text-xs text-stone">Error: {error.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!config) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-cream">
+        <div className="text-stone">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!config.keycloakUrl) {
     console.info("[Auth] OIDC not configured, using mock authentication");
     return <MockAuthProvider>{children}</MockAuthProvider>;
   }
+
+  const oidcConfig = buildOidcConfig(config);
 
   return (
     <OidcAuthProvider {...oidcConfig}>
@@ -335,6 +397,45 @@ export function RequireAuth({ children, fallback }: RequireAuthProps) {
           <div className="text-stone">Redirecting to login...</div>
         </div>
       )
+    );
+  }
+
+  // Show auth error screen when backend rejects the token (e.g., misconfiguration)
+  // This prevents a redirect loop: 401 → Keycloak login → already logged in → redirect back → 401
+  if (auth.authError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-cream">
+        <div className="max-w-md p-8 text-center">
+          <h1 className="mb-2 font-serif text-2xl text-ink">Session Error</h1>
+          <p className="mb-6 text-stone">
+            Your session could not be verified by the server. This may be due to an expired session or a
+            configuration issue.
+          </p>
+          <div className="flex justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                auth.setAuthError(null);
+                auth.clearSessionAndLogin();
+              }}
+              className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-ink/90"
+            >
+              Log In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                auth.setAuthError(null);
+                auth.logout();
+              }}
+              className="rounded-full border border-ink px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-ink/10"
+            >
+              Log Out
+            </button>
+          </div>
+          <p className="mt-4 text-xs text-stone">{auth.authError}</p>
+        </div>
+      </div>
     );
   }
 

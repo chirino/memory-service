@@ -16,7 +16,13 @@ type ListUserConversationsResponse = {
 };
 
 function generateConversationId() {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `session-${Date.now()}`;
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  // Fallback for insecure contexts (plain HTTP) where crypto.randomUUID() is unavailable
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+    (+c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (+c / 4)))).toString(16),
+  );
 }
 
 function getConversationIdFromUrl(): string | null {
@@ -128,8 +134,9 @@ function App() {
   useEffect(() => {
     const interceptor = (response: Response) => {
       if (response.status === 401) {
-        // Clear session and redirect to login instead of reloading (which causes a loop)
-        auth.clearSessionAndLogin();
+        // Show auth error screen instead of auto-redirecting to prevent redirect loops
+        // (e.g., Keycloak sees user logged in → redirects back → backend still rejects token → 401 again)
+        auth.setAuthError("The server returned 401 Unauthorized. Your token may be invalid or the server configuration may not match.");
       }
       return response;
     };

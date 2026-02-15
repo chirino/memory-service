@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Keycloak with its own dedicated PostgreSQL database.
+# Independent of the memory-service datastore choice.
+
+resources:
+  - deployment-keycloak.yaml
+  - deployment-keycloak-db.yaml
+  - service-keycloak.yaml
+  - service-keycloak-db.yaml
+  - pvc-keycloak-db.yaml
+
+configMapGenerator:
+  - name: keycloak-realm
+    files:
+      - memory-service-realm.json
+  - name: memory-service-config
+    literals:
+      - KEYCLOAK_FRONTEND_URL=http://keycloak:8080
+      - OIDC_TOKEN_ISSUER=http://keycloak:8080/realms/memory-service
+
+secretGenerator:
+  - name: keycloak-secret
+    literals:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=CHANGEME
+      - KEYCLOAK_CLIENT_SECRET=change-me
+  - name: keycloak-db-secret
+    literals:
+      - POSTGRES_USER=keycloak
+      - POSTGRES_PASSWORD=CHANGEME
+      - POSTGRES_DB=keycloak
+
+patches:
+  - path: patch-memory-service.yaml
+    target:
+      kind: Deployment
+      name: memory-service

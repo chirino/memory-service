@@ -6,6 +6,9 @@
 * Add support for python langchain /w user docs similar to the quarkus/spring support.
 * config option to disable passthrough s3 signed download url (for when endpoint is private)
 * move the ChatEvent json serializer to quarkus
+* fix QUARKUS_REDIS_HEALTH_ENABLED
+* make the infinispan cache name configurable
+* make all common memory-service config options prefixed with "memory-service."
 
 # Hardening Work
 

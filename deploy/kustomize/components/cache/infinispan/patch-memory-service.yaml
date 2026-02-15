@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: memory-service
+          env:
+            - name: MEMORY_SERVICE_CACHE_TYPE
+              value: "infinispan"
+            - name: QUARKUS_INFINISPAN_CLIENT_HOSTS
+              value: "infinispan:11222"
+            - name: QUARKUS_INFINISPAN_CLIENT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: infinispan-secret
+                  key: USER
+            - name: QUARKUS_INFINISPAN_CLIENT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: infinispan-secret
+                  key: PASS
+            - name: QUARKUS_INFINISPAN_CLIENT_CACHE__RESPONSE_RECORDINGS__CONFIGURATION
+              value: '<distributed-cache><encoding media-type="application/x-protostream"/></distributed-cache>'
+            - name: QUARKUS_INFINISPAN_CLIENT_CACHE__MEMORY_ENTRIES__CONFIGURATION
+              value: '<distributed-cache><encoding media-type="text/plain"/></distributed-cache>'

@@ -47,6 +47,7 @@ nb-configuration.xml
 .certs/
 
 /*.log
+/*.png
 vendor
 .claude
 .playwright-mcp
