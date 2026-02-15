@@ -382,7 +382,7 @@ Dedicated `Logger` instance (`io.github.chirino.memory.admin.audit`). Provides `
 
 ### 3. Keycloak Realm Configuration
 
-**File:** `common/keycloak/memory-service-realm.json`
+**File:** `deploy/keycloak/memory-service-realm.json`
 
 Add `admin` and `auditor` realm roles. Assign `admin` to a test user (e.g., `alice`).
 
@@ -659,7 +659,7 @@ cd examples/chat-frontend && npm run generate
 |------|-------------|
 | `memory-service/src/main/java/io/github/chirino/memory/security/AdminRoleResolver.java` | New file |
 | `memory-service/src/main/java/io/github/chirino/memory/security/AdminAuditLogger.java` | New file |
-| `common/keycloak/memory-service-realm.json` | Add admin/auditor roles |
+| `deploy/keycloak/memory-service-realm.json` | Add admin/auditor roles |
 | `memory-service-contracts/src/main/resources/openapi-admin.yml` | New file |
 | `memory-service/src/main/resources/application.properties` | Add admin config |
 | `memory-service/src/main/java/io/github/chirino/memory/model/AdminConversationQuery.java` | New file |

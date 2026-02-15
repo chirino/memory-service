@@ -9,7 +9,7 @@ services:
       - "55432:5432"
     volumes:
       # Init script mount (read-only); data lives on tmpfs below so it disappears with the container
-      - ../../../common/keycloak/postgres-init-keycloak.sql:/docker-entrypoint-initdb.d/postgres-init-keycloak.sql:ro
+      - ../../../deploy/keycloak/postgres-init-keycloak.sql:/docker-entrypoint-initdb.d/postgres-init-keycloak.sql:ro
     tmpfs:
       # Ephemeral Postgres data dir; removed automatically when the container is deleted
       - /var/lib/postgresql/data
@@ -38,7 +38,7 @@ services:
     environment:
       SERVICES: s3
     volumes:
-      - ../../../common/localstack/init-ready.d:/etc/localstack/init/ready.d:ro
+      - ../../../deploy/localstack/init-ready.d:/etc/localstack/init/ready.d:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health"]
       interval: 5s
@@ -63,7 +63,7 @@ services:
       # Allow internal (Docker network) backchannel communication
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     volumes:
-      - ../../../common/keycloak/memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
+      - ../../../deploy/keycloak/memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
     depends_on:
       postgres:
         condition: service_healthy

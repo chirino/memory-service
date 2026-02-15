@@ -428,7 +428,7 @@ Update collection name from `messages` to `entries` in `MongoEntry` entity annot
 | `MessageRole` | Delete (unused) |
 | `MessageVisibility` | Delete (unused) |
 
-### 14. Frontend Impact (`common/chat-frontend`)
+### 14. Frontend Impact (`frontends/chat-frontend`)
 
 The generated TypeScript client types will change:
 - `Message` → `Entry`

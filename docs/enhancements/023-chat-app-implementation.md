@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the implementation plan for applying the Minimal Light design (from [Enhancement 022](./022-chat-app-design.md)) to the existing React chat application in `common/chat-frontend/`.
+This document outlines the implementation plan for applying the Minimal Light design (from [Enhancement 022](./022-chat-app-design.md)) to the existing React chat application in `frontends/chat-frontend/`.
 
 ## Goals
 
@@ -14,8 +14,8 @@ This document outlines the implementation plan for applying the Minimal Light de
 ## Design Reference
 
 The implementation should match the mockups created in Enhancement 022:
-- `common/chat-frontend/mockups/chat.html` - Complete chat interface
-- `common/chat-frontend/mockups/chat-empty.html` - Empty/new conversation state
+- `frontends/chat-frontend/mockups/chat.html` - Complete chat interface
+- `frontends/chat-frontend/mockups/chat-empty.html` - Empty/new conversation state
 
 ## Design Tokens
 
@@ -324,7 +324,7 @@ If issues arise:
 
 ## References
 
-- Design mockups: `common/chat-frontend/mockups/`
-- Style exploration: `common/chat-frontend/style-mockups/`
-- Current implementation: `common/chat-frontend/src/`
+- Design mockups: `frontends/chat-frontend/mockups/`
+- Style exploration: `frontends/chat-frontend/style-mockups/`
+- Current implementation: `frontends/chat-frontend/src/`
 - Design document: [Enhancement 022](./022-chat-app-design.md)
