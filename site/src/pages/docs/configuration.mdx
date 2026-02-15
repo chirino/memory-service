@@ -21,13 +21,14 @@ These are the core server configuration options:
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
 | <Cfg p="memory-service.datastore.type" /> | `postgres`, `mongo`, `mongodb` | `postgres` | Database backend for storing conversations |
+| <Cfg p="memory-service.datastore.migrate-at-start" /> | `true`, `false` | `true` | Run database migrations at startup (routed to the correct backend automatically) |
 | <Cfg p="memory-service.cache.type" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching (used by response resumer and future cache features) |
 | <Cfg p="memory-service.vector.type" /> | `none`, `pgvector`, `postgres`, `mongo`, `mongodb` | `none` | Vector store for semantic search |
 | <Cfg p="memory-service.temp-dir" /> | path | system temp dir | Directory for temporary files (attachment downloads, response resumer, etc.) |
 
 ## Database Configuration
 
-Memory Service supports multiple database backends for storing conversation data.
+Memory Service supports multiple database backends for storing conversation data. When you set <Cfg p="memory-service.datastore.type" />, the service automatically routes database migrations to the correct Liquibase backend. Selecting `mongo` requires a few additional settings to keep the unused PostgreSQL/Hibernate ORM subsystem inactive (see the MongoDB section below).
 
 ### PostgreSQL (Recommended)
 
@@ -47,7 +48,22 @@ memory-service.datastore.type=mongo
 
 # MongoDB connection
 quarkus.mongodb.connection-string=mongodb://localhost:27017
-quarkus.mongodb.database=memoryservice`} />
+quarkus.mongodb.database=memoryservice
+quarkus.mongodb.credentials.auth-source=admin`} />
+
+In production, MongoDB deployments also require settings to keep the unused PostgreSQL/Hibernate ORM subsystem inactive. The `DatastoreConfigSourceFactory` handles MongoDB Liquibase routing automatically, but the JDBC datasource and PostgreSQL Liquibase settings use Quarkus `BUILD_AND_RUN_TIME_FIXED` config properties that must be set via environment variables:
+
+<ConfigBlock property={`# Dummy JDBC URL keeps Hibernate ORM active (no actual connection is made)
+quarkus.datasource.jdbc.url=jdbc:postgresql://unused:5432/unused
+quarkus.datasource.jdbc.initial-size=0
+quarkus.datasource.jdbc.min-size=0
+quarkus.datasource.jdbc.max-size=1
+
+# Disable PostgreSQL Liquibase (migrations route to MongoDB automatically)
+quarkus.liquibase.migrate-at-start=false
+quarkus.liquibase.validate-on-migrate=false`} />
+
+> **Note:** These settings are pre-configured in the [kustomize MongoDB component](/docs/deployment/kubernetes/) and the Docker Compose MongoDB example below. You only need to set them manually for custom deployments.
 
 ## Cache Configuration
 

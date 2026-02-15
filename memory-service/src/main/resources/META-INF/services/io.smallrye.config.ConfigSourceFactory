@@ -1,1 +1,2 @@
 io.github.chirino.memory.config.BodySizeConfigSourceFactory
+io.github.chirino.memory.config.DatastoreConfigSourceFactory

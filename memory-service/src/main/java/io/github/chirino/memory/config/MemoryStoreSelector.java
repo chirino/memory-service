@@ -7,6 +7,7 @@ import io.github.chirino.memory.store.impl.PostgresMemoryStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -16,9 +17,9 @@ public class MemoryStoreSelector {
     @ConfigProperty(name = "memory-service.datastore.type", defaultValue = "postgres")
     String datastoreType;
 
-    @Inject PostgresMemoryStore postgresMemoryStore;
+    @Inject Instance<PostgresMemoryStore> postgresMemoryStore;
 
-    @Inject MongoMemoryStore mongoMemoryStore;
+    @Inject Instance<MongoMemoryStore> mongoMemoryStore;
 
     @Inject MeterRegistry meterRegistry;
 
@@ -37,10 +38,10 @@ public class MemoryStoreSelector {
     private MemoryStore selectDelegate() {
         String type = datastoreType == null ? "postgres" : datastoreType.trim().toLowerCase();
         if ("postgres".equals(type)) {
-            return postgresMemoryStore;
+            return postgresMemoryStore.get();
         }
         if ("mongo".equals(type) || "mongodb".equals(type)) {
-            return mongoMemoryStore;
+            return mongoMemoryStore.get();
         }
         throw new IllegalStateException(
                 "Unsupported memory-service.datastore.type: " + datastoreType);
