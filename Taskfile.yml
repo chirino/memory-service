@@ -5,7 +5,7 @@ version: '3'
 vars:
   KIND_CLUSTER_NAME: memory-service
   ENVOY_GATEWAY_VERSION: v1.7.0
-  OVERLAY: '{{.OVERLAY | default "postgresql-infinispan-demo"}}'
+  OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
 
 tasks:
 
@@ -70,7 +70,7 @@ tasks:
           kubectl wait --timeout=5m -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
           kubectl apply -f deploy/kustomize/components/gateway-envoy/gatewayclass.yaml
         fi
-      - kubectl apply -f deploy/kustomize/envs/kind/envoyproxy.yaml
+      # - kubectl apply -f deploy/kustomize/envs/kind/envoyproxy.yaml
       - task: kind:load
       - task: kind:deploy
       - task: secrets
