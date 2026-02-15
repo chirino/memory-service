@@ -14,3 +14,4 @@ components:
   - ../../components/auth/keycloak
   - ../../components/monitoring/prometheus
   - ../../components/monitoring/grafana
+  - ../../components/demo/chat

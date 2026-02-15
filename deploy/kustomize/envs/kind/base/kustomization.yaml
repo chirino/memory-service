@@ -4,8 +4,16 @@ kind: Component
 # Kind-specific patches: nip.io hostnames, local image pull policy,
 # and keycloak realm config for local development.
 #
-# Note: EnvoyProxy and GatewayClass are cluster-scoped resources applied
-# separately by the kind:deploy task (not part of the kustomize tree).
+# Note: EnvoyProxy is in envoy-gateway-system namespace and is applied
+# separately by the kind:init task. The GatewayClass parametersRef patch
+# is in each Kind overlay (not here) because kustomize Component patches
+# cannot target resources from sibling components.
+resources:
+  - envoyproxy.yaml
+
+components:
+  - ../../../components/gateway-envoy
+  - ../../../components/demo/gateway
 
 configMapGenerator:
   - name: keycloak-realm
@@ -19,6 +27,20 @@ configMapGenerator:
     behavior: replace
 
 patches:
+  # Link GatewayClass to the Kind-specific EnvoyProxy (hostNetwork + ClusterIP)
+  - target:
+      group: gateway.networking.k8s.io
+      version: v1
+      kind: GatewayClass
+      name: eg
+    patch: |
+      - op: add
+        path: /spec/parametersRef
+        value:
+          group: gateway.envoyproxy.io
+          kind: EnvoyProxy
+          name: kind-proxy
+          namespace: envoy-gateway-system
   # Assign nip.io hostnames to each HTTPRoute
   - target:
       kind: HTTPRoute

@@ -3,6 +3,7 @@ package io.github.chirino.memory.config;
 import io.github.chirino.memory.mongo.repo.MongoTaskRepository;
 import io.github.chirino.memory.persistence.repo.TaskRepository;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -12,9 +13,9 @@ public class TaskRepositorySelector {
     @ConfigProperty(name = "memory-service.datastore.type", defaultValue = "postgres")
     String datastoreType;
 
-    @Inject TaskRepository postgresTaskRepository;
+    @Inject Instance<TaskRepository> postgresTaskRepository;
 
-    @Inject MongoTaskRepository mongoTaskRepository;
+    @Inject Instance<MongoTaskRepository> mongoTaskRepository;
 
     public boolean isPostgres() {
         String type = datastoreType == null ? "postgres" : datastoreType.trim().toLowerCase();
@@ -22,10 +23,10 @@ public class TaskRepositorySelector {
     }
 
     public TaskRepository getPostgresRepository() {
-        return postgresTaskRepository;
+        return postgresTaskRepository.get();
     }
 
     public MongoTaskRepository getMongoRepository() {
-        return mongoTaskRepository;
+        return mongoTaskRepository.get();
     }
 }
