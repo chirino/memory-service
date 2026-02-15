@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Patch-only component: enables MongoDB Atlas Vector Search on the memory-service.
+# Requires the mongodb datastore component.
+
+patches:
+  - path: patch-memory-service.yaml
+    target:
+      kind: Deployment
+      name: memory-service

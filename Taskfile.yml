@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+# install task from: https://taskfile.dev/docs/installation
+version: '3'
+
+vars:
+  KIND_CLUSTER_NAME: memory-service
+  ENVOY_GATEWAY_VERSION: v1.7.0
+  OVERLAY: '{{.OVERLAY | default "demo-postgresql-infinispan-gateway"}}'
+
+tasks:
+
+  secrets:
+    desc: Create memory-service secret from current shell environment variables
+    cmds:
+      - |
+        kubectl create secret generic memory-service \
+          --namespace memory-service \
+          --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
+          --from-literal=OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.openai.com}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+  deploy:
+    desc: "Deploy an overlay to the kind cluster (usage: task deploy OVERLAY={{.OVERLAY}})"
+    cmds:
+      - kubectl apply -k deploy/kustomize/overlays/{{.OVERLAY}}
+  undeploy:
+    desc: "Remove the deployed overlay (usage: task undeploy OVERLAY={{.OVERLAY}})"
+    cmds:
+      - kubectl delete -k deploy/kustomize/overlays/{{.OVERLAY}} --ignore-not-found
+
+  kind:deploy:
+    desc: "Deploy to kind the overlay (usage: task kind:deploy OVERLAY={{.OVERLAY}})"
+    cmds:
+      - kubectl apply -k deploy/kustomize/envs/kind/overlays/{{.OVERLAY}}
+
+  kind:undeploy:
+    desc: "Remove the deployed overlay (usage: task kind:undeploy OVERLAY={{.OVERLAY}})"
+    cmds:
+      - kubectl delete -k deploy/kustomize/envs/kind/overlays/{{.OVERLAY}} --ignore-not-founds
+
+  kind:load:
+    desc: Load locally built app images into the kind cluster and restart their deployments
+    cmds:
+      - kind load docker-image ghcr.io/chirino/memory-service:latest --name {{.KIND_CLUSTER_NAME}}
+      - kind load docker-image ghcr.io/chirino/memory-service-demo-chat:latest --name {{.KIND_CLUSTER_NAME}}
+      - kubectl rollout restart deployment/memory-service deployment/demo-chat -n memory-service 2>/dev/null || true
+
+  kind:rm:
+    desc: Delete the kind cluster
+    cmds:
+      - kind delete cluster --name {{.KIND_CLUSTER_NAME}} 2>/dev/null || true
+
+  kind:reset:
+    desc: Delete and recreate the kind cluster, then deploy
+    cmds:
+      - task: kind:rm
+      - task: kind:init
+
+  kind:init:
+    desc: "Deploy to kind: demo + gateway + hostNetwork"
+    cmds:
+      - |
+        if ! kind get clusters 2>/dev/null | grep -q '^{{.KIND_CLUSTER_NAME}}$'; then
+          kind create cluster --name {{.KIND_CLUSTER_NAME}} --config deploy/kind-config.yaml
+          kubectl cluster-info --context kind-{{.KIND_CLUSTER_NAME}}
+        fi
+      - |
+        if ! kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; then
+          kubectl apply --server-side --force-conflicts -f https://github.com/envoyproxy/gateway/releases/download/{{.ENVOY_GATEWAY_VERSION}}/install.yaml
+          kubectl wait --timeout=5m -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
+          kubectl apply -f deploy/kustomize/components/gateway/envoy-gateway/gatewayclass.yaml
+        fi
+      - kubectl apply -f deploy/kustomize/envs/kind/envoyproxy.yaml
+      - kubectl apply -f deploy/kustomize/envs/kind/patch-gatewayclass.yaml
+      - task: kind:load
+      - task: kind:deploy
+      - task: secrets
+      - |
+        echo ""
+        echo "Overlay: {{.OVERLAY}}"
+        echo "Waiting for Gateway to be programmed..."
+        kubectl wait -n memory-service gateway/memory-service-gateway --for=condition=Programmed --timeout=2m 2>/dev/null || true
+        echo ""
+        echo "Services available at:"
+        echo "  Chat:           http://chat.127.0.0.1.nip.io"
+        echo "  Memory Service: http://api.127.0.0.1.nip.io/v1/"
+        echo "  Keycloak:       http://keycloak.127.0.0.1.nip.io"
+        echo "  Grafana:        http://grafana.127.0.0.1.nip.io/grafana/"
+        echo "  Prometheus:     http://prometheus.127.0.0.1.nip.io/prometheus/"
+

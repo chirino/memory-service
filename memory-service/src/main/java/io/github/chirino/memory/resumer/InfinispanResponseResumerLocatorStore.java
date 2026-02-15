@@ -14,13 +14,21 @@ import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.exceptions.HotRodClientException;
 import org.infinispan.client.hotrod.exceptions.TransportException;
+import org.infinispan.commons.configuration.XMLStringConfiguration;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class InfinispanResponseResumerLocatorStore implements ResponseResumerLocatorStore {
     private static final Logger LOG = Logger.getLogger(InfinispanResponseResumerLocatorStore.class);
     private static final String RESPONSE_KEY_PREFIX = "response:";
-    private static final String CACHE_NAME = "response-resumer";
+    private static final String CACHE_NAME = "response-recordings";
+    private static final XMLStringConfiguration CACHE_CONFIG =
+            new XMLStringConfiguration(
+                    "<distributed-cache name=\""
+                            + CACHE_NAME
+                            + "\">"
+                            + "<encoding media-type=\"application/x-protostream\"/>"
+                            + "</distributed-cache>");
     private static final Duration RETRY_DELAY = Duration.ofMillis(200);
 
     private final boolean infinispanEnabled;
@@ -54,13 +62,13 @@ public class InfinispanResponseResumerLocatorStore implements ResponseResumerLoc
         }
 
         RemoteCacheManager cacheManager = cacheManagers.get();
-        cache = cacheManager.getCache(CACHE_NAME);
+        cache = cacheManager.administration().getOrCreateCache(CACHE_NAME, CACHE_CONFIG);
         if (cache == null) {
             throw new IllegalStateException(
                     "Response resumer is enabled (memory-service.cache.type=infinispan) but"
                             + " cache '"
                             + CACHE_NAME
-                            + "' is not available.");
+                            + "' could not be created.");
         }
     }
 

@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Patch-only component: configures memory-service for external S3 storage.
+# Users must override the s3-secret with real AWS credentials and optionally
+# set QUARKUS_S3_ENDPOINT_OVERRIDE, QUARKUS_S3_AWS_REGION in their overlay.
+
+secretGenerator:
+  - name: s3-secret
+    literals:
+      - AWS_ACCESS_KEY_ID=CHANGEME
+      - AWS_SECRET_ACCESS_KEY=CHANGEME
+
+patches:
+  - path: patch-memory-service.yaml
+    target:
+      kind: Deployment
+      name: memory-service

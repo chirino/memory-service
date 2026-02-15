@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: memory-service
+          env:
+            - name: MEMORY_SERVICE_DATASTORE_TYPE
+              value: "postgres"
+            - name: QUARKUS_DATASOURCE_DB_KIND
+              value: "postgresql"
+            - name: QUARKUS_DATASOURCE_JDBC_URL
+              value: "jdbc:postgresql://postgresql:5432/memory_service"
+            - name: QUARKUS_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: POSTGRES_USER
+            - name: QUARKUS_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: POSTGRES_PASSWORD
+            - name: QUARKUS_LIQUIBASE_MIGRATE_AT_START
+              value: "true"

@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-service
+  labels:
+    app: memory-service
+    app.kubernetes.io/name: memory-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-service
+  template:
+    metadata:
+      labels:
+        app: memory-service
+        app.kubernetes.io/name: memory-service
+    spec:
+      serviceAccountName: memory-service
+      containers:
+        - name: memory-service
+          image: ghcr.io/chirino/memory-service:latest
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: MEMORY_SERVICE_DATASTORE_TYPE
+              value: "postgres"
+            - name: MEMORY_SERVICE_CACHE_TYPE
+              value: "none"
+            - name: MEMORY_SERVICE_VECTOR_TYPE
+              value: "none"
+            - name: MEMORY_SERVICE_ATTACHMENTS_STORE
+              value: "db"
+            - name: QUARKUS_REDIS_HOSTS
+              value: "redis://localhost:6379"
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 250m
+            limits:
+              memory: 1Gi
+              cpu: "1"

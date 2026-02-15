@@ -1,0 +1,82 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Kind-specific patches: nip.io hostnames, local image pull policy,
+# and keycloak realm config for local development.
+#
+# Note: EnvoyProxy and GatewayClass are cluster-scoped resources applied
+# separately by the kind:deploy task (not part of the kustomize tree).
+
+configMapGenerator:
+  - name: keycloak-realm
+    files:
+      - memory-service-realm.json
+    behavior: replace
+  - name: memory-service-config
+    literals:
+      - KEYCLOAK_FRONTEND_URL=http://keycloak.127.0.0.1.nip.io
+      - OIDC_TOKEN_ISSUER=http://keycloak.127.0.0.1.nip.io/realms/memory-service
+    behavior: replace
+
+patches:
+  # Assign nip.io hostnames to each HTTPRoute
+  - target:
+      kind: HTTPRoute
+      name: demo-chat
+    patch: |
+      - op: add
+        path: /spec/hostnames
+        value: ["chat.127.0.0.1.nip.io"]
+  - target:
+      kind: HTTPRoute
+      name: memory-service
+    patch: |
+      - op: add
+        path: /spec/hostnames
+        value: ["api.127.0.0.1.nip.io"]
+  - target:
+      kind: HTTPRoute
+      name: keycloak
+    patch: |
+      - op: add
+        path: /spec/hostnames
+        value: ["keycloak.127.0.0.1.nip.io"]
+      - op: replace
+        path: /spec/rules
+        value:
+          - matches:
+              - path:
+                  type: PathPrefix
+                  value: /
+            backendRefs:
+              - name: keycloak
+                port: 8080
+  - target:
+      kind: HTTPRoute
+      name: grafana
+    patch: |
+      - op: add
+        path: /spec/hostnames
+        value: ["grafana.127.0.0.1.nip.io"]
+  - target:
+      kind: HTTPRoute
+      name: prometheus
+    patch: |
+      - op: add
+        path: /spec/hostnames
+        value: ["prometheus.127.0.0.1.nip.io"]
+  # Use IfNotPresent so kind-loaded images aren't pulled from a registry
+  - target:
+      kind: Deployment
+      name: memory-service
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target:
+      kind: Deployment
+      name: demo-chat
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
