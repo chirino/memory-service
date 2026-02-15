@@ -167,7 +167,7 @@ For chat-spring, the `SecurityConfig` must also permit/protect `/chat/**` accord
 
 ### SSE URL
 
-**File**: `common/chat-frontend/src/hooks/useSseStream.ts`
+**File**: `frontends/chat-frontend/src/hooks/useSseStream.ts`
 
 The chat stream URL changes:
 
@@ -183,7 +183,7 @@ The resume URL (`/v1/conversations/${conversationId}/resume`) does NOT change.
 
 ### Cancel Response
 
-**File**: `common/chat-frontend/src/client/services.gen.ts` (generated)
+**File**: `frontends/chat-frontend/src/client/services.gen.ts` (generated)
 
 The cancel endpoint changes from `DELETE /v1/conversations/{id}/response` to `POST /v1/conversations/{id}/cancel`.
 
@@ -253,7 +253,7 @@ All other frontend API paths (`/v1/conversations`, `/v1/attachments`, `/v1/me`, 
 
 25. Update SSE URL in `useSseStream.ts`: `/v1/conversations/${id}/chat` → `/chat/${id}`
 26. Update cancel-response calls: `DELETE .../response` → `POST .../cancel` (in services, hooks, or generated client)
-27. Run frontend lint and build: `cd common/chat-frontend && npm run lint && npm run build`
+27. Run frontend lint and build: `cd frontends/chat-frontend && npm run lint && npm run build`
 
 ### Phase 6: Verification
 

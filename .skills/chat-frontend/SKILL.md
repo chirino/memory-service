@@ -5,7 +5,7 @@ description: Use when working on the React chat frontend. Covers architecture, c
 
 # Chat Frontend Context
 
-Location: `common/chat-frontend/`
+Location: `frontends/chat-frontend/`
 
 ## Tech Stack
 - **React 19** with TypeScript, Vite 7 build tool
@@ -55,7 +55,7 @@ src/
 
 ## Dev Commands
 ```bash
-cd common/chat-frontend
+cd frontends/chat-frontend
 npm run dev        # Dev server with HMR
 npm run build      # Production build
 npm run lint       # ESLint

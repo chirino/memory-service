@@ -147,11 +147,25 @@ Configure file attachment storage, size limits, and lifecycle.
 
 When using S3 as the attachment storage backend:
 
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| <Cfg p="memory-service.attachments.s3.bucket" /> | string | `memory-service-attachments` | S3 bucket name |
+| <Cfg p="memory-service.attachments.s3.prefix" /> | string | _(empty)_ | Optional key prefix for all objects |
+| <Cfg p="memory-service.attachments.s3.direct-download" /> | `true`, `false` | `true` | When `true`, download URLs redirect clients directly to S3 via presigned URLs. When `false`, downloads are proxied through memory-service. |
+| <Cfg p="memory-service.attachments.s3.external-endpoint" /> | URL | _(none)_ | Override the endpoint used in presigned URLs. Only relevant when `direct-download` is `true`. Use this when the internal S3 endpoint (e.g., `http://minio:9000`) is not reachable from clients. |
+
 <ConfigBlock property={`# Select S3 storage
 memory-service.attachments.store=s3
 
 # S3 bucket configuration
 memory-service.attachments.s3.bucket=memory-service-attachments`} />
+
+**Direct download vs. proxy mode:** By default, the `/v1/attachments/{id}` and `/v1/attachments/{id}/download-url` endpoints return presigned S3 URLs that redirect clients directly to the S3 backend. This offloads bandwidth from memory-service but requires S3 to be reachable from the client. Set <Cfg p="memory-service.attachments.s3.direct-download" /> to `false` to proxy downloads through memory-service instead.
+
+When using a self-hosted S3-compatible store (like MinIO) that is only reachable at an internal address, you have two options:
+
+1. **Proxy mode** — set <Cfg p="memory-service.attachments.s3.direct-download" /> to `false`. Downloads stream through memory-service; no client-reachable S3 endpoint needed.
+2. **Direct download with external endpoint** — keep `direct-download` as `true` and set <Cfg p="memory-service.attachments.s3.external-endpoint" /> to a client-reachable URL (e.g., `http://minio-api.example.com`). Presigned URLs will use this endpoint instead of the internal one.
 
 See [Attachments](/docs/concepts/attachments/) for details on how attachments work.
 

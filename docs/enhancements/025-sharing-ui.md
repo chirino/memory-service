@@ -647,4 +647,4 @@ Verify the client is regenerated with sharing endpoints included.
 - Design system: [Enhancement 022](./022-chat-app-design.md)
 - Implementation patterns: [Enhancement 023](./023-chat-app-implementation.md)
 - API Spec: `memory-service-contracts/src/main/resources/openapi.yml`
-- Current implementation: `common/chat-frontend/src/`
+- Current implementation: `frontends/chat-frontend/src/`

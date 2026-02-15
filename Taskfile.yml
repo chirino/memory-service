@@ -47,6 +47,7 @@ tasks:
 
   kind:rm:
     desc: Delete the kind cluster
+    silent: true
     cmds:
       - kind delete cluster --name {{.KIND_CLUSTER_NAME}} 2>/dev/null || true
 
@@ -58,6 +59,7 @@ tasks:
 
   kind:init:
     desc: "Deploy to kind: demo + gateway + hostNetwork"
+    silent: true
     cmds:
       - |
         if ! kind get clusters 2>/dev/null | grep -q '^{{.KIND_CLUSTER_NAME}}$'; then
@@ -70,20 +72,49 @@ tasks:
           kubectl wait --timeout=5m -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
           kubectl apply -f deploy/kustomize/components/gateway-envoy/gatewayclass.yaml
         fi
-      # - kubectl apply -f deploy/kustomize/envs/kind/envoyproxy.yaml
+      - kubectl apply -f deploy/kustomize/envs/kind/base/envoyproxy.yaml
       - task: kind:load
       - task: kind:deploy
       - task: secrets
       - |
         echo ""
+        echo "Waiting for all pods to be ready..."
+        timeout=300
+        elapsed=0
+        while [ $elapsed -lt $timeout ]; do
+          not_ready=$(kubectl get pods -A --no-headers 2>/dev/null | grep -v 'Running\|Completed\|Succeeded' || true)
+          if [ -z "$not_ready" ]; then
+            total=$(kubectl get pods -A --no-headers 2>/dev/null | grep -c 'Running' || echo "0")
+            echo "All $total pod(s) across all namespaces are running!"
+            break
+          fi
+          echo "--- Pods not yet ready (${elapsed}s elapsed) ---"
+          echo "$not_ready"
+          echo ""
+          sleep 5
+          elapsed=$((elapsed + 5))
+        done
+        if [ $elapsed -ge $timeout ]; then
+          echo "WARNING: Timed out waiting for pods after ${timeout}s. Current status:"
+          kubectl get pods -A
+        fi
+      - |
+        echo ""
         echo "Overlay: {{.OVERLAY}}"
         echo "Waiting for Gateway to be programmed..."
         kubectl wait -n memory-service gateway/memory-service-gateway --for=condition=Programmed --timeout=2m 2>/dev/null || true
+      - task: kind:urls
+
+  kind:urls:
+    desc: Show services of the kind cluster
+    silent: true
+    cmds:
+      - |
         echo ""
         echo "Services available at:"
-        echo "  Chat:           http://chat.127.0.0.1.nip.io"
-        echo "  Memory Service: http://api.127.0.0.1.nip.io/v1/"
-        echo "  Keycloak:       http://keycloak.127.0.0.1.nip.io"
-        echo "  Grafana:        http://grafana.127.0.0.1.nip.io/grafana/"
+        echo "  Chat:           http://chat.127.0.0.1.nip.io               (bob/bob or alice/alice)"
+        echo "  Keycloak:       http://keycloak.127.0.0.1.nip.io           (admin/admin)"
+        echo "  Grafana:        http://grafana.127.0.0.1.nip.io/grafana/   (admin/admin)"
         echo "  Prometheus:     http://prometheus.127.0.0.1.nip.io/prometheus/"
+        echo "  MinIO Console:  http://minio.127.0.0.1.nip.io              (minioadmin/minioadmin)"
 

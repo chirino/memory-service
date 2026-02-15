@@ -1,11 +1,11 @@
 FROM docker.io/library/node:22-alpine AS frontend-builder
 
 WORKDIR /build
-COPY common/chat-frontend/package.json .
-COPY common/chat-frontend/package-lock.json .
+COPY frontends/chat-frontend/package.json .
+COPY frontends/chat-frontend/package-lock.json .
 RUN npm install
 
-COPY common/chat-frontend .
+COPY frontends/chat-frontend .
 RUN npm run build
 
 FROM maven:3.9.9-eclipse-temurin-21 AS build
@@ -16,7 +16,7 @@ WORKDIR /build
 COPY mvnw .
 COPY .mvn .mvn
 
-COPY ./common/chat-frontend/pom.xml ./common/chat-frontend/pom.xml
+COPY ./frontends/chat-frontend/pom.xml ./frontends/chat-frontend/pom.xml
 COPY ./memory-service-contracts/pom.xml ./memory-service-contracts/pom.xml
 COPY ./memory-service/pom.xml ./memory-service/pom.xml
 COPY ./pom.xml ./pom.xml
