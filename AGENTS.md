@@ -30,7 +30,7 @@ When you discover something meaningful about this project during your work—arc
 - `memory-service-contracts/` - OpenAPI + proto sources of truth
 - `memory-service/` - core implementation
 - `quarkus/examples/chat-quarkus/` - Demo chat app (Quarkus)
-- `common/chat-frontend/` - Demo chat app frontend (React)
+- `frontends/chat-frontend/` - Demo chat app frontend (React)
 
 ## Development Guidelines
 
@@ -47,7 +47,7 @@ When you discover something meaningful about this project during your work—arc
 
 **ALWAYS compile after changes**:
 - Java: `./mvnw compile`
-- TypeScript: `npm run lint && npm run build` from `common/chat-frontend/`
+- TypeScript: `npm run lint && npm run build` from `frontends/chat-frontend/`
 
 **Test output strategy**: When running tests, redirect output to a file and search for errors instead of using `| tail`. This ensures you see all relevant error context:
 ```bash

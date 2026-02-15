@@ -706,8 +706,8 @@ curl -sSfX POST http://localhost:9090/chat/$CONV_ID \
 
 The chat-frontend implementation provides excellent reference patterns:
 
-- **Hooks**: `common/chat-frontend/src/hooks/useSharing.ts` - React hooks for all sharing operations
-- **Components**: `common/chat-frontend/src/components/sharing/` - UI components for share modal, transfer management
+- **Hooks**: `frontends/chat-frontend/src/hooks/useSharing.ts` - React hooks for all sharing operations
+- **Components**: `frontends/chat-frontend/src/components/sharing/` - UI components for share modal, transfer management
 - **Utilities**: Helper functions for permission checking (`canManageMembers`, `canTransferOwnership`, `getAssignableAccessLevels`)
 
 These patterns can inform documentation examples and help users understand real-world usage.
