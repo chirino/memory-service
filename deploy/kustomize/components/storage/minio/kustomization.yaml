@@ -1,19 +1,32 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
+namespace: memory-service
+
 resources:
   - deployment.yaml
   - service.yaml
   - pvc.yaml
+  - init-job.yaml
+
+configMapGenerator:
+  - name: memory-service-config
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_ATTACHMENTS_STORE=s3
+      - MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET=memory-service-attachments
+      - MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=false
+      - QUARKUS_S3_ENDPOINT_OVERRIDE=http://minio:9000
+      - QUARKUS_S3_AWS_REGION=us-east-1
+      - QUARKUS_S3_PATH_STYLE_ACCESS=true
 
 secretGenerator:
   - name: minio-secret
     literals:
       - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=CHANGEME
-
-patches:
-  - path: patch-memory-service.yaml
-    target:
-      kind: Deployment
-      name: memory-service
+      - MINIO_ROOT_PASSWORD=minioadmin
+  - name: memory-service-secret
+    behavior: merge
+    literals:
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin

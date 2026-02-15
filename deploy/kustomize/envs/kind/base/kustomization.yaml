@@ -9,11 +9,13 @@ kind: Component
 # is in each Kind overlay (not here) because kustomize Component patches
 # cannot target resources from sibling components.
 resources:
-  - envoyproxy.yaml
+  - httproute-minio.yaml
+  - httproute-minio-api.yaml
 
 components:
   - ../../../components/gateway-envoy
   - ../../../components/demo/gateway
+  - ../../../components/storage/minio
 
 configMapGenerator:
   - name: keycloak-realm
@@ -21,10 +23,13 @@ configMapGenerator:
       - memory-service-realm.json
     behavior: replace
   - name: memory-service-config
+    behavior: merge
     literals:
       - KEYCLOAK_FRONTEND_URL=http://keycloak.127.0.0.1.nip.io
       - OIDC_TOKEN_ISSUER=http://keycloak.127.0.0.1.nip.io/realms/memory-service
-    behavior: replace
+      - QUARKUS_OIDC_AUTH_SERVER_URL=http://keycloak:8080/realms/memory-service
+      - QUARKUS_OIDC_TOKEN_ISSUER=http://keycloak.127.0.0.1.nip.io/realms/memory-service
+      - MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT=http://minio-api.127.0.0.1.nip.io
 
 patches:
   # Link GatewayClass to the Kind-specific EnvoyProxy (hostNetwork + ClusterIP)
@@ -87,6 +92,20 @@ patches:
       - op: add
         path: /spec/hostnames
         value: ["prometheus.127.0.0.1.nip.io"]
+  - target:
+      kind: HTTPRoute
+      name: minio
+    patch: |
+      - op: add
+        path: /spec/hostnames
+        value: ["minio.127.0.0.1.nip.io"]
+  - target:
+      kind: HTTPRoute
+      name: minio-api
+    patch: |
+      - op: add
+        path: /spec/hostnames
+        value: ["minio-api.127.0.0.1.nip.io"]
   # Use IfNotPresent so kind-loaded images aren't pulled from a registry
   - target:
       kind: Deployment
@@ -98,6 +117,13 @@ patches:
   - target:
       kind: Deployment
       name: demo-chat
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target:
+      kind: Deployment
+      name: minio
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy

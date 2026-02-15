@@ -10,9 +10,7 @@ configMapGenerator:
   - name: prometheus-config
     files:
       - prometheus.yml
-
-patches:
-  - path: patch-memory-service.yaml
-    target:
-      kind: Deployment
-      name: memory-service
+  - name: memory-service-config
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_PROMETHEUS_URL=http://prometheus:9090

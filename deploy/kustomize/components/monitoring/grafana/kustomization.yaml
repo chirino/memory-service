@@ -9,4 +9,4 @@ resources:
 secretGenerator:
   - name: grafana-secret
     literals:
-      - GF_SECURITY_ADMIN_PASSWORD=CHANGEME
+      - GF_SECURITY_ADMIN_PASSWORD=admin
