@@ -594,7 +594,7 @@ public static Flux<String> bufferLines(Flux<String> upstream) {
 
 #### 4.1 Rich Event Rendering
 
-**File:** `common/chat-frontend/src/components/MessageBubble.tsx`
+**File:** `frontends/chat-frontend/src/components/MessageBubble.tsx`
 
 Add event rendering when `events` array is present:
 ```tsx
@@ -607,7 +607,7 @@ Add event rendering when `events` array is present:
 
 #### 4.2 RichEventRenderer Component
 
-**New file:** `common/chat-frontend/src/components/RichEventRenderer.tsx`
+**New file:** `frontends/chat-frontend/src/components/RichEventRenderer.tsx`
 
 ```tsx
 interface RichEventRendererProps {

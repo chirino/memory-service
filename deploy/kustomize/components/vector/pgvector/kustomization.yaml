@@ -1,15 +1,17 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
-# Patch-only component: enables pgvector on the memory-service and swaps the
-# PostgreSQL image to one that includes the pgvector extension.
+# Enables pgvector on the memory-service and swaps the PostgreSQL image
+# to one that includes the pgvector extension.
 # Requires the postgresql datastore component.
 
+configMapGenerator:
+  - name: memory-service-config
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_VECTOR_TYPE=pgvector
+
 patches:
-  - path: patch-memory-service.yaml
-    target:
-      kind: Deployment
-      name: memory-service
   - path: patch-postgresql-image.yaml
     target:
       kind: Deployment

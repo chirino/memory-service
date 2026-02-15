@@ -1,6 +1,6 @@
 # Chat Frontend Design
 
-This document describes the architecture of the chat frontend in `common/chat-frontend/`.
+This document describes the architecture of the chat frontend in `frontends/chat-frontend/`.
 
 ## Overview
 
@@ -278,10 +278,10 @@ flowchart TB
 
 | File | Purpose |
 |------|---------|
-| [conversation.tsx](../common/chat-frontend/src/components/conversation.tsx) | Headless primitives, reducer, hooks |
-| [chat-panel.tsx](../common/chat-frontend/src/components/chat-panel.tsx) | Main chat UI, auto-resume |
-| [useSseStream.ts](../common/chat-frontend/src/hooks/useSseStream.ts) | SSE stream handling |
-| [conversations-ui.tsx](../common/chat-frontend/src/components/conversations-ui.tsx) | Styled UI components |
+| [conversation.tsx](../frontends/chat-frontend/src/components/conversation.tsx) | Headless primitives, reducer, hooks |
+| [chat-panel.tsx](../frontends/chat-frontend/src/components/chat-panel.tsx) | Main chat UI, auto-resume |
+| [useSseStream.ts](../frontends/chat-frontend/src/hooks/useSseStream.ts) | SSE stream handling |
+| [conversations-ui.tsx](../frontends/chat-frontend/src/components/conversations-ui.tsx) | Styled UI components |
 
 ## Design Decisions
 

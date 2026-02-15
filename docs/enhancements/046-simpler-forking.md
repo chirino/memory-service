@@ -325,15 +325,15 @@ ChatClient.stream()
 
 ### Layer 7: Frontend
 
-**File:** `common/chat-frontend/src/hooks/useStreamTypes.ts`
+**File:** `frontends/chat-frontend/src/hooks/useStreamTypes.ts`
 
 Add `forkedAtConversationId?` and `forkedAtEntryId?` to `StreamStartParams`.
 
-**File:** `common/chat-frontend/src/hooks/useSseStream.ts`
+**File:** `frontends/chat-frontend/src/hooks/useSseStream.ts`
 
 Include fork fields in POST body when present.
 
-**File:** `common/chat-frontend/src/components/chat-panel.tsx`
+**File:** `frontends/chat-frontend/src/components/chat-panel.tsx`
 
 1. **Fix attachment deletion**: Destructure `resetAfterSend` from `useAttachments()`. Call `editResetAfterSend()` before `onForkSend()` in the Send button handler.
 
@@ -391,5 +391,5 @@ Update all feature files:
 1. `./mvnw compile` — regenerate Java client models from OpenAPI + gRPC proto stubs
 2. `./mvnw install -pl quarkus/memory-service-proto-quarkus` — rebuild proto stubs module
 3. `./mvnw test -pl memory-service > test.log 2>&1` — run all Cucumber tests (REST + gRPC)
-4. `cd common/chat-frontend && npm run generate-client && npm run lint && npm run build`
+4. `cd frontends/chat-frontend && npm run generate-client && npm run lint && npm run build`
 5. Manual: fork a message with attachment in the chat UI, verify it works end-to-end
