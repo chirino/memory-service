@@ -6,3 +6,12 @@ resources:
 
 components:
   - ../../base
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: memory-service-config
+    patch: |
+      - op: add
+        path: /data/MEMORY_SERVICE_ATTACHMENTS_STORE
+        value: db
