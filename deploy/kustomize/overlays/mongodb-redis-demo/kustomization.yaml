@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Demo: MongoDB + Redis + MongoDB Vector + Keycloak + Monitoring + Chat App
+namespace: memory-service
+
+resources:
+  - ../mongodb-redis
+
+components:
+  - ../../components/demo/chat

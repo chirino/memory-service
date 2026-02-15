@@ -9,14 +9,16 @@ import org.junit.jupiter.api.Test;
 
 class VectorStoreSelectorTest {
 
+    private VectorStoreSelector createSelector() {
+        VectorStoreSelector selector = new VectorStoreSelector();
+        selector.pgVectorStore = TestInstance.of(new PgVectorStore());
+        selector.mongoVectorStore = TestInstance.of(new MongoVectorStore());
+        return selector;
+    }
+
     @Test
     void selects_pg_and_mongo_vector_stores() {
-        PgVectorStore pg = new PgVectorStore();
-        MongoVectorStore mongo = new MongoVectorStore();
-
-        VectorStoreSelector selector = new VectorStoreSelector();
-        selector.pgVectorStore = pg;
-        selector.mongoVectorStore = mongo;
+        VectorStoreSelector selector = createSelector();
 
         selector.vectorType = "pgvector";
         VectorStore selected = selector.getVectorStore();
@@ -37,12 +39,7 @@ class VectorStoreSelectorTest {
 
     @Test
     void defaults_to_pg_when_vector_type_is_none_and_datastore_is_postgres() {
-        PgVectorStore pg = new PgVectorStore();
-        MongoVectorStore mongo = new MongoVectorStore();
-
-        VectorStoreSelector selector = new VectorStoreSelector();
-        selector.pgVectorStore = pg;
-        selector.mongoVectorStore = mongo;
+        VectorStoreSelector selector = createSelector();
         selector.vectorType = "none";
         selector.datastoreType = "postgres";
 
@@ -52,12 +49,7 @@ class VectorStoreSelectorTest {
 
     @Test
     void defaults_to_mongo_when_vector_type_is_none_and_datastore_is_mongo() {
-        PgVectorStore pg = new PgVectorStore();
-        MongoVectorStore mongo = new MongoVectorStore();
-
-        VectorStoreSelector selector = new VectorStoreSelector();
-        selector.pgVectorStore = pg;
-        selector.mongoVectorStore = mongo;
+        VectorStoreSelector selector = createSelector();
         selector.vectorType = "none";
         selector.datastoreType = "mongodb";
 

@@ -5,7 +5,7 @@ version: '3'
 vars:
   KIND_CLUSTER_NAME: memory-service
   ENVOY_GATEWAY_VERSION: v1.7.0
-  OVERLAY: '{{.OVERLAY | default "demo-postgresql-infinispan-gateway"}}'
+  OVERLAY: '{{.OVERLAY | default "postgresql-infinispan-demo"}}'
 
 tasks:
 
@@ -36,7 +36,7 @@ tasks:
   kind:undeploy:
     desc: "Remove the deployed overlay (usage: task kind:undeploy OVERLAY={{.OVERLAY}})"
     cmds:
-      - kubectl delete -k deploy/kustomize/envs/kind/overlays/{{.OVERLAY}} --ignore-not-founds
+      - kubectl delete -k deploy/kustomize/envs/kind/overlays/{{.OVERLAY}} --ignore-not-found
 
   kind:load:
     desc: Load locally built app images into the kind cluster and restart their deployments
@@ -68,10 +68,9 @@ tasks:
         if ! kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; then
           kubectl apply --server-side --force-conflicts -f https://github.com/envoyproxy/gateway/releases/download/{{.ENVOY_GATEWAY_VERSION}}/install.yaml
           kubectl wait --timeout=5m -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
-          kubectl apply -f deploy/kustomize/components/gateway/envoy-gateway/gatewayclass.yaml
+          kubectl apply -f deploy/kustomize/components/gateway-envoy/gatewayclass.yaml
         fi
       - kubectl apply -f deploy/kustomize/envs/kind/envoyproxy.yaml
-      - kubectl apply -f deploy/kustomize/envs/kind/patch-gatewayclass.yaml
       - task: kind:load
       - task: kind:deploy
       - task: secrets

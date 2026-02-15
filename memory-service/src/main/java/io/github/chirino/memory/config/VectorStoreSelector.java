@@ -4,6 +4,7 @@ import io.github.chirino.memory.vector.MongoVectorStore;
 import io.github.chirino.memory.vector.PgVectorStore;
 import io.github.chirino.memory.vector.VectorStore;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -16,19 +17,19 @@ public class VectorStoreSelector {
     @ConfigProperty(name = "memory-service.datastore.type", defaultValue = "postgres")
     String datastoreType;
 
-    @Inject PgVectorStore pgVectorStore;
+    @Inject Instance<PgVectorStore> pgVectorStore;
 
-    @Inject MongoVectorStore mongoVectorStore;
+    @Inject Instance<MongoVectorStore> mongoVectorStore;
 
     public VectorStore getVectorStore() {
         String type = vectorType == null ? "none" : vectorType.trim().toLowerCase();
         switch (type) {
             case "pgvector":
             case "postgres":
-                return pgVectorStore;
+                return pgVectorStore.get();
             case "mongo":
             case "mongodb":
-                return mongoVectorStore;
+                return mongoVectorStore.get();
             case "none":
             default:
                 return defaultForDatastore();
@@ -43,8 +44,8 @@ public class VectorStoreSelector {
     private VectorStore defaultForDatastore() {
         String ds = datastoreType == null ? "postgres" : datastoreType.trim().toLowerCase();
         return switch (ds) {
-            case "mongo", "mongodb" -> mongoVectorStore;
-            default -> pgVectorStore;
+            case "mongo", "mongodb" -> mongoVectorStore.get();
+            default -> pgVectorStore.get();
         };
     }
 }

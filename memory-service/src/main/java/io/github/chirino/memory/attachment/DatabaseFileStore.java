@@ -4,6 +4,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.gridfs.GridFSBucket;
 import com.mongodb.client.gridfs.GridFSBuckets;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,7 +44,7 @@ public class DatabaseFileStore implements FileStore {
     @ConfigProperty(name = "memory-service.datastore.type", defaultValue = "postgres")
     String datastoreType;
 
-    @Inject DataSource dataSource;
+    @Inject Instance<DataSource> dataSource;
 
     @Inject MongoClient mongoClient;
 
@@ -106,7 +107,7 @@ public class DatabaseFileStore implements FileStore {
             long size = counted.getCount();
 
             // 2. Short transaction: stream temp file → LargeObject.
-            try (Connection conn = dataSource.getConnection()) {
+            try (Connection conn = dataSource.get().getConnection()) {
                 conn.setAutoCommit(false);
                 try {
                     LargeObjectManager lom = conn.unwrap(PGConnection.class).getLargeObjectAPI();
@@ -148,7 +149,7 @@ public class DatabaseFileStore implements FileStore {
         Connection conn;
         LargeObject lo;
         try {
-            conn = dataSource.getConnection();
+            conn = dataSource.get().getConnection();
             conn.setAutoCommit(false);
             LargeObjectManager lom = conn.unwrap(PGConnection.class).getLargeObjectAPI();
             lo = lom.open(oid, LargeObjectManager.READ);
@@ -187,7 +188,7 @@ public class DatabaseFileStore implements FileStore {
 
     private void postgresDelete(String storageKey) throws Exception {
         long oid = Long.parseLong(storageKey);
-        try (Connection conn = dataSource.getConnection()) {
+        try (Connection conn = dataSource.get().getConnection()) {
             conn.setAutoCommit(false);
             try {
                 LargeObjectManager lom = conn.unwrap(PGConnection.class).getLargeObjectAPI();

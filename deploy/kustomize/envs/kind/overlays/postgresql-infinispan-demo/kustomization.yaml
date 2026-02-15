@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../../overlays/postgresql-infinispan-demo
+
+components:
+  - ../../base
+  - ../../../../components/gateway-envoy
+  - ../../../../components/demo/gateway
+
+patches:
+  # Link GatewayClass to the Kind-specific EnvoyProxy (hostNetwork + ClusterIP)
+  - target:
+      group: gateway.networking.k8s.io
+      version: v1
+      kind: GatewayClass
+      name: eg
+    patch: |
+      - op: add
+        path: /spec/parametersRef
+        value:
+          group: gateway.envoyproxy.io
+          kind: EnvoyProxy
+          name: kind-proxy
+          namespace: envoy-gateway-system
