@@ -140,8 +140,8 @@ services:
       prometheus:
         condition: service_healthy
 
-  demo-chat:
-    image: ghcr.io/chirino/memory-service-demo-chat:latest
+  chat-quarkus:
+    image: ghcr.io/chirino/memory-service-chat-quarkus:latest
     build:
       context: .
       dockerfile: ./quarkus/examples/chat-quarkus/Dockerfile
