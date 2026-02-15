@@ -76,11 +76,19 @@ public class GrpcResponseResumer implements ResponseResumer {
 
     private final String configuredApiKey;
 
+    private final String grpcTarget;
+
     public GrpcResponseResumer() {
+        var config = ConfigProvider.getConfig();
         this.configuredApiKey =
-                ConfigProvider.getConfig()
-                        .getOptionalValue("memory-service.client.api-key", String.class)
-                        .orElse(null);
+                config.getOptionalValue("memory-service.client.api-key", String.class).orElse(null);
+        String host =
+                config.getOptionalValue("quarkus.grpc.clients.responserecorder.host", String.class)
+                        .orElse("localhost");
+        String port =
+                config.getOptionalValue("quarkus.grpc.clients.responserecorder.port", String.class)
+                        .orElse("9000");
+        this.grpcTarget = host + ":" + port;
     }
 
     @Override
@@ -95,6 +103,9 @@ public class GrpcResponseResumer implements ResponseResumer {
 
     @Override
     public Multi<String> replay(String conversationId, String bearerToken) {
+        LOG.debugf(
+                "Replay session starting for conversationId=%s against gRPC server %s",
+                conversationId, grpcTarget);
         ReplayRequest request =
                 ReplayRequest.newBuilder().setConversationId(toByteString(conversationId)).build();
 
@@ -274,6 +285,7 @@ public class GrpcResponseResumer implements ResponseResumer {
                         response -> {
                             String redirectAddress = response.getRedirectAddress();
                             if (redirectAddress != null && !redirectAddress.isEmpty()) {
+                                LOG.debugf("Replay redirect to %s", redirectAddress);
                                 if (redirectsRemaining <= 0) {
                                     return Multi.createFrom()
                                             .failure(new RuntimeException("Too many redirects"));
@@ -314,6 +326,7 @@ public class GrpcResponseResumer implements ResponseResumer {
                         response -> {
                             String redirectAddress = response.getRedirectAddress();
                             if (redirectAddress != null && !redirectAddress.isEmpty()) {
+                                LOG.debugf("Cancel redirect to %s", redirectAddress);
                                 if (redirectsRemaining <= 0) {
                                     return io.smallrye.mutiny.Uni.createFrom()
                                             .failure(new RuntimeException("Too many redirects"));
@@ -412,6 +425,7 @@ public class GrpcResponseResumer implements ResponseResumer {
             this.recorderService = recorderService;
             this.conversationId = conversationId;
             this.conversationIdBytes = toByteString(conversationId);
+            LOG.debugf("Recording session starting for conversationId=%s", conversationId);
             startStream();
         }
 

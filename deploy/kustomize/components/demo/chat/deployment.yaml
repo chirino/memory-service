@@ -1,24 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: demo-chat
+  name: chat-quarkus
   labels:
-    app: demo-chat
-    app.kubernetes.io/name: demo-chat
+    app: chat-quarkus
+    app.kubernetes.io/name: chat-quarkus
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
-      app: demo-chat
+      app: chat-quarkus
   template:
     metadata:
       labels:
-        app: demo-chat
-        app.kubernetes.io/name: demo-chat
+        app: chat-quarkus
+        app.kubernetes.io/name: chat-quarkus
     spec:
       containers:
-        - name: demo-chat
-          image: ghcr.io/chirino/memory-service-demo-chat:latest
+        - name: chat-quarkus
+          image: ghcr.io/chirino/memory-service-chat-quarkus:latest
           ports:
             - name: http
               containerPort: 8080
@@ -29,7 +29,7 @@ spec:
             - name: MEMORY_SERVICE_CLIENT_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: demo-chat-secret
+                  name: chat-quarkus-secret
                   key: MEMORY_SERVICE_CLIENT_API_KEY
             - name: QUARKUS_OIDC_AUTH_SERVER_URL
               value: "http://keycloak:8080/realms/memory-service"
@@ -46,7 +46,7 @@ spec:
             - name: KEYCLOAK_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: demo-chat-secret
+                  name: chat-quarkus-secret
                   key: KEYCLOAK_CLIENT_SECRET
             - name: OPENAI_API_KEY
               valueFrom:

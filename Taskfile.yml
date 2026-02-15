@@ -9,6 +9,17 @@ vars:
 
 tasks:
 
+  dev:
+    desc: Run the memoery-service and chat-quarkus apps in dev mode.
+    cmds:
+      - |
+        set -e
+        trap 'kill 0' EXIT
+        ./mvnw -T 1C install -pl ':memory-service,:memory-service-extension-deployment' -am -DskipTests
+        ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log 2>&1 &
+        ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
+
+
   secrets:
     desc: Create memory-service secret from current shell environment variables
     cmds:
@@ -42,8 +53,8 @@ tasks:
     desc: Load locally built app images into the kind cluster and restart their deployments
     cmds:
       - kind load docker-image ghcr.io/chirino/memory-service:latest --name {{.KIND_CLUSTER_NAME}}
-      - kind load docker-image ghcr.io/chirino/memory-service-demo-chat:latest --name {{.KIND_CLUSTER_NAME}}
-      - kubectl rollout restart deployment/memory-service deployment/demo-chat -n memory-service 2>/dev/null || true
+      - kind load docker-image ghcr.io/chirino/memory-service-chat-quarkus:latest --name {{.KIND_CLUSTER_NAME}}
+      - kubectl rollout restart deployment/memory-service deployment/chat-quarkus -n memory-service 2>/dev/null || true
 
   kind:rm:
     desc: Delete the kind cluster

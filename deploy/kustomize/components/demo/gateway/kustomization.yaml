@@ -5,4 +5,4 @@ resources:
   - httproute-keycloak.yaml
   - httproute-grafana.yaml
   - httproute-prometheus.yaml
-  - httproute-demo-chat.yaml
+  - httproute-chat-quarkus.yaml

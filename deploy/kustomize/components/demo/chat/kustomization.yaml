@@ -6,7 +6,7 @@ resources:
   - service.yaml
 
 secretGenerator:
-  - name: demo-chat-secret
+  - name: chat-quarkus-secret
     literals:
       - MEMORY_SERVICE_CLIENT_API_KEY=agent-api-key-1
       - KEYCLOAK_CLIENT_SECRET=change-me
