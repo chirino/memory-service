@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: memory-service
+          env:
+            - name: QUARKUS_OIDC_AUTH_SERVER_URL
+              value: "http://keycloak:8080/realms/memory-service"
+            - name: QUARKUS_OIDC_TOKEN_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: memory-service-config
+                  key: OIDC_TOKEN_ISSUER
+            - name: QUARKUS_OIDC_CLIENT_ID
+              value: "memory-service-client"
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secret
+                  key: KEYCLOAK_CLIENT_SECRET
+            - name: MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE
+              value: "admin"
+            - name: MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE
+              value: "auditor"

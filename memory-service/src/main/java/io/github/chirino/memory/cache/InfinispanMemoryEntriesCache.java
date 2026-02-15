@@ -19,12 +19,20 @@ import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.exceptions.HotRodClientException;
 import org.infinispan.client.hotrod.exceptions.TransportException;
+import org.infinispan.commons.configuration.XMLStringConfiguration;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class InfinispanMemoryEntriesCache implements MemoryEntriesCache {
     private static final Logger LOG = Logger.getLogger(InfinispanMemoryEntriesCache.class);
     private static final String CACHE_NAME = "memory-entries";
+    private static final XMLStringConfiguration CACHE_CONFIG =
+            new XMLStringConfiguration(
+                    "<distributed-cache name=\""
+                            + CACHE_NAME
+                            + "\">"
+                            + "<encoding media-type=\"text/plain\"/>"
+                            + "</distributed-cache>");
     private static final Duration RETRY_DELAY = Duration.ofMillis(200);
 
     private final boolean infinispanEnabled;
@@ -78,11 +86,11 @@ public class InfinispanMemoryEntriesCache implements MemoryEntriesCache {
 
         try {
             RemoteCacheManager cacheManager = cacheManagers.get();
-            cache = cacheManager.getCache(CACHE_NAME);
+            cache = cacheManager.administration().getOrCreateCache(CACHE_NAME, CACHE_CONFIG);
             if (cache == null) {
                 LOG.warnf(
                         "Memory entries cache is enabled (memory-service.cache.type=infinispan) but"
-                                + " cache '%s' is not available.",
+                                + " cache '%s' could not be created.",
                         CACHE_NAME);
             }
         } catch (Exception e) {

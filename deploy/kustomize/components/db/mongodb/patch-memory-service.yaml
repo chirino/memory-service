@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: memory-service
+          env:
+            - name: MEMORY_SERVICE_DATASTORE_TYPE
+              value: "mongo"
+            - name: QUARKUS_MONGODB_CONNECTION_STRING
+              value: "mongodb://mongodb:27017"
+            - name: QUARKUS_MONGODB_DATABASE
+              value: "memory_service"
+            - name: QUARKUS_MONGODB_CREDENTIALS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secret
+                  key: MONGO_INITDB_ROOT_USERNAME
+            - name: QUARKUS_MONGODB_CREDENTIALS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secret
+                  key: MONGO_INITDB_ROOT_PASSWORD

@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-chat
+  labels:
+    app: demo-chat
+    app.kubernetes.io/name: demo-chat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-chat
+  template:
+    metadata:
+      labels:
+        app: demo-chat
+        app.kubernetes.io/name: demo-chat
+    spec:
+      containers:
+        - name: demo-chat
+          image: ghcr.io/chirino/memory-service-demo-chat:latest
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: MEMORY_SERVICE_CLIENT_URL
+              value: "http://memory-service:8080"
+            - name: MEMORY_SERVICE_CLIENT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-chat-secret
+                  key: MEMORY_SERVICE_CLIENT_API_KEY
+            - name: QUARKUS_OIDC_AUTH_SERVER_URL
+              value: "http://keycloak:8080/realms/memory-service"
+            - name: QUARKUS_OIDC_TOKEN_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: memory-service-config
+                  key: OIDC_TOKEN_ISSUER
+            - name: KEYCLOAK_FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: memory-service-config
+                  key: KEYCLOAK_FRONTEND_URL
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: demo-chat-secret
+                  key: KEYCLOAK_CLIENT_SECRET
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: memory-service
+                  key: OPENAI_API_KEY
+            - name: OPENAI_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: memory-service
+                  key: OPENAI_BASE_URL
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 250m
+            limits:
+              memory: 1Gi
+              cpu: "1"
