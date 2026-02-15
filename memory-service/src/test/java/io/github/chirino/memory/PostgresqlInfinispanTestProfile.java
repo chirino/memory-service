@@ -12,7 +12,7 @@ public class PostgresqlInfinispanTestProfile implements QuarkusTestProfile {
                 Map.entry("memory-service.vector.type", "pgvector"),
                 Map.entry("memory-service.cache.type", "infinispan"),
                 Map.entry(
-                        "quarkus.infinispan-client.cache.response-resumer.configuration",
+                        "quarkus.infinispan-client.cache.response-recordings.configuration",
                         "<distributed-cache><encoding"
                             + " media-type=\"application/x-protostream\"/></distributed-cache>"),
                 Map.entry(

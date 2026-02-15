@@ -43,14 +43,6 @@ export function useSseStream(): StreamClient {
       // Resume: text is empty and resetResume is false
       const isResume = !trimmedMessage && !params.resetResume;
 
-      console.info("[useSseStream] start", {
-        localStreamId,
-        sessionId: params.sessionId,
-        isResume,
-        hasText: Boolean(trimmedMessage),
-        resetResume: params.resetResume,
-      });
-
       if (!isResume && !trimmedMessage) {
         params.onError?.(new Error("SSE stream requires a message"));
         return;

@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infinispan
+  labels:
+    app: infinispan
+    app.kubernetes.io/name: infinispan
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: infinispan
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: infinispan
+        app.kubernetes.io/name: infinispan
+    spec:
+      containers:
+        - name: infinispan
+          image: quay.io/infinispan/server:15.0
+          ports:
+            - name: infinispan
+              containerPort: 11222
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: infinispan-secret
+          volumeMounts:
+            - name: data
+              mountPath: /opt/infinispan/server/data
+          readinessProbe:
+            httpGet:
+              path: /rest/v2/cache-managers/default/health/status
+              port: infinispan
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /rest/v2/cache-managers/default/health/status
+              port: infinispan
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 250m
+            limits:
+              memory: 1Gi
+              cpu: 500m
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: infinispan-data
