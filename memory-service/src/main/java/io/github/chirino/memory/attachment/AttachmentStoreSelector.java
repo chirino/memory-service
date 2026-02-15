@@ -2,6 +2,7 @@ package io.github.chirino.memory.attachment;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -11,9 +12,9 @@ public class AttachmentStoreSelector {
     @ConfigProperty(name = "memory-service.datastore.type", defaultValue = "postgres")
     String datastoreType;
 
-    @Inject PostgresAttachmentStore postgresAttachmentStore;
+    @Inject Instance<PostgresAttachmentStore> postgresAttachmentStore;
 
-    @Inject MongoAttachmentStore mongoAttachmentStore;
+    @Inject Instance<MongoAttachmentStore> mongoAttachmentStore;
 
     private AttachmentStore selected;
 
@@ -21,9 +22,9 @@ public class AttachmentStoreSelector {
     void init() {
         String type = datastoreType == null ? "postgres" : datastoreType.trim().toLowerCase();
         if ("postgres".equals(type)) {
-            selected = postgresAttachmentStore;
+            selected = postgresAttachmentStore.get();
         } else if ("mongo".equals(type) || "mongodb".equals(type)) {
-            selected = mongoAttachmentStore;
+            selected = mongoAttachmentStore.get();
         } else {
             throw new IllegalStateException(
                     "Unsupported memory-service.datastore.type for attachments: " + datastoreType);

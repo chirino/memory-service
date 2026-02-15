@@ -7,14 +7,13 @@ public class MongoRedisTestProfile implements QuarkusTestProfile {
 
     @Override
     public Map<String, String> getConfigOverrides() {
-        return Map.of(
-                "memory-service.datastore.type", "mongo",
-                "memory-service.vector.type", "mongodb",
-                "memory-service.cache.type", "redis",
-                "quarkus.mongodb.devservices.enabled", "true",
-                "quarkus.redis.devservices.enabled", "true",
-                "quarkus.liquibase-mongodb.migrate-at-start", "true",
-                "quarkus.liquibase-mongodb.change-log",
-                        "db/changelog-mongodb/db.changelog-master.yaml");
+        return Map.ofEntries(
+                Map.entry("memory-service.datastore.type", "mongo"),
+                Map.entry("memory-service.vector.type", "mongodb"),
+                Map.entry("memory-service.cache.type", "redis"),
+                Map.entry("quarkus.mongodb.devservices.enabled", "true"),
+                Map.entry("quarkus.redis.devservices.enabled", "true"),
+                // Disable unused Infinispan dev services
+                Map.entry("quarkus.infinispan-client.devservices.enabled", "false"));
     }
 }

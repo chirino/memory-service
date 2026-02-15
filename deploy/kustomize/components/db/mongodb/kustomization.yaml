@@ -12,6 +12,7 @@ secretGenerator:
       - MONGO_INITDB_ROOT_USERNAME=mongo
       - MONGO_INITDB_ROOT_PASSWORD=CHANGEME
       - MONGO_INITDB_DATABASE=memory_service
+      - keyfile=bW9uZ29kYnJlcGxpY2FzZXRrZXljaGFuZ2VtZWlucHJvZHVjdGlvbgo=
 
 patches:
   - path: patch-memory-service.yaml
