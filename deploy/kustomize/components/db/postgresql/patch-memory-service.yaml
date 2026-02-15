@@ -24,5 +24,5 @@ spec:
                 secretKeyRef:
                   name: postgresql-secret
                   key: POSTGRES_PASSWORD
-            - name: QUARKUS_LIQUIBASE_MIGRATE_AT_START
+            - name: MEMORY_SERVICE_DATASTORE_MIGRATE_AT_START
               value: "true"

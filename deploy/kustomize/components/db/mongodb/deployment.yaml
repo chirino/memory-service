@@ -18,9 +18,20 @@ spec:
         app: mongodb
         app.kubernetes.io/name: mongodb
     spec:
+      initContainers:
+        - name: init-keyfile
+          image: mongo:7
+          command: ["bash", "-c", "cp /secret/keyfile /etc/mongo/keyfile && chmod 400 /etc/mongo/keyfile && chown 999:999 /etc/mongo/keyfile"]
+          volumeMounts:
+            - name: keyfile-secret
+              mountPath: /secret
+              readOnly: true
+            - name: keyfile
+              mountPath: /etc/mongo
       containers:
         - name: mongodb
           image: mongo:7
+          args: ["--replSet", "rs0", "--keyFile", "/etc/mongo/keyfile"]
           ports:
             - name: mongo
               containerPort: 27017
@@ -31,22 +42,29 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data/db
+            - name: keyfile
+              mountPath: /etc/mongo
+              readOnly: true
           readinessProbe:
             exec:
               command:
-                - mongosh
-                - --eval
-                - "db.adminCommand('ping')"
+                - bash
+                - -c
+                - >-
+                  mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "
+                  try { rs.status().ok && 1 } catch(e) { rs.initiate({_id:'rs0', members:[{_id:0, host:'localhost:27017'}]}); sleep(1000); rs.status().ok && 1 }
+                  "
             initialDelaySeconds: 5
             periodSeconds: 5
-            timeoutSeconds: 5
+            timeoutSeconds: 10
             failureThreshold: 10
           livenessProbe:
             exec:
               command:
-                - mongosh
-                - --eval
-                - "db.adminCommand('ping')"
+                - bash
+                - -c
+                - >-
+                  mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand('ping')"
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
@@ -62,3 +80,11 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: mongodb-data
+        - name: keyfile-secret
+          secret:
+            secretName: mongodb-secret
+            items:
+              - key: keyfile
+                path: keyfile
+        - name: keyfile
+          emptyDir: {}
