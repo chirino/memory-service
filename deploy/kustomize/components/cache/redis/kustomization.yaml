@@ -5,8 +5,9 @@ resources:
   - deployment.yaml
   - service.yaml
 
-patches:
-  - path: patch-memory-service.yaml
-    target:
-      kind: Deployment
-      name: memory-service
+configMapGenerator:
+  - name: memory-service-config
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_CACHE_TYPE=redis
+      - QUARKUS_REDIS_HOSTS=redis://redis:6379

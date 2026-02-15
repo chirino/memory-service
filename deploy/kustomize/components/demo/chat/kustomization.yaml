@@ -10,9 +10,7 @@ secretGenerator:
     literals:
       - MEMORY_SERVICE_CLIENT_API_KEY=agent-api-key-1
       - KEYCLOAK_CLIENT_SECRET=change-me
-
-patches:
-  - path: patch-memory-service.yaml
-    target:
-      kind: Deployment
-      name: memory-service
+  - name: memory-service-secret
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_API_KEYS_AGENT=agent-api-key-1

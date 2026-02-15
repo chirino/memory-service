@@ -10,3 +10,15 @@ resources:
 labels:
   - pairs:
       app.kubernetes.io/part-of: memory-service
+
+configMapGenerator:
+  - name: memory-service-config
+    literals:
+      - MEMORY_SERVICE_DATASTORE_TYPE=postgres
+      - MEMORY_SERVICE_CACHE_TYPE=none
+      - MEMORY_SERVICE_VECTOR_TYPE=none
+      - MEMORY_SERVICE_ATTACHMENTS_STORE=db
+
+secretGenerator:
+  - name: memory-service-secret
+    literals: []

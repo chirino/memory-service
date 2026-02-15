@@ -6,14 +6,22 @@ resources:
   - service.yaml
   - pvc.yaml
 
+configMapGenerator:
+  - name: memory-service-config
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_CACHE_TYPE=infinispan
+      - QUARKUS_INFINISPAN_CLIENT_HOSTS=infinispan:11222
+      - 'QUARKUS_INFINISPAN_CLIENT_CACHE__RESPONSE_RECORDINGS__CONFIGURATION=<distributed-cache><encoding media-type="application/x-protostream"/></distributed-cache>'
+      - 'QUARKUS_INFINISPAN_CLIENT_CACHE__MEMORY_ENTRIES__CONFIGURATION=<distributed-cache><encoding media-type="text/plain"/></distributed-cache>'
+
 secretGenerator:
   - name: infinispan-secret
     literals:
       - USER=admin
-      - PASS=CHANGEME
-
-patches:
-  - path: patch-memory-service.yaml
-    target:
-      kind: Deployment
-      name: memory-service
+      - PASS=admin
+  - name: memory-service-secret
+    behavior: merge
+    literals:
+      - QUARKUS_INFINISPAN_CLIENT_USERNAME=admin
+      - QUARKUS_INFINISPAN_CLIENT_PASSWORD=admin
