@@ -2,6 +2,7 @@ package io.github.chirino.memory.config;
 
 import io.quarkus.runtime.configuration.MemorySize;
 import jakarta.enterprise.context.ApplicationScoped;
+import java.net.URI;
 import java.time.Duration;
 import java.util.Optional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -39,6 +40,12 @@ public class AttachmentConfig {
 
     @ConfigProperty(name = "memory-service.attachments.s3.prefix")
     Optional<String> s3Prefix;
+
+    @ConfigProperty(name = "memory-service.attachments.s3.direct-download", defaultValue = "true")
+    boolean s3DirectDownload;
+
+    @ConfigProperty(name = "memory-service.attachments.s3.external-endpoint")
+    Optional<String> s3ExternalEndpoint;
 
     @ConfigProperty(
             name = "memory-service.attachments.download-url-expires-in",
@@ -82,6 +89,14 @@ public class AttachmentConfig {
 
     public String getS3Prefix() {
         return s3Prefix.orElse("");
+    }
+
+    public boolean isS3DirectDownload() {
+        return s3DirectDownload;
+    }
+
+    public Optional<URI> getS3ExternalEndpoint() {
+        return s3ExternalEndpoint.filter(s -> !s.isBlank()).map(URI::create);
     }
 
     public Duration getDownloadUrlExpiresIn() {

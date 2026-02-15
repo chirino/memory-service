@@ -18,9 +18,13 @@ import java.util.UUID;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
@@ -59,6 +63,36 @@ public class S3FileStore implements FileStore {
     @Inject S3Presigner s3Presigner;
 
     @Inject AttachmentConfig config;
+
+    @ConfigProperty(name = "quarkus.s3.aws.region", defaultValue = "us-east-1")
+    String s3Region;
+
+    private volatile S3Presigner externalPresigner;
+
+    /** Returns a presigner that signs against the external endpoint when configured. */
+    private S3Presigner presignerForUrls() {
+        Optional<URI> ext = config.getS3ExternalEndpoint();
+        if (ext.isEmpty()) {
+            return s3Presigner;
+        }
+        if (externalPresigner == null) {
+            synchronized (this) {
+                if (externalPresigner == null) {
+                    externalPresigner =
+                            S3Presigner.builder()
+                                    .endpointOverride(ext.get())
+                                    .credentialsProvider(DefaultCredentialsProvider.create())
+                                    .region(Region.of(s3Region))
+                                    .serviceConfiguration(
+                                            S3Configuration.builder()
+                                                    .pathStyleAccessEnabled(true)
+                                                    .build())
+                                    .build();
+                }
+            }
+        }
+        return externalPresigner;
+    }
 
     private String key(String storageKey) {
         String prefix = config.getS3Prefix();
@@ -252,17 +286,21 @@ public class S3FileStore implements FileStore {
 
     @Override
     public Optional<URI> getSignedUrl(String storageKey, Duration expiry) {
+        if (!config.isS3DirectDownload()) {
+            return Optional.empty();
+        }
         try {
             var presigned =
-                    s3Presigner.presignGetObject(
-                            GetObjectPresignRequest.builder()
-                                    .signatureDuration(expiry)
-                                    .getObjectRequest(
-                                            GetObjectRequest.builder()
-                                                    .bucket(config.getS3Bucket())
-                                                    .key(key(storageKey))
-                                                    .build())
-                                    .build());
+                    presignerForUrls()
+                            .presignGetObject(
+                                    GetObjectPresignRequest.builder()
+                                            .signatureDuration(expiry)
+                                            .getObjectRequest(
+                                                    GetObjectRequest.builder()
+                                                            .bucket(config.getS3Bucket())
+                                                            .key(key(storageKey))
+                                                            .build())
+                                            .build());
             return Optional.of(presigned.url().toURI());
         } catch (Exception e) {
             LOG.warnf("Failed to generate signed URL for %s: %s", storageKey, e.getMessage());
