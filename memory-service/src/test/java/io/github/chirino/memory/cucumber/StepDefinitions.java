@@ -2934,7 +2934,9 @@ public class StepDefinitions {
     }
 
     private void clearMongoData() {
-        if (mongoEntryRepository.isUnsatisfied()) {
+        String datastoreType =
+                config.getOptionalValue("memory-service.datastore.type", String.class).orElse("");
+        if (!"mongo".equals(datastoreType) || mongoEntryRepository.isUnsatisfied()) {
             return;
         }
         mongoEntryRepository.get().deleteAll();
