@@ -6,7 +6,7 @@ metadata:
     app: memory-service
     app.kubernetes.io/name: memory-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: memory-service
