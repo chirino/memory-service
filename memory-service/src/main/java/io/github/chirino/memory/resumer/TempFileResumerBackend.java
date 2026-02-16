@@ -118,6 +118,9 @@ public class TempFileResumerBackend implements ResponseResumerBackend {
                         resolvedAddress == null ? "localhost" : resolvedAddress.host(),
                         resolvedAddress == null ? 0 : resolvedAddress.port(),
                         entry.fileName());
+        LOG.infof(
+                "Recording registered: conversationId=%s advertisedAddress=%s locator=%s",
+                conversationId, resolvedAddress, locator.encode());
         ScheduledFuture<?> refreshTask =
                 scheduler.scheduleAtFixedRate(
                         () -> locatorStore.upsert(conversationId, locator, locatorTtl),
@@ -138,10 +141,21 @@ public class TempFileResumerBackend implements ResponseResumerBackend {
 
         Optional<ResponseResumerLocator> locator = locatorStore.get(conversationId);
         if (locator.isEmpty()) {
+            LOG.infof("Replay: no locator found for conversationId=%s", conversationId);
             return Multi.createFrom().empty();
         }
 
+        LOG.infof(
+                "Replay: conversationId=%s advertisedAddress=%s locator=%s matches=%b",
+                conversationId,
+                advertisedAddress,
+                locator.get().encode(),
+                advertisedAddress == null || locator.get().matches(advertisedAddress));
+
         if (advertisedAddress != null && !locator.get().matches(advertisedAddress)) {
+            LOG.infof(
+                    "Replay: redirecting conversationId=%s to %s",
+                    conversationId, locator.get().address());
             return Multi.createFrom()
                     .failure(new ResponseResumerRedirectException(locator.get().address()));
         }

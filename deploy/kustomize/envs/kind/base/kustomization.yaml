@@ -49,7 +49,7 @@ patches:
   # Assign nip.io hostnames to each HTTPRoute
   - target:
       kind: HTTPRoute
-      name: demo-chat
+      name: chat-quarkus
     patch: |
       - op: add
         path: /spec/hostnames
@@ -116,7 +116,7 @@ patches:
         value: IfNotPresent
   - target:
       kind: Deployment
-      name: demo-chat
+      name: chat-quarkus
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
