@@ -1317,7 +1317,23 @@ public class MongoMemoryStore implements MemoryStore {
         // Load conversation to check if it's a fork
         MongoConversation conversation = conversationRepository.findById(conversationId);
         if (conversation == null) {
-            throw new ResourceNotFoundException("conversation", conversationId);
+            // Auto-create: no existing entries, so just append all incoming content as epoch 1.
+            // appendMemoryEntries handles conversation auto-creation.
+            SyncResult result = new SyncResult();
+            if (entry.getContent() == null || entry.getContent().isEmpty()) {
+                result.setNoOp(true);
+                return result;
+            }
+            Long initialEpoch = 1L;
+            List<EntryDto> appended =
+                    appendMemoryEntries(
+                            userId, conversationId, List.of(entry), clientId, initialEpoch);
+            updateCacheWithLatestEntries(conversationId, clientId);
+            result.setEpoch(initialEpoch);
+            result.setEntry(appended.isEmpty() ? null : appended.get(0));
+            result.setEpochIncremented(true);
+            result.setNoOp(false);
+            return result;
         }
 
         List<EntryDto> latestEpochEntries;

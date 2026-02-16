@@ -124,7 +124,7 @@ Update the Agent interface to accept a conversation ID using the `@MemoryId` ann
   lang="java"
 />
 
-Update the REST resource to accept a conversation ID:
+Update the REST resource to accept a conversation ID. Note the `@Blocking` annotation — this is required because the Memory Service extension uses a REST client that performs blocking I/O. Quarkus RESTEasy Reactive runs endpoints on the Vert.x event loop by default, which does not allow blocking calls. The `@Blocking` annotation moves the endpoint to a worker thread where blocking I/O is permitted.
 
 <CodeFromFile
   file="quarkus/examples/doc-checkpoints/02-with-memory/src/main/java/org/acme/ChatResource.java"

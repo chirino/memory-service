@@ -355,13 +355,6 @@ public class MemoryServiceProxy {
                         : "application/octet-stream";
         String filename = formValue.getFileName();
 
-        if (!AttachmentResolver.isSupportedContentType(contentType)) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .type(MediaType.APPLICATION_JSON)
-                    .entity(Map.of("error", "Unsupported file type: " + contentType))
-                    .build();
-        }
-
         try {
             InputStream fileStream = formValue.getFileItem().getInputStream();
 
@@ -645,11 +638,21 @@ public class MemoryServiceProxy {
     }
 
     private Response handleException(Exception e) {
-        if (e instanceof jakarta.ws.rs.WebApplicationException) {
-            jakarta.ws.rs.WebApplicationException wae = (jakarta.ws.rs.WebApplicationException) e;
-            Response.ResponseBuilder builder = Response.status(wae.getResponse().getStatus());
-            if (wae.getResponse().hasEntity()) {
-                builder.entity(wae.getResponse().getEntity());
+        if (e instanceof jakarta.ws.rs.WebApplicationException wae) {
+            int status = wae.getResponse().getStatus();
+            String body = "";
+            try {
+                if (wae.getResponse().hasEntity()) {
+                    body = wae.getResponse().readEntity(String.class);
+                }
+            } catch (Exception ignored) {
+            }
+            if (status >= 400) {
+                LOG.warnf("memory-service call failed: %d %s", status, body);
+            }
+            Response.ResponseBuilder builder = Response.status(status);
+            if (!body.isEmpty()) {
+                builder.entity(body);
             }
             return builder.build();
         }

@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.util.StringUtils;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 public class ConversationStore {
 
@@ -119,10 +120,6 @@ public class ConversationStore {
         CreateEntryRequest request = new CreateEntryRequest();
         request.channel(Channel.HISTORY);
         request.contentType("history/lc4j");
-        String userId = resolveUserId();
-        if (userId != null) {
-            request.userId(userId);
-        }
 
         Map<String, Object> block = new HashMap<>();
         block.put("role", "AI");
@@ -151,6 +148,12 @@ public class ConversationStore {
         try {
             ConversationsApi api = apiFactory.create(bearerToken);
             api.appendConversationEntry(UUID.fromString(conversationId), request).block();
+        } catch (WebClientResponseException e) {
+            LOG.warn(
+                    "Failed to append conversation entry for conversationId={}: {} {}",
+                    conversationId,
+                    e.getStatusCode(),
+                    e.getResponseBodyAsString());
         } catch (Exception e) {
             LOG.warn(
                     "Failed to append conversation entry for conversationId={}, continuing"
@@ -160,18 +163,14 @@ public class ConversationStore {
         }
     }
 
-    private String resolveUserId() {
-        return SecurityHelper.principalName();
-    }
-
     private CreateEntryRequest createRequest(String content, String role) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.channel(Channel.HISTORY);
         request.contentType("history");
-        String userId = resolveUserId();
-        if (userId != null) {
-            request.userId(userId);
-        }
+        // Don't send userId — the server resolves it from the Bearer token.
+        // Sending it explicitly can cause mismatches when the Spring principal
+        // name (JWT "sub" claim) differs from the server's principal name
+        // (e.g. Keycloak "preferred_username").
         Map<String, Object> block = new HashMap<>();
         block.put("text", content);
         block.put("role", role);

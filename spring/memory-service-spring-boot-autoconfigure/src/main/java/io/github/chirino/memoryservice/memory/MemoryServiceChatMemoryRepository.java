@@ -7,7 +7,6 @@ import io.github.chirino.memoryservice.client.model.CreateEntryRequest;
 import io.github.chirino.memoryservice.client.model.Entry;
 import io.github.chirino.memoryservice.client.model.ListConversationEntries200Response;
 import io.github.chirino.memoryservice.history.ConversationsApiFactory;
-import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -141,6 +140,13 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
                     "Successfully synced {} messages for conversationId={}",
                     syncEntry.getContent().size(),
                     conversationId);
+        } catch (WebClientResponseException e) {
+            LOG.warn(
+                    "Failed to sync entries for conversationId={}: {} {}",
+                    conversationId,
+                    e.getStatusCode(),
+                    e.getResponseBodyAsString());
+            throw e;
         } catch (Exception e) {
             LOG.warn("Failed to sync entries for conversationId={}", conversationId, e);
             throw e;
@@ -156,10 +162,6 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         CreateEntryRequest syncEntry = new CreateEntryRequest();
         syncEntry.setChannel(Channel.MEMORY);
         syncEntry.setContentType("SpringAI");
-        String userId = SecurityHelper.principalName();
-        if (userId != null) {
-            syncEntry.setUserId(userId);
-        }
         syncEntry.setContent(new ArrayList<>());
 
         try {
@@ -167,6 +169,13 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
                     .syncConversationMemory(UUID.fromString(conversationId), syncEntry)
                     .block();
             LOG.debug("Successfully cleared memory for conversationId={}", conversationId);
+        } catch (WebClientResponseException e) {
+            LOG.warn(
+                    "Failed to clear memory for conversationId={}: {} {}",
+                    conversationId,
+                    e.getStatusCode(),
+                    e.getResponseBodyAsString());
+            throw e;
         } catch (Exception e) {
             LOG.warn("Failed to clear memory for conversationId={}", conversationId, e);
             throw e;
@@ -185,11 +194,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(Channel.MEMORY);
         request.setContentType("SpringAI");
-
-        String userId = SecurityHelper.principalName();
-        if (userId != null) {
-            request.setUserId(userId);
-        }
+        // Don't send userId — the server resolves it from the Bearer token.
 
         List<Object> contentBlocks = new ArrayList<>();
         for (Message message : messages) {
