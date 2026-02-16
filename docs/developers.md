@@ -78,3 +78,18 @@ curl -sSfX GET "http://localhost:8082/v1/admin/stats/store-latency-p95" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
+
+## Testing in Kubernetes
+
+Requirments:
+
+* kind
+* task
+
+To create a new kind cluster running the memory-service and the chat-quarkus demo, run:
+
+```bash
+task kind:reset
+```
+
+Run `task --list` to see all available targets that you can use to manage the kind deployment.
