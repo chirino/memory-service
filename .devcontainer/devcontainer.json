@@ -1,0 +1,60 @@
+{
+  "name": "Memory Service",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "dockerDashComposeVersion": "v2"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+      "version": "latest",
+      "helm": "none",
+      "minikube": "none"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "configureZshAsDefaultShell": false,
+      "upgradePackages": false,
+      "username": "vscode",
+      "userUid": "automatic",
+      "userGid": "automatic"
+    }
+  },
+  "initializeCommand": "bash -c 'mkdir -p ~/.m2 || true'",
+  "mounts": [
+    {
+      "source": "${localEnv:HOME}${localEnv:USERPROFILE}/.m2",
+      "target": "/home/vscode/.m2",
+      "type": "bind"
+    }
+  ],
+  "postStartCommand": "bash -c 'pgrep -x microsocks > /dev/null || { nohup microsocks -p 1080 > /tmp/microsocks.log 2>&1 & disown; }'",
+  "forwardPorts": [1080, 3000, 3001, 4321, 8080, 8081, 8082, 9092],
+  "portsAttributes": {
+    "1080": { "label": "SOCKS5 Proxy", "onAutoForward": "silent" },
+    "3000": { "label": "Chat Frontend" },
+    "3001": { "label": "Grafana" },
+    "4321": { "label": "Docs Site (Astro)" },
+    "8080": { "label": "Chat Quarkus" },
+    "8081": { "label": "Keycloak" },
+    "8082": { "label": "Memory Service" },
+    "9092": { "label": "Prometheus" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "redhat.java",
+        "vscjava.vscode-maven",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-kubernetes-tools.vscode-kubernetes-tools"
+      ]
+    }
+  }
+}
