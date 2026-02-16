@@ -127,7 +127,19 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
             LOG.debugf("Skipping sync for empty memory update on conversationId=%s", memoryId);
             return;
         }
-        conversationsApi().syncConversationMemory(UUID.fromString(memoryId.toString()), syncEntry);
+        try {
+            conversationsApi()
+                    .syncConversationMemory(UUID.fromString(memoryId.toString()), syncEntry);
+        } catch (WebApplicationException e) {
+            String body = readResponseBody(e);
+            LOG.warnf(
+                    "Failed to sync memory for conversationId=%s: %d %s",
+                    memoryId, e.getResponse() != null ? e.getResponse().getStatus() : -1, body);
+            throw e;
+        } catch (Exception e) {
+            LOG.warnf(e, "Failed to sync memory for conversationId=%s", memoryId);
+            throw e;
+        }
     }
 
     @Override
@@ -145,7 +157,19 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         syncEntry.setChannel(ChannelEnum.MEMORY);
         syncEntry.setContentType("LC4J");
         syncEntry.setContent(new ArrayList<>());
-        conversationsApi().syncConversationMemory(UUID.fromString(memoryId.toString()), syncEntry);
+        try {
+            conversationsApi()
+                    .syncConversationMemory(UUID.fromString(memoryId.toString()), syncEntry);
+        } catch (WebApplicationException e) {
+            String body = readResponseBody(e);
+            LOG.warnf(
+                    "Failed to clear memory for conversationId=%s: %d %s",
+                    memoryId, e.getResponse() != null ? e.getResponse().getStatus() : -1, body);
+            throw e;
+        } catch (Exception e) {
+            LOG.warnf(e, "Failed to clear memory for conversationId=%s", memoryId);
+            throw e;
+        }
     }
 
     /**
@@ -171,6 +195,16 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         }
         request.setContent(contentBlocks);
         return request;
+    }
+
+    static String readResponseBody(WebApplicationException e) {
+        try {
+            if (e.getResponse() != null && e.getResponse().hasEntity()) {
+                return e.getResponse().readEntity(String.class);
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
     }
 
     private ConversationsApi conversationsApi() {

@@ -106,7 +106,8 @@ And the response body should be json:
   "filename": "test-upload.txt",
   "size": %{response.body.size},
   "sha256": "%{response.body.sha256}",
-  "expiresAt": "%{response.body.expiresAt}"
+  "expiresAt": "%{response.body.expiresAt}",
+  "status": "ready"
 }
 """
 `}>
@@ -130,7 +131,8 @@ Example response:
   "filename": "test-upload.txt",
   "size": 21,
   "sha256": "a1b2c3d4...",
-  "expiresAt": "2025-01-28T11:30:00Z"
+  "expiresAt": "2025-01-28T11:30:00Z",
+  "status": "ready"
 }
 ```
 

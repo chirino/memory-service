@@ -602,7 +602,10 @@ public class MemoryServiceProxy {
                     action.apply(conversationsApi(null)).block(resolveTimeout());
             return handleUpstreamResponse(upstream);
         } catch (WebClientResponseException e) {
-            LOG.warn("memory-service call failed: {}", e.getMessage());
+            LOG.warn(
+                    "memory-service call failed: {} {}",
+                    e.getStatusCode(),
+                    e.getResponseBodyAsString());
             return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
         } catch (Exception e) {
             LOG.error("Unexpected error calling memory-service", e);
@@ -618,7 +621,10 @@ public class MemoryServiceProxy {
             ResponseEntity<T> upstream = action.apply(sharingApi(null)).block(resolveTimeout());
             return handleUpstreamResponse(upstream);
         } catch (WebClientResponseException e) {
-            LOG.warn("memory-service call failed: {}", e.getMessage());
+            LOG.warn(
+                    "memory-service call failed: {} {}",
+                    e.getStatusCode(),
+                    e.getResponseBodyAsString());
             return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
         } catch (Exception e) {
             LOG.error("Unexpected error calling memory-service", e);
@@ -637,7 +643,10 @@ public class MemoryServiceProxy {
             }
             return ResponseEntity.status(upstream.getStatusCode()).build();
         } catch (WebClientResponseException e) {
-            LOG.warn("memory-service call failed: {}", e.getMessage());
+            LOG.warn(
+                    "memory-service call failed: {} {}",
+                    e.getStatusCode(),
+                    e.getResponseBodyAsString());
             return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
         } catch (Exception e) {
             LOG.error("Unexpected error calling memory-service", e);
@@ -653,7 +662,10 @@ public class MemoryServiceProxy {
             ResponseEntity<T> upstream = action.apply(searchApi(null)).block(resolveTimeout());
             return handleUpstreamResponse(upstream);
         } catch (WebClientResponseException e) {
-            LOG.warn("memory-service call failed: {}", e.getMessage());
+            LOG.warn(
+                    "memory-service call failed: {} {}",
+                    e.getStatusCode(),
+                    e.getResponseBodyAsString());
             return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
         } catch (Exception e) {
             LOG.error("Unexpected error calling memory-service", e);

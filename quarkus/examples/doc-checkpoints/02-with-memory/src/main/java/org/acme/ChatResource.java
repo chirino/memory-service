@@ -1,5 +1,6 @@
 package org.acme;
 
+import io.smallrye.common.annotation.Blocking;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -15,6 +16,7 @@ public class ChatResource {
 
     @POST
     @Path("/{conversationId}")
+    @Blocking
     @Consumes(MediaType.TEXT_PLAIN)
     @Produces(MediaType.TEXT_PLAIN)
     public String chat(@PathParam("conversationId") String conversationId, String userMessage) {
