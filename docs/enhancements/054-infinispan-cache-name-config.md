@@ -1,4 +1,10 @@
+---
+status: proposed
+---
+
 # Enhancement 054: Configurable Infinispan Cache Names
+
+> **Status**: Proposed.
 
 ## Summary
 

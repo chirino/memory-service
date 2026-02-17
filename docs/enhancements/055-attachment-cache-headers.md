@@ -1,4 +1,10 @@
+---
+status: proposed
+---
+
 # Enhancement 055: Attachment Download Cache Headers
+
+> **Status**: Proposed.
 
 ## Summary
 

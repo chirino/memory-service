@@ -10,4 +10,4 @@ configMapGenerator:
     behavior: merge
     literals:
       - MEMORY_SERVICE_CACHE_TYPE=redis
-      - QUARKUS_REDIS_HOSTS=redis://redis:6379
+      - MEMORY_SERVICE_REDIS_HOSTS=redis://redis:6379
