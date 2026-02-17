@@ -19,7 +19,7 @@
 # Performance Related
 
 * are there any http cache/headers that could reduce load against the server?
-* Look into partitioning the messages table to improve pref.  
+* Look into partitioning the messages table to improve pref.
     * can we use the sha256 as the ETAG of attachments?
 
 # Need Dev Feedback for:
