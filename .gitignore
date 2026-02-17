@@ -51,3 +51,4 @@ nb-configuration.xml
 vendor
 .claude
 .playwright-mcp
+.devcontainer/.env
