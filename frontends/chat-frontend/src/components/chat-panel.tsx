@@ -827,7 +827,7 @@ function ChatPanelContent({
   const composerDisabled = isBusy || canceling || isReader;
 
   // Get conversation title and start time
-  const conversationTitle = conversationQuery.data?.title || "New conversation";
+  const conversationTitle = conversationQuery.data?.title || "Untitled conversation";
   const conversationStartTime = conversationQuery.data?.createdAt
     ? formatConversationTime(conversationQuery.data.createdAt)
     : "";
@@ -839,10 +839,10 @@ function ChatPanelContent({
         <div className="mx-auto flex max-w-3xl items-center justify-between">
           <div>
             <h2 className="font-serif text-xl">
-              {messages.length === 0 ? <span className="text-stone/60">New conversation</span> : conversationTitle}
+              {!isResolvedConversation && messages.length === 0 ? <span className="text-stone/60">New conversation</span> : conversationTitle}
             </h2>
             <p className="mt-0.5 text-sm text-stone">
-              {messages.length === 0
+              {!isResolvedConversation && messages.length === 0
                 ? "Start chatting with your agent"
                 : conversationStartTime
                   ? `Started ${conversationStartTime}`
