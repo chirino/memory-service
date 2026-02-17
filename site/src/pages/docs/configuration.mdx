@@ -75,6 +75,8 @@ Memory Service uses a unified cache configuration for all cache-dependent featur
 | <Cfg p="memory-service.redis.hosts" /> | Redis URL | `redis://localhost:6379` | Redis connection URL |
 | <Cfg p="memory-service.cache.redis.client" /> | client name | default | Optional: specify a named Redis client |
 | <Cfg p="memory-service.cache.infinispan.startup-timeout" /> | duration | `PT30S` | Startup timeout for Infinispan connection |
+| <Cfg p="memory-service.cache.infinispan.memory-entries-cache-name" /> | string | `memory-entries` | Infinispan cache name for memory entries |
+| <Cfg p="memory-service.cache.infinispan.response-recordings-cache-name" /> | string | `response-recordings` | Infinispan cache name for response recordings |
 
 ### Memory Entries Cache
 
@@ -127,6 +129,10 @@ quarkus.infinispan-client.password=password
 
 # Optional: startup timeout for Infinispan connection
 memory-service.cache.infinispan.startup-timeout=PT30S
+
+# Optional: custom cache names (useful for multi-tenant or multi-environment clusters)
+# memory-service.cache.infinispan.memory-entries-cache-name=my-memory-entries
+# memory-service.cache.infinispan.response-recordings-cache-name=my-response-recordings
 
 # Optional: disable response resumer even with cache enabled
 memory-service.response-resumer.enabled=false`} />
