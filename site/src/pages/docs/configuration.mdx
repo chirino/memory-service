@@ -72,6 +72,7 @@ Memory Service uses a unified cache configuration for all cache-dependent featur
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
 | <Cfg p="memory-service.cache.type" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching |
+| <Cfg p="memory-service.redis.hosts" /> | Redis URL | `redis://localhost:6379` | Redis connection URL |
 | <Cfg p="memory-service.cache.redis.client" /> | client name | default | Optional: specify a named Redis client |
 | <Cfg p="memory-service.cache.infinispan.startup-timeout" /> | duration | `PT30S` | Startup timeout for Infinispan connection |
 
@@ -106,7 +107,7 @@ The Response Resumer enables clients to reconnect to in-progress streaming respo
 memory-service.cache.type=redis
 
 # Redis connection
-quarkus.redis.hosts=redis://localhost:6379
+memory-service.redis.hosts=redis://localhost:6379
 
 # Optional: specify a named Redis client
 memory-service.cache.redis.client=my-redis-client
@@ -544,7 +545,7 @@ services:
 
       # Cache with Redis (response resumer and memory entries cache automatically enabled)
       MEMORY_SERVICE_CACHE_TYPE: redis
-      QUARKUS_REDIS_HOSTS: redis://redis:6379
+      MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
       # Optional: memory entries cache TTL (default: 10 minutes)
       # MEMORY_SERVICE_CACHE_EPOCH_TTL: PT10M
 
