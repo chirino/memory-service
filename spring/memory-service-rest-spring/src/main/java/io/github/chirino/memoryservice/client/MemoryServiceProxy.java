@@ -10,6 +10,7 @@ import io.github.chirino.memoryservice.client.model.CreateOwnershipTransferReque
 import io.github.chirino.memoryservice.client.model.SearchConversationsRequest;
 import io.github.chirino.memoryservice.client.model.ShareConversationRequest;
 import io.github.chirino.memoryservice.client.model.UpdateConversationMembershipRequest;
+import io.github.chirino.memoryservice.client.model.UpdateConversationRequest;
 import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
@@ -133,6 +134,20 @@ public class MemoryServiceProxy {
     public ResponseEntity<?> getConversation(String conversationId) {
         return execute(
                 api -> api.getConversationWithHttpInfo(toUuid(conversationId)), HttpStatus.OK);
+    }
+
+    public ResponseEntity<?> updateConversation(String conversationId, String body) {
+        try {
+            UpdateConversationRequest request =
+                    OBJECT_MAPPER.readValue(body, UpdateConversationRequest.class);
+            return execute(
+                    api -> api.updateConversationWithHttpInfo(toUuid(conversationId), request),
+                    HttpStatus.OK);
+        } catch (Exception e) {
+            LOG.error("Error parsing update conversation request body", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "Invalid request body"));
+        }
     }
 
     public ResponseEntity<?> deleteConversation(String conversationId) {

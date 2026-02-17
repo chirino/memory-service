@@ -37,6 +37,12 @@ class ConversationsController {
         return proxy.getConversation(conversationId);
     }
 
+    @PatchMapping("/{conversationId}")
+    public ResponseEntity<?> updateConversation(
+            @PathVariable String conversationId, @RequestBody String body) {
+        return proxy.updateConversation(conversationId, body);
+    }
+
     @DeleteMapping("/{conversationId}")
     public ResponseEntity<?> deleteConversation(@PathVariable String conversationId) {
         return proxy.deleteConversation(conversationId);

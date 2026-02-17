@@ -19,6 +19,14 @@ tasks:
         ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log 2>&1 &
         ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
 
+  dev:chat-quarkus:
+    desc: Run the chat-quarkus app in dev mode.
+    cmds:
+      - |
+        set -e
+        ./mvnw -T 1C install -pl ':memory-service-extension-deployment' -am -DskipTests
+        ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
+
 
   secrets:
     desc: Create memory-service secret from current shell environment variables

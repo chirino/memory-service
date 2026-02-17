@@ -16,6 +16,7 @@ import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
 import io.github.chirino.memory.grpc.v1.ListForksRequest;
 import io.github.chirino.memory.grpc.v1.ListForksResponse;
+import io.github.chirino.memory.grpc.v1.UpdateConversationRequest;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
@@ -87,6 +88,22 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
                             String conversationId = byteStringToString(request.getConversationId());
                             ConversationDto dto =
                                     store().getConversation(currentUserId(), conversationId);
+                            return GrpcDtoMapper.toProto(dto);
+                        })
+                .onFailure()
+                .transform(GrpcStatusMapper::map);
+    }
+
+    @Override
+    public Uni<Conversation> updateConversation(UpdateConversationRequest request) {
+        return Uni.createFrom()
+                .item(
+                        () -> {
+                            String conversationId = byteStringToString(request.getConversationId());
+                            String title = request.hasTitle() ? request.getTitle() : null;
+                            ConversationDto dto =
+                                    store().updateConversation(
+                                                    currentUserId(), conversationId, title);
                             return GrpcDtoMapper.toProto(dto);
                         })
                 .onFailure()

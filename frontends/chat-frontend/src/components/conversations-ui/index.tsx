@@ -158,7 +158,13 @@ function isImageAttachment(attachment: ChatAttachment): boolean {
  * Renders the image with max 50% width and hover overlay buttons
  * for opening in a new tab or downloading.
  */
-function ImageAttachmentPreview({ attachment, isUserMessage }: { attachment: ChatAttachment; isUserMessage?: boolean }) {
+function ImageAttachmentPreview({
+  attachment,
+  isUserMessage,
+}: {
+  attachment: ChatAttachment;
+  isUserMessage?: boolean;
+}) {
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const displayName = attachment.name || "Image";
@@ -172,7 +178,9 @@ function ImageAttachmentPreview({ attachment, isUserMessage }: { attachment: Cha
         setImageUrl(url);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [attachment]);
 
   const handlePreview = async () => {
@@ -214,9 +222,11 @@ function ImageAttachmentPreview({ attachment, isUserMessage }: { attachment: Cha
           style={{ maxWidth: "100%", height: "auto" }}
         />
       ) : (
-        <div className={`flex h-24 w-32 items-center justify-center rounded-lg ${
-          isUserMessage ? "bg-cream/10" : "bg-black/5"
-        }`}>
+        <div
+          className={`flex h-24 w-32 items-center justify-center rounded-lg ${
+            isUserMessage ? "bg-cream/10" : "bg-black/5"
+          }`}
+        >
           <Image className={`h-6 w-6 animate-pulse ${isUserMessage ? "text-cream/40" : "text-stone/40"}`} />
         </div>
       )}
@@ -368,36 +378,37 @@ function ConversationsUIMessageRow({
           >
             {children ?? (
               <>
-                {message.attachments && message.attachments.length > 0 && (() => {
-                  const nonImageAtts = message.attachments.filter((a) => !isImageAttachment(a));
-                  const imageAtts = message.attachments.filter((a) => isImageAttachment(a));
-                  return (
-                    <>
-                      {nonImageAtts.length > 0 && (
-                        <div className="mb-2 flex flex-wrap gap-1.5">
-                          {nonImageAtts.map((att, i) => (
-                            <AttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
-                          ))}
-                        </div>
-                      )}
-                      {imageAtts.length > 0 && (
-                        isUser ? (
+                {message.attachments &&
+                  message.attachments.length > 0 &&
+                  (() => {
+                    const nonImageAtts = message.attachments.filter((a) => !isImageAttachment(a));
+                    const imageAtts = message.attachments.filter((a) => isImageAttachment(a));
+                    return (
+                      <>
+                        {nonImageAtts.length > 0 && (
                           <div className="mb-2 flex flex-wrap gap-1.5">
-                            {imageAtts.map((att, i) => (
+                            {nonImageAtts.map((att, i) => (
                               <AttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
                             ))}
                           </div>
-                        ) : (
-                          <div className="mb-2 flex flex-wrap gap-2">
-                            {imageAtts.map((att, i) => (
-                              <ImageAttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
-                            ))}
-                          </div>
-                        )
-                      )}
-                    </>
-                  );
-                })()}
+                        )}
+                        {imageAtts.length > 0 &&
+                          (isUser ? (
+                            <div className="mb-2 flex flex-wrap gap-1.5">
+                              {imageAtts.map((att, i) => (
+                                <AttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="mb-2 flex flex-wrap gap-2">
+                              {imageAtts.map((att, i) => (
+                                <ImageAttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
+                              ))}
+                            </div>
+                          ))}
+                      </>
+                    );
+                  })()}
                 {message.events && message.events.length > 0 ? (
                   <RichEventRenderer events={message.events} isStreaming={isStreaming} />
                 ) : message.content ? (
