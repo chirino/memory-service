@@ -82,7 +82,8 @@ Response:
   "filename": "photo.jpg",
   "size": 204800,
   "sha256": "e3b0c44298fc1c149afbf4c8996fb924...",
-  "expiresAt": "2025-01-28T11:30:00Z"
+  "expiresAt": "2025-01-28T11:30:00Z",
+  "status": "ready"
 }
 ```
 
@@ -95,6 +96,7 @@ Response:
 | `size` | File size in bytes |
 | `sha256` | SHA-256 hash of the file contents |
 | `expiresAt` | When the unlinked attachment will be cleaned up |
+| `status` | Processing status (`ready` when upload is complete) |
 
 **Notes:**
 - `expiresIn` is an ISO 8601 duration (default `PT1H`, max `PT24H`)

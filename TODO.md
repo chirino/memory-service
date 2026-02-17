@@ -4,16 +4,15 @@
 * document admin apis
 * Brand the project and move it to an org/foundation.
 * Add support for python langchain /w user docs similar to the quarkus/spring support.
-* config option to disable passthrough s3 signed download url (for when endpoint is private)
 * move the ChatEvent json serializer to quarkus
 * fix QUARKUS_REDIS_HEALTH_ENABLED
 * make the infinispan cache name configurable
 * make all common memory-service config options prefixed with "memory-service."
+* kustomize manifests
+* minikube setup.
 
 # Hardening Work
 
-* require API_KEY for all api calls.
-* validate CreateMessageRequest.userId matches the bearer token principle.
 * test grpc resume redirects on when a loadbalancer sits in front of the memory-service
 * validate all api fields
 * review all config key names: keep them consistent and simple.
