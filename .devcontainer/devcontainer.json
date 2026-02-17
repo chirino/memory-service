@@ -1,8 +1,8 @@
 {
   "name": "Memory Service",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "dockerDashComposeVersion": "v2"
@@ -24,35 +24,8 @@
       "userGid": "automatic"
     }
   },
-  "initializeCommand": "bash -c 'mkdir -p ~/.m2 || true; mkdir -p ~/.claude || true; touch .devcontainer/.env'",
-  "runArgs": ["--env-file", ".devcontainer/.env"],
-  "mounts": [
-    {
-      "source": "${localEnv:HOME}${localEnv:USERPROFILE}/.m2",
-      "target": "/home/vscode/.m2",
-      "type": "bind"
-    },
-    {
-      "source": "${localEnv:HOME}${localEnv:USERPROFILE}/.claude",
-      "target": "/home/vscode/.claude",
-      "type": "bind"
-    }
-  ],
-  "containerEnv": {
-    "IN_DEVCONTAINER": "1"
-  },
+  "initializeCommand": "bash .devcontainer/init.sh",
   "overrideCommand": false,
-  "forwardPorts": [1080, 3000, 3001, 4321, 8080, 8081, 8082, 9092],
-  "portsAttributes": {
-    "1080": { "label": "SOCKS5 Proxy", "onAutoForward": "silent" },
-    "3000": { "label": "Chat Frontend" },
-    "3001": { "label": "Grafana" },
-    "4321": { "label": "Docs Site (Astro)" },
-    "8080": { "label": "Chat Quarkus" },
-    "8081": { "label": "Keycloak" },
-    "8082": { "label": "Memory Service" },
-    "9092": { "label": "Prometheus" }
-  },
   "customizations": {
     "vscode": {
       "extensions": [
