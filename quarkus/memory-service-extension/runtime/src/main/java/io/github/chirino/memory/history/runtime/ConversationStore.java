@@ -17,6 +17,7 @@ import io.smallrye.mutiny.Multi;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.WebApplicationException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -104,8 +105,7 @@ public class ConversationStore {
         if (forkedAtEntryId != null) {
             request.setForkedAtEntryId(UUID.fromString(forkedAtEntryId));
         }
-        conversationsApi(bearerToken(securityIdentity))
-                .appendConversationEntry(UUID.fromString(conversationId), request);
+        callAppend(conversationId, request, bearerToken(securityIdentity));
     }
 
     public void appendAgentMessage(String conversationId, String content) {
@@ -126,10 +126,8 @@ public class ConversationStore {
         block.put("role", "AI");
         request.setContent(List.of(block));
         applyIndexedContent(request, content, "AI");
-        String effectiveToken;
-        effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
-        conversationsApi(effectiveToken)
-                .appendConversationEntry(UUID.fromString(conversationId), request);
+        String effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
+        callAppend(conversationId, request, effectiveToken);
     }
 
     public Multi<String> appendAgentMessage(String conversationId, Multi<String> stringMulti) {
@@ -234,8 +232,34 @@ public class ConversationStore {
 
         applyIndexedContent(request, finalText, "AI");
         String effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
-        conversationsApi(effectiveToken)
-                .appendConversationEntry(UUID.fromString(conversationId), request);
+        callAppend(conversationId, request, effectiveToken);
+    }
+
+    private void callAppend(String conversationId, CreateEntryRequest request, String bearerToken) {
+        try {
+            conversationsApi(bearerToken)
+                    .appendConversationEntry(UUID.fromString(conversationId), request);
+        } catch (WebApplicationException e) {
+            String body = readResponseBody(e);
+            LOG.warnf(
+                    "Failed to append conversation entry for conversationId=%s: %d %s",
+                    conversationId,
+                    e.getResponse() != null ? e.getResponse().getStatus() : -1,
+                    body);
+        } catch (Exception e) {
+            LOG.warnf(
+                    e, "Failed to append conversation entry for conversationId=%s", conversationId);
+        }
+    }
+
+    static String readResponseBody(WebApplicationException e) {
+        try {
+            if (e.getResponse() != null && e.getResponse().hasEntity()) {
+                return e.getResponse().readEntity(String.class);
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
     }
 
     private ConversationsApi conversationsApi(String bearerToken) {

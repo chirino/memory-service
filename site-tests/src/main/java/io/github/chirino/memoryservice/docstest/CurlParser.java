@@ -128,9 +128,26 @@ public class CurlParser {
         StringBuilder curlCmd = null;
         boolean inCurl = false;
         boolean quoteOpen = false;
+        int functionBraceDepth = 0;
 
         for (String line : lines) {
             String trimmed = line.trim();
+
+            // Track function definitions — skip curl commands inside them
+            if (trimmed.matches("^(function\\s+\\w+|\\w+\\s*\\(\\s*\\))\\s*\\{?.*")) {
+                functionBraceDepth++;
+                if (trimmed.contains("{")) {
+                    // Opening brace is on the same line
+                } else {
+                    // Brace may come on the next line
+                }
+                continue;
+            }
+            if (functionBraceDepth > 0) {
+                if (trimmed.contains("{")) functionBraceDepth++;
+                if (trimmed.contains("}")) functionBraceDepth--;
+                continue;
+            }
 
             if (!inCurl) {
                 if (trimmed.startsWith("curl")) {

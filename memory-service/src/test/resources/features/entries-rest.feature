@@ -230,6 +230,50 @@ Feature: Entries REST API
     And the response body field "epochIncremented" should be "false"
     And the sync response entry should be null
 
+  Scenario: Sync memory entries auto-creates conversation when it does not exist
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation id is "00000000-0000-0000-0000-aaaaaaaaaaaa"
+    When I sync memory entries with request:
+    """
+    {
+      "channel": "MEMORY",
+      "contentType": "test.v1",
+      "content": [
+        {
+          "type": "text",
+          "text": "First sync entry"
+        }
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epoch" should be "1"
+    And the response body field "noOp" should be "false"
+    And the response body field "epochIncremented" should be "true"
+    And the sync response entry should not be null
+    # Verify the conversation was auto-created and is accessible
+    Given I am authenticated as user "alice"
+    When I call GET "/v1/conversations/${conversationId}"
+    Then the response status should be 200
+    And the response body field "id" should be "${conversationId}"
+    And the response body field "ownerUserId" should be "alice"
+
+  Scenario: Sync memory entries with empty content is no-op when conversation does not exist
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation id is "00000000-0000-0000-0000-bbbbbbbbbbbb"
+    When I sync memory entries with request:
+    """
+    {
+      "channel": "MEMORY",
+      "contentType": "test.v1",
+      "content": []
+    }
+    """
+    Then the response status should be 200
+    And the response body field "noOp" should be "true"
+    And the response body field "epochIncremented" should be "false"
+    And the sync response entry should be null
+
   Scenario: User can only see history channel entries
     Given I am authenticated as user "alice"
     And the conversation has an entry "User entry"
