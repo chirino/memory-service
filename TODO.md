@@ -5,7 +5,6 @@
 * Brand the project and move it to an org/foundation.
 * Add support for python langchain /w user docs similar to the quarkus/spring support.
 * move the ChatEvent json serializer to quarkus
-* fix QUARKUS_REDIS_HEALTH_ENABLED
 * make the infinispan cache name configurable (see [054-infinispan-cache-name-config.md](docs/enhancements/054-infinispan-cache-name-config.md))
 * make all common memory-service config options prefixed with "memory-service."
 
