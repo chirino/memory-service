@@ -1,4 +1,10 @@
-# Enhancement 038: Tutorial Checkpoint Directories
+---
+status: implemented
+---
+
+# Tutorial Checkpoint Directories
+
+> **Status**: Implemented.
 
 **Status**: 📋 Planned
 

@@ -1,4 +1,10 @@
-# Enhancement 026: Memory Channel SQL Access Pattern Analysis
+---
+status: implemented
+---
+
+# Memory Channel SQL Access Pattern Analysis
+
+> **Status**: Implemented.
 
 ## Overview
 

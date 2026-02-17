@@ -1,4 +1,15 @@
-# 019 - Rename Summary to Index and Consolidate Conversation Endpoints
+---
+status: partial
+supersedes:
+  - 002-summarization-design.md
+superseded-by:
+  - 030-index-design.md
+---
+
+# Rename Summary to Index and Consolidate Conversation Endpoints
+
+> **Status**: Partially implemented. Supersedes [002](002-summarization-design.md). Index model
+> further redesigned to per-entry indexing by [030](030-index-design.md).
 
 ## Summary
 

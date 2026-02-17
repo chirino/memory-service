@@ -1,4 +1,16 @@
+---
+status: implemented
+supersedes:
+  - 002-summarization-design.md
+  - 019-rename-summary-to-index.md
+  - 029-search-index-improvements.md
+---
+
 # Index Endpoint Redesign
+
+> **Status**: Implemented. Supersedes the indexing approaches in
+> [002](002-summarization-design.md), [019](019-rename-summary-to-index.md),
+> and [029](029-search-index-improvements.md).
 
 ## Motivation
 

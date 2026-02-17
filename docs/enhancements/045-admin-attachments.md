@@ -1,4 +1,10 @@
-# 045: Admin API for Attachments
+---
+status: implemented
+---
+
+# Enhancement 045: Admin API for Attachments
+
+> **Status**: Implemented.
 
 ## Status
 Proposed

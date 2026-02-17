@@ -1,4 +1,10 @@
-# Enhancement 021: UUID IDs in API Contracts
+---
+status: implemented
+---
+
+# UUID IDs in API Contracts
+
+> **Status**: Implemented.
 
 ## Overview
 

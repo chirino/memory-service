@@ -1,6 +1,13 @@
-# Enhancement 022: Chat App Frontend Design
+---
+status: implemented
+supersedes:
+  - 008-headless-ui-component-design.md
+---
 
-**Status**: ✅ Complete
+# Chat App Frontend Design
+
+> **Status**: Implemented. Replaces the headless library approach from
+> [008](008-headless-ui-component-design.md) with a full chat application.
 
 ## Overview
 

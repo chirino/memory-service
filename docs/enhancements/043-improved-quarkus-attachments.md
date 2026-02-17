@@ -1,4 +1,13 @@
+---
+status: implemented
+supersedes:
+  - 037-attachments.md
+---
+
 # Enhancement 043: Improved Attachments (Full Multimodal Support)
+
+> **Status**: Implemented. Supersedes the phased attachment approach in
+> [037](037-attachments.md).
 
 ## Summary
 

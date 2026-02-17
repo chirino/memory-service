@@ -1,4 +1,13 @@
+---
+status: partial
+superseded-by:
+  - 030-index-design.md
+---
+
 # Search and Index API Improvements
+
+> **Status**: Partially implemented. Index model further redesigned to per-entry indexing by
+> [030](030-index-design.md).
 
 ## Motivation
 

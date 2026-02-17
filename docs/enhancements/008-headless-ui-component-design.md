@@ -1,4 +1,15 @@
+---
+status: superseded
+superseded-by:
+  - 022-chat-app-design.md
+  - 023-chat-app-implementation.md
+---
+
 # Headless Conversation & Fork Primitives — Design & Implementation Plan
+
+> **Status**: Superseded. Standalone headless library approach replaced by a full chat app
+> built directly with Radix/shadcn primitives in
+> [022](022-chat-app-design.md) and [023](023-chat-app-implementation.md).
 
 This document defines the design of a family of **headless, composable conversation primitives** for building AI chat UIs in this application.  
 These primitives encapsulate conversation state, fork logic, and streaming message lifecycles in a Radix-style headless API without UI or styling.

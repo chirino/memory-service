@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Enhancement 041: Stale Documentation Prevention and Testing
+
+> **Status**: Implemented.
 
 **Status**: ✅ Fully Implemented
 

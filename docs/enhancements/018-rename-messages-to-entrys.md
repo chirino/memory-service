@@ -1,4 +1,10 @@
-# 018 - Rename Messages to Entries and Add contentType Field
+---
+status: implemented
+---
+
+# Rename Messages to Entries and Add contentType Field
+
+> **Status**: Implemented.
 
 ## Summary
 

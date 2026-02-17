@@ -1,4 +1,15 @@
+---
+status: superseded
+superseded-by:
+  - 019-rename-summary-to-index.md
+  - 030-index-design.md
+---
+
 # Summarization Design
+
+> **Status**: Superseded. Renamed from "summary" to "index" by
+> [019](019-rename-summary-to-index.md). Index model redesigned to per-entry indexing by
+> [030](030-index-design.md).
 
 ## Goals
 - Extend the conversation summarization flow to persist a title, summary content, and summary coverage metadata.

@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Enhancement 052: Update Conversation Title
+
+> **Status**: Implemented.
 
 ## Summary
 

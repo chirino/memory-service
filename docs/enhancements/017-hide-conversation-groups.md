@@ -1,4 +1,13 @@
-# 017 - Hide Conversation Groups from Public API Contracts
+---
+status: implemented
+supersedes:
+  - 001-conversation-forking-design.md
+---
+
+# Hide Conversation Groups from Public API Contracts
+
+> **Status**: Implemented. Refines the public API surface from
+> [001](001-conversation-forking-design.md).
 
 ## Summary
 

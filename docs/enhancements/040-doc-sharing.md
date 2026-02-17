@@ -1,4 +1,10 @@
-# Enhancement 040: Conversation Sharing Documentation
+---
+status: implemented
+---
+
+# Conversation Sharing Documentation
+
+> **Status**: Implemented.
 
 **Status**: 📋 Planned
 

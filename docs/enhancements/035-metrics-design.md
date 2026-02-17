@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Metrics Design
+
+> **Status**: Implemented.
 
 This document describes the metrics strategy for the memory-service, covering Prometheus metrics for operational monitoring and admin dashboard metrics.
 
