@@ -1,4 +1,13 @@
-# Enhancement 038: Remove Epoch Eviction
+---
+status: implemented
+supersedes:
+  - 027-epoch-evictions.md
+---
+
+# Remove Epoch Eviction
+
+> **Status**: Implemented. Supersedes [027](027-epoch-evictions.md). Epoch eviction removed to
+> avoid data loss when forked conversations reference evicted epochs.
 
 ## Problem Statement
 

@@ -1,4 +1,15 @@
+---
+status: implemented
+supersedes:
+  - 004-response-cancel.md
+  - 010-drop-resumePosition.md
+---
+
 # Simplify ResponseResumerService gRPC API
+
+> **Status**: Implemented. Supersedes the response cancel design in
+> [004](004-response-cancel.md) and the resume simplification in
+> [010](010-drop-resumePosition.md).
 
 ## Motivation
 

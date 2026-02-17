@@ -1,4 +1,15 @@
+---
+status: partial
+superseded-by:
+  - 017-hide-conversation-groups.md
+  - 046-simpler-forking.md
+---
+
 # Conversation Forking Data Model (Design Draft)
+
+> **Status**: Partially implemented. Conversation groups hidden from public API by
+> [017](017-hide-conversation-groups.md). Fork creation simplified to auto-create on first entry by
+> [046](046-simpler-forking.md).
 
 ## Goals
 - Support many messages per conversation and allow forking at any message.

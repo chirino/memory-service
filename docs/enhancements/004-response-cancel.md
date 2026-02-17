@@ -1,4 +1,15 @@
+---
+status: partial
+superseded-by:
+  - 010-drop-resumePosition.md
+  - 049-response-resumer-api-simplification.md
+---
+
 # Response Cancel Design (Draft)
+
+> **Status**: Partially implemented. Resume position dropped by
+> [010](010-drop-resumePosition.md). Service and RPC names simplified by
+> [049](049-response-resumer-api-simplification.md).
 
 ## Goals
 - Allow a user or agent to cancel an in-progress response generation.

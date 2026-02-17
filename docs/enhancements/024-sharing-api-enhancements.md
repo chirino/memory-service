@@ -1,4 +1,10 @@
-# Enhancement 024: Sharing API Enhancements
+---
+status: implemented
+---
+
+# Sharing API Enhancements
+
+> **Status**: Implemented.
 
 ## Overview
 

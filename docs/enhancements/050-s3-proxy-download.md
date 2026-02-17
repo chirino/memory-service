@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Enhancement 050: S3 Proxy Download Mode
+
+> **Status**: Implemented.
 
 ## Summary
 

@@ -1,4 +1,13 @@
+---
+status: implemented
+supersedes:
+  - 001-conversation-forking-design.md
+---
+
 # Enhancement 046: Simpler Forking — Auto-Create Fork on First Entry
+
+> **Status**: Implemented. Simplifies the fork creation flow from
+> [001](001-conversation-forking-design.md).
 
 ## Summary
 

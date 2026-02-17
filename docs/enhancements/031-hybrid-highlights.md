@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Hybrid Highlight Generation
+
+> **Status**: Implemented.
 
 ## Motivation
 

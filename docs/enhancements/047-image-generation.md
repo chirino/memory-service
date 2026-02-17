@@ -1,4 +1,10 @@
-# 047: Image Generation Support
+---
+status: implemented
+---
+
+# Enhancement 047: Image Generation Support
+
+> **Status**: Implemented.
 
 ## Status
 Implemented

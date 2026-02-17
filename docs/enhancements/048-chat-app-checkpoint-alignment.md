@@ -1,4 +1,13 @@
-# 048: Align Chat Apps with Doc-Checkpoint Conventions
+---
+status: implemented
+supersedes:
+  - 023-chat-app-implementation.md
+---
+
+# Enhancement 048: Align Chat Apps with Doc-Checkpoint Conventions
+
+> **Status**: Implemented. Realigns class names and REST paths from
+> [023](023-chat-app-implementation.md).
 
 ## Status
 Implemented
