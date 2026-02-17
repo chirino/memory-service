@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Enhancement 044: Forked Attachments (Referencing and Copying Attachments Across Entries)
+
+> **Status**: Implemented.
 
 ## Summary
 

@@ -1,4 +1,13 @@
-# 037: Multi-Modal Input Requests in History Entries
+---
+status: superseded
+superseded-by:
+  - 043-improved-quarkus-attachments.md
+---
+
+# Multi-Modal Input Requests in History Entries
+
+> **Status**: Superseded. Phased attachment approach replaced by simplified multimodal design in
+> [043](043-improved-quarkus-attachments.md).
 
 ## Status
 Implemented (Phase 1 + Phase 2 + Phase 3 + Phase 4)

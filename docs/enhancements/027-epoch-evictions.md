@@ -1,4 +1,13 @@
-# Enhancement 027: Epoch Evictions
+---
+status: superseded
+superseded-by:
+  - 039-remove-epoch-eviction.md
+---
+
+# Epoch Evictions
+
+> **Status**: Superseded. Epoch eviction removed to avoid data loss with conversation forking.
+> See [039](039-remove-epoch-eviction.md).
 
 ## Motivation
 

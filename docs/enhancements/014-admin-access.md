@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Admin Access APIs
+
+> **Status**: Implemented.
 
 ## Motivation
 

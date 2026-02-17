@@ -1,4 +1,14 @@
+---
+status: implemented
+supersedes:
+  - 005-redis-connection-limits.md
+  - 006-infinispan-support.md
+---
+
 # Simplify Cache Configuration
+
+> **Status**: Implemented. Unifies cache configuration from
+> [005](005-redis-connection-limits.md) and [006](006-infinispan-support.md).
 
 ## Motivation
 

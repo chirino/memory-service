@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Enhancement 042: Indexing and Search Documentation
+
+> **Status**: Implemented.
 
 **Status**: ✅ Implemented
 

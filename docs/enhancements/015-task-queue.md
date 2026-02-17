@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Background Task Queue
+
+> **Status**: Implemented.
 
 ## Motivation
 

@@ -1,4 +1,13 @@
+---
+status: implemented
+superseded-by:
+  - 011-simpler-cache-config.md
+---
+
 # Redis Connection Limits for Response Replay (Draft)
+
+> **Status**: Implemented. Cache configuration properties unified by
+> [011](011-simpler-cache-config.md).
 
 ## Problem Summary
 When many clients reload/resume a long response at the same time, the memory-service

@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Forked Entry Retrieval
+
+> **Status**: Implemented.
 
 ## Problem Statement
 

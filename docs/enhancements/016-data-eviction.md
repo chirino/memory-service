@@ -1,4 +1,15 @@
+---
+status: partial
+superseded-by:
+  - 028-membership-hard-delete.md
+  - 039-remove-epoch-eviction.md
+---
+
 # Data Eviction (Hard Delete) for Soft-Deleted Resources
+
+> **Status**: Partially implemented. Membership eviction removed by
+> [028](028-membership-hard-delete.md). Epoch eviction removed by
+> [039](039-remove-epoch-eviction.md).
 
 ## Motivation
 

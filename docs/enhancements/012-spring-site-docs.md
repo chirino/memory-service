@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Spring Boot / Spring AI Documentation
+
+> **Status**: Implemented.
 
 ## Goals
 

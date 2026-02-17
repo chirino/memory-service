@@ -1,4 +1,15 @@
-# Enhancement 023: Chat App Implementation
+---
+status: partial
+supersedes:
+  - 008-headless-ui-component-design.md
+superseded-by:
+  - 048-chat-app-checkpoint-alignment.md
+---
+
+# Chat App Implementation
+
+> **Status**: Partially implemented. Replaces [008](008-headless-ui-component-design.md). Class names
+> and REST paths realigned by [048](048-chat-app-checkpoint-alignment.md).
 
 ## Overview
 

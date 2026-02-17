@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Search Optimizations: Vector Search Implementation
+
+> **Status**: Implemented.
 
 ## Motivation
 
