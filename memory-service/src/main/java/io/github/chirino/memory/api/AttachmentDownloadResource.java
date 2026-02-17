@@ -7,6 +7,7 @@ import io.github.chirino.memory.attachment.FileStoreException;
 import io.github.chirino.memory.attachment.FileStoreSelector;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.core.Response;
@@ -29,7 +30,9 @@ public class AttachmentDownloadResource {
     @GET
     @Path("/{token}/{filename}")
     public Response download(
-            @PathParam("token") String token, @PathParam("filename") String filename) {
+            @PathParam("token") String token,
+            @PathParam("filename") String filename,
+            @HeaderParam("If-None-Match") String ifNoneMatch) {
         // Verify token
         Optional<DownloadUrlSigner.SignedDownloadClaim> claim =
                 downloadUrlSigner.verifyToken(token);
@@ -59,10 +62,18 @@ public class AttachmentDownloadResource {
 
         // Stream the file
         try {
-            InputStream stream = fileStoreSelector.getFileStore().retrieve(att.storageKey());
-
             long cacheMaxAge =
                     Math.max(0, expiresAt.getEpochSecond() - Instant.now().getEpochSecond());
+            String cacheControl = "private, max-age=" + cacheMaxAge + ", immutable";
+
+            // Check conditional GET
+            Optional<Response> notModified =
+                    AttachmentResponseHelper.checkNotModified(ifNoneMatch, att, cacheControl);
+            if (notModified.isPresent()) {
+                return notModified.get();
+            }
+
+            InputStream stream = fileStoreSelector.getFileStore().retrieve(att.storageKey());
 
             Response.ResponseBuilder builder =
                     Response.ok(stream).header("Content-Type", att.contentType());
@@ -73,7 +84,7 @@ public class AttachmentDownloadResource {
                 builder.header(
                         "Content-Disposition", "inline; filename=\"" + att.filename() + "\"");
             }
-            builder.header("Cache-Control", "private, max-age=" + cacheMaxAge);
+            AttachmentResponseHelper.addCacheHeaders(builder, att, cacheControl);
             return builder.build();
         } catch (FileStoreException e) {
             LOG.errorf(e, "Failed to retrieve attachment %s", attachmentId);

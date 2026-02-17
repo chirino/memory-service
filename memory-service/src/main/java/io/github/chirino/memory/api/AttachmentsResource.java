@@ -18,6 +18,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -203,7 +204,8 @@ public class AttachmentsResource {
 
     @GET
     @Path("/{id}")
-    public Response retrieve(@PathParam("id") String id) {
+    public Response retrieve(
+            @PathParam("id") String id, @HeaderParam("If-None-Match") String ifNoneMatch) {
         Optional<AttachmentDto> optAtt = attachmentStore().findById(id);
         if (optAtt.isEmpty()) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -268,13 +270,23 @@ public class AttachmentsResource {
                     .build();
         }
 
+        String cacheControl = "private, max-age=86400, immutable";
+
+        // Check conditional GET
+        Optional<Response> notModified =
+                AttachmentResponseHelper.checkNotModified(ifNoneMatch, att, cacheControl);
+        if (notModified.isPresent()) {
+            return notModified.get();
+        }
+
         // Check for signed URL redirect
         Duration signedUrlExpiry = Duration.ofHours(1);
         Optional<URI> signedUrl = fileStore().getSignedUrl(att.storageKey(), signedUrlExpiry);
         if (signedUrl.isPresent()) {
-            return Response.temporaryRedirect(signedUrl.get())
-                    .header("Cache-Control", "private, max-age=" + signedUrlExpiry.toSeconds())
-                    .build();
+            Response.ResponseBuilder builder = Response.temporaryRedirect(signedUrl.get());
+            AttachmentResponseHelper.addCacheHeaders(
+                    builder, att, "private, max-age=" + signedUrlExpiry.toSeconds());
+            return builder.build();
         }
 
         // Stream bytes directly
@@ -289,7 +301,7 @@ public class AttachmentsResource {
                 builder.header(
                         "Content-Disposition", "inline; filename=\"" + att.filename() + "\"");
             }
-            builder.header("Cache-Control", "private, no-store");
+            AttachmentResponseHelper.addCacheHeaders(builder, att, cacheControl);
             return builder.build();
         } catch (FileStoreException e) {
             return fileStoreErrorResponse(e);
