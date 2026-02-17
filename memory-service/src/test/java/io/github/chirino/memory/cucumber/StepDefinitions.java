@@ -75,6 +75,7 @@ import io.github.chirino.memory.grpc.v1.ShareConversationRequest;
 import io.github.chirino.memory.grpc.v1.SyncEntriesRequest;
 import io.github.chirino.memory.grpc.v1.SyncEntriesResponse;
 import io.github.chirino.memory.grpc.v1.SystemServiceGrpc;
+import io.github.chirino.memory.grpc.v1.UpdateConversationRequest;
 import io.github.chirino.memory.grpc.v1.UpdateMembershipRequest;
 import io.github.chirino.memory.grpc.v1.UploadAttachmentRequest;
 import io.github.chirino.memory.grpc.v1.UploadAttachmentResponse;
@@ -1478,6 +1479,24 @@ public class StepDefinitions {
         iListMembershipsForTheConversation();
     }
 
+    @io.cucumber.java.en.When("I update the conversation with request:")
+    public void iUpdateTheConversationWithRequest(String requestBody) {
+        trackUsage();
+        String rendered = renderTemplate(requestBody);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(rendered);
+        if (currentUserId != null) {
+            String token = keycloakClient.getAccessToken(currentUserId);
+            if (token == null) {
+                throw new AssertionError(
+                        "Failed to get access token for user: "
+                                + currentUserId
+                                + ". KeycloakTestClient may not be properly configured.");
+            }
+            requestSpec = requestSpec.auth().oauth2(token);
+        }
+        this.lastResponse = requestSpec.when().patch("/v1/conversations/{id}", conversationId);
+    }
+
     @io.cucumber.java.en.When("I update membership for user {string} with request:")
     public void iUpdateMembershipForUserWithRequest(String userId, String requestBody) {
         trackUsage();
@@ -2574,6 +2593,14 @@ public class StepDefinitions {
                     }
                     return stub.listForks(requestBuilder.build());
                 }
+            case "UpdateConversation":
+                {
+                    var requestBuilder = UpdateConversationRequest.newBuilder();
+                    if (body != null && !body.isBlank()) {
+                        TextFormat.merge(body, requestBuilder);
+                    }
+                    return stub.updateConversation(requestBuilder.build());
+                }
             default:
                 throw new IllegalArgumentException(
                         "Unsupported ConversationsService method: " + method);
@@ -3329,6 +3356,16 @@ public class StepDefinitions {
         var requestSpec = given().contentType(MediaType.APPLICATION_JSON);
         requestSpec = authenticateRequest(requestSpec);
         this.lastResponse = requestSpec.when().post(renderedPath);
+    }
+
+    @io.cucumber.java.en.When("I call PATCH {string} with body:")
+    public void iCallPATCHWithBody(String path, String body) {
+        trackUsage();
+        String renderedPath = renderTemplate(path);
+        String renderedBody = renderTemplate(body);
+        var requestSpec = given().contentType(MediaType.APPLICATION_JSON).body(renderedBody);
+        requestSpec = authenticateRequest(requestSpec);
+        this.lastResponse = requestSpec.when().patch(renderedPath);
     }
 
     @io.cucumber.java.en.Then("all conversations should have ownerUserId {string}")

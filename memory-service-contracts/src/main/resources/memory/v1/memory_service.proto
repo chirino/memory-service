@@ -126,6 +126,12 @@ message GetConversationRequest {
   bytes conversation_id = 1;
 }
 
+message UpdateConversationRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  optional string title = 2;
+}
+
 message DeleteConversationRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
@@ -380,6 +386,7 @@ service ConversationsService {
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
   rpc CreateConversation(CreateConversationRequest) returns (Conversation);
   rpc GetConversation(GetConversationRequest) returns (Conversation);
+  rpc UpdateConversation(UpdateConversationRequest) returns (Conversation);
   // DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
   rpc DeleteConversation(DeleteConversationRequest) returns (google.protobuf.Empty);
   rpc ListForks(ListForksRequest) returns (ListForksResponse);

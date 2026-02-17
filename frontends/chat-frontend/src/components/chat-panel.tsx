@@ -435,6 +435,9 @@ function ChatPanelContent({
   entriesWithForks: EntryAndForkInfo[];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState("");
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const { messages } = useConversationMessages();
   const { resumeStream, isBusy } = useConversationStreaming();
   const [editingMessage, setEditingMessage] = useState<{ id: string; conversationId: string } | null>(null);
@@ -827,7 +830,7 @@ function ChatPanelContent({
   const composerDisabled = isBusy || canceling || isReader;
 
   // Get conversation title and start time
-  const conversationTitle = conversationQuery.data?.title || "New conversation";
+  const conversationTitle = conversationQuery.data?.title || "Untitled conversation";
   const conversationStartTime = conversationQuery.data?.createdAt
     ? formatConversationTime(conversationQuery.data.createdAt)
     : "";
@@ -837,12 +840,61 @@ function ChatPanelContent({
       {/* Chat Header */}
       <header className="relative z-40 border-b border-stone/10 bg-cream/80 px-8 py-5 backdrop-blur-sm">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
-          <div>
-            <h2 className="font-serif text-xl">
-              {messages.length === 0 ? <span className="text-stone/60">New conversation</span> : conversationTitle}
-            </h2>
+          <div className="min-w-0 flex-1">
+            {isEditingTitle ? (
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={editTitleValue}
+                onChange={(e) => setEditTitleValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const newTitle = editTitleValue.trim() || null;
+                    setIsEditingTitle(false);
+                    if (conversationId) {
+                      ConversationsService.updateConversation({
+                        conversationId,
+                        requestBody: { title: newTitle },
+                      }).then(() => {
+                        void queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+                        void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+                      });
+                    }
+                  } else if (e.key === "Escape") {
+                    setIsEditingTitle(false);
+                  }
+                }}
+                onBlur={() => setIsEditingTitle(false)}
+                className="w-full border-b-2 border-ink/30 bg-transparent font-serif text-xl outline-none focus:border-ink"
+                autoFocus
+              />
+            ) : (
+              <div className="group flex items-center gap-2">
+                <h2 className="font-serif text-xl">
+                  {!isResolvedConversation && messages.length === 0 ? (
+                    <span className="text-stone/60">New conversation</span>
+                  ) : (
+                    conversationTitle
+                  )}
+                </h2>
+                {isResolvedConversation && !isReader && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditTitleValue(conversationQuery.data?.title || "");
+                      setIsEditingTitle(true);
+                    }}
+                    className="rounded p-1 text-stone/0 transition-colors group-hover:text-stone hover:text-ink"
+                    aria-label="Edit conversation title"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            )}
             <p className="mt-0.5 text-sm text-stone">
-              {messages.length === 0
+              {!isResolvedConversation && messages.length === 0
                 ? "Start chatting with your agent"
                 : conversationStartTime
                   ? `Started ${conversationStartTime}`

@@ -408,8 +408,8 @@ export function RequireAuth({ children, fallback }: RequireAuthProps) {
         <div className="max-w-md p-8 text-center">
           <h1 className="mb-2 font-serif text-2xl text-ink">Session Error</h1>
           <p className="mb-6 text-stone">
-            Your session could not be verified by the server. This may be due to an expired session or a
-            configuration issue.
+            Your session could not be verified by the server. This may be due to an expired session or a configuration
+            issue.
           </p>
           <div className="flex justify-center gap-3">
             <button
