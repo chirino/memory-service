@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Enhancement 053: Redis Configuration Consolidation
+
+> **Status**: Implemented.
 
 ## Summary
 
@@ -29,8 +35,10 @@ Add a `memory-service.redis.hosts` property and wire it to `quarkus.redis.hosts`
 ```properties
 # application.properties
 memory-service.redis.hosts=redis://localhost:6379
-quarkus.redis.hosts=${memory-service.redis.hosts}
+%prod.quarkus.redis.hosts=${memory-service.redis.hosts}
 ```
+
+The `%prod.` prefix is required so that Quarkus Redis dev services still auto-start in dev/test profiles. Setting `quarkus.redis.hosts` globally would prevent dev services from discovering and configuring the connection automatically.
 
 Users set `MEMORY_SERVICE_REDIS_HOSTS=redis://redis:6379` instead of `QUARKUS_REDIS_HOSTS`.
 
@@ -66,6 +74,7 @@ public class RedisHealthCheck implements HealthCheck {
 
         try {
             Instance<ReactiveRedisDataSource> selected = clientName
+                    .filter(name -> !name.isBlank())
                     .map(name -> redisSources.select(RedisClientName.Literal.of(name)))
                     .orElse(redisSources);
 
@@ -104,7 +113,7 @@ public class RedisHealthCheck implements HealthCheck {
 
 # After:
 memory-service.redis.hosts=redis://localhost:6379
-quarkus.redis.hosts=${memory-service.redis.hosts}
+%prod.quarkus.redis.hosts=${memory-service.redis.hosts}  # prod-only so dev services still auto-start
 quarkus.redis.health.enabled=false  # Always disabled; replaced by custom check
 ```
 
@@ -219,7 +228,8 @@ The existing Cucumber tests with `MongoRedisTestProfile` (which sets `memory-ser
 | `memory-service/src/main/resources/application.properties` | Add `memory-service.redis.hosts`, wire to `quarkus.redis.hosts`, make health disabled globally |
 | `memory-service/src/main/java/.../cache/RedisHealthCheck.java` | **New**: Custom `@Readiness` health check |
 | `memory-service/src/test/java/.../cache/RedisHealthCheckTest.java` | **New**: Unit test |
-| `memory-service/src/test/java/.../config/TestInstance.java` | Add `unsatisfied()` factory method |
+| `memory-service/pom.xml` | Add `quarkus-smallrye-health` dependency |
+| `memory-service/src/test/java/.../config/TestInstance.java` | Make class and factory methods `public`; add `unsatisfied()` factory; change `select()` to delegate instead of throwing |
 | `compose.yaml` | `QUARKUS_REDIS_HOSTS` -> `MEMORY_SERVICE_REDIS_HOSTS` |
 | `deploy/kustomize/components/cache/redis/kustomization.yaml` | `QUARKUS_REDIS_HOSTS` -> `MEMORY_SERVICE_REDIS_HOSTS` |
 | `site/src/pages/docs/configuration.mdx` | Add `memory-service.redis.hosts` to Cache Configuration table; update Redis Backend example to use `memory-service.redis.hosts` instead of `quarkus.redis.hosts`; update Docker Compose example to use `MEMORY_SERVICE_REDIS_HOSTS` instead of `QUARKUS_REDIS_HOSTS` |

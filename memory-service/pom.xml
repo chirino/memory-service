@@ -155,6 +155,12 @@
       <artifactId>quarkus-smallrye-context-propagation</artifactId>
     </dependency>
 
+    <!-- Health checks -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-health</artifactId>
+    </dependency>
+
     <!-- OpenAPI/Swagger -->
     <dependency>
       <groupId>io.quarkus</groupId>

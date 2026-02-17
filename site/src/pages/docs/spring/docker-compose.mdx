@@ -94,7 +94,7 @@ services:
       QUARKUS_OIDC_TOKEN_ISSUER: http://localhost:8081/realms/memory-service
       KEYCLOAK_CLIENT_SECRET: change-me
       MEMORY_SERVICE_CACHE_TYPE: redis
-      QUARKUS_REDIS_HOSTS: redis://redis:6379
+      MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
