@@ -5,7 +5,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         jq \
         build-essential \
         maven \
+        supervisor \
     && rm -rf /var/lib/apt/lists/*
+
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Build microsocks (lightweight SOCKS5 proxy with remote DNS support)
 RUN git clone https://github.com/rofl0r/microsocks.git /tmp/microsocks \
@@ -33,3 +36,5 @@ RUN ARCH=$(dpkg --print-architecture) \
     && GRPCURL_VERSION=$(curl -s https://api.github.com/repos/fullstorydev/grpcurl/releases/latest | jq -r .tag_name) \
     && curl -sSL "https://github.com/fullstorydev/grpcurl/releases/download/${GRPCURL_VERSION}/grpcurl_${GRPCURL_VERSION#v}_linux_${GRPCURL_ARCH}.tar.gz" \
        | tar -xz -C /usr/local/bin grpcurl
+
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

@@ -24,15 +24,24 @@
       "userGid": "automatic"
     }
   },
-  "initializeCommand": "bash -c 'mkdir -p ~/.m2 || true'",
+  "initializeCommand": "bash -c 'mkdir -p ~/.m2 || true; mkdir -p ~/.claude || true; touch .devcontainer/.env'",
+  "runArgs": ["--env-file", ".devcontainer/.env"],
   "mounts": [
     {
       "source": "${localEnv:HOME}${localEnv:USERPROFILE}/.m2",
       "target": "/home/vscode/.m2",
       "type": "bind"
+    },
+    {
+      "source": "${localEnv:HOME}${localEnv:USERPROFILE}/.claude",
+      "target": "/home/vscode/.claude",
+      "type": "bind"
     }
   ],
-  "postStartCommand": "bash -c 'pgrep -x microsocks > /dev/null || { nohup microsocks -p 1080 > /tmp/microsocks.log 2>&1 & disown; }'",
+  "containerEnv": {
+    "IN_DEVCONTAINER": "1"
+  },
+  "overrideCommand": false,
   "forwardPorts": [1080, 3000, 3001, 4321, 8080, 8081, 8082, 9092],
   "portsAttributes": {
     "1080": { "label": "SOCKS5 Proxy", "onAutoForward": "silent" },
@@ -53,7 +62,8 @@
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "bradlc.vscode-tailwindcss",
-        "ms-kubernetes-tools.vscode-kubernetes-tools"
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "anthropic.claude-code"
       ]
     }
   }

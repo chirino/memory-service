@@ -122,8 +122,8 @@ services:
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
-      QUARKUS_HTTP_CORS: "true"
-      QUARKUS_HTTP_CORS_ORIGINS: http://localhost:3000
+      MEMORY_SERVICE_CORS_ENABLED: "true"
+      MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
 
       # Prometheus URL for admin stats endpoints
       MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
