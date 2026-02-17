@@ -1,19 +1,16 @@
 # TODO List
 
-* document index/search apis: concepts and spring/quarkus howtos (provide RAG example).
+* document index/search apis: provide RAG example
 * document admin apis
 * Brand the project and move it to an org/foundation.
 * Add support for python langchain /w user docs similar to the quarkus/spring support.
 * move the ChatEvent json serializer to quarkus
 * fix QUARKUS_REDIS_HEALTH_ENABLED
-* make the infinispan cache name configurable
+* make the infinispan cache name configurable (see [054-infinispan-cache-name-config.md](docs/enhancements/054-infinispan-cache-name-config.md))
 * make all common memory-service config options prefixed with "memory-service."
-* kustomize manifests
-* minikube setup.
 
 # Hardening Work
 
-* test grpc resume redirects on when a loadbalancer sits in front of the memory-service
 * validate all api fields
 * review all config key names: keep them consistent and simple.
 * test/find the message size limits of the app.
@@ -23,7 +20,8 @@
 # Performance Related
 
 * are there any http cache/headers that could reduce load against the server?
-* Look into partitioning the messages table to improve pref.
+* Look into partitioning the messages table to improve pref.  
+    * can we use the sha256 as the ETAG of attachments?
 
 # Need Dev Feedback for:
 
