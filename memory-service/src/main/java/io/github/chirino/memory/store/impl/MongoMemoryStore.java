@@ -273,6 +273,25 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
+    public ConversationDto updateConversation(String userId, String conversationId, String title) {
+        MongoConversation c = conversationRepository.findById(conversationId);
+        if (c == null || c.deletedAt != null) {
+            throw new ResourceNotFoundException("conversation", conversationId);
+        }
+        String groupId = c.conversationGroupId;
+        ensureHasAccess(groupId, userId, AccessLevel.WRITER);
+        c.title = encryptTitle(title);
+        c.updatedAt = Instant.now();
+        conversationRepository.update(c);
+        MongoConversationMembership membership =
+                membershipRepository
+                        .findMembership(groupId, userId)
+                        .orElseThrow(() -> new AccessDeniedException("No access to conversation"));
+        return toConversationDto(c, membership.accessLevel, null);
+    }
+
+    @Override
+    @Transactional
     public void deleteConversation(String userId, String conversationId) {
         String groupId = resolveGroupId(conversationId);
         MongoConversationMembership membership =

@@ -146,6 +146,16 @@ export const $CreateConversationRequest = {
   },
 } as const;
 
+export const $UpdateConversationRequest = {
+  type: "object",
+  properties: {
+    title: {
+      type: "string",
+      nullable: true,
+    },
+  },
+} as const;
+
 export const $ConversationMembership = {
   type: "object",
   properties: {
@@ -270,9 +280,35 @@ When the entry is created, this is replaced with an href.`,
   },
 } as const;
 
+export const $CreateFromUrlRequest = {
+  type: "object",
+  description: "Request to create an attachment from a source URL.",
+  required: ["sourceUrl"],
+  properties: {
+    sourceUrl: {
+      type: "string",
+      format: "uri",
+      description: "URL of the content to download and store as an attachment.",
+    },
+    contentType: {
+      type: "string",
+      description: "MIME type of the content. Defaults to application/octet-stream.",
+    },
+    name: {
+      type: "string",
+      description: "Display name for the attachment.",
+    },
+  },
+  example: {
+    sourceUrl: "https://example.com/generated-image.png",
+    contentType: "image/png",
+    name: "generated-cat.png",
+  },
+} as const;
+
 export const $AttachmentUploadResponse = {
   type: "object",
-  description: "Response from uploading an attachment.",
+  description: "Response from uploading or creating an attachment.",
   properties: {
     id: {
       type: "string",
@@ -295,16 +331,30 @@ export const $AttachmentUploadResponse = {
     size: {
       type: "integer",
       format: "int64",
-      description: "File size in bytes.",
+      description: "File size in bytes (null for URL-created attachments until download completes).",
     },
     sha256: {
       type: "string",
-      description: "SHA-256 hash of the file content.",
+      description: "SHA-256 hash of the file content (null for URL-created attachments until download completes).",
     },
     expiresAt: {
       type: "string",
       format: "date-time",
       description: "When this unlinked attachment will expire and be deleted.",
+    },
+    status: {
+      type: "string",
+      enum: ["uploading", "downloading", "ready", "failed"],
+      description: `Current status of the attachment:
+- \`uploading\` - Multipart upload created but not yet completed
+- \`downloading\` - Server is downloading content from sourceUrl
+- \`ready\` - Content is available for retrieval
+- \`failed\` - Download from sourceUrl failed`,
+    },
+    sourceUrl: {
+      type: "string",
+      nullable: true,
+      description: "Original source URL (only present for URL-created attachments).",
     },
   },
   example: {
@@ -315,6 +365,7 @@ export const $AttachmentUploadResponse = {
     size: 204800,
     sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     expiresAt: "2025-01-28T11:30:00Z",
+    status: "ready",
   },
 } as const;
 

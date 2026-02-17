@@ -17,6 +17,7 @@ import io.github.chirino.memory.client.model.IndexEntryRequest;
 import io.github.chirino.memory.client.model.SearchConversationsRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest;
+import io.github.chirino.memory.client.model.UpdateConversationRequest;
 import io.github.chirino.memory.history.runtime.AttachmentResolver;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -66,6 +67,21 @@ public class MemoryServiceProxy {
                 OK,
                 "Error getting history %s",
                 conversationId);
+    }
+
+    public Response updateConversation(String conversationId, String body) {
+        try {
+            UpdateConversationRequest request =
+                    OBJECT_MAPPER.readValue(body, UpdateConversationRequest.class);
+            return execute(
+                    () -> conversationsApi().updateConversation(toUuid(conversationId), request),
+                    OK,
+                    "Error updating conversation %s",
+                    conversationId);
+        } catch (Exception e) {
+            LOG.errorf(e, "Error parsing update conversation request body");
+            return handleException(e);
+        }
     }
 
     public Response deleteConversation(String conversationId) {

@@ -62,6 +62,10 @@ export type CreateConversationRequest = {
   };
 };
 
+export type UpdateConversationRequest = {
+  title?: string | null;
+};
+
 export type ConversationMembership = {
   /**
    * Unique identifier for the conversation.
@@ -149,7 +153,25 @@ export type Attachment = {
 };
 
 /**
- * Response from uploading an attachment.
+ * Request to create an attachment from a source URL.
+ */
+export type CreateFromUrlRequest = {
+  /**
+   * URL of the content to download and store as an attachment.
+   */
+  sourceUrl: string;
+  /**
+   * MIME type of the content. Defaults to application/octet-stream.
+   */
+  contentType?: string;
+  /**
+   * Display name for the attachment.
+   */
+  name?: string;
+};
+
+/**
+ * Response from uploading or creating an attachment.
  */
 export type AttachmentUploadResponse = {
   /**
@@ -169,17 +191,29 @@ export type AttachmentUploadResponse = {
    */
   filename?: string | null;
   /**
-   * File size in bytes.
+   * File size in bytes (null for URL-created attachments until download completes).
    */
   size?: number;
   /**
-   * SHA-256 hash of the file content.
+   * SHA-256 hash of the file content (null for URL-created attachments until download completes).
    */
   sha256?: string;
   /**
    * When this unlinked attachment will expire and be deleted.
    */
   expiresAt?: string;
+  /**
+   * Current status of the attachment:
+   * - `uploading` - Multipart upload created but not yet completed
+   * - `downloading` - Server is downloading content from sourceUrl
+   * - `ready` - Content is available for retrieval
+   * - `failed` - Download from sourceUrl failed
+   */
+  status?: "uploading" | "downloading" | "ready" | "failed";
+  /**
+   * Original source URL (only present for URL-created attachments).
+   */
+  sourceUrl?: string | null;
 };
 
 /**
@@ -520,6 +554,25 @@ export type $OpenApiTs = {
          * Conversation identifier (UUID format).
          */
         conversationId: string;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
+    patch: {
+      req: {
+        /**
+         * Conversation identifier (UUID format).
+         */
+        conversationId: string;
+        requestBody: UpdateConversationRequest;
       };
       res: {
         /**
@@ -974,7 +1027,7 @@ export type $OpenApiTs = {
       req: {
         /**
          * ISO 8601 duration for how long the unlinked attachment should persist.
-         * Defaults to 1 hour. Maximum 24 hours.
+         * Defaults to 1 hour. Maximum 24 hours. Only used for multipart uploads.
          */
         expiresIn?: string;
         formData: {
@@ -990,7 +1043,7 @@ export type $OpenApiTs = {
          */
         200: ErrorResponse;
         /**
-         * Attachment uploaded successfully.
+         * Attachment created successfully.
          */
         201: AttachmentUploadResponse;
         /**

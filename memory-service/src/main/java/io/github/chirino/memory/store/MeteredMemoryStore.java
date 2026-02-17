@@ -61,6 +61,12 @@ public class MeteredMemoryStore implements MemoryStore {
     }
 
     @Override
+    public ConversationDto updateConversation(String userId, String conversationId, String title) {
+        return registry.timer("memory.store.operation", "operation", "updateConversation")
+                .record(() -> delegate.updateConversation(userId, conversationId, title));
+    }
+
+    @Override
     public void deleteConversation(String userId, String conversationId) {
         registry.timer("memory.store.operation", "operation", "deleteConversation")
                 .record(() -> delegate.deleteConversation(userId, conversationId));
