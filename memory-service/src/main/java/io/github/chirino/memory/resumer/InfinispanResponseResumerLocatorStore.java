@@ -21,19 +21,12 @@ import org.jboss.logging.Logger;
 public class InfinispanResponseResumerLocatorStore implements ResponseResumerLocatorStore {
     private static final Logger LOG = Logger.getLogger(InfinispanResponseResumerLocatorStore.class);
     private static final String RESPONSE_KEY_PREFIX = "response:";
-    private static final String CACHE_NAME = "response-recordings";
-    private static final XMLStringConfiguration CACHE_CONFIG =
-            new XMLStringConfiguration(
-                    "<distributed-cache name=\""
-                            + CACHE_NAME
-                            + "\">"
-                            + "<encoding media-type=\"application/x-protostream\"/>"
-                            + "</distributed-cache>");
     private static final Duration RETRY_DELAY = Duration.ofMillis(200);
 
     private final boolean infinispanEnabled;
     private final Instance<RemoteCacheManager> cacheManagers;
     private final Duration startupTimeout;
+    private final String cacheName;
     private volatile RemoteCache<String, String> cache;
 
     @Inject
@@ -43,9 +36,14 @@ public class InfinispanResponseResumerLocatorStore implements ResponseResumerLoc
                             name = "memory-service.cache.infinispan.startup-timeout",
                             defaultValue = "PT30S")
                     Duration startupTimeout,
+            @ConfigProperty(
+                            name = "memory-service.cache.infinispan.response-recordings-cache-name",
+                            defaultValue = "response-recordings")
+                    String cacheName,
             @Any Instance<RemoteCacheManager> cacheManagers) {
         this.infinispanEnabled = cacheType.map("infinispan"::equalsIgnoreCase).orElse(false);
         this.startupTimeout = startupTimeout;
+        this.cacheName = cacheName;
         this.cacheManagers = cacheManagers;
     }
 
@@ -62,12 +60,15 @@ public class InfinispanResponseResumerLocatorStore implements ResponseResumerLoc
         }
 
         RemoteCacheManager cacheManager = cacheManagers.get();
-        cache = cacheManager.administration().getOrCreateCache(CACHE_NAME, CACHE_CONFIG);
+        cache =
+                cacheManager
+                        .administration()
+                        .getOrCreateCache(cacheName, buildCacheConfig(cacheName));
         if (cache == null) {
             throw new IllegalStateException(
                     "Response resumer is enabled (memory-service.cache.type=infinispan) but"
                             + " cache '"
-                            + CACHE_NAME
+                            + cacheName
                             + "' could not be created.");
         }
     }
@@ -125,6 +126,22 @@ public class InfinispanResponseResumerLocatorStore implements ResponseResumerLoc
         }
         return Boolean.TRUE.equals(
                 withRetry("exists", () -> cache.containsKey(key(conversationId))));
+    }
+
+    static String buildCacheConfigXml(String name) {
+        return "<distributed-cache name=\""
+                + name
+                + "\">"
+                + "<encoding media-type=\"application/x-protostream\"/>"
+                + "</distributed-cache>";
+    }
+
+    private static XMLStringConfiguration buildCacheConfig(String name) {
+        return new XMLStringConfiguration(buildCacheConfigXml(name));
+    }
+
+    String getCacheName() {
+        return cacheName;
     }
 
     private String key(String conversationId) {

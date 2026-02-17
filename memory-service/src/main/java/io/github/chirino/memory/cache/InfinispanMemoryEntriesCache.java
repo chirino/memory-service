@@ -25,19 +25,12 @@ import org.jboss.logging.Logger;
 @ApplicationScoped
 public class InfinispanMemoryEntriesCache implements MemoryEntriesCache {
     private static final Logger LOG = Logger.getLogger(InfinispanMemoryEntriesCache.class);
-    private static final String CACHE_NAME = "memory-entries";
-    private static final XMLStringConfiguration CACHE_CONFIG =
-            new XMLStringConfiguration(
-                    "<distributed-cache name=\""
-                            + CACHE_NAME
-                            + "\">"
-                            + "<encoding media-type=\"text/plain\"/>"
-                            + "</distributed-cache>");
     private static final Duration RETRY_DELAY = Duration.ofMillis(200);
 
     private final boolean infinispanEnabled;
     private final Instance<RemoteCacheManager> cacheManagers;
     private final Duration startupTimeout;
+    private final String cacheName;
     private final Duration ttl;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
@@ -53,6 +46,10 @@ public class InfinispanMemoryEntriesCache implements MemoryEntriesCache {
                             name = "memory-service.cache.infinispan.startup-timeout",
                             defaultValue = "PT30S")
                     Duration startupTimeout,
+            @ConfigProperty(
+                            name = "memory-service.cache.infinispan.memory-entries-cache-name",
+                            defaultValue = "memory-entries")
+                    String cacheName,
             @ConfigProperty(name = "memory-service.cache.epoch.ttl", defaultValue = "PT10M")
                     Duration ttl,
             @Any Instance<RemoteCacheManager> cacheManagers,
@@ -60,6 +57,7 @@ public class InfinispanMemoryEntriesCache implements MemoryEntriesCache {
             MeterRegistry meterRegistry) {
         this.infinispanEnabled = cacheType.map("infinispan"::equalsIgnoreCase).orElse(false);
         this.startupTimeout = startupTimeout;
+        this.cacheName = cacheName;
         this.ttl = ttl;
         this.cacheManagers = cacheManagers;
         this.objectMapper = objectMapper;
@@ -86,12 +84,15 @@ public class InfinispanMemoryEntriesCache implements MemoryEntriesCache {
 
         try {
             RemoteCacheManager cacheManager = cacheManagers.get();
-            cache = cacheManager.administration().getOrCreateCache(CACHE_NAME, CACHE_CONFIG);
+            cache =
+                    cacheManager
+                            .administration()
+                            .getOrCreateCache(cacheName, buildCacheConfig(cacheName));
             if (cache == null) {
                 LOG.warnf(
                         "Memory entries cache is enabled (memory-service.cache.type=infinispan) but"
                                 + " cache '%s' could not be created.",
-                        CACHE_NAME);
+                        cacheName);
             }
         } catch (Exception e) {
             LOG.warnf(e, "Failed to initialize Infinispan memory entries cache");
@@ -194,6 +195,22 @@ public class InfinispanMemoryEntriesCache implements MemoryEntriesCache {
                     conversationId,
                     clientId);
         }
+    }
+
+    static String buildCacheConfigXml(String name) {
+        return "<distributed-cache name=\""
+                + name
+                + "\">"
+                + "<encoding media-type=\"text/plain\"/>"
+                + "</distributed-cache>";
+    }
+
+    private static XMLStringConfiguration buildCacheConfig(String name) {
+        return new XMLStringConfiguration(buildCacheConfigXml(name));
+    }
+
+    String getCacheName() {
+        return cacheName;
     }
 
     private String buildKey(UUID conversationId, String clientId) {
