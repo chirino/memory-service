@@ -57,4 +57,6 @@ When you discover something meaningful about this project during your work—arc
 
 **Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 
+**Enhancement docs**: When implementing work from `docs/enhancements/`, update the corresponding enhancement doc as you complete each phase. If the implementation diverges from the original design, update the doc to reflect what was actually implemented.
+
 ## Learned Facts
