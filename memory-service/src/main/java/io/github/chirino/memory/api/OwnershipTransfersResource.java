@@ -11,6 +11,7 @@ import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
+import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -67,7 +68,7 @@ public class OwnershipTransfersResource {
     }
 
     @POST
-    public Response createOwnershipTransfer(CreateOwnershipTransferRequest request) {
+    public Response createOwnershipTransfer(@Valid CreateOwnershipTransferRequest request) {
         try {
             OwnershipTransferDto transfer =
                     store().createOwnershipTransfer(currentUserId(), request);

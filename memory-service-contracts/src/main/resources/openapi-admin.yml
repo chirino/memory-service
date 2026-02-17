@@ -113,6 +113,8 @@ paths:
           schema:
             type: integer
             default: 100
+            minimum: 1
+            maximum: 1000
         - name: justification
           in: query
           required: false
@@ -274,6 +276,8 @@ paths:
           schema:
             type: integer
             default: 50
+            minimum: 1
+            maximum: 1000
         - name: channel
           in: query
           required: false
@@ -554,6 +558,8 @@ paths:
           schema:
             type: integer
             default: 50
+            minimum: 1
+            maximum: 1000
         - name: justification
           in: query
           required: false
@@ -1239,18 +1245,24 @@ components:
       properties:
         query:
           type: string
+          minLength: 1
+          maxLength: 1000
           description: Natural language query.
         after:
           type: string
           nullable: true
+          maxLength: 100
           description: Cursor for pagination; returns items after this result.
         limit:
           type: integer
           default: 20
+          minimum: 1
+          maximum: 1000
           description: Maximum number of results to return.
         userId:
           type: string
           nullable: true
+          maxLength: 255
           description: Filter search to conversations owned by this user.
         includeDeleted:
           type: boolean

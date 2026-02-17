@@ -4434,6 +4434,20 @@ public class StepDefinitions {
         }
     }
 
+    @io.cucumber.java.en.And("set {string} to a JSON array of {int} empty objects")
+    public void setContextVariableToJsonArray(String variableName, int count) {
+        trackUsage();
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                sb.append(",");
+            }
+            sb.append("{}");
+        }
+        sb.append("]");
+        contextVariables.put(variableName, sb.toString());
+    }
+
     private static CreateEntryRequest createHistoryEntry(String userId, String text) {
         CreateEntryRequest req = new CreateEntryRequest();
         req.setChannel(CreateEntryRequest.ChannelEnum.HISTORY);

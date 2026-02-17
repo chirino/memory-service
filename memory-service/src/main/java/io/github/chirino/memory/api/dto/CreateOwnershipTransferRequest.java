@@ -1,8 +1,15 @@
 package io.github.chirino.memory.api.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 public class CreateOwnershipTransferRequest {
 
-    private String conversationId;
+    @NotNull private String conversationId;
+
+    @NotBlank
+    @Size(max = 255)
     private String newOwnerUserId;
 
     public String getConversationId() {

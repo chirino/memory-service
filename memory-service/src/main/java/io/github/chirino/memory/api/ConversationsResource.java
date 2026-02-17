@@ -41,6 +41,10 @@ import io.quarkus.security.identity.SecurityIdentity;
 import io.vertx.core.net.SocketAddress;
 import io.vertx.ext.web.RoutingContext;
 import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -127,7 +131,7 @@ public class ConversationsResource {
     public Response listConversations(
             @QueryParam("mode") String mode,
             @QueryParam("after") String after,
-            @QueryParam("limit") Integer limit,
+            @QueryParam("limit") @Min(1) @Max(200) Integer limit,
             @QueryParam("query") String query) {
         int pageSize = limit != null ? limit : 20;
         ConversationListMode listMode = ConversationListMode.fromQuery(mode);
@@ -143,7 +147,7 @@ public class ConversationsResource {
 
     @POST
     @Path("/conversations")
-    public Response createConversation(CreateConversationRequest request) {
+    public Response createConversation(@Valid CreateConversationRequest request) {
         io.github.chirino.memory.api.dto.CreateConversationRequest internal =
                 new io.github.chirino.memory.api.dto.CreateConversationRequest();
         internal.setTitle(request.getTitle());
@@ -171,7 +175,8 @@ public class ConversationsResource {
     @PATCH
     @Path("/conversations/{conversationId}")
     public Response updateConversation(
-            @PathParam("conversationId") String conversationId, UpdateConversationRequest request) {
+            @PathParam("conversationId") String conversationId,
+            @Valid UpdateConversationRequest request) {
         try {
             ConversationDto dto =
                     store().updateConversation(currentUserId(), conversationId, request.getTitle());
@@ -202,7 +207,7 @@ public class ConversationsResource {
     public Response listEntries(
             @PathParam("conversationId") String conversationId,
             @QueryParam("after") String after,
-            @QueryParam("limit") Integer limit,
+            @QueryParam("limit") @Min(1) @Max(200) Integer limit,
             @QueryParam("channel") String channel,
             @QueryParam("epoch") String epoch,
             @QueryParam("forks") @DefaultValue("none") String forks) {
@@ -272,7 +277,7 @@ public class ConversationsResource {
     @POST
     @Path("/conversations/{conversationId}/entries")
     public Response appendEntry(
-            @PathParam("conversationId") String conversationId, CreateEntryRequest request) {
+            @PathParam("conversationId") String conversationId, @Valid CreateEntryRequest request) {
         boolean explicitHistory = request.getChannel() == CreateEntryRequest.ChannelEnum.HISTORY;
         boolean isHistoryChannel = request.getChannel() == null || explicitHistory;
         // Ensure channel is explicitly set so the store doesn't default to MEMORY
@@ -344,7 +349,7 @@ public class ConversationsResource {
     @POST
     @Path("/conversations/{conversationId}/entries/sync")
     public Response syncMemoryEntries(
-            @PathParam("conversationId") String conversationId, CreateEntryRequest request) {
+            @PathParam("conversationId") String conversationId, @Valid CreateEntryRequest request) {
         String clientId = resolveClientId();
         if (clientId == null || clientId.isBlank()) {
             return forbidden(
@@ -401,7 +406,8 @@ public class ConversationsResource {
     @POST
     @Path("/conversations/{conversationId}/memberships")
     public Response shareConversation(
-            @PathParam("conversationId") String conversationId, ShareConversationRequest request) {
+            @PathParam("conversationId") String conversationId,
+            @Valid ShareConversationRequest request) {
         try {
             io.github.chirino.memory.api.dto.ShareConversationRequest internal =
                     new io.github.chirino.memory.api.dto.ShareConversationRequest();
@@ -481,7 +487,7 @@ public class ConversationsResource {
 
     @POST
     @Path("/conversations/index")
-    public Response indexConversations(List<IndexEntryRequest> request) {
+    public Response indexConversations(@Valid List<@Valid IndexEntryRequest> request) {
         try {
             roleResolver.requireIndexer(identity, apiKeyContext);
         } catch (AccessDeniedException e) {
@@ -545,7 +551,8 @@ public class ConversationsResource {
     @GET
     @Path("/conversations/unindexed")
     public Response listUnindexedEntries(
-            @QueryParam("limit") Integer limit, @QueryParam("cursor") String cursor) {
+            @QueryParam("limit") @Min(1) @Max(200) Integer limit,
+            @QueryParam("cursor") @Size(max = 100) String cursor) {
         try {
             roleResolver.requireIndexer(identity, apiKeyContext);
         } catch (AccessDeniedException e) {

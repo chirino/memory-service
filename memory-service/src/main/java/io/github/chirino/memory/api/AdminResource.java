@@ -36,6 +36,10 @@ import io.github.chirino.memory.vector.VectorStore;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -101,7 +105,7 @@ public class AdminResource {
             @QueryParam("deletedAfter") String deletedAfter,
             @QueryParam("deletedBefore") String deletedBefore,
             @QueryParam("after") String after,
-            @QueryParam("limit") Integer limit,
+            @QueryParam("limit") @Min(1) @Max(1000) Integer limit,
             @QueryParam("justification") String justification) {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
@@ -219,8 +223,8 @@ public class AdminResource {
     @Path("/conversations/{id}/entries")
     public Response getEntries(
             @PathParam("id") String id,
-            @QueryParam("after") String after,
-            @QueryParam("limit") Integer limit,
+            @QueryParam("after") @Size(max = 100) String after,
+            @QueryParam("limit") @Min(1) @Max(1000) Integer limit,
             @QueryParam("channel") String channel,
             @QueryParam("justification") String justification,
             @QueryParam("forks") @DefaultValue("none") String forks) {
@@ -354,7 +358,7 @@ public class AdminResource {
     @POST
     @Path("/conversations/search")
     public Response searchConversations(
-            AdminSearchQuery request, @QueryParam("justification") String justification) {
+            @Valid AdminSearchQuery request, @QueryParam("justification") String justification) {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
@@ -363,10 +367,6 @@ public class AdminResource {
             params.put("userId", request != null ? request.getUserId() : null);
             params.put("includeDeleted", request != null && request.isIncludeDeleted());
             auditLogger.logRead("searchMessages", params, justification, identity, apiKeyContext);
-
-            if (request == null || request.getQuery() == null || request.getQuery().isBlank()) {
-                return badRequest("query is required");
-            }
 
             VectorStore vectorStore = vectorStoreSelector.getVectorStore();
             if (vectorStore == null || !vectorStore.isEnabled()) {
@@ -419,17 +419,9 @@ public class AdminResource {
     public Response evict(
             @HeaderParam("Accept") @DefaultValue(MediaType.APPLICATION_JSON) String accept,
             @QueryParam("async") @DefaultValue("false") boolean async,
-            EvictRequest request) {
+            @Valid EvictRequest request) {
         try {
             roleResolver.requireAdmin(identity, apiKeyContext);
-
-            // Validate required fields
-            if (request.getRetentionPeriod() == null) {
-                return badRequest("retentionPeriod is required");
-            }
-            if (request.getResourceTypes() == null || request.getResourceTypes().isEmpty()) {
-                return badRequest("resourceTypes is required and must not be empty");
-            }
 
             String target =
                     String.format(

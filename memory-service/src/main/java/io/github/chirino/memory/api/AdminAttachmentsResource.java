@@ -23,6 +23,9 @@ import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -85,8 +88,8 @@ public class AdminAttachmentsResource {
             @QueryParam("userId") String userId,
             @QueryParam("entryId") String entryId,
             @QueryParam("status") String status,
-            @QueryParam("after") String after,
-            @QueryParam("limit") Integer limit,
+            @QueryParam("after") @Size(max = 100) String after,
+            @QueryParam("limit") @Min(1) @Max(1000) Integer limit,
             @QueryParam("justification") String justification) {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
