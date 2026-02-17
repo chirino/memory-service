@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Spring Boot support: design and implementation plan
+
+> **Status**: Implemented.
 
 ## Goals
 - Provide first-class Spring Boot equivalents for the REST client, gRPC/proto artifacts, dev-time helpers, and the example agent.

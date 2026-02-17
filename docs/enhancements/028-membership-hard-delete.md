@@ -1,4 +1,13 @@
+---
+status: implemented
+supersedes:
+  - 013-soft-deletes.md
+---
+
 # Hard Delete for Conversation Memberships with Audit Logging
+
+> **Status**: Implemented. Replaces membership soft deletes from
+> [013](013-soft-deletes.md) with hard deletes and audit logging.
 
 ## Motivation
 

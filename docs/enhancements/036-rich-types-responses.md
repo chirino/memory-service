@@ -1,4 +1,10 @@
-# 036: Rich Event Types in History Entries and Resumable Streams
+---
+status: implemented
+---
+
+# Rich Event Types in History Entries and Resumable Streams
+
+> **Status**: Implemented.
 
 ## Status
 Implemented (Quarkus complete, Spring partial - see Known Limitations)

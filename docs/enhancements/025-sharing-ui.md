@@ -1,4 +1,10 @@
-# Enhancement 024: Conversation Sharing UI
+---
+status: implemented
+---
+
+# Conversation Sharing UI
+
+> **Status**: Implemented.
 
 ## Overview
 

@@ -1,4 +1,13 @@
+---
+status: implemented
+superseded-by:
+  - 011-simpler-cache-config.md
+---
+
 # Infinispan Cache Support for memory-service (Draft)
+
+> **Status**: Implemented. Cache configuration properties unified by
+> [011](011-simpler-cache-config.md).
 
 ## Problem Summary
 The memory-service currently uses Redis only for the response-resumer locator

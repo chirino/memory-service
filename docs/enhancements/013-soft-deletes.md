@@ -1,4 +1,13 @@
+---
+status: partial
+superseded-by:
+  - 028-membership-hard-delete.md
+---
+
 # Soft Deletes for Audit Retention
+
+> **Status**: Partially implemented. Membership soft deletes replaced by hard deletes with
+> audit logging in [028](028-membership-hard-delete.md).
 
 ## Motivation
 

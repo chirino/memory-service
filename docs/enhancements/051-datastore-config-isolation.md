@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Enhancement 051: Datastore Configuration Isolation
+
+> **Status**: Implemented.
 
 ## Summary
 

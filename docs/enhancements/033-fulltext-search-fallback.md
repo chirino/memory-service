@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Full-Text Search Fallback with GIN Indexes
+
+> **Status**: Implemented.
 
 ## Motivation
 

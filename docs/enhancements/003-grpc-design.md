@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # gRPC API Design for memory-service
+
+> **Status**: Implemented.
 
 ## Goals
 - Expose all memory-service REST endpoints as gRPC endpoints while preserving behavior and access control.

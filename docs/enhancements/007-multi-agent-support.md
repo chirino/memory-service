@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Multi-Agent Memory Support (Draft)
+
+> **Status**: Implemented.
 
 ## Problem Summary
 The memory-service currently assumes a single agent per conversation. All

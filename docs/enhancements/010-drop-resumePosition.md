@@ -1,4 +1,13 @@
+---
+status: implemented
+superseded-by:
+  - 049-response-resumer-api-simplification.md
+---
+
 # Drop `resumePosition` from ResponseResumer.replay
+
+> **Status**: Implemented. API further simplified and renamed by
+> [049](049-response-resumer-api-simplification.md).
 
 ## Motivation
 
