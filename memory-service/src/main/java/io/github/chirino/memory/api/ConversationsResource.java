@@ -22,6 +22,7 @@ import io.github.chirino.memory.client.model.IndexConversationsResponse;
 import io.github.chirino.memory.client.model.IndexEntryRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.UnindexedEntriesResponse;
+import io.github.chirino.memory.client.model.UpdateConversationRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.Channel;
@@ -158,6 +159,22 @@ public class ConversationsResource {
     public Response getConversation(@PathParam("conversationId") String conversationId) {
         try {
             ConversationDto dto = store().getConversation(currentUserId(), conversationId);
+            Conversation result = toClientConversation(dto);
+            return Response.ok(result).build();
+        } catch (ResourceNotFoundException e) {
+            return notFound(e);
+        } catch (AccessDeniedException e) {
+            return forbidden(e);
+        }
+    }
+
+    @PATCH
+    @Path("/conversations/{conversationId}")
+    public Response updateConversation(
+            @PathParam("conversationId") String conversationId, UpdateConversationRequest request) {
+        try {
+            ConversationDto dto =
+                    store().updateConversation(currentUserId(), conversationId, request.getTitle());
             Conversation result = toClientConversation(dto);
             return Response.ok(result).build();
         } catch (ResourceNotFoundException e) {

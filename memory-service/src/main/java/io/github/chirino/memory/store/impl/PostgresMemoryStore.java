@@ -257,6 +257,27 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     @Transactional
+    public ConversationDto updateConversation(String userId, String conversationId, String title) {
+        UUID id = UUID.fromString(conversationId);
+        ConversationEntity conversation =
+                conversationRepository
+                        .findActiveById(id)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "conversation", conversationId));
+        UUID groupId = conversation.getConversationGroup().getId();
+        ensureHasAccess(groupId, userId, AccessLevel.WRITER);
+        conversation.setTitle(encryptTitle(title));
+        ConversationMembershipEntity membership =
+                membershipRepository
+                        .findMembership(groupId, userId)
+                        .orElseThrow(() -> new AccessDeniedException("No access to conversation"));
+        return toConversationDto(conversation, membership.getAccessLevel(), null);
+    }
+
+    @Override
+    @Transactional
     public void deleteConversation(String userId, String conversationId) {
         UUID id = UUID.fromString(conversationId);
         // Check if conversation exists first to avoid Hibernate transient entity issues

@@ -34,6 +34,8 @@ public interface MemoryStore {
 
     ConversationDto getConversation(String userId, String conversationId);
 
+    ConversationDto updateConversation(String userId, String conversationId, String title);
+
     void deleteConversation(String userId, String conversationId);
 
     List<ConversationMembershipDto> listMemberships(String userId, String conversationId);

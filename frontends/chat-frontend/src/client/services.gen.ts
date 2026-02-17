@@ -94,6 +94,37 @@ export class ConversationsService {
   }
 
   /**
+   * Update a conversation
+   * Updates conversation properties. Currently supports updating the title.
+   * Requires writer or higher access on the conversation.
+   * @param data The data for the request.
+   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.requestBody
+   * @returns Conversation The updated conversation.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static updateConversation(
+    data: $OpenApiTs["/v1/conversations/{conversationId}"]["patch"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/conversations/{conversationId}"]["patch"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}"]["patch"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "PATCH",
+      url: "/v1/conversations/{conversationId}",
+      path: {
+        conversationId: data.conversationId,
+      },
+      body: data.requestBody,
+      mediaType: "application/json",
+      errors: {
+        404: "Resource not found",
+      },
+    });
+  }
+
+  /**
    * Delete a conversation
    * Deletes a conversation. Only the owner (or manager, depending on policy) may delete.
    *
@@ -703,19 +734,25 @@ export class SearchService {
 
 export class AttachmentsService {
   /**
-   * Upload a file attachment
-   * Uploads a binary file and stores it server-side. Returns an attachment
-   * reference that can be included in conversation entries via the
-   * `attachmentId` field.
+   * Upload or create an attachment
+   * Creates an attachment either by uploading a binary file (multipart/form-data)
+   * or by providing a source URL for the server to download (application/json).
+   *
+   * **Multipart upload**: Uploads a binary file and stores it server-side.
+   *
+   * **URL-based creation**: Provides a `sourceUrl` for the server to download
+   * asynchronously. Returns immediately with status `downloading`. The
+   * attachment transitions to `ready` once the download completes, or `failed`
+   * on error.
    *
    * Uploaded attachments expire after the specified duration unless they are
    * linked to an entry before expiration.
    * @param data The data for the request.
    * @param data.formData
    * @param data.expiresIn ISO 8601 duration for how long the unlinked attachment should persist.
-   * Defaults to 1 hour. Maximum 24 hours.
+   * Defaults to 1 hour. Maximum 24 hours. Only used for multipart uploads.
    * @returns ErrorResponse Error response
-   * @returns AttachmentUploadResponse Attachment uploaded successfully.
+   * @returns AttachmentUploadResponse Attachment created successfully.
    * @throws ApiError
    */
   public static uploadAttachment(

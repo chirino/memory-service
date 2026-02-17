@@ -45,6 +45,15 @@ public class ConversationsResource {
         return proxy.getConversation(conversationId);
     }
 
+    @PATCH
+    @Path("/{conversationId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updateConversation(
+            @PathParam("conversationId") String conversationId, String body) {
+        return proxy.updateConversation(conversationId, body);
+    }
+
     @DELETE
     @Path("/{conversationId}")
     public Response deleteConversation(@PathParam("conversationId") String conversationId) {

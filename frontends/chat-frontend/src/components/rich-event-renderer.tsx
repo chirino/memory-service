@@ -119,7 +119,13 @@ function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
         }
         flushText();
         flushThinking();
-        groups.push({ type: "tool-result", id: event.id, toolName: event.toolName, input: event.input, output: event.output });
+        groups.push({
+          type: "tool-result",
+          id: event.id,
+          toolName: event.toolName,
+          input: event.input,
+          output: event.output,
+        });
         break;
       case "ContentFetched":
         flushText();
@@ -284,4 +290,3 @@ function ContentFetchedBlock({ source, content }: ContentFetchedBlockProps) {
     </div>
   );
 }
-

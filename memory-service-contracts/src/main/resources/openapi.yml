@@ -142,12 +142,46 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+    patch:
+      tags: [Conversations]
+      summary: Update a conversation
+      description: |-
+        Updates conversation properties. Currently supports updating the title.
+        Requires writer or higher access on the conversation.
+      operationId: updateConversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          description: Conversation identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateConversationRequest'
+      responses:
+        '200':
+          description: The updated conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
     delete:
       tags: [Conversations]
       summary: Delete a conversation
       description: |-
         Deletes a conversation. Only the owner (or manager, depending on policy) may delete.
-        
+
         **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
       operationId: deleteConversation
       parameters:
@@ -1246,6 +1280,13 @@ components:
         metadata:
           source: "web-chat"
           projectId: "proj_7890"
+
+    UpdateConversationRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          nullable: true
 
     ConversationMembership:
       type: object

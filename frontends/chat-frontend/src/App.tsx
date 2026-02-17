@@ -136,7 +136,9 @@ function App() {
       if (response.status === 401) {
         // Show auth error screen instead of auto-redirecting to prevent redirect loops
         // (e.g., Keycloak sees user logged in → redirects back → backend still rejects token → 401 again)
-        auth.setAuthError("The server returned 401 Unauthorized. Your token may be invalid or the server configuration may not match.");
+        auth.setAuthError(
+          "The server returned 401 Unauthorized. Your token may be invalid or the server configuration may not match.",
+        );
       }
       return response;
     };
