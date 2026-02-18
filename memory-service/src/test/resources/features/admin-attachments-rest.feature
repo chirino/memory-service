@@ -219,3 +219,32 @@ Feature: Admin Attachments REST API
     Then the response status should be 200
     And the admin audit log should contain "listAttachments"
     And the admin audit log should contain "Compliance audit 2024"
+
+  # --- Cache Headers ---
+
+  Scenario: Admin attachment content download includes ETag and Cache-Control
+    Given I am authenticated as user "bob"
+    And I have a conversation with title "Admin Cache Conv"
+    When I upload a file "admin-cached.txt" with content type "text/plain" and content "Admin Cache Content"
+    Then the response status should be 201
+    And set "adminCachedId" to the json response field "id"
+    And set "adminCachedSha" to the json response field "sha256"
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/attachments/${adminCachedId}/content" expecting binary
+    Then the response status should be 200
+    And the response header "ETag" should contain "${adminCachedSha}"
+    And the response header "Cache-Control" should contain "private"
+    And the response header "Cache-Control" should contain "max-age="
+    And the response header "Cache-Control" should contain "immutable"
+
+  Scenario: Admin attachment content returns 304 for matching ETag
+    Given I am authenticated as user "bob"
+    And I have a conversation with title "Admin ETag Conv"
+    When I upload a file "admin-etag.txt" with content type "text/plain" and content "Admin ETag Content"
+    Then the response status should be 201
+    And set "adminEtagId" to the json response field "id"
+    And set "adminEtagSha" to the json response field "sha256"
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/attachments/${adminEtagId}/content" expecting binary with header "If-None-Match" = "\"${adminEtagSha}\""
+    Then the response status should be 304
+    And the response header "ETag" should contain "${adminEtagSha}"

@@ -4163,6 +4163,36 @@ public class StepDefinitions {
         this.lastResponse = requestSpec.when().get(renderedPath);
     }
 
+    @io.cucumber.java.en.When(
+            "I call GET {string} expecting binary with header {string} = {string}")
+    public void iCallGETExpectingBinaryWithHeader(
+            String path, String headerName, String headerValue) {
+        trackUsage();
+        String renderedPath = renderTemplate(path);
+        var requestSpec = given();
+        requestSpec = authenticateRequest(requestSpec);
+        requestSpec = requestSpec.header(headerName, renderTemplate(headerValue));
+        this.lastResponse = requestSpec.when().get(renderedPath);
+    }
+
+    @io.cucumber.java.en.When("I call GET {string} expecting binary without authentication")
+    public void iCallGETExpectingBinaryWithoutAuth(String path) {
+        trackUsage();
+        String renderedPath = renderTemplate(path);
+        this.lastResponse = given().when().get(renderedPath);
+    }
+
+    @io.cucumber.java.en.When(
+            "I call GET {string} expecting binary without authentication with header {string} ="
+                    + " {string}")
+    public void iCallGETExpectingBinaryWithoutAuthWithHeader(
+            String path, String headerName, String headerValue) {
+        trackUsage();
+        String renderedPath = renderTemplate(path);
+        this.lastResponse =
+                given().header(headerName, renderTemplate(headerValue)).when().get(renderedPath);
+    }
+
     @io.cucumber.java.en.Then("the binary response content should be {string}")
     public void theBinaryResponseContentShouldBe(String expectedContent) {
         trackUsage();
@@ -4173,11 +4203,22 @@ public class StepDefinitions {
     @io.cucumber.java.en.Then("the response header {string} should contain {string}")
     public void theResponseHeaderShouldContain(String headerName, String expectedValue) {
         trackUsage();
+        String rendered = renderTemplate(expectedValue);
         String actual = lastResponse.getHeader(headerName);
         assertThat(
-                "Response header " + headerName + " should contain " + expectedValue,
+                "Response header " + headerName + " should contain " + rendered,
                 actual,
-                containsString(expectedValue));
+                containsString(rendered));
+    }
+
+    @io.cucumber.java.en.Then("the response header {string} should not be present")
+    public void theResponseHeaderShouldNotBePresent(String headerName) {
+        trackUsage();
+        String actual = lastResponse.getHeader(headerName);
+        assertThat(
+                "Response header " + headerName + " should not be present",
+                actual,
+                is(nullValue()));
     }
 
     @io.cucumber.java.en.Then("the response body field {string} should not be null")
