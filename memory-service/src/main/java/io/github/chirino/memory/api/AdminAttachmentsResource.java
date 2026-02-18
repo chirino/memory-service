@@ -26,6 +26,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -159,7 +160,9 @@ public class AdminAttachmentsResource {
     @GET
     @Path("/{id}/content")
     public Response getAttachmentContent(
-            @PathParam("id") String id, @QueryParam("justification") String justification) {
+            @PathParam("id") String id,
+            @QueryParam("justification") String justification,
+            @HeaderParam("If-None-Match") String ifNoneMatch) {
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
@@ -177,13 +180,23 @@ public class AdminAttachmentsResource {
                 return notFound(new ResourceNotFoundException("attachment content", id));
             }
 
+            String cacheControl = "private, max-age=86400, immutable";
+
+            // Check conditional GET
+            Optional<Response> notModified =
+                    AttachmentResponseHelper.checkNotModified(ifNoneMatch, att, cacheControl);
+            if (notModified.isPresent()) {
+                return notModified.get();
+            }
+
             // Check for signed URL redirect (S3)
             Duration signedUrlExpiry = Duration.ofHours(1);
             Optional<URI> signedUrl = fileStore().getSignedUrl(att.storageKey(), signedUrlExpiry);
             if (signedUrl.isPresent()) {
-                return Response.temporaryRedirect(signedUrl.get())
-                        .header("Cache-Control", "private, max-age=" + signedUrlExpiry.toSeconds())
-                        .build();
+                Response.ResponseBuilder builder = Response.temporaryRedirect(signedUrl.get());
+                AttachmentResponseHelper.addCacheHeaders(
+                        builder, att, "private, max-age=" + signedUrlExpiry.toSeconds());
+                return builder.build();
             }
 
             // Stream bytes directly
@@ -197,7 +210,7 @@ public class AdminAttachmentsResource {
                 builder.header(
                         "Content-Disposition", "inline; filename=\"" + att.filename() + "\"");
             }
-            builder.header("Cache-Control", "private, no-store");
+            AttachmentResponseHelper.addCacheHeaders(builder, att, cacheControl);
             return builder.build();
         } catch (AccessDeniedException e) {
             return forbidden(e);

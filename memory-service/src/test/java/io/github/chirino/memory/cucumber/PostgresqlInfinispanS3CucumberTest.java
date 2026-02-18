@@ -10,6 +10,7 @@ import io.quarkus.test.security.TestSecurity;
 @TestProfile(PostgresqlInfinispanS3TestProfile.class)
 @CucumberOptions(
         features = {"classpath:features/attachments-rest.feature"},
+        tags = "not @direct-stream-only",
         plugin = {
             "pretty",
             "html:target/cucumber-reports/postgresql-infinispan-s3.html",
