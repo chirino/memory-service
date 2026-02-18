@@ -27,6 +27,13 @@ tasks:
         ./mvnw -T 1C install -pl ':memory-service' -am -DskipTests
         ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log
 
+  site:
+    desc: Run the site in dev mode.
+    dir: site
+    cmds:
+      - npm i
+      - npm run dev
+
   dev:chat-quarkus:
     desc: Run the chat-quarkus app in dev mode.
     cmds:
