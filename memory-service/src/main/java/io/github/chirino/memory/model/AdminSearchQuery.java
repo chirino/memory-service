@@ -1,12 +1,28 @@
 package io.github.chirino.memory.model;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 public class AdminSearchQuery {
 
+    @NotBlank
+    @Size(max = 1000)
     private String query;
+
     private String searchType;
+
+    @Min(1)
+    @Max(1000)
     private Integer limit;
+
+    @Size(max = 100)
     private String after;
+
+    @Size(max = 255)
     private String userId;
+
     private boolean includeDeleted;
     private Boolean includeEntry;
     private Boolean groupByConversation;

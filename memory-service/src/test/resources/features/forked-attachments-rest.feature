@@ -90,6 +90,8 @@ Feature: Forked Attachments REST API
     When I call POST "/v1/conversations/${forkedConversationId}/entries" with body:
     """
     {
+      "channel": "HISTORY",
+      "contentType": "history",
       "content": [{
         "role": "USER",
         "text": "Summarize page 3",
