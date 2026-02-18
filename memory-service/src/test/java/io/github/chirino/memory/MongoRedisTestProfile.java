@@ -9,7 +9,7 @@ public class MongoRedisTestProfile implements QuarkusTestProfile {
     public Map<String, String> getConfigOverrides() {
         return Map.ofEntries(
                 Map.entry("memory-service.datastore.type", "mongo"),
-                Map.entry("memory-service.vector.type", "mongodb"),
+                Map.entry("memory-service.vector.store.type", "mongo"),
                 Map.entry("memory-service.cache.type", "redis"),
                 Map.entry("quarkus.mongodb.devservices.enabled", "true"),
                 Map.entry("quarkus.redis.devservices.enabled", "true"),

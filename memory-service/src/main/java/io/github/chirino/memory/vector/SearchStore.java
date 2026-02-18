@@ -4,7 +4,7 @@ import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.model.AdminSearchQuery;
 
-public interface VectorStore {
+public interface SearchStore {
 
     boolean isEnabled();
 

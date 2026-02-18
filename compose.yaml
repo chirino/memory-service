@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: memory_service
       POSTGRES_USER: postgres
@@ -95,6 +95,15 @@ services:
       # Note: S3 presigned URLs use internal Docker hostnames, so 'db' is simpler
       # for local development. S3 storage is tested via unit test profiles.
       MEMORY_SERVICE_ATTACHMENTS_STORE: db
+
+      # Search & embedding: defaults to fulltext only (no vector search).
+      # To enable pgvector + OpenAI embeddings, add to .env:
+      #   MEMORY_SERVICE_VECTOR_STORE_TYPE=pgvector
+      #   MEMORY_SERVICE_EMBEDDING_TYPE=openai
+      #   OPENAI_API_KEY=sk-your-key
+      MEMORY_SERVICE_VECTOR_STORE_TYPE: ${MEMORY_SERVICE_VECTOR_STORE_TYPE:-none}
+      MEMORY_SERVICE_EMBEDDING_TYPE: ${MEMORY_SERVICE_EMBEDDING_TYPE:-none}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

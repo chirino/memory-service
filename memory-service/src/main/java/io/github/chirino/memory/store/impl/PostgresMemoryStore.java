@@ -23,7 +23,7 @@ import io.github.chirino.memory.cache.CachedMemoryEntries;
 import io.github.chirino.memory.cache.MemoryEntriesCache;
 import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
-import io.github.chirino.memory.config.VectorStoreSelector;
+import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
@@ -46,7 +46,7 @@ import io.github.chirino.memory.store.MemoryStore;
 import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
-import io.github.chirino.memory.vector.VectorStore;
+import io.github.chirino.memory.vector.SearchStore;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -89,7 +89,7 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Inject ObjectMapper objectMapper;
 
-    @Inject VectorStoreSelector vectorStoreSelector;
+    @Inject SearchStoreSelector searchStoreSelector;
 
     @Inject EmbeddingService embeddingService;
 
@@ -1682,7 +1682,7 @@ public class PostgresMemoryStore implements MemoryStore {
         if (text == null || text.isBlank()) {
             return;
         }
-        VectorStore store = vectorStoreSelector.getVectorStore();
+        SearchStore store = searchStoreSelector.getSearchStore();
         float[] embedding = embeddingService.embed(text);
         if (embedding == null || embedding.length == 0) {
             return;
@@ -1819,7 +1819,7 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     private boolean shouldVectorize() {
-        VectorStore store = vectorStoreSelector.getVectorStore();
+        SearchStore store = searchStoreSelector.getSearchStore();
         return store != null && store.isEnabled() && embeddingService.isEnabled();
     }
 
