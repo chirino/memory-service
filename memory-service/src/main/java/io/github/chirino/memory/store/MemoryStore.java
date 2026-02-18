@@ -30,7 +30,7 @@ public interface MemoryStore {
     ConversationDto createConversation(String userId, CreateConversationRequest request);
 
     List<ConversationSummaryDto> listConversations(
-            String userId, String query, String after, int limit, ConversationListMode mode);
+            String userId, String query, String afterCursor, int limit, ConversationListMode mode);
 
     ConversationDto getConversation(String userId, String conversationId);
 
@@ -38,7 +38,8 @@ public interface MemoryStore {
 
     void deleteConversation(String userId, String conversationId);
 
-    List<ConversationMembershipDto> listMemberships(String userId, String conversationId);
+    List<ConversationMembershipDto> listMemberships(
+            String userId, String conversationId, String afterCursor, int limit);
 
     ConversationMembershipDto shareConversation(
             String userId, String conversationId, ShareConversationRequest request);
@@ -51,10 +52,12 @@ public interface MemoryStore {
 
     void deleteMembership(String userId, String conversationId, String memberUserId);
 
-    List<ConversationForkSummaryDto> listForks(String userId, String conversationId);
+    List<ConversationForkSummaryDto> listForks(
+            String userId, String conversationId, String afterCursor, int limit);
 
     // Ownership transfer methods (transfers are always "pending" while they exist)
-    List<OwnershipTransferDto> listPendingTransfers(String userId, String role);
+    List<OwnershipTransferDto> listPendingTransfers(
+            String userId, String role, String afterCursor, int limit);
 
     Optional<OwnershipTransferDto> getTransfer(String userId, String transferId);
 
@@ -114,7 +117,7 @@ public interface MemoryStore {
      * @param cursor pagination cursor from previous response
      * @return paginated response with entries and cursor
      */
-    UnindexedEntriesResponse listUnindexedEntries(int limit, String cursor);
+    UnindexedEntriesResponse listUnindexedEntries(int limit, String afterCursor);
 
     /**
      * Find entries pending vector store indexing (indexed_content IS NOT NULL AND indexed_at IS NULL).
@@ -144,9 +147,11 @@ public interface MemoryStore {
 
     PagedEntries adminGetEntries(String conversationId, AdminMessageQuery query);
 
-    List<ConversationMembershipDto> adminListMemberships(String conversationId);
+    List<ConversationMembershipDto> adminListMemberships(
+            String conversationId, String afterCursor, int limit);
 
-    List<ConversationForkSummaryDto> adminListForks(String conversationId);
+    List<ConversationForkSummaryDto> adminListForks(
+            String conversationId, String afterCursor, int limit);
 
     SearchResultsDto adminSearchEntries(AdminSearchQuery query);
 

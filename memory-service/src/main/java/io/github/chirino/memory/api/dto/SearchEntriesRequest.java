@@ -5,7 +5,7 @@ public class SearchEntriesRequest {
     private String query;
     private String searchType;
     private Integer limit;
-    private String after;
+    private String afterCursor;
     private Boolean includeEntry;
     private Boolean groupByConversation;
 
@@ -33,12 +33,12 @@ public class SearchEntriesRequest {
         this.limit = limit;
     }
 
-    public String getAfter() {
-        return after;
+    public String getAfterCursor() {
+        return afterCursor;
     }
 
-    public void setAfter(String after) {
-        this.after = after;
+    public void setAfterCursor(String afterCursor) {
+        this.afterCursor = afterCursor;
     }
 
     public Boolean getIncludeEntry() {

@@ -82,7 +82,7 @@ public class EntriesGrpcService extends AbstractGrpcService implements EntriesSe
                                         paged.getEntries().stream()
                                                 .map(GrpcDtoMapper::toProto)
                                                 .collect(Collectors.toList()));
-                                String nextCursor = paged.getNextCursor();
+                                String nextCursor = paged.getAfterCursor();
                                 if (nextCursor != null && !nextCursor.isBlank()) {
                                     builder.setPageInfo(
                                             PageInfo.newBuilder().setNextPageToken(nextCursor));

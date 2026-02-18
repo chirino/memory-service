@@ -214,7 +214,7 @@ Feature: Index Entries REST API
     """
     Then the response status should be 200
     And the search response should contain 2 results
-    And the response should have a nextCursor
+    And the response should have an afterCursor
 
   Scenario: Search result includes entryId at top level
     When I list entries for the conversation

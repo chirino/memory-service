@@ -104,7 +104,7 @@ public class AdminResource {
             @QueryParam("onlyDeleted") @jakarta.ws.rs.DefaultValue("false") boolean onlyDeleted,
             @QueryParam("deletedAfter") String deletedAfter,
             @QueryParam("deletedBefore") String deletedBefore,
-            @QueryParam("after") String after,
+            @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") @Min(1) @Max(1000) Integer limit,
             @QueryParam("justification") String justification) {
         try {
@@ -128,7 +128,7 @@ public class AdminResource {
             if (deletedBefore != null && !deletedBefore.isBlank()) {
                 query.setDeletedBefore(OffsetDateTime.parse(deletedBefore, ISO_FORMATTER));
             }
-            query.setAfter(after);
+            query.setAfterCursor(afterCursor);
             query.setLimit(limit != null ? limit : 100);
 
             List<ConversationSummaryDto> internal = store().adminListConversations(query);
@@ -136,6 +136,11 @@ public class AdminResource {
                     internal.stream().map(this::toAdminConversationSummary).toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
+            String cursor =
+                    data.size() == query.getLimit() && !data.isEmpty()
+                            ? data.get(data.size() - 1).getId().toString()
+                            : null;
+            response.put("afterCursor", cursor);
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);
@@ -223,7 +228,7 @@ public class AdminResource {
     @Path("/conversations/{id}/entries")
     public Response getEntries(
             @PathParam("id") String id,
-            @QueryParam("after") @Size(max = 100) String after,
+            @QueryParam("afterCursor") @Size(max = 100) String afterCursor,
             @QueryParam("limit") @Min(1) @Max(1000) Integer limit,
             @QueryParam("channel") String channel,
             @QueryParam("justification") String justification,
@@ -236,7 +241,7 @@ public class AdminResource {
             auditLogger.logRead("getMessages", params, justification, identity, apiKeyContext);
 
             AdminMessageQuery query = new AdminMessageQuery();
-            query.setAfterEntryId(after);
+            query.setAfterEntryId(afterCursor);
             query.setLimit(limit != null ? limit : 50);
             if (channel != null && !channel.isBlank()) {
                 query.setChannel(Channel.fromString(channel));
@@ -247,7 +252,7 @@ public class AdminResource {
             List<Entry> entries = result.getEntries().stream().map(this::toAdminEntry).toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", entries);
-            response.put("nextCursor", result.getNextCursor());
+            response.put("afterCursor", result.getAfterCursor());
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);
@@ -263,14 +268,19 @@ public class AdminResource {
     @GET
     @Path("/conversations/{id}/memberships")
     public Response getMemberships(
-            @PathParam("id") String id, @QueryParam("justification") String justification) {
+            @PathParam("id") String id,
+            @QueryParam("afterCursor") String afterCursor,
+            @QueryParam("limit") @Min(1) @Max(1000) Integer limit,
+            @QueryParam("justification") String justification) {
+        int pageSize = limit != null ? limit : 50;
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
             params.put("id", id);
             auditLogger.logRead("getMemberships", params, justification, identity, apiKeyContext);
 
-            List<ConversationMembershipDto> memberships = store().adminListMemberships(id);
+            List<ConversationMembershipDto> memberships =
+                    store().adminListMemberships(id, afterCursor, pageSize);
             List<ConversationMembership> data =
                     memberships.stream()
                             .map(
@@ -294,6 +304,11 @@ public class AdminResource {
                             .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
+            String cursor =
+                    data.size() == pageSize && !data.isEmpty()
+                            ? data.get(data.size() - 1).getUserId()
+                            : null;
+            response.put("afterCursor", cursor);
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);
@@ -309,14 +324,19 @@ public class AdminResource {
     @GET
     @Path("/conversations/{id}/forks")
     public Response listForks(
-            @PathParam("id") String id, @QueryParam("justification") String justification) {
+            @PathParam("id") String id,
+            @QueryParam("afterCursor") String afterCursor,
+            @QueryParam("limit") @Min(1) @Max(1000) Integer limit,
+            @QueryParam("justification") String justification) {
+        int pageSize = limit != null ? limit : 50;
         try {
             roleResolver.requireAuditor(identity, apiKeyContext);
             Map<String, Object> params = new HashMap<>();
             params.put("id", id);
             auditLogger.logRead("listForks", params, justification, identity, apiKeyContext);
 
-            List<ConversationForkSummaryDto> forks = store().adminListForks(id);
+            List<ConversationForkSummaryDto> forks =
+                    store().adminListForks(id, afterCursor, pageSize);
             List<ConversationForkSummary> data =
                     forks.stream()
                             .map(
@@ -343,6 +363,11 @@ public class AdminResource {
                             .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
+            String cursorValue =
+                    data.size() == pageSize && !data.isEmpty()
+                            ? data.get(data.size() - 1).getConversationId().toString()
+                            : null;
+            response.put("afterCursor", cursorValue);
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
             return forbidden(e);
@@ -381,8 +406,8 @@ public class AdminResource {
                             .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
-            if (internalResults.getNextCursor() != null) {
-                response.put("nextCursor", internalResults.getNextCursor());
+            if (internalResults.getAfterCursor() != null) {
+                response.put("afterCursor", internalResults.getAfterCursor());
             }
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {

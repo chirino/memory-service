@@ -114,9 +114,13 @@ public class MemoryServiceProxy {
                 conversationId);
     }
 
-    public Response listConversationForks(String conversationId) {
+    public Response listConversationForks(
+            String conversationId, String afterCursor, Integer limit) {
         return execute(
-                () -> conversationsApi().listConversationForks(toUuid(conversationId)),
+                () ->
+                        conversationsApi()
+                                .listConversationForks(
+                                        toUuid(conversationId), toUuid(afterCursor), limit),
                 OK,
                 "Error listing forks for history %s",
                 conversationId);
@@ -175,9 +179,13 @@ public class MemoryServiceProxy {
         }
     }
 
-    public Response listConversationMemberships(String conversationId) {
+    public Response listConversationMemberships(
+            String conversationId, String afterCursor, Integer limit) {
         return execute(
-                () -> sharingApi().listConversationMemberships(toUuid(conversationId)),
+                () ->
+                        sharingApi()
+                                .listConversationMemberships(
+                                        toUuid(conversationId), afterCursor, limit),
                 OK,
                 "Error listing memberships for history %s",
                 conversationId);
@@ -212,9 +220,9 @@ public class MemoryServiceProxy {
                 userId);
     }
 
-    public Response listPendingTransfers(String role) {
+    public Response listPendingTransfers(String role, String afterCursor, Integer limit) {
         return execute(
-                () -> sharingApi().listPendingTransfers(role),
+                () -> sharingApi().listPendingTransfers(role, toUuid(afterCursor), limit),
                 OK,
                 "Error listing pending transfers");
     }

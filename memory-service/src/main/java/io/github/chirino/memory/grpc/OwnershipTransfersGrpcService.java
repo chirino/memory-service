@@ -12,6 +12,7 @@ import io.github.chirino.memory.grpc.v1.ListOwnershipTransfersRequest;
 import io.github.chirino.memory.grpc.v1.ListOwnershipTransfersResponse;
 import io.github.chirino.memory.grpc.v1.OwnershipTransfer;
 import io.github.chirino.memory.grpc.v1.OwnershipTransfersService;
+import io.github.chirino.memory.grpc.v1.PageInfo;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.common.annotation.Blocking;
@@ -32,14 +33,32 @@ public class OwnershipTransfersGrpcService extends AbstractGrpcService
                 .item(
                         () -> {
                             String role = GrpcDtoMapper.transferRoleFromProto(request.getRole());
+                            String token =
+                                    request.hasPage()
+                                            ? normalizeToken(request.getPage().getPageToken())
+                                            : null;
+                            int pageSize =
+                                    request.hasPage() && request.getPage().getPageSize() > 0
+                                            ? request.getPage().getPageSize()
+                                            : 50;
                             List<OwnershipTransferDto> transfers =
-                                    store().listPendingTransfers(currentUserId(), role);
-                            return ListOwnershipTransfersResponse.newBuilder()
-                                    .addAllTransfers(
-                                            transfers.stream()
-                                                    .map(GrpcDtoMapper::toProto)
-                                                    .collect(Collectors.toList()))
-                                    .build();
+                                    store().listPendingTransfers(
+                                                    currentUserId(), role, token, pageSize);
+                            ListOwnershipTransfersResponse.Builder builder =
+                                    ListOwnershipTransfersResponse.newBuilder()
+                                            .addAllTransfers(
+                                                    transfers.stream()
+                                                            .map(GrpcDtoMapper::toProto)
+                                                            .collect(Collectors.toList()));
+                            if (transfers.size() == pageSize && !transfers.isEmpty()) {
+                                builder.setPageInfo(
+                                        PageInfo.newBuilder()
+                                                .setNextPageToken(
+                                                        transfers
+                                                                .get(transfers.size() - 1)
+                                                                .getId()));
+                            }
+                            return builder.build();
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
@@ -92,6 +111,13 @@ public class OwnershipTransfersGrpcService extends AbstractGrpcService
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
+    }
+
+    private static String normalizeToken(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        return token;
     }
 
     @Override

@@ -50,7 +50,7 @@ paths:
             type: string
             enum: [all, roots, latest-fork]
             default: latest-fork
-        - name: after
+        - name: afterCursor
           in: query
           required: false
           description: Cursor for pagination; returns items after this conversation id (UUID format).
@@ -86,7 +86,7 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ConversationSummary'
-                  nextCursor:
+                  afterCursor:
                     type: string
                     nullable: true
         default:
@@ -228,7 +228,7 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: after
+        - name: afterCursor
           in: query
           required: false
           description: Cursor for pagination; returns entries after this entry id (UUID format).
@@ -291,7 +291,7 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Entry'
-                  nextCursor:
+                  afterCursor:
                     type: string
                     nullable: true
         '404':
@@ -405,6 +405,23 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: afterCursor
+          in: query
+          required: false
+          description: Cursor for pagination; returns items after this conversation id (UUID format).
+          schema:
+            type: string
+            format: uuid
+            nullable: true
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of forks to return.
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
       responses:
         '200':
           description: Forked conversations related to this conversation's root.
@@ -417,6 +434,9 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ConversationForkSummary'
+                  afterCursor:
+                    type: string
+                    nullable: true
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -472,6 +492,23 @@ paths:
             type: string
             enum: [sender, recipient, all]
             default: all
+        - name: afterCursor
+          in: query
+          required: false
+          description: Cursor for pagination; returns items after this transfer id (UUID format).
+          schema:
+            type: string
+            format: uuid
+            nullable: true
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of transfers to return.
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
       responses:
         '200':
           description: List of pending transfers.
@@ -484,6 +521,9 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/OwnershipTransfer'
+                  afterCursor:
+                    type: string
+                    nullable: true
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -655,6 +695,22 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: afterCursor
+          in: query
+          required: false
+          description: Cursor for pagination; returns items after this user id.
+          schema:
+            type: string
+            nullable: true
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of memberships to return.
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
       responses:
         '200':
           description: Memberships for the conversation.
@@ -667,6 +723,9 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ConversationMembership'
+                  afterCursor:
+                    type: string
+                    nullable: true
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -805,7 +864,7 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/SearchResult'
-                  nextCursor:
+                  afterCursor:
                     type: string
                     nullable: true
         '501':
@@ -889,7 +948,7 @@ paths:
             default: 100
             minimum: 1
             maximum: 200
-        - name: cursor
+        - name: afterCursor
           in: query
           required: false
           description: Pagination cursor from previous response.
@@ -1745,7 +1804,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/UnindexedEntry'
-        cursor:
+        afterCursor:
           type: string
           nullable: true
           description: Cursor for fetching next page. Null when no more results.
@@ -1760,7 +1819,7 @@ components:
                 - text: "Help me design a memory service"
                   role: "USER"
               createdAt: "2025-01-10T14:40:12Z"
-        cursor: "eyJjcmVhdGVkQXQiOiIyMDI1LTAxLTEwVDE0OjQwOjEyWiJ9"
+        afterCursor: "eyJjcmVhdGVkQXQiOiIyMDI1LTAxLTEwVDE0OjQwOjEyWiJ9"
 
     UnindexedEntry:
       type: object
@@ -1793,7 +1852,7 @@ components:
 
             If the requested search type is not available on the server, a 501 (Not Implemented)
             error is returned with details about which search types are available.
-        after:
+        afterCursor:
           type: string
           nullable: true
           maxLength: 100
