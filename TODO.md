@@ -15,6 +15,7 @@
 * test/find the message size limits of the app.
     * use that info to protect against DOS: huge api requests .
 * define maxium lengths for all fields.
+* Handle syncing Memory entries with more than 1000 messages by splitting into multiple entries (client-side change).
 
 # Performance Related
 

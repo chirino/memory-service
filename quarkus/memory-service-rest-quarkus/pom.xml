@@ -36,6 +36,11 @@
       <artifactId>quarkus-openapi-generator-oidc</artifactId>
       <version>2.13.0-lts</version>
     </dependency>
+    <!-- Bean validation for generated OpenAPI models -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-hibernate-validator</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-oidc</artifactId>

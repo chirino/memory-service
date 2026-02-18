@@ -885,7 +885,7 @@ function ChatPanelContent({
                       setEditTitleValue(conversationQuery.data?.title || "");
                       setIsEditingTitle(true);
                     }}
-                    className="rounded p-1 text-stone/0 transition-colors group-hover:text-stone hover:text-ink"
+                    className="rounded p-1 text-stone/0 transition-colors hover:text-ink group-hover:text-stone"
                     aria-label="Edit conversation title"
                   >
                     <Pencil className="h-4 w-4" />

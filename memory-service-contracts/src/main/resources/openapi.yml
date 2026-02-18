@@ -65,6 +65,8 @@ paths:
           schema:
             type: integer
             default: 20
+            minimum: 1
+            maximum: 200
         - name: query
           in: query
           required: false
@@ -240,6 +242,8 @@ paths:
           schema:
             type: integer
             default: 50
+            minimum: 1
+            maximum: 200
         - name: channel
           in: query
           required: false
@@ -883,12 +887,15 @@ paths:
           schema:
             type: integer
             default: 100
+            minimum: 1
+            maximum: 200
         - name: cursor
           in: query
           required: false
           description: Pagination cursor from previous response.
           schema:
             type: string
+            maxLength: 100
       responses:
         '200':
           description: Paginated list of unindexed entries.
@@ -1272,6 +1279,7 @@ components:
         title:
           type: string
           nullable: true
+          maxLength: 500
         metadata:
           type: object
           additionalProperties: true
@@ -1287,6 +1295,7 @@ components:
         title:
           type: string
           nullable: true
+          maxLength: 500
 
     ConversationMembership:
       type: object
@@ -1335,6 +1344,8 @@ components:
       properties:
         userId:
           type: string
+          minLength: 1
+          maxLength: 255
         accessLevel:
           $ref: '#/components/schemas/AccessLevel'
         createdAt:
@@ -1573,6 +1584,7 @@ components:
         userId:
           type: string
           nullable: true
+          maxLength: 255
           description: |-
             Human user this entry is associated with.
             For history entries authored by a user, this is the sender.
@@ -1581,6 +1593,7 @@ components:
           $ref: '#/components/schemas/Channel'
         contentType:
           type: string
+          maxLength: 127
           description: |-
             Describes the schema/format of the content array.
 
@@ -1605,6 +1618,7 @@ components:
             agent memory entries.
         content:
           type: array
+          maxItems: 1000
           description: |-
             For history channel entries (contentType: `"history"` or `"history/<subtype>"`), each block
             contains `role` and at least one of `text`, `events`, or `attachments`.
@@ -1612,6 +1626,7 @@ components:
         indexedContent:
           type: string
           nullable: true
+          maxLength: 100000
           description: |-
             Optional text to index for search. Only valid for entries in the history
             channel. If provided, the entry will be indexed for search immediately
@@ -1703,6 +1718,8 @@ components:
           description: The entry ID to index.
         indexedContent:
           type: string
+          minLength: 1
+          maxLength: 100000
           description: The searchable text for this entry.
       example:
         conversationId: "550e8400-e29b-41d4-a716-446655440000"
@@ -1761,6 +1778,8 @@ components:
       properties:
         query:
           type: string
+          minLength: 1
+          maxLength: 1000
           description: Natural language query.
         searchType:
           type: string
@@ -1777,10 +1796,13 @@ components:
         after:
           type: string
           nullable: true
+          maxLength: 100
           description: Cursor for pagination; returns items after this result.
         limit:
           type: integer
           default: 20
+          minimum: 1
+          maximum: 200
           description: Maximum number of results to return.
         includeEntry:
           type: boolean

@@ -16,6 +16,7 @@ import io.github.chirino.memory.vector.VectorStore;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
+import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -51,7 +52,7 @@ public class SearchResource {
 
     @POST
     @Path("/conversations/search")
-    public Response searchConversations(SearchConversationsRequest request) {
+    public Response searchConversations(@Valid SearchConversationsRequest request) {
         VectorStore vectorStore = vectorStore();
         if (vectorStore == null || !vectorStore.isEnabled()) {
             return vectorStoreUnavailable();

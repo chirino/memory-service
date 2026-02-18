@@ -53,7 +53,7 @@ This means a caller can submit a conversation title that is megabytes long, a `u
 | Field | Type | Constraint | Rationale |
 |-------|------|------------|-----------|
 | `contentType` | String | `@NotBlank`, `@Size(max = 127)`, `@Pattern(regexp = "^[a-zA-Z0-9][a-zA-Z0-9!#$&\\-^_.+]*(/[a-zA-Z0-9][a-zA-Z0-9!#$&\\-^_.+]*)?$")` | Must be a valid MIME-like type; matches `VARCHAR(127)` from attachments |
-| `content` | List | `@NotNull`, `@Size(min = 1, max = 1000)` | At least one content element; bounded to prevent unbounded arrays |
+| `content` | List | `@NotNull`, `@Size(max = 1000)` | Content elements list; bounded to prevent unbounded arrays |
 | `userId` | String | `@Size(max = 255)`, nullable | OAuth subject IDs are typically short; 255 is safe |
 | `clientId` | String | `@Size(max = 255)`, nullable | Agent client identifiers |
 | `indexedContent` | String | `@Size(max = 100_000)`, nullable | Full-text search content; 100K chars covers large documents |

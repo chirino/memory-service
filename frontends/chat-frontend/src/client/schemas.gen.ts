@@ -131,6 +131,7 @@ export const $CreateConversationRequest = {
     title: {
       type: "string",
       nullable: true,
+      maxLength: 500,
     },
     metadata: {
       type: "object",
@@ -152,6 +153,7 @@ export const $UpdateConversationRequest = {
     title: {
       type: "string",
       nullable: true,
+      maxLength: 500,
     },
   },
 } as const;
@@ -214,6 +216,8 @@ export const $ShareConversationRequest = {
   properties: {
     userId: {
       type: "string",
+      minLength: 1,
+      maxLength: 255,
     },
     accessLevel: {
       $ref: "#/components/schemas/AccessLevel",
@@ -490,6 +494,7 @@ export const $CreateEntryRequest = {
     userId: {
       type: "string",
       nullable: true,
+      maxLength: 255,
       description: `Human user this entry is associated with.
 For history entries authored by a user, this is the sender.
 For agent entries, this is the user the agent is responding to.`,
@@ -499,6 +504,7 @@ For agent entries, this is the user the agent is responding to.`,
     },
     contentType: {
       type: "string",
+      maxLength: 127,
       description: `Describes the schema/format of the content array.
 
 **History channel entries must use \`"history"\` or \`"history/<subtype>"\` as the contentType.**
@@ -523,6 +529,7 @@ agent memory entries.`,
     },
     content: {
       type: "array",
+      maxItems: 1000,
       description: `For history channel entries (contentType: \`"history"\` or \`"history/<subtype>"\`), each block
 contains \`role\` and at least one of \`text\`, \`events\`, or \`attachments\`.`,
       items: {},
@@ -530,6 +537,7 @@ contains \`role\` and at least one of \`text\`, \`events\`, or \`attachments\`.`
     indexedContent: {
       type: "string",
       nullable: true,
+      maxLength: 100000,
       description: `Optional text to index for search. Only valid for entries in the history
 channel. If provided, the entry will be indexed for search immediately
 after creation. Returns 400 Bad Request if specified for non-history channels.`,
@@ -649,6 +657,8 @@ export const $IndexEntryRequest = {
     },
     indexedContent: {
       type: "string",
+      minLength: 1,
+      maxLength: 100000,
       description: "The searchable text for this entry.",
     },
   },
@@ -730,6 +740,8 @@ export const $SearchConversationsRequest = {
   properties: {
     query: {
       type: "string",
+      minLength: 1,
+      maxLength: 1000,
       description: "Natural language query.",
     },
     searchType: {
@@ -748,11 +760,14 @@ error is returned with details about which search types are available.
     after: {
       type: "string",
       nullable: true,
+      maxLength: 100,
       description: "Cursor for pagination; returns items after this result.",
     },
     limit: {
       type: "integer",
       default: 20,
+      minimum: 1,
+      maximum: 200,
       description: "Maximum number of results to return.",
     },
     includeEntry: {
