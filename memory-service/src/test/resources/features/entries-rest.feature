@@ -15,7 +15,7 @@ Feature: Entries REST API
     And the response body should be json:
     """
     {
-      "nextCursor": null,
+      "afterCursor": null,
       "data": []
     }
     """
@@ -32,7 +32,7 @@ Feature: Entries REST API
     And the response body should be json:
     """
     {
-      "nextCursor": null,
+      "afterCursor": null,
       "data": [
         {
           "id": "${response.body.data[0].id}",
@@ -61,7 +61,7 @@ Feature: Entries REST API
     When I list entries with limit 2
     Then the response status should be 200
     And the response should contain 2 entries
-    And the response should have a nextCursor
+    And the response should have an afterCursor
 
   Scenario: Agent can append memory entries to conversation
     Given I am authenticated as agent with API key "test-agent-key"

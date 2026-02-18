@@ -12,7 +12,7 @@ import { useAuth } from "@/lib/auth";
 
 type ListUserConversationsResponse = {
   data?: ConversationSummary[];
-  nextCursor?: string | null;
+  afterCursor?: string | null;
 };
 
 function generateConversationId() {

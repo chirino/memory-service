@@ -175,9 +175,12 @@ public class MemoryServiceProxy {
                 HttpStatus.OK);
     }
 
-    public ResponseEntity<?> listConversationForks(String conversationId) {
+    public ResponseEntity<?> listConversationForks(
+            String conversationId, String afterCursor, Integer limit) {
         return execute(
-                api -> api.listConversationForksWithHttpInfo(toUuid(conversationId)),
+                api ->
+                        api.listConversationForksWithHttpInfo(
+                                toUuid(conversationId), toUuid(afterCursor), limit),
                 HttpStatus.OK);
     }
 
@@ -201,9 +204,12 @@ public class MemoryServiceProxy {
                 HttpStatus.OK);
     }
 
-    public ResponseEntity<?> listConversationMemberships(String conversationId) {
+    public ResponseEntity<?> listConversationMemberships(
+            String conversationId, String afterCursor, Integer limit) {
         return executeSharingApi(
-                api -> api.listConversationMembershipsWithHttpInfo(toUuid(conversationId)),
+                api ->
+                        api.listConversationMembershipsWithHttpInfo(
+                                toUuid(conversationId), afterCursor, limit),
                 HttpStatus.OK);
     }
 
@@ -230,8 +236,10 @@ public class MemoryServiceProxy {
                 HttpStatus.NO_CONTENT);
     }
 
-    public ResponseEntity<?> listPendingTransfers(String role) {
-        return executeSharingApi(api -> api.listPendingTransfersWithHttpInfo(role), HttpStatus.OK);
+    public ResponseEntity<?> listPendingTransfers(String role, String afterCursor, Integer limit) {
+        return executeSharingApi(
+                api -> api.listPendingTransfersWithHttpInfo(role, toUuid(afterCursor), limit),
+                HttpStatus.OK);
     }
 
     public ResponseEntity<?> createOwnershipTransfer(String body) {

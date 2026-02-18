@@ -204,9 +204,9 @@ public class PostgresAttachmentStore implements AttachmentStore {
             params.put("now", now);
         }
 
-        if (query.getAfter() != null) {
+        if (query.getAfterCursor() != null) {
             // Cursor is the UUID of the last item; use createdAt + id for deterministic ordering
-            UUID afterId = UUID.fromString(query.getAfter());
+            UUID afterId = UUID.fromString(query.getAfterCursor());
             AttachmentEntity afterEntity = attachmentRepository.findById(afterId);
             if (afterEntity != null) {
                 conditions.add(

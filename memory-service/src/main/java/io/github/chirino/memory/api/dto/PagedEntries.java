@@ -6,7 +6,7 @@ public class PagedEntries {
 
     private String conversationId;
     private List<EntryDto> entries;
-    private String nextCursor;
+    private String afterCursor;
 
     public String getConversationId() {
         return conversationId;
@@ -24,11 +24,11 @@ public class PagedEntries {
         this.entries = entries;
     }
 
-    public String getNextCursor() {
-        return nextCursor;
+    public String getAfterCursor() {
+        return afterCursor;
     }
 
-    public void setNextCursor(String nextCursor) {
-        this.nextCursor = nextCursor;
+    public void setAfterCursor(String afterCursor) {
+        this.afterCursor = afterCursor;
     }
 }

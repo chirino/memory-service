@@ -63,12 +63,12 @@ class ConversationsController {
 
     @GetMapping("/{conversationId}/forks")
     public ResponseEntity<?> listConversationForks(@PathVariable String conversationId) {
-        return proxy.listConversationForks(conversationId);
+        return proxy.listConversationForks(conversationId, null, null);
     }
 
     @GetMapping("/{conversationId}/memberships")
     public ResponseEntity<?> listConversationMemberships(@PathVariable String conversationId) {
-        return proxy.listConversationMemberships(conversationId);
+        return proxy.listConversationMemberships(conversationId, null, null);
     }
 
     @PostMapping("/{conversationId}/memberships")

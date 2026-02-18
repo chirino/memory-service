@@ -64,7 +64,7 @@ public class SearchResource {
             internal.setSearchType(
                     request.getSearchType() != null ? request.getSearchType().value() : "auto");
             internal.setLimit(request.getLimit());
-            internal.setAfter(request.getAfter());
+            internal.setAfterCursor(request.getAfterCursor());
             internal.setIncludeEntry(request.getIncludeEntry());
             internal.setGroupByConversation(request.getGroupByConversation());
 
@@ -75,7 +75,7 @@ public class SearchResource {
                             .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
-            response.put("nextCursor", internalResults.getNextCursor());
+            response.put("afterCursor", internalResults.getAfterCursor());
             return Response.ok(response).build();
         } catch (SearchTypeUnavailableException e) {
             return searchTypeUnavailable(e);

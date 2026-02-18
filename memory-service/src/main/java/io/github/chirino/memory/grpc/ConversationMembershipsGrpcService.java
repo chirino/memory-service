@@ -10,6 +10,7 @@ import io.github.chirino.memory.grpc.v1.ConversationMembershipsService;
 import io.github.chirino.memory.grpc.v1.DeleteMembershipRequest;
 import io.github.chirino.memory.grpc.v1.ListMembershipsRequest;
 import io.github.chirino.memory.grpc.v1.ListMembershipsResponse;
+import io.github.chirino.memory.grpc.v1.PageInfo;
 import io.github.chirino.memory.grpc.v1.UpdateMembershipRequest;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.common.annotation.Blocking;
@@ -28,17 +29,38 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
                 .item(
                         () -> {
                             String conversationId = byteStringToString(request.getConversationId());
+                            String token =
+                                    request.hasPage()
+                                            ? normalizeToken(request.getPage().getPageToken())
+                                            : null;
+                            int pageSize =
+                                    request.hasPage() && request.getPage().getPageSize() > 0
+                                            ? request.getPage().getPageSize()
+                                            : 50;
                             List<ConversationMembershipDto> internal =
-                                    store().listMemberships(currentUserId(), conversationId);
-                            return ListMembershipsResponse.newBuilder()
-                                    .addAllMemberships(
-                                            internal.stream()
-                                                    .map(
-                                                            dto ->
-                                                                    GrpcDtoMapper.toProto(
-                                                                            dto, conversationId))
-                                                    .collect(Collectors.toList()))
-                                    .build();
+                                    store().listMemberships(
+                                                    currentUserId(),
+                                                    conversationId,
+                                                    token,
+                                                    pageSize);
+                            ListMembershipsResponse.Builder builder =
+                                    ListMembershipsResponse.newBuilder()
+                                            .addAllMemberships(
+                                                    internal.stream()
+                                                            .map(
+                                                                    dto ->
+                                                                            GrpcDtoMapper.toProto(
+                                                                                    dto,
+                                                                                    conversationId))
+                                                            .collect(Collectors.toList()));
+                            if (internal.size() == pageSize && !internal.isEmpty()) {
+                                builder.setPageInfo(
+                                        PageInfo.newBuilder()
+                                                .setNextPageToken(
+                                                        internal.get(internal.size() - 1)
+                                                                .getUserId()));
+                            }
+                            return builder.build();
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
@@ -84,6 +106,13 @@ public class ConversationMembershipsGrpcService extends AbstractGrpcService
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);
+    }
+
+    private static String normalizeToken(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        return token;
     }
 
     @Override

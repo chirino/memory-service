@@ -75,7 +75,7 @@ public class ConversationsResource {
     @Path("/{conversationId}/forks")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversationForks(@PathParam("conversationId") String conversationId) {
-        return proxy.listConversationForks(conversationId);
+        return proxy.listConversationForks(conversationId, null, null);
     }
 
     @GET
@@ -83,7 +83,7 @@ public class ConversationsResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversationMemberships(
             @PathParam("conversationId") String conversationId) {
-        return proxy.listConversationMemberships(conversationId);
+        return proxy.listConversationMemberships(conversationId, null, null);
     }
 
     @POST

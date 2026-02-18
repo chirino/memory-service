@@ -5,13 +5,13 @@ import java.util.List;
 public class UnindexedEntriesResponse {
 
     private List<UnindexedEntry> data;
-    private String cursor;
+    private String afterCursor;
 
     public UnindexedEntriesResponse() {}
 
-    public UnindexedEntriesResponse(List<UnindexedEntry> data, String cursor) {
+    public UnindexedEntriesResponse(List<UnindexedEntry> data, String afterCursor) {
         this.data = data;
-        this.cursor = cursor;
+        this.afterCursor = afterCursor;
     }
 
     public List<UnindexedEntry> getData() {
@@ -22,11 +22,11 @@ public class UnindexedEntriesResponse {
         this.data = data;
     }
 
-    public String getCursor() {
-        return cursor;
+    public String getAfterCursor() {
+        return afterCursor;
     }
 
-    public void setCursor(String cursor) {
-        this.cursor = cursor;
+    public void setAfterCursor(String afterCursor) {
+        this.afterCursor = afterCursor;
     }
 }

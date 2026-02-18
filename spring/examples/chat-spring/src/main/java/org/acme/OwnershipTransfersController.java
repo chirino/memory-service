@@ -24,7 +24,7 @@ class OwnershipTransfersController {
     @GetMapping
     public ResponseEntity<?> listPendingTransfers(
             @RequestParam(value = "role", required = false) String role) {
-        return proxy.listPendingTransfers(role);
+        return proxy.listPendingTransfers(role, null, null);
     }
 
     @PostMapping

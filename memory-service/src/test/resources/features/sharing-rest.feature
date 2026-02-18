@@ -91,7 +91,8 @@ Feature: Conversation Sharing REST API
           "accessLevel": "${response.body.data[1].accessLevel}",
           "createdAt": "${response.body.data[1].createdAt}"
         }
-      ]
+      ],
+      "afterCursor": null
     }
     """
     And the response should contain a membership for user "alice" with access level "owner"

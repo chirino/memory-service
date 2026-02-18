@@ -59,7 +59,7 @@ Feature: Conversations REST API
     And the response body should be json:
     """
     {
-      "nextCursor": null,
+      "afterCursor": null,
       "data": [
         {
           "id": "${response.body.data[0].id}",
@@ -89,7 +89,7 @@ Feature: Conversations REST API
     Then the response status should be 200
     And the response should contain 2 conversations
     And set "firstConversationId" to the json response field "data[0].id"
-    When I list conversations with limit 2 and after "${firstConversationId}"
+    When I list conversations with limit 2 and afterCursor "${firstConversationId}"
     Then the response status should be 200
     And the response should contain at least 1 conversation
 

@@ -109,7 +109,7 @@ public class TranscriptIndexingResource {
             if (data != null && !data.isEmpty()) {
                 all.addAll(data);
             }
-            String next = response != null ? response.getNextCursor() : null;
+            String next = response != null ? response.getAfterCursor() : null;
             if (next == null || next.isBlank()) {
                 break;
             }

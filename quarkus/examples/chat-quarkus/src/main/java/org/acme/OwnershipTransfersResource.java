@@ -29,7 +29,7 @@ public class OwnershipTransfersResource {
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Response listPendingTransfers(@QueryParam("role") String role) {
-        return proxy.listPendingTransfers(role);
+        return proxy.listPendingTransfers(role, null, null);
     }
 
     @POST
