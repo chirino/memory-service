@@ -27,7 +27,7 @@ public class PostgresqlInfinispanTestProfile implements QuarkusTestProfile {
                                 + " media-type=\"text/plain\"/></distributed-cache>"),
                 Map.entry("quarkus.datasource.devservices.enabled", "true"),
                 Map.entry("quarkus.infinispan-client.devservices.enabled", "true"),
-                Map.entry("quarkus.datasource.devservices.image-name", "pgvector/pgvector:pg17"),
+                Map.entry("quarkus.datasource.devservices.image-name", "pgvector/pgvector:pg18"),
                 // Disable unused MongoDB/Redis dev services
                 Map.entry("quarkus.mongodb.devservices.enabled", "false"),
                 Map.entry("quarkus.redis.devservices.enabled", "false"));
