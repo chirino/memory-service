@@ -43,6 +43,10 @@ When you discover something meaningful about this project during your work—arc
 **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`). Include test commands and config changes.
 
 
+## Worktree-Isolated Execution
+
+This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree manager). If the `wt` command is available, commands that open ports, start services, use shared resources, run builds with artifacts at fixed paths, or run integration/end-to-end tests **MUST** be run inside the devcontainer using `wt exec -- <command>`. Run `wt up` first to ensure the devcontainer is running. Do NOT use `wt exec` for read-only operations (file reads, git commands, editing, linting). See [.skills/wt/SKILL.md](.skills/wt/SKILL.md) for full details including proxy access to container services.
+
 ## Notes for AI Assistants
 
 **ALWAYS compile after changes**:

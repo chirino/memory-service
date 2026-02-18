@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: postgresql
-          image: pgvector/pgvector:pg16
+          image: pgvector/pgvector:pg18

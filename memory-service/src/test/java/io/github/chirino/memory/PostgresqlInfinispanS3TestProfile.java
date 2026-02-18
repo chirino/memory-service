@@ -28,7 +28,7 @@ public class PostgresqlInfinispanS3TestProfile implements QuarkusTestProfile {
                 Map.entry("quarkus.datasource.devservices.enabled", "true"),
                 Map.entry("quarkus.infinispan-client.devservices.enabled", "true"),
                 Map.entry("quarkus.liquibase.migrate-at-start", "true"),
-                Map.entry("quarkus.datasource.devservices.image-name", "pgvector/pgvector:pg17"),
+                Map.entry("quarkus.datasource.devservices.image-name", "pgvector/pgvector:pg18"),
                 // S3 FileStore via LocalStack
                 Map.entry("memory-service.attachments.store", "s3"),
                 Map.entry("quarkus.s3.devservices.enabled", "true"),
