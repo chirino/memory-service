@@ -67,7 +67,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     environment:
       - POSTGRES_DB=memoryservice
       - POSTGRES_USER=postgres
@@ -184,7 +184,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
 
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     # ... configuration
 ```
 
