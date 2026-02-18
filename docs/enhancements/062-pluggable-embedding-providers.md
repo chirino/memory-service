@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 062: Pluggable Embedding Providers
 
-> **Status**: Proposed.
+> **Status**: Implemented.
 
 ## Summary
 
@@ -39,9 +39,9 @@ The current `VectorStore` interface is misleading — it handles search (semanti
 | `MongoVectorStore` | `MongoSearchStore` |
 | `VectorStoreSelector` | `SearchStoreSelector` |
 | `VectorStoreSelectorTest` | `SearchStoreSelectorTest` |
-| `memory-service.vector.type` | `memory-service.search.store.type` |
+| `memory-service.vector.type` | `memory-service.vector.store.type` |
 
-This rename also affects `compose.yaml` (`MEMORY_SERVICE_VECTOR_TYPE` → `MEMORY_SERVICE_SEARCH_STORE_TYPE`), configuration docs, and all injection sites.
+This rename also affects `compose.yaml` (`MEMORY_SERVICE_VECTOR_TYPE` → `MEMORY_SERVICE_VECTOR_STORE_TYPE`), configuration docs, and all injection sites.
 
 ### Configuration Property Cleanup
 
@@ -49,12 +49,12 @@ Rename and simplify search-related config properties to use a consistent namespa
 
 | Current | Proposed | Values |
 |---------|----------|--------|
-| `memory-service.vector.type` | `memory-service.search.store.type` | `postgres`, `mongo`, `none` |
+| `memory-service.vector.type` | `memory-service.vector.store.type` | `pgvector`, `mongo`, `none` |
 | `memory-service.embedding.enabled` | `memory-service.embedding.type` | `local`, `openai`, `none` |
 | `memory-service.search.semantic.enabled` | *(no change)* | `true`, `false` |
 | `memory-service.search.fulltext.enabled` | *(no change)* | `true`, `false` |
 
-The old `pgvector` and `mongodb` aliases for the search store type are dropped — since the store handles both semantic and full-text search (not just vectors), the datastore name (`postgres`, `mongo`) is more accurate.
+The old `mongodb` alias for the vector store type is dropped. The pgvector value uses `pgvector` (not `postgres`) to clearly distinguish it from the PostgreSQL datastore and fulltext search.
 
 ### Embedding Provider Configuration
 
@@ -220,29 +220,29 @@ All existing Cucumber tests should pass unchanged since the default embedding ty
 ## Tasks
 
 ### Rename VectorStore → SearchStore
-- [ ] Rename `VectorStore` → `SearchStore` interface
-- [ ] Rename `PgVectorStore` → `PgSearchStore`
-- [ ] Rename `MongoVectorStore` → `MongoSearchStore`
-- [ ] Rename `VectorStoreSelector` → `SearchStoreSelector`
-- [ ] Rename `VectorStoreSelectorTest` → `SearchStoreSelectorTest`
-- [ ] Update config property `memory-service.vector.type` → `memory-service.search.store.type`
-- [ ] Update all injection sites, compose.yaml, and docs
+- [x] Rename `VectorStore` → `SearchStore` interface
+- [x] Rename `PgVectorStore` → `PgSearchStore`
+- [x] Rename `MongoVectorStore` → `MongoSearchStore`
+- [x] Rename `VectorStoreSelector` → `SearchStoreSelector`
+- [x] Rename `VectorStoreSelectorTest` → `SearchStoreSelectorTest`
+- [x] Update config property `memory-service.vector.type` → `memory-service.vector.store.type`
+- [x] Update all injection sites, compose.yaml, and docs
 
 ### Pluggable Embedding Providers
-- [ ] Add `dimensions()` and `modelId()` to `EmbeddingService` interface
-- [ ] Create `LocalEmbeddingService` (extracts logic from `DefaultEmbeddingService`)
-- [ ] Create `OpenAiEmbeddingService` (wraps LangChain4j `OpenAiEmbeddingModel`)
-- [ ] Create `DisabledEmbeddingService`
-- [ ] Create `EmbeddingServiceProducer` with `@Produces @Singleton`
-- [ ] Delete `DefaultEmbeddingService` and `EmbeddingModelProducer`
-- [ ] Add `langchain4j-open-ai` dependency to `memory-service/pom.xml`
-- [ ] Update `pgvector-schema.sql` — remove hardcoded `vector(384)`, add `model` column + index
-- [ ] Update `PgVectorEmbeddingRepository` — include `model` in upsert and filter searches by model
-- [ ] Update `application.properties` — replace `embedding.enabled` with `embedding.type`
-- [ ] Update test `application.properties`
-- [ ] Update `compose.yaml` — add commented OpenAI config + pgvector image
-- [ ] Update `configuration.mdx` docs
-- [ ] Write unit tests for `EmbeddingServiceProducer`
+- [x] Add `dimensions()` and `modelId()` to `EmbeddingService` interface
+- [x] Create `LocalEmbeddingService` (extracts logic from `DefaultEmbeddingService`)
+- [x] Create `OpenAiEmbeddingService` (wraps LangChain4j `OpenAiEmbeddingModel`)
+- [x] Create `DisabledEmbeddingService`
+- [x] Create `EmbeddingServiceProducer` with `@Produces @Singleton`
+- [x] Delete `DefaultEmbeddingService` and `EmbeddingModelProducer`
+- [x] Add `langchain4j-open-ai` dependency to `memory-service/pom.xml`
+- [x] Update `pgvector-schema.sql` — remove hardcoded `vector(384)`, add `model` column + index
+- [x] Update `PgVectorEmbeddingRepository` — include `model` in upsert and filter searches by model
+- [x] Update `application.properties` — replace `embedding.enabled` with `embedding.type`
+- [x] Update test `application.properties`
+- [x] Update `compose.yaml` — add commented OpenAI config + pgvector image
+- [x] Update `configuration.mdx` docs
+- [x] Write unit tests for `EmbeddingServiceProducer`
 
 ## Files to Modify
 
@@ -262,7 +262,7 @@ All existing Cucumber tests should pass unchanged since the default embedding ty
 | `memory-service/src/main/java/.../grpc/SearchGrpcService.java` | Update `VectorStore` references |
 | `memory-service/src/main/java/.../service/TaskProcessor.java` | Update `VectorStore` references |
 | `memory-service/src/test/java/.../cucumber/StepDefinitions.java` | Update `VectorStore` references |
-| `memory-service/src/main/resources/application.properties` | `memory-service.vector.type` → `memory-service.search.store.type` |
+| `memory-service/src/main/resources/application.properties` | `memory-service.vector.type` → `memory-service.vector.store.type` |
 
 ### Pluggable Embedding Providers
 
@@ -321,6 +321,12 @@ The schema changes in this enhancement (unparameterized `vector` column + `model
 - Progress tracking (count of entries re-indexed vs. total)
 - HNSW index rebuild after migration completes
 - Search query changes to filter `WHERE model = ?` on the current model
+
+## Implementation Notes
+
+### HNSW Index Limitation
+
+The HNSW index cannot be created on an unparameterized `vector` column — pgvector requires the dimension to be known at index creation time. The initial schema therefore omits the HNSW index and includes a comment with instructions for creating it manually after selecting an embedding provider. Without the HNSW index, pgvector falls back to exact nearest neighbor search, which is functionally correct but slower for large datasets.
 
 ## Non-Goals
 

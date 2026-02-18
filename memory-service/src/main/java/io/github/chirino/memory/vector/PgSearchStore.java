@@ -27,15 +27,15 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 /**
- * PgVector-backed vector store implementation.
+ * PgVector-backed search store implementation.
  *
  * <p>Performs semantic search using pgvector's cosine similarity operator on stored embeddings.
  * Access control is enforced via JOIN with conversation_memberships table.
  */
 @ApplicationScoped
-public class PgVectorStore implements VectorStore {
+public class PgSearchStore implements SearchStore {
 
-    private static final Logger LOG = Logger.getLogger(PgVectorStore.class);
+    private static final Logger LOG = Logger.getLogger(PgSearchStore.class);
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     @ConfigProperty(name = "memory-service.search.semantic.enabled", defaultValue = "true")
@@ -169,7 +169,8 @@ public class PgVectorStore implements VectorStore {
                             userId,
                             toPgVectorLiteral(queryEmbedding),
                             limit + 1,
-                            groupByConversation);
+                            groupByConversation,
+                            embeddingService.modelId());
             LOG.infof("semanticSearch: vector query returned %d raw results", vectorResults.size());
         } catch (Exception e) {
             LOG.warnf("semanticSearch: vector search failed: %s", e.getMessage());
@@ -390,11 +391,14 @@ public class PgVectorStore implements VectorStore {
             return;
         }
         embeddingRepository.upsertEmbedding(
-                entryId, conversationId, conversationGroupId, toPgVectorLiteral(embedding));
+                entryId,
+                conversationId,
+                conversationGroupId,
+                toPgVectorLiteral(embedding),
+                embeddingService.modelId());
         LOG.infof(
-                "Embedding stored in vector store: entryId=%s, conversationId=%s,"
-                        + " embeddingDimensions=%d",
-                entryId, conversationId, embedding.length);
+                "Embedding stored: entryId=%s, conversationId=%s, model=%s, dimensions=%d",
+                entryId, conversationId, embeddingService.modelId(), embedding.length);
     }
 
     @Override
@@ -500,7 +504,8 @@ public class PgVectorStore implements VectorStore {
                             limit + 1,
                             groupByConversation,
                             query.getUserId(),
-                            query.isIncludeDeleted());
+                            query.isIncludeDeleted(),
+                            embeddingService.modelId());
             LOG.infof(
                     "adminSemanticSearch: vector query returned %d raw results",
                     vectorResults.size());

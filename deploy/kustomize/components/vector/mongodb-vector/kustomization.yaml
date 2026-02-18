@@ -8,4 +8,4 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
-      - MEMORY_SERVICE_VECTOR_TYPE=mongodb
+      - MEMORY_SERVICE_VECTOR_STORE_TYPE=mongo

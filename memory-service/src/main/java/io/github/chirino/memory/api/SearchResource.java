@@ -7,12 +7,12 @@ import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
 import io.github.chirino.memory.client.model.SearchConversationsRequest;
 import io.github.chirino.memory.client.model.SearchResult;
-import io.github.chirino.memory.config.VectorStoreSelector;
+import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.model.Channel;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.store.SearchTypeUnavailableException;
-import io.github.chirino.memory.vector.VectorStore;
+import io.github.chirino.memory.vector.SearchStore;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -38,12 +38,12 @@ public class SearchResource {
 
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
-    @Inject VectorStoreSelector vectorStoreSelector;
+    @Inject SearchStoreSelector searchStoreSelector;
 
     @Inject SecurityIdentity identity;
 
-    private VectorStore vectorStore() {
-        return vectorStoreSelector.getVectorStore();
+    private SearchStore searchStore() {
+        return searchStoreSelector.getSearchStore();
     }
 
     private String currentUserId() {
@@ -53,9 +53,9 @@ public class SearchResource {
     @POST
     @Path("/conversations/search")
     public Response searchConversations(@Valid SearchConversationsRequest request) {
-        VectorStore vectorStore = vectorStore();
-        if (vectorStore == null || !vectorStore.isEnabled()) {
-            return vectorStoreUnavailable();
+        SearchStore searchStore = searchStore();
+        if (searchStore == null || !searchStore.isEnabled()) {
+            return searchStoreUnavailable();
         }
         try {
             io.github.chirino.memory.api.dto.SearchEntriesRequest internal =
@@ -68,7 +68,7 @@ public class SearchResource {
             internal.setIncludeEntry(request.getIncludeEntry());
             internal.setGroupByConversation(request.getGroupByConversation());
 
-            SearchResultsDto internalResults = vectorStore.search(currentUserId(), internal);
+            SearchResultsDto internalResults = searchStore.search(currentUserId(), internal);
             List<SearchResult> data =
                     internalResults.getResults().stream()
                             .map(dto -> toClientSearchResult(dto, internal.getIncludeEntry()))
@@ -86,11 +86,11 @@ public class SearchResource {
         }
     }
 
-    private Response vectorStoreUnavailable() {
+    private Response searchStoreUnavailable() {
         ErrorResponse error = new ErrorResponse();
-        error.setError("Vector search not available");
-        error.setCode("vector_store_disabled");
-        error.setDetails(Map.of("message", "Enable a vector store to use semantic search."));
+        error.setError("Search not available");
+        error.setCode("search_store_disabled");
+        error.setDetails(Map.of("message", "Enable a search store to use semantic search."));
         return Response.status(Response.Status.NOT_IMPLEMENTED).entity(error).build();
     }
 

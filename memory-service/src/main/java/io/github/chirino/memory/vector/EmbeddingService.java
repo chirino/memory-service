@@ -5,4 +5,8 @@ public interface EmbeddingService {
     boolean isEnabled();
 
     float[] embed(String text);
+
+    int dimensions();
+
+    String modelId();
 }

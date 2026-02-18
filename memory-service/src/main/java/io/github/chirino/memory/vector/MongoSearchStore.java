@@ -25,15 +25,15 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 /**
- * MongoDB-backed vector store implementation.
+ * MongoDB-backed search store implementation.
  *
  * <p>Currently supports full-text search using MongoDB text indexes. Vector search (semantic) is
  * not yet implemented for MongoDB - it requires MongoDB Atlas Vector Search or similar.
  */
 @ApplicationScoped
-public class MongoVectorStore implements VectorStore {
+public class MongoSearchStore implements SearchStore {
 
-    private static final Logger LOG = Logger.getLogger(MongoVectorStore.class);
+    private static final Logger LOG = Logger.getLogger(MongoSearchStore.class);
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     @ConfigProperty(name = "memory-service.search.semantic.enabled", defaultValue = "true")
