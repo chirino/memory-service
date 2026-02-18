@@ -26,6 +26,7 @@ nb-configuration.xml
 .vscode
 .factorypath
 .vscode-profile
+.chrome-profile
 
 # OSX
 .DS_Store
