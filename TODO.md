@@ -8,6 +8,7 @@
 * make the infinispan cache name configurable (see [054-infinispan-cache-name-config.md](docs/enhancements/054-infinispan-cache-name-config.md))
 * make all common memory-service config options prefixed with "memory-service."
 * make page cursoring more consistent accross the endpoints.
+* bug: delete a fork, restore: it does not show up restored.
 
 # Hardening Work
 
