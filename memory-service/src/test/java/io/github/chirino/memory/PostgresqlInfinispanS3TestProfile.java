@@ -9,7 +9,7 @@ public class PostgresqlInfinispanS3TestProfile implements QuarkusTestProfile {
     public Map<String, String> getConfigOverrides() {
         return Map.ofEntries(
                 Map.entry("memory-service.datastore.type", "postgres"),
-                Map.entry("memory-service.vector.type", "pgvector"),
+                Map.entry("memory-service.vector.store.type", "pgvector"),
                 Map.entry("memory-service.cache.type", "infinispan"),
                 Map.entry(
                         "memory-service.cache.infinispan.memory-entries-cache-name",

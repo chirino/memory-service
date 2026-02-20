@@ -23,7 +23,7 @@ These are the core server configuration options:
 | <Cfg p="memory-service.datastore.type" /> | `postgres`, `mongo`, `mongodb` | `postgres` | Database backend for storing conversations |
 | <Cfg p="memory-service.datastore.migrate-at-start" /> | `true`, `false` | `true` | Run database migrations at startup (routed to the correct backend automatically) |
 | <Cfg p="memory-service.cache.type" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching (used by response resumer and future cache features) |
-| <Cfg p="memory-service.vector.type" /> | `none`, `pgvector`, `postgres`, `mongo`, `mongodb` | `none` | Vector store for semantic search |
+| <Cfg p="memory-service.vector.store.type" /> | `none`, `pgvector`, `mongo` | `none` | Vector store for semantic search |
 | <Cfg p="memory-service.temp-dir" /> | path | system temp dir | Directory for temporary files (attachment downloads, response resumer, etc.) |
 
 ## Database Configuration
@@ -178,34 +178,56 @@ See [Attachments](/docs/concepts/attachments/) for details on how attachments wo
 
 ## Vector Store Configuration
 
-For semantic search capabilities, configure a vector store and embedding settings.
-
-### Embedding Configuration
+For semantic search capabilities, configure a vector store and embedding provider.
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| <Cfg p="memory.embedding.type" /> | `none`, `hash` | `hash` | Embedding algorithm (`hash` is a simple built-in implementation) |
-| <Cfg p="memory.embedding.dimension" /> | integer | `256` | Vector dimension size |
+| <Cfg p="memory-service.vector.store.type" /> | `none`, `pgvector`, `mongo` | `none` | Vector store backend (defaults to matching the datastore type when `none`) |
+| <Cfg p="memory-service.search.semantic.enabled" /> | `true`, `false` | `true` | Enable semantic (vector) search |
+| <Cfg p="memory-service.search.fulltext.enabled" /> | `true`, `false` | `true` | Enable full-text search |
+
+### Embedding Provider
+
+The embedding provider controls how text is converted to vectors for semantic search.
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| <Cfg p="memory-service.embedding.type" /> | `local`, `openai`, `none` | `local` | Embedding provider selection |
+
+**Local** (default) — uses an in-process all-MiniLM-L6-v2 ONNX model (384 dimensions). No external API calls required.
+
+**OpenAI** — uses the OpenAI Embeddings API for higher-quality embeddings:
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| <Cfg p="memory-service.embedding.openai.api-key" /> | _(required)_ | OpenAI API key |
+| <Cfg p="memory-service.embedding.openai.model-name" /> | `text-embedding-3-small` | OpenAI model name |
+| <Cfg p="memory-service.embedding.openai.base-url" /> | `https://api.openai.com/v1` | API base URL (for Azure OpenAI or proxies) |
+| <Cfg p="memory-service.embedding.openai.dimensions" /> | _(model default)_ | Optional dimension override |
+
+<ConfigBlock property={`# Use OpenAI embeddings
+memory-service.embedding.type=openai
+memory-service.embedding.openai.api-key=sk-...
+memory-service.embedding.openai.model-name=text-embedding-3-small`} />
+
+**None** — disables embedding and semantic search. Full-text search remains available.
 
 ### pgvector (PostgreSQL)
 
-When using PostgreSQL with the pgvector extension:
+When using PostgreSQL, the vector store uses pgvector for semantic search:
 
-<ConfigBlock property={`# Enable pgvector for semantic search
-memory-service.vector.type=pgvector
+<ConfigBlock property={`# pgvector (auto-selected when datastore is postgres)
+memory-service.vector.store.type=pgvector
 
-# Embedding configuration
-memory.embedding.type=hash
-memory.embedding.dimension=256`} />
+# Use local embedding model (default)
+memory-service.embedding.type=local`} />
 
-### MongoDB Atlas Vector Search
+### MongoDB
 
-<ConfigBlock property={`# Enable MongoDB vector search
-memory-service.vector.type=mongodb
+When using MongoDB, the search store uses MongoDB text indexes for full-text search. Semantic search is not yet available for MongoDB.
 
-# Embedding configuration
-memory.embedding.type=hash
-memory.embedding.dimension=256`} />
+<ConfigBlock property={`# MongoDB search store (auto-selected when datastore is mongo)
+memory-service.vector.store.type=mongo`} />
 
 ## API Key Authentication
 

@@ -17,7 +17,7 @@ import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.config.MemoryStoreSelector;
-import io.github.chirino.memory.config.VectorStoreSelector;
+import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
 import io.github.chirino.memory.model.AdminSearchQuery;
@@ -32,7 +32,7 @@ import io.github.chirino.memory.store.MemoryStore;
 import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.store.SearchTypeUnavailableException;
-import io.github.chirino.memory.vector.VectorStore;
+import io.github.chirino.memory.vector.SearchStore;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -78,7 +78,7 @@ public class AdminResource {
 
     @Inject MemoryStoreSelector storeSelector;
 
-    @Inject VectorStoreSelector vectorStoreSelector;
+    @Inject SearchStoreSelector searchStoreSelector;
 
     @Inject SecurityIdentity identity;
 
@@ -368,13 +368,13 @@ public class AdminResource {
             params.put("includeDeleted", request != null && request.isIncludeDeleted());
             auditLogger.logRead("searchMessages", params, justification, identity, apiKeyContext);
 
-            VectorStore vectorStore = vectorStoreSelector.getVectorStore();
-            if (vectorStore == null || !vectorStore.isEnabled()) {
-                return vectorStoreUnavailable();
+            SearchStore searchStore = searchStoreSelector.getSearchStore();
+            if (searchStore == null || !searchStore.isEnabled()) {
+                return searchStoreUnavailable();
             }
 
             boolean includeEntry = request.getIncludeEntry() == null || request.getIncludeEntry();
-            SearchResultsDto internalResults = vectorStore.adminSearch(request);
+            SearchResultsDto internalResults = searchStore.adminSearch(request);
             List<SearchResult> data =
                     internalResults.getResults().stream()
                             .map(dto -> toAdminSearchResult(dto, includeEntry))
@@ -396,11 +396,11 @@ public class AdminResource {
         }
     }
 
-    private Response vectorStoreUnavailable() {
+    private Response searchStoreUnavailable() {
         ErrorResponse error = new ErrorResponse();
-        error.setError("Vector search not available");
-        error.setCode("vector_store_disabled");
-        error.setDetails(Map.of("message", "Enable a vector store to use semantic search."));
+        error.setError("Search not available");
+        error.setCode("search_store_disabled");
+        error.setDetails(Map.of("message", "Enable a search store to use semantic search."));
         return Response.status(Response.Status.NOT_IMPLEMENTED).entity(error).build();
     }
 

@@ -1,287 +1,576 @@
 ---
-status: proposed
+status: partial
 ---
 
-# Enhancement 062: Pluggable Embedding Providers
+# Enhancement 062: Pluggable Embedding Providers & Vector Search Backends
 
-> **Status**: Proposed.
+> **Status**: Partial — Phase 1 (SearchStore rename) and Phase 2 (embedding providers) implemented. Phase 3 (LangChain4j vector search abstraction) proposed.
 
 ## Summary
 
-Add support for configurable embedding providers, starting with OpenAI embeddings alongside the existing local all-MiniLM-L6-v2 ONNX model. The embedding provider is selected via `memory-service.embedding.type` configuration, following the established selector pattern used throughout the codebase.
+Make both **embedding generation** and **vector search storage** pluggable. Phase 1 renamed `VectorStore` → `SearchStore`. Phase 2 added configurable embedding providers (local ONNX, OpenAI, disabled). Phase 3 introduces a LangChain4j `EmbeddingStore`-based `SearchStore` implementation, enabling external vector databases — starting with **Qdrant** — while keeping the existing pgvector backend.
 
 ## Motivation
 
-The memory-service currently hardcodes a single embedding model (`AllMiniLmL6V2QuantizedEmbeddingModel` — 384-dimension in-process ONNX model). While this works well for local development and small deployments, production users need:
+The memory-service currently has two `SearchStore` implementations: `PgSearchStore` (pgvector + PostgreSQL full-text) and `MongoSearchStore` (MongoDB full-text only). Both are tightly coupled to their respective databases — the vector index lives inside the same database as the application data.
 
-1. **Higher-quality embeddings**: OpenAI's `text-embedding-3-small` and `text-embedding-3-large` produce significantly better semantic search results than the quantized MiniLM model.
-2. **Flexible deployment**: Some environments prefer offloading embedding computation to an API rather than running ONNX inference in-process.
-3. **Model choice**: Different use cases benefit from different embedding models — smaller/faster for high-volume indexing, larger/better for precision search.
+Production deployments benefit from **dedicated vector databases** for several reasons:
 
-### Current State
+1. **Scalability**: Dedicated vector DBs (Qdrant, Milvus, Weaviate) are purpose-built for high-dimensional similarity search with HNSW/IVF indexes, payload filtering, and horizontal scaling — capabilities that pgvector provides but PostgreSQL wasn't designed to optimize.
+2. **Operational independence**: Scaling vector search independently of the transactional datastore avoids resource contention (CPU, memory, I/O) between OLTP and ANN workloads.
+3. **Multi-tenancy at scale**: Qdrant's payload-based filtering and shard-key routing support large-scale multi-tenant deployments without requiring one collection per tenant.
+4. **Ecosystem**: LangChain4j provides a uniform `EmbeddingStore<TextSegment>` interface with implementations for 15+ vector databases. Using this abstraction lets operators choose the best vector DB for their environment without code changes.
 
-- `DefaultEmbeddingService` directly injects `AllMiniLmL6V2QuantizedEmbeddingModel` (hardcoded).
-- `EmbeddingModelProducer` is a CDI producer that creates the ONNX model singleton.
-- The pgvector schema hardcodes `vector(384)` in the `entry_embeddings` table.
-- The `EmbeddingService` interface has only `isEnabled()` and `embed(String text)` — no dimension awareness.
-- Both `AllMiniLmL6V2QuantizedEmbeddingModel` and `OpenAiEmbeddingModel` implement LangChain4j's `EmbeddingModel` interface.
+### Current State (after Phase 1 & 2)
 
-## Design
+- `SearchStore` interface with `PgSearchStore` and `MongoSearchStore` implementations.
+- `SearchStoreSelector` routes via `memory-service.vector.store.type` (`pgvector`, `mongo`, `none`).
+- `EmbeddingService` interface with `LocalEmbeddingService`, `OpenAiEmbeddingService`, `DisabledEmbeddingService`.
+- `EmbeddingServiceProducer` selects provider via `memory-service.embedding.type` (`local`, `openai`, `none`).
+- pgvector schema uses unparameterized `vector` column + `model` column for multi-model support.
+- Event-driven vectorization via `EntryVectorizationObserver` (AFTER_SUCCESS, timeout-bounded).
 
-### Rename `VectorStore` → `SearchStore`
+---
 
-The current `VectorStore` interface is misleading — it handles search (semantic + full-text + auto), embedding storage, and cleanup. The MongoDB implementation doesn't even do vector search (it only supports full-text). The name should reflect what the interface actually represents: a **search backend**.
+## Phase 1: Rename VectorStore → SearchStore [Implemented]
 
-| Current | Proposed |
-|---------|----------|
-| `VectorStore` | `SearchStore` |
-| `PgVectorStore` | `PgSearchStore` |
-| `MongoVectorStore` | `MongoSearchStore` |
-| `VectorStoreSelector` | `SearchStoreSelector` |
-| `VectorStoreSelectorTest` | `SearchStoreSelectorTest` |
-| `memory-service.vector.type` | `memory-service.search.store.type` |
+Renamed `VectorStore` → `SearchStore`, `PgVectorStore` → `PgSearchStore`, `MongoVectorStore` → `MongoSearchStore`, `VectorStoreSelector` → `SearchStoreSelector`. Config property `memory-service.vector.type` → `memory-service.vector.store.type`.
 
-This rename also affects `compose.yaml` (`MEMORY_SERVICE_VECTOR_TYPE` → `MEMORY_SERVICE_SEARCH_STORE_TYPE`), configuration docs, and all injection sites.
+## Phase 2: Pluggable Embedding Providers [Implemented]
 
-### Configuration Property Cleanup
+Added `dimensions()` and `modelId()` to `EmbeddingService`. Created `LocalEmbeddingService` (384-dim ONNX), `OpenAiEmbeddingService` (configurable), `DisabledEmbeddingService`. `EmbeddingServiceProducer` selects via `memory-service.embedding.type`. Updated pgvector schema to unparameterized `vector` + `model` column. Added `langchain4j-open-ai` dependency. Created event-driven vectorization pipeline (`EntryVectorizationEvent`/`Observer`).
 
-Rename and simplify search-related config properties to use a consistent namespace:
+---
 
-| Current | Proposed | Values |
-|---------|----------|--------|
-| `memory-service.vector.type` | `memory-service.search.store.type` | `postgres`, `mongo`, `none` |
-| `memory-service.embedding.enabled` | `memory-service.embedding.type` | `local`, `openai`, `none` |
-| `memory-service.search.semantic.enabled` | *(no change)* | `true`, `false` |
-| `memory-service.search.fulltext.enabled` | *(no change)* | `true`, `false` |
+## Phase 3: LangChain4j Vector Search Abstraction [Proposed]
 
-The old `pgvector` and `mongodb` aliases for the search store type are dropped — since the store handles both semantic and full-text search (not just vectors), the datastore name (`postgres`, `mongo`) is more accurate.
+### Architecture Overview
 
-### Embedding Provider Configuration
+Introduce a single, generic `LangChain4jSearchStore` that adapts **any** LangChain4j `EmbeddingStore<TextSegment>` to the `SearchStore` interface. A CDI producer creates the concrete `EmbeddingStore` based on configuration. Adding a new vector database backend requires only a new Maven dependency and a new case in the producer — no new `SearchStore` implementation.
 
-New config property `memory-service.embedding.type` with values:
-
-| Value | Description |
-|-------|-------------|
-| `local` (default) | In-process all-MiniLM-L6-v2 ONNX model (384 dimensions) |
-| `openai` | OpenAI Embeddings API (requires API key) |
-| `none` | Disabled — semantic search falls back to full-text |
-
-OpenAI-specific settings (when `type=openai`):
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `memory-service.embedding.openai.api-key` | (required) | OpenAI API key |
-| `memory-service.embedding.openai.model-name` | `text-embedding-3-small` | OpenAI model name |
-| `memory-service.embedding.openai.base-url` | `https://api.openai.com/v1` | API base URL (for Azure OpenAI or proxies) |
-| `memory-service.embedding.openai.dimensions` | (model default) | Optional dimension override (supported by text-embedding-3-*) |
-
-Environment variable equivalents:
-```bash
-MEMORY_SERVICE_EMBEDDING_TYPE=openai
-MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY=sk-...
-MEMORY_SERVICE_EMBEDDING_OPENAI_MODEL_NAME=text-embedding-3-small
-MEMORY_SERVICE_EMBEDDING_OPENAI_BASE_URL=https://api.openai.com/v1
-MEMORY_SERVICE_EMBEDDING_OPENAI_DIMENSIONS=1536
+```
+SearchStore (interface)
+├── PgSearchStore            [existing — pgvector + PG full-text]
+├── MongoSearchStore         [existing — MongoDB full-text only]
+└── LangChain4jSearchStore   [new — generic adapter]
+    └── wraps EmbeddingStore<TextSegment>
+        ├── QdrantEmbeddingStore    [from langchain4j-qdrant]    ← Phase 3
+        ├── ChromaEmbeddingStore    [from langchain4j-chroma]   ← future
+        ├── MilvusEmbeddingStore    [from langchain4j-milvus]   ← future
+        └── ...
 ```
 
-### Interface Change
+### LangChain4jSearchStore
 
-Extend `EmbeddingService` with `dimensions()` and `modelId()`:
-
-```java
-public interface EmbeddingService {
-    boolean isEnabled();
-    float[] embed(String text);
-    int dimensions();
-    String modelId();
-}
-```
-
-The `modelId()` returns a stable identifier for the provider+model combination (e.g., `local/all-MiniLM-L6-v2`, `openai/text-embedding-3-small`). This is stored in the `entry_embeddings.model` column and used to filter search results to the current model.
-
-### Implementation Classes
-
-Replace `DefaultEmbeddingService` + `EmbeddingModelProducer` with:
-
-1. **`LocalEmbeddingService`** — wraps `AllMiniLmL6V2QuantizedEmbeddingModel`, `dimensions()=384`, `modelId()="local/all-MiniLM-L6-v2"`
-2. **`OpenAiEmbeddingService`** — wraps LangChain4j `OpenAiEmbeddingModel`, configurable dimensions, `modelId()="openai/{model-name}"`
-3. **`DisabledEmbeddingService`** — `isEnabled()=false`, `dimensions()=0`, `modelId()="none"`
-
-### Selector / CDI Producer
-
-`EmbeddingServiceProducer` uses `@Produces @Singleton` to produce the correct `EmbeddingService` based on config. This approach (vs. a getter-based selector) means all existing `@Inject EmbeddingService` injection points — `PgVectorStore`, `PostgresMemoryStore`, `MongoMemoryStore` — require **zero code changes**.
+A single `@ApplicationScoped` class that implements `SearchStore` by delegating vector operations to a LangChain4j `EmbeddingStore<TextSegment>`.
 
 ```java
 @ApplicationScoped
-public class EmbeddingServiceProducer {
-    @ConfigProperty(name = "memory-service.embedding.type", defaultValue = "local")
-    String embeddingType;
-    // ... OpenAI config properties ...
+public class LangChain4jSearchStore implements SearchStore {
+
+    @Inject EmbeddingStore<TextSegment> embeddingStore;
+    @Inject EmbeddingService embeddingService;
+    @Inject EntityManager entityManager;              // for membership queries
+    @Inject EntryRepository entryRepository;
+    @Inject ConversationRepository conversationRepository;
+    @Inject DataEncryptionService dataEncryptionService;
+    @Inject ObjectMapper objectMapper;
+
+    // Optional full-text search (available when datastore is Postgres)
+    @Inject Instance<FullTextSearchRepository> fullTextSearchRepository;
+
+    @ConfigProperty(name = "memory-service.search.semantic.enabled", defaultValue = "true")
+    boolean semanticSearchEnabled;
+
+    @ConfigProperty(name = "memory-service.search.fulltext.enabled", defaultValue = "true")
+    boolean fullTextSearchEnabled;
+}
+```
+
+#### Semantic Search
+
+Uses LangChain4j's `EmbeddingStore.search()` with metadata filters for access control and model filtering:
+
+```java
+private SearchResultsDto semanticSearch(String userId, SearchEntriesRequest request) {
+    float[] queryVector = embeddingService.embed(request.getQuery());
+    Embedding queryEmbedding = Embedding.from(queryVector);
+
+    // Resolve user's allowed conversation groups from Postgres
+    List<String> allowedGroupIds = getAllowedGroupIds(userId);
+    if (allowedGroupIds.isEmpty()) {
+        return emptyResults();
+    }
+
+    // Build metadata filter: group access + model
+    Filter filter = new And(
+        new IsIn("conversation_group_id", allowedGroupIds),
+        new IsEqualTo("model", embeddingService.modelId())
+    );
+
+    int limit = request.getLimit() != null ? request.getLimit() : 20;
+    boolean groupByConversation = request.getGroupByConversation() == null
+        || request.getGroupByConversation();
+
+    // Overfetch when grouping (post-process deduplication)
+    int fetchLimit = groupByConversation ? limit * 3 : limit + 1;
+
+    EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
+        .queryEmbedding(queryEmbedding)
+        .filter(filter)
+        .maxResults(fetchLimit)
+        .build();
+
+    EmbeddingSearchResult<TextSegment> results = embeddingStore.search(searchRequest);
+
+    // Post-process: group by conversation if needed, build DTOs
+    return buildResults(results.matches(), limit, groupByConversation, includeEntry);
+}
+```
+
+#### Access Control
+
+The current `PgSearchStore` enforces access control via SQL JOINs with `conversation_memberships` inside the vector query. With an external vector store, access control becomes a **two-step process**:
+
+1. **Pre-query**: Fetch the user's allowed `conversation_group_id`s from Postgres.
+2. **Filter**: Pass allowed group IDs as a metadata filter to the vector store.
+
+```java
+private List<String> getAllowedGroupIds(String userId) {
+    @SuppressWarnings("unchecked")
+    List<Object> rows = entityManager
+        .createNativeQuery(
+            "SELECT DISTINCT conversation_group_id::text FROM conversation_memberships WHERE user_id = ?1")
+        .setParameter(1, userId)
+        .getResultList();
+    return rows.stream().map(Object::toString).toList();
+}
+```
+
+This trades a single SQL JOIN for a two-step process but keeps all access control decisions in Postgres — the vector store never sees unauthorized data in search results.
+
+#### GroupByConversation
+
+`PgSearchStore` uses SQL `ROW_NUMBER() OVER (PARTITION BY conversation_id)` to return the best match per conversation. LangChain4j's `EmbeddingStore` doesn't support this natively.
+
+Strategy: **overfetch + post-process**.
+
+1. Request `limit * 3` results from the vector store.
+2. Iterate results, keeping only the highest-scoring entry per `conversation_id`.
+3. Return the top `limit` grouped results.
+
+```java
+private List<EmbeddingMatch<TextSegment>> groupByConversation(
+        List<EmbeddingMatch<TextSegment>> matches, int limit) {
+    Map<String, EmbeddingMatch<TextSegment>> bestPerConversation = new LinkedHashMap<>();
+    for (EmbeddingMatch<TextSegment> match : matches) {
+        String convId = match.embedded().metadata().getString("conversation_id");
+        bestPerConversation.putIfAbsent(convId, match); // first = highest score
+    }
+    return bestPerConversation.values().stream().limit(limit).toList();
+}
+```
+
+#### Admin Search
+
+Admin search has no membership restrictions but supports optional `userId` filter and `includeDeleted` flag. These fields (`owner_user_id`, `deleted_at`) are conversation-level attributes not stored in the vector store metadata.
+
+Strategy:
+- **No userId filter**: Search with `model` filter only, no membership restriction.
+- **With userId filter**: Pre-query the user's conversation group IDs from Postgres and filter in the vector store.
+- **includeDeleted**: Always filter `deleted_at IS NULL` in Postgres when building result DTOs. Overfetch from the vector store to account for filtered-out deleted results.
+
+#### Full-Text Search
+
+`LangChain4jSearchStore` conditionally supports full-text search by delegating to `FullTextSearchRepository` when the primary datastore is PostgreSQL. This is the same repository that `PgSearchStore` uses.
+
+- If `FullTextSearchRepository` is resolvable (Postgres datastore) → full-text search available.
+- If not resolvable (e.g., MongoDB datastore + Qdrant vector) → full-text search throws `SearchTypeUnavailableException`.
+- `auto` mode: tries semantic first, falls back to full-text if available and semantic returned no results.
+
+#### Shared Search Result Building
+
+Both `PgSearchStore` and `LangChain4jSearchStore` need identical logic for building `SearchResultDto` from entry/conversation entities: fetching entities, decrypting content, extracting highlights. This shared logic should be extracted into a `SearchResultDtoBuilder` utility class to avoid duplication.
+
+### EmbeddingStoreProducer
+
+A CDI producer that creates the appropriate LangChain4j `EmbeddingStore<TextSegment>` based on the vector store type configuration.
+
+```java
+@ApplicationScoped
+public class EmbeddingStoreProducer {
+
+    @ConfigProperty(name = "memory-service.vector.store.type", defaultValue = "none")
+    String storeType;
+
+    // Qdrant config
+    @ConfigProperty(name = "memory-service.vector.qdrant.host", defaultValue = "localhost")
+    String qdrantHost;
+
+    @ConfigProperty(name = "memory-service.vector.qdrant.port", defaultValue = "6334")
+    int qdrantPort;
+
+    @ConfigProperty(name = "memory-service.vector.qdrant.collection-name",
+                    defaultValue = "memory_segments")
+    String qdrantCollectionName;
+
+    @ConfigProperty(name = "memory-service.vector.qdrant.api-key")
+    Optional<String> qdrantApiKey;
+
+    @ConfigProperty(name = "memory-service.vector.qdrant.use-tls", defaultValue = "false")
+    boolean qdrantUseTls;
+
+    @Inject EmbeddingService embeddingService;
 
     @Produces @Singleton
-    public EmbeddingService embeddingService() {
-        return switch (embeddingType.trim().toLowerCase()) {
-            case "local" -> new LocalEmbeddingService();
-            case "openai" -> new OpenAiEmbeddingService(apiKey, modelName, baseUrl, dimensions);
-            case "none" -> new DisabledEmbeddingService();
-            default -> throw new IllegalStateException("Unsupported: " + embeddingType);
+    public EmbeddingStore<TextSegment> embeddingStore() {
+        return switch (storeType.trim().toLowerCase()) {
+            case "qdrant" -> buildQdrantStore();
+            default -> throw new IllegalStateException(
+                "No LangChain4j EmbeddingStore configured for store type: " + storeType
+                    + ". This producer is only called when the SearchStoreSelector"
+                    + " routes to LangChain4jSearchStore.");
+        };
+    }
+
+    private EmbeddingStore<TextSegment> buildQdrantStore() {
+        var builder = QdrantEmbeddingStore.builder()
+            .host(qdrantHost)
+            .port(qdrantPort)
+            .collectionName(qdrantCollectionName)
+            .useTls(qdrantUseTls);
+
+        qdrantApiKey.ifPresent(builder::apiKey);
+
+        return builder.build();
+    }
+}
+```
+
+> **Note**: The `EmbeddingStore` bean is only resolved when `SearchStoreSelector` routes to `LangChain4jSearchStore` (via `Instance<LangChain4jSearchStore>`). When `storeType` is `pgvector`, `mongo`, or `none`, the producer is never called.
+
+### SearchStoreSelector Update
+
+Add routing for LangChain4j-backed store types:
+
+```java
+@ApplicationScoped
+public class SearchStoreSelector {
+
+    @Inject Instance<PgSearchStore> pgSearchStore;
+    @Inject Instance<MongoSearchStore> mongoSearchStore;
+    @Inject Instance<LangChain4jSearchStore> langChain4jSearchStore;
+
+    public SearchStore getSearchStore() {
+        return switch (type) {
+            case "pgvector" -> pgSearchStore.get();
+            case "mongo" -> mongoSearchStore.get();
+            case "qdrant" -> langChain4jSearchStore.get();  // NEW
+            case "none" -> defaultForDatastore();
+            default -> defaultForDatastore();
         };
     }
 }
 ```
 
-### Schema Migration
+Future LangChain4j backends (`chroma`, `milvus`, `weaviate`) would also route to `langChain4jSearchStore.get()` — the `EmbeddingStoreProducer` handles creating the right store.
 
-Update `pgvector-schema.sql` to support pluggable providers and future migration between them. Two changes:
+### Metadata Schema
 
-1. **Remove hardcoded dimension** — `vector(384)` → `vector` (unparameterized). pgvector accepts any dimension; the HNSW index works as long as all vectors in the index share the same dimension.
+Each point stored in the LangChain4j `EmbeddingStore` carries:
 
-2. **Add `model` column** — Records which embedding provider/model produced each vector. This is essential for future migration: when switching providers, the system can identify stale embeddings and selectively re-index them.
+| Metadata Key | Type | Purpose |
+|---|---|---|
+| `conversation_id` | String (UUID) | Links to Postgres conversation; used for groupByConversation |
+| `conversation_group_id` | String (UUID) | Tenant partition key; used for access control filtering |
+| `model` | String | Embedding model identifier; filters to current model |
 
-**Before:**
-```sql
-CREATE TABLE IF NOT EXISTS entry_embeddings (
-    entry_id              UUID PRIMARY KEY REFERENCES entries (id) ON DELETE CASCADE,
-    conversation_id       UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
-    conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
-    embedding             vector(384) NOT NULL,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
+The point `id` is the `entry_id` (UUID as string). LangChain4j's `EmbeddingStore.add(String id, Embedding, TextSegment)` supports explicit IDs, enabling upsert semantics.
 
-**After:**
-```sql
-CREATE TABLE IF NOT EXISTS entry_embeddings (
-    entry_id              UUID PRIMARY KEY REFERENCES entries (id) ON DELETE CASCADE,
-    conversation_id       UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
-    conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
-    embedding             vector NOT NULL,
-    model                 VARCHAR(128) NOT NULL,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_entry_embeddings_model
-    ON entry_embeddings (model);
-```
-
-The `model` column stores an identifier like `local/all-MiniLM-L6-v2` or `openai/text-embedding-3-small`. Each `EmbeddingService` implementation provides this via a new `modelId()` method on the interface:
-
+**Upsert:**
 ```java
-public interface EmbeddingService {
-    boolean isEnabled();
-    float[] embed(String text);
-    int dimensions();
-    String modelId();
-}
+TextSegment segment = TextSegment.from("", Metadata.from(Map.of(
+    "conversation_id", conversationId,
+    "conversation_group_id", conversationGroupId,
+    "model", embeddingService.modelId()
+)));
+embeddingStore.add(entryId, Embedding.from(embedding), segment);
 ```
 
-The upsert query and search queries are updated to include the `model` column. Search queries filter by the current model so that stale embeddings from a previous provider are excluded from results.
+**Delete by conversation group:**
+```java
+embeddingStore.removeAll(
+    new IsEqualTo("conversation_group_id", conversationGroupId)
+);
+```
 
-### Dependency
+### Qdrant Collection Management
 
-Add the core LangChain4j OpenAI library (not the Quarkus extension, to avoid auto-configuration side effects):
+Qdrant does **not** auto-create collections. The `QdrantEmbeddingStore` from langchain4j-qdrant handles collection creation on first use if the collection doesn't exist, using the dimension of the first embedding.
+
+For explicit control, the `EmbeddingStoreProducer` can verify/create the collection at startup. The collection schema:
+
+- **Collection name**: `memory_segments` (configurable)
+- **Vector params**: `size` = embedding dimensions, `distance` = Cosine
+- **Payload indexes** (for filter performance):
+  - `conversation_group_id` — keyword index (high-selectivity, used in every search + deletes)
+  - `model` — keyword index (used in every search)
+  - `conversation_id` — keyword index (used for groupByConversation deduplication)
+
+### Configuration
+
+New properties for Qdrant (when `memory-service.vector.store.type=qdrant`):
+
+| Property | Default | Description |
+|---|---|---|
+| `memory-service.vector.qdrant.host` | `localhost` | Qdrant server hostname |
+| `memory-service.vector.qdrant.port` | `6334` | Qdrant gRPC port |
+| `memory-service.vector.qdrant.collection-name` | `memory_segments` | Qdrant collection name |
+| `memory-service.vector.qdrant.api-key` | *(none)* | API key for authentication |
+| `memory-service.vector.qdrant.use-tls` | `false` | Enable TLS for gRPC connection |
+
+Environment variable equivalents:
+```bash
+MEMORY_SERVICE_VECTOR_STORE_TYPE=qdrant
+MEMORY_SERVICE_VECTOR_QDRANT_HOST=localhost
+MEMORY_SERVICE_VECTOR_QDRANT_PORT=6334
+MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_NAME=memory_segments
+MEMORY_SERVICE_VECTOR_QDRANT_API_KEY=change-me
+MEMORY_SERVICE_VECTOR_QDRANT_USE_TLS=false
+```
+
+### Docker Compose
+
+Add Qdrant service to `compose.yaml`:
+
+```yaml
+qdrant:
+  image: qdrant/qdrant:v1.16.3
+  ports:
+    - "6333:6333"   # HTTP/REST
+    - "6334:6334"   # gRPC
+  volumes:
+    - qdrant_storage:/qdrant/storage
+  environment:
+    QDRANT__SERVICE__API_KEY: "${QDRANT_API_KEY:-change-me}"
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://localhost:6333/readyz"]
+    interval: 10s
+    timeout: 3s
+    retries: 10
+```
+
+Memory service environment (when using Qdrant):
+```yaml
+MEMORY_SERVICE_VECTOR_STORE_TYPE: qdrant
+MEMORY_SERVICE_VECTOR_QDRANT_HOST: qdrant
+MEMORY_SERVICE_VECTOR_QDRANT_PORT: 6334
+MEMORY_SERVICE_VECTOR_QDRANT_API_KEY: "${QDRANT_API_KEY:-change-me}"
+MEMORY_SERVICE_EMBEDDING_TYPE: "${MEMORY_SERVICE_EMBEDDING_TYPE:-local}"
+```
+
+### Dependencies
+
+Add the LangChain4j Qdrant module (same version as existing LangChain4j dependencies):
 
 ```xml
 <dependency>
     <groupId>dev.langchain4j</groupId>
-    <artifactId>langchain4j-open-ai</artifactId>
+    <artifactId>langchain4j-qdrant</artifactId>
     <version>1.0.0-beta3</version>
 </dependency>
 ```
 
-Same version as the existing `langchain4j-embeddings-all-minilm-l6-v2-q` dependency.
+This transitively brings in `langchain4j-core` (which provides `EmbeddingStore`, `Filter`, `TextSegment`, etc.) and `io.qdrant:client` (official Qdrant Java SDK via gRPC).
 
-### Compose Configuration
+> **Why not `quarkus-langchain4j-qdrant`?** The Quarkus extension auto-produces an `EmbeddingStore` bean, which would conflict when adding additional LangChain4j backends (Chroma, Milvus). Using the core library gives us full control over bean production via `EmbeddingStoreProducer`, maintaining the pluggable architecture.
 
-```yaml
-# To use OpenAI embeddings instead of the default local model:
-MEMORY_SERVICE_EMBEDDING_TYPE: openai
-MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY: ${OPENAI_API_KEY}
-MEMORY_SERVICE_EMBEDDING_OPENAI_MODEL_NAME: text-embedding-3-small
-```
+---
 
 ## Testing
 
-### Unit Tests
+### Phase 2 Unit Tests [Implemented]
 
 ```java
 // EmbeddingServiceProducerTest
-@Test void selects_local_by_default()    // → LocalEmbeddingService, 384 dims
-@Test void selects_openai_with_config()  // → OpenAiEmbeddingService (mock API)
-@Test void selects_disabled_for_none()   // → DisabledEmbeddingService
-@Test void openai_requires_api_key()     // → IllegalStateException
-@Test void rejects_unknown_type()        // → IllegalStateException
+@Test void selects_local_by_default()
+@Test void selects_openai_with_config()
+@Test void selects_disabled_for_none()
+@Test void openai_requires_api_key()
+@Test void rejects_unknown_type()
 ```
 
-### Existing Tests
+### Phase 3 Tests
 
-All existing Cucumber tests should pass unchanged since the default embedding type is `local`, which matches current behavior. The test `application.properties` should set `memory-service.embedding.type=local`.
+#### Integration Tests (Qdrant via Testcontainers)
+
+```java
+@QuarkusTest
+@TestProfile(QdrantTestProfile.class)
+class LangChain4jSearchStoreTest {
+
+    @Test void semantic_search_returns_relevant_results()
+    @Test void semantic_search_filters_by_membership()
+    @Test void semantic_search_excludes_wrong_model()
+    @Test void semantic_search_groups_by_conversation()
+    @Test void upsert_stores_embedding_with_metadata()
+    @Test void upsert_overwrites_existing_entry()
+    @Test void delete_by_conversation_group_removes_all_points()
+    @Test void auto_search_falls_back_to_fulltext()
+    @Test void admin_search_no_membership_restriction()
+    @Test void admin_search_filters_by_user_id()
+}
+```
+
+`QdrantTestProfile` sets:
+```properties
+memory-service.vector.store.type=qdrant
+memory-service.vector.qdrant.host=localhost
+memory-service.vector.qdrant.port=${qdrant.mapped.port}
+memory-service.embedding.type=local
+```
+
+The Qdrant container is started via `@QuarkusTestResource` using Testcontainers:
+
+```java
+public class QdrantTestResource implements QuarkusTestResourceLifecycleManager {
+    private GenericContainer<?> qdrant;
+
+    @Override
+    public Map<String, String> start() {
+        qdrant = new GenericContainer<>("qdrant/qdrant:v1.16.3")
+            .withExposedPorts(6333, 6334);
+        qdrant.start();
+        return Map.of(
+            "memory-service.vector.qdrant.host", qdrant.getHost(),
+            "memory-service.vector.qdrant.port", String.valueOf(qdrant.getMappedPort(6334))
+        );
+    }
+
+    @Override
+    public void stop() { if (qdrant != null) qdrant.stop(); }
+}
+```
+
+#### Cucumber Scenarios
+
+Extend existing search scenarios to verify Qdrant backend. Key scenarios:
+
+```gherkin
+Feature: Semantic search via Qdrant vector store
+
+  Background:
+    Given a user "alice" with a conversation containing entries:
+      | role      | content                              |
+      | user      | Tell me about quantum computing      |
+      | assistant | Quantum computing uses qubits...      |
+      | user      | How does machine learning work?      |
+      | assistant | Machine learning is a subset of AI... |
+    And embeddings have been indexed
+
+  Scenario: Semantic search returns relevant entries
+    When "alice" searches for "quantum physics" with type "semantic"
+    Then the search returns results containing entry about "quantum computing"
+    And each result has a score between 0 and 1
+
+  Scenario: Search respects membership access control
+    Given a user "bob" with no access to alice's conversations
+    When "bob" searches for "quantum computing" with type "semantic"
+    Then the search returns no results
+
+  Scenario: Search filters by embedding model
+    Given entries were indexed with model "local/all-MiniLM-L6-v2"
+    And the embedding service now reports model "openai/text-embedding-3-small"
+    When "alice" searches for "quantum computing" with type "semantic"
+    Then the search returns no results
+
+  Scenario: Delete removes all embeddings for a conversation group
+    When the conversation group is deleted
+    Then searching for "quantum computing" returns no results
+```
+
+#### Unit Tests
+
+```java
+class EmbeddingStoreProducerTest {
+    @Test void produces_qdrant_store_when_type_is_qdrant()
+    @Test void throws_for_unsupported_type()
+}
+
+class SearchStoreSelectorTest {
+    @Test void routes_qdrant_to_langchain4j_search_store()  // NEW
+}
+
+class SearchResultDtoBuilderTest {
+    @Test void builds_dto_from_vector_result()
+    @Test void builds_dto_from_fulltext_result()
+    @Test void decrypts_conversation_title()
+    @Test void handles_missing_entry_gracefully()
+}
+```
+
+---
 
 ## Tasks
 
-### Rename VectorStore → SearchStore
-- [ ] Rename `VectorStore` → `SearchStore` interface
-- [ ] Rename `PgVectorStore` → `PgSearchStore`
-- [ ] Rename `MongoVectorStore` → `MongoSearchStore`
-- [ ] Rename `VectorStoreSelector` → `SearchStoreSelector`
-- [ ] Rename `VectorStoreSelectorTest` → `SearchStoreSelectorTest`
-- [ ] Update config property `memory-service.vector.type` → `memory-service.search.store.type`
-- [ ] Update all injection sites, compose.yaml, and docs
+### Phase 1: Rename VectorStore → SearchStore [Implemented]
+- [x] Rename `VectorStore` → `SearchStore` interface
+- [x] Rename `PgVectorStore` → `PgSearchStore`
+- [x] Rename `MongoVectorStore` → `MongoSearchStore`
+- [x] Rename `VectorStoreSelector` → `SearchStoreSelector`
+- [x] Rename `VectorStoreSelectorTest` → `SearchStoreSelectorTest`
+- [x] Update config property `memory-service.vector.type` → `memory-service.vector.store.type`
+- [x] Update all injection sites, compose.yaml, and docs
 
-### Pluggable Embedding Providers
-- [ ] Add `dimensions()` and `modelId()` to `EmbeddingService` interface
-- [ ] Create `LocalEmbeddingService` (extracts logic from `DefaultEmbeddingService`)
-- [ ] Create `OpenAiEmbeddingService` (wraps LangChain4j `OpenAiEmbeddingModel`)
-- [ ] Create `DisabledEmbeddingService`
-- [ ] Create `EmbeddingServiceProducer` with `@Produces @Singleton`
-- [ ] Delete `DefaultEmbeddingService` and `EmbeddingModelProducer`
-- [ ] Add `langchain4j-open-ai` dependency to `memory-service/pom.xml`
-- [ ] Update `pgvector-schema.sql` — remove hardcoded `vector(384)`, add `model` column + index
-- [ ] Update `PgVectorEmbeddingRepository` — include `model` in upsert and filter searches by model
-- [ ] Update `application.properties` — replace `embedding.enabled` with `embedding.type`
-- [ ] Update test `application.properties`
-- [ ] Update `compose.yaml` — add commented OpenAI config + pgvector image
-- [ ] Update `configuration.mdx` docs
-- [ ] Write unit tests for `EmbeddingServiceProducer`
+### Phase 2: Pluggable Embedding Providers [Implemented]
+- [x] Add `dimensions()` and `modelId()` to `EmbeddingService` interface
+- [x] Create `LocalEmbeddingService`, `OpenAiEmbeddingService`, `DisabledEmbeddingService`
+- [x] Create `EmbeddingServiceProducer` with `@Produces @Singleton`
+- [x] Delete `DefaultEmbeddingService` and `EmbeddingModelProducer`
+- [x] Add `langchain4j-open-ai` dependency
+- [x] Update pgvector schema — unparameterized `vector`, add `model` column + index
+- [x] Update `PgVectorEmbeddingRepository` — model in upsert, model filter in search
+- [x] Update application.properties — `embedding.type` replaces `embedding.enabled`
+- [x] Create event-driven vectorization pipeline (`EntryVectorizationEvent`/`Observer`)
+- [x] Write unit tests for `EmbeddingServiceProducer`
+
+### Phase 3: LangChain4j Vector Search Abstraction
+- [ ] Add `langchain4j-qdrant` dependency to `memory-service/pom.xml`
+- [ ] Extract `SearchResultDtoBuilder` from `PgSearchStore` (shared result building logic)
+- [ ] Refactor `PgSearchStore` to use `SearchResultDtoBuilder`
+- [ ] Create `LangChain4jSearchStore` implementing `SearchStore`
+- [ ] Create `EmbeddingStoreProducer` (CDI producer for `EmbeddingStore<TextSegment>`)
+- [ ] Update `SearchStoreSelector` — add `qdrant` routing to `LangChain4jSearchStore`
+- [ ] Add Qdrant configuration properties to `application.properties`
+- [ ] Add Qdrant service to `compose.yaml`
+- [ ] Add Qdrant service to `.devcontainer/devcontainer.json` (or devcontainer compose)
+- [ ] Create `QdrantTestResource` (Testcontainers lifecycle manager)
+- [ ] Write integration tests for `LangChain4jSearchStore`
+- [ ] Write unit tests for `EmbeddingStoreProducer` and `SearchStoreSelector`
+- [ ] Update `configuration.mdx` docs with Qdrant configuration
+- [ ] Verify existing pgvector Cucumber tests still pass
 
 ## Files to Modify
 
-### Rename VectorStore → SearchStore
+### Phase 3: LangChain4j Vector Search Abstraction
 
 | File | Change |
-|------|--------|
-| `memory-service/src/main/java/.../vector/VectorStore.java` | **Rename** → `SearchStore.java` |
-| `memory-service/src/main/java/.../vector/PgVectorStore.java` | **Rename** → `PgSearchStore.java` |
-| `memory-service/src/main/java/.../vector/MongoVectorStore.java` | **Rename** → `MongoSearchStore.java` |
-| `memory-service/src/main/java/.../config/VectorStoreSelector.java` | **Rename** → `SearchStoreSelector.java`, update config key |
-| `memory-service/src/test/java/.../config/VectorStoreSelectorTest.java` | **Rename** → `SearchStoreSelectorTest.java` |
-| `memory-service/src/main/java/.../store/impl/PostgresMemoryStore.java` | Update `VectorStore` references |
-| `memory-service/src/main/java/.../store/impl/MongoMemoryStore.java` | Update `VectorStore` references |
-| `memory-service/src/main/java/.../api/SearchResource.java` | Update `VectorStore` references |
-| `memory-service/src/main/java/.../api/AdminResource.java` | Update `VectorStore` references |
-| `memory-service/src/main/java/.../grpc/SearchGrpcService.java` | Update `VectorStore` references |
-| `memory-service/src/main/java/.../service/TaskProcessor.java` | Update `VectorStore` references |
-| `memory-service/src/test/java/.../cucumber/StepDefinitions.java` | Update `VectorStore` references |
-| `memory-service/src/main/resources/application.properties` | `memory-service.vector.type` → `memory-service.search.store.type` |
-
-### Pluggable Embedding Providers
-
-| File | Change |
-|------|--------|
-| `memory-service/src/main/java/.../vector/EmbeddingService.java` | Add `dimensions()` and `modelId()` methods |
-| `memory-service/src/main/java/.../vector/LocalEmbeddingService.java` | **New** — local ONNX embedding impl |
-| `memory-service/src/main/java/.../vector/OpenAiEmbeddingService.java` | **New** — OpenAI embedding impl |
-| `memory-service/src/main/java/.../vector/DisabledEmbeddingService.java` | **New** — disabled/noop impl |
-| `memory-service/src/main/java/.../vector/EmbeddingServiceProducer.java` | **New** — CDI producer with type selection |
-| `memory-service/src/main/java/.../vector/DefaultEmbeddingService.java` | **Delete** — replaced by LocalEmbeddingService |
-| `memory-service/src/main/java/.../vector/EmbeddingModelProducer.java` | **Delete** — absorbed into producer |
-| `memory-service/pom.xml` | Add `langchain4j-open-ai` dependency |
-| `memory-service/src/main/java/.../vector/PgVectorEmbeddingRepository.java` | Add `model` param to upsert, filter searches by model |
-| `memory-service/src/main/resources/db/pgvector-schema.sql` | `vector(384)` → `vector`, add `model` column + index |
-| `memory-service/src/main/resources/application.properties` | Replace `embedding.enabled` with `embedding.type` + OpenAI props |
-| `memory-service/src/test/resources/application.properties` | Set `embedding.type=local` |
-| `compose.yaml` | Add pgvector image + commented OpenAI embedding env vars |
-| `site/src/pages/docs/configuration.mdx` | Update embedding + search store config docs |
+|---|---|
+| `memory-service/pom.xml` | Add `langchain4j-qdrant` dependency |
+| `.../vector/SearchResultDtoBuilder.java` | **New** — extracted shared DTO building logic |
+| `.../vector/PgSearchStore.java` | Refactor to use `SearchResultDtoBuilder` |
+| `.../vector/LangChain4jSearchStore.java` | **New** — generic LangChain4j `EmbeddingStore` adapter |
+| `.../vector/EmbeddingStoreProducer.java` | **New** — CDI producer for `EmbeddingStore<TextSegment>` |
+| `.../config/SearchStoreSelector.java` | Add `qdrant` case routing to `LangChain4jSearchStore` |
+| `memory-service/src/main/resources/application.properties` | Add `memory-service.vector.qdrant.*` properties |
+| `memory-service/src/test/resources/application.properties` | Add Qdrant test profile properties |
+| `compose.yaml` | Add `qdrant` service + memory-service Qdrant env vars |
+| `.devcontainer/devcontainer.json` | Add Qdrant service for dev environment |
+| `.../test/QdrantTestResource.java` | **New** — Testcontainers lifecycle manager |
+| `.../test/LangChain4jSearchStoreTest.java` | **New** — integration tests |
+| `.../test/EmbeddingStoreProducerTest.java` | **New** — unit tests |
+| `.../test/SearchResultDtoBuilderTest.java` | **New** — unit tests |
+| `site/src/pages/docs/configuration.mdx` | Add Qdrant vector store configuration docs |
 
 ## Verification
 
@@ -289,49 +578,38 @@ All existing Cucumber tests should pass unchanged since the default embedding ty
 # Compile
 ./mvnw compile
 
-# Run tests
+# Run tests (includes Qdrant integration tests via Testcontainers)
 ./mvnw test -pl memory-service > test.log 2>&1
 # Search for failures using Grep tool on test.log
 ```
 
-## Future: Multi-Provider Migration
+## Design Decisions
 
-The schema changes in this enhancement (unparameterized `vector` column + `model` column) are designed to support migrating between embedding providers in a future enhancement. This section outlines how that migration would work — **implementation is out of scope** for this enhancement, but the schema must not block it.
+1. **Core `langchain4j-qdrant` instead of `quarkus-langchain4j-qdrant`**: The Quarkus extension auto-produces an `EmbeddingStore` bean. When we add a second LangChain4j backend (Chroma, Milvus), two extensions would produce competing beans. Using the core library with our own `EmbeddingStoreProducer` keeps bean production under our control and supports the pluggable architecture.
 
-### How migration would work
+2. **Single `LangChain4jSearchStore` for all backends**: Rather than writing `QdrantSearchStore`, `ChromaSearchStore`, etc., one generic class adapts any `EmbeddingStore<TextSegment>`. The `EmbeddingStoreProducer` is the only code that knows about specific backends.
 
-1. **Change `memory-service.embedding.type`** to the new provider (e.g., `local` → `openai`). Restart the service.
+3. **Two-step access control (pre-query groups, filter in vector store)**: The current pgvector approach uses a SQL JOIN inside the vector query. With an external vector store, we first query Postgres for allowed `conversation_group_id`s, then pass them as a metadata filter. This keeps access control decisions in Postgres and avoids storing user membership data in the vector store.
 
-2. **New embeddings use the new model.** The `model` column records `openai/text-embedding-3-small` for newly indexed entries. Search queries filter by the current model, so old embeddings are excluded from semantic results (full-text search is unaffected).
+4. **Overfetch + post-process for groupByConversation**: LangChain4j's `EmbeddingStore` doesn't support SQL-style window functions. We overfetch (3x limit) and deduplicate by conversation in Java. This is acceptable because the overfetch factor is bounded and the result set is small.
 
-3. **Background re-indexing.** A re-index task (triggered via admin API or scheduled) iterates over entries where `entry_embeddings.model != currentModelId` (or where no embedding exists). It re-embeds each entry with the new provider and upserts the result.
+5. **Conditional full-text search**: `LangChain4jSearchStore` delegates full-text search to `FullTextSearchRepository` (PostgreSQL) when available. This means Postgres + Qdrant deployments get both semantic and full-text search. Non-Postgres deployments get semantic only.
 
-4. **Cleanup.** Once re-indexing is complete, old embeddings (with the previous model) can be deleted. The HNSW index is rebuilt to reflect the new dimension.
+6. **`@Produces @Singleton` for `EmbeddingStore`**: Consistent with the `EmbeddingServiceProducer` pattern. The produced bean is only resolved when `SearchStoreSelector` routes to `LangChain4jSearchStore` (via `Instance<>` lazy resolution).
 
-### What the schema enables
-
-- **`model` column** — identifies which provider produced each embedding, enabling selective re-indexing and model-filtered search.
-- **Unparameterized `vector`** — allows vectors of any dimension to coexist during migration (the HNSW index is rebuilt after migration completes).
-- **`entry_embeddings.model` index** — efficient queries for "entries needing re-indexing" (`WHERE model != ?`).
-
-### What would need to be built (future enhancement)
-
-- Admin API endpoint to trigger re-indexing (e.g., `POST /v1/admin/reindex-embeddings`)
-- Background task that re-embeds entries in batches (leveraging existing task queue infrastructure)
-- Progress tracking (count of entries re-indexed vs. total)
-- HNSW index rebuild after migration completes
-- Search query changes to filter `WHERE model = ?` on the current model
+7. **Metadata-only storage in vector store**: We store `conversation_id`, `conversation_group_id`, and `model` as metadata — not the full entry text. Entry content is fetched from Postgres when building result DTOs. This avoids data duplication and keeps the vector store lightweight.
 
 ## Non-Goals
 
-- **Other providers** (Anthropic, Cohere, HuggingFace Inference API) — future work, but the architecture supports adding them easily.
-- **Automatic re-indexing** on provider switch — out of scope, but the schema supports it (see Future section above).
-- **Multiple simultaneous providers** — one active provider per deployment; the `model` column tracks provenance but doesn't enable concurrent querying across models.
+- **Quarkus Dev Services for Qdrant** — We use Testcontainers directly instead of the Quarkus extension to maintain control over bean production.
+- **Vector store migration tooling** (pgvector → Qdrant) — Users can re-index by changing `vector.store.type` and triggering a re-index. Automated migration is out of scope.
+- **Multiple simultaneous vector stores** — One active vector store per deployment.
+- **Qdrant clustering / distributed mode** — Single-node Qdrant is sufficient for the initial implementation. Clustering is an operational concern, not an application concern.
 
-## Design Decisions
+## Open Questions
 
-1. **Core `langchain4j-open-ai` instead of `quarkus-langchain4j-openai`**: The Quarkus extension auto-discovers and produces chat model beans, which would conflict with the example apps and add unwanted build-time configuration. The core library gives us just the `OpenAiEmbeddingModel` builder.
+1. **Collection initialization**: Should the `EmbeddingStoreProducer` (or `LangChain4jSearchStore`) explicitly create the Qdrant collection + payload indexes on startup? Or rely on langchain4j-qdrant's implicit collection creation? Explicit creation gives control over distance metric and payload indexes but adds startup logic.
 
-2. **`@Produces @Singleton` instead of getter-based selector**: Unlike `VectorStoreSelector.getVectorStore()`, the `EmbeddingService` is injected directly by type in three places. A CDI producer makes the switch transparent — zero changes to consumers.
+2. **Payload indexes**: LangChain4j's `QdrantEmbeddingStore` may not create payload indexes automatically. We may need a startup hook (or admin endpoint) to create indexes on `conversation_group_id`, `model`, and `conversation_id` for filter performance.
 
-3. **Unparameterized `vector` column + `model` column**: Removing `vector(384)` allows any embedding dimension. The `model` column tracks which provider produced each embedding, enabling filtered search and future migration. Runtime consistency within a single model is enforced by the application — pgvector will reject inserts with mismatched dimensions against the HNSW index if one exists.
+3. **Score normalization**: Qdrant cosine similarity returns scores in `[0, 1]`. Verify that LangChain4j's `QdrantEmbeddingStore` passes through scores without transformation, to match the `1 - cosine_distance` scoring in pgvector.

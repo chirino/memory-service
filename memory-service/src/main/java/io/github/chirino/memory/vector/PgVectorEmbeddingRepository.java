@@ -12,21 +12,26 @@ public class PgVectorEmbeddingRepository {
 
     @Inject EntityManager entityManager;
 
-    @Transactional
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void upsertEmbedding(
-            String entryId, String conversationId, String conversationGroupId, String embedding) {
+            String entryId,
+            String conversationId,
+            String conversationGroupId,
+            String embedding,
+            String model) {
         entityManager
                 .createNativeQuery(
                         "INSERT INTO entry_embeddings (entry_id, conversation_id,"
-                            + " conversation_group_id, embedding) VALUES (?1, ?2, ?3, CAST(?4 AS"
-                            + " vector)) ON CONFLICT (entry_id) DO UPDATE SET conversation_id ="
-                            + " EXCLUDED.conversation_id, conversation_group_id ="
+                            + " conversation_group_id, embedding, model) VALUES (?1, ?2, ?3,"
+                            + " CAST(?4 AS vector), ?5) ON CONFLICT (entry_id) DO UPDATE SET"
+                            + " conversation_id = EXCLUDED.conversation_id, conversation_group_id ="
                             + " EXCLUDED.conversation_group_id, embedding = EXCLUDED.embedding,"
-                            + " created_at = NOW()")
+                            + " model = EXCLUDED.model, created_at = NOW()")
                 .setParameter(1, UUID.fromString(entryId))
                 .setParameter(2, UUID.fromString(conversationId))
                 .setParameter(3, UUID.fromString(conversationGroupId))
                 .setParameter(4, embedding)
+                .setParameter(5, model)
                 .executeUpdate();
     }
 
@@ -47,17 +52,23 @@ public class PgVectorEmbeddingRepository {
     }
 
     /**
-     * Search for similar entries using vector similarity.
+     * Search for similar entries using vector similarity, filtered by model.
      *
      * @param userId the user ID for access control filtering
-     * @param embeddingLiteral the query embedding in pgvector literal format (e.g., "[0.1,0.2,...]")
+     * @param embeddingLiteral the query embedding in pgvector literal format (e.g.,
+     *     "[0.1,0.2,...]")
      * @param limit maximum number of results to return
      * @param groupByConversation when true, returns only the highest-scoring entry per conversation
+     * @param model the embedding model ID to filter by (only search embeddings from this model)
      * @return list of search results ordered by similarity score (descending)
      */
     @Transactional
     public List<VectorSearchResult> searchSimilar(
-            String userId, String embeddingLiteral, int limit, boolean groupByConversation) {
+            String userId,
+            String embeddingLiteral,
+            int limit,
+            boolean groupByConversation,
+            String model) {
 
         String sql;
         if (groupByConversation) {
@@ -83,6 +94,7 @@ public class PgVectorEmbeddingRepository {
                         JOIN conversation_groups cg
                             ON cg.id = ee.conversation_group_id
                             AND cg.deleted_at IS NULL
+                        WHERE ee.model = ?4
                     )
                     SELECT entry_id, conversation_id, score
                     FROM accessible_ranked
@@ -108,6 +120,7 @@ public class PgVectorEmbeddingRepository {
                     JOIN conversation_groups cg
                         ON cg.id = ee.conversation_group_id
                         AND cg.deleted_at IS NULL
+                    WHERE ee.model = ?4
                     ORDER BY ee.embedding <=> CAST(?1 AS vector)
                     LIMIT ?3
                     """;
@@ -120,6 +133,7 @@ public class PgVectorEmbeddingRepository {
                         .setParameter(1, embeddingLiteral)
                         .setParameter(2, userId)
                         .setParameter(3, limit)
+                        .setParameter(4, model)
                         .getResultList();
 
         return rows.stream()
@@ -141,6 +155,7 @@ public class PgVectorEmbeddingRepository {
      * @param groupByConversation when true, returns only the highest-scoring entry per conversation
      * @param userId optional filter by conversation owner
      * @param includeDeleted whether to include soft-deleted conversations
+     * @param model the embedding model ID to filter by
      * @return list of search results ordered by similarity score (descending)
      */
     @Transactional
@@ -149,7 +164,8 @@ public class PgVectorEmbeddingRepository {
             int limit,
             boolean groupByConversation,
             String userId,
-            boolean includeDeleted) {
+            boolean includeDeleted,
+            String model) {
 
         // Build dynamic WHERE clauses
         StringBuilder deletedFilter = new StringBuilder();
@@ -161,6 +177,11 @@ public class PgVectorEmbeddingRepository {
         if (userId != null && !userId.isBlank()) {
             userFilter.append(" AND c.owner_user_id = ?3");
         }
+
+        String modelFilter = " AND ee.model = ?4";
+        // Compute the model parameter position
+        int modelParamIdx = (userId != null && !userId.isBlank()) ? 5 : 4;
+        modelFilter = " AND ee.model = ?" + modelParamIdx;
 
         String sql;
         if (groupByConversation) {
@@ -182,6 +203,7 @@ public class PgVectorEmbeddingRepository {
                     """
                             + deletedFilter
                             + userFilter
+                            + modelFilter
                             + """
                             )
                             SELECT entry_id, conversation_id, score
@@ -204,6 +226,7 @@ public class PgVectorEmbeddingRepository {
                     """
                             + deletedFilter
                             + userFilter
+                            + modelFilter
                             + """
                             ORDER BY ee.embedding <=> CAST(?1 AS vector)
                             LIMIT ?2
@@ -219,6 +242,8 @@ public class PgVectorEmbeddingRepository {
         if (userId != null && !userId.isBlank()) {
             nativeQuery.setParameter(3, userId);
         }
+
+        nativeQuery.setParameter(modelParamIdx, model);
 
         @SuppressWarnings("unchecked")
         List<Object[]> rows = nativeQuery.getResultList();
