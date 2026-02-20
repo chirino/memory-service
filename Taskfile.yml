@@ -9,24 +9,6 @@ vars:
 
 tasks:
 
-  dev:
-    desc: Run the memoery-service and chat-quarkus apps in dev mode.
-    cmds:
-      - |
-        set -e
-        trap 'kill 0' EXIT
-        ./mvnw -T 1C install -pl ':memory-service,:memory-service-extension-deployment' -am -DskipTests
-        ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log 2>&1 &
-        ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
-
-  dev:memory-service:
-    desc: Run the chat-quarkus app in dev mode.
-    cmds:
-      - |
-        set -e
-        ./mvnw -T 1C install -pl ':memory-service' -am -DskipTests
-        ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log
-
   site:
     desc: Run the site in dev mode.
     dir: site
@@ -34,14 +16,30 @@ tasks:
       - npm i
       - npm run dev
 
+  image:memory-service:
+    desc: Build the memory-service container image
+    cmds:
+      - docker build -t ghcr.io/chirino/memory-service:latest -f Dockerfile .
+
+  image:chat-quarkus:
+    desc: Build the chat-quarkus container image
+    cmds:
+      - docker build -t ghcr.io/chirino/memory-service-chat-quarkus:latest -f quarkus/examples/chat-quarkus/Dockerfile .
+
+  dev:memory-service:
+    desc: Run the memory-service app in dev mode.
+    cmds:
+      - |
+        [ -f .envrc ] && source .envrc
+        ./mvnw -T 1C install -pl ':memory-service' -am -DskipTests
+        ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log
+
   dev:chat-quarkus:
     desc: Run the chat-quarkus app in dev mode.
     cmds:
-      - |
-        set -e
-        ./mvnw -T 1C install -pl ':memory-service-extension-deployment' -am -DskipTests
-        ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
-
+      - cd frontends/chat-frontend && npm i
+      - ./mvnw -T 1C install -pl ':memory-service-extension-deployment' -am -DskipTests
+      - ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
 
   secrets:
     desc: Create memory-service secret from current shell environment variables
@@ -72,12 +70,24 @@ tasks:
     cmds:
       - kubectl delete -k deploy/kustomize/envs/kind/overlays/{{.OVERLAY}} --ignore-not-found
 
-  kind:load:
-    desc: Load locally built app images into the kind cluster and restart their deployments
+  kind:load:memory-service:
+    deps:
+      - image:memory-service
     cmds:
       - kind load docker-image ghcr.io/chirino/memory-service:latest --name {{.KIND_CLUSTER_NAME}}
+      - kubectl rollout restart deployment/memory-service -n memory-service 2>/dev/null || true
+
+  kind:load:quarkus-chat:
+    deps:
+      - image:quarkus-chat
+    cmds:
       - kind load docker-image ghcr.io/chirino/memory-service-chat-quarkus:latest --name {{.KIND_CLUSTER_NAME}}
-      - kubectl rollout restart deployment/memory-service deployment/chat-quarkus -n memory-service 2>/dev/null || true
+      - kubectl rollout restart deployment/chat-quarkus -n memory-service 2>/dev/null || true
+
+  kind:load:
+    deps:
+      - kind:load:memory-service
+      - kind:load:quarkus-chat
 
   kind:rm:
     desc: Delete the kind cluster

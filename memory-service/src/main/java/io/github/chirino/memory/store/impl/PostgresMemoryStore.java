@@ -23,7 +23,7 @@ import io.github.chirino.memory.cache.CachedMemoryEntries;
 import io.github.chirino.memory.cache.MemoryEntriesCache;
 import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
-import io.github.chirino.memory.config.VectorStoreSelector;
+import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.AdminConversationQuery;
 import io.github.chirino.memory.model.AdminMessageQuery;
@@ -46,9 +46,12 @@ import io.github.chirino.memory.store.MemoryStore;
 import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
-import io.github.chirino.memory.vector.VectorStore;
+import io.github.chirino.memory.vector.EntryVectorizationEvent;
+import io.github.chirino.memory.vector.EntryVectorizationEvent.EntryToVectorize;
+import io.github.chirino.memory.vector.SearchStore;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
@@ -75,6 +78,8 @@ public class PostgresMemoryStore implements MemoryStore {
     private static final Logger LOG = Logger.getLogger(PostgresMemoryStore.class);
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
+    @Inject Event<EntryVectorizationEvent> vectorizationEvent;
+
     @Inject ConversationRepository conversationRepository;
 
     @Inject ConversationGroupRepository conversationGroupRepository;
@@ -89,7 +94,7 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Inject ObjectMapper objectMapper;
 
-    @Inject VectorStoreSelector vectorStoreSelector;
+    @Inject SearchStoreSelector searchStoreSelector;
 
     @Inject EmbeddingService embeddingService;
 
@@ -1402,6 +1407,7 @@ public class PostgresMemoryStore implements MemoryStore {
 
         OffsetDateTime latestHistoryTimestamp = null;
         List<EntryDto> created = new ArrayList<>(entries.size());
+        List<EntryEntity> entriesToVectorize = new ArrayList<>();
         for (CreateEntryRequest req : entries) {
             EntryEntity entity = new EntryEntity();
             entity.setConversation(conversation);
@@ -1445,6 +1451,9 @@ public class PostgresMemoryStore implements MemoryStore {
                                 + " contentLength=%d",
                         entity.getId(), conversation.getId(), req.getIndexedContent().length());
             }
+            if (indexedContent != null && !indexedContent.isBlank()) {
+                entriesToVectorize.add(entity);
+            }
             if (entity.getChannel() == Channel.HISTORY) {
                 latestHistoryTimestamp = createdAt;
             }
@@ -1454,6 +1463,25 @@ public class PostgresMemoryStore implements MemoryStore {
         LOG.infof("appendMemoryEntries: flushing %d entries to database", created.size());
         entryRepository.flush();
         LOG.infof("appendMemoryEntries: flush completed");
+
+        // Fire a CDI event for best-effort vectorization. The observer runs AFTER this
+        // transaction commits (TransactionPhase.AFTER_SUCCESS), so:
+        // 1. The entry rows are committed and visible for the embedding FK constraint.
+        // 2. The DB connection is released — not held open during the embedding network call.
+        // 3. If vectorization fails, entries remain with indexed_at=NULL for retry.
+        if (!entriesToVectorize.isEmpty()) {
+            List<EntryToVectorize> toVectorize =
+                    entriesToVectorize.stream()
+                            .map(
+                                    e ->
+                                            new EntryToVectorize(
+                                                    e.getId().toString(),
+                                                    e.getConversation().getId().toString(),
+                                                    e.getConversationGroupId().toString(),
+                                                    e.getIndexedContent()))
+                            .toList();
+            vectorizationEvent.fire(new EntryVectorizationEvent(toVectorize));
+        }
 
         // Invalidate/update cache if MEMORY entries were created
         if (hasMemoryEntries && clientId != null) {
@@ -1672,6 +1700,13 @@ public class PostgresMemoryStore implements MemoryStore {
                 taskRepository.createTask(
                         "vector_store_index_retry", "vector_store_index_retry", Map.of());
             }
+        } else {
+            // No vector store active — full-text indexing (via DB generated column) is the only
+            // store and succeeds automatically on persist, so mark entries as fully indexed.
+            for (EntryEntity entry : entitiesToVectorize) {
+                entry.setIndexedAt(OffsetDateTime.now());
+                entryRepository.persist(entry);
+            }
         }
 
         return new IndexConversationsResponse(indexed);
@@ -1682,7 +1717,7 @@ public class PostgresMemoryStore implements MemoryStore {
         if (text == null || text.isBlank()) {
             return;
         }
-        VectorStore store = vectorStoreSelector.getVectorStore();
+        SearchStore store = searchStoreSelector.getSearchStore();
         float[] embedding = embeddingService.embed(text);
         if (embedding == null || embedding.length == 0) {
             return;
@@ -1783,7 +1818,7 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    @Transactional
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void setIndexedAt(String entryId, OffsetDateTime indexedAt) {
         UUID id = UUID.fromString(entryId);
         EntryEntity entry = entryRepository.findById(id);
@@ -1819,7 +1854,7 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     private boolean shouldVectorize() {
-        VectorStore store = vectorStoreSelector.getVectorStore();
+        SearchStore store = searchStoreSelector.getSearchStore();
         return store != null && store.isEnabled() && embeddingService.isEnabled();
     }
 

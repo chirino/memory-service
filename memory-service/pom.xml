@@ -21,6 +21,12 @@
       <artifactId>langchain4j-embeddings-all-minilm-l6-v2-q</artifactId>
       <version>1.0.0-beta3</version>
     </dependency>
+    <!-- OpenAI embedding model (requires API key) -->
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-open-ai</artifactId>
+      <version>1.0.0-beta3</version>
+    </dependency>
     <dependency>
       <groupId>io.github.chirino.memory-service</groupId>
       <artifactId>memory-service-proto-quarkus</artifactId>

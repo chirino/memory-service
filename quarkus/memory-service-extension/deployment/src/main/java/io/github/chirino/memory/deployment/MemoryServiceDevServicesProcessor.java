@@ -216,7 +216,9 @@ public class MemoryServiceDevServicesProcessor {
                                                 .withEnv(
                                                         "MEMORY_SERVICE_API_KEYS_AGENT",
                                                         effectiveApiKey)
-                                                .withEnv("MEMORY_SERVICE_VECTOR_TYPE", "pgvector")
+                                                .withEnv(
+                                                        "MEMORY_SERVICE_VECTOR_STORE_TYPE",
+                                                        "pgvector")
                                                 .withLabel(DEV_SERVICE_LABEL, "memory-service");
 
                                         // Apply additional environment variables from config

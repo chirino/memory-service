@@ -1,9 +1,9 @@
 package io.github.chirino.memory.service;
 
+import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.config.TaskRepositorySelector;
-import io.github.chirino.memory.config.VectorStoreSelector;
 import io.github.chirino.memory.persistence.entity.TaskEntity;
-import io.github.chirino.memory.vector.VectorStore;
+import io.github.chirino.memory.vector.SearchStore;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -22,7 +22,7 @@ public class TaskProcessor {
 
     @Inject TaskRepositorySelector taskRepositorySelector;
 
-    @Inject VectorStoreSelector vectorStoreSelector;
+    @Inject SearchStoreSelector searchStoreSelector;
 
     @ConfigProperty(name = "memory-service.tasks.retry-delay", defaultValue = "PT10M")
     Duration retryDelay;
@@ -93,11 +93,11 @@ public class TaskProcessor {
     }
 
     private void executeTask(String taskType, Map<String, Object> taskBody) {
-        VectorStore vectorStore = vectorStoreSelector.getVectorStore();
+        SearchStore searchStore = searchStoreSelector.getSearchStore();
         switch (taskType) {
             case "vector_store_delete" -> {
                 String groupId = (String) taskBody.get("conversationGroupId");
-                vectorStore.deleteByConversationGroupId(groupId);
+                searchStore.deleteByConversationGroupId(groupId);
             }
             default -> throw new IllegalArgumentException("Unknown task type: " + taskType);
         }
