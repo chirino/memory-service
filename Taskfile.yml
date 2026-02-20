@@ -6,7 +6,9 @@ vars:
   KIND_CLUSTER_NAME: memory-service
   ENVOY_GATEWAY_VERSION: v1.7.0
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
-
+dotenv:
+  - .env
+  
 tasks:
 
   site:
@@ -30,7 +32,7 @@ tasks:
     desc: Run the memory-service app in dev mode.
     cmds:
       - |
-        [ -f .envrc ] && source .envrc
+        [ -f .env ] && source .env
         ./mvnw -T 1C install -pl ':memory-service' -am -DskipTests
         ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log
 
@@ -47,6 +49,7 @@ tasks:
       - |
         kubectl create secret generic memory-service \
           --namespace memory-service \
+          --from-literal=MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY="${MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY:-${OPENAI_API_KEY}}" \
           --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
           --from-literal=OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.openai.com}" \
           --dry-run=client -o yaml | kubectl apply -f -
@@ -64,6 +67,8 @@ tasks:
     desc: "Deploy to kind the overlay (usage: task kind:deploy OVERLAY={{.OVERLAY}})"
     cmds:
       - kubectl apply -k deploy/kustomize/envs/kind/overlays/{{.OVERLAY}}
+      - task: secrets
+      - kubectl set env deployment/memory-service -n memory-service --from=secret/memory-service
 
   kind:undeploy:
     desc: "Remove the deployed overlay (usage: task kind:undeploy OVERLAY={{.OVERLAY}})"
@@ -77,9 +82,9 @@ tasks:
       - kind load docker-image ghcr.io/chirino/memory-service:latest --name {{.KIND_CLUSTER_NAME}}
       - kubectl rollout restart deployment/memory-service -n memory-service 2>/dev/null || true
 
-  kind:load:quarkus-chat:
+  kind:load:chat-quarkus:
     deps:
-      - image:quarkus-chat
+      - image:chat-quarkus
     cmds:
       - kind load docker-image ghcr.io/chirino/memory-service-chat-quarkus:latest --name {{.KIND_CLUSTER_NAME}}
       - kubectl rollout restart deployment/chat-quarkus -n memory-service 2>/dev/null || true
@@ -87,7 +92,7 @@ tasks:
   kind:load:
     deps:
       - kind:load:memory-service
-      - kind:load:quarkus-chat
+      - kind:load:chat-quarkus
 
   kind:rm:
     desc: Delete the kind cluster
@@ -119,7 +124,6 @@ tasks:
       - kubectl apply -f deploy/kustomize/envs/kind/base/envoyproxy.yaml
       - task: kind:load
       - task: kind:deploy
-      - task: secrets
       - |
         echo ""
         echo "Waiting for all pods to be ready..."
@@ -161,4 +165,3 @@ tasks:
         echo "  Grafana:        http://grafana.127.0.0.1.nip.io/grafana/   (admin/admin)"
         echo "  Prometheus:     http://prometheus.127.0.0.1.nip.io/prometheus/"
         echo "  MinIO Console:  http://minio.127.0.0.1.nip.io              (minioadmin/minioadmin)"
-

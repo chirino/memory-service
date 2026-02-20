@@ -31,13 +31,10 @@ import org.jboss.logging.Logger;
  * not yet implemented for MongoDB - it requires MongoDB Atlas Vector Search or similar.
  */
 @ApplicationScoped
-public class MongoSearchStore implements SearchStore {
+public class MongoSearchStore implements FullTextSearchStore {
 
     private static final Logger LOG = Logger.getLogger(MongoSearchStore.class);
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
-
-    @ConfigProperty(name = "memory-service.search.semantic.enabled", defaultValue = "true")
-    boolean semanticSearchEnabled;
 
     @ConfigProperty(name = "memory-service.search.fulltext.enabled", defaultValue = "true")
     boolean fullTextSearchEnabled;
@@ -49,8 +46,8 @@ public class MongoSearchStore implements SearchStore {
     @Inject ObjectMapper objectMapper;
 
     @Override
-    public boolean isEnabled() {
-        return true;
+    public boolean isFullTextSearchAvailable() {
+        return fullTextSearchEnabled;
     }
 
     @Override
@@ -59,34 +56,8 @@ public class MongoSearchStore implements SearchStore {
             return emptyResults();
         }
 
-        String searchType = request.getSearchType() != null ? request.getSearchType() : "auto";
-
-        return switch (searchType) {
-            case "semantic" -> {
-                validateSemanticSearchAvailable();
-                // MongoDB vector search not implemented yet - this will throw
-                yield emptyResults();
-            }
-            case "fulltext" -> {
-                validateFullTextSearchAvailable();
-                yield fullTextSearch(userId, request);
-            }
-            case "auto" -> autoSearch(userId, request);
-            default ->
-                    throw new IllegalArgumentException(
-                            "Invalid searchType: "
-                                    + searchType
-                                    + ". Valid values: auto, semantic, fulltext");
-        };
-    }
-
-    private void validateSemanticSearchAvailable() {
-        // MongoDB vector search is not implemented yet
-        List<String> available = fullTextSearchEnabled ? List.of("fulltext") : List.of();
-        throw new SearchTypeUnavailableException(
-                "Semantic search is not available for MongoDB. MongoDB Atlas Vector Search is not"
-                        + " yet implemented.",
-                available);
+        validateFullTextSearchAvailable();
+        return fullTextSearch(userId, request);
     }
 
     private void validateFullTextSearchAvailable() {
@@ -97,18 +68,6 @@ public class MongoSearchStore implements SearchStore {
                             + " text search support.",
                     List.of());
         }
-    }
-
-    private SearchResultsDto autoSearch(String userId, SearchEntriesRequest request) {
-        // For MongoDB, semantic search is not available, go directly to full-text
-        if (fullTextSearchEnabled) {
-            SearchResultsDto results = fullTextSearch(userId, request);
-            if (!results.getResults().isEmpty()) {
-                return results;
-            }
-        }
-
-        return emptyResults();
     }
 
     private SearchResultsDto fullTextSearch(String userId, SearchEntriesRequest request) {
@@ -244,37 +203,8 @@ public class MongoSearchStore implements SearchStore {
             return emptyResults();
         }
 
-        String searchType = query.getSearchType() != null ? query.getSearchType() : "auto";
-
-        return switch (searchType) {
-            case "semantic" -> {
-                validateSemanticSearchAvailable();
-                // MongoDB vector search not implemented yet - this will throw
-                yield emptyResults();
-            }
-            case "fulltext" -> {
-                validateFullTextSearchAvailable();
-                yield adminFullTextSearch(query);
-            }
-            case "auto" -> adminAutoSearch(query);
-            default ->
-                    throw new IllegalArgumentException(
-                            "Invalid searchType: "
-                                    + searchType
-                                    + ". Valid values: auto, semantic, fulltext");
-        };
-    }
-
-    private SearchResultsDto adminAutoSearch(AdminSearchQuery query) {
-        // For MongoDB, semantic search is not available, go directly to full-text
-        if (fullTextSearchEnabled) {
-            SearchResultsDto results = adminFullTextSearch(query);
-            if (!results.getResults().isEmpty()) {
-                return results;
-            }
-        }
-
-        return emptyResults();
+        validateFullTextSearchAvailable();
+        return adminFullTextSearch(query);
     }
 
     private SearchResultsDto adminFullTextSearch(AdminSearchQuery query) {
@@ -321,16 +251,5 @@ public class MongoSearchStore implements SearchStore {
         }
 
         return result;
-    }
-
-    @Override
-    public void upsertTranscriptEmbedding(
-            String conversationGroupId, String conversationId, String entryId, float[] embedding) {
-        // no-op until MongoDB Atlas Vector Search is implemented
-    }
-
-    @Override
-    public void deleteByConversationGroupId(String conversationGroupId) {
-        // no-op until MongoDB Atlas Vector Search is implemented
     }
 }

@@ -7,7 +7,6 @@ import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
-import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.grpc.v1.IndexConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListUnindexedEntriesRequest;
 import io.github.chirino.memory.grpc.v1.ListUnindexedEntriesResponse;
@@ -18,7 +17,7 @@ import io.github.chirino.memory.grpc.v1.UnindexedEntry;
 import io.github.chirino.memory.security.AdminRoleResolver;
 import io.github.chirino.memory.security.ApiKeyContext;
 import io.github.chirino.memory.store.AccessDeniedException;
-import io.github.chirino.memory.vector.SearchStore;
+import io.github.chirino.memory.vector.SearchExecutionService;
 import io.grpc.Status;
 import io.quarkus.grpc.GrpcService;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -32,7 +31,7 @@ import java.util.stream.Collectors;
 @Blocking
 public class SearchGrpcService extends AbstractGrpcService implements SearchService {
 
-    private final SearchStoreSelector searchStoreSelector;
+    private final SearchExecutionService searchExecutionService;
 
     @Inject SecurityIdentity identity;
 
@@ -40,8 +39,8 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
 
     @Inject AdminRoleResolver roleResolver;
 
-    public SearchGrpcService(SearchStoreSelector searchStoreSelector) {
-        this.searchStoreSelector = searchStoreSelector;
+    public SearchGrpcService(SearchExecutionService searchExecutionService) {
+        this.searchExecutionService = searchExecutionService;
     }
 
     @Override
@@ -54,10 +53,9 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                                         .withDescription("query is required")
                                         .asRuntimeException();
                             }
-                            SearchStore searchStore = searchStoreSelector.getSearchStore();
-                            if (searchStore == null || !searchStore.isEnabled()) {
+                            if (!searchExecutionService.isSearchAvailable()) {
                                 throw Status.UNIMPLEMENTED
-                                        .withDescription("Search store is not available")
+                                        .withDescription("Vector/full-text search is not available")
                                         .asRuntimeException();
                             }
                             io.github.chirino.memory.api.dto.SearchEntriesRequest internal =
@@ -70,9 +68,10 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                             boolean includeEntry =
                                     !request.hasIncludeEntry() || request.getIncludeEntry();
                             internal.setIncludeEntry(includeEntry);
+                            internal.setSearchType("auto");
 
                             SearchResultsDto internalResults =
-                                    searchStore.search(currentUserId(), internal);
+                                    searchExecutionService.search(currentUserId(), internal);
 
                             SearchEntriesResponse.Builder responseBuilder =
                                     SearchEntriesResponse.newBuilder()

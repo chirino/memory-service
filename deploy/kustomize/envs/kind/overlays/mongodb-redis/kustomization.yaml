@@ -15,3 +15,6 @@ patches:
       - op: add
         path: /data/MEMORY_SERVICE_ATTACHMENTS_STORE
         value: db
+      - op: add
+        path: /data/MEMORY_SERVICE_EMBEDDING_TYPE
+        value: openai

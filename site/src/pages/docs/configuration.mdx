@@ -23,7 +23,7 @@ These are the core server configuration options:
 | <Cfg p="memory-service.datastore.type" /> | `postgres`, `mongo`, `mongodb` | `postgres` | Database backend for storing conversations |
 | <Cfg p="memory-service.datastore.migrate-at-start" /> | `true`, `false` | `true` | Run database migrations at startup (routed to the correct backend automatically) |
 | <Cfg p="memory-service.cache.type" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching (used by response resumer and future cache features) |
-| <Cfg p="memory-service.vector.store.type" /> | `none`, `pgvector`, `mongo` | `none` | Vector store for semantic search |
+| <Cfg p="memory-service.vector.store.type" /> | `none`, `pgvector`, `qdrant` | `none` | Optional vector store for semantic search |
 | <Cfg p="memory-service.temp-dir" /> | path | system temp dir | Directory for temporary files (attachment downloads, response resumer, etc.) |
 
 ## Database Configuration
@@ -182,7 +182,8 @@ For semantic search capabilities, configure a vector store and embedding provide
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| <Cfg p="memory-service.vector.store.type" /> | `none`, `pgvector`, `mongo` | `none` | Vector store backend (defaults to matching the datastore type when `none`) |
+| <Cfg p="memory-service.vector.store.type" /> | `none`, `pgvector`, `qdrant` | `none` | Optional vector store backend for semantic search |
+| <Cfg p="memory-service.vector.migrate-at-start" /> | `true`, `false` | `true` | Run vector store migrations/provisioning at startup |
 | <Cfg p="memory-service.search.semantic.enabled" /> | `true`, `false` | `true` | Enable semantic (vector) search |
 | <Cfg p="memory-service.search.fulltext.enabled" /> | `true`, `false` | `true` | Enable full-text search |
 
@@ -222,12 +223,37 @@ memory-service.vector.store.type=pgvector
 # Use local embedding model (default)
 memory-service.embedding.type=local`} />
 
+### Qdrant
+
+Qdrant is a dedicated vector database that can be used as an external vector store for semantic search. When using Qdrant, the primary datastore (PostgreSQL or MongoDB) still stores all conversation data — Qdrant only stores embeddings and metadata for vector search.
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| <Cfg p="memory-service.vector.qdrant.host" /> | `localhost` | Qdrant server hostname |
+| <Cfg p="memory-service.vector.qdrant.port" /> | `6334` | Qdrant gRPC port |
+| <Cfg p="memory-service.vector.qdrant.collection-name" /> | `memory_segments` | Qdrant collection name |
+| <Cfg p="memory-service.vector.qdrant.api-key" /> | _(none)_ | API key for authentication |
+| <Cfg p="memory-service.vector.qdrant.use-tls" /> | `false` | Enable TLS for gRPC connection |
+| <Cfg p="memory-service.vector.qdrant.startup-timeout" /> | `PT30S` | Startup migration timeout for Qdrant API calls |
+
+<ConfigBlock property={`# Qdrant vector store with local embeddings
+memory-service.vector.store.type=qdrant
+memory-service.vector.migrate-at-start=true
+memory-service.vector.qdrant.host=localhost
+memory-service.vector.qdrant.port=6334
+memory-service.embedding.type=local`} />
+
+With <Cfg p="memory-service.vector.migrate-at-start" /> enabled (default), memory-service ensures the configured Qdrant collection exists at startup.
+
+When using PostgreSQL as the primary datastore with Qdrant for vector search, full-text search is also available (using PostgreSQL's built-in text search). When using MongoDB as the primary datastore with Qdrant, MongoDB full-text search is also available.
+
 ### MongoDB
 
-When using MongoDB, the search store uses MongoDB text indexes for full-text search. Semantic search is not yet available for MongoDB.
+When using MongoDB, full-text search uses MongoDB text indexes. Semantic search requires an explicit vector store (`qdrant`).
 
-<ConfigBlock property={`# MongoDB search store (auto-selected when datastore is mongo)
-memory-service.vector.store.type=mongo`} />
+<ConfigBlock property={`# MongoDB datastore with no vector store (full-text only)
+memory-service.datastore.type=mongo
+memory-service.vector.store.type=none`} />
 
 ## API Key Authentication
 

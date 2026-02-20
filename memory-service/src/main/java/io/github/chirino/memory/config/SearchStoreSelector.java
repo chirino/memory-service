@@ -1,8 +1,8 @@
 package io.github.chirino.memory.config;
 
-import io.github.chirino.memory.vector.MongoSearchStore;
+import io.github.chirino.memory.vector.LangChain4jSearchStore;
 import io.github.chirino.memory.vector.PgSearchStore;
-import io.github.chirino.memory.vector.SearchStore;
+import io.github.chirino.memory.vector.VectorSearchStore;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -14,36 +14,20 @@ public class SearchStoreSelector {
     @ConfigProperty(name = "memory-service.vector.store.type", defaultValue = "none")
     String vectorStoreType;
 
-    @ConfigProperty(name = "memory-service.datastore.type", defaultValue = "postgres")
-    String datastoreType;
-
     @Inject Instance<PgSearchStore> pgSearchStore;
 
-    @Inject Instance<MongoSearchStore> mongoSearchStore;
+    @Inject Instance<LangChain4jSearchStore> langChain4jSearchStore;
 
-    public SearchStore getSearchStore() {
+    public VectorSearchStore getSearchStore() {
         String type = vectorStoreType == null ? "none" : vectorStoreType.trim().toLowerCase();
-        switch (type) {
+        return switch (type) {
             case "pgvector":
-                return pgSearchStore.get();
-            case "mongo":
-                return mongoSearchStore.get();
+                yield pgSearchStore.get();
+            case "qdrant":
+                yield langChain4jSearchStore.get();
             case "none":
             default:
-                return defaultForDatastore();
-        }
-    }
-
-    /**
-     * When no explicit search store type is configured, select the store matching the datastore
-     * type. Both PgSearchStore and MongoSearchStore gracefully fall back to full-text search when
-     * semantic/embedding search is unavailable.
-     */
-    private SearchStore defaultForDatastore() {
-        String ds = datastoreType == null ? "postgres" : datastoreType.trim().toLowerCase();
-        return switch (ds) {
-            case "mongo", "mongodb" -> mongoSearchStore.get();
-            default -> pgSearchStore.get();
+                yield null;
         };
     }
 }

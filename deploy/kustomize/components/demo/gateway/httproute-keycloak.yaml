@@ -10,28 +10,7 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /realms/
-      backendRefs:
-        - name: keycloak
-          port: 8080
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /admin/
-      backendRefs:
-        - name: keycloak
-          port: 8080
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /resources/
-      backendRefs:
-        - name: keycloak
-          port: 8080
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /js/
+            value: /
       backendRefs:
         - name: keycloak
           port: 8080

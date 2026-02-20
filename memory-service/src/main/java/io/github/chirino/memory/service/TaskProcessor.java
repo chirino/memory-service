@@ -3,7 +3,7 @@ package io.github.chirino.memory.service;
 import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.config.TaskRepositorySelector;
 import io.github.chirino.memory.persistence.entity.TaskEntity;
-import io.github.chirino.memory.vector.SearchStore;
+import io.github.chirino.memory.vector.VectorSearchStore;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -93,9 +93,13 @@ public class TaskProcessor {
     }
 
     private void executeTask(String taskType, Map<String, Object> taskBody) {
-        SearchStore searchStore = searchStoreSelector.getSearchStore();
+        VectorSearchStore searchStore = searchStoreSelector.getSearchStore();
         switch (taskType) {
             case "vector_store_delete" -> {
+                if (searchStore == null || !searchStore.isEnabled()) {
+                    LOG.debug("Skipping vector_store_delete: no vector store configured");
+                    return;
+                }
                 String groupId = (String) taskBody.get("conversationGroupId");
                 searchStore.deleteByConversationGroupId(groupId);
             }

@@ -51,7 +51,7 @@ import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
 import io.github.chirino.memory.vector.EntryVectorizationEvent;
 import io.github.chirino.memory.vector.EntryVectorizationEvent.EntryToVectorize;
-import io.github.chirino.memory.vector.SearchStore;
+import io.github.chirino.memory.vector.VectorSearchStore;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -1332,7 +1332,17 @@ public class MongoMemoryStore implements MemoryStore {
             Instant createdAt = Instant.now();
             m.createdAt = createdAt;
             entryRepository.persist(m);
+            boolean requestProvidedIndexedContent =
+                    req.getIndexedContent() != null && !req.getIndexedContent().isBlank();
             if (indexedContent != null && !indexedContent.isBlank()) {
+                LOG.infof(
+                        "Entry created with indexedContent: entryId=%s, conversationId=%s,"
+                                + " channel=%s, source=%s, contentLength=%d",
+                        m.id,
+                        m.conversationId,
+                        channel,
+                        requestProvidedIndexedContent ? "request" : "derived",
+                        indexedContent.length());
                 entriesToVectorize.add(m);
             }
             if (m.channel == Channel.HISTORY) {
@@ -1544,6 +1554,12 @@ public class MongoMemoryStore implements MemoryStore {
 
             entry.indexedContent = req.getIndexedContent();
             entryRepository.persistOrUpdate(entry);
+            if (req.getIndexedContent() != null) {
+                LOG.infof(
+                        "Index request received indexedContent: entryId=%s, conversationId=%s,"
+                                + " contentLength=%d",
+                        entry.id, entry.conversationId, req.getIndexedContent().length());
+            }
             entriesToVectorize.add(entry);
             indexed++;
         }
@@ -1583,7 +1599,10 @@ public class MongoMemoryStore implements MemoryStore {
         if (text == null || text.isBlank()) {
             return;
         }
-        SearchStore store = searchStoreSelector.getSearchStore();
+        VectorSearchStore store = searchStoreSelector.getSearchStore();
+        if (store == null || !store.isEnabled()) {
+            return;
+        }
         float[] embedding = embeddingService.embed(text);
         if (embedding == null || embedding.length == 0) {
             return;
@@ -1593,8 +1612,11 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     private boolean shouldVectorize() {
-        SearchStore store = searchStoreSelector.getSearchStore();
-        return store != null && store.isEnabled() && embeddingService.isEnabled();
+        VectorSearchStore store = searchStoreSelector.getSearchStore();
+        return store != null
+                && store.isEnabled()
+                && store.isSemanticSearchAvailable()
+                && embeddingService.isEnabled();
     }
 
     @Override
