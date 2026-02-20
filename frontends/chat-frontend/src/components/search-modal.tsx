@@ -14,7 +14,7 @@ type SearchModalProps = {
 
 type SearchResultsResponse = {
   data?: SearchResult[];
-  nextCursor?: string | null;
+  afterCursor?: string | null;
 };
 
 function SearchResultSkeleton() {

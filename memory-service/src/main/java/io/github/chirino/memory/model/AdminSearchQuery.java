@@ -18,7 +18,7 @@ public class AdminSearchQuery {
     private Integer limit;
 
     @Size(max = 100)
-    private String after;
+    private String afterCursor;
 
     @Size(max = 255)
     private String userId;
@@ -43,12 +43,12 @@ public class AdminSearchQuery {
         this.limit = limit;
     }
 
-    public String getAfter() {
-        return after;
+    public String getAfterCursor() {
+        return afterCursor;
     }
 
-    public void setAfter(String after) {
-        this.after = after;
+    public void setAfterCursor(String afterCursor) {
+        this.afterCursor = afterCursor;
     }
 
     public String getUserId() {

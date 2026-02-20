@@ -65,7 +65,7 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                             internal.setQuery(request.getQuery());
                             internal.setLimit(request.getLimit() > 0 ? request.getLimit() : 20);
                             if (request.getAfter() != null && !request.getAfter().isBlank()) {
-                                internal.setAfter(request.getAfter());
+                                internal.setAfterCursor(request.getAfter());
                             }
                             boolean includeEntry =
                                     !request.hasIncludeEntry() || request.getIncludeEntry();
@@ -84,8 +84,8 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                                                                                     r,
                                                                                     includeEntry))
                                                             .collect(Collectors.toList()));
-                            if (internalResults.getNextCursor() != null) {
-                                responseBuilder.setNextCursor(internalResults.getNextCursor());
+                            if (internalResults.getAfterCursor() != null) {
+                                responseBuilder.setNextCursor(internalResults.getAfterCursor());
                             }
                             return responseBuilder.build();
                         })
@@ -214,8 +214,8 @@ public class SearchGrpcService extends AbstractGrpcService implements SearchServ
                                                 .collect(Collectors.toList()));
                             }
 
-                            if (dto.getCursor() != null) {
-                                builder.setCursor(dto.getCursor());
+                            if (dto.getAfterCursor() != null) {
+                                builder.setCursor(dto.getAfterCursor());
                             }
 
                             return builder.build();

@@ -263,9 +263,8 @@ Feature: Admin REST API
     Then the response status should be 200
     # Should return the original conversation plus the 2 forks
     And the response should contain at least 3 conversations
-    # Root conversation (forkedAtEntryId=null) should be first due to NULLS FIRST ordering
-    And the response body "data[0].conversationId" should be "${bobConversationId}"
-    And the response body "data[0].forkedAtEntryId" should be "null"
+    # Results are ordered by conversation ID (ASC) for cursor-based pagination
+    And the response body should contain "${bobConversationId}"
 
   Scenario: Auditor can list forks for any conversation
     # First authenticate as bob to create an entry and fork

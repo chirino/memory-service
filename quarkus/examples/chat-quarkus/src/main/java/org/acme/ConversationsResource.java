@@ -32,10 +32,10 @@ public class ConversationsResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversations(
             @QueryParam("mode") String mode,
-            @QueryParam("after") String after,
+            @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") Integer limit,
             @QueryParam("query") String query) {
-        return proxy.listConversations(mode, after, limit, query);
+        return proxy.listConversations(mode, afterCursor, limit, query);
     }
 
     @GET
@@ -65,17 +65,17 @@ public class ConversationsResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversationEntries(
             @PathParam("conversationId") String conversationId,
-            @QueryParam("after") String after,
+            @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") Integer limit) {
         return proxy.listConversationEntries(
-                conversationId, after, limit, Channel.HISTORY, null, "all");
+                conversationId, afterCursor, limit, Channel.HISTORY, null, "all");
     }
 
     @GET
     @Path("/{conversationId}/forks")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversationForks(@PathParam("conversationId") String conversationId) {
-        return proxy.listConversationForks(conversationId);
+        return proxy.listConversationForks(conversationId, null, null);
     }
 
     @GET
@@ -83,7 +83,7 @@ public class ConversationsResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversationMemberships(
             @PathParam("conversationId") String conversationId) {
-        return proxy.listConversationMemberships(conversationId);
+        return proxy.listConversationMemberships(conversationId, null, null);
     }
 
     @POST

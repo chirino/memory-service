@@ -11,7 +11,7 @@ public class AdminConversationQuery {
     private boolean onlyDeleted;
     private OffsetDateTime deletedAfter;
     private OffsetDateTime deletedBefore;
-    private String after;
+    private String afterCursor;
     private int limit;
 
     public ConversationListMode getMode() {
@@ -62,12 +62,12 @@ public class AdminConversationQuery {
         this.deletedBefore = deletedBefore;
     }
 
-    public String getAfter() {
-        return after;
+    public String getAfterCursor() {
+        return afterCursor;
     }
 
-    public void setAfter(String after) {
-        this.after = after;
+    public void setAfterCursor(String afterCursor) {
+        this.afterCursor = afterCursor;
     }
 
     public int getLimit() {

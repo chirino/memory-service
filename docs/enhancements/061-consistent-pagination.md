@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: completed
 ---
 
 # Enhancement 061: Consistent Pagination Across All List Endpoints
 
-> **Status**: Proposed.
+> **Status**: Completed.
 
 ## Summary
 

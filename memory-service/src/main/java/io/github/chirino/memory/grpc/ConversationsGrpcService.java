@@ -16,6 +16,7 @@ import io.github.chirino.memory.grpc.v1.ListConversationsRequest;
 import io.github.chirino.memory.grpc.v1.ListConversationsResponse;
 import io.github.chirino.memory.grpc.v1.ListForksRequest;
 import io.github.chirino.memory.grpc.v1.ListForksResponse;
+import io.github.chirino.memory.grpc.v1.PageInfo;
 import io.github.chirino.memory.grpc.v1.UpdateConversationRequest;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.common.annotation.Blocking;
@@ -129,14 +130,34 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
                 .item(
                         () -> {
                             String conversationId = byteStringToString(request.getConversationId());
+                            String token =
+                                    request.hasPage()
+                                            ? normalizeToken(request.getPage().getPageToken())
+                                            : null;
+                            int pageSize =
+                                    request.hasPage() && request.getPage().getPageSize() > 0
+                                            ? request.getPage().getPageSize()
+                                            : 50;
                             List<ConversationForkSummaryDto> forks =
-                                    store().listForks(currentUserId(), conversationId);
-                            return ListForksResponse.newBuilder()
-                                    .addAllForks(
-                                            forks.stream()
-                                                    .map(GrpcDtoMapper::toProto)
-                                                    .collect(Collectors.toList()))
-                                    .build();
+                                    store().listForks(
+                                                    currentUserId(),
+                                                    conversationId,
+                                                    token,
+                                                    pageSize);
+                            ListForksResponse.Builder builder =
+                                    ListForksResponse.newBuilder()
+                                            .addAllForks(
+                                                    forks.stream()
+                                                            .map(GrpcDtoMapper::toProto)
+                                                            .collect(Collectors.toList()));
+                            if (forks.size() == pageSize && !forks.isEmpty()) {
+                                builder.setPageInfo(
+                                        PageInfo.newBuilder()
+                                                .setNextPageToken(
+                                                        forks.get(forks.size() - 1)
+                                                                .getConversationId()));
+                            }
+                            return builder.build();
                         })
                 .onFailure()
                 .transform(GrpcStatusMapper::map);

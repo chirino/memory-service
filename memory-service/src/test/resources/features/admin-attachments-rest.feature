@@ -67,7 +67,7 @@ Feature: Admin Attachments REST API
     Given I am authenticated as admin user "alice"
     When I call GET "/v1/admin/attachments?limit=2"
     Then the response status should be 200
-    And the response body field "nextCursor" should not be null
+    And the response body field "afterCursor" should not be null
 
   # --- Get Metadata ---
 

@@ -49,9 +49,9 @@ public class MeteredMemoryStore implements MemoryStore {
 
     @Override
     public List<ConversationSummaryDto> listConversations(
-            String userId, String query, String after, int limit, ConversationListMode mode) {
+            String userId, String query, String afterCursor, int limit, ConversationListMode mode) {
         return registry.timer("memory.store.operation", "operation", "listConversations")
-                .record(() -> delegate.listConversations(userId, query, after, limit, mode));
+                .record(() -> delegate.listConversations(userId, query, afterCursor, limit, mode));
     }
 
     @Override
@@ -73,9 +73,10 @@ public class MeteredMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationMembershipDto> listMemberships(String userId, String conversationId) {
+    public List<ConversationMembershipDto> listMemberships(
+            String userId, String conversationId, String afterCursor, int limit) {
         return registry.timer("memory.store.operation", "operation", "listMemberships")
-                .record(() -> delegate.listMemberships(userId, conversationId));
+                .record(() -> delegate.listMemberships(userId, conversationId, afterCursor, limit));
     }
 
     @Override
@@ -105,15 +106,17 @@ public class MeteredMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationForkSummaryDto> listForks(String userId, String conversationId) {
+    public List<ConversationForkSummaryDto> listForks(
+            String userId, String conversationId, String afterCursor, int limit) {
         return registry.timer("memory.store.operation", "operation", "listForks")
-                .record(() -> delegate.listForks(userId, conversationId));
+                .record(() -> delegate.listForks(userId, conversationId, afterCursor, limit));
     }
 
     @Override
-    public List<OwnershipTransferDto> listPendingTransfers(String userId, String role) {
+    public List<OwnershipTransferDto> listPendingTransfers(
+            String userId, String role, String afterCursor, int limit) {
         return registry.timer("memory.store.operation", "operation", "listPendingTransfers")
-                .record(() -> delegate.listPendingTransfers(userId, role));
+                .record(() -> delegate.listPendingTransfers(userId, role, afterCursor, limit));
     }
 
     @Override
@@ -193,9 +196,9 @@ public class MeteredMemoryStore implements MemoryStore {
     }
 
     @Override
-    public UnindexedEntriesResponse listUnindexedEntries(int limit, String cursor) {
+    public UnindexedEntriesResponse listUnindexedEntries(int limit, String afterCursor) {
         return registry.timer("memory.store.operation", "operation", "listUnindexedEntries")
-                .record(() -> delegate.listUnindexedEntries(limit, cursor));
+                .record(() -> delegate.listUnindexedEntries(limit, afterCursor));
     }
 
     @Override
@@ -242,15 +245,17 @@ public class MeteredMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationMembershipDto> adminListMemberships(String conversationId) {
+    public List<ConversationMembershipDto> adminListMemberships(
+            String conversationId, String afterCursor, int limit) {
         return registry.timer("memory.store.operation", "operation", "adminListMemberships")
-                .record(() -> delegate.adminListMemberships(conversationId));
+                .record(() -> delegate.adminListMemberships(conversationId, afterCursor, limit));
     }
 
     @Override
-    public List<ConversationForkSummaryDto> adminListForks(String conversationId) {
+    public List<ConversationForkSummaryDto> adminListForks(
+            String conversationId, String afterCursor, int limit) {
         return registry.timer("memory.store.operation", "operation", "adminListForks")
-                .record(() -> delegate.adminListForks(conversationId));
+                .record(() -> delegate.adminListForks(conversationId, afterCursor, limit));
     }
 
     @Override

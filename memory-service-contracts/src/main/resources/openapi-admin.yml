@@ -99,7 +99,7 @@ paths:
           schema:
             type: string
             format: date-time
-        - name: after
+        - name: afterCursor
           in: query
           required: false
           description: Cursor for pagination (UUID format).
@@ -133,6 +133,9 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/AdminConversationSummary'
+                  afterCursor:
+                    type: string
+                    nullable: true
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -262,7 +265,7 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: after
+        - name: afterCursor
           in: query
           required: false
           description: Cursor for pagination (UUID format).
@@ -312,7 +315,7 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Entry'
-                  nextCursor:
+                  afterCursor:
                     type: string
                     nullable: true
         '404':
@@ -337,6 +340,22 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: afterCursor
+          in: query
+          required: false
+          description: Cursor for pagination; returns items after this user id.
+          schema:
+            type: string
+            nullable: true
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of memberships to return.
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 1000
         - name: justification
           in: query
           required: false
@@ -355,6 +374,9 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ConversationMembership'
+                  afterCursor:
+                    type: string
+                    nullable: true
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -382,6 +404,23 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: afterCursor
+          in: query
+          required: false
+          description: Cursor for pagination; returns items after this conversation id (UUID format).
+          schema:
+            type: string
+            format: uuid
+            nullable: true
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of forks to return.
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 1000
         - name: justification
           in: query
           required: false
@@ -400,6 +439,9 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ConversationForkSummary'
+                  afterCursor:
+                    type: string
+                    nullable: true
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -440,7 +482,7 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/SearchResult'
-                  nextCursor:
+                  afterCursor:
                     type: string
                     nullable: true
         default:
@@ -544,7 +586,7 @@ paths:
             type: string
             enum: [linked, unlinked, expired, all]
             default: all
-        - name: after
+        - name: afterCursor
           in: query
           required: false
           description: Cursor for pagination (UUID of last item).
@@ -578,7 +620,7 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/AdminAttachment'
-                  nextCursor:
+                  afterCursor:
                     type: string
                     nullable: true
         default:
@@ -1248,7 +1290,7 @@ components:
           minLength: 1
           maxLength: 1000
           description: Natural language query.
-        after:
+        afterCursor:
           type: string
           nullable: true
           maxLength: 100

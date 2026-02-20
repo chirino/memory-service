@@ -4,7 +4,7 @@ title: Pagination
 description: How cursor-based pagination works across Memory Service list endpoints.
 ---
 
-Memory Service uses **cursor-based pagination** for all list endpoints. Instead of page numbers or offsets, you pass the ID of the last item you received to fetch the next batch. This approach is efficient, consistent under concurrent writes, and scales well for large datasets.
+Memory Service uses **cursor-based pagination** for all list endpoints. Instead of page numbers or offsets, you pass the cursor from the previous response to fetch the next batch. This approach is efficient, consistent under concurrent writes, and scales well for large datasets.
 
 ## How It Works
 
@@ -13,36 +13,52 @@ Every paginated endpoint returns a response with two fields:
 ```json
 {
   "data": [ ... ],
-  "nextCursor": "550e8400-e29b-41d4-a716-446655440000"
+  "afterCursor": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
 | Field | Description |
 |-------|-------------|
 | `data` | Array of results for the current page |
-| `nextCursor` | Cursor to pass in the next request for more results. `null` when there are no more pages. |
+| `afterCursor` | Cursor to pass in the next request for more results. `null` when there are no more pages. |
 
 To paginate through results:
 
 1. Make the initial request (optionally with a `limit`)
-2. Check `nextCursor` in the response
-3. If `nextCursor` is not `null`, pass it as the `after` parameter in the next request
-4. Repeat until `nextCursor` is `null`
+2. Check `afterCursor` in the response
+3. If `afterCursor` is not `null`, pass it as the `afterCursor` parameter in the next request
+4. Repeat until `afterCursor` is `null`
 
 ## Paginated Endpoints
 
 All paginated endpoints share the same pattern but differ in defaults and parameter placement.
 
+### Agent API
+
 | Endpoint | Cursor Param | Limit Param | Default Limit | Max Limit |
 |----------|-------------|-------------|---------------|-----------|
-| `GET /v1/conversations` | `after` (query) | `limit` (query) | 20 | 200 |
-| `GET /v1/conversations/{id}/entries` | `after` (query) | `limit` (query) | 50 | 200 |
-| `POST /v1/conversations/search` | `after` (body) | `limit` (body) | 20 | 200 |
-| `GET /v1/conversations/unindexed` | `cursor` (query) | `limit` (query) | 100 | 200 |
+| `GET /v1/conversations` | `afterCursor` (query) | `limit` (query) | 20 | 200 |
+| `GET /v1/conversations/{id}/entries` | `afterCursor` (query) | `limit` (query) | 50 | 200 |
+| `GET /v1/conversations/{id}/memberships` | `afterCursor` (query) | `limit` (query) | 50 | 200 |
+| `GET /v1/conversations/{id}/forks` | `afterCursor` (query) | `limit` (query) | 50 | 200 |
+| `POST /v1/conversations/search` | `afterCursor` (body) | `limit` (body) | 20 | 200 |
+| `GET /v1/conversations/unindexed` | `afterCursor` (query) | `limit` (query) | 100 | 200 |
+| `GET /v1/ownership-transfers` | `afterCursor` (query) | `limit` (query) | 50 | 200 |
+
+### Admin API
+
+| Endpoint | Cursor Param | Limit Param | Default Limit | Max Limit |
+|----------|-------------|-------------|---------------|-----------|
+| `GET /v1/admin/conversations` | `afterCursor` (query) | `limit` (query) | 100 | 1000 |
+| `GET /v1/admin/conversations/{id}/entries` | `afterCursor` (query) | `limit` (query) | 50 | 1000 |
+| `GET /v1/admin/conversations/{id}/memberships` | `afterCursor` (query) | `limit` (query) | 50 | 1000 |
+| `GET /v1/admin/conversations/{id}/forks` | `afterCursor` (query) | `limit` (query) | 50 | 1000 |
+| `POST /v1/admin/conversations/search` | `afterCursor` (body) | `limit` (body) | 20 | 1000 |
+| `GET /v1/admin/attachments` | `afterCursor` (query) | `limit` (query) | 50 | 1000 |
 
 ## Listing Conversations
 
-Fetch conversations in pages of a given size using the `limit` and `after` query parameters.
+Fetch conversations in pages of a given size using the `limit` and `afterCursor` query parameters.
 
 ### First page
 
@@ -73,16 +89,16 @@ Response:
       "accessLevel": "owner"
     }
   ],
-  "nextCursor": "660e8400-e29b-41d4-a716-446655440001"
+  "afterCursor": "660e8400-e29b-41d4-a716-446655440001"
 }
 ```
 
 ### Next page
 
-Pass the `nextCursor` value as the `after` parameter:
+Pass the `afterCursor` value as the `afterCursor` parameter:
 
 ```bash
-curl "http://localhost:8080/v1/conversations?limit=2&after=660e8400-e29b-41d4-a716-446655440001" \
+curl "http://localhost:8080/v1/conversations?limit=2&afterCursor=660e8400-e29b-41d4-a716-446655440001" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -100,15 +116,15 @@ Response (last page):
       "accessLevel": "owner"
     }
   ],
-  "nextCursor": null
+  "afterCursor": null
 }
 ```
 
-A `nextCursor` of `null` means there are no more results.
+An `afterCursor` of `null` means there are no more results.
 
 ## Listing Entries
 
-Entries within a conversation are paginated the same way, using `after` and `limit` query parameters.
+Entries within a conversation are paginated the same way, using `afterCursor` and `limit` query parameters.
 
 ### First page
 
@@ -141,20 +157,20 @@ Response:
       "createdAt": "2025-01-10T14:40:15Z"
     }
   ],
-  "nextCursor": "bbb7b810-9dad-11d1-80b4-00c04fd430c9"
+  "afterCursor": "bbb7b810-9dad-11d1-80b4-00c04fd430c9"
 }
 ```
 
 ### Next page
 
 ```bash
-curl "http://localhost:8080/v1/conversations/{conversationId}/entries?limit=2&after=bbb7b810-9dad-11d1-80b4-00c04fd430c9" \
+curl "http://localhost:8080/v1/conversations/{conversationId}/entries?limit=2&afterCursor=bbb7b810-9dad-11d1-80b4-00c04fd430c9" \
   -H "Authorization: Bearer <token>"
 ```
 
 ## Search Results
 
-Search pagination works through the request body rather than query parameters. Pass `after` and `limit` in the JSON body of the `POST` request.
+Search pagination works through the request body rather than query parameters. Pass `afterCursor` and `limit` in the JSON body of the `POST` request.
 
 ### First page
 
@@ -190,7 +206,7 @@ Response:
       "entry": { ... }
     }
   ],
-  "nextCursor": "eyJzY29yZSI6MC44Nywi..."
+  "afterCursor": "eyJzY29yZSI6MC44Nywi..."
 }
 ```
 
@@ -203,38 +219,8 @@ curl -X POST "http://localhost:8080/v1/conversations/search" \
   -d '{
     "query": "memory service design",
     "limit": 2,
-    "after": "eyJzY29yZSI6MC44Nywi..."
+    "afterCursor": "eyJzY29yZSI6MC44Nywi..."
   }'
-```
-
-## Unindexed Entries
-
-The unindexed entries endpoint (used by indexing jobs) uses `cursor` instead of `after` as the parameter name.
-
-```bash
-curl "http://localhost:8080/v1/conversations/unindexed?limit=50" \
-  -H "Authorization: Bearer <token>"
-```
-
-Response:
-
-```json
-{
-  "data": [
-    {
-      "conversationId": "550e8400-e29b-41d4-a716-446655440000",
-      "entry": { ... }
-    }
-  ],
-  "cursor": "eyJjcmVhdGVkQXQiOiIyMDI1LTAxLTEwVDE0OjQwOjEyWiJ9"
-}
-```
-
-Next page:
-
-```bash
-curl "http://localhost:8080/v1/conversations/unindexed?limit=50&cursor=eyJjcmVhdGVkQXQiOiIyMDI1LTAxLTEwVDE0OjQwOjEyWiJ9" \
-  -H "Authorization: Bearer <token>"
 ```
 
 ## Limits Reference
@@ -242,20 +228,23 @@ curl "http://localhost:8080/v1/conversations/unindexed?limit=50&cursor=eyJjcmVhd
 | Constraint | Value |
 |-----------|-------|
 | Minimum `limit` | 1 |
-| Maximum `limit` | 200 |
+| Maximum `limit` | 200 (agent) / 1000 (admin) |
 | Default limit (conversations) | 20 |
 | Default limit (entries) | 50 |
+| Default limit (memberships) | 50 |
+| Default limit (forks) | 50 |
 | Default limit (search) | 20 |
 | Default limit (unindexed) | 100 |
+| Default limit (transfers) | 50 |
 
-If no `limit` is provided, the endpoint-specific default is used. Requesting a `limit` above 200 or below 1 returns a validation error.
+If no `limit` is provided, the endpoint-specific default is used. Requesting a `limit` above the maximum or below 1 returns a validation error.
 
 ## Best Practices
 
-1. **Always check `nextCursor`** — don't assume a fixed number of pages. When it's `null`, you've reached the end.
+1. **Always check `afterCursor`** — don't assume a fixed number of pages. When it's `null`, you've reached the end.
 2. **Use reasonable page sizes** — smaller pages (20–50) give faster individual responses; larger pages (100–200) reduce the number of round trips.
 3. **Don't store cursors long-term** — cursors are opaque position markers. They may become invalid if the underlying data changes (e.g., a conversation is deleted).
-4. **Paginate in loops** — for batch processing, loop until `nextCursor` is `null` rather than guessing when to stop.
+4. **Paginate in loops** — for batch processing, loop until `afterCursor` is `null` rather than guessing when to stop.
 
 ## Next Steps
 

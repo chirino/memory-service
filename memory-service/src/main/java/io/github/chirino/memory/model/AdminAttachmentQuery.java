@@ -5,7 +5,7 @@ public class AdminAttachmentQuery {
     private String userId;
     private String entryId;
     private AttachmentStatus status = AttachmentStatus.ALL;
-    private String after;
+    private String afterCursor;
     private int limit = 50;
 
     public String getUserId() {
@@ -32,12 +32,12 @@ public class AdminAttachmentQuery {
         this.status = status != null ? status : AttachmentStatus.ALL;
     }
 
-    public String getAfter() {
-        return after;
+    public String getAfterCursor() {
+        return afterCursor;
     }
 
-    public void setAfter(String after) {
-        this.after = after;
+    public void setAfterCursor(String afterCursor) {
+        this.afterCursor = afterCursor;
     }
 
     public int getLimit() {

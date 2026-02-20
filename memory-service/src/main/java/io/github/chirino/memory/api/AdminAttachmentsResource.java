@@ -88,7 +88,7 @@ public class AdminAttachmentsResource {
             @QueryParam("userId") String userId,
             @QueryParam("entryId") String entryId,
             @QueryParam("status") String status,
-            @QueryParam("after") @Size(max = 100) String after,
+            @QueryParam("afterCursor") @Size(max = 100) String afterCursor,
             @QueryParam("limit") @Min(1) @Max(1000) Integer limit,
             @QueryParam("justification") String justification) {
         try {
@@ -105,7 +105,7 @@ public class AdminAttachmentsResource {
             if (status != null && !status.isBlank()) {
                 query.setStatus(AdminAttachmentQuery.AttachmentStatus.fromString(status));
             }
-            query.setAfter(after);
+            query.setAfterCursor(afterCursor);
             query.setLimit(limit != null ? limit : 50);
 
             List<AttachmentDto> internal = store().adminList(query);
@@ -114,9 +114,9 @@ public class AdminAttachmentsResource {
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
             if (data.size() == query.getLimit()) {
-                response.put("nextCursor", data.get(data.size() - 1).getId().toString());
+                response.put("afterCursor", data.get(data.size() - 1).getId().toString());
             } else {
-                response.put("nextCursor", null);
+                response.put("afterCursor", null);
             }
             return Response.ok(response).build();
         } catch (AccessDeniedException e) {
