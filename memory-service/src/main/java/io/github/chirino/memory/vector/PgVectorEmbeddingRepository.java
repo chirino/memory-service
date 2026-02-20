@@ -12,7 +12,7 @@ public class PgVectorEmbeddingRepository {
 
     @Inject EntityManager entityManager;
 
-    @Transactional
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void upsertEmbedding(
             String entryId,
             String conversationId,

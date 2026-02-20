@@ -49,9 +49,12 @@ import io.github.chirino.memory.store.MemoryStore;
 import io.github.chirino.memory.store.ResourceConflictException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
+import io.github.chirino.memory.vector.EntryVectorizationEvent;
+import io.github.chirino.memory.vector.EntryVectorizationEvent.EntryToVectorize;
 import io.github.chirino.memory.vector.SearchStore;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import java.nio.charset.StandardCharsets;
@@ -80,6 +83,8 @@ public class MongoMemoryStore implements MemoryStore {
 
     private static final Logger LOG = Logger.getLogger(MongoMemoryStore.class);
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+
+    @Inject Event<EntryVectorizationEvent> vectorizationEvent;
 
     @Inject MongoConversationRepository conversationRepository;
 
@@ -1269,6 +1274,7 @@ public class MongoMemoryStore implements MemoryStore {
 
         Instant latestHistoryTimestamp = null;
         List<EntryDto> created = new ArrayList<>(entries.size());
+        List<MongoEntry> entriesToVectorize = new ArrayList<>();
         for (CreateEntryRequest req : entries) {
             MongoEntry m = new MongoEntry();
             m.id = UUID.randomUUID().toString();
@@ -1305,12 +1311,34 @@ public class MongoMemoryStore implements MemoryStore {
             Instant createdAt = Instant.now();
             m.createdAt = createdAt;
             entryRepository.persist(m);
+            if (indexedContent != null && !indexedContent.isBlank()) {
+                entriesToVectorize.add(m);
+            }
             if (m.channel == Channel.HISTORY) {
                 latestHistoryTimestamp = createdAt;
             }
             created.add(toEntryDto(m));
         }
         // Note: MongoDB writes are immediately visible (no flush needed unlike Hibernate ORM)
+
+        // Fire a CDI event for best-effort vectorization. The observer runs AFTER this
+        // transaction commits (TransactionPhase.AFTER_SUCCESS), so:
+        // 1. The entry rows are committed and visible for the embedding FK constraint.
+        // 2. The DB connection is released — not held open during the embedding network call.
+        // 3. If vectorization fails, entries remain with indexed_at=NULL for retry.
+        if (!entriesToVectorize.isEmpty()) {
+            List<EntryToVectorize> toVectorize =
+                    entriesToVectorize.stream()
+                            .map(
+                                    e ->
+                                            new EntryToVectorize(
+                                                    e.id,
+                                                    e.conversationId,
+                                                    e.conversationGroupId,
+                                                    e.indexedContent))
+                            .toList();
+            vectorizationEvent.fire(new EntryVectorizationEvent(toVectorize));
+        }
 
         // Invalidate/update cache if MEMORY entries were created
         if (hasMemoryEntries && clientId != null) {
@@ -1517,6 +1545,13 @@ public class MongoMemoryStore implements MemoryStore {
                 taskRepository.createTask(
                         "vector_store_index_retry", "vector_store_index_retry", Map.of());
             }
+        } else {
+            // No vector store active — full-text indexing is the only store and succeeds
+            // automatically on persist, so mark entries as fully indexed.
+            for (MongoEntry entry : entriesToVectorize) {
+                entry.indexedAt = Instant.now();
+                entryRepository.persistOrUpdate(entry);
+            }
         }
 
         return new IndexConversationsResponse(indexed);
@@ -1605,7 +1640,7 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    @Transactional
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void setIndexedAt(String entryId, OffsetDateTime indexedAt) {
         MongoEntry entry = entryRepository.findById(entryId);
         if (entry != null) {
