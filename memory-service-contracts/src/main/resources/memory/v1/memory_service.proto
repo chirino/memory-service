@@ -140,10 +140,12 @@ message DeleteConversationRequest {
 message ListForksRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
+  PageRequest page = 2;
 }
 
 message ListForksResponse {
   repeated ConversationForkSummary forks = 1;
+  PageInfo page_info = 2;
 }
 
 message CreateEntryRequest {
@@ -233,10 +235,12 @@ message Entry {
 message ListMembershipsRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
+  PageRequest page = 2;
 }
 
 message ListMembershipsResponse {
   repeated ConversationMembership memberships = 1;
+  PageInfo page_info = 2;
 }
 
 message ShareConversationRequest {
@@ -279,10 +283,12 @@ enum TransferRole {
 
 message ListOwnershipTransfersRequest {
   TransferRole role = 1;
+  PageRequest page = 2;
 }
 
 message ListOwnershipTransfersResponse {
   repeated OwnershipTransfer transfers = 1;
+  PageInfo page_info = 2;
 }
 
 message GetOwnershipTransferRequest {

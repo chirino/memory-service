@@ -27,7 +27,7 @@ import { createForkView, type EntryAndForkInfo, type ForkOption } from "@/lib/co
 
 type ListUserEntriesResponse = {
   data?: Entry[];
-  nextCursor?: string | null;
+  afterCursor?: string | null;
 };
 
 type ListConversationForksResponse = {

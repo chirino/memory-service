@@ -145,11 +145,11 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     private MongoCollection<Document> getMembershipCollection() {
-        return mongoClient.getDatabase("memory").getCollection("conversationMemberships");
+        return mongoClient.getDatabase("memory").getCollection("conversation_memberships");
     }
 
     private MongoCollection<Document> getOwnershipTransferCollection() {
-        return mongoClient.getDatabase("memory").getCollection("conversationOwnershipTransfers");
+        return mongoClient.getDatabase("memory").getCollection("conversation_ownership_transfers");
     }
 
     @Override
@@ -177,7 +177,7 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Override
     public List<ConversationSummaryDto> listConversations(
-            String userId, String query, String after, int limit, ConversationListMode mode) {
+            String userId, String query, String afterCursor, int limit, ConversationListMode mode) {
         List<MongoConversationMembership> memberships =
                 membershipRepository.listForUser(userId, limit);
         if (mode == ConversationListMode.ROOTS) {
@@ -311,11 +311,22 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationMembershipDto> listMemberships(String userId, String conversationId) {
+    public List<ConversationMembershipDto> listMemberships(
+            String userId, String conversationId, String afterCursor, int limit) {
         String groupId = resolveGroupId(conversationId);
         // Any member can view the membership list
         ensureHasAccess(groupId, userId, AccessLevel.READER);
-        return membershipRepository.listForConversationGroup(groupId).stream()
+
+        List<MongoConversationMembership> memberships =
+                membershipRepository.listForConversationGroup(groupId);
+        return memberships.stream()
+                .sorted(Comparator.comparing(m -> m.userId))
+                .filter(
+                        m ->
+                                afterCursor == null
+                                        || afterCursor.isBlank()
+                                        || m.userId.compareTo(afterCursor) > 0)
+                .limit(limit)
                 .map(this::toMembershipDto)
                 .collect(Collectors.toList());
     }
@@ -447,7 +458,8 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationForkSummaryDto> listForks(String userId, String conversationId) {
+    public List<ConversationForkSummaryDto> listForks(
+            String userId, String conversationId, String afterCursor, int limit) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
         if (conversation == null || conversation.deletedAt != null) {
             throw new ResourceNotFoundException("conversation", conversationId);
@@ -455,18 +467,19 @@ public class MongoMemoryStore implements MemoryStore {
         String groupId = conversation.conversationGroupId;
         ensureHasAccess(groupId, userId, AccessLevel.READER);
 
+        List<Bson> filters = new ArrayList<>();
+        filters.add(Filters.eq("conversationGroupId", groupId));
+        filters.add(Filters.eq("deletedAt", null));
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            filters.add(Filters.gt("_id", afterCursor));
+        }
+
         List<MongoConversation> candidates =
-                conversationRepository.find("conversationGroupId", groupId).stream()
-                        .filter(c -> c.deletedAt == null)
-                        .sorted(
-                                Comparator.comparing(
-                                                (MongoConversation c) ->
-                                                        c.forkedAtEntryId != null ? 1 : 0)
-                                        .thenComparing(
-                                                Comparator.comparing(
-                                                        (MongoConversation c) -> c.updatedAt,
-                                                        Comparator.reverseOrder())))
+                conversationRepository.find(Filters.and(filters)).stream()
+                        .sorted(Comparator.comparing((MongoConversation c) -> c.id))
+                        .limit(limit)
                         .collect(Collectors.toList());
+
         List<ConversationForkSummaryDto> results = new ArrayList<>();
         for (MongoConversation candidate : candidates) {
             ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
@@ -482,7 +495,8 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<OwnershipTransferDto> listPendingTransfers(String userId, String role) {
+    public List<OwnershipTransferDto> listPendingTransfers(
+            String userId, String role, String afterCursor, int limit) {
         List<MongoConversationOwnershipTransfer> transfers;
         switch (role) {
             case "sender":
@@ -494,7 +508,14 @@ public class MongoMemoryStore implements MemoryStore {
             default: // "all"
                 transfers = ownershipTransferRepository.listByUser(userId);
         }
-        return transfers.stream().map(this::toOwnershipTransferDto).collect(Collectors.toList());
+
+        // Apply cursor-based pagination
+        java.util.stream.Stream<MongoConversationOwnershipTransfer> stream =
+                transfers.stream().sorted(Comparator.comparing(t -> t.id));
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            stream = stream.filter(t -> t.id.compareTo(afterCursor) > 0);
+        }
+        return stream.limit(limit).map(this::toOwnershipTransferDto).collect(Collectors.toList());
     }
 
     @Override
@@ -1178,7 +1199,7 @@ public class MongoMemoryStore implements MemoryStore {
         page.setEntries(dtos);
         String nextCursor =
                 dtos.size() == limit && !dtos.isEmpty() ? dtos.get(dtos.size() - 1).getId() : null;
-        page.setNextCursor(nextCursor);
+        page.setAfterCursor(nextCursor);
         return page;
     }
 
@@ -1577,7 +1598,7 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public UnindexedEntriesResponse listUnindexedEntries(int limit, String cursor) {
+    public UnindexedEntriesResponse listUnindexedEntries(int limit, String afterCursor) {
         // Query entries where channel = HISTORY AND indexed_content IS NULL
         Bson filter =
                 Filters.and(
@@ -1585,11 +1606,11 @@ public class MongoMemoryStore implements MemoryStore {
                         Filters.eq("indexedContent", null));
 
         // Handle cursor-based pagination
-        if (cursor != null && !cursor.isBlank()) {
+        if (afterCursor != null && !afterCursor.isBlank()) {
             try {
                 String decoded =
                         new String(
-                                java.util.Base64.getDecoder().decode(cursor),
+                                java.util.Base64.getDecoder().decode(afterCursor),
                                 StandardCharsets.UTF_8);
                 Instant cursorTime = Instant.from(ISO_FORMATTER.parse(decoded));
                 filter = Filters.and(filter, Filters.gt("createdAt", cursorTime));
@@ -2114,19 +2135,31 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationMembershipDto> adminListMemberships(String conversationId) {
+    public List<ConversationMembershipDto> adminListMemberships(
+            String conversationId, String afterCursor, int limit) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
         if (conversation == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         String groupId = conversation.conversationGroupId;
+
         List<MongoConversationMembership> memberships =
                 membershipRepository.listForConversationGroup(groupId);
-        return memberships.stream().map(this::toMembershipDto).collect(Collectors.toList());
+        return memberships.stream()
+                .sorted(Comparator.comparing(m -> m.userId))
+                .filter(
+                        m ->
+                                afterCursor == null
+                                        || afterCursor.isBlank()
+                                        || m.userId.compareTo(afterCursor) > 0)
+                .limit(limit)
+                .map(this::toMembershipDto)
+                .collect(Collectors.toList());
     }
 
     @Override
-    public List<ConversationForkSummaryDto> adminListForks(String conversationId) {
+    public List<ConversationForkSummaryDto> adminListForks(
+            String conversationId, String afterCursor, int limit) {
         MongoConversation conversation = conversationRepository.findById(conversationId);
         if (conversation == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
@@ -2134,17 +2167,18 @@ public class MongoMemoryStore implements MemoryStore {
         String groupId = conversation.conversationGroupId;
 
         // Admin can see all forks including deleted ones
+        List<Bson> filters = new ArrayList<>();
+        filters.add(Filters.eq("conversationGroupId", groupId));
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            filters.add(Filters.gt("_id", afterCursor));
+        }
+
         List<MongoConversation> candidates =
-                conversationRepository.find("conversationGroupId", groupId).stream()
-                        .sorted(
-                                Comparator.comparing(
-                                                (MongoConversation c) ->
-                                                        c.forkedAtEntryId != null ? 1 : 0)
-                                        .thenComparing(
-                                                Comparator.comparing(
-                                                        (MongoConversation c) -> c.updatedAt,
-                                                        Comparator.reverseOrder())))
+                conversationRepository.find(Filters.and(filters)).stream()
+                        .sorted(Comparator.comparing((MongoConversation c) -> c.id))
+                        .limit(limit)
                         .collect(Collectors.toList());
+
         List<ConversationForkSummaryDto> results = new ArrayList<>();
         for (MongoConversation candidate : candidates) {
             ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
@@ -2163,7 +2197,7 @@ public class MongoMemoryStore implements MemoryStore {
     public SearchResultsDto adminSearchEntries(AdminSearchQuery query) {
         SearchResultsDto result = new SearchResultsDto();
         result.setResults(Collections.emptyList());
-        result.setNextCursor(null);
+        result.setAfterCursor(null);
 
         if (query.getQuery() == null || query.getQuery().isBlank()) {
             return result;
@@ -2198,7 +2232,7 @@ public class MongoMemoryStore implements MemoryStore {
         int limit = query.getLimit() != null ? query.getLimit() : 20;
 
         // Parse after cursor if present
-        String afterEntryId = query.getAfter();
+        String afterEntryId = query.getAfterCursor();
 
         List<MongoEntry> candidates =
                 entryRepository.find("conversationId in ?1", conversationIds).list().stream()
@@ -2251,7 +2285,7 @@ public class MongoMemoryStore implements MemoryStore {
         // Determine next cursor
         if (resultsList.size() > limit) {
             SearchResultDto last = resultsList.get(limit - 1);
-            result.setNextCursor(last.getEntry().getId());
+            result.setAfterCursor(last.getEntry().getId());
             resultsList = resultsList.subList(0, limit);
         }
 

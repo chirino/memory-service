@@ -228,8 +228,8 @@ public class MongoAttachmentStore implements AttachmentStore {
             case ALL -> {} // no filter
         }
 
-        if (query.getAfter() != null) {
-            MongoAttachment afterDoc = attachmentRepository.findById(query.getAfter());
+        if (query.getAfterCursor() != null) {
+            MongoAttachment afterDoc = attachmentRepository.findById(query.getAfterCursor());
             if (afterDoc != null) {
                 conditions.add(
                         "(createdAt < ?"

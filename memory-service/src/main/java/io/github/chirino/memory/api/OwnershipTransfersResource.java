@@ -12,6 +12,8 @@ import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -50,10 +52,20 @@ public class OwnershipTransfersResource {
     }
 
     @GET
-    public Response listPendingTransfers(@QueryParam("role") @DefaultValue("all") String role) {
-        List<OwnershipTransferDto> transfers = store().listPendingTransfers(currentUserId(), role);
+    public Response listPendingTransfers(
+            @QueryParam("role") @DefaultValue("all") String role,
+            @QueryParam("afterCursor") String afterCursor,
+            @QueryParam("limit") @Min(1) @Max(200) Integer limit) {
+        int pageSize = limit != null ? limit : 50;
+        List<OwnershipTransferDto> transfers =
+                store().listPendingTransfers(currentUserId(), role, afterCursor, pageSize);
         Map<String, Object> response = new HashMap<>();
         response.put("data", transfers);
+        String cursor =
+                transfers.size() == pageSize && !transfers.isEmpty()
+                        ? transfers.get(transfers.size() - 1).getId()
+                        : null;
+        response.put("afterCursor", cursor);
         return Response.ok(response).build();
     }
 

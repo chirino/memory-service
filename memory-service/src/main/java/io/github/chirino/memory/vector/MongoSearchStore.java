@@ -147,7 +147,7 @@ public class MongoSearchStore implements SearchStore {
         result.setResults(resultsList);
 
         if (ftsResults.size() > limit && !resultsList.isEmpty()) {
-            result.setNextCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+            result.setAfterCursor(resultsList.get(resultsList.size() - 1).getEntryId());
         }
 
         return result;
@@ -156,7 +156,7 @@ public class MongoSearchStore implements SearchStore {
     private SearchResultsDto emptyResults() {
         SearchResultsDto result = new SearchResultsDto();
         result.setResults(Collections.emptyList());
-        result.setNextCursor(null);
+        result.setAfterCursor(null);
         return result;
     }
 
@@ -317,7 +317,7 @@ public class MongoSearchStore implements SearchStore {
         result.setResults(resultsList);
 
         if (ftsResults.size() > limit && !resultsList.isEmpty()) {
-            result.setNextCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+            result.setAfterCursor(resultsList.get(resultsList.size() - 1).getEntryId());
         }
 
         return result;

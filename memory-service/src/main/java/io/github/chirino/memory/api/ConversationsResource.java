@@ -130,18 +130,22 @@ public class ConversationsResource {
     @Path("/conversations")
     public Response listConversations(
             @QueryParam("mode") String mode,
-            @QueryParam("after") String after,
+            @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") @Min(1) @Max(200) Integer limit,
             @QueryParam("query") String query) {
         int pageSize = limit != null ? limit : 20;
         ConversationListMode listMode = ConversationListMode.fromQuery(mode);
         List<ConversationSummaryDto> internal =
-                store().listConversations(currentUserId(), query, after, pageSize, listMode);
+                store().listConversations(currentUserId(), query, afterCursor, pageSize, listMode);
         List<ConversationSummary> data =
                 internal.stream().map(this::toClientConversationSummary).toList();
         Map<String, Object> response = new HashMap<>();
         response.put("data", data);
-        response.put("nextCursor", null);
+        String cursor =
+                data.size() == pageSize && !data.isEmpty()
+                        ? data.get(data.size() - 1).getId().toString()
+                        : null;
+        response.put("afterCursor", cursor);
         return Response.ok(response).build();
     }
 
@@ -206,21 +210,21 @@ public class ConversationsResource {
     @Path("/conversations/{conversationId}/entries")
     public Response listEntries(
             @PathParam("conversationId") String conversationId,
-            @QueryParam("after") String after,
+            @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") @Min(1) @Max(200) Integer limit,
             @QueryParam("channel") String channel,
             @QueryParam("epoch") String epoch,
             @QueryParam("forks") @DefaultValue("none") String forks) {
         boolean allForks = "all".equalsIgnoreCase(forks);
         LOG.infof(
-                "Listing messages for conversationId=%s, user=%s, after=%s, limit=%s,"
+                "Listing messages for conversationId=%s, user=%s, afterCursor=%s, limit=%s,"
                         + " channel=%s, forks=%s",
-                conversationId, currentUserId(), after, limit, channel, forks);
+                conversationId, currentUserId(), afterCursor, limit, channel, forks);
         Channel requestedChannel = channel != null ? Channel.fromString(channel) : null;
         try {
             int pageSize = limit != null ? limit : 50;
             List<EntryDto> internal;
-            String nextCursor = null;
+            String afterCursorResult = null;
             boolean hasApiKey = apiKeyContext != null && apiKeyContext.hasValidApiKey();
             MemoryEpochFilter epochFilter = null;
             Channel effectiveChannel = requestedChannel;
@@ -241,18 +245,18 @@ public class ConversationsResource {
                     store().getEntries(
                                     currentUserId(),
                                     conversationId,
-                                    after,
+                                    afterCursor,
                                     pageSize,
                                     effectiveChannel,
                                     epochFilter,
                                     hasApiKey ? apiKeyContext.getClientId() : null,
                                     allForks);
             internal = context.getEntries();
-            nextCursor = context.getNextCursor();
+            afterCursorResult = context.getAfterCursor();
             List<Entry> data = internal.stream().map(this::toClientEntry).toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
-            response.put("nextCursor", nextCursor);
+            response.put("afterCursor", afterCursorResult);
             return Response.ok(response).build();
         } catch (ResourceNotFoundException e) {
             LOG.infof(
@@ -385,16 +389,25 @@ public class ConversationsResource {
 
     @GET
     @Path("/conversations/{conversationId}/memberships")
-    public Response listMemberships(@PathParam("conversationId") String conversationId) {
+    public Response listMemberships(
+            @PathParam("conversationId") String conversationId,
+            @QueryParam("afterCursor") String afterCursor,
+            @QueryParam("limit") @Min(1) @Max(200) Integer limit) {
+        int pageSize = limit != null ? limit : 50;
         try {
             List<ConversationMembershipDto> internal =
-                    store().listMemberships(currentUserId(), conversationId);
+                    store().listMemberships(currentUserId(), conversationId, afterCursor, pageSize);
             List<ConversationMembership> data =
                     internal.stream()
                             .map(dto -> toClientConversationMembership(dto, conversationId))
                             .toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
+            String cursor =
+                    data.size() == pageSize && !data.isEmpty()
+                            ? data.get(data.size() - 1).getUserId()
+                            : null;
+            response.put("afterCursor", cursor);
             return Response.ok(response).build();
         } catch (ResourceNotFoundException e) {
             return notFound(e);
@@ -469,14 +482,23 @@ public class ConversationsResource {
 
     @GET
     @Path("/conversations/{conversationId}/forks")
-    public Response listForks(@PathParam("conversationId") String conversationId) {
+    public Response listForks(
+            @PathParam("conversationId") String conversationId,
+            @QueryParam("afterCursor") String afterCursor,
+            @QueryParam("limit") @Min(1) @Max(200) Integer limit) {
+        int pageSize = limit != null ? limit : 50;
         try {
             List<ConversationForkSummaryDto> internal =
-                    store().listForks(currentUserId(), conversationId);
+                    store().listForks(currentUserId(), conversationId, afterCursor, pageSize);
             List<ConversationForkSummary> data =
                     internal.stream().map(this::toClientConversationForkSummary).toList();
             Map<String, Object> response = new HashMap<>();
             response.put("data", data);
+            String cursor =
+                    data.size() == pageSize && !data.isEmpty()
+                            ? data.get(data.size() - 1).getConversationId().toString()
+                            : null;
+            response.put("afterCursor", cursor);
             return Response.ok(response).build();
         } catch (ResourceNotFoundException e) {
             return notFound(e);
@@ -552,7 +574,7 @@ public class ConversationsResource {
     @Path("/conversations/unindexed")
     public Response listUnindexedEntries(
             @QueryParam("limit") @Min(1) @Max(200) Integer limit,
-            @QueryParam("cursor") @Size(max = 100) String cursor) {
+            @QueryParam("afterCursor") @Size(max = 100) String afterCursor) {
         try {
             roleResolver.requireIndexer(identity, apiKeyContext);
         } catch (AccessDeniedException e) {
@@ -562,11 +584,11 @@ public class ConversationsResource {
         int effectiveLimit = limit != null && limit > 0 ? limit : 100;
 
         io.github.chirino.memory.api.dto.UnindexedEntriesResponse dto =
-                store().listUnindexedEntries(effectiveLimit, cursor);
+                store().listUnindexedEntries(effectiveLimit, afterCursor);
 
         // Convert to client model
         UnindexedEntriesResponse result = new UnindexedEntriesResponse();
-        result.setCursor(dto.getCursor());
+        result.setAfterCursor(dto.getAfterCursor());
         if (dto.getData() != null) {
             result.setData(
                     dto.getData().stream()

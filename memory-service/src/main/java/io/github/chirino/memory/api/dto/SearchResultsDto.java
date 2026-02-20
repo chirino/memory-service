@@ -5,7 +5,7 @@ import java.util.List;
 public class SearchResultsDto {
 
     private List<SearchResultDto> results;
-    private String nextCursor;
+    private String afterCursor;
 
     public List<SearchResultDto> getResults() {
         return results;
@@ -15,11 +15,11 @@ public class SearchResultsDto {
         this.results = results;
     }
 
-    public String getNextCursor() {
-        return nextCursor;
+    public String getAfterCursor() {
+        return afterCursor;
     }
 
-    public void setNextCursor(String nextCursor) {
-        this.nextCursor = nextCursor;
+    public void setAfterCursor(String afterCursor) {
+        this.afterCursor = afterCursor;
     }
 }

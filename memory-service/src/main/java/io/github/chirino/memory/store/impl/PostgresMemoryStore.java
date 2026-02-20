@@ -150,7 +150,7 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     public List<ConversationSummaryDto> listConversations(
-            String userId, String query, String after, int limit, ConversationListMode mode) {
+            String userId, String query, String afterCursor, int limit, ConversationListMode mode) {
         // For now, list by memberships and ignore cursor/query for simplicity.
         List<ConversationMembershipEntity> memberships =
                 membershipRepository.listForUser(userId, limit);
@@ -307,12 +307,32 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationMembershipDto> listMemberships(String userId, String conversationId) {
+    public List<ConversationMembershipDto> listMemberships(
+            String userId, String conversationId, String afterCursor, int limit) {
         UUID cid = UUID.fromString(conversationId);
         UUID groupId = resolveGroupId(cid);
         // Any member can view the membership list
         ensureHasAccess(groupId, userId, AccessLevel.READER);
-        return membershipRepository.listForConversationGroup(groupId).stream()
+
+        StringBuilder jpql =
+                new StringBuilder(
+                        "SELECT cm FROM ConversationMembershipEntity cm"
+                                + " WHERE cm.id.conversationGroupId = :groupId");
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            jpql.append(" AND cm.id.userId > :afterCursor");
+        }
+        jpql.append(" ORDER BY cm.id.userId ASC");
+
+        var query =
+                entityManager
+                        .createQuery(jpql.toString(), ConversationMembershipEntity.class)
+                        .setParameter("groupId", groupId)
+                        .setMaxResults(limit);
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            query.setParameter("afterCursor", afterCursor);
+        }
+
+        return query.getResultList().stream()
                 .map(this::toMembershipDto)
                 .collect(Collectors.toList());
     }
@@ -469,7 +489,8 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationForkSummaryDto> listForks(String userId, String conversationId) {
+    public List<ConversationForkSummaryDto> listForks(
+            String userId, String conversationId, String afterCursor, int limit) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation =
                 conversationRepository
@@ -481,14 +502,26 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID groupId = conversation.getConversationGroup().getId();
         ensureHasAccess(groupId, userId, AccessLevel.READER);
 
-        List<ConversationEntity> candidates =
-                conversationRepository
-                        .find(
-                                "conversationGroup.id = ?1 AND deletedAt IS NULL AND"
-                                        + " conversationGroup.deletedAt IS NULL"
-                                        + " ORDER BY forkedAtEntryId NULLS FIRST, updatedAt DESC",
-                                groupId)
-                        .list();
+        StringBuilder jpql =
+                new StringBuilder(
+                        "FROM ConversationEntity c WHERE c.conversationGroup.id = :groupId"
+                                + " AND c.deletedAt IS NULL"
+                                + " AND c.conversationGroup.deletedAt IS NULL");
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            jpql.append(" AND c.id > :afterCursor");
+        }
+        jpql.append(" ORDER BY c.id ASC");
+
+        var query =
+                entityManager
+                        .createQuery(jpql.toString(), ConversationEntity.class)
+                        .setParameter("groupId", groupId)
+                        .setMaxResults(limit);
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            query.setParameter("afterCursor", UUID.fromString(afterCursor));
+        }
+
+        List<ConversationEntity> candidates = query.getResultList();
         List<ConversationForkSummaryDto> results = new ArrayList<>();
         for (ConversationEntity candidate : candidates) {
             ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
@@ -510,19 +543,37 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<OwnershipTransferDto> listPendingTransfers(String userId, String role) {
-        List<ConversationOwnershipTransferEntity> transfers;
+    public List<OwnershipTransferDto> listPendingTransfers(
+            String userId, String role, String afterCursor, int limit) {
+        StringBuilder jpql =
+                new StringBuilder("SELECT t FROM ConversationOwnershipTransferEntity t WHERE ");
         switch (role) {
             case "sender":
-                transfers = ownershipTransferRepository.listByFromUser(userId);
+                jpql.append("t.fromUserId = :userId");
                 break;
             case "recipient":
-                transfers = ownershipTransferRepository.listByToUser(userId);
+                jpql.append("t.toUserId = :userId");
                 break;
             default: // "all"
-                transfers = ownershipTransferRepository.listByUser(userId);
+                jpql.append("(t.fromUserId = :userId OR t.toUserId = :userId)");
         }
-        return transfers.stream().map(this::toOwnershipTransferDto).collect(Collectors.toList());
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            jpql.append(" AND t.id > :afterCursor");
+        }
+        jpql.append(" ORDER BY t.id ASC");
+
+        var query =
+                entityManager
+                        .createQuery(jpql.toString(), ConversationOwnershipTransferEntity.class)
+                        .setParameter("userId", userId)
+                        .setMaxResults(limit);
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            query.setParameter("afterCursor", UUID.fromString(afterCursor));
+        }
+
+        return query.getResultList().stream()
+                .map(this::toOwnershipTransferDto)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -682,7 +733,7 @@ public class PostgresMemoryStore implements MemoryStore {
             PagedEntries empty = new PagedEntries();
             empty.setConversationId(conversationId);
             empty.setEntries(Collections.emptyList());
-            empty.setNextCursor(null);
+            empty.setAfterCursor(null);
             return empty;
         }
         UUID groupId = conversation.getConversationGroup().getId();
@@ -1310,7 +1361,7 @@ public class PostgresMemoryStore implements MemoryStore {
         page.setEntries(dtos);
         String nextCursor =
                 dtos.size() == limit && !dtos.isEmpty() ? dtos.get(dtos.size() - 1).getId() : null;
-        page.setNextCursor(nextCursor);
+        page.setAfterCursor(nextCursor);
         return page;
     }
 
@@ -1730,7 +1781,7 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public UnindexedEntriesResponse listUnindexedEntries(int limit, String cursor) {
+    public UnindexedEntriesResponse listUnindexedEntries(int limit, String afterCursor) {
         // Query entries where channel = HISTORY AND indexed_content IS NULL
         // Order by created_at for consistent pagination
 
@@ -1740,12 +1791,12 @@ public class PostgresMemoryStore implements MemoryStore {
                                 + " e.indexedContent IS NULL");
 
         // Handle cursor-based pagination
-        if (cursor != null && !cursor.isBlank()) {
+        if (afterCursor != null && !afterCursor.isBlank()) {
             try {
                 // Cursor is base64 encoded createdAt timestamp
                 String decoded =
                         new String(
-                                java.util.Base64.getDecoder().decode(cursor),
+                                java.util.Base64.getDecoder().decode(afterCursor),
                                 StandardCharsets.UTF_8);
                 queryBuilder.append(" AND e.createdAt > :cursorTime");
             } catch (Exception e) {
@@ -1761,11 +1812,11 @@ public class PostgresMemoryStore implements MemoryStore {
                         .setParameter("channel", Channel.HISTORY)
                         .setMaxResults(limit + 1); // Fetch one extra to check for next page
 
-        if (cursor != null && !cursor.isBlank()) {
+        if (afterCursor != null && !afterCursor.isBlank()) {
             try {
                 String decoded =
                         new String(
-                                java.util.Base64.getDecoder().decode(cursor),
+                                java.util.Base64.getDecoder().decode(afterCursor),
                                 StandardCharsets.UTF_8);
                 OffsetDateTime cursorTime = OffsetDateTime.parse(decoded, ISO_FORMATTER);
                 query.setParameter("cursorTime", cursorTime);
@@ -2262,20 +2313,41 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ConversationMembershipDto> adminListMemberships(String conversationId) {
+    public List<ConversationMembershipDto> adminListMemberships(
+            String conversationId, String afterCursor, int limit) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
         if (conversation == null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         UUID groupId = conversation.getConversationGroup().getId();
-        List<ConversationMembershipEntity> memberships =
-                membershipRepository.find("id.conversationGroupId", groupId).list();
-        return memberships.stream().map(this::toMembershipDto).collect(Collectors.toList());
+
+        StringBuilder jpql =
+                new StringBuilder(
+                        "SELECT cm FROM ConversationMembershipEntity cm"
+                                + " WHERE cm.id.conversationGroupId = :groupId");
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            jpql.append(" AND cm.id.userId > :afterCursor");
+        }
+        jpql.append(" ORDER BY cm.id.userId ASC");
+
+        var query =
+                entityManager
+                        .createQuery(jpql.toString(), ConversationMembershipEntity.class)
+                        .setParameter("groupId", groupId)
+                        .setMaxResults(limit);
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            query.setParameter("afterCursor", afterCursor);
+        }
+
+        return query.getResultList().stream()
+                .map(this::toMembershipDto)
+                .collect(Collectors.toList());
     }
 
     @Override
-    public List<ConversationForkSummaryDto> adminListForks(String conversationId) {
+    public List<ConversationForkSummaryDto> adminListForks(
+            String conversationId, String afterCursor, int limit) {
         UUID cid = UUID.fromString(conversationId);
         ConversationEntity conversation = conversationRepository.findByIdOptional(cid).orElse(null);
         if (conversation == null) {
@@ -2284,13 +2356,24 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID groupId = conversation.getConversationGroup().getId();
 
         // Admin can see all forks including deleted ones
-        List<ConversationEntity> candidates =
-                conversationRepository
-                        .find(
-                                "conversationGroup.id = ?1"
-                                        + " ORDER BY forkedAtEntryId NULLS FIRST, updatedAt DESC",
-                                groupId)
-                        .list();
+        StringBuilder jpql =
+                new StringBuilder(
+                        "FROM ConversationEntity c WHERE c.conversationGroup.id = :groupId");
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            jpql.append(" AND c.id > :afterCursor");
+        }
+        jpql.append(" ORDER BY c.id ASC");
+
+        var query =
+                entityManager
+                        .createQuery(jpql.toString(), ConversationEntity.class)
+                        .setParameter("groupId", groupId)
+                        .setMaxResults(limit);
+        if (afterCursor != null && !afterCursor.isBlank()) {
+            query.setParameter("afterCursor", UUID.fromString(afterCursor));
+        }
+
+        List<ConversationEntity> candidates = query.getResultList();
         List<ConversationForkSummaryDto> results = new ArrayList<>();
         for (ConversationEntity candidate : candidates) {
             ConversationForkSummaryDto dto = new ConversationForkSummaryDto();
@@ -2315,7 +2398,7 @@ public class PostgresMemoryStore implements MemoryStore {
     public SearchResultsDto adminSearchEntries(AdminSearchQuery query) {
         SearchResultsDto result = new SearchResultsDto();
         result.setResults(Collections.emptyList());
-        result.setNextCursor(null);
+        result.setAfterCursor(null);
 
         if (query.getQuery() == null || query.getQuery().isBlank()) {
             return result;
@@ -2349,9 +2432,9 @@ public class PostgresMemoryStore implements MemoryStore {
 
         // Parse after cursor if present
         UUID afterEntryId = null;
-        if (query.getAfter() != null && !query.getAfter().isBlank()) {
+        if (query.getAfterCursor() != null && !query.getAfterCursor().isBlank()) {
             try {
-                afterEntryId = UUID.fromString(query.getAfter());
+                afterEntryId = UUID.fromString(query.getAfterCursor());
             } catch (IllegalArgumentException e) {
                 // Invalid cursor, ignore
             }
@@ -2405,7 +2488,7 @@ public class PostgresMemoryStore implements MemoryStore {
         // Determine next cursor
         if (resultsList.size() > limit) {
             SearchResultDto last = resultsList.get(limit - 1);
-            result.setNextCursor(last.getEntry().getId());
+            result.setAfterCursor(last.getEntry().getId());
             resultsList = resultsList.subList(0, limit);
         }
 

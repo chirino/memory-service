@@ -943,7 +943,7 @@ public class StepDefinitions {
         requestSpec = authenticateRequest(requestSpec);
         var request = requestSpec.when();
         if (after != null) {
-            request = request.queryParam("after", after);
+            request = request.queryParam("afterCursor", after);
         }
         if (limit != null) {
             request = request.queryParam("limit", limit);
@@ -1143,8 +1143,8 @@ public class StepDefinitions {
         iListConversationsWithParams(null, limit, null, null);
     }
 
-    @io.cucumber.java.en.When("I list conversations with limit {int} and after {string}")
-    public void iListConversationsWithLimitAndAfter(int limit, String after) {
+    @io.cucumber.java.en.When("I list conversations with limit {int} and afterCursor {string}")
+    public void iListConversationsWithLimitAndAfterCursor(int limit, String after) {
         trackUsage();
         iListConversationsWithParams(after, limit, null, null);
     }
@@ -1167,7 +1167,7 @@ public class StepDefinitions {
         requestSpec = authenticateRequest(requestSpec);
         var request = requestSpec.when();
         if (after != null) {
-            request = request.queryParam("after", after);
+            request = request.queryParam("afterCursor", after);
         }
         if (limit != null) {
             request = request.queryParam("limit", limit);
@@ -1299,8 +1299,9 @@ public class StepDefinitions {
     @io.cucumber.java.en.Then("the response body should contain {string}")
     public void theResponseBodyShouldContain(String text) {
         trackUsage();
+        String rendered = renderTemplate(text);
         String body = lastResponse.getBody().asString();
-        assertThat("Response body should contain: " + text, body, containsString(text));
+        assertThat("Response body should contain: " + rendered, body, containsString(rendered));
     }
 
     @io.cucumber.java.en.Then("the response body should not contain {string}")
@@ -1785,10 +1786,10 @@ public class StepDefinitions {
         assertThat(actualContent, is(expectedContent));
     }
 
-    @io.cucumber.java.en.Then("the response should have a nextCursor")
-    public void theResponseShouldHaveANextCursor() {
+    @io.cucumber.java.en.Then("the response should have an afterCursor")
+    public void theResponseShouldHaveAnAfterCursor() {
         trackUsage();
-        lastResponse.then().body("nextCursor", notNullValue());
+        lastResponse.then().body("afterCursor", notNullValue());
     }
 
     @io.cucumber.java.en.Then("the response should contain the created entry")
