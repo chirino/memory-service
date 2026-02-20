@@ -26,22 +26,22 @@ class MemoryServiceProxyController {
     @GetMapping("/{conversationId}/entries")
     public ResponseEntity<?> listConversationEntries(
             @PathVariable String conversationId,
-            @RequestParam(required = false) String after,
+            @RequestParam(required = false) String afterCursor,
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String channel,
             @RequestParam(required = false) String epoch,
             @RequestParam(required = false) String forks) {
         Channel channelEnum = channel != null ? Channel.fromValue(channel) : Channel.HISTORY;
         return proxy.listConversationEntries(
-                conversationId, after, limit, channelEnum, epoch, forks);
+                conversationId, afterCursor, limit, channelEnum, epoch, forks);
     }
 
     @GetMapping
     public ResponseEntity<?> listConversations(
             @RequestParam(value = "mode", required = false) String mode,
-            @RequestParam(value = "after", required = false) String after,
+            @RequestParam(value = "afterCursor", required = false) String afterCursor,
             @RequestParam(value = "limit", required = false) Integer limit,
             @RequestParam(value = "query", required = false) String query) {
-        return proxy.listConversations(mode, after, limit, query);
+        return proxy.listConversations(mode, afterCursor, limit, query);
     }
 }
