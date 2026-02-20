@@ -60,7 +60,7 @@ patches:
     patch: |
       - op: add
         path: /spec/hostnames
-        value: ["api.127.0.0.1.nip.io"]
+        value: ["memory-service.127.0.0.1.nip.io"]
   - target:
       kind: HTTPRoute
       name: keycloak
@@ -68,16 +68,6 @@ patches:
       - op: add
         path: /spec/hostnames
         value: ["keycloak.127.0.0.1.nip.io"]
-      - op: replace
-        path: /spec/rules
-        value:
-          - matches:
-              - path:
-                  type: PathPrefix
-                  value: /
-            backendRefs:
-              - name: keycloak
-                port: 8080
   - target:
       kind: HTTPRoute
       name: grafana

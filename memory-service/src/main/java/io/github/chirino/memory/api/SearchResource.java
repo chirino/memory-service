@@ -7,12 +7,11 @@ import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ErrorResponse;
 import io.github.chirino.memory.client.model.SearchConversationsRequest;
 import io.github.chirino.memory.client.model.SearchResult;
-import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.model.Channel;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.store.SearchTypeUnavailableException;
-import io.github.chirino.memory.vector.SearchStore;
+import io.github.chirino.memory.vector.SearchExecutionService;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -38,13 +37,9 @@ public class SearchResource {
 
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
-    @Inject SearchStoreSelector searchStoreSelector;
+    @Inject SearchExecutionService searchExecutionService;
 
     @Inject SecurityIdentity identity;
-
-    private SearchStore searchStore() {
-        return searchStoreSelector.getSearchStore();
-    }
 
     private String currentUserId() {
         return identity.getPrincipal().getName();
@@ -53,8 +48,7 @@ public class SearchResource {
     @POST
     @Path("/conversations/search")
     public Response searchConversations(@Valid SearchConversationsRequest request) {
-        SearchStore searchStore = searchStore();
-        if (searchStore == null || !searchStore.isEnabled()) {
+        if (!searchExecutionService.isSearchAvailable()) {
             return searchStoreUnavailable();
         }
         try {
@@ -68,7 +62,8 @@ public class SearchResource {
             internal.setIncludeEntry(request.getIncludeEntry());
             internal.setGroupByConversation(request.getGroupByConversation());
 
-            SearchResultsDto internalResults = searchStore.search(currentUserId(), internal);
+            SearchResultsDto internalResults =
+                    searchExecutionService.search(currentUserId(), internal);
             List<SearchResult> data =
                     internalResults.getResults().stream()
                             .map(dto -> toClientSearchResult(dto, internal.getIncludeEntry()))
@@ -90,7 +85,11 @@ public class SearchResource {
         ErrorResponse error = new ErrorResponse();
         error.setError("Search not available");
         error.setCode("search_store_disabled");
-        error.setDetails(Map.of("message", "Enable a search store to use semantic search."));
+        error.setDetails(
+                Map.of(
+                        "message",
+                        "Enable a vector search store and/or full-text datastore search to use"
+                                + " this endpoint."));
         return Response.status(Response.Status.NOT_IMPLEMENTED).entity(error).build();
     }
 

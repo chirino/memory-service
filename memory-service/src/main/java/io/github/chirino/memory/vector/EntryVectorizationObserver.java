@@ -61,8 +61,12 @@ public class EntryVectorizationObserver {
     public void onEntriesCreated(
             @Observes(during = TransactionPhase.AFTER_SUCCESS) EntryVectorizationEvent event) {
 
-        SearchStore store = searchStoreSelector.getSearchStore();
-        boolean canVectorize = store != null && store.isEnabled() && embeddingService.isEnabled();
+        VectorSearchStore store = searchStoreSelector.getSearchStore();
+        boolean canVectorize =
+                store != null
+                        && store.isEnabled()
+                        && store.isSemanticSearchAvailable()
+                        && embeddingService.isEnabled();
 
         if (!canVectorize) {
             // No vector store active — full-text indexing (DB generated column for Postgres,
@@ -76,9 +80,14 @@ public class EntryVectorizationObserver {
 
         long timeoutMs = vectorizeTimeout.toMillis();
         for (EntryToVectorize entry : event.getEntries()) {
+            String text = entry.indexedContent();
+            int indexedContentLength = text != null ? text.length() : 0;
             try {
-                String text = entry.indexedContent();
                 if (text == null || text.isBlank()) {
+                    LOG.debugf(
+                            "Skipping vectorization for blank indexedContent: entryId=%s,"
+                                    + " conversationId=%s, conversationGroupId=%s",
+                            entry.entryId(), entry.conversationId(), entry.conversationGroupId());
                     continue;
                 }
 
@@ -89,6 +98,10 @@ public class EntryVectorizationObserver {
                         CompletableFuture.supplyAsync(() -> embeddingService.embed(text))
                                 .get(timeoutMs, TimeUnit.MILLISECONDS);
                 if (embedding == null || embedding.length == 0) {
+                    LOG.debugf(
+                            "Embedding provider returned empty vector: entryId=%s,"
+                                    + " conversationId=%s",
+                            entry.entryId(), entry.conversationId());
                     continue;
                 }
 
@@ -114,9 +127,14 @@ public class EntryVectorizationObserver {
             } catch (Exception e) {
                 LOG.warnf(
                         e,
-                        "Failed to vectorize entry %s on append — will be retried by background"
-                                + " task",
-                        entry.entryId());
+                        "Failed to vectorize entry %s on append (conversationId=%s,"
+                                + " conversationGroupId=%s, indexedContentLength=%d,"
+                                + " embeddingModel=%s) — will be retried by background task",
+                        entry.entryId(),
+                        entry.conversationId(),
+                        entry.conversationGroupId(),
+                        indexedContentLength,
+                        embeddingService.modelId());
             }
         }
     }

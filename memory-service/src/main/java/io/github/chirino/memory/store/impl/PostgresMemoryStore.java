@@ -48,7 +48,7 @@ import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
 import io.github.chirino.memory.vector.EntryVectorizationEvent;
 import io.github.chirino.memory.vector.EntryVectorizationEvent.EntryToVectorize;
-import io.github.chirino.memory.vector.SearchStore;
+import io.github.chirino.memory.vector.VectorSearchStore;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -1496,11 +1496,17 @@ public class PostgresMemoryStore implements MemoryStore {
             OffsetDateTime createdAt = OffsetDateTime.now();
             entity.setCreatedAt(createdAt);
             entryRepository.persist(entity);
-            if (req.getIndexedContent() != null && !req.getIndexedContent().isBlank()) {
+            boolean requestProvidedIndexedContent =
+                    req.getIndexedContent() != null && !req.getIndexedContent().isBlank();
+            if (indexedContent != null && !indexedContent.isBlank()) {
                 LOG.infof(
                         "Entry created with indexedContent: entryId=%s, conversationId=%s,"
-                                + " contentLength=%d",
-                        entity.getId(), conversation.getId(), req.getIndexedContent().length());
+                                + " channel=%s, source=%s, contentLength=%d",
+                        entity.getId(),
+                        conversation.getId(),
+                        channel,
+                        requestProvidedIndexedContent ? "request" : "derived",
+                        indexedContent.length());
             }
             if (indexedContent != null && !indexedContent.isBlank()) {
                 entriesToVectorize.add(entity);
@@ -1729,6 +1735,14 @@ public class PostgresMemoryStore implements MemoryStore {
 
             entry.setIndexedContent(req.getIndexedContent());
             entryRepository.persist(entry);
+            if (req.getIndexedContent() != null) {
+                LOG.infof(
+                        "Index request received indexedContent: entryId=%s, conversationId=%s,"
+                                + " contentLength=%d",
+                        entry.getId(),
+                        entry.getConversation().getId(),
+                        req.getIndexedContent().length());
+            }
             entitiesToVectorize.add(entry);
             indexed++;
         }
@@ -1768,7 +1782,10 @@ public class PostgresMemoryStore implements MemoryStore {
         if (text == null || text.isBlank()) {
             return;
         }
-        SearchStore store = searchStoreSelector.getSearchStore();
+        VectorSearchStore store = searchStoreSelector.getSearchStore();
+        if (store == null || !store.isEnabled()) {
+            return;
+        }
         float[] embedding = embeddingService.embed(text);
         if (embedding == null || embedding.length == 0) {
             return;
@@ -1905,8 +1922,11 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     private boolean shouldVectorize() {
-        SearchStore store = searchStoreSelector.getSearchStore();
-        return store != null && store.isEnabled() && embeddingService.isEnabled();
+        VectorSearchStore store = searchStoreSelector.getSearchStore();
+        return store != null
+                && store.isEnabled()
+                && store.isSemanticSearchAvailable()
+                && embeddingService.isEnabled();
     }
 
     private OffsetDateTime parseOffsetDateTime(String value) {
