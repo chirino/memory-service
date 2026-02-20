@@ -54,9 +54,10 @@ public class MemoryServiceProxy {
 
     @Inject SecurityIdentity securityIdentity;
 
-    public Response listConversations(String mode, String after, Integer limit, String query) {
+    public Response listConversations(
+            String mode, String afterCursor, Integer limit, String query) {
         return execute(
-                () -> conversationsApi().listConversations(mode, toUuid(after), limit, query),
+                () -> conversationsApi().listConversations(mode, toUuid(afterCursor), limit, query),
                 OK,
                 "Error listing conversations");
     }
@@ -94,7 +95,7 @@ public class MemoryServiceProxy {
 
     public Response listConversationEntries(
             String conversationId,
-            String after,
+            String afterCursor,
             Integer limit,
             Channel channel,
             String epoch,
@@ -104,7 +105,7 @@ public class MemoryServiceProxy {
                         conversationsApi()
                                 .listConversationEntries(
                                         toUuid(conversationId),
-                                        toUuid(after),
+                                        toUuid(afterCursor),
                                         limit,
                                         channel,
                                         epoch,

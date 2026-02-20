@@ -125,9 +125,9 @@ public class MemoryServiceProxy {
     }
 
     public ResponseEntity<?> listConversations(
-            String mode, String after, Integer limit, String query) {
+            String mode, String afterCursor, Integer limit, String query) {
         return execute(
-                api -> api.listConversationsWithHttpInfo(mode, toUuid(after), limit, query),
+                api -> api.listConversationsWithHttpInfo(mode, toUuid(afterCursor), limit, query),
                 HttpStatus.OK);
     }
 
@@ -158,7 +158,7 @@ public class MemoryServiceProxy {
 
     public ResponseEntity<?> listConversationEntries(
             String conversationId,
-            String after,
+            String afterCursor,
             Integer limit,
             Channel channel,
             String epoch,
@@ -167,7 +167,7 @@ public class MemoryServiceProxy {
                 api ->
                         api.listConversationEntriesWithHttpInfo(
                                 toUuid(conversationId),
-                                toUuid(after),
+                                toUuid(afterCursor),
                                 limit,
                                 channel,
                                 epoch,
