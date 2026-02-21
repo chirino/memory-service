@@ -15,9 +15,7 @@
 
 # Performance Related
 
-* are there any http cache/headers that could reduce load against the server? (see [055-attachment-cache-headers.md](docs/enhancements/055-attachment-cache-headers.md))
 * Look into partitioning the messages table to improve pref. (see [059-entries-table-partitioning.md](docs/enhancements/059-entries-table-partitioning.md))
-    * can we use the sha256 as the ETAG of attachments? (see [055-attachment-cache-headers.md](docs/enhancements/055-attachment-cache-headers.md))
 
 # Need Dev Feedback for:
 
