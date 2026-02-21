@@ -43,6 +43,19 @@ Make both **embedding generation** and **vector search storage** pluggable. Phas
   - `auto`: tries semantic first, then full-text
 - Vectorization paths (`EntryVectorizationObserver`, `PostgresMemoryStore`, `MongoMemoryStore`) now gate vector work on `isSemanticSearchAvailable()` and treat vector store as optional.
 
+## Implementation Update (2026-02-21)
+
+- Qdrant collection naming is now embedding-profile aware by default:
+  `memory-service_<model>-<dimensions>`.
+- Naming is resolved in a shared `QdrantCollectionNameResolver`, used by both
+  `EmbeddingStoreProducer` and `QdrantVectorMigration`, so runtime/search and startup migration
+  always target the same collection.
+- Search result hydration is now datastore-specific via `MemoryStore` methods:
+  - `buildFromVectorResult(...)`
+  - `buildFromFullTextResult(...)`
+- `SearchResultDtoBuilder` delegates to `MemoryStoreSelector` instead of directly using PostgreSQL
+  repositories. This prevents MongoDB+Qdrant deployments from attempting JDBC access.
+
 ## Motivation
 
 The memory-service currently has two `SearchStore` implementations: `PgSearchStore` (pgvector + PostgreSQL full-text) and `MongoSearchStore` (MongoDB full-text only). Both are tightly coupled to their respective databases — the vector index lives inside the same database as the application data.
@@ -215,8 +228,8 @@ Admin search has no membership restrictions but supports optional `userId` filte
 
 Strategy:
 - **No userId filter**: Search with `model` filter only, no membership restriction.
-- **With userId filter**: Pre-query the user's conversation group IDs from Postgres and filter in the vector store.
-- **includeDeleted**: Always filter `deleted_at IS NULL` in Postgres when building result DTOs. Overfetch from the vector store to account for filtered-out deleted results.
+- **With userId filter**: Pre-query the user's conversation group IDs from the active primary datastore and filter in the vector store.
+- **includeDeleted**: Apply deleted filtering in the active primary datastore when building result DTOs. Overfetch from the vector store to account for filtered-out results.
 
 #### Full-Text Search
 
@@ -228,7 +241,10 @@ Strategy:
 
 #### Shared Search Result Building
 
-Both `PgSearchStore` and `LangChain4jSearchStore` need identical logic for building `SearchResultDto` from entry/conversation entities: fetching entities, decrypting content, extracting highlights. This shared logic should be extracted into a `SearchResultDtoBuilder` utility class to avoid duplication.
+`SearchResultDtoBuilder` centralizes orchestration for result DTO assembly, but datastore-specific
+hydration now lives in `MemoryStore` implementations (`PostgresMemoryStore`, `MongoMemoryStore`).
+The builder delegates through `MemoryStoreSelector`, ensuring vector search paths work for both
+PostgreSQL and MongoDB deployments without datastore leakage.
 
 ### EmbeddingStoreProducer
 
@@ -248,17 +264,13 @@ public class EmbeddingStoreProducer {
     @ConfigProperty(name = "memory-service.vector.qdrant.port", defaultValue = "6334")
     int qdrantPort;
 
-    @ConfigProperty(name = "memory-service.vector.qdrant.collection-name",
-                    defaultValue = "memory_segments")
-    String qdrantCollectionName;
-
     @ConfigProperty(name = "memory-service.vector.qdrant.api-key")
     Optional<String> qdrantApiKey;
 
     @ConfigProperty(name = "memory-service.vector.qdrant.use-tls", defaultValue = "false")
     boolean qdrantUseTls;
 
-    @Inject EmbeddingService embeddingService;
+    @Inject QdrantCollectionNameResolver collectionNameResolver;
 
     @Produces @Singleton
     public EmbeddingStore<TextSegment> embeddingStore() {
@@ -272,10 +284,11 @@ public class EmbeddingStoreProducer {
     }
 
     private EmbeddingStore<TextSegment> buildQdrantStore() {
+        String collectionName = collectionNameResolver.resolveCollectionName();
         var builder = QdrantEmbeddingStore.builder()
             .host(qdrantHost)
             .port(qdrantPort)
-            .collectionName(qdrantCollectionName)
+            .collectionName(collectionName)
             .useTls(qdrantUseTls);
 
         qdrantApiKey.ifPresent(builder::apiKey);
@@ -367,7 +380,8 @@ does not provision collection schema in constructor/search/upsert paths.
 The service provisions the collection at startup when
 `memory-service.vector.migrate-at-start=true` (default). The collection schema:
 
-- **Collection name**: `memory_segments` (configurable)
+- **Collection name**: derived as `memory-service_<model>-<dimensions>` by default
+  (or overridden via `memory-service.vector.qdrant.collection-name`)
 - **Vector params**: `size` = embedding dimensions, `distance` = Cosine
 - **Payload indexes** (for filter performance):
   - `conversation_group_id` — keyword index (high-selectivity, used in every search + deletes)
@@ -382,18 +396,27 @@ New properties for Qdrant (when `memory-service.vector.store.type=qdrant`):
 |---|---|---|
 | `memory-service.vector.qdrant.host` | `localhost` | Qdrant server hostname |
 | `memory-service.vector.qdrant.port` | `6334` | Qdrant gRPC port |
-| `memory-service.vector.qdrant.collection-name` | `memory_segments` | Qdrant collection name |
+| `memory-service.vector.qdrant.collection-prefix` | `memory-service` | Prefix used for derived collection names |
+| `memory-service.vector.qdrant.collection-name` | *(none)* | Optional explicit collection name override |
 | `memory-service.vector.qdrant.api-key` | *(none)* | API key for authentication |
 | `memory-service.vector.qdrant.use-tls` | `false` | Enable TLS for gRPC connection |
 | `memory-service.vector.migrate-at-start` | `true` | Auto-provision vector store schema at startup |
 | `memory-service.vector.qdrant.startup-timeout` | `PT30S` | Timeout for Qdrant migration API calls |
+
+When `memory-service.vector.qdrant.collection-name` is not set, memory-service derives the
+collection name from the active embedding profile as
+`<collection-prefix>_<model>-<dimensions>` (for example,
+`memory-service_openai-text-embedding-3-small-1536`). This prevents dimension mismatches when
+switching embedding providers/models.
 
 Environment variable equivalents:
 ```bash
 MEMORY_SERVICE_VECTOR_STORE_TYPE=qdrant
 MEMORY_SERVICE_VECTOR_QDRANT_HOST=localhost
 MEMORY_SERVICE_VECTOR_QDRANT_PORT=6334
-MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_NAME=memory_segments
+MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_PREFIX=memory-service
+# Optional override (disables derived naming when set)
+# MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_NAME=my-collection
 MEMORY_SERVICE_VECTOR_QDRANT_API_KEY=change-me
 MEMORY_SERVICE_VECTOR_QDRANT_USE_TLS=false
 ```
@@ -561,10 +584,8 @@ class SearchStoreSelectorTest {
 }
 
 class SearchResultDtoBuilderTest {
-    @Test void builds_dto_from_vector_result()
-    @Test void builds_dto_from_fulltext_result()
-    @Test void decrypts_conversation_title()
-    @Test void handles_missing_entry_gracefully()
+    @Test void delegatesVectorResultHydrationToMemoryStore()
+    @Test void delegatesFullTextResultHydrationToMemoryStore()
 }
 ```
 
@@ -597,7 +618,7 @@ class SearchResultDtoBuilderTest {
 - [x] Add `langchain4j-qdrant` dependency to `memory-service/pom.xml`
 - [x] Extract `SearchResultDtoBuilder` from `PgSearchStore` (shared result building logic)
 - [x] Refactor `PgSearchStore` to use `SearchResultDtoBuilder`
-- [x] Create `LangChain4jSearchStore` implementing `SearchStore`
+- [x] Create `LangChain4jSearchStore` implementing `VectorSearchStore`
 - [x] Create `EmbeddingStoreProducer` (CDI producer for `EmbeddingStore<TextSegment>`)
 - [x] Update `SearchStoreSelector` — add `qdrant` routing to `LangChain4jSearchStore`
 - [x] Add Qdrant configuration properties to `application.properties`
@@ -605,6 +626,7 @@ class SearchResultDtoBuilderTest {
 - [x] Write unit tests for `EmbeddingStoreProducer` and `SearchStoreSelector`
 - [x] Update `configuration.mdx` docs with Qdrant configuration
 - [x] Verify existing pgvector Cucumber tests still pass
+- [x] Add `QdrantCollectionNameResolver` and dynamic default naming
 
 ### Phase 4: Search Interface Split [Implemented]
 - [x] Rename `SearchStore` interface to `VectorSearchStore`
@@ -616,6 +638,7 @@ class SearchResultDtoBuilderTest {
 - [x] Update `PgSearchStore`, `LangChain4jSearchStore`, and `MongoSearchStore` to implement the new contracts
 - [x] Update vectorization/indexing paths to gate on `isSemanticSearchAvailable()`
 - [x] Add/refresh unit tests for selectors and `SearchExecutionService`
+- [x] Move search-result hydration onto `MemoryStore` and delegate via `SearchResultDtoBuilder`
 
 ## Files to Modify
 
@@ -628,6 +651,7 @@ class SearchResultDtoBuilderTest {
 | `.../vector/PgSearchStore.java` | Refactor to use `SearchResultDtoBuilder` |
 | `.../vector/LangChain4jSearchStore.java` | **New** — generic LangChain4j `EmbeddingStore` adapter |
 | `.../vector/EmbeddingStoreProducer.java` | **New** — CDI producer for `EmbeddingStore<TextSegment>` |
+| `.../vector/QdrantCollectionNameResolver.java` | **New** — resolves effective Qdrant collection name from embedding profile |
 | `.../config/SearchStoreSelector.java` | Add `qdrant` case routing to `LangChain4jSearchStore` |
 | `memory-service/src/main/resources/application.properties` | Add `memory-service.vector.qdrant.*` properties |
 | `memory-service/src/test/resources/application.properties` | Add Qdrant test profile properties |
@@ -654,6 +678,9 @@ class SearchResultDtoBuilderTest {
 | `.../vector/EntryVectorizationObserver.java` | Gate vector work with semantic availability |
 | `.../store/impl/PostgresMemoryStore.java` | Gate vector indexing with semantic availability |
 | `.../store/impl/MongoMemoryStore.java` | Gate vector indexing with semantic availability |
+| `.../store/MemoryStore.java` | Add datastore-specific search-result hydration methods |
+| `.../store/MeteredMemoryStore.java` | Delegate new hydration methods with metrics |
+| `.../vector/SearchResultDtoBuilder.java` | Delegate hydration through `MemoryStoreSelector` |
 | `.../service/TaskProcessor.java` | Handle optional vector store in cleanup task |
 | `.../test/config/FullTextSearchStoreSelectorTest.java` | **New** selector unit tests |
 | `.../test/vector/SearchExecutionServiceTest.java` | Updated orchestration unit tests |
@@ -675,7 +702,7 @@ class SearchResultDtoBuilderTest {
 
 2. **Single `LangChain4jSearchStore` for all backends**: Rather than writing `QdrantSearchStore`, `ChromaSearchStore`, etc., one generic class adapts any `EmbeddingStore<TextSegment>`. The `EmbeddingStoreProducer` is the only code that knows about specific backends.
 
-3. **Two-step access control (pre-query groups, filter in vector store)**: The current pgvector approach uses a SQL JOIN inside the vector query. With an external vector store, we first query Postgres for allowed `conversation_group_id`s, then pass them as a metadata filter. This keeps access control decisions in Postgres and avoids storing user membership data in the vector store.
+3. **Two-step access control (pre-query groups, filter in vector store)**: The current pgvector approach uses a SQL JOIN inside the vector query. With an external vector store, we first query allowed `conversation_group_id`s from the active primary datastore (Postgres or Mongo), then pass them as a metadata filter. This keeps access control decisions in the primary datastore and avoids storing membership data in the vector store.
 
 4. **Overfetch + post-process for groupByConversation**: LangChain4j's `EmbeddingStore` doesn't support SQL-style window functions. We overfetch (3x limit) and deduplicate by conversation in Java. This is acceptable because the overfetch factor is bounded and the result set is small.
 
@@ -683,7 +710,7 @@ class SearchResultDtoBuilderTest {
 
 6. **`@Produces @Singleton` for `EmbeddingStore`**: Consistent with the `EmbeddingServiceProducer` pattern. The produced bean is only resolved when `SearchStoreSelector` routes to `LangChain4jSearchStore` (via `Instance<>` lazy resolution).
 
-7. **Metadata-only storage in vector store**: We store `conversation_id`, `conversation_group_id`, and `model` as metadata — not the full entry text. Entry content is fetched from Postgres when building result DTOs. This avoids data duplication and keeps the vector store lightweight.
+7. **Metadata-only storage in vector store**: We store `conversation_id`, `conversation_group_id`, and `model` as metadata — not the full entry text. Entry content is fetched from the active primary datastore when building result DTOs. This avoids data duplication and keeps the vector store lightweight.
 
 ## Non-Goals
 
@@ -694,8 +721,6 @@ class SearchResultDtoBuilderTest {
 
 ## Open Questions
 
-1. **Collection initialization**: Should the `EmbeddingStoreProducer` (or `LangChain4jSearchStore`) explicitly create the Qdrant collection + payload indexes on startup? Or rely on langchain4j-qdrant's implicit collection creation? Explicit creation gives control over distance metric and payload indexes but adds startup logic.
+1. **Payload indexes**: LangChain4j's `QdrantEmbeddingStore` may not create payload indexes automatically. We may need a startup hook (or admin endpoint) to create indexes on `conversation_group_id`, `model`, and `conversation_id` for filter performance.
 
-2. **Payload indexes**: LangChain4j's `QdrantEmbeddingStore` may not create payload indexes automatically. We may need a startup hook (or admin endpoint) to create indexes on `conversation_group_id`, `model`, and `conversation_id` for filter performance.
-
-3. **Score normalization**: Qdrant cosine similarity returns scores in `[0, 1]`. Verify that LangChain4j's `QdrantEmbeddingStore` passes through scores without transformation, to match the `1 - cosine_distance` scoring in pgvector.
+2. **Score normalization**: Qdrant cosine similarity returns scores in `[0, 1]`. Verify that LangChain4j's `QdrantEmbeddingStore` passes through scores without transformation, to match the `1 - cosine_distance` scoring in pgvector.

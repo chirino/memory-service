@@ -2517,6 +2517,84 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     @Override
+    public SearchResultDto buildFromVectorResult(
+            String entryId, String conversationId, double score, boolean includeEntry) {
+        EntryEntity entry = entryRepository.findById(UUID.fromString(entryId));
+        if (entry == null) {
+            return null;
+        }
+
+        ConversationEntity conversation =
+                conversationRepository.findById(UUID.fromString(conversationId));
+
+        SearchResultDto dto = new SearchResultDto();
+        dto.setEntryId(entryId);
+        dto.setConversationId(conversationId);
+        dto.setScore(score);
+
+        if (conversation != null && conversation.getTitle() != null) {
+            dto.setConversationTitle(decryptTitle(conversation.getTitle()));
+        }
+
+        String indexedContent = entry.getIndexedContent();
+        if (indexedContent != null && !indexedContent.isBlank()) {
+            dto.setHighlights(extractHighlight(indexedContent));
+        }
+
+        if (includeEntry) {
+            dto.setEntry(toEntryDto(entry));
+        }
+
+        return dto;
+    }
+
+    @Override
+    public SearchResultDto buildFromFullTextResult(
+            String entryId,
+            String conversationId,
+            double score,
+            String highlight,
+            boolean includeEntry) {
+        EntryEntity entry = entryRepository.findById(UUID.fromString(entryId));
+        if (entry == null) {
+            return null;
+        }
+
+        ConversationEntity conversation =
+                conversationRepository.findById(UUID.fromString(conversationId));
+
+        SearchResultDto dto = new SearchResultDto();
+        dto.setEntryId(entryId);
+        dto.setConversationId(conversationId);
+        dto.setScore(score);
+
+        if (conversation != null && conversation.getTitle() != null) {
+            dto.setConversationTitle(decryptTitle(conversation.getTitle()));
+        }
+
+        if (highlight != null && !highlight.isBlank()) {
+            dto.setHighlights(highlight);
+        }
+
+        if (includeEntry) {
+            dto.setEntry(toEntryDto(entry));
+        }
+
+        return dto;
+    }
+
+    private String extractHighlight(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        int maxLength = 200;
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...";
+    }
+
+    @Override
     @Transactional
     public List<String> findEvictableGroupIds(OffsetDateTime cutoff, int limit) {
         @SuppressWarnings("unchecked")

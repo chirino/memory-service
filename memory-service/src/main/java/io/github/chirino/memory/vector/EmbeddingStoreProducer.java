@@ -5,6 +5,7 @@ import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.qdrant.QdrantEmbeddingStore;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import java.util.Optional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -30,16 +31,13 @@ public class EmbeddingStoreProducer {
     @ConfigProperty(name = "memory-service.vector.qdrant.port", defaultValue = "6334")
     int qdrantPort;
 
-    @ConfigProperty(
-            name = "memory-service.vector.qdrant.collection-name",
-            defaultValue = "memory_segments")
-    String qdrantCollectionName;
-
     @ConfigProperty(name = "memory-service.vector.qdrant.api-key")
     Optional<String> qdrantApiKey;
 
     @ConfigProperty(name = "memory-service.vector.qdrant.use-tls", defaultValue = "false")
     boolean qdrantUseTls;
+
+    @Inject QdrantCollectionNameResolver collectionNameResolver;
 
     @Produces
     @Singleton
@@ -56,11 +54,12 @@ public class EmbeddingStoreProducer {
     }
 
     private EmbeddingStore<TextSegment> buildQdrantStore() {
+        String collectionName = collectionNameResolver.resolveCollectionName();
         var builder =
                 QdrantEmbeddingStore.builder()
                         .host(qdrantHost)
                         .port(qdrantPort)
-                        .collectionName(qdrantCollectionName)
+                        .collectionName(collectionName)
                         .useTls(qdrantUseTls);
 
         qdrantApiKey.filter(k -> !k.isBlank()).ifPresent(builder::apiKey);

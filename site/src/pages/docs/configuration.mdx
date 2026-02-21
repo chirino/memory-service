@@ -231,7 +231,8 @@ Qdrant is a dedicated vector database that can be used as an external vector sto
 |----------|---------|-------------|
 | <Cfg p="memory-service.vector.qdrant.host" /> | `localhost` | Qdrant server hostname |
 | <Cfg p="memory-service.vector.qdrant.port" /> | `6334` | Qdrant gRPC port |
-| <Cfg p="memory-service.vector.qdrant.collection-name" /> | `memory_segments` | Qdrant collection name |
+| <Cfg p="memory-service.vector.qdrant.collection-prefix" /> | `memory-service` | Prefix for derived collection name |
+| <Cfg p="memory-service.vector.qdrant.collection-name" /> | _(none)_ | Optional explicit collection name override |
 | <Cfg p="memory-service.vector.qdrant.api-key" /> | _(none)_ | API key for authentication |
 | <Cfg p="memory-service.vector.qdrant.use-tls" /> | `false` | Enable TLS for gRPC connection |
 | <Cfg p="memory-service.vector.qdrant.startup-timeout" /> | `PT30S` | Startup migration timeout for Qdrant API calls |
@@ -243,7 +244,9 @@ memory-service.vector.qdrant.host=localhost
 memory-service.vector.qdrant.port=6334
 memory-service.embedding.type=local`} />
 
-With <Cfg p="memory-service.vector.migrate-at-start" /> enabled (default), memory-service ensures the configured Qdrant collection exists at startup.
+By default, memory-service derives the collection name as `memory-service_<model>-<dimensions>`, for example `memory-service_openai-text-embedding-3-small-1536`. Set <Cfg p="memory-service.vector.qdrant.collection-name" /> to force a specific collection.
+
+With <Cfg p="memory-service.vector.migrate-at-start" /> enabled (default), memory-service ensures the effective Qdrant collection exists at startup.
 
 When using PostgreSQL as the primary datastore with Qdrant for vector search, full-text search is also available (using PostgreSQL's built-in text search). When using MongoDB as the primary datastore with Qdrant, MongoDB full-text search is also available.
 
