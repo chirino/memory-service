@@ -8,6 +8,3 @@ spec:
       containers:
         - name: postgresql
           image: pgvector/pgvector:pg18
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/postgresql
