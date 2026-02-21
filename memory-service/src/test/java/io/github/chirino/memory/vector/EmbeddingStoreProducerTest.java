@@ -1,9 +1,13 @@
 package io.github.chirino.memory.vector;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Field;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -14,9 +18,11 @@ class EmbeddingStoreProducerTest {
         producer.storeType = storeType;
         producer.qdrantHost = "localhost";
         producer.qdrantPort = 6334;
-        producer.qdrantCollectionName = "memory_segments";
         producer.qdrantApiKey = Optional.empty();
         producer.qdrantUseTls = false;
+        producer.collectionNameResolver = mock(QdrantCollectionNameResolver.class);
+        when(producer.collectionNameResolver.resolveCollectionName())
+                .thenReturn("memory-service_local-all-minilm-l6-v2-384");
         return producer;
     }
 
@@ -28,6 +34,7 @@ class EmbeddingStoreProducerTest {
         // so this should succeed without a running Qdrant instance
         var store = producer.embeddingStore();
         assertNotNull(store);
+        assertEquals("memory-service_local-all-minilm-l6-v2-384", getCollectionName(store));
     }
 
     @Test
@@ -55,5 +62,16 @@ class EmbeddingStoreProducerTest {
 
         var store = producer.embeddingStore();
         assertNotNull(store);
+        assertEquals("memory-service_local-all-minilm-l6-v2-384", getCollectionName(store));
+    }
+
+    private static String getCollectionName(Object store) {
+        try {
+            Field field = store.getClass().getDeclaredField("collectionName");
+            field.setAccessible(true);
+            return (String) field.get(store);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Could not inspect Qdrant collectionName on store", e);
+        }
     }
 }

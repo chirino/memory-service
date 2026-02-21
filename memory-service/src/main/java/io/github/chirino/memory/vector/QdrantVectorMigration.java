@@ -35,11 +35,6 @@ public class QdrantVectorMigration {
     @ConfigProperty(name = "memory-service.vector.qdrant.port", defaultValue = "6334")
     int qdrantPort;
 
-    @ConfigProperty(
-            name = "memory-service.vector.qdrant.collection-name",
-            defaultValue = "memory_segments")
-    String qdrantCollectionName;
-
     @ConfigProperty(name = "memory-service.vector.qdrant.api-key")
     Optional<String> qdrantApiKey;
 
@@ -50,6 +45,7 @@ public class QdrantVectorMigration {
     Duration startupTimeout;
 
     @Inject EmbeddingService embeddingService;
+    @Inject QdrantCollectionNameResolver collectionNameResolver;
 
     void onStart(@Observes StartupEvent ignored) {
         if (!migrateAtStart) {
@@ -70,9 +66,11 @@ public class QdrantVectorMigration {
                             + ". Check memory-service.embedding.type configuration.");
         }
 
+        String collectionName = collectionNameResolver.resolveCollectionName();
+
         try (QdrantClient client = createClient()) {
-            if (collectionExists(client)) {
-                LOG.infof("Qdrant collection '%s' already exists", qdrantCollectionName);
+            if (collectionExists(client, collectionName)) {
+                LOG.infof("Qdrant collection '%s' already exists", collectionName);
                 return;
             }
 
@@ -81,10 +79,10 @@ public class QdrantVectorMigration {
                             .setSize(dimensions)
                             .setDistance(Distance.Cosine)
                             .build();
-            createCollection(client, vectorParams);
+            createCollection(client, collectionName, vectorParams);
             LOG.infof(
                     "Created Qdrant collection '%s' with size=%d distance=COSINE",
-                    qdrantCollectionName, dimensions);
+                    collectionName, dimensions);
         }
     }
 
@@ -95,9 +93,9 @@ public class QdrantVectorMigration {
         return new QdrantClient(builder.build());
     }
 
-    private boolean collectionExists(QdrantClient client) {
+    private boolean collectionExists(QdrantClient client, String collectionName) {
         try {
-            return client.collectionExistsAsync(qdrantCollectionName, startupTimeout)
+            return client.collectionExistsAsync(collectionName, startupTimeout)
                     .get(startupTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -107,16 +105,17 @@ public class QdrantVectorMigration {
         }
     }
 
-    private void createCollection(QdrantClient client, VectorParams vectorParams) {
+    private void createCollection(
+            QdrantClient client, String collectionName, VectorParams vectorParams) {
         try {
-            client.createCollectionAsync(qdrantCollectionName, vectorParams, startupTimeout)
+            client.createCollectionAsync(collectionName, vectorParams, startupTimeout)
                     .get(startupTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while creating Qdrant collection", e);
         } catch (ExecutionException e) {
             if (isAlreadyExists(e)) {
-                LOG.infof("Qdrant collection '%s' was created concurrently", qdrantCollectionName);
+                LOG.infof("Qdrant collection '%s' was created concurrently", collectionName);
                 return;
             }
             throw new IllegalStateException("Failed to create Qdrant collection", e);

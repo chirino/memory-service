@@ -1860,6 +1860,17 @@ public class MongoMemoryStore implements MemoryStore {
         return result;
     }
 
+    private String extractHighlight(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        int maxLength = 200;
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...";
+    }
+
     private String inferTitleFromEntries(List<CreateEntryRequest> entries) {
         if (entries == null || entries.isEmpty()) {
             return null;
@@ -2313,6 +2324,70 @@ public class MongoMemoryStore implements MemoryStore {
 
         result.setResults(resultsList);
         return result;
+    }
+
+    @Override
+    public SearchResultDto buildFromVectorResult(
+            String entryId, String conversationId, double score, boolean includeEntry) {
+        MongoEntry entry = entryRepository.findById(entryId);
+        if (entry == null) {
+            return null;
+        }
+
+        MongoConversation conversation = conversationRepository.findById(conversationId);
+
+        SearchResultDto dto = new SearchResultDto();
+        dto.setEntryId(entryId);
+        dto.setConversationId(conversationId);
+        dto.setScore(score);
+
+        if (conversation != null && conversation.title != null) {
+            dto.setConversationTitle(decryptTitle(conversation.title));
+        }
+
+        if (entry.indexedContent != null && !entry.indexedContent.isBlank()) {
+            dto.setHighlights(extractHighlight(entry.indexedContent));
+        }
+
+        if (includeEntry) {
+            dto.setEntry(toEntryDto(entry));
+        }
+
+        return dto;
+    }
+
+    @Override
+    public SearchResultDto buildFromFullTextResult(
+            String entryId,
+            String conversationId,
+            double score,
+            String highlight,
+            boolean includeEntry) {
+        MongoEntry entry = entryRepository.findById(entryId);
+        if (entry == null) {
+            return null;
+        }
+
+        MongoConversation conversation = conversationRepository.findById(conversationId);
+
+        SearchResultDto dto = new SearchResultDto();
+        dto.setEntryId(entryId);
+        dto.setConversationId(conversationId);
+        dto.setScore(score);
+
+        if (conversation != null && conversation.title != null) {
+            dto.setConversationTitle(decryptTitle(conversation.title));
+        }
+
+        if (highlight != null && !highlight.isBlank()) {
+            dto.setHighlights(highlight);
+        }
+
+        if (includeEntry) {
+            dto.setEntry(toEntryDto(entry));
+        }
+
+        return dto;
     }
 
     @Override

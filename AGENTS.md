@@ -3,9 +3,8 @@
 A memory service for AI agents that stores messages exchanged with LLMs and users, supporting conversation replay and forking.
 
 **Self-Updating Knowledge:**
-When you discover something meaningful about this project during your work—architecture patterns, naming conventions, gotchas, dependency quirks, correct/incorrect assumptions in existing docs—update `CLAUDE.md` (or the relevant skill file) immediately so future sessions benefit without re-discovering it. Specifically:
+When you discover something meaningful about this project during your work—architecture patterns, naming conventions, gotchas, dependency quirks, correct/incorrect assumptions in existing docs—update `AGENTS.md` (or the relevant skill file) immediately so future sessions benefit without re-discovering it. Specifically:
 
-- **Add** newly learned project-specific facts that would pertient in most assitant interactions.
 - **Correct** any skill or doc content you find to be outdated or wrong.
 - **Refine trigger criteria** in skill descriptions if a skill was loaded but wasn't relevant to the task—tighten its description so it activates more precisely.
 - Keep updates concise and factual. Don't bloat files with obvious or generic information.
@@ -63,5 +62,3 @@ This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree
 
 **Enhancement docs**: When implementing work from `docs/enhancements/`, update the corresponding enhancement doc as you complete each phase. If the implementation diverges from the original design, update the doc to reflect what was actually implemented.
 
-## Learned Facts
-- `langchain4j-qdrant:1.0.0-beta3` is ABI-coupled to `io.qdrant:client:1.13.0`; forcing newer `io.qdrant:client` versions (e.g. `1.16.x`) causes runtime `NoSuchMethodError` in `PointIdFactory.id(UUID)`.

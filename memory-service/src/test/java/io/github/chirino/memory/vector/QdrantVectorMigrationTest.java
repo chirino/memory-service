@@ -27,6 +27,8 @@ import org.mockito.ArgumentCaptor;
 
 class QdrantVectorMigrationTest {
 
+    private static final String COLLECTION_NAME = "memory-service_local-all-minilm-l6-v2-384";
+
     @Test
     void skips_when_migration_disabled() {
         QdrantClient client = mock(QdrantClient.class);
@@ -52,9 +54,9 @@ class QdrantVectorMigrationTest {
     @Test
     void creates_collection_when_missing() {
         QdrantClient client = mock(QdrantClient.class);
-        when(client.collectionExistsAsync(eq("memory_segments"), any()))
+        when(client.collectionExistsAsync(eq(COLLECTION_NAME), any()))
                 .thenReturn(Futures.immediateFuture(false));
-        when(client.createCollectionAsync(eq("memory_segments"), any(VectorParams.class), any()))
+        when(client.createCollectionAsync(eq(COLLECTION_NAME), any(VectorParams.class), any()))
                 .thenReturn(Futures.immediateFuture(mock(CollectionOperationResponse.class)));
 
         QdrantVectorMigration migration = createMigration(client);
@@ -62,7 +64,7 @@ class QdrantVectorMigrationTest {
         migration.onStart(null);
 
         ArgumentCaptor<VectorParams> paramsCaptor = ArgumentCaptor.forClass(VectorParams.class);
-        verify(client).createCollectionAsync(eq("memory_segments"), paramsCaptor.capture(), any());
+        verify(client).createCollectionAsync(eq(COLLECTION_NAME), paramsCaptor.capture(), any());
         VectorParams vectorParams = paramsCaptor.getValue();
         assertEquals(384, vectorParams.getSize());
         assertEquals(Distance.Cosine, vectorParams.getDistance());
@@ -71,7 +73,7 @@ class QdrantVectorMigrationTest {
     @Test
     void does_not_create_when_collection_exists() {
         QdrantClient client = mock(QdrantClient.class);
-        when(client.collectionExistsAsync(eq("memory_segments"), any()))
+        when(client.collectionExistsAsync(eq(COLLECTION_NAME), any()))
                 .thenReturn(Futures.immediateFuture(true));
 
         QdrantVectorMigration migration = createMigration(client);
@@ -84,9 +86,9 @@ class QdrantVectorMigrationTest {
     @Test
     void tolerates_concurrent_already_exists_errors() {
         QdrantClient client = mock(QdrantClient.class);
-        when(client.collectionExistsAsync(eq("memory_segments"), any()))
+        when(client.collectionExistsAsync(eq(COLLECTION_NAME), any()))
                 .thenReturn(Futures.immediateFuture(false));
-        when(client.createCollectionAsync(eq("memory_segments"), any(VectorParams.class), any()))
+        when(client.createCollectionAsync(eq(COLLECTION_NAME), any(VectorParams.class), any()))
                 .thenReturn(
                         Futures.immediateFailedFuture(
                                 new StatusRuntimeException(Status.ALREADY_EXISTS)));
@@ -113,13 +115,14 @@ class QdrantVectorMigrationTest {
         migration.vectorStoreType = "qdrant";
         migration.qdrantHost = "localhost";
         migration.qdrantPort = 6334;
-        migration.qdrantCollectionName = "memory_segments";
         migration.qdrantApiKey = Optional.empty();
         migration.qdrantUseTls = false;
         migration.startupTimeout = Duration.ofSeconds(2);
 
         migration.embeddingService = mock(EmbeddingService.class);
         when(migration.embeddingService.dimensions()).thenReturn(384);
+        migration.collectionNameResolver = mock(QdrantCollectionNameResolver.class);
+        when(migration.collectionNameResolver.resolveCollectionName()).thenReturn(COLLECTION_NAME);
         doReturn(client).when(migration).createClient();
         return migration;
     }
