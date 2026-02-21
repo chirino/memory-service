@@ -91,33 +91,6 @@ quarkus.mongodb.connection-string=mongodb://admin:password@localhost:27017
 quarkus.mongodb.database=memoryservice
 ```
 
-### Atlas Vector Search
-
-For semantic search with MongoDB Atlas:
-
-1. Create a vector search index in Atlas:
-
-```json
-{
-  "fields": [
-    {
-      "type": "vector",
-      "path": "embedding",
-      "numDimensions": 1536,
-      "similarity": "cosine"
-    }
-  ]
-}
-```
-
-2. Configure Memory Service:
-
-```properties
-memory-service.vector-store.type=mongodb
-memory-service.vector-store.mongodb.index=vector_index
-memory-service.vector-store.dimension=1536
-```
-
 ## Embedding Configuration
 
 Configure the embedding model for vector generation:

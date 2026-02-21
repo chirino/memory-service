@@ -58,7 +58,7 @@ Full-text search finds entries containing specific keywords or phrases. It uses 
 Semantic search finds entries that are conceptually similar to the query, even if they don't share exact keywords. It works by:
 
 1. Converting indexed content into vector embeddings using an AI model
-2. Storing vectors in a vector database (PGVector or MongoDB Atlas)
+2. Storing vectors in a vector database (pgvector or Qdrant)
 3. Converting the search query into a vector
 4. Finding entries with the most similar vectors
 
