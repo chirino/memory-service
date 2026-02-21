@@ -19,6 +19,13 @@ public class MongoConversationMembershipRepository
         return find("userId", userId).page(0, limit).list();
     }
 
+    public List<String> listConversationGroupIdsForUser(String userId) {
+        return find("userId", userId).list().stream()
+                .map(m -> m.conversationGroupId)
+                .distinct()
+                .toList();
+    }
+
     public Optional<MongoConversationMembership> findMembership(
             String conversationId, String userId) {
         String id = conversationId + ":" + userId;

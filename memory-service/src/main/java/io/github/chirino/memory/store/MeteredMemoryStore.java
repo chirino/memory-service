@@ -12,6 +12,7 @@ import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
+import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
@@ -262,6 +263,30 @@ public class MeteredMemoryStore implements MemoryStore {
     public SearchResultsDto adminSearchEntries(AdminSearchQuery query) {
         return registry.timer("memory.store.operation", "operation", "adminSearchEntries")
                 .record(() -> delegate.adminSearchEntries(query));
+    }
+
+    @Override
+    public SearchResultDto buildFromVectorResult(
+            String entryId, String conversationId, double score, boolean includeEntry) {
+        return registry.timer("memory.store.operation", "operation", "buildFromVectorResult")
+                .record(
+                        () ->
+                                delegate.buildFromVectorResult(
+                                        entryId, conversationId, score, includeEntry));
+    }
+
+    @Override
+    public SearchResultDto buildFromFullTextResult(
+            String entryId,
+            String conversationId,
+            double score,
+            String highlight,
+            boolean includeEntry) {
+        return registry.timer("memory.store.operation", "operation", "buildFromFullTextResult")
+                .record(
+                        () ->
+                                delegate.buildFromFullTextResult(
+                                        entryId, conversationId, score, highlight, includeEntry));
     }
 
     @Override

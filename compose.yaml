@@ -17,6 +17,21 @@ services:
       timeout: 5s
       retries: 10
 
+  qdrant:
+    image: qdrant/qdrant:v1.16.3
+    ports:
+      - "6333:6333"   # HTTP/REST
+      - "6334:6334"   # gRPC
+    tmpfs:
+      - /qdrant/storage
+    environment:
+      QDRANT__SERVICE__API_KEY: "${QDRANT_API_KEY:-change-me}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]
@@ -100,6 +115,12 @@ services:
       # To enable pgvector + OpenAI embeddings, add to .env:
       #   MEMORY_SERVICE_VECTOR_STORE_TYPE=pgvector
       #   MEMORY_SERVICE_EMBEDDING_TYPE=openai
+      # To enable Qdrant vector search, add to .env:
+      #   MEMORY_SERVICE_VECTOR_STORE_TYPE=qdrant
+      #   MEMORY_SERVICE_VECTOR_QDRANT_HOST=qdrant
+      #   MEMORY_SERVICE_VECTOR_QDRANT_PORT=6334
+      #   MEMORY_SERVICE_VECTOR_QDRANT_API_KEY=change-me
+      #   MEMORY_SERVICE_EMBEDDING_TYPE=local
       #   OPENAI_API_KEY=sk-your-key
       MEMORY_SERVICE_VECTOR_STORE_TYPE: ${MEMORY_SERVICE_VECTOR_STORE_TYPE:-none}
       MEMORY_SERVICE_EMBEDDING_TYPE: ${MEMORY_SERVICE_EMBEDDING_TYPE:-none}

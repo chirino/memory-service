@@ -6,3 +6,4 @@ resources:
   - httproute-grafana.yaml
   - httproute-prometheus.yaml
   - httproute-chat-quarkus.yaml
+  - httproute-memory-service.yaml

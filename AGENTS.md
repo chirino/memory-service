@@ -3,9 +3,8 @@
 A memory service for AI agents that stores messages exchanged with LLMs and users, supporting conversation replay and forking.
 
 **Self-Updating Knowledge:**
-When you discover something meaningful about this project during your work—architecture patterns, naming conventions, gotchas, dependency quirks, correct/incorrect assumptions in existing docs—update `CLAUDE.md` (or the relevant skill file) immediately so future sessions benefit without re-discovering it. Specifically:
+When you discover something meaningful about this project during your work—architecture patterns, naming conventions, gotchas, dependency quirks, correct/incorrect assumptions in existing docs—update `AGENTS.md` (or the relevant skill file) immediately so future sessions benefit without re-discovering it. Specifically:
 
-- **Add** newly learned project-specific facts (e.g., "the API layer uses X pattern", "tests require Y setup").
 - **Correct** any skill or doc content you find to be outdated or wrong.
 - **Refine trigger criteria** in skill descriptions if a skill was loaded but wasn't relevant to the task—tighten its description so it activates more precisely.
 - Keep updates concise and factual. Don't bloat files with obvious or generic information.
@@ -15,7 +14,7 @@ When you discover something meaningful about this project during your work—arc
 - **Agent API**: For agent apps - manage conversations, append entries, retrieve context for LLMs, summarization. Some agent APIs are designed to be safely exposed to frontend apps (e.g., SPAs) for features like listing conversations, semantic search, viewing messages, and forking.
 - **Admin API**: For administrative operations and system management.
 - **User access control**: Conversations are owned by users with read/write/manager/owner access levels.
-- **Data stores**: PostgreSQL, MongoDB; Redis, Infinispan (caching); PGVector, MongoDB (vector search).
+- **Data stores**: PostgreSQL, MongoDB; Redis, Infinispan (caching); PGVector, Qdrant (vector search).
 
 ## Quick Reference
 
@@ -63,4 +62,3 @@ This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree
 
 **Enhancement docs**: When implementing work from `docs/enhancements/`, update the corresponding enhancement doc as you complete each phase. If the implementation diverges from the original design, update the doc to reflect what was actually implemented.
 
-## Learned Facts

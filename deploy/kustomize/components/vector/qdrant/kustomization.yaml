@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Deploys Qdrant as an external vector store for the memory-service.
+# Works with any datastore component (postgresql, mongodb).
+# When paired with postgresql, both semantic and full-text search are available.
+# When paired with mongodb, only semantic search is available.
+
+resources:
+  - deployment.yaml
+  - service.yaml
+
+configMapGenerator:
+  - name: memory-service-config
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_VECTOR_STORE_TYPE=qdrant
+      - MEMORY_SERVICE_VECTOR_QDRANT_HOST=qdrant
+      - MEMORY_SERVICE_VECTOR_QDRANT_PORT=6334
+      - QUARKUS_GRPC_SERVER_GRPC_HEALTH_ENABLED=false
+
+secretGenerator:
+  - name: memory-service-secret
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_VECTOR_QDRANT_API_KEY=change-me

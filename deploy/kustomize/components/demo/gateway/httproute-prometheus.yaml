@@ -10,7 +10,7 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /prometheus/
+            value: /
       backendRefs:
         - name: prometheus
           port: 9090

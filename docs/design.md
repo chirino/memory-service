@@ -230,7 +230,7 @@ Ownership transfers use a two-step flow with explicit acceptance.
     - `groupByConversation`: when true (default), returns only highest-scoring entry per conversation.
   - Response: list of `SearchResult` with:
     - `conversationId`, `conversationTitle`, `entryId`, `score`, `highlights`, `entry`.
-  - Backed by pluggable vector store (pgvector, MongoDB, etc.).
+  - Backed by pluggable vector store (pgvector, Qdrant).
 
 #### Index Entries for Search
 
@@ -290,7 +290,7 @@ Key concepts:
 - **Channels**: Entries are organized into logical channels - HISTORY for visible conversation and MEMORY for agent-internal state.
 - **Memory Epochs**: Agent memory entries use epochs for versioning. When an agent's context changes significantly, it creates a new epoch that supersedes previous ones.
 - **Fork Trees**: All forks of a conversation share the same internal group, enabling shared access control. The `conversationGroupId` is not exposed in the API.
-- **Vector Embeddings**: Optional vector store integration for semantic search (pgvector, MongoDB, etc.).
+- **Vector Embeddings**: Optional vector store integration for semantic search (pgvector, Qdrant).
 
 For detailed data model specifications, see:
 - [Entry Data Model](entry-data-model.md) for comprehensive documentation of entries, channels, epochs, and fork-aware retrieval.

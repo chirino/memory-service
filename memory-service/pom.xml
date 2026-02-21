@@ -27,6 +27,23 @@
       <artifactId>langchain4j-open-ai</artifactId>
       <version>1.0.0-beta3</version>
     </dependency>
+    <!-- LangChain4j Qdrant vector store (core library, not Quarkus extension).
+         Exclude transitive gRPC deps — Quarkus manages gRPC via quarkus-grpc.
+         The io.qdrant:client jar bundles an old grpc.health.v1.HealthGrpc stub
+         that lacks getWatchMethod(), which breaks Quarkus's MutinyHealthGrpc.
+         Adding grpc-services explicitly ensures the full HealthGrpc wins the
+         classpath race over the bundled copy. -->
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-qdrant</artifactId>
+      <version>1.0.0-beta3</version>
+      <exclusions>
+        <exclusion>
+          <groupId>io.grpc</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
     <dependency>
       <groupId>io.github.chirino.memory-service</groupId>
       <artifactId>memory-service-proto-quarkus</artifactId>
@@ -50,7 +67,11 @@
       <artifactId>quarkus-data-encryption-dek</artifactId>
       <version>${project.version}</version>
     </dependency>
-
+    <!-- Overrides the incomplete HealthGrpc bundled inside io.qdrant:client -->
+    <dependency>
+      <groupId>io.grpc</groupId>
+      <artifactId>grpc-services</artifactId>
+    </dependency>
     <!-- S3 FileStore support -->
     <dependency>
       <groupId>io.quarkiverse.amazonservices</groupId>
