@@ -27,13 +27,9 @@ Memory Service is a backend service designed to solve the persistent memory prob
 
 ![Memory Service Architecture](memory-service-architecture.png)
 
-Memory Service is packaged as container image and provides both REST and gRPC APIs. It's designed to be:
-
-- **Backend Service** - Designed to be used as an internal service used by your AI agent systems
-- **Lightweight** - Minimal overhead for your agent infrastructure
-- **Flexible** - Works with your existing database and vector stores
-- **Secure** - Provides access control and fine-grained permissions
-- **Stateless** - No state is stored in the service itself, making it easy to scale horizontally
+Memory Service is packaged as container image and provides both REST and gRPC APIs.  It also provides 
+several client side components to simplify integration with Quarkus LangChain4j and Spring AI applications.
+All the blue components in the diagram above are part of this project.
 
 ## Quick Navigation
 

@@ -1,8 +1,30 @@
 {
   "name": "Memory Service",
-  "dockerComposeFile": "docker-compose.yml",
-  "service": "app",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "workspaceMount": "source=${localWorkspaceFolder}/..,target=/workspaces,type=bind,consistency=cached",
+  "mounts": [
+    "source=${localEnv:HOME},target=/home/host,type=bind,readonly"
+  ],
+  "appPort": [
+    "1080",
+    "8080"
+  ],
+  "portsAttributes": {
+    "1080": {
+      "label": "socks5"
+    },
+    "8080": {
+      "label": "http"
+    }
+  },
+  "overrideCommand": false,
+  "containerEnv": {
+    "IN_DEVCONTAINER": "1"
+  },
+  "postStartCommand": "bash .devcontainer/post-start.sh",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "dockerDashComposeVersion": "v2"
@@ -24,8 +46,6 @@
       "userGid": "automatic"
     }
   },
-  "initializeCommand": "bash .devcontainer/init.sh",
-  "overrideCommand": false,
   "customizations": {
     "vscode": {
       "extensions": [
