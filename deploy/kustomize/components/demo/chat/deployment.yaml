@@ -33,6 +33,13 @@ spec:
                   key: MEMORY_SERVICE_CLIENT_API_KEY
             - name: QUARKUS_OIDC_AUTH_SERVER_URL
               value: "http://keycloak:8080/realms/memory-service"
+            - name: QUARKUS_OIDC_CLIENT_ID
+              value: "memory-service-client"
+            - name: QUARKUS_OIDC_CREDENTIALS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: chat-quarkus-secret
+                  key: KEYCLOAK_CLIENT_SECRET
             - name: QUARKUS_OIDC_TOKEN_ISSUER
               valueFrom:
                 configMapKeyRef:

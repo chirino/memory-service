@@ -197,6 +197,8 @@ CREATE TABLE IF NOT EXISTS attachments (
     sha256          VARCHAR(64),
     user_id         TEXT NOT NULL,
     entry_id        UUID REFERENCES entries(id) ON DELETE CASCADE,
+    status          VARCHAR(20) NOT NULL DEFAULT 'ready',
+    source_url      VARCHAR(2048),
     expires_at      TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at      TIMESTAMPTZ
@@ -210,6 +212,8 @@ CREATE INDEX IF NOT EXISTS idx_attachments_storage_key
     ON attachments(storage_key) WHERE storage_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_deleted_at
     ON attachments(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_status
+    ON attachments(status) WHERE status != 'ready';
 CREATE INDEX IF NOT EXISTS idx_attachments_user_id
     ON attachments(user_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_created_at_id
