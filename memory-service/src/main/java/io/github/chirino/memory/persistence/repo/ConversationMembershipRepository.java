@@ -30,6 +30,20 @@ public class ConversationMembershipRepository
                 .list();
     }
 
+    public List<String> listConversationGroupIdsForUser(String userId) {
+        return entityManager
+                .createQuery(
+                        "select distinct m.id.conversationGroupId from ConversationMembershipEntity"
+                            + " m where m.id.userId = :userId and m.conversationGroup.deletedAt IS"
+                            + " NULL",
+                        java.util.UUID.class)
+                .setParameter("userId", userId)
+                .getResultList()
+                .stream()
+                .map(java.util.UUID::toString)
+                .toList();
+    }
+
     public Optional<ConversationMembershipEntity> findMembership(
             UUID conversationGroupId, String userId) {
         return find(

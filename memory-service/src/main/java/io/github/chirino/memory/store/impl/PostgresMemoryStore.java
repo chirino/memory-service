@@ -48,7 +48,7 @@ import io.github.chirino.memory.store.ResourceNotFoundException;
 import io.github.chirino.memory.vector.EmbeddingService;
 import io.github.chirino.memory.vector.EntryVectorizationEvent;
 import io.github.chirino.memory.vector.EntryVectorizationEvent.EntryToVectorize;
-import io.github.chirino.memory.vector.SearchStore;
+import io.github.chirino.memory.vector.VectorSearchStore;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -1496,11 +1496,17 @@ public class PostgresMemoryStore implements MemoryStore {
             OffsetDateTime createdAt = OffsetDateTime.now();
             entity.setCreatedAt(createdAt);
             entryRepository.persist(entity);
-            if (req.getIndexedContent() != null && !req.getIndexedContent().isBlank()) {
+            boolean requestProvidedIndexedContent =
+                    req.getIndexedContent() != null && !req.getIndexedContent().isBlank();
+            if (indexedContent != null && !indexedContent.isBlank()) {
                 LOG.infof(
                         "Entry created with indexedContent: entryId=%s, conversationId=%s,"
-                                + " contentLength=%d",
-                        entity.getId(), conversation.getId(), req.getIndexedContent().length());
+                                + " channel=%s, source=%s, contentLength=%d",
+                        entity.getId(),
+                        conversation.getId(),
+                        channel,
+                        requestProvidedIndexedContent ? "request" : "derived",
+                        indexedContent.length());
             }
             if (indexedContent != null && !indexedContent.isBlank()) {
                 entriesToVectorize.add(entity);
@@ -1729,6 +1735,14 @@ public class PostgresMemoryStore implements MemoryStore {
 
             entry.setIndexedContent(req.getIndexedContent());
             entryRepository.persist(entry);
+            if (req.getIndexedContent() != null) {
+                LOG.infof(
+                        "Index request received indexedContent: entryId=%s, conversationId=%s,"
+                                + " contentLength=%d",
+                        entry.getId(),
+                        entry.getConversation().getId(),
+                        req.getIndexedContent().length());
+            }
             entitiesToVectorize.add(entry);
             indexed++;
         }
@@ -1768,7 +1782,10 @@ public class PostgresMemoryStore implements MemoryStore {
         if (text == null || text.isBlank()) {
             return;
         }
-        SearchStore store = searchStoreSelector.getSearchStore();
+        VectorSearchStore store = searchStoreSelector.getSearchStore();
+        if (store == null || !store.isEnabled()) {
+            return;
+        }
         float[] embedding = embeddingService.embed(text);
         if (embedding == null || embedding.length == 0) {
             return;
@@ -1905,8 +1922,11 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     private boolean shouldVectorize() {
-        SearchStore store = searchStoreSelector.getSearchStore();
-        return store != null && store.isEnabled() && embeddingService.isEnabled();
+        VectorSearchStore store = searchStoreSelector.getSearchStore();
+        return store != null
+                && store.isEnabled()
+                && store.isSemanticSearchAvailable()
+                && embeddingService.isEnabled();
     }
 
     private OffsetDateTime parseOffsetDateTime(String value) {
@@ -2494,6 +2514,84 @@ public class PostgresMemoryStore implements MemoryStore {
 
         result.setResults(resultsList);
         return result;
+    }
+
+    @Override
+    public SearchResultDto buildFromVectorResult(
+            String entryId, String conversationId, double score, boolean includeEntry) {
+        EntryEntity entry = entryRepository.findById(UUID.fromString(entryId));
+        if (entry == null) {
+            return null;
+        }
+
+        ConversationEntity conversation =
+                conversationRepository.findById(UUID.fromString(conversationId));
+
+        SearchResultDto dto = new SearchResultDto();
+        dto.setEntryId(entryId);
+        dto.setConversationId(conversationId);
+        dto.setScore(score);
+
+        if (conversation != null && conversation.getTitle() != null) {
+            dto.setConversationTitle(decryptTitle(conversation.getTitle()));
+        }
+
+        String indexedContent = entry.getIndexedContent();
+        if (indexedContent != null && !indexedContent.isBlank()) {
+            dto.setHighlights(extractHighlight(indexedContent));
+        }
+
+        if (includeEntry) {
+            dto.setEntry(toEntryDto(entry));
+        }
+
+        return dto;
+    }
+
+    @Override
+    public SearchResultDto buildFromFullTextResult(
+            String entryId,
+            String conversationId,
+            double score,
+            String highlight,
+            boolean includeEntry) {
+        EntryEntity entry = entryRepository.findById(UUID.fromString(entryId));
+        if (entry == null) {
+            return null;
+        }
+
+        ConversationEntity conversation =
+                conversationRepository.findById(UUID.fromString(conversationId));
+
+        SearchResultDto dto = new SearchResultDto();
+        dto.setEntryId(entryId);
+        dto.setConversationId(conversationId);
+        dto.setScore(score);
+
+        if (conversation != null && conversation.getTitle() != null) {
+            dto.setConversationTitle(decryptTitle(conversation.getTitle()));
+        }
+
+        if (highlight != null && !highlight.isBlank()) {
+            dto.setHighlights(highlight);
+        }
+
+        if (includeEntry) {
+            dto.setEntry(toEntryDto(entry));
+        }
+
+        return dto;
+    }
+
+    private String extractHighlight(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        int maxLength = 200;
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...";
     }
 
     @Override

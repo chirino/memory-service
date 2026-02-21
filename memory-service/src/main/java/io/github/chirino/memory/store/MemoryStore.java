@@ -12,6 +12,7 @@ import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
+import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
@@ -154,6 +155,16 @@ public interface MemoryStore {
             String conversationId, String afterCursor, int limit);
 
     SearchResultsDto adminSearchEntries(AdminSearchQuery query);
+
+    SearchResultDto buildFromVectorResult(
+            String entryId, String conversationId, double score, boolean includeEntry);
+
+    SearchResultDto buildFromFullTextResult(
+            String entryId,
+            String conversationId,
+            double score,
+            String highlight,
+            boolean includeEntry);
 
     // Eviction support
     List<String> findEvictableGroupIds(OffsetDateTime cutoff, int limit);

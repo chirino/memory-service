@@ -1,28 +1,17 @@
 package io.github.chirino.memory.vector;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.SearchEntriesRequest;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.model.AdminSearchQuery;
-import io.github.chirino.memory.persistence.entity.ConversationEntity;
-import io.github.chirino.memory.persistence.entity.EntryEntity;
-import io.github.chirino.memory.persistence.repo.ConversationRepository;
-import io.github.chirino.memory.persistence.repo.EntryRepository;
 import io.github.chirino.memory.store.SearchTypeUnavailableException;
 import io.github.chirino.memory.vector.FullTextSearchRepository.FullTextSearchResult;
 import io.github.chirino.memory.vector.PgVectorEmbeddingRepository.VectorSearchResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.nio.charset.StandardCharsets;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.UUID;
-import memory.service.io.github.chirino.dataencryption.DataEncryptionService;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -33,10 +22,9 @@ import org.jboss.logging.Logger;
  * Access control is enforced via JOIN with conversation_memberships table.
  */
 @ApplicationScoped
-public class PgSearchStore implements SearchStore {
+public class PgSearchStore implements VectorSearchStore, FullTextSearchStore {
 
     private static final Logger LOG = Logger.getLogger(PgSearchStore.class);
-    private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     @ConfigProperty(name = "memory-service.search.semantic.enabled", defaultValue = "true")
     boolean semanticSearchEnabled;
@@ -47,21 +35,28 @@ public class PgSearchStore implements SearchStore {
     @Inject PgVectorEmbeddingRepository embeddingRepository;
     @Inject FullTextSearchRepository fullTextSearchRepository;
     @Inject EmbeddingService embeddingService;
-    @Inject EntryRepository entryRepository;
-    @Inject ConversationRepository conversationRepository;
-    @Inject DataEncryptionService dataEncryptionService;
-    @Inject ObjectMapper objectMapper;
+    @Inject SearchResultDtoBuilder resultBuilder;
 
     @Override
     public boolean isEnabled() {
-        // Always enabled - falls back to keyword search when embeddings are not available
+        // Vector store is available when this implementation is selected.
         return true;
+    }
+
+    @Override
+    public boolean isSemanticSearchAvailable() {
+        return semanticSearchEnabled && embeddingService.isEnabled();
+    }
+
+    @Override
+    public boolean isFullTextSearchAvailable() {
+        return fullTextSearchEnabled;
     }
 
     @Override
     public SearchResultsDto search(String userId, SearchEntriesRequest request) {
         if (request.getQuery() == null || request.getQuery().isBlank()) {
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         String searchType = request.getSearchType() != null ? request.getSearchType() : "auto";
@@ -75,7 +70,9 @@ public class PgSearchStore implements SearchStore {
                 validateFullTextSearchAvailable();
                 yield fullTextSearch(userId, request);
             }
-            case "auto" -> autoSearch(userId, request);
+            case "auto" ->
+                    throw new IllegalArgumentException(
+                            "searchType 'auto' must be resolved by the caller");
             default ->
                     throw new IllegalArgumentException(
                             "Invalid searchType: "
@@ -85,7 +82,7 @@ public class PgSearchStore implements SearchStore {
     }
 
     private void validateSemanticSearchAvailable() {
-        if (!semanticSearchEnabled || !embeddingService.isEnabled()) {
+        if (!isSemanticSearchAvailable()) {
             List<String> available = fullTextSearchEnabled ? List.of("fulltext") : List.of();
             throw new SearchTypeUnavailableException(
                     "Semantic search is not available. The embedding service is disabled on this"
@@ -95,11 +92,8 @@ public class PgSearchStore implements SearchStore {
     }
 
     private void validateFullTextSearchAvailable() {
-        if (!fullTextSearchEnabled) {
-            List<String> available =
-                    (semanticSearchEnabled && embeddingService.isEnabled())
-                            ? List.of("semantic")
-                            : List.of();
+        if (!isFullTextSearchAvailable()) {
+            List<String> available = isSemanticSearchAvailable() ? List.of("semantic") : List.of();
             throw new SearchTypeUnavailableException(
                     "Full-text search is not available. The server is not configured with"
                             + " PostgreSQL full-text search support.",
@@ -107,49 +101,12 @@ public class PgSearchStore implements SearchStore {
         }
     }
 
-    private SearchResultsDto autoSearch(String userId, SearchEntriesRequest request) {
-        // Try semantic first if available
-        if (semanticSearchEnabled && embeddingService.isEnabled()) {
-            LOG.infof("autoSearch: attempting semantic search for query '%s'", request.getQuery());
-            SearchResultsDto results = semanticSearch(userId, request);
-            if (!results.getResults().isEmpty()) {
-                LOG.infof(
-                        "autoSearch: semantic search returned %d results",
-                        results.getResults().size());
-                return results;
-            }
-            LOG.info("autoSearch: semantic search returned no results");
-        } else {
-            LOG.infof(
-                    "autoSearch: semantic search skipped (enabled=%s, embeddingService.enabled=%s)",
-                    semanticSearchEnabled, embeddingService.isEnabled());
-        }
-
-        // Fall back to full-text if available
-        if (fullTextSearchEnabled) {
-            LOG.infof("autoSearch: attempting full-text search for query '%s'", request.getQuery());
-            SearchResultsDto results = fullTextSearch(userId, request);
-            if (!results.getResults().isEmpty()) {
-                LOG.infof(
-                        "autoSearch: full-text search returned %d results",
-                        results.getResults().size());
-                return results;
-            }
-            LOG.info("autoSearch: full-text search returned no results");
-        } else {
-            LOG.info("autoSearch: full-text search skipped (disabled)");
-        }
-
-        LOG.info("autoSearch: no results from any search method");
-        return emptyResults();
-    }
-
     private SearchResultsDto semanticSearch(String userId, SearchEntriesRequest request) {
         // Embed the query
         float[] queryEmbedding = embeddingService.embed(request.getQuery());
         if (queryEmbedding == null || queryEmbedding.length == 0) {
             LOG.warn("semanticSearch: failed to embed query");
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         int limit = request.getLimit() != null ? request.getLimit() : 20;
@@ -174,11 +131,11 @@ public class PgSearchStore implements SearchStore {
             LOG.infof("semanticSearch: vector query returned %d raw results", vectorResults.size());
         } catch (Exception e) {
             LOG.warnf("semanticSearch: vector search failed: %s", e.getMessage());
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         if (vectorResults.isEmpty()) {
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         // Build result DTOs with entry details
@@ -188,21 +145,21 @@ public class PgSearchStore implements SearchStore {
                 break;
             }
 
-            SearchResultDto dto = buildSearchResultDto(vr, includeEntry);
+            SearchResultDto dto =
+                    resultBuilder.buildFromVectorResult(
+                            vr.entryId(), vr.conversationId(), vr.score(), includeEntry);
             if (dto != null) {
                 resultsList.add(dto);
             }
         }
 
-        SearchResultsDto result = new SearchResultsDto();
-        result.setResults(resultsList);
-
         // Determine next cursor
+        String nextCursor = null;
         if (vectorResults.size() > limit && !resultsList.isEmpty()) {
-            result.setAfterCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+            nextCursor = resultsList.get(resultsList.size() - 1).getEntryId();
         }
 
-        return result;
+        return resultBuilder.buildResultsFromList(resultsList, nextCursor);
     }
 
     private SearchResultsDto fullTextSearch(String userId, SearchEntriesRequest request) {
@@ -223,11 +180,11 @@ public class PgSearchStore implements SearchStore {
             LOG.infof("fullTextSearch: query returned %d raw results", ftsResults.size());
         } catch (Exception e) {
             LOG.warnf("fullTextSearch: search failed: %s", e.getMessage());
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         if (ftsResults.isEmpty()) {
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         List<SearchResultDto> resultsList = new ArrayList<>();
@@ -236,152 +193,24 @@ public class PgSearchStore implements SearchStore {
                 break;
             }
 
-            SearchResultDto dto = buildSearchResultDtoFromFts(fts, includeEntry);
+            SearchResultDto dto =
+                    resultBuilder.buildFromFullTextResult(
+                            fts.entryId(),
+                            fts.conversationId(),
+                            fts.score(),
+                            fts.highlight(),
+                            includeEntry);
             if (dto != null) {
                 resultsList.add(dto);
             }
         }
 
-        SearchResultsDto result = new SearchResultsDto();
-        result.setResults(resultsList);
-
+        String nextCursor = null;
         if (ftsResults.size() > limit && !resultsList.isEmpty()) {
-            result.setAfterCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+            nextCursor = resultsList.get(resultsList.size() - 1).getEntryId();
         }
 
-        return result;
-    }
-
-    private SearchResultsDto emptyResults() {
-        SearchResultsDto result = new SearchResultsDto();
-        result.setResults(Collections.emptyList());
-        result.setAfterCursor(null);
-        return result;
-    }
-
-    private SearchResultDto buildSearchResultDto(VectorSearchResult vr, boolean includeEntry) {
-        // Fetch entry
-        EntryEntity entry = entryRepository.findById(UUID.fromString(vr.entryId()));
-        if (entry == null) {
-            return null;
-        }
-
-        // Fetch conversation for title
-        ConversationEntity conversation =
-                conversationRepository.findById(UUID.fromString(vr.conversationId()));
-
-        SearchResultDto dto = new SearchResultDto();
-        dto.setEntryId(vr.entryId());
-        dto.setConversationId(vr.conversationId());
-        dto.setScore(vr.score());
-
-        // Decrypt and set conversation title
-        if (conversation != null && conversation.getTitle() != null) {
-            dto.setConversationTitle(decryptTitle(conversation.getTitle()));
-        }
-
-        // Generate highlights from indexed content
-        String indexedContent = entry.getIndexedContent();
-        if (indexedContent != null && !indexedContent.isBlank()) {
-            dto.setHighlights(extractHighlight(indexedContent));
-        }
-
-        // Include full entry if requested
-        if (includeEntry) {
-            dto.setEntry(toEntryDto(entry));
-        }
-
-        return dto;
-    }
-
-    private SearchResultDto buildSearchResultDtoFromFts(
-            FullTextSearchResult fts, boolean includeEntry) {
-        // Fetch entry
-        EntryEntity entry = entryRepository.findById(UUID.fromString(fts.entryId()));
-        if (entry == null) {
-            return null;
-        }
-
-        // Fetch conversation for title
-        ConversationEntity conversation =
-                conversationRepository.findById(UUID.fromString(fts.conversationId()));
-
-        SearchResultDto dto = new SearchResultDto();
-        dto.setEntryId(fts.entryId());
-        dto.setConversationId(fts.conversationId());
-        dto.setScore(fts.score());
-
-        // Decrypt and set conversation title
-        if (conversation != null && conversation.getTitle() != null) {
-            dto.setConversationTitle(decryptTitle(conversation.getTitle()));
-        }
-
-        // Use ts_headline highlight from full-text search
-        if (fts.highlight() != null && !fts.highlight().isBlank()) {
-            dto.setHighlights(fts.highlight());
-        }
-
-        // Include full entry if requested
-        if (includeEntry) {
-            dto.setEntry(toEntryDto(entry));
-        }
-
-        return dto;
-    }
-
-    private String decryptTitle(byte[] encryptedTitle) {
-        if (encryptedTitle == null) {
-            return null;
-        }
-        byte[] plain = dataEncryptionService.decrypt(encryptedTitle);
-        return new String(plain, StandardCharsets.UTF_8);
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Object> decryptContent(byte[] content) {
-        if (content == null) {
-            return null;
-        }
-        byte[] plain = dataEncryptionService.decrypt(content);
-        try {
-            return objectMapper.readValue(plain, List.class);
-        } catch (Exception e) {
-            LOG.warnf("Failed to deserialize entry content: %s", e.getMessage());
-            return null;
-        }
-    }
-
-    private EntryDto toEntryDto(EntryEntity entry) {
-        EntryDto dto = new EntryDto();
-        dto.setId(entry.getId().toString());
-        dto.setConversationId(entry.getConversation().getId().toString());
-        dto.setUserId(entry.getUserId());
-        dto.setChannel(entry.getChannel());
-        dto.setEpoch(entry.getEpoch());
-        dto.setContentType(entry.getContentType());
-
-        List<Object> content = decryptContent(entry.getContent());
-        if (content != null) {
-            dto.setContent(content);
-        }
-
-        if (entry.getCreatedAt() != null) {
-            dto.setCreatedAt(ISO_FORMATTER.format(entry.getCreatedAt()));
-        }
-
-        return dto;
-    }
-
-    private String extractHighlight(String text) {
-        if (text == null || text.isBlank()) {
-            return null;
-        }
-        // Return first 200 characters as highlight
-        int maxLength = 200;
-        if (text.length() <= maxLength) {
-            return text;
-        }
-        return text.substring(0, maxLength) + "...";
+        return resultBuilder.buildResultsFromList(resultsList, nextCursor);
     }
 
     @Override
@@ -416,7 +245,7 @@ public class PgSearchStore implements SearchStore {
     @Override
     public SearchResultsDto adminSearch(AdminSearchQuery query) {
         if (query.getQuery() == null || query.getQuery().isBlank()) {
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         String searchType = query.getSearchType() != null ? query.getSearchType() : "auto";
@@ -430,7 +259,9 @@ public class PgSearchStore implements SearchStore {
                 validateFullTextSearchAvailable();
                 yield adminFullTextSearch(query);
             }
-            case "auto" -> adminAutoSearch(query);
+            case "auto" ->
+                    throw new IllegalArgumentException(
+                            "searchType 'auto' must be resolved by the caller");
             default ->
                     throw new IllegalArgumentException(
                             "Invalid searchType: "
@@ -439,52 +270,11 @@ public class PgSearchStore implements SearchStore {
         };
     }
 
-    private SearchResultsDto adminAutoSearch(AdminSearchQuery query) {
-        // Try semantic first if available
-        if (semanticSearchEnabled && embeddingService.isEnabled()) {
-            LOG.infof(
-                    "adminAutoSearch: attempting semantic search for query '%s'", query.getQuery());
-            SearchResultsDto results = adminSemanticSearch(query);
-            if (!results.getResults().isEmpty()) {
-                LOG.infof(
-                        "adminAutoSearch: semantic search returned %d results",
-                        results.getResults().size());
-                return results;
-            }
-            LOG.info("adminAutoSearch: semantic search returned no results");
-        } else {
-            LOG.infof(
-                    "adminAutoSearch: semantic search skipped (enabled=%s,"
-                            + " embeddingService.enabled=%s)",
-                    semanticSearchEnabled, embeddingService.isEnabled());
-        }
-
-        // Fall back to full-text if available
-        if (fullTextSearchEnabled) {
-            LOG.infof(
-                    "adminAutoSearch: attempting full-text search for query '%s'",
-                    query.getQuery());
-            SearchResultsDto results = adminFullTextSearch(query);
-            if (!results.getResults().isEmpty()) {
-                LOG.infof(
-                        "adminAutoSearch: full-text search returned %d results",
-                        results.getResults().size());
-                return results;
-            }
-            LOG.info("adminAutoSearch: full-text search returned no results");
-        } else {
-            LOG.info("adminAutoSearch: full-text search skipped (disabled)");
-        }
-
-        LOG.info("adminAutoSearch: no results from any search method");
-        return emptyResults();
-    }
-
     private SearchResultsDto adminSemanticSearch(AdminSearchQuery query) {
         float[] queryEmbedding = embeddingService.embed(query.getQuery());
         if (queryEmbedding == null || queryEmbedding.length == 0) {
             LOG.warn("adminSemanticSearch: failed to embed query");
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         int limit = query.getLimit() != null ? query.getLimit() : 20;
@@ -511,11 +301,11 @@ public class PgSearchStore implements SearchStore {
                     vectorResults.size());
         } catch (Exception e) {
             LOG.warnf("adminSemanticSearch: vector search failed: %s", e.getMessage());
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         if (vectorResults.isEmpty()) {
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         List<SearchResultDto> resultsList = new ArrayList<>();
@@ -524,20 +314,20 @@ public class PgSearchStore implements SearchStore {
                 break;
             }
 
-            SearchResultDto dto = buildSearchResultDto(vr, includeEntry);
+            SearchResultDto dto =
+                    resultBuilder.buildFromVectorResult(
+                            vr.entryId(), vr.conversationId(), vr.score(), includeEntry);
             if (dto != null) {
                 resultsList.add(dto);
             }
         }
 
-        SearchResultsDto result = new SearchResultsDto();
-        result.setResults(resultsList);
-
+        String nextCursor = null;
         if (vectorResults.size() > limit && !resultsList.isEmpty()) {
-            result.setAfterCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+            nextCursor = resultsList.get(resultsList.size() - 1).getEntryId();
         }
 
-        return result;
+        return resultBuilder.buildResultsFromList(resultsList, nextCursor);
     }
 
     private SearchResultsDto adminFullTextSearch(AdminSearchQuery query) {
@@ -562,11 +352,11 @@ public class PgSearchStore implements SearchStore {
             LOG.infof("adminFullTextSearch: query returned %d raw results", ftsResults.size());
         } catch (Exception e) {
             LOG.warnf("adminFullTextSearch: search failed: %s", e.getMessage());
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         if (ftsResults.isEmpty()) {
-            return emptyResults();
+            return resultBuilder.emptyResults();
         }
 
         List<SearchResultDto> resultsList = new ArrayList<>();
@@ -575,20 +365,24 @@ public class PgSearchStore implements SearchStore {
                 break;
             }
 
-            SearchResultDto dto = buildSearchResultDtoFromFts(fts, includeEntry);
+            SearchResultDto dto =
+                    resultBuilder.buildFromFullTextResult(
+                            fts.entryId(),
+                            fts.conversationId(),
+                            fts.score(),
+                            fts.highlight(),
+                            includeEntry);
             if (dto != null) {
                 resultsList.add(dto);
             }
         }
 
-        SearchResultsDto result = new SearchResultsDto();
-        result.setResults(resultsList);
-
+        String nextCursor = null;
         if (ftsResults.size() > limit && !resultsList.isEmpty()) {
-            result.setAfterCursor(resultsList.get(resultsList.size() - 1).getEntryId());
+            nextCursor = resultsList.get(resultsList.size() - 1).getEntryId();
         }
 
-        return result;
+        return resultBuilder.buildResultsFromList(resultsList, nextCursor);
     }
 
     private String toPgVectorLiteral(float[] embedding) {
