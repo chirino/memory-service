@@ -2,13 +2,13 @@
 # install task from: https://taskfile.dev/docs/installation
 version: '3'
 
+dotenv: ['.env']
+
 vars:
   KIND_CLUSTER_NAME: memory-service
   ENVOY_GATEWAY_VERSION: v1.7.0
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
-dotenv:
-  - .env
-  
+
 tasks:
 
   site:
@@ -29,18 +29,19 @@ tasks:
       - docker build -t ghcr.io/chirino/memory-service-chat-quarkus:latest -f quarkus/examples/chat-quarkus/Dockerfile .
 
   dev:memory-service:
-    desc: Run the memory-service app in dev mode.
+    desc: Run the memory-service app in dev mode. Use quick=true to skip dependency compilation.
     cmds:
-      - |
-        [ -f .env ] && source .env
-        ./mvnw -T 1C install -pl ':memory-service' -am -DskipTests
-        ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log
+      - cmd: ./mvnw -T 1C install -pl ':memory-service' -am -DskipTests
+        if: '{{eq .quick ""}}'
+      - ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log
 
   dev:chat-quarkus:
-    desc: Run the chat-quarkus app in dev mode.
+    desc: Run the chat-quarkus app in dev mode. Use quick=true to skip npm install and dependency compilation.
     cmds:
-      - cd frontends/chat-frontend && npm i
-      - ./mvnw -T 1C install -pl ':memory-service-extension-deployment' -am -DskipTests
+      - cmd: cd frontends/chat-frontend && npm i
+        if: '{{eq .quick ""}}'
+      - cmd: ./mvnw -T 1C install -pl :memory-service-extension-deployment -am -DskipTests
+        if: '{{eq .quick ""}}'
       - ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
 
   secrets:
