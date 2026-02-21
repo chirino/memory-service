@@ -56,7 +56,7 @@ block-beta
 
     block:stores["Pluggable Stores"]:3
         MemStore["MemoryStore"]
-        VecStore["VectorStore"]
+        VecStore["VectorSearchStore"]
         AttStore["AttachmentStore / FileStore"]
         CacheStore["MemoryEntriesCache"]
     end
@@ -64,7 +64,7 @@ block-beta
     block:impl["Implementations"]:3
         PG["PostgreSQL"]
         Mongo["MongoDB"]
-        PGV["pgvector"]
+        PGV["pgvector / Qdrant"]
         Redis["Redis"]
         Infinispan["Infinispan"]
         S3["S3"]
@@ -101,17 +101,17 @@ classDiagram
     MemoryStore <|.. MeteredMemoryStore
     MeteredMemoryStore o-- MemoryStore : wraps
 
-    class VectorStore {
+    class VectorSearchStore {
         <<interface>>
         +search()
         +adminSearch()
         +upsertTranscriptEmbedding()
         +deleteByConversationGroupId()
     }
-    class PgVectorStore
-    class MongoVectorStore
-    VectorStore <|.. PgVectorStore
-    VectorStore <|.. MongoVectorStore
+    class PgSearchStore
+    class LangChain4jSearchStore
+    VectorSearchStore <|.. PgSearchStore
+    VectorSearchStore <|.. LangChain4jSearchStore
 
     class MemoryEntriesCache {
         <<interface>>
@@ -176,7 +176,7 @@ sequenceDiagram
     participant API as REST / gRPC
     participant Svc as Service Core
     participant Embed as EmbeddingService
-    participant Vec as VectorStore
+    participant Vec as VectorSearchStore
     participant FTS as Full-Text Index
     participant Tasks as Task Queue
 
