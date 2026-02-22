@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 public class DataEncryptionServiceFallbackTest {
 
     @Test
-    void encryptsWithFirstProviderAndDecryptsWithEnvelope() throws Exception {
+    void encryptsWithFirstProviderAndDecryptsWithHeader() throws Exception {
         byte[] key = new byte[32];
         new SecureRandom().nextBytes(key);
 
@@ -28,10 +28,10 @@ public class DataEncryptionServiceFallbackTest {
         DataEncryptionService service = new DataEncryptionService(config, List.of(dek, plain));
         invokeInit(service);
 
-        byte[] plaintext = "envelope-test".getBytes();
+        byte[] plaintext = "header-test".getBytes();
         byte[] ciphertext = service.encrypt(plaintext);
 
-        // Envelope should change the bytes
+        // Header + encryption changes the bytes
         assertNotEquals(new String(plaintext), new String(ciphertext));
 
         byte[] decrypted = service.decrypt(ciphertext);
@@ -39,24 +39,33 @@ public class DataEncryptionServiceFallbackTest {
     }
 
     @Test
-    void fallsBackToPlainForLegacyData() throws Exception {
+    void serviceRoutesToCorrectProviderViaHeader() throws Exception {
         byte[] key = new byte[32];
         new SecureRandom().nextBytes(key);
 
         DekDataEncryptionProvider dek = createProviderWithKey(key);
         PlainDataEncryptionProvider plain = new PlainDataEncryptionProvider();
 
-        TestConfig config = new TestConfig(List.of("dek", "plain"));
-        DataEncryptionService service = new DataEncryptionService(config, List.of(dek, plain));
-        invokeInit(service);
+        // Service configured with plain as primary
+        TestConfig plainConfig = new TestConfig(List.of("plain", "dek"));
+        DataEncryptionService plainService =
+                new DataEncryptionService(plainConfig, List.of(dek, plain));
+        invokeInit(plainService);
 
-        byte[] legacyData = "legacy-plain-data".getBytes();
+        byte[] plaintext = "provider-routing".getBytes();
 
-        // Not wrapped in an envelope, so service should try providers in order.
-        byte[] decrypted = service.decrypt(legacyData);
+        // Encrypt with plain service (plain provider writes MSEH header with provider_id="plain")
+        byte[] encrypted = plainService.encrypt(plaintext);
 
-        // DEK provider should fail fast, plain provider should act as identity.
-        assertArrayEquals(legacyData, decrypted);
+        // A service with dek as primary can still decrypt it because the header has
+        // provider_id="plain"
+        TestConfig dekConfig = new TestConfig(List.of("dek", "plain"));
+        DataEncryptionService dekService =
+                new DataEncryptionService(dekConfig, List.of(dek, plain));
+        invokeInit(dekService);
+
+        byte[] decrypted = dekService.decrypt(encrypted);
+        assertArrayEquals(plaintext, decrypted);
     }
 
     private DekDataEncryptionProvider createProviderWithKey(byte[] key) throws Exception {
