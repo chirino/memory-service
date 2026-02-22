@@ -212,15 +212,15 @@ For the unauthenticated signed-token endpoint, `Authorization` isn't even presen
 
 ## Tasks
 
-- [ ] Create `AttachmentResponseHelper` utility class in `io.github.chirino.memory.api`
-- [ ] Update `AttachmentsResource.retrieve()` — add `If-None-Match` param, ETag header, 304 support, update `Cache-Control` from `no-store` to `max-age=86400, immutable`
-- [ ] Update `AttachmentDownloadResource.download()` — add `If-None-Match` param, ETag header, 304 support, add `immutable` directive
-- [ ] Update `AdminAttachmentsResource.getAttachmentContent()` — same changes as user endpoint
-- [ ] Add new Cucumber step definitions for header testing (see below)
-- [ ] Add Cucumber tests for cache headers on user attachment downloads
-- [ ] Add Cucumber tests for cache headers on admin attachment downloads
-- [ ] Add Cucumber tests for cache headers on signed-token downloads
-- [ ] Add Cucumber tests for conditional GET (304 Not Modified)
+- [x] Create `AttachmentResponseHelper` utility class in `io.github.chirino.memory.api`
+- [x] Update `AttachmentsResource.retrieve()` — add `If-None-Match` param, ETag header, 304 support, update `Cache-Control` from `no-store` to `max-age=86400, immutable`
+- [x] Update `AttachmentDownloadResource.download()` — add `If-None-Match` param, ETag header, 304 support, add `immutable` directive
+- [x] Update `AdminAttachmentsResource.getAttachmentContent()` — same changes as user endpoint
+- [x] Add new Cucumber step definitions for header testing (see below)
+- [x] Add Cucumber tests for cache headers on user attachment downloads
+- [x] Add Cucumber tests for cache headers on admin attachment downloads
+- [x] Add Cucumber tests for cache headers on signed-token downloads
+- [x] Add Cucumber tests for conditional GET (304 Not Modified)
 
 ## Cucumber Tests
 

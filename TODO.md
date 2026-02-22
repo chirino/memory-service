@@ -8,6 +8,7 @@
 * make all common memory-service config options prefixed with "memory-service." (see [057-unified-config-key-naming.md](docs/enhancements/057-unified-config-key-naming.md))
 * bug: delete a fork, restore: it does not show up restored.
 * encrypted file store (see [063-encrypted-file-store.md](docs/enhancements/063-encrypted-file-store.md))
+* move the `data.encryption.*` config properties under `memory-service.*`, default the file encryption to match data encryption. Make sure the encryption header is not being added when no encryption is enabled.
 
 # Hardening Work
 
@@ -15,9 +16,7 @@
 
 # Performance Related
 
-* are there any http cache/headers that could reduce load against the server? (see [055-attachment-cache-headers.md](docs/enhancements/055-attachment-cache-headers.md))
 * Look into partitioning the messages table to improve pref. (see [059-entries-table-partitioning.md](docs/enhancements/059-entries-table-partitioning.md))
-    * can we use the sha256 as the ETAG of attachments? (see [055-attachment-cache-headers.md](docs/enhancements/055-attachment-cache-headers.md))
 
 # Need Dev Feedback for:
 

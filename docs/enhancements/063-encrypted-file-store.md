@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 063: Encrypted File Store
 
-> **Status**: Proposed.
+> **Status**: Implemented.
 
 ## Summary
 
@@ -334,6 +334,8 @@ Raw upload → DigestInputStream (SHA-256) → CountingInputStream → Encryptin
 
 The SHA-256 still reflects the plaintext, correct for deduplication and integrity checks.
 
+`EncryptingFileStore.store()` also returns the **plaintext** byte count as `FileStoreResult.size()` (tracked via `InputStream.transferTo()` return value). This ensures `att.size()` stored in the database and the `Content-Length` header on download reflect the plaintext size, not the larger ciphertext size.
+
 ### No New Database Schema
 
 `EncryptionHeader` is a binary prefix prepended to stored bytes. The file store already stores opaque bytes identified by a storage key — no new columns or metadata fields needed.
@@ -442,21 +444,21 @@ Feature: Encrypted file store
 
 ## Tasks
 
-- [ ] Define `EncryptionHeader` proto message in `quarkus-data-encryption` (or hand-code the protobuf encoding for the two fields)
-- [ ] Implement `EncryptionHeader` Java class with `read(InputStream)` and `write(OutputStream)`
-- [ ] Delete `EncryptionEnvelope.java`
-- [ ] Add `encryptingStream(OutputStream)` and `decryptingStream(InputStream, EncryptionHeader)` default methods to `DataEncryptionProvider`
-- [ ] Update `DekDataEncryptionProvider.encrypt(byte[])` and `decrypt(byte[])` to use the new header format (via `encryptingStream`/`decryptingStream`)
-- [ ] Implement `DekDataEncryptionProvider.encryptingStream` and `decryptingStream`
-- [ ] Update `PlainDataEncryptionProvider.encrypt(byte[])` and `decrypt(byte[])` similarly
-- [ ] Implement `PlainDataEncryptionProvider.encryptingStream` and `decryptingStream` (passthrough)
-- [ ] Remove `EncryptionEnvelope` usage from `DataEncryptionService`; add `encryptingStream(OutputStream)` and `decryptingStream(InputStream)`
-- [ ] Update `DataEncryptionService.decrypt(byte[])` to dispatch via `EncryptionHeader` provider ID
-- [ ] Implement `EncryptingFileStore` decorator with virtual-thread pipe `store()` and streaming `retrieve()`
-- [ ] Add `memory-service.attachments.encryption.enabled` to `AttachmentConfig`
-- [ ] Update `FileStoreSelector` to wrap delegate with `EncryptingFileStore` when enabled; add startup validation
-- [ ] Add unit tests: `EncryptionHeaderTest`, `DekDataEncryptionProviderTest` additions, `EncryptingFileStoreTest`, `FileStoreSelectorTest`
-- [ ] Add Cucumber integration tests for encrypted upload/download round-trip
+- [x] Define `EncryptionHeader` proto message in `quarkus-data-encryption` (hand-coded protobuf encoding)
+- [x] Implement `EncryptionHeader` Java class with `read(InputStream)` and `write(OutputStream)`
+- [x] Delete `EncryptionEnvelope.java`
+- [x] Add `encryptingStream(OutputStream)` and `decryptingStream(InputStream, EncryptionHeader)` default methods to `DataEncryptionProvider`
+- [x] Update `DekDataEncryptionProvider.encrypt(byte[])` and `decrypt(byte[])` to use the new header format (via `encryptingStream`/`decryptingStream`)
+- [x] Implement `DekDataEncryptionProvider.encryptingStream` and `decryptingStream`
+- [x] Update `PlainDataEncryptionProvider.encrypt(byte[])` and `decrypt(byte[])` similarly
+- [x] Implement `PlainDataEncryptionProvider.encryptingStream` and `decryptingStream` (passthrough)
+- [x] Remove `EncryptionEnvelope` usage from `DataEncryptionService`; add `encryptingStream(OutputStream)` and `decryptingStream(InputStream)`
+- [x] Update `DataEncryptionService.decrypt(byte[])` to dispatch via `EncryptionHeader` provider ID
+- [x] Implement `EncryptingFileStore` decorator with virtual-thread pipe `store()` and streaming `retrieve()`
+- [x] Add `memory-service.attachments.encryption.enabled` to `AttachmentConfig`
+- [x] Update `FileStoreSelector` to wrap delegate with `EncryptingFileStore` when enabled; add startup validation
+- [x] Add unit tests: `EncryptionHeaderTest`, `DekDataEncryptionProviderTest` additions, `EncryptingFileStoreTest`
+- [x] Add Cucumber integration tests for encrypted upload/download round-trip
 
 ## Files to Modify
 
