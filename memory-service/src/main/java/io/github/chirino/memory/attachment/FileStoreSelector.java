@@ -36,13 +36,13 @@ public class FileStoreSelector {
                     "Unsupported memory-service.attachments.store: " + storeType);
         }
 
-        if (attachmentConfig.isEncryptionEnabled()) {
+        if (dataEncryptionService.isPrimaryProviderReal()) {
             if ("s3".equals(type) && attachmentConfig.isS3DirectDownload()) {
                 throw new IllegalStateException(
                         "S3 direct download (memory-service.attachments.s3.direct-download=true)"
-                                + " is incompatible with file encryption"
-                                + " (memory-service.attachments.encryption.enabled=true)."
-                                + " Disable S3 direct download or disable encryption.");
+                                + " is incompatible with file encryption."
+                                + " Disable S3 direct download or use the plain encryption"
+                                + " provider.");
             }
             selected = new EncryptingFileStore(base, dataEncryptionService);
         } else {

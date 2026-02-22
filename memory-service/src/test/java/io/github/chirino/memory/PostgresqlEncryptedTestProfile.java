@@ -25,8 +25,7 @@ public class PostgresqlEncryptedTestProfile implements QuarkusTestProfile {
                 Map.entry("quarkus.redis.devservices.enabled", "false"),
                 Map.entry("quarkus.infinispan-client.devservices.enabled", "false"),
                 // Enable DEK encryption for both MemoryStore and FileStore
-                Map.entry("data.encryption.providers", "dek"),
-                Map.entry("data.encryption.dek.key", TEST_KEY),
-                Map.entry("memory-service.attachments.encryption.enabled", "true"));
+                Map.entry("memory-service.encryption.providers", "dek"),
+                Map.entry("memory-service.encryption.dek.key", TEST_KEY));
     }
 }

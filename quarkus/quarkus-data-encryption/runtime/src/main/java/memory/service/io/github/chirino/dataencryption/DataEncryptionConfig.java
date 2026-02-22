@@ -9,12 +9,12 @@ import java.util.Map;
  * Root configuration for the data encryption extension.
  *
  * <pre>
- * data.encryption.providers=a,b
- * data.encryption.provider.a.type=vault
- * data.encryption.provider.b.type=plain
+ * memory-service.encryption.providers=a,b
+ * memory-service.encryption.provider.a.type=vault
+ * memory-service.encryption.provider.b.type=plain
  * </pre>
  */
-@ConfigMapping(prefix = "data.encryption")
+@ConfigMapping(prefix = "memory-service.encryption")
 public interface DataEncryptionConfig {
 
     /**

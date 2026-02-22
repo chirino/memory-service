@@ -25,7 +25,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * Only the transit key name is configured here:
  *
  * <pre>
- * data.encryption.vault.transit-key=app-data
+ * memory-service.encryption.vault.transit-key=app-data
  * </pre>
  *
  * The encrypted DEK returned from Vault ({@code ciphertext}) is stored as UTF-8
@@ -36,7 +36,7 @@ public class VaultKeyEncryptionService implements KeyEncryptionService {
 
     @Inject VaultTransitSecretEngine transit;
 
-    @ConfigProperty(name = "data.encryption.vault.transit-key")
+    @ConfigProperty(name = "memory-service.encryption.vault.transit-key")
     String transitKey;
 
     @Override
