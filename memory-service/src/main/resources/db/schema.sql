@@ -64,7 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_groups_deleted
 ------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS entries (
-    id                UUID PRIMARY KEY,
+    id                UUID NOT NULL,
     conversation_id   UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
     user_id           TEXT,
@@ -75,8 +75,27 @@ CREATE TABLE IF NOT EXISTS entries (
     content           BYTEA NOT NULL,
     indexed_content   TEXT,
     indexed_at        TIMESTAMPTZ,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+    indexed_content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', COALESCE(indexed_content, ''))) STORED,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id, conversation_group_id)
+) PARTITION BY HASH (conversation_group_id);
+
+CREATE TABLE IF NOT EXISTS entries_p0  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 0);
+CREATE TABLE IF NOT EXISTS entries_p1  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 1);
+CREATE TABLE IF NOT EXISTS entries_p2  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 2);
+CREATE TABLE IF NOT EXISTS entries_p3  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 3);
+CREATE TABLE IF NOT EXISTS entries_p4  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 4);
+CREATE TABLE IF NOT EXISTS entries_p5  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 5);
+CREATE TABLE IF NOT EXISTS entries_p6  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 6);
+CREATE TABLE IF NOT EXISTS entries_p7  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 7);
+CREATE TABLE IF NOT EXISTS entries_p8  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 8);
+CREATE TABLE IF NOT EXISTS entries_p9  PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 9);
+CREATE TABLE IF NOT EXISTS entries_p10 PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 10);
+CREATE TABLE IF NOT EXISTS entries_p11 PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 11);
+CREATE TABLE IF NOT EXISTS entries_p12 PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 12);
+CREATE TABLE IF NOT EXISTS entries_p13 PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 13);
+CREATE TABLE IF NOT EXISTS entries_p14 PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 14);
+CREATE TABLE IF NOT EXISTS entries_p15 PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 15);
 
 -- Index for finding unindexed history entries (batch indexing job)
 CREATE INDEX IF NOT EXISTS idx_entries_unindexed
@@ -87,11 +106,6 @@ CREATE INDEX IF NOT EXISTS idx_entries_unindexed
 CREATE INDEX IF NOT EXISTS idx_entries_pending_vector_indexing
     ON entries (indexed_at)
     WHERE indexed_content IS NOT NULL AND indexed_at IS NULL;
-
--- Full-text search support: generated tsvector column for GIN index
--- Automatically maintained when indexed_content changes
-ALTER TABLE entries ADD COLUMN IF NOT EXISTS indexed_content_tsv tsvector
-    GENERATED ALWAYS AS (to_tsvector('english', COALESCE(indexed_content, ''))) STORED;
 
 -- GIN index for fast full-text search
 CREATE INDEX IF NOT EXISTS idx_entries_indexed_content_fts
@@ -196,7 +210,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     size            BIGINT,
     sha256          VARCHAR(64),
     user_id         TEXT NOT NULL,
-    entry_id        UUID REFERENCES entries(id) ON DELETE CASCADE,
+    entry_id        UUID,
     status          VARCHAR(20) NOT NULL DEFAULT 'ready',
     source_url      VARCHAR(2048),
     expires_at      TIMESTAMPTZ,

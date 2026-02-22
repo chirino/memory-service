@@ -9,14 +9,33 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Embeddings are associated with individual entries.
 -- The embedding column is unparameterized to support any dimension.
 -- The model column records which provider/model produced each vector.
+-- Note: no FK to entries — PostgreSQL does not support FKs referencing partitioned tables.
 CREATE TABLE IF NOT EXISTS entry_embeddings (
-    entry_id              UUID PRIMARY KEY REFERENCES entries (id) ON DELETE CASCADE,
+    entry_id              UUID NOT NULL,
     conversation_id       UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
     embedding             vector NOT NULL,
     model                 VARCHAR(128) NOT NULL,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (entry_id, conversation_group_id)
+) PARTITION BY HASH (conversation_group_id);
+
+CREATE TABLE IF NOT EXISTS entry_embeddings_p0  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 0);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p1  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 1);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p2  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 2);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p3  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 3);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p4  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 4);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p5  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 5);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p6  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 6);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p7  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 7);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p8  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 8);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p9  PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 9);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p10 PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 10);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p11 PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 11);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p12 PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 12);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p13 PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 13);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p14 PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 14);
+CREATE TABLE IF NOT EXISTS entry_embeddings_p15 PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER 15);
 
 -- Index for filtering by conversation group (for access control via JOIN)
 CREATE INDEX IF NOT EXISTS idx_entry_embeddings_group

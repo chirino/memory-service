@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: complete
 ---
 
 # Enhancement 059: Entries and Entry Embeddings Table Partitioning
 
-> **Status**: Proposed.
+> **Status**: Complete.
 
 ## Summary
 
