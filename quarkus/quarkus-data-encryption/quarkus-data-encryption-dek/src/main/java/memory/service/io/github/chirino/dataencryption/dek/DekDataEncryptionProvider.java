@@ -34,7 +34,7 @@ public class DekDataEncryptionProvider implements DataEncryptionProvider {
     private static final int GCM_TAG_LENGTH_BITS = 128;
     private static final int IV_LENGTH_BYTES = 12;
 
-    @ConfigProperty(name = "data.encryption.providers")
+    @ConfigProperty(name = "memory-service.encryption.providers")
     Optional<List<String>> providerOrder;
 
     // Loaded lazily via ConfigProvider only when the DEK provider is enabled.
@@ -44,10 +44,10 @@ public class DekDataEncryptionProvider implements DataEncryptionProvider {
 
     /**
      * Optional additional decryption keys, expressed as Base64-encoded strings. The first key
-     * (data.encryption.dek.key) is always used for encryption; all keys (primary + additional) are
-     * tried for decryption.
+     * (memory-service.encryption.dek.key) is always used for encryption; all keys (primary +
+     * additional) are tried for decryption.
      */
-    @ConfigProperty(name = "data.encryption.dek.decryption-keys")
+    @ConfigProperty(name = "memory-service.encryption.dek.decryption-keys")
     Optional<List<String>> additionalDecryptionKeys;
 
     private SecretKey secretKey;
@@ -63,7 +63,8 @@ public class DekDataEncryptionProvider implements DataEncryptionProvider {
                     providerOrder.get().stream()
                             .anyMatch(
                                     id -> {
-                                        String base = "data.encryption.provider." + id + ".";
+                                        String base =
+                                                "memory-service.encryption.provider." + id + ".";
                                         String type =
                                                 cfg.getOptionalValue(base + "type", String.class)
                                                         .orElse(id);
@@ -79,7 +80,7 @@ public class DekDataEncryptionProvider implements DataEncryptionProvider {
         }
 
         if (!dekEnabled) {
-            // Provider is not configured in data.encryption.providers; skip key initialization.
+            // Provider is not configured in memory-service.encryption.providers; skip key init.
             this.decryptionKeys = List.of();
             return;
         }
@@ -88,24 +89,27 @@ public class DekDataEncryptionProvider implements DataEncryptionProvider {
             if (dekKeyConfig == null) {
                 Config cfg = ConfigProvider.getConfig();
                 dekKeyConfig =
-                        cfg.getOptionalValue("data.encryption.dek.key", String.class).orElse("");
+                        cfg.getOptionalValue("memory-service.encryption.dek.key", String.class)
+                                .orElse("");
             }
             if (dekKeyConfig == null || dekKeyConfig.isBlank()) {
                 throw new IllegalStateException(
-                        "data.encryption.dek.key must be set to a Base64-encoded 32-byte AES-256"
-                                + " key");
+                        "memory-service.encryption.dek.key must be set to a Base64-encoded"
+                                + " 32-byte AES-256 key");
             }
             try {
                 dekKey = Base64.getDecoder().decode(dekKeyConfig.trim());
             } catch (IllegalArgumentException e) {
                 throw new IllegalStateException(
-                        "data.encryption.dek.key must be a Base64-encoded 32-byte AES-256 key", e);
+                        "memory-service.encryption.dek.key must be a Base64-encoded 32-byte"
+                                + " AES-256 key",
+                        e);
             }
         }
 
         if (dekKey == null || dekKey.length != 32) {
             throw new IllegalStateException(
-                    "data.encryption.dek.key must be a 32-byte AES-256 key");
+                    "memory-service.encryption.dek.key must be a 32-byte AES-256 key");
         }
         this.secretKey = new SecretKeySpec(dekKey, "AES");
 
@@ -120,8 +124,8 @@ public class DekDataEncryptionProvider implements DataEncryptionProvider {
                 byte[] keyBytes = Base64.getDecoder().decode(encoded.trim());
                 if (keyBytes.length != 32) {
                     throw new IllegalStateException(
-                            "Each data.encryption.dek.decryption-keys entry must decode to a"
-                                    + " 32-byte AES-256 key");
+                            "Each memory-service.encryption.dek.decryption-keys entry must decode"
+                                    + " to a 32-byte AES-256 key");
                 }
                 keys.add(new SecretKeySpec(keyBytes, "AES"));
             }

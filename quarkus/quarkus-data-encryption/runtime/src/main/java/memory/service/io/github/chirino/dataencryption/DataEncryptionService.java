@@ -8,6 +8,8 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PushbackInputStream;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,7 +28,7 @@ public class DataEncryptionService {
 
     @Inject
     public DataEncryptionService(
-            @ConfigProperty(name = "data.encryption.providers")
+            @ConfigProperty(name = "memory-service.encryption.providers")
                     Optional<List<String>> providerOrder,
             Instance<DataEncryptionProvider> providersInstance) {
         this.providerOrder = providerOrder.orElse(List.of("plain"));
@@ -39,7 +41,7 @@ public class DataEncryptionService {
         Config cfg = ConfigProvider.getConfig();
         Map<String, DataEncryptionProvider> byId = new java.util.LinkedHashMap<>();
         for (String id : this.providerOrder) {
-            String base = "data.encryption.provider." + id + ".";
+            String base = "memory-service.encryption.provider." + id + ".";
             String type = cfg.getOptionalValue(base + "type", String.class).orElse(id);
             boolean enabled = cfg.getOptionalValue(base + "enabled", Boolean.class).orElse(true);
             if (!enabled) {
@@ -110,6 +112,14 @@ public class DataEncryptionService {
         this.primaryProvider = primary.getValue();
     }
 
+    /**
+     * Returns true when the primary provider performs real encryption (not plain/no-op). Used to
+     * automatically derive whether file store encryption should be active.
+     */
+    public boolean isPrimaryProviderReal() {
+        return !(primaryProvider instanceof PlainDataEncryptionProvider);
+    }
+
     public byte[] encrypt(byte[] plaintext) {
         return primaryProvider.encrypt(plaintext);
     }
@@ -119,8 +129,8 @@ public class DataEncryptionService {
         try {
             header = EncryptionHeader.read(new ByteArrayInputStream(data));
         } catch (IOException e) {
-            throw new DecryptionFailedException(
-                    "Not a valid encrypted payload (missing or corrupt MSEH header)");
+            // No valid MSEH header — data was stored without encryption; return as-is.
+            return data;
         }
         DataEncryptionProvider provider = providersById.get(header.getProviderId());
         if (provider == null) {
@@ -141,16 +151,25 @@ public class DataEncryptionService {
     }
 
     /**
-     * Reads the {@link EncryptionHeader} from {@code source}, routes to the correct provider, and
-     * returns a decrypting {@link InputStream} over the remaining bytes.
+     * Peeks at the first 4 bytes of {@code source}. If the {@link EncryptionHeader#MAGIC} is
+     * present, routes to the correct provider for decryption. Otherwise returns the stream
+     * unchanged (data was stored without an encryption header).
      */
     public InputStream decryptingStream(InputStream source) throws IOException {
-        EncryptionHeader header = EncryptionHeader.read(source);
+        PushbackInputStream pis = new PushbackInputStream(source, 4);
+        byte[] magic = new byte[4];
+        int n = pis.read(magic);
+        if (n < 4 || ByteBuffer.wrap(magic).getInt() != EncryptionHeader.MAGIC) {
+            if (n > 0) pis.unread(magic, 0, n);
+            return pis; // no encryption header present — passthrough
+        }
+        // Valid MSEH prefix; parse remaining header fields and dispatch.
+        EncryptionHeader header = EncryptionHeader.readAfterMagic(pis);
         DataEncryptionProvider provider = providersById.get(header.getProviderId());
         if (provider == null) {
             throw new DecryptionFailedException(
                     "No data encryption provider registered with id: " + header.getProviderId());
         }
-        return provider.decryptingStream(source, header);
+        return provider.decryptingStream(pis, header);
     }
 }

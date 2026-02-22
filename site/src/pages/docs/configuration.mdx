@@ -176,6 +176,50 @@ When using a self-hosted S3-compatible store (like MinIO) that is only reachable
 
 See [Attachments](/docs/concepts/attachments/) for details on how attachments work.
 
+## Encryption
+
+Memory Service supports transparent encryption of all stored data — conversation titles, entry content, and file attachments — using the `memory-service.encryption.*` configuration namespace.
+
+| Property | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `memory-service.encryption.providers` | comma-separated provider IDs | `plain` | Ordered list of providers; first active provider encrypts new data |
+| `memory-service.encryption.provider.<id>.type` | `plain`, `dek`, `vault` | _(required)_ | Provider type for the named ID |
+| `memory-service.encryption.provider.<id>.enabled` | `true`, `false` | `true` | Whether this provider is active |
+| `memory-service.encryption.dek.key` | base64 string | _(required for dek)_ | Primary AES-256-GCM key (base64-encoded 32 bytes) |
+| `memory-service.encryption.dek.decryption-keys` | comma-separated base64 strings | _(none)_ | Additional old keys for decryption during key rotation |
+| `memory-service.encryption.vault.transit-key` | string | _(required for vault)_ | Vault transit key name |
+
+### AES-256-GCM (DEK provider)
+
+The built-in `dek` provider encrypts data with AES-256-GCM using a static key you supply:
+
+```properties
+memory-service.encryption.providers=dek
+memory-service.encryption.provider.dek.type=dek
+memory-service.encryption.dek.key=<base64-encoded-32-byte-key>
+```
+
+Generate a key with:
+
+```bash
+openssl rand -base64 32
+```
+
+### Automatic attachment encryption
+
+When a non-plain provider is the primary provider, file attachments are encrypted automatically — no extra flag is needed. When the `plain` provider is active (the default), attachments are stored as-is with no overhead.
+
+> **S3 incompatibility**: S3 direct download (`memory-service.attachments.s3.direct-download=true`) is incompatible with encryption. Disable direct download when using a real encryption provider.
+
+### Key rotation
+
+Set `memory-service.encryption.dek.decryption-keys` to a comma-separated list of old (retired) Base64-encoded keys. New data is always encrypted with the primary `dek.key`; stored data is decrypted by trying the primary key first and then each key in `decryption-keys` in order.
+
+```properties
+memory-service.encryption.dek.key=<new-base64-key>
+memory-service.encryption.dek.decryption-keys=<old-base64-key-1>,<old-base64-key-2>
+```
+
 ## Vector Store Configuration
 
 For semantic search capabilities, configure a vector store and embedding provider.

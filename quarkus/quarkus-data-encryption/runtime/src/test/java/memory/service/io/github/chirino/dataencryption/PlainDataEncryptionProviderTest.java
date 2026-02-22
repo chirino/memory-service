@@ -1,22 +1,20 @@
 package memory.service.io.github.chirino.dataencryption;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
-import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
 public class PlainDataEncryptionProviderTest {
 
     @Test
-    void encryptAddsHeaderAndDecryptRestoresPlaintext() throws Exception {
+    void encryptIsIdentity() throws Exception {
         PlainDataEncryptionProvider provider = new PlainDataEncryptionProvider();
         byte[] data = "plain-text".getBytes();
 
         byte[] encrypted = provider.encrypt(data);
 
-        // encrypt() now prepends the MSEH header, so bytes differ from plaintext
-        assertFalse(Arrays.equals(data, encrypted), "encrypt() should prepend MSEH header");
+        // Plain provider is a true no-op: output must equal input
+        assertArrayEquals(data, encrypted, "encrypt() should return input unchanged");
 
         byte[] decrypted = provider.decrypt(encrypted);
         assertArrayEquals(data, decrypted);
