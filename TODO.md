@@ -10,13 +10,13 @@
 * encrypted file store (see [063-encrypted-file-store.md](docs/enhancements/063-encrypted-file-store.md))
 * move the `data.encryption.*` config properties under `memory-service.*`, default the file encryption to match data encryption. Make sure the encryption header is not being added when no encryption is enabled.
 
+# Performance Related
+
+* Think about supporting operating against postgresql read replicas.
+
 # Hardening Work
 
 * Handle syncing Memory entries with more than 1000 messages by splitting into multiple entries (client-side change).
-
-# Performance Related
-
-* Look into partitioning the messages table to improve pref. (see [059-entries-table-partitioning.md](docs/enhancements/059-entries-table-partitioning.md))
 
 # Need Dev Feedback for:
 
