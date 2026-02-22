@@ -182,12 +182,12 @@ Memory Service supports transparent encryption of all stored data — conversati
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `memory-service.encryption.providers` | comma-separated provider IDs | `plain` | Ordered list of providers; first active provider encrypts new data |
-| `memory-service.encryption.provider.<id>.type` | `plain`, `dek`, `vault` | _(required)_ | Provider type for the named ID |
-| `memory-service.encryption.provider.<id>.enabled` | `true`, `false` | `true` | Whether this provider is active |
-| `memory-service.encryption.dek.key` | base64 string | _(required for dek)_ | Primary AES-256-GCM key (base64-encoded 32 bytes) |
-| `memory-service.encryption.dek.decryption-keys` | comma-separated base64 strings | _(none)_ | Additional old keys for decryption during key rotation |
-| `memory-service.encryption.vault.transit-key` | string | _(required for vault)_ | Vault transit key name |
+| <Cfg p="memory-service.encryption.providers" /> | comma-separated provider IDs | `plain` | Ordered list of providers; first active provider encrypts new data |
+| <Cfg p="memory-service.encryption.provider.<id>.type" /> | `plain`, `dek`, `vault` | _(required)_ | Provider type for the named ID |
+| <Cfg p="memory-service.encryption.provider.<id>.enabled" /> | `true`, `false` | `true` | Whether this provider is active |
+| <Cfg p="memory-service.encryption.dek.key" /> | base64 string | _(required for dek)_ | Primary AES-256-GCM key (base64-encoded 32 bytes) |
+| <Cfg p="memory-service.encryption.dek.decryption-keys" /> | comma-separated base64 strings | _(none)_ | Additional old keys for decryption during key rotation |
+| <Cfg p="memory-service.encryption.vault.transit-key" /> | string | _(required for vault)_ | Vault transit key name |
 
 ### AES-256-GCM (DEK provider)
 

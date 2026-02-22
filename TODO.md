@@ -9,6 +9,7 @@
 * bug: delete a fork, restore: it does not show up restored.
 * encrypted file store (see [063-encrypted-file-store.md](docs/enhancements/063-encrypted-file-store.md))
 * ~~move the `data.encryption.*` config properties under `memory-service.*`, default the file encryption to match data encryption. Make sure the encryption header is not being added when no encryption is enabled.~~ (done, see [064-unified-encryption-config.md](docs/enhancements/064-unified-encryption-config.md))
+* ponder how to implement hierarchical memory and what the access control rules should be for it.
 
 # Performance Related
 
