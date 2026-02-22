@@ -1,0 +1,214 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Admin APIs
+description: Administrative APIs for cross-user access, audit logging, and data lifecycle management in the Memory Service.
+---
+
+Admin APIs give platform administrators and auditors elevated access to Memory Service data — across all users, including soft-deleted resources. They are available under the `/v1/admin/` path prefix and require the `admin` or `auditor` role.
+
+## How Admin APIs Differ from Regular APIs
+
+The regular Agent APIs are scoped to the authenticated caller: a user can only see their own conversations, their own attachments, and resources they have been explicitly shared. Admin APIs remove those ownership boundaries.
+
+Key differences:
+
+| Aspect | Regular APIs | Admin APIs |
+|--------|-------------|------------|
+| Scope | Caller's own resources | All users |
+| Deleted resources | Hidden | Visible (with `includeDeleted`) |
+| Role required | Any authenticated user | `admin` or `auditor` |
+| Audit logging | No | Yes — every call is logged |
+| Justification | Not applicable | Optional (or required, if configured) |
+
+## Roles
+
+There are three admin roles, each granting a different level of privilege:
+
+| Role | Access | Description |
+|------|--------|-------------|
+| `admin` | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`. |
+| `auditor` | Read-only | View any user's conversations and search system-wide. Cannot modify data. |
+| `indexer` | Index only | Index any conversation's transcript for search. Cannot view or modify other data. |
+
+Roles can be assigned via OIDC token roles, explicit user lists, or API key client IDs. See the [Admin Access Configuration](/docs/configuration/#admin-access-configuration) section of the configuration guide for details.
+
+## Justification and Audit Logging
+
+Every admin API call is written to a dedicated audit log at the `io.github.chirino.memory.admin.audit` logger. This provides a tamper-evident record of who accessed what data and why.
+
+### Providing a Justification
+
+All admin endpoints accept an optional `justification` parameter. For `GET` endpoints it is a query parameter; for write endpoints it may also appear in the request body.
+
+```bash
+# Query parameter (GET requests)
+curl "http://localhost:8080/v1/admin/conversations?justification=Support+ticket+%231234" \
+  -H "Authorization: Bearer <admin-token>"
+
+# Request body (write requests)
+curl -X DELETE "http://localhost:8080/v1/admin/conversations/{id}" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{"justification": "User requested account deletion per GDPR request #789"}'
+```
+
+### Requiring Justification
+
+By default, `justification` is optional. Set `memory-service.admin.require-justification=true` to make it mandatory — any admin call without a justification will receive a `400 Bad Request` response. This is recommended for regulated environments.
+
+### Audit Log Format
+
+Each audit log entry includes:
+- The admin's user ID (or API key client ID)
+- The HTTP method and path
+- The justification (if provided)
+- A timestamp
+
+To route admin audit logs to a separate file or system, configure the Quarkus logging category:
+
+```properties
+quarkus.log.category."io.github.chirino.memory.admin.audit".level=INFO
+```
+
+## Reading Data Across Users
+
+Admin and auditor endpoints mirror most regular APIs but operate system-wide. For example, listing conversations:
+
+```bash
+# List all conversations across all users
+curl "http://localhost:8080/v1/admin/conversations" \
+  -H "Authorization: Bearer <admin-token>"
+
+# Filter to a specific user
+curl "http://localhost:8080/v1/admin/conversations?userId=alice" \
+  -H "Authorization: Bearer <admin-token>"
+
+# Include soft-deleted conversations
+curl "http://localhost:8080/v1/admin/conversations?includeDeleted=true" \
+  -H "Authorization: Bearer <admin-token>"
+
+# Show only deleted conversations
+curl "http://localhost:8080/v1/admin/conversations?onlyDeleted=true" \
+  -H "Authorization: Bearer <admin-token>"
+```
+
+Similarly, entries, memberships, forks, attachments, and semantic search all have admin counterparts that bypass ownership checks. The response schemas are the same as the regular APIs, with a few additions (such as `deletedAt` timestamps on conversations and attachments).
+
+## Restoring Soft-Deleted Conversations
+
+Admins can restore conversations that have been soft-deleted:
+
+```bash
+curl -X POST "http://localhost:8080/v1/admin/conversations/{id}/restore" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{"justification": "User accidentally deleted — support ticket #456"}'
+```
+
+Returns the restored conversation object, or `409 Conflict` if the conversation is not currently deleted.
+
+## Eviction: Permanently Removing Soft-Deleted Data
+
+Soft-deletion keeps data recoverable. **Eviction** permanently removes resources that have been soft-deleted for longer than a specified retention period. This operation is irreversible and requires the `admin` role.
+
+### When to Use Eviction
+
+- Enforcing a data retention policy (e.g., purge conversations deleted more than 90 days ago)
+- Satisfying a GDPR/right-to-erasure request
+- Reclaiming storage after bulk deletes
+
+### Synchronous Eviction
+
+By default, the eviction call blocks until complete and returns `204 No Content`:
+
+```bash
+curl -X POST "http://localhost:8080/v1/admin/evict" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{
+    "retentionPeriod": "P90D",
+    "resourceTypes": ["conversations"],
+    "justification": "Quarterly data cleanup per retention policy"
+  }'
+```
+
+The `retentionPeriod` is an ISO 8601 duration. Common values:
+
+| Value | Meaning |
+|-------|---------|
+| `P90D` | 90 days |
+| `P1Y` | 1 year |
+| `PT24H` | 24 hours |
+| `P0D` | Immediately (all soft-deleted) |
+
+### Streaming Eviction (SSE)
+
+For large datasets, use `?async=true` (or set `Accept: text/event-stream`) to receive progress updates as Server-Sent Events instead of blocking:
+
+```bash
+curl -X POST "http://localhost:8080/v1/admin/evict?async=true" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{
+    "retentionPeriod": "P90D",
+    "resourceTypes": ["conversations"],
+    "justification": "Quarterly data cleanup per retention policy"
+  }'
+```
+
+The response stream emits progress events from 0 to 100:
+
+```
+data: {"progress": 0}
+
+data: {"progress": 25}
+
+data: {"progress": 75}
+
+data: {"progress": 100}
+```
+
+If eviction fails mid-run, an error event is emitted:
+
+```
+event: error
+data: {"error": "Database connection failed"}
+```
+
+The eviction runs in batches internally to minimize database lock contention.
+
+## Admin Attachment Management
+
+Admins can list, inspect, download, and delete attachments across all users:
+
+```bash
+# List all attachments (optionally filter by user or status)
+curl "http://localhost:8080/v1/admin/attachments?userId=alice&status=unlinked" \
+  -H "Authorization: Bearer <admin-token>"
+
+# Get a specific attachment's metadata (including soft-deleted)
+curl "http://localhost:8080/v1/admin/attachments/{id}" \
+  -H "Authorization: Bearer <admin-token>"
+
+# Download attachment content
+curl "http://localhost:8080/v1/admin/attachments/{id}/content" \
+  -H "Authorization: Bearer <admin-token>" \
+  -o file.bin
+
+# Get a signed download URL
+curl "http://localhost:8080/v1/admin/attachments/{id}/download-url" \
+  -H "Authorization: Bearer <admin-token>"
+
+# Delete any attachment (admin only)
+curl -X DELETE "http://localhost:8080/v1/admin/attachments/{id}" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{"justification": "GDPR erasure request #999"}'
+```
+
+Attachment deletion uses reference-counting: the stored file blob is only removed when the last attachment record sharing it is deleted.
+
+## Next Steps
+
+- Configure admin roles and audit logging in [Service Configuration](/docs/configuration/#admin-access-configuration)
+- Browse the full endpoint specifications in [API Contracts](/docs/api-contracts/)
