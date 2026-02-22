@@ -22,6 +22,7 @@ import io.github.chirino.memory.client.model.IndexConversationsResponse;
 import io.github.chirino.memory.client.model.IndexEntryRequest;
 import io.github.chirino.memory.client.model.ShareConversationRequest;
 import io.github.chirino.memory.client.model.UnindexedEntriesResponse;
+import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest;
 import io.github.chirino.memory.client.model.UpdateConversationRequest;
 import io.github.chirino.memory.config.MemoryStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
@@ -445,11 +446,11 @@ public class ConversationsResource {
     public Response updateMembership(
             @PathParam("conversationId") String conversationId,
             @PathParam("userId") String userId,
-            ShareConversationRequest request) {
+            @Valid UpdateConversationMembershipRequest request) {
         try {
             io.github.chirino.memory.api.dto.ShareConversationRequest internal =
                     new io.github.chirino.memory.api.dto.ShareConversationRequest();
-            internal.setUserId(request.getUserId());
+            internal.setUserId(userId);
             if (request.getAccessLevel() != null) {
                 internal.setAccessLevel(AccessLevel.fromString(request.getAccessLevel().value()));
             }

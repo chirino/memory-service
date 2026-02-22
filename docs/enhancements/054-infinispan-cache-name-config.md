@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: completed
 ---
 
 # Enhancement 054: Configurable Infinispan Cache Names
 
-> **Status**: Proposed.
+> **Status**: Completed.
 
 ## Summary
 
