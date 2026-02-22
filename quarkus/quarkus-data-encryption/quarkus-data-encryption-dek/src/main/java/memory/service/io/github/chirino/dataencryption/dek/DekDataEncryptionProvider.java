@@ -2,19 +2,27 @@ package memory.service.io.github.chirino.dataencryption.dek;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
-import java.nio.ByteBuffer;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.security.GeneralSecurityException;
+import java.security.InvalidKeyException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import javax.crypto.Cipher;
+import javax.crypto.CipherInputStream;
+import javax.crypto.CipherOutputStream;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import memory.service.io.github.chirino.dataencryption.DataEncryptionProvider;
 import memory.service.io.github.chirino.dataencryption.DecryptionFailedException;
+import memory.service.io.github.chirino.dataencryption.EncryptionHeader;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -35,9 +43,9 @@ public class DekDataEncryptionProvider implements DataEncryptionProvider {
     byte[] dekKey;
 
     /**
-     * Optional additional decryption keys, expressed as Base64-encoded strings.
-     * The first key (data.encryption.dek.key) is always used for encryption;
-     * all keys (primary + additional) are tried for decryption.
+     * Optional additional decryption keys, expressed as Base64-encoded strings. The first key
+     * (data.encryption.dek.key) is always used for encryption; all keys (primary + additional) are
+     * tried for decryption.
      */
     @ConfigProperty(name = "data.encryption.dek.decryption-keys")
     Optional<List<String>> additionalDecryptionKeys;
@@ -129,42 +137,31 @@ public class DekDataEncryptionProvider implements DataEncryptionProvider {
 
     @Override
     public byte[] encrypt(byte[] plaintext) {
-        try {
-            byte[] iv = new byte[IV_LENGTH_BYTES];
-            secureRandom.nextBytes(iv);
-
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(
-                    Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv));
-            byte[] cipherText = cipher.doFinal(plaintext);
-
-            ByteBuffer buffer = ByteBuffer.allocate(iv.length + cipherText.length);
-            buffer.put(iv);
-            buffer.put(cipherText);
-            return buffer.array();
-        } catch (GeneralSecurityException e) {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (OutputStream out = encryptingStream(baos)) {
+            out.write(plaintext);
+        } catch (IOException e) {
             throw new IllegalStateException("Failed to encrypt data with DEK provider", e);
         }
+        return baos.toByteArray();
     }
 
     @Override
-    public byte[] decrypt(byte[] ciphertext) throws DecryptionFailedException {
+    public byte[] decrypt(byte[] data) throws DecryptionFailedException {
         try {
-            ByteBuffer buffer = ByteBuffer.wrap(ciphertext);
-            byte[] iv = new byte[IV_LENGTH_BYTES];
-            buffer.get(iv);
-            byte[] cipherText = new byte[buffer.remaining()];
-            buffer.get(cipherText);
-            GeneralSecurityException lastFailure = null;
+            ByteArrayInputStream bais = new ByteArrayInputStream(data);
+            EncryptionHeader header = EncryptionHeader.read(bais);
+            byte[] ciphertext = bais.readAllBytes();
 
+            GeneralSecurityException lastFailure = null;
             for (SecretKey key : decryptionKeys) {
                 try {
                     Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
                     cipher.init(
                             Cipher.DECRYPT_MODE,
                             key,
-                            new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv));
-                    return cipher.doFinal(cipherText);
+                            new GCMParameterSpec(GCM_TAG_LENGTH_BITS, header.getIv()));
+                    return cipher.doFinal(ciphertext);
                 } catch (GeneralSecurityException e) {
                     lastFailure = e;
                 }
@@ -172,11 +169,50 @@ public class DekDataEncryptionProvider implements DataEncryptionProvider {
 
             throw new DecryptionFailedException(
                     "Failed to decrypt data with DEK provider", lastFailure);
+        } catch (DecryptionFailedException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new DecryptionFailedException(
+                    "Invalid or corrupt MSEH header in DEK-encrypted data", e);
         } catch (RuntimeException e) {
-            // Any failure to interpret or decrypt the ciphertext (e.g. malformed payload)
-            // should be reported as a DecryptionFailedException so callers can fail-fast
-            // and optionally try fallback providers.
             throw new DecryptionFailedException("Failed to decrypt data with DEK provider", e);
         }
+    }
+
+    @Override
+    public OutputStream encryptingStream(OutputStream sink) throws IOException {
+        byte[] iv = new byte[IV_LENGTH_BYTES];
+        secureRandom.nextBytes(iv);
+        new EncryptionHeader(1, id(), iv).write(sink);
+        try {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(
+                    Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv));
+            return new CipherOutputStream(sink, cipher);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Failed to initialize AES/GCM cipher for encryption", e);
+        }
+    }
+
+    @Override
+    public InputStream decryptingStream(InputStream source, EncryptionHeader header)
+            throws IOException {
+        // Try keys at init time; InvalidKeyException means the key can't be used at all.
+        // For wrong-but-valid AES keys, the GCM tag failure surfaces at end-of-stream.
+        for (SecretKey key : decryptionKeys) {
+            try {
+                Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                cipher.init(
+                        Cipher.DECRYPT_MODE,
+                        key,
+                        new GCMParameterSpec(GCM_TAG_LENGTH_BITS, header.getIv()));
+                return new CipherInputStream(source, cipher);
+            } catch (InvalidKeyException e) {
+                // Try next key
+            } catch (GeneralSecurityException e) {
+                throw new IOException("Failed to initialize AES/GCM cipher for decryption", e);
+            }
+        }
+        throw new IOException("No configured key could initialize AES/GCM cipher for decryption");
     }
 }
