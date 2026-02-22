@@ -2,17 +2,17 @@
 status: proposed
 ---
 
-# Enhancement 059: Entries Table Partitioning
+# Enhancement 059: Entries and Entry Embeddings Table Partitioning
 
 > **Status**: Proposed.
 
 ## Summary
 
-Investigate and implement table partitioning for the `entries` table in PostgreSQL to improve query performance and enable more efficient data lifecycle management at scale.
+Implement hash partitioning by `conversation_group_id` for both the `entries` and `entry_embeddings` tables in PostgreSQL to improve query performance and enable more efficient data lifecycle management at scale.
 
 ## Motivation
 
-The `entries` table is the largest and most frequently queried table in the memory service. Every conversation sync, history retrieval, search operation, and fork traversal touches this table.
+The `entries` table is the largest and most frequently queried table in the memory service. Every conversation sync, history retrieval, search operation, and fork traversal touches this table. The `entry_embeddings` table grows 1:1 with indexed entries and has identical access patterns, making it a natural co-candidate.
 
 ### Current Schema
 
@@ -32,10 +32,20 @@ CREATE TABLE entries (
     indexed_content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', COALESCE(indexed_content, ''))) STORED,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE entry_embeddings (
+    entry_id              UUID PRIMARY KEY REFERENCES entries (id) ON DELETE CASCADE,
+    conversation_id       UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
+    embedding             vector NOT NULL,
+    model                 VARCHAR(128) NOT NULL,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ```
 
-### Current Indexes (7)
+### Current Indexes
 
+**entries (7 indexes)**:
 ```sql
 idx_entries_conversation_channel_client_epoch_created_at  -- Primary memory operations
 idx_entries_conversation_created_at                        -- History channel queries
@@ -45,121 +55,79 @@ idx_entries_pending_vector_indexing                         -- Vector indexing q
 idx_entries_indexed_content_fts                             -- GIN full-text search
 ```
 
+**entry_embeddings (3 indexes)**:
+```sql
+idx_entry_embeddings_group    -- Access control via conversation_group_id
+idx_entry_embeddings_model    -- Selective re-indexing by model
+idx_entry_embeddings_hnsw     -- ANN vector search (HNSW)
+```
+
 ### Growth Characteristics
 
 - Every conversation sync appends at least one entry (since Enhancement 026 consolidated N messages → 1 entry).
 - History channel entries accumulate over a conversation's lifetime (one per user/AI turn).
 - Memory channel entries grow with each sync cycle (though old epochs become unreachable).
 - The `content` column stores encrypted BYTEA, which can be large for conversations with many messages or attachments.
+- `entry_embeddings` grows 1:1 with indexed entries; each row contains a high-dimensional vector.
 - Soft-deleted conversations retain their entries until eviction runs.
 
 ### Performance Concerns
 
-1. **Index bloat**: As the table grows, all 7 indexes grow proportionally. Index maintenance (inserts, vacuuming) becomes more expensive.
+1. **Index bloat**: As tables grow, all indexes grow proportionally. Index maintenance (inserts, vacuuming) becomes more expensive.
 2. **Full-text search**: The GIN index on `indexed_content_tsv` degrades with table size since GIN indexes don't support partial scans efficiently.
-3. **Eviction**: Batch deletion of soft-deleted entries requires scanning and vacuuming large table segments.
-4. **Sequential scans**: Queries that can't use indexes (e.g., complex fork tree traversals) become slower.
+3. **ANN search**: HNSW and IVFFlat vector indexes perform better with smaller candidate sets. Partitioning reduces the search space per partition.
+4. **Eviction**: Batch deletion of soft-deleted entries requires scanning and vacuuming large table segments.
+5. **Sequential scans**: Queries that can't use indexes (e.g., complex fork tree traversals) become slower.
 
 ## Design
 
-### Partitioning Strategies Evaluated
+### Partitioning Strategy: Hash by `conversation_group_id`
 
-#### Option A: Partition by `conversation_group_id` (Hash)
-
-```sql
-CREATE TABLE entries (
-    ...
-) PARTITION BY HASH (conversation_group_id);
-
-CREATE TABLE entries_p0 PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 0);
-CREATE TABLE entries_p1 PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER 1);
--- ... entries_p2 through entries_p15
-```
-
-**Pros**:
-- Aligns with the most common query pattern: all entry queries filter by `conversation_id` or `conversation_group_id`.
-- Queries for a single conversation only scan one partition.
-- Even data distribution (hash-based).
-- Fork-aware queries (`conversation_group_id`) also benefit since all forks share the same group.
-
-**Cons**:
-- Cannot easily drop partitions (hash partitions are permanent).
-- Cross-conversation queries (search, admin) must scan all partitions.
-- Partition count must be chosen upfront (can be altered but requires data migration).
-
-#### Option B: Partition by `created_at` (Range)
-
-```sql
-CREATE TABLE entries (
-    ...
-) PARTITION BY RANGE (created_at);
-
-CREATE TABLE entries_2025_q1 PARTITION OF entries
-    FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
-CREATE TABLE entries_2025_q2 PARTITION OF entries
-    FOR VALUES FROM ('2025-04-01') TO ('2025-07-01');
-```
-
-**Pros**:
-- Enables efficient time-based eviction: drop entire partitions instead of row-by-row deletion.
-- Recent data (hot partition) stays in cache; old data (cold partitions) can be on slower storage.
-- Automatic partition creation can be scripted with `pg_partman` or a scheduled task.
-
-**Cons**:
-- Most queries filter by `conversation_id`, not `created_at` — so partition pruning doesn't help the hot path.
-- A long-running conversation has entries spread across many partitions.
-- Requires adding `created_at` to the primary key (PostgreSQL requirement for partition keys).
-
-#### Option C: Partition by `conversation_group_id` (List, Dynamic)
-
-```sql
-CREATE TABLE entries (
-    ...
-) PARTITION BY LIST (conversation_group_id);
-
--- Created dynamically per conversation group
-CREATE TABLE entries_group_<uuid> PARTITION OF entries
-    FOR VALUES IN ('<uuid>');
-```
-
-**Pros**:
-- Perfect partition pruning for all conversation-scoped queries.
-- Dropping a conversation group = dropping one partition (instant eviction).
-
-**Cons**:
-- Unbounded partition count (one per conversation group). PostgreSQL performance degrades beyond ~1000 partitions.
-- Requires dynamic DDL on conversation creation.
-- Not practical at scale.
-
-### Recommended Approach: Option A (Hash by `conversation_group_id`)
-
-Hash partitioning by `conversation_group_id` best aligns with the query patterns:
+Hash partitioning by `conversation_group_id` best aligns with the dominant query patterns for both tables:
 
 1. **Memory sync** (`listMemoryEntriesAtLatestEpoch`): Filters by `conversation_id` → single partition.
 2. **History listing** (`listByChannel`): Filters by `conversation_id` → single partition.
 3. **Fork-aware retrieval** (`listByConversationGroup`): Filters by `conversation_group_id` → single partition.
-4. **Search**: Must scan all partitions, but search is already the slowest operation and benefits from vector/GIN indexes within each partition.
-5. **Eviction**: Must scan all partitions, but eviction is a background task.
+4. **Vector search**: Filters by `conversation_group_id` for access control → single partition.
+5. **Full-text search**: Must scan all partitions, but benefits from smaller per-partition GIN indexes.
+6. **Eviction**: Must scan all partitions, but eviction is a background task.
+
+Using the same partition key and modulus for both tables means a given conversation group's entries and embeddings always land in the same numbered partition, keeping the schema conceptually consistent.
 
 ### Schema Changes
 
-#### 1. Primary Key Must Include Partition Key
+#### 1. Primary Keys Must Include the Partition Key
 
 PostgreSQL requires the partition key to be part of the primary key:
 
 ```sql
--- BEFORE
+-- entries: BEFORE
 CREATE TABLE entries (
     id UUID PRIMARY KEY,
     ...
 );
 
--- AFTER
+-- entries: AFTER
 CREATE TABLE entries (
     id UUID NOT NULL,
     conversation_group_id UUID NOT NULL,
     ...
     PRIMARY KEY (id, conversation_group_id)
+) PARTITION BY HASH (conversation_group_id);
+
+-- entry_embeddings: BEFORE
+CREATE TABLE entry_embeddings (
+    entry_id UUID PRIMARY KEY,
+    conversation_group_id UUID NOT NULL,
+    ...
+);
+
+-- entry_embeddings: AFTER
+CREATE TABLE entry_embeddings (
+    entry_id UUID NOT NULL,
+    conversation_group_id UUID NOT NULL,
+    ...
+    PRIMARY KEY (entry_id, conversation_group_id)
 ) PARTITION BY HASH (conversation_group_id);
 ```
 
@@ -167,35 +135,50 @@ This changes the uniqueness constraint from `(id)` to `(id, conversation_group_i
 
 #### 2. Foreign Keys
 
-PostgreSQL does not support foreign keys referencing partitioned tables (as of PG 17). The `entry_id` FK from `attachments` and `entry_embeddings` must become an application-level constraint or be dropped:
+PostgreSQL does not support foreign keys referencing partitioned tables (as of PG 17). The FKs from `attachments` (to `entries`) and from `entry_embeddings` (to `entries`) must be dropped and replaced with application-level enforcement:
 
 ```sql
--- BEFORE
+-- attachments: BEFORE
 CREATE TABLE attachments (
     entry_id UUID REFERENCES entries(id) ON DELETE CASCADE,
     ...
 );
 
--- AFTER: No FK, application-level enforcement + cascade via tasks
+-- attachments: AFTER — no FK, cascade handled by eviction task
 CREATE TABLE attachments (
-    entry_id UUID,  -- No FK constraint
+    entry_id UUID,
+    ...
+);
+
+-- entry_embeddings: BEFORE
+CREATE TABLE entry_embeddings (
+    entry_id UUID PRIMARY KEY REFERENCES entries (id) ON DELETE CASCADE,
+    ...
+);
+
+-- entry_embeddings: AFTER — no FK to entries
+CREATE TABLE entry_embeddings (
+    entry_id UUID NOT NULL,
     ...
 );
 ```
 
-The cascade delete behavior must be handled by the application (already partially the case since soft deletes go through the task queue for eviction).
+The cascade delete behavior is handled by the eviction task queue (already the case for soft-deleted entries).
 
 #### 3. Partition Creation
 
-Create 16 hash partitions (a reasonable starting point):
+Create 16 hash partitions for each table (a reasonable starting point):
 
 ```sql
--- Migration script
 DO $$
 BEGIN
     FOR i IN 0..15 LOOP
         EXECUTE format(
             'CREATE TABLE entries_p%s PARTITION OF entries FOR VALUES WITH (MODULUS 16, REMAINDER %s)',
+            i, i
+        );
+        EXECUTE format(
+            'CREATE TABLE entry_embeddings_p%s PARTITION OF entry_embeddings FOR VALUES WITH (MODULUS 16, REMAINDER %s)',
             i, i
         );
     END LOOP;
@@ -204,54 +187,40 @@ END $$;
 
 #### 4. Index Changes
 
-Indexes are created per-partition automatically in PostgreSQL. The existing index definitions work as-is since PostgreSQL creates them on each partition:
+Indexes defined on the parent table are automatically created on each partition by PostgreSQL. The existing index definitions work as-is:
 
 ```sql
--- These are automatically created on each partition
+-- Defined on entries, automatically applied to entries_p0..entries_p15
 CREATE INDEX idx_entries_conversation_channel_... ON entries (...);
+
+-- Defined on entry_embeddings, automatically applied to entry_embeddings_p0..p15
+CREATE INDEX idx_entry_embeddings_hnsw ON entry_embeddings USING hnsw (...);
 ```
 
 ### JPA/Hibernate Changes
 
-The `EntryEntity` class needs the composite primary key:
-
-```java
-// BEFORE
-@Id
-@Column(name = "id")
-private UUID id;
-
-// AFTER: Composite PK
-@Id
-@Column(name = "id")
-private UUID id;
-
-// conversation_group_id is already mapped, just ensure it's part of @IdClass or @EmbeddedId
-```
-
-Alternatively, since the `id` UUID is globally unique, keep it as the logical `@Id` and handle the composite PK at the DDL level only (Hibernate doesn't need to know about the partition key in the PK).
+Since the `id`/`entry_id` UUIDs are globally unique, keep them as the logical `@Id` in the entity classes. Handle the composite PK at the DDL level only — Hibernate doesn't need to know about the partition key in the PK.
 
 ### Migration Strategy
 
-Since the project is pre-release, the migration can simply recreate the table:
+Since the project is pre-release, migrations can simply recreate the tables:
 
 ```sql
--- 1. Rename existing table
+-- entries
 ALTER TABLE entries RENAME TO entries_old;
-
--- 2. Create partitioned table
 CREATE TABLE entries (...) PARTITION BY HASH (conversation_group_id);
-
--- 3. Create partitions
-DO $$ ... $$;
-
--- 4. Copy data
+DO $$ ... $$;  -- create partitions
 INSERT INTO entries SELECT * FROM entries_old;
-
--- 5. Drop old table
 DROP TABLE entries_old CASCADE;
 
--- 6. Recreate indexes and constraints
+-- entry_embeddings (depends on entries existing first)
+ALTER TABLE entry_embeddings RENAME TO entry_embeddings_old;
+CREATE TABLE entry_embeddings (...) PARTITION BY HASH (conversation_group_id);
+DO $$ ... $$;  -- create partitions
+INSERT INTO entry_embeddings SELECT * FROM entry_embeddings_old;
+DROP TABLE entry_embeddings_old CASCADE;
+
+-- Recreate indexes
 ...
 ```
 
@@ -283,6 +252,13 @@ SELECT * FROM entries
 WHERE indexed_content_tsv @@ plainto_tsquery('english', $1)
 ORDER BY ts_rank(indexed_content_tsv, plainto_tsquery('english', $1)) DESC
 LIMIT 20;
+
+-- Vector search (verify single partition scanned)
+EXPLAIN ANALYZE
+SELECT * FROM entry_embeddings
+WHERE conversation_group_id = $1
+ORDER BY embedding <=> $2
+LIMIT 10;
 ```
 
 ### Functional Tests
@@ -290,28 +266,35 @@ LIMIT 20;
 All existing Cucumber tests must pass without modification — partitioning is transparent to the application.
 
 ```bash
-# Run full test suite
 ./mvnw test -pl memory-service > test.log 2>&1
 ```
 
 ### Partition Verification
 
 ```sql
--- Verify partition pruning
+-- Verify partition pruning on entries
 EXPLAIN SELECT * FROM entries WHERE conversation_group_id = 'some-uuid';
 -- Should show: "Append" with only one partition scanned
+
+-- Verify partition pruning on entry_embeddings
+EXPLAIN SELECT * FROM entry_embeddings WHERE conversation_group_id = 'some-uuid';
+-- Should show: "Append" with only one partition scanned
+
+-- Check data distribution
+SELECT tableoid::regclass, count(*) FROM entries GROUP BY tableoid ORDER BY tableoid::regclass;
+SELECT tableoid::regclass, count(*) FROM entry_embeddings GROUP BY tableoid ORDER BY tableoid::regclass;
 ```
 
 ## Files to Modify
 
 | File | Change |
 |------|--------|
-| `memory-service/src/main/resources/db/schema.sql` | Add `PARTITION BY HASH`, composite PK, partition creation |
+| `memory-service/src/main/resources/db/schema.sql` | Add `PARTITION BY HASH`, composite PKs, partition creation for `entries` |
+| `memory-service/src/main/resources/db/pgvector-schema.sql` | Add `PARTITION BY HASH`, composite PK, partition creation for `entry_embeddings`; drop FK to `entries` |
 | `memory-service/src/main/resources/db/changelog/` | **New**: Liquibase migration changeset |
-| `memory-service/.../persistence/entity/EntryEntity.java` | Adjust PK mapping if needed |
-| `memory-service/.../persistence/entity/AttachmentEntity.java` | Remove FK constraint annotation to entries |
-| `memory-service/.../persistence/entity/EntryEmbeddingsEntity.java` | Remove FK constraint annotation to entries |
-| `memory-service/src/main/resources/db/pgvector-schema.sql` | Update `entry_embeddings` FK |
+| `memory-service/.../persistence/entity/EntryEntity.java` | Verify `@Id` mapping works with composite DDL PK |
+| `memory-service/.../persistence/entity/AttachmentEntity.java` | Remove FK constraint annotation to `entries` |
+| `memory-service/.../persistence/entity/EntryEmbeddingsEntity.java` | Remove FK constraint annotation to `entries`; verify `@Id` mapping |
 
 ## Verification
 
@@ -326,19 +309,21 @@ EXPLAIN SELECT * FROM entries WHERE conversation_group_id = 'some-uuid';
 ./mvnw quarkus:dev -pl memory-service
 # Then in psql:
 # \d+ entries
+# \d+ entry_embeddings
 # SELECT tableoid::regclass, count(*) FROM entries GROUP BY tableoid;
+# SELECT tableoid::regclass, count(*) FROM entry_embeddings GROUP BY tableoid;
 ```
 
 ## Design Decisions
 
-1. **Hash over range**: The dominant query pattern is by `conversation_id`/`conversation_group_id`, not by time. Hash partitioning gives partition pruning on the hot path. Time-range partitioning helps eviction but hurts the hot path.
-2. **16 partitions**: A moderate starting point. Can be increased by re-partitioning (data migration required). Too few partitions give little benefit; too many add planning overhead.
-3. **Application-level cascade**: Losing FK constraints is the main trade-off. Since the service already uses soft deletes and background eviction tasks, the cascade is effectively application-managed already.
-4. **MongoDB not affected**: MongoDB has its own sharding model and doesn't use SQL partitioning. This enhancement is PostgreSQL-only.
-5. **No `pg_partman`**: For initial simplicity, use static hash partitions. `pg_partman` is useful for time-range partitions with automatic creation/retention, which we're not using.
+1. **Hash over range**: The dominant query pattern is by `conversation_id`/`conversation_group_id`, not by time. Hash partitioning gives partition pruning on the hot path.
+2. **Same key and modulus for both tables**: Using `conversation_group_id` with modulus 16 on both tables keeps the design consistent and means related data lands in the same partition number.
+3. **16 partitions**: A moderate starting point. Can be increased by re-partitioning (data migration required). Too few partitions give little benefit; too many add planning overhead.
+4. **Application-level cascade**: Losing FK constraints is the main trade-off. Since the service already uses soft deletes and background eviction tasks, the cascade is effectively application-managed already.
+5. **MongoDB not affected**: MongoDB has its own sharding model and doesn't use SQL partitioning. This enhancement is PostgreSQL-only.
+6. **No `pg_partman`**: For initial simplicity, use static hash partitions. `pg_partman` is useful for time-range partitions with automatic creation/retention, which we're not using.
 
 ## Future Considerations
 
 - **Hybrid partitioning**: If time-based eviction becomes important, consider sub-partitioning each hash partition by `created_at` range. PostgreSQL supports multi-level partitioning.
 - **Partition count tuning**: Monitor `pg_stat_user_tables` per partition to verify even distribution. Rebalance if needed.
-- **`entry_embeddings` table**: May benefit from the same partitioning strategy since it has the same `conversation_group_id` column and similar query patterns.
