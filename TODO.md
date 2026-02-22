@@ -11,11 +11,6 @@
 
 # Hardening Work
 
-* validate all api fields (see [056-api-field-validation.md](docs/enhancements/056-api-field-validation.md))
-* review all config key names: keep them consistent and simple. (see [057-unified-config-key-naming.md](docs/enhancements/057-unified-config-key-naming.md))
-* test/find the message size limits of the app. (see [056-api-field-validation.md](docs/enhancements/056-api-field-validation.md))
-    * use that info to protect against DOS: huge api requests .
-* define maxium lengths for all fields. (see [056-api-field-validation.md](docs/enhancements/056-api-field-validation.md))
 * Handle syncing Memory entries with more than 1000 messages by splitting into multiple entries (client-side change).
 
 # Performance Related

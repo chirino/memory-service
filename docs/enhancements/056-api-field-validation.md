@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 056: API Field Validation & Maximum Lengths
 
-> **Status**: Proposed.
+> **Status**: Implemented.
 
 ## Summary
 
