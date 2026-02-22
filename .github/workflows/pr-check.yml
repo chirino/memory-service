@@ -5,10 +5,20 @@ on:
     branches: [main]
     paths-ignore:
       - 'site/**'
+      - 'docs/**'
+      - '*.md'
+      - '.skills/**'
+      - '.github/**'
+      - '.devconainer/**'
   push:
     branches: [main]
     paths-ignore:
       - 'site/**'
+      - 'docs/**'
+      - '*.md'
+      - '.skills/**'
+      - '.github/**'
+      - '.devconainer/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
