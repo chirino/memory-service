@@ -108,6 +108,43 @@ public final class EncryptionHeader {
     }
 
     /**
+     * Read {@code [varint length][proto]} from {@code is}, assuming the 4-byte magic has already
+     * been consumed. Used by {@link DataEncryptionService} after peeking the magic bytes.
+     *
+     * @throws IOException if the stream is too short or the proto is invalid
+     */
+    static EncryptionHeader readAfterMagic(InputStream is) throws IOException {
+        // 1. Read protobuf varint32: header length
+        int headerLen = readVarint32(is);
+
+        // 2. Read exactly headerLen bytes of protobuf message
+        byte[] protoBytes = is.readNBytes(headerLen);
+        if (protoBytes.length < headerLen) {
+            throw new IOException("Unexpected end of stream reading EncryptionHeader proto");
+        }
+
+        // 3. Parse proto fields
+        CodedInputStream coded = CodedInputStream.newInstance(protoBytes);
+        int version = 0;
+        String providerId = "";
+        byte[] iv = new byte[0];
+
+        while (!coded.isAtEnd()) {
+            int tag = coded.readTag();
+            if (tag == 0) break;
+            int fieldNumber = tag >>> 3;
+            switch (fieldNumber) {
+                case 1 -> version = coded.readUInt32();
+                case 2 -> providerId = coded.readString();
+                case 3 -> iv = coded.readBytes().toByteArray();
+                default -> coded.skipField(tag);
+            }
+        }
+
+        return new EncryptionHeader(version, providerId, iv);
+    }
+
+    /**
      * Write {@code [magic][varint length][proto]} to {@code os}. The caller is responsible for
      * writing the ciphertext payload immediately after.
      */

@@ -53,25 +53,25 @@ In a consuming Quarkus app’s `pom.xml`:
 
 ## Configuration Model
 
-The extension is configured via `data.encryption.*` properties.
+The extension is configured via `memory-service.encryption.*` properties (used as the config prefix when consumed by Memory Service).
 
 ### Provider Ordering and Types
 
 ```properties
 # Logical provider IDs in order of preference
-data.encryption.providers=a,b
+memory-service.encryption.providers=a,b
 
 # Logical provider "a" uses the local DEK provider
-data.encryption.provider.a.type=dek
+memory-service.encryption.provider.a.type=dek
 
 # Logical provider "b" is a pass-through provider
-data.encryption.provider.b.type=plain
+memory-service.encryption.provider.b.type=plain
 ```
 
 Semantics:
 
-- `data.encryption.providers` is an ordered list of **logical provider IDs** (for example: `a`, `b`, `primary`, `fallback`).
-- For each logical ID, `data.encryption.provider.<id>.type` selects the concrete provider implementation (`dek`, `plain`, etc.).
+- `memory-service.encryption.providers` is an ordered list of **logical provider IDs** (for example: `a`, `b`, `primary`, `fallback`).
+- For each logical ID, `memory-service.encryption.provider.<id>.type` selects the concrete provider implementation (`dek`, `plain`, etc.).
 - The first logical provider that is enabled and has a matching implementation is used for **new encrypt operations**.
 - For ciphertext:
   - If it is a Protobuf envelope, the `provider_id` in the envelope is the logical provider ID used at encrypt time and is used to select the provider for decrypt.
@@ -90,19 +90,19 @@ Provider ID: `dek`
 
 ```properties
 # Primary 32-byte AES-256 DEK (Base64-encoded)
-data.encryption.dek.key=BASE64_PRIMARY_KEY
+memory-service.encryption.dek.key=BASE64_PRIMARY_KEY
 
 # Optional additional decryption keys (Base64-encoded),
 # used only for decrypt; useful during rotation.
-data.encryption.dek.decryption-keys=BASE64_OLD_KEY_1,BASE64_OLD_KEY_2
+memory-service.encryption.dek.decryption-keys=BASE64_OLD_KEY_1,BASE64_OLD_KEY_2
 ```
 
 Behaviour:
 
-- All new data encrypted by the `dek` provider uses `data.encryption.dek.key` (decoded from Base64).
+- All new data encrypted by the `dek` provider uses `memory-service.encryption.dek.key` (decoded from Base64).
 - On decrypt, the provider tries:
   - Primary key, then
-  - Each key from `data.encryption.dek.decryption-keys` (decoded from Base64).
+  - Each key from `memory-service.encryption.dek.decryption-keys` (decoded from Base64).
 - If none can decrypt, it throws `DecryptionFailedException`, allowing higher-level fallback (e.g. to `plain`).
 
 ### Plain Provider
@@ -112,8 +112,8 @@ The `plain` provider is built into the runtime module (`PlainDataEncryptionProvi
 Configure it by mapping a logical provider ID to the `plain` type:
 
 ```properties
-data.encryption.providers=b
-data.encryption.provider.b.type=plain
+memory-service.encryption.providers=b
+memory-service.encryption.provider.b.type=plain
 ```
 
 This is useful both for:
@@ -136,7 +136,7 @@ Key properties:
 
 ```properties
 # Name of the Transit key used to wrap/unwrap DEKs
-data.encryption.vault.transit-key=app-data
+memory-service.encryption.vault.transit-key=app-data
 
 # Standard Quarkus Vault configuration (examples)
 quarkus.vault.url=http://localhost:8200
@@ -202,32 +202,32 @@ Typical rotation scenario:
 1. Start with a plain provider:
 
    ```properties
-   data.encryption.providers=a
-   data.encryption.provider.a.type=plain
+   memory-service.encryption.providers=a
+   memory-service.encryption.provider.a.type=plain
    ```
 
 2. Introduce DEK encryption for new data:
 
    ```properties
    # Logical provider "enc" uses DEK, "plain" remains as fallback
-   data.encryption.providers=enc,plain
-   data.encryption.provider.enc.type=dek
-   data.encryption.provider.plain.type=plain
+   memory-service.encryption.providers=enc,plain
+   memory-service.encryption.provider.enc.type=dek
+   memory-service.encryption.provider.plain.type=plain
 
-   data.encryption.dek.key=<current-dek>
+   memory-service.encryption.dek.key=<current-dek>
    ```
 
 3. Rotate DEK without changing provider IDs:
 
-   - Update `data.encryption.dek.key` to the new DEK.
-   - Add the old DEK to `data.encryption.dek.decryption-keys`.
+   - Update `memory-service.encryption.dek.key` to the new DEK.
+   - Add the old DEK to `memory-service.encryption.dek.decryption-keys`.
    - Existing ciphertext remains decryptable; new ciphertext uses the new key.
 
 4. Optional background job:
 
    - Walk stored data, decrypt using `DataEncryptionService`, re-encrypt with the current configuration, and persist.
 
-Because the envelope contains the provider ID, you can also introduce entirely new providers (e.g. a future `kms` provider) and re-order `data.encryption.providers` for new data while continuing to decrypt existing envelopes using the recorded provider ID.
+Because the envelope contains the provider ID, you can also introduce entirely new providers (e.g. a future `kms` provider) and re-order `memory-service.encryption.providers` for new data while continuing to decrypt existing envelopes using the recorded provider ID.
 
 ## Testing Notes
 

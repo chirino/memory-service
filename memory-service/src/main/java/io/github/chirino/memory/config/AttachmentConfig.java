@@ -55,9 +55,6 @@ public class AttachmentConfig {
     @ConfigProperty(name = "memory-service.attachments.download-url-secret")
     Optional<String> downloadUrlSecret;
 
-    @ConfigProperty(name = "memory-service.attachments.encryption.enabled", defaultValue = "false")
-    boolean encryptionEnabled;
-
     public long getMaxSize() {
         return maxSize.asLongValue();
     }
@@ -108,9 +105,5 @@ public class AttachmentConfig {
 
     public Optional<String> getDownloadUrlSecret() {
         return downloadUrlSecret;
-    }
-
-    public boolean isEncryptionEnabled() {
-        return encryptionEnabled;
     }
 }
