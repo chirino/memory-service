@@ -8,6 +8,7 @@
 * make all common memory-service config options prefixed with "memory-service." (see [057-unified-config-key-naming.md](docs/enhancements/057-unified-config-key-naming.md))
 * bug: delete a fork, restore: it does not show up restored.
 * encrypted file store (see [063-encrypted-file-store.md](docs/enhancements/063-encrypted-file-store.md))
+* move the `data.encryption.*` config properties under `memory-service.*`, default the file encryption to match data encryption. Make sure the encryption header is not being added when no encryption is enabled.
 
 # Hardening Work
 

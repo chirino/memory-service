@@ -1,10 +1,13 @@
 package memory.service.io.github.chirino.dataencryption;
 
-import com.google.protobuf.InvalidProtocolBufferException;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,8 +50,8 @@ public class DataEncryptionService {
                 byId.put(id, provider);
             }
         }
-        // Backwards compatibility: also register providers by their implementation id/type
-        // so existing envelopes that used "plain", "dek", etc. as provider ids continue to decrypt.
+        // Also register providers by their implementation id/type so MSEH headers that use
+        // "plain", "dek", etc. as provider ids continue to route correctly.
         for (DataEncryptionProvider provider : providersByType.values()) {
             String typeKey = provider.id();
             byId.putIfAbsent(typeKey, provider);
@@ -57,8 +60,8 @@ public class DataEncryptionService {
     }
 
     /**
-     * Testing-friendly constructor used by unit tests in the DEK module.
-     * This avoids the need for CDI/bootstrap when exercising the service logic.
+     * Testing-friendly constructor used by unit tests in the DEK module. This avoids the need for
+     * CDI/bootstrap when exercising the service logic.
      */
     public DataEncryptionService(
             DataEncryptionConfig config, List<DataEncryptionProvider> providers) {
@@ -81,8 +84,8 @@ public class DataEncryptionService {
                 byId.put(id, provider);
             }
         }
-        // Backwards compatibility: also register providers by their implementation id/type
-        // so existing envelopes that used "plain", "dek", etc. as provider ids continue to decrypt.
+        // Also register providers by their implementation id/type so MSEH headers that use
+        // "plain", "dek", etc. as provider ids continue to route correctly.
         for (DataEncryptionProvider provider : providersByType.values()) {
             String typeKey = provider.id();
             byId.putIfAbsent(typeKey, provider);
@@ -108,37 +111,46 @@ public class DataEncryptionService {
     }
 
     public byte[] encrypt(byte[] plaintext) {
-        byte[] ciphertext = primaryProvider.encrypt(plaintext);
-        EncryptionEnvelope envelope = EncryptionEnvelope.wrap(primaryProviderId, ciphertext);
-        return envelope.toBytes();
+        return primaryProvider.encrypt(plaintext);
     }
 
     public byte[] decrypt(byte[] data) {
-        EncryptionEnvelope envelope;
+        EncryptionHeader header;
         try {
-            envelope = EncryptionEnvelope.fromBytes(data);
-        } catch (InvalidProtocolBufferException e) {
-            // Legacy/plain data path: try providers in configured order for fallback.
-            for (String id : providerOrder) {
-                DataEncryptionProvider provider = providersById.get(id);
-                if (provider == null) {
-                    continue;
-                }
-                try {
-                    return provider.decrypt(data);
-                } catch (DecryptionFailedException ignored) {
-                    // Try next provider.
-                }
-            }
-            // No provider could decrypt; treat as plain legacy data.
-            return data;
+            header = EncryptionHeader.read(new ByteArrayInputStream(data));
+        } catch (IOException e) {
+            throw new DecryptionFailedException(
+                    "Not a valid encrypted payload (missing or corrupt MSEH header)");
         }
-
-        DataEncryptionProvider provider = providersById.get(envelope.getProviderId());
+        DataEncryptionProvider provider = providersById.get(header.getProviderId());
         if (provider == null) {
             throw new DecryptionFailedException(
-                    "No data encryption provider registered with id: " + envelope.getProviderId());
+                    "No data encryption provider registered with id: " + header.getProviderId());
         }
-        return provider.decrypt(envelope.getPayload());
+        // Provider rereads the header internally from the full byte array to get decryption params.
+        return provider.decrypt(data);
+    }
+
+    /**
+     * Returns an {@link OutputStream} that encrypts into {@code sink}. The provider writes an
+     * {@link EncryptionHeader} before the ciphertext. The caller must close the returned stream to
+     * flush the final authentication tag.
+     */
+    public OutputStream encryptingStream(OutputStream sink) throws IOException {
+        return primaryProvider.encryptingStream(sink);
+    }
+
+    /**
+     * Reads the {@link EncryptionHeader} from {@code source}, routes to the correct provider, and
+     * returns a decrypting {@link InputStream} over the remaining bytes.
+     */
+    public InputStream decryptingStream(InputStream source) throws IOException {
+        EncryptionHeader header = EncryptionHeader.read(source);
+        DataEncryptionProvider provider = providersById.get(header.getProviderId());
+        if (provider == null) {
+            throw new DecryptionFailedException(
+                    "No data encryption provider registered with id: " + header.getProviderId());
+        }
+        return provider.decryptingStream(source, header);
     }
 }
