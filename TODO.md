@@ -1,14 +1,10 @@
 # TODO List
 
 * document index/search apis: provide RAG example (see [042-index-search-docs.md](docs/enhancements/042-index-search-docs.md))
-* document admin apis
 * Brand the project and move it to an org/foundation.
-* Add support for python langchain /w user docs similar to the quarkus/spring support. (see [058-python-langchain-support.md](docs/enhancements/058-python-langchain-support.md))
 * move the ChatEvent json serializer to quarkus
 * make all common memory-service config options prefixed with "memory-service." (see [057-unified-config-key-naming.md](docs/enhancements/057-unified-config-key-naming.md))
 * bug: delete a fork, restore: it does not show up restored.
-* encrypted file store (see [063-encrypted-file-store.md](docs/enhancements/063-encrypted-file-store.md))
-* ~~move the `data.encryption.*` config properties under `memory-service.*`, default the file encryption to match data encryption. Make sure the encryption header is not being added when no encryption is enabled.~~ (done, see [064-unified-encryption-config.md](docs/enhancements/064-unified-encryption-config.md))
 * ponder how to implement hierarchical memory and what the access control rules should be for it.
 
 # Performance Related

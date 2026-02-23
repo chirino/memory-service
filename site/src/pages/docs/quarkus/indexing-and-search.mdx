@@ -47,31 +47,19 @@ The framework automatically discovers your `IndexedContentProvider` bean via CDI
 
 ### Custom Redaction
 
-For production applications, you'll likely want to redact sensitive information. Here's an example that strips credit card numbers:
+For production applications, you'll likely want to redact sensitive information. Start from the same provider method and replace the return line with:
+`text.replaceAll("\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b", "[REDACTED]")`
 
-```java
-@ApplicationScoped
-public class RedactingIndexedContentProvider implements IndexedContentProvider {
-
-    @Override
-    public String getIndexedContent(String text, String role) {
-        // Redact credit card numbers before indexing
-        return text.replaceAll("\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b", "[REDACTED]");
-    }
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/PassThroughIndexedContentProvider.java"
+  lang="java"
+  before={1}
+  after={2}
+>public String getIndexedContent(String text, String role)</CodeFromFile>
 
 You can also return `null` to skip indexing entirely for certain messages — for example, you might choose not to index AI responses:
 
-```java
-@Override
-public String getIndexedContent(String text, String role) {
-    if ("AI".equals(role)) {
-        return null; // Don't index AI responses
-    }
-    return text;
-}
-```
+`if ("AI".equals(role)) { return null; }`
 
 ## Expose the Search API
 
@@ -80,8 +68,8 @@ To let the frontend search across conversations, add a search endpoint to your `
 <CodeFromFile
   file="quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/ConversationsResource.java"
   lang="java"
-  before={2}
-  after={1}
+  before={4}
+  after={2}
 >public Response searchConversations</CodeFromFile>
 
 This endpoint accepts a JSON request body with the following fields:

@@ -1,0 +1,195 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python Conversation Forking
+description: Branch conversations to explore alternative paths.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide covers conversation forking, letting users branch from any point in a conversation to explore alternative paths.
+
+> **New to forking concepts?**
+> Read [Forking](/docs/concepts/forking/) first to understand how conversation forking works. This guide focuses on the Python LangChain implementation.
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [python/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/03-with-history)
+
+Make sure you've completed the previous guides:
+- [Python Getting Started](/docs/python/getting-started/) - Minimal agent + memory-service checkpointer
+- [Python Conversation History](/docs/python/conversation-history/) - History recording and conversation APIs
+
+Also complete **Step 2** in [Python Dev Setup](/docs/python/dev-setup/) (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Conversation Forking
+
+Conversation forking lets users branch off from any point in a conversation to explore alternative paths.
+
+### How Forking Works
+
+Keep the chat endpoint the same shape as Quarkus and Spring (`text/plain` input). Fork creation is done by appending the first entry to a new conversation with fork metadata.
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/04-conversation-forking/app.py"
+  lang="python"
+  lines="49-72"
+/>
+
+Checkpoint `04` keeps `/chat/{conversation_id}` as `text/plain` for regular turns. To fork, call the same endpoint with `forkedAtConversationId` and `forkedAtEntryId` query parameters while using a different target conversation ID.
+
+### Listing Forks
+
+Expose a forks endpoint so frontend clients can discover branches from a conversation:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/04-conversation-forking/app.py"
+  lang="python"
+  lines="103-110"
+/>
+
+## Try It With Curl
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/04-conversation-forking">
+
+Define a helper to get a bearer token for `bob`:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Create a turn on the source conversation:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Hello from the root conversation."
+```
+
+</CurlTest>
+
+Example response:
+
+```text
+Sure, I can help with that.
+```
+
+Fetch the entry id to fork from:
+
+<CurlTest steps={`
+Then the response status should be 200
+And set "FORK_ENTRY_ID" to the json response field "data[0].id"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/entries \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+Manual bash equivalent (stores the value in a shell variable):
+
+```bash
+FORK_ENTRY_ID="$(curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/entries \
+  -H "Authorization: Bearer $(get-token)" | jq -r '.data[0].id')"
+echo "$FORK_ENTRY_ID"
+```
+
+Example response from the entries API:
+
+```json
+{
+  "data": [
+    {
+      "id": "9dded20f-4118-4d7a-b633-141311ec589e",
+      "conversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Hello from the root conversation."}]
+    }
+  ]
+}
+```
+
+Create a fork by posting the first turn to a different conversation ID and passing fork metadata as query params:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -NsSfX POST "http://localhost:9090/chat/5deea4ab-32d4-4587-b1c1-3e5707eb596f?forkedAtConversationId=2c9d7ab0-b842-4b08-91b0-9dc6f4825f01&forkedAtEntryId=${FORK_ENTRY_ID}" \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Continue from this fork."
+```
+
+</CurlTest>
+
+Example response:
+
+```text
+Sure, let's continue from that branch.
+```
+
+List forks for the source conversation through the Python proxy endpoint:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01"
+And the response should contain "5deea4ab-32d4-4587-b1c1-3e5707eb596f"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/forks \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "conversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "title": "Hello from the root conversation.",
+      "createdAt": "2026-02-23T03:56:55.880524Z"
+    },
+    {
+      "conversationId": "5deea4ab-32d4-4587-b1c1-3e5707eb596f",
+      "forkedAtConversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "title": "Continue from this fork.",
+      "createdAt": "2026-02-23T03:57:31.598799Z"
+    }
+  ],
+  "afterCursor": null
+}
+```
+
+</TestScenario>
+
+## Complete Example
+
+**Completed code**: View the full implementation at [python/examples/doc-checkpoints/04-conversation-forking](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/04-conversation-forking)
+
+## Next Steps
+
+- [Response Resumption](/docs/python/response-resumption/) - Streaming responses with resume and cancel endpoints
+- [Sharing](/docs/python/sharing/) - Membership and ownership transfer APIs

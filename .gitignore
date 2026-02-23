@@ -31,6 +31,11 @@ nb-configuration.xml
 # OSX
 .DS_Store
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
 # Vim
 *.swp
 *.swo

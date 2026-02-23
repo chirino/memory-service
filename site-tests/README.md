@@ -245,7 +245,7 @@ curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942
 ### Run All Tests
 
 ```bash
-./mvnw test -pl site-tests -Ptest-docs
+./mvnw test -pl site-tests -Psite-tests
 ```
 
 This will:
@@ -262,7 +262,7 @@ The tests automatically detect the project root, so you can run from anywhere:
 
 ```bash
 cd site-tests
-../mvnw test -Ptest-docs
+../mvnw test -Psite-tests
 ```
 
 ### Development Workflow
@@ -270,9 +270,17 @@ cd site-tests
 When updating documentation:
 
 1. **Edit MDX files** in `site/src/pages/docs/`
-2. **Run tests**: `./mvnw test -pl site-tests -Ptest-docs`
+2. **Run tests**: `./mvnw test -pl site-tests -Psite-tests`
 3. **Check logs**: Checkpoint output is piped to stdout with `[checkpoint:PORT]` prefixes
 4. **Iterate**: Fix any failures and re-run
+
+### Run Python Scenarios Only
+
+For faster loops while working on Python docs/checkpoints:
+
+```bash
+./mvnw -Psite-tests -pl site-tests -Dcucumber.filter.tags=@python surefire:test
+```
 
 ### Debugging Failed Tests
 
@@ -282,7 +290,11 @@ Checkpoint output is piped to stdout with `[checkpoint:PORT]` prefixes (e.g., `[
 
 #### Test Only Specific Checkpoint
 
-Temporarily remove other scenarios from `test-scenarios.json` and re-run.
+Use generated checkpoint tags:
+
+```bash
+./mvnw -Psite-tests -pl site-tests -Dcucumber.filter.tags=@checkpoint_python_examples_doc_checkpoints_04_conversation_forking surefire:test
+```
 
 #### Check Service Health
 
@@ -475,7 +487,7 @@ jobs:
           node-version: '20'
 
       - name: Test Documentation
-        run: ./mvnw test -pl site-tests -Ptest-docs
+        run: ./mvnw test -pl site-tests -Psite-tests
 
       - name: Upload Logs
         if: failure()
@@ -552,7 +564,7 @@ The test framework supports recording real OpenAI API responses for deterministi
 ### Record Fixtures
 
 ```bash
-SITE_TEST_RECORD=true OPENAI_API_KEY=sk-... ./mvnw test -pl site-tests -Ptest-docs
+SITE_TEST_RECORD=true OPENAI_API_KEY=sk-... ./mvnw test -pl site-tests -Psite-tests
 ```
 
 This proxies requests to the real OpenAI API and saves responses as numbered fixture files in `site-tests/openai-mock/fixtures/{framework}/{checkpoint-name}/` (e.g., `001.json`, `002.json`).
@@ -560,7 +572,7 @@ This proxies requests to the real OpenAI API and saves responses as numbered fix
 ### Re-record All Fixtures
 
 ```bash
-SITE_TEST_RECORD=all OPENAI_API_KEY=sk-... ./mvnw test -pl site-tests -Ptest-docs
+SITE_TEST_RECORD=all OPENAI_API_KEY=sk-... ./mvnw test -pl site-tests -Psite-tests
 ```
 
 Use `SITE_TEST_RECORD=all` to overwrite existing fixtures.
@@ -568,7 +580,7 @@ Use `SITE_TEST_RECORD=all` to overwrite existing fixtures.
 ### Playback Mode (Default)
 
 ```bash
-./mvnw test -pl site-tests -Ptest-docs
+./mvnw test -pl site-tests -Psite-tests
 ```
 
 Fixture files are loaded as WireMock scenario-based stubs that fire sequentially (1st request gets 1st recorded response, 2nd gets 2nd, etc.). Falls back to default `chat-completions.json` if no fixtures exist for a checkpoint.

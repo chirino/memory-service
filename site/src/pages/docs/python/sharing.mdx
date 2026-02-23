@@ -1,0 +1,156 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python Sharing
+description: Membership and ownership transfer APIs in the Python tutorial app.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide shows how to add conversation sharing and ownership transfer APIs to the Python tutorial app.
+
+> **New to sharing concepts?**
+> Read [Sharing & Access Control](/docs/concepts/sharing/) first to understand access levels and transfer flow.
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [python/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/03-with-history)
+
+Make sure you've completed:
+- [Python Conversation History](/docs/python/conversation-history/) - History recording and conversation APIs
+- Multiple users in Keycloak (`bob`, `alice`, `charlie`)
+
+Also complete **Step 2** in [Python Dev Setup](/docs/python/dev-setup/) (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Membership Endpoints
+
+Checkpoint `06` adds membership endpoint passthroughs to the tutorial app:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/06-sharing/app.py"
+  lang="python"
+  lines="127-152"
+/>
+
+## Ownership Transfer Endpoints
+
+Checkpoint `06` also exposes ownership transfer APIs:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/06-sharing/app.py"
+  lang="python"
+  lines="155-180"
+/>
+
+## Testing Membership Management
+
+Define a token helper for multiple users:
+
+```bash
+function get-token() {
+  local username=${1:-bob}
+  local password=${2:-$username}
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=$username" \
+    -d "password=$password" \
+    | jq -r '.access_token'
+}
+```
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/06-sharing">
+
+Create a conversation as bob:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/chat/2380a370-09c5-468d-965f-f247af507833 \
+  -H "Authorization: Bearer $(get-token bob bob)" \
+  -H "Content-Type: text/plain" \
+  -d "Hello, starting a sharing test conversation."
+```
+
+</CurlTest>
+
+List memberships:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "bob"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/2380a370-09c5-468d-965f-f247af507833/memberships \
+  -H "Authorization: Bearer $(get-token bob bob)" | jq
+```
+
+</CurlTest>
+
+Add alice as a writer:
+
+<CurlTest steps={`
+Then the response status should be 201
+And the response should contain "alice"
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/2380a370-09c5-468d-965f-f247af507833/memberships \
+  -H "Authorization: Bearer $(get-token bob bob)" \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"alice","accessLevel":"writer"}' | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Testing Ownership Transfers
+
+Initiate an ownership transfer:
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/ownership-transfers \
+  -H "Authorization: Bearer $(get-token bob bob)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conversationId": "2380a370-09c5-468d-965f-f247af507833",
+    "newOwnerUserId": "alice"
+  }' | jq
+```
+
+List transfers for the recipient:
+
+```bash
+curl -sSfX GET "http://localhost:9090/v1/ownership-transfers?role=recipient" \
+  -H "Authorization: Bearer $(get-token alice alice)" | jq
+```
+
+Accept a transfer:
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/ownership-transfers/<transfer-id>/accept \
+  -H "Authorization: Bearer $(get-token alice alice)"
+```
+
+Decline or cancel a transfer:
+
+```bash
+curl -sSfX DELETE http://localhost:9090/v1/ownership-transfers/<transfer-id> \
+  -H "Authorization: Bearer $(get-token alice alice)"
+```
+
+## Completed Checkpoint
+
+**Completed code**: View the full implementation at [python/examples/doc-checkpoints/06-sharing](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/06-sharing)
+
+## What's Next
+
+You've now added collaborative features (memberships and ownership transfer) to your Python tutorial app.
+
+Next, continue to [Indexing and Search](/docs/python/indexing-and-search/) to add searchable indexed content.

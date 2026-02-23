@@ -3,8 +3,7 @@ layout: ../../../layouts/DocsLayout.astro
 title: Conversation Forking
 description: Branch conversations to explore alternative paths.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
+import CodeFromFile from '../../../components/CodeFromFile.astro';
 import TestScenario from '../../../components/TestScenario.astro';
 import CurlTest from '../../../components/CurlTest.astro';
 
@@ -25,37 +24,170 @@ Make sure you've completed the previous guides:
 
 Conversation forking lets users branch off from any point in a conversation to explore alternative paths.
 
+### How Forking Works
+
+Forks are created implicitly when the first entry is appended to a new conversation with fork metadata. In this checkpoint, the `ChatController` remains the same as the previous step, and fork metadata is passed when creating entries through the Memory Service API:
+
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/04-conversation-forking/src/main/java/com/example/demo/ChatController.java"
+  lang="java"
+  before={2}
+  after={1}
+>public String chat(@PathVariable String conversationId, @RequestBody String message)</CodeFromFile>
+
 ### Listing Forks
 
 Add this method to the `MemoryServiceProxyController` to list forks for a conversation:
 
-```java
-@GetMapping("/{conversationId}/forks")
-public ResponseEntity<?> listConversationForks(@PathVariable String conversationId) {
-    return proxy.listConversationForks(conversationId);
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/04-conversation-forking/src/main/java/com/example/demo/MemoryServiceProxyController.java"
+  lang="java"
+  before={2}
+  after={1}
+>listConversationForks(@PathVariable String conversationId)</CodeFromFile>
+
+## Try It With Curl
+
+<TestScenario checkpoint="spring/examples/doc-checkpoints/04-conversation-forking">
+
+Define a helper to get a bearer token for `bob`:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
 }
 ```
 
-### How Forking Works
+Create a turn on the source conversation:
 
-Forks are created implicitly when the first entry is appended to a new conversation with fork metadata. In Spring, the `ConversationHistoryStreamAdvisor` reads fork metadata from advisor params and includes it in the entry request.
+<CurlTest steps={`
+Then the response status should be 200
+`}>
 
-Pass fork metadata from your controller using the advisor param keys:
+```bash
+curl -NsSfX POST http://localhost:9090/chat/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Hello from the root conversation."
+```
 
-```java
-import static io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisor.FORKED_AT_CONVERSATION_ID_KEY;
-import static io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisor.FORKED_AT_ENTRY_ID_KEY;
+</CurlTest>
 
-// In your chat/stream handler:
-if (StringUtils.hasText(request.getForkedAtConversationId())) {
-    advisor.param(FORKED_AT_CONVERSATION_ID_KEY, request.getForkedAtConversationId());
-}
-if (StringUtils.hasText(request.getForkedAtEntryId())) {
-    advisor.param(FORKED_AT_ENTRY_ID_KEY, request.getForkedAtEntryId());
+Example response:
+
+```text
+Sure, I can help with that.
+```
+
+Fetch the entry id to fork from:
+
+<CurlTest steps={`
+Then the response status should be 200
+And set "FORK_ENTRY_ID" to the json response field "data[0].id"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/entries \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+Example response from the entries API:
+
+```json
+{
+  "data": [
+    {
+      "id": "9dded20f-4118-4d7a-b633-141311ec589e",
+      "conversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Hello from the root conversation."}]
+    }
+  ]
 }
 ```
 
-When the frontend sends a chat request with fork metadata, the advisor includes `forkedAtConversationId` and `forkedAtEntryId` in the `CreateEntryRequest`. If the target conversation doesn't exist yet, the memory service auto-creates it as a fork of the original conversation at the specified entry.
+Create a forked entry (this uses the Memory Service API directly so fork metadata can be passed in the request body).
+Use a different conversation ID in the path (`5deea4ab-32d4-4587-b1c1-3e5707eb596f` below) than the root conversation ID:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -sSfX POST http://localhost:8082/v1/conversations/5deea4ab-32d4-4587-b1c1-3e5707eb596f/entries \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "X-API-Key: agent-api-key-1" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"channel\": \"history\",
+    \"contentType\": \"history\",
+    \"content\": [{\"role\": \"USER\", \"text\": \"Continue from this fork.\"}],
+    \"forkedAtConversationId\": \"2c9d7ab0-b842-4b08-91b0-9dc6f4825f01\",
+    \"forkedAtEntryId\": \"${FORK_ENTRY_ID}\"
+  }" | jq
+```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "id": "b3a9d6dd-b499-44cc-8852-1d2dbab6f03c",
+  "conversationId": "5deea4ab-32d4-4587-b1c1-3e5707eb596f",
+  "channel": "history",
+  "contentType": "history",
+  "content": [{"role": "USER", "text": "Continue from this fork."}]
+}
+```
+
+List forks for the source conversation through the Spring proxy endpoint:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01"
+And the response should contain "5deea4ab-32d4-4587-b1c1-3e5707eb596f"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/forks \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+Example response:
+
+```json
+{
+  "data": [
+    {
+      "conversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "title": "Hello from the root conversation.",
+      "createdAt": "2026-02-23T03:56:55.880524Z"
+    },
+    {
+      "conversationId": "5deea4ab-32d4-4587-b1c1-3e5707eb596f",
+      "forkedAtConversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "title": "Continue from this fork.",
+      "createdAt": "2026-02-23T03:57:31.598799Z"
+    }
+  ],
+  "afterCursor": null
+}
+```
+
+</TestScenario>
 
 ## Complete Example
 

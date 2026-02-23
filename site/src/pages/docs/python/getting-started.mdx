@@ -1,0 +1,131 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python Getting Started
+description: Step-by-step guide to integrating Memory Service with a Python FastAPI + LangGraph-style agent.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide walks you through a minimal Python agent first using [LangChain](https://docs.langchain.com/oss/python/langchain/overview), then adds incremental memory-service integration. The goal is to keep code changes small while unlocking memory features one step at a time.
+
+Make sure you have completed [Python Dev Setup](/docs/python/dev-setup/) first.
+Also complete **Step 2** on that page (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Step 1: Start with a Minimal Agent
+
+**Starting checkpoint**: [python/examples/doc-checkpoints/01-basic-agent](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/01-basic-agent)
+
+Create a minimal LangChain agent and expose it over HTTP with FastAPI (no memory-service imports yet):
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/01-basic-agent/app.py"
+  lang="python"
+/>
+
+Add LangChain dependencies:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/01-basic-agent/pyproject.toml"
+  lang="toml"
+/>
+
+The checkpoint reads model configuration from environment variables (`OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`) so local dev and `site-tests` can inject provider settings without code changes.
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/01-basic-agent">
+
+Run the app:
+
+```bash
+cd python/examples/doc-checkpoints/01-basic-agent
+uv sync --frozen
+uv run uvicorn app:app --host 0.0.0.0 --port 9090
+```
+
+Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Python memory-service demo agent"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat \
+  -H "Content-Type: text/plain" \
+  -d "Hi, who are you?"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Step 2: Enable Memory-Backed Conversations
+
+**Starting checkpoint**: [python/examples/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/02-with-memory)
+
+Checkpoint `02` is built from checkpoint `01` and adds conversation-scoped chat memory keyed by `conversation_id`:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/02-with-memory/app.py"
+  lang="python"
+  lines="46-56"
+/>
+
+The new conversation-aware endpoint builds on the same LangChain agent from step 1:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/02-with-memory/app.py"
+  lang="python"
+  lines="59-68"
+/>
+
+Make sure Memory Service and Keycloak are running, then define a helper to get a user token:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/02-with-memory">
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hi Hiram"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/b2c3d4e5-f6a7-4b8c-9d0e-1a2b3c4d5e6f \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Hi, I'm Hiram, who are you?"
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hiram"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/b2c3d4e5-f6a7-4b8c-9d0e-1a2b3c4d5e6f \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Who am I?"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Next Steps
+
+Continue to [Conversation History](/docs/python/conversation-history/) to record user/AI turns and expose conversation APIs for frontend clients.

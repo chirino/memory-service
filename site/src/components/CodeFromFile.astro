@@ -1,7 +1,7 @@
 ---
 import { Code } from 'astro:components';
 import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { basename, resolve } from 'path';
 
 interface Props {
     file: string;
@@ -78,8 +78,8 @@ try {
         const start = Math.max(0, matchIndex - before);
         const end = Math.min(allLines.length, matchIndex + matchLines.length + after);
         content = allLines.slice(start, end).join('\n');
-        lineStart = start + 2;
-        lineEnd = end + 1;
+        lineStart = start + 1;
+        lineEnd = end;
     } else {
         // Return entire file
         content = fileContent;
@@ -91,10 +91,19 @@ try {
 
 const isSubset = lineStart > 1 || lineEnd < totalLines;
 const lineFragment = isSubset ? (lineStart === lineEnd ? `#L${lineStart}` : `#L${lineStart}-L${lineEnd}`) : '';
+const sourceHref = `https://github.com/chirino/memory-service/tree/main/${file}${lineFragment}`;
+const fileName = basename(file);
 ---
 
-<div class="code-from-file" data-source={file} data-source-href={`https://github.com/chirino/memory-service/tree/main/${file}${lineFragment}`}>
-    <Code code={content} lang={lang} />
+<div class="my-6">
+    <div class="flex items-end">
+        <div class="inline-flex items-center border border-b-0 border-gray-300 rounded-t-lg px-3.5 py-1.5 bg-gray-100">
+            <span class="font-mono text-[1.05rem] font-bold text-gray-700 tracking-[0.01em] whitespace-nowrap leading-none">{fileName}</span>
+        </div>
+    </div>
+    <div class="code-from-file" data-source={file} data-source-href={sourceHref}>
+        <Code code={content} lang={lang} />
+    </div>
 </div>
 
 <script>
@@ -121,7 +130,14 @@ document.querySelectorAll('.code-from-file').forEach(wrapper => {
 </script>
 
 <style>
-    .code-from-file {
-        margin: 1.5rem 0;
+    /* Target internals of Astro's <Code> component — can't reach these with Tailwind classes on the parent */
+    .code-from-file :global(*) {
+        margin-top: 0 !important;
+    }
+
+    .code-from-file :global(pre) {
+        margin: 0;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
     }
 </style>

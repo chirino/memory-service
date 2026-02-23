@@ -110,36 +110,29 @@ public class CheckpointSteps {
 
     @When("I build the checkpoint")
     public void buildCheckpoint() throws Exception {
-        // Use root mvnw with -f flag to build checkpoint
+        if (isPythonCheckpoint()) {
+            buildPythonCheckpoint();
+            return;
+        }
+
+        // Use root mvnw with -f flag to build Java checkpoint
         File mvnw = new File(projectRoot, "mvnw");
         String pomFile = Paths.get(checkpointPath, "pom.xml").toString();
-        ProcessBuilder pb =
-                new ProcessBuilder(
-                        mvnw.getAbsolutePath(),
-                        "-B",
-                        "clean",
-                        "package",
-                        "-DskipTests",
-                        "-f",
-                        pomFile);
-        pb.directory(projectRoot);
-        pb.redirectErrorStream(true);
-
-        System.out.println("=== Building checkpoint: " + checkpointId + " ===");
-        System.out.println("Command: " + String.join(" ", pb.command()));
-        Process process = pb.start();
-        pipeOutput(process, "build");
-        lastExitCode = process.waitFor();
-        System.out.println(
-                "=== Build finished: " + checkpointId + " (exit code " + lastExitCode + ") ===");
-
-        if (lastExitCode != 0) {
-            fail("Build failed with exit code: " + lastExitCode + " (see build output above)");
-        }
+        executeBuildCommand(
+                new String[] {
+                    mvnw.getAbsolutePath(), "-B", "clean", "package", "-DskipTests", "-f", pomFile
+                },
+                projectRoot);
     }
 
     @When("I build the checkpoint with {string}")
     public void buildCheckpoint(String buildCommand) throws Exception {
+        if (isPythonCheckpoint()) {
+            // For Python checkpoints, custom build commands are executed in checkpoint dir.
+            executeBuildCommand(buildCommand.split(" "), new File(checkpointPath));
+            return;
+        }
+
         File mvnw = new File(projectRoot, "mvnw");
         String pomFile = Paths.get(checkpointPath, "pom.xml").toString();
         String[] cmdParts = buildCommand.split(" ");
@@ -157,21 +150,7 @@ public class CheckpointSteps {
         fullCmd[fullCmd.length - 2] = "-f";
         fullCmd[fullCmd.length - 1] = pomFile;
 
-        ProcessBuilder pb = new ProcessBuilder(fullCmd);
-        pb.directory(projectRoot);
-        pb.redirectErrorStream(true);
-
-        System.out.println("=== Building checkpoint: " + checkpointId + " ===");
-        System.out.println("Command: " + String.join(" ", pb.command()));
-        Process process = pb.start();
-        pipeOutput(process, "build");
-        lastExitCode = process.waitFor();
-        System.out.println(
-                "=== Build finished: " + checkpointId + " (exit code " + lastExitCode + ") ===");
-
-        if (lastExitCode != 0) {
-            fail("Build failed with exit code: " + lastExitCode + " (see build output above)");
-        }
+        executeBuildCommand(fullCmd, projectRoot);
     }
 
     @Then("the build should succeed")
@@ -182,6 +161,7 @@ public class CheckpointSteps {
     @When("I start the checkpoint on port {int}")
     public void startCheckpoint(int port) throws Exception {
         this.currentPort = port;
+        ensurePortAvailable(port);
 
         // Decide whether to record or play back for this checkpoint
         recordingThisCheckpoint = false;
@@ -203,13 +183,16 @@ public class CheckpointSteps {
             DockerSteps.loadFixturesForCheckpoint(checkpointId);
         }
 
-        // Determine if this is a Quarkus or Spring Boot application
+        // Determine if this is a Python, Quarkus, or Spring Boot application
+        boolean isPython = isPythonCheckpoint();
         File targetDir = new File(checkpointPath, "target");
         File quarkusJar = new File(targetDir, "quarkus-app/quarkus-run.jar");
-        File jarFile;
-        boolean isQuarkus;
+        File jarFile = null;
+        boolean isQuarkus = false;
 
-        if (quarkusJar.exists()) {
+        if (isPython) {
+            System.out.println("Detected Python application");
+        } else if (quarkusJar.exists()) {
             // Quarkus application
             jarFile = quarkusJar;
             isQuarkus = true;
@@ -231,7 +214,21 @@ public class CheckpointSteps {
 
         // Build command with appropriate port configuration
         ProcessBuilder pb;
-        if (isQuarkus) {
+        if (isPython) {
+            File venvPython = new File(checkpointPath, ".venv/bin/python");
+            String pythonExecutable =
+                    venvPython.exists() ? venvPython.getAbsolutePath() : "python3";
+            pb =
+                    new ProcessBuilder(
+                            pythonExecutable,
+                            "-m",
+                            "uvicorn",
+                            "app:app",
+                            "--host",
+                            "0.0.0.0",
+                            "--port",
+                            String.valueOf(port));
+        } else if (isQuarkus) {
             pb =
                     new ProcessBuilder(
                             "java",
@@ -289,7 +286,7 @@ public class CheckpointSteps {
         // Wait for application to be ready
         waitForPort(port, Duration.ofSeconds(90));
 
-        // Give additional time for Spring Boot context to fully initialize
+        // Give additional time for app context to fully initialize
         System.out.println(
                 "Port is open, waiting additional 10 seconds for application context...");
         try {
@@ -378,6 +375,61 @@ public class CheckpointSteps {
 
         System.out.println(
                 "Warning: Port " + port + " may still be in use after waiting " + timeout);
+    }
+
+    private static void ensurePortAvailable(int port) {
+        try (Socket ignored = new Socket("localhost", port)) {
+            System.out.println("Port " + port + " is occupied. Attempting cleanup before start.");
+        } catch (IOException e) {
+            return;
+        }
+
+        try {
+            Process process =
+                    new ProcessBuilder("bash", "-lc", "lsof -ti :" + port + " | xargs -r kill -9")
+                            .start();
+            process.waitFor(5, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            System.err.println(
+                    "Warning: Failed to clean occupied port " + port + ": " + e.getMessage());
+        }
+
+        waitForPortRelease(port, Duration.ofSeconds(10));
+    }
+
+    private boolean isPythonCheckpoint() {
+        return Files.exists(Paths.get(checkpointPath, "pyproject.toml"));
+    }
+
+    private void buildPythonCheckpoint() throws Exception {
+        File checkpointDir = new File(checkpointPath);
+
+        // Prefer frozen sync when a lockfile exists; fallback to sync.
+        boolean hasLock =
+                Files.exists(Paths.get(checkpointPath, "uv.lock"))
+                        || Files.exists(Paths.get(checkpointPath, "requirements.lock"));
+
+        String[] command =
+                hasLock ? new String[] {"uv", "sync", "--frozen"} : new String[] {"uv", "sync"};
+        executeBuildCommand(command, checkpointDir);
+    }
+
+    private void executeBuildCommand(String[] command, File workingDirectory) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(workingDirectory);
+        pb.redirectErrorStream(true);
+
+        System.out.println("=== Building checkpoint: " + checkpointId + " ===");
+        System.out.println("Command: " + String.join(" ", pb.command()));
+        Process process = pb.start();
+        pipeOutput(process, "build");
+        lastExitCode = process.waitFor();
+        System.out.println(
+                "=== Build finished: " + checkpointId + " (exit code " + lastExitCode + ") ===");
+
+        if (lastExitCode != 0) {
+            fail("Build failed with exit code: " + lastExitCode + " (see build output above)");
+        }
     }
 
     /** Reads all process output and prints it to System.out. Blocks until the stream closes. */

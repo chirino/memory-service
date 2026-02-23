@@ -3,8 +3,7 @@ layout: ../../../layouts/DocsLayout.astro
 title: Response Resumption
 description: Streaming responses, response resumption, and cancellation.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
+import CodeFromFile from '../../../components/CodeFromFile.astro';
 import TestScenario from '../../../components/TestScenario.astro';
 import CurlTest from '../../../components/CurlTest.astro';
 
@@ -24,80 +23,24 @@ When users disconnect during a streaming response (page reload, network issues),
 
 Update the `Agent.java` to use streaming responses:
 
-```java
-package org.acme;
-
-import dev.langchain4j.service.MemoryId;
-import io.quarkiverse.langchain4j.RegisterAiService;
-import io.smallrye.mutiny.Multi;
-import jakarta.enterprise.context.ApplicationScoped;
-
-@ApplicationScoped
-@RegisterAiService
-public interface Agent {
-    Multi<String> chat(@MemoryId String conversationId, String userMessage);
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/Agent.java"
+  lang="java"
+/>
 
 Update the `HistoryRecordingAgent.java` to use streaming responses:
 
-```java
-package org.acme;
-
-import io.github.chirino.memory.history.annotations.ConversationId;
-import io.github.chirino.memory.history.annotations.RecordConversation;
-import io.github.chirino.memory.history.annotations.UserMessage;
-import io.smallrye.mutiny.Multi;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-
-@ApplicationScoped
-public class HistoryRecordingAgent {
-
-    private final Agent agent;
-
-    @Inject
-    public HistoryRecordingAgent(Agent agent) {
-        this.agent = agent;
-    }
-
-    @RecordConversation
-    public Multi<String> chat(@ConversationId String conversationId, @UserMessage String userMessage) {
-        return agent.chat(conversationId, userMessage);
-    }
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/HistoryRecordingAgent.java"
+  lang="java"
+/>
 
 Update `ChatResource.java` to use Server Sent Events (SSE) to stream the responses to the client:
 
-```java
-package org.acme;
-
-import io.smallrye.mutiny.Multi;
-import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
-
-@Path("/chat")
-public class ChatResource {
-
-    @Inject HistoryRecordingAgent agent;
-
-    @POST
-    @Path("/{conversationId}")
-    @Consumes(MediaType.TEXT_PLAIN)
-    @Produces(MediaType.TEXT_PLAIN)
-    public Multi<String> chat(
-            @PathParam("conversationId") String conversationId, String userMessage) {
-        return agent.chat(conversationId, userMessage);
-    }
-}
-
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/ChatResource.java"
+  lang="java"
+/>
 
 <TestScenario checkpoint="quarkus/examples/doc-checkpoints/05-response-resumption">
 
@@ -132,62 +75,10 @@ The following creates a REST endpoint that will allow us to:
 * Resume a response that is in progress
 * Cancel a response that is in progress
 
-```java
-package org.acme;
-
-import io.github.chirino.memory.history.runtime.ResponseResumer;
-import io.github.chirino.memory.runtime.MemoryServiceProxy;
-import io.quarkus.security.identity.SecurityIdentity;
-import io.smallrye.common.annotation.Blocking;
-import io.smallrye.mutiny.Multi;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
-
-import java.util.List;
-
-import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
-
-@Path("/v1/conversations")
-@ApplicationScoped
-public class ResumeResource {
-
-    @Inject ResponseResumer resumer;
-    @Inject SecurityIdentity securityIdentity;
-    @Inject MemoryServiceProxy proxy;
-
-    @POST
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Path("/resume-check")
-    public List<String> check(List<String> conversationIds) {
-        return resumer.check(conversationIds, bearerToken(securityIdentity));
-    }
-
-    @GET
-    @Path("/{conversationId}/resume")
-    @Blocking
-    @Produces(MediaType.SERVER_SENT_EVENTS)
-    public Multi<String> resume(
-            @PathParam("conversationId") String conversationId) {
-        String bearerToken = bearerToken(securityIdentity);
-        return resumer.replay(conversationId, bearerToken);
-    }
-
-    @POST
-    @Path("/{conversationId}/cancel")
-    public Response cancelResponse(@PathParam("conversationId") String conversationId) {
-        return proxy.cancelResponse(conversationId);
-    }
-}
-```
+<CodeFromFile
+  file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/ResumeResource.java"
+  lang="java"
+/>
 
 Test it with curl:
 

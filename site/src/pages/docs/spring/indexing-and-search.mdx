@@ -47,31 +47,19 @@ Spring Boot auto-configuration automatically discovers your `IndexedContentProvi
 
 ### Custom Redaction
 
-For production applications, you'll likely want to redact sensitive information. Here's an example that strips credit card numbers:
+For production applications, you'll likely want to redact sensitive information. Start from the same provider method and replace the return line with:
+`text.replaceAll("\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b", "[REDACTED]")`
 
-```java
-@Component
-public class RedactingIndexedContentProvider implements IndexedContentProvider {
-
-    @Override
-    public String getIndexedContent(String text, String role) {
-        // Redact credit card numbers before indexing
-        return text.replaceAll("\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b", "[REDACTED]");
-    }
-}
-```
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/07-with-search/src/main/java/com/example/demo/PassThroughIndexedContentProvider.java"
+  lang="java"
+  before={1}
+  after={2}
+>public String getIndexedContent(String text, String role)</CodeFromFile>
 
 You can also return `null` to skip indexing entirely for certain messages — for example, you might choose not to index AI responses:
 
-```java
-@Override
-public String getIndexedContent(String text, String role) {
-    if ("AI".equals(role)) {
-        return null; // Don't index AI responses
-    }
-    return text;
-}
-```
+`if ("AI".equals(role)) { return null; }`
 
 ## Expose the Search API
 
@@ -80,8 +68,8 @@ To let the frontend search across conversations, add a search endpoint to your `
 <CodeFromFile
   file="spring/examples/doc-checkpoints/07-with-search/src/main/java/com/example/demo/MemoryServiceProxyController.java"
   lang="java"
-  before={2}
-  after={1}
+  before={1}
+  after={2}
 >searchConversations(@RequestBody</CodeFromFile>
 
 This endpoint accepts a JSON request body with the following fields:

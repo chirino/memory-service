@@ -1,0 +1,42 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python Guides
+description: Integrate Memory Service with Python FastAPI + LangGraph-style agents.
+---
+
+These guides walk through an incremental Python integration path for LangChain/LangGraph developers:
+- Start from a minimal working chat app
+- Turn on memory-service features one by one
+- Keep code changes small and explicit using checkpoint-based diffs
+
+Each guide references runnable checkpoints under `python/examples/doc-checkpoints/` and includes `site-tests`-backed curl scenarios.
+
+## Prerequisites
+
+Before starting, complete [Python Dev Setup](/docs/python/dev-setup/) and ensure Memory Service + Keycloak are running.
+Also complete **Step 2** on that page (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Tutorial Path
+
+### [Getting Started](/docs/python/getting-started/)
+Build a minimal Python agent, then enable memory-backed conversations.
+
+### [Conversation History](/docs/python/conversation-history/)
+Record USER/AI turns in the history channel and expose read APIs.
+
+### [Indexing and Search](/docs/python/indexing-and-search/)
+Add indexed history content and conversation search.
+
+### [Conversation Forking](/docs/python/conversation-forking/)
+Pass fork metadata and list conversation forks.
+
+### [Response Resumption](/docs/python/response-resumption/)
+Stream responses and support resume-check, resume, and cancel.
+
+### [Sharing](/docs/python/sharing/)
+Add memberships and ownership transfer APIs.
+
+## Reference
+
+### [Dev Setup](/docs/python/dev-setup/)
+Reproducible `uv` workflow, Dockerized dependencies, and fast Python-only docs tests.

@@ -1,0 +1,116 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python Indexing and Search
+description: Add search indexing and semantic search to your conversations.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide continues from [Conversation History](/docs/python/conversation-history/) and shows how to add search indexing to history entries and expose a search API for frontend applications.
+
+> **New to indexing and search concepts?**
+> Read [Indexing & Search](/docs/concepts/indexing-and-search/) first to understand `indexedContent`, redaction, and search types.
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [python/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/03-with-history)
+
+Make sure you've completed the [Python Conversation History](/docs/python/conversation-history/) guide first.
+Also complete **Step 2** in [Python Dev Setup](/docs/python/dev-setup/) (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## How Search Indexing Works
+
+Conversation history content is encrypted at rest, so text search needs a separate cleartext index field.
+
+Checkpoint `07` configures `MemoryServiceHistoryMiddleware` with an `indexed_content_provider`. The provider transforms each history message into `indexedContent` before the entry is written.
+
+This gives you a redaction point. You can remove sensitive data from `indexedContent` while still storing the full encrypted message content.
+
+## Add an Indexed Content Provider
+
+The simplest provider is pass-through:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/07-with-search/app.py"
+  lang="python"
+  lines="54-61"
+/>
+
+For production, replace pass-through with redaction logic. Example:
+
+```python
+def redacting_indexed_content(text: str, role: str) -> str:
+    del role
+    return re.sub(r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b", "[REDACTED]", text)
+```
+
+## Expose the Search API
+
+Expose `POST /v1/conversations/search` so frontend apps can query across conversations:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/07-with-search/app.py"
+  lang="python"
+  lines="127-130"
+/>
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/07-with-search">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+First, create searchable conversation content:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/6f87e68a-899f-4346-a30f-b05bfebf1a9f \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Give me a random number between 1 and 100."
+```
+
+</CurlTest>
+
+Search conversations:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "data"
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/search \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "random number", "searchType": "auto"}' | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Completed Checkpoint
+
+**Completed code**: View the full implementation at [python/examples/doc-checkpoints/07-with-search](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/07-with-search)
+
+## Next Steps
+
+Continue to:
+- [Conversation Forking](/docs/python/conversation-forking/) - Branch conversations to explore alternative paths
+- [Response Resumption](/docs/python/response-resumption/) - Streaming responses with resume and cancel support
