@@ -77,7 +77,7 @@ And the response should match pattern "\\w+"
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/7bcb4a17-a263-4b22-8de0-b7d8d1eb116a \
+curl -NsSfX POST http://localhost:9090/chat/2946ccfc-cf26-43e1-87fc-f71c944895b1 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Write a short story about a cat."
@@ -113,7 +113,7 @@ And the response should contain "["
 curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $(get-token)" \
-  -d '["7bcb4a17-a263-4b22-8de0-b7d8d1eb116a"]'
+  -d '["2946ccfc-cf26-43e1-87fc-f71c944895b1"]'
 ```
 
 </CurlTest>
@@ -123,14 +123,14 @@ curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
 Resume manually from another terminal:
 
 ```bash
-curl -NsSfX GET http://localhost:9090/v1/conversations/7bcb4a17-a263-4b22-8de0-b7d8d1eb116a/resume \
+curl -NsSfX GET http://localhost:9090/v1/conversations/2946ccfc-cf26-43e1-87fc-f71c944895b1/resume \
   -H "Authorization: Bearer $(get-token)"
 ```
 
 Cancel manually:
 
 ```bash
-curl -sSfX POST http://localhost:9090/v1/conversations/7bcb4a17-a263-4b22-8de0-b7d8d1eb116a/cancel \
+curl -sSfX POST http://localhost:9090/v1/conversations/2946ccfc-cf26-43e1-87fc-f71c944895b1/cancel \
   -H "Authorization: Bearer $(get-token)"
 ```
 

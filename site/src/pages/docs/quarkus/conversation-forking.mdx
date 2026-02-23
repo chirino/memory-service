@@ -70,7 +70,7 @@ Then the response status should be 200
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01 \
+curl -NsSfX POST http://localhost:9090/chat/88a1db4c-ce91-4391-a6c1-baf9bcc65a86 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Hello from the root conversation."
@@ -92,7 +92,7 @@ And set "FORK_ENTRY_ID" to the json response field "data[1].id"
 `}>
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/entries \
+curl -sSfX GET http://localhost:9090/v1/conversations/88a1db4c-ce91-4391-a6c1-baf9bcc65a86/entries \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
@@ -105,7 +105,7 @@ Example response from the entries API:
   "data": [
     {
       "id": "9dded20f-4118-4d7a-b633-141311ec589e",
-      "conversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "conversationId": "88a1db4c-ce91-4391-a6c1-baf9bcc65a86",
       "channel": "history",
       "contentType": "history",
       "content": [{"role": "USER", "text": "Hello from the root conversation."}]
@@ -115,14 +115,14 @@ Example response from the entries API:
 ```
 
 Create a forked entry (this uses the Memory Service API directly so fork metadata can be passed in the request body).
-Use a different conversation ID in the path (`5deea4ab-32d4-4587-b1c1-3e5707eb596f` below) than the root conversation ID:
+Use a different conversation ID in the path (`d517e108-28f0-49a1-93cc-d0f48ebedf42` below) than the root conversation ID:
 
 <CurlTest steps={`
 Then the response status should be 201
 `}>
 
 ```bash
-curl -sSfX POST http://localhost:8082/v1/conversations/5deea4ab-32d4-4587-b1c1-3e5707eb596f/entries \
+curl -sSfX POST http://localhost:8082/v1/conversations/d517e108-28f0-49a1-93cc-d0f48ebedf42/entries \
   -H "Authorization: Bearer $(get-token)" \
   -H "X-API-Key: agent-api-key-1" \
   -H "Content-Type: application/json" \
@@ -130,7 +130,7 @@ curl -sSfX POST http://localhost:8082/v1/conversations/5deea4ab-32d4-4587-b1c1-3
     "channel": "history",
     "contentType": "history",
     "content": [{"role": "USER", "text": "Continue from this fork."}],
-    "forkedAtConversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+    "forkedAtConversationId": "88a1db4c-ce91-4391-a6c1-baf9bcc65a86",
     "forkedAtEntryId": "${FORK_ENTRY_ID}"
   }' | jq
 ```
@@ -142,7 +142,7 @@ Example response:
 ```json
 {
   "id": "b3a9d6dd-b499-44cc-8852-1d2dbab6f03c",
-  "conversationId": "5deea4ab-32d4-4587-b1c1-3e5707eb596f",
+  "conversationId": "d517e108-28f0-49a1-93cc-d0f48ebedf42",
   "channel": "history",
   "contentType": "history",
   "content": [{"role": "USER", "text": "Continue from this fork."}]
@@ -153,12 +153,12 @@ List forks for the source conversation through the Quarkus proxy endpoint:
 
 <CurlTest steps={`
 Then the response status should be 200
-And the response should contain "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01"
-And the response should contain "5deea4ab-32d4-4587-b1c1-3e5707eb596f"
+And the response should contain "88a1db4c-ce91-4391-a6c1-baf9bcc65a86"
+And the response should contain "d517e108-28f0-49a1-93cc-d0f48ebedf42"
 `}>
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/forks \
+curl -sSfX GET http://localhost:9090/v1/conversations/88a1db4c-ce91-4391-a6c1-baf9bcc65a86/forks \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
@@ -170,13 +170,13 @@ Example response:
 {
   "data": [
     {
-      "conversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "conversationId": "88a1db4c-ce91-4391-a6c1-baf9bcc65a86",
       "title": "Hello from the root conversation.",
       "createdAt": "2026-02-23T03:56:55.880524Z"
     },
     {
-      "conversationId": "5deea4ab-32d4-4587-b1c1-3e5707eb596f",
-      "forkedAtConversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "conversationId": "d517e108-28f0-49a1-93cc-d0f48ebedf42",
+      "forkedAtConversationId": "88a1db4c-ce91-4391-a6c1-baf9bcc65a86",
       "title": "Continue from this fork.",
       "createdAt": "2026-02-23T03:57:31.598799Z"
     }

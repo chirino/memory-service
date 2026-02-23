@@ -38,7 +38,7 @@ And the response should match pattern "\\w+"
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -NsSfX POST http://localhost:9090/chat/8337ca02-62de-43e1-b69b-c663cb50acc4 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Write a 4 paragraph story about a cat."
@@ -50,7 +50,7 @@ curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942
 
 You should see the response streaming to your command line.
 
-Now browse to the demo agent app at [http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942)
+Now browse to the demo agent app at [http://localhost:8080/?conversationId=8337ca02-62de-43e1-b69b-c663cb50acc4](http://localhost:8080/?conversationId=8337ca02-62de-43e1-b69b-c663cb50acc4)
 and you should see the response streaming to the browser.
 
 ## Response Resumption
@@ -68,7 +68,7 @@ The following creates a REST endpoint that will allow us to:
 Test it with curl:
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -NsSfX POST http://localhost:9090/chat/8337ca02-62de-43e1-b69b-c663cb50acc4 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Write a 4 paragraph story about a cat."
@@ -80,13 +80,13 @@ And while the response is streaming, you can check use the following to check to
 curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $(get-token)" \
-  -d '["3579aac5-c86e-4b67-bbea-6ec1a3644942"]' | jq
+  -d '["8337ca02-62de-43e1-b69b-c663cb50acc4"]' | jq
 ```
 
 And to resume a conversation, you can run the following command in a new terminal:
 
 ```bash
-curl -NsSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/resume \
+curl -NsSfX GET http://localhost:9090/v1/conversations/8337ca02-62de-43e1-b69b-c663cb50acc4/resume \
   -H "Authorization: Bearer $(get-token)"
 ```
 
@@ -97,7 +97,7 @@ You should see the response streaming to your command line.
 To cancel a response, you can run the following command:
 
 ```bash
-curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/cancel \
+curl -sSfX POST http://localhost:9090/v1/conversations/8337ca02-62de-43e1-b69b-c663cb50acc4/cancel \
   -H "Authorization: Bearer $(get-token)"
 ```
 

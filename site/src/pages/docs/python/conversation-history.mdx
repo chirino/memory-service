@@ -59,7 +59,7 @@ And the response should contain "42"
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/70f00f9d-9e38-4f12-a468-f866f4f8aa89 \
+curl -NsSfX POST http://localhost:9090/chat/0ef33d7b-11b1-4992-9785-681e222dbcd2 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Give me a random number between 1 and 100."
@@ -89,7 +89,7 @@ Test it with curl:
 
 <CurlTest steps={`
 Then the response status should be 200
-And the response should contain "70f00f9d-9e38-4f12-a468-f866f4f8aa89"
+And the response should contain "0ef33d7b-11b1-4992-9785-681e222dbcd2"
 And the response should contain "ownerUserId"
 And the response should contain "bob"
 And the response should contain "accessLevel"
@@ -97,7 +97,7 @@ And the response should contain "owner"
 `}>
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/70f00f9d-9e38-4f12-a468-f866f4f8aa89 \
+curl -sSfX GET http://localhost:9090/v1/conversations/0ef33d7b-11b1-4992-9785-681e222dbcd2 \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
@@ -111,7 +111,7 @@ And the response body should be json:
   "data": [
     {
       "id": "%{response.body.data[0].id}",
-      "conversationId": "70f00f9d-9e38-4f12-a468-f866f4f8aa89",
+      "conversationId": "0ef33d7b-11b1-4992-9785-681e222dbcd2",
       "userId": "bob",
       "channel": "history",
       "contentType": "history",
@@ -120,7 +120,7 @@ And the response body should be json:
     },
     {
       "id": "%{response.body.data[1].id}",
-      "conversationId": "70f00f9d-9e38-4f12-a468-f866f4f8aa89",
+      "conversationId": "0ef33d7b-11b1-4992-9785-681e222dbcd2",
       "userId": "bob",
       "channel": "history",
       "contentType": "history",
@@ -134,7 +134,7 @@ And the response body should be json:
 `}>
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/70f00f9d-9e38-4f12-a468-f866f4f8aa89/entries \
+curl -sSfX GET http://localhost:9090/v1/conversations/0ef33d7b-11b1-4992-9785-681e222dbcd2/entries \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 

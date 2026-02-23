@@ -30,6 +30,7 @@ public class CheckpointSteps {
     private int currentPort;
     private static File projectRoot;
     private static final List<ProcessInfo> allProcesses = new ArrayList<>();
+    private static final ThreadLocal<Integer> SCENARIO_PORT = new ThreadLocal<>();
 
     static {
         // Find project root by looking for pom.xml with site-tests module
@@ -72,6 +73,11 @@ public class CheckpointSteps {
             System.out.println("Cleaning up checkpoint process on port " + currentPort);
             stopCheckpoint();
         }
+        SCENARIO_PORT.remove();
+    }
+
+    static Integer getCurrentScenarioPort() {
+        return SCENARIO_PORT.get();
     }
 
     private static File findProjectRoot() {
@@ -161,6 +167,7 @@ public class CheckpointSteps {
     @When("I start the checkpoint on port {int}")
     public void startCheckpoint(int port) throws Exception {
         this.currentPort = port;
+        SCENARIO_PORT.set(port);
         ensurePortAvailable(port);
 
         // Decide whether to record or play back for this checkpoint
@@ -328,6 +335,7 @@ public class CheckpointSteps {
             killProcess(checkpointProcess, pid, currentPort);
             checkpointProcess = null;
         }
+        SCENARIO_PORT.remove();
     }
 
     private static void killProcess(Process process, long pid, int port) {

@@ -63,7 +63,7 @@ Sure! Here's a random number between 1 and 100: **42**.
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -NsSfX POST http://localhost:9090/chat/564f4b5f-789c-473b-adbf-44ed85de5550 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Give me a random number between 1 and 100."
@@ -74,7 +74,7 @@ curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942
 </TestScenario>
 
 This time when you browse to to the demo agent app at
-[http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942)
+[http://localhost:8080/?conversationId=564f4b5f-789c-473b-adbf-44ed85de5550](http://localhost:8080/?conversationId=564f4b5f-789c-473b-adbf-44ed85de5550)
 you should see the messages that were exchanged between you and the agent.
 
 ## Expose Conversation APIs
@@ -99,7 +99,7 @@ Then the response status should be 200
 And the response body should be json:
 """
 {
-  "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "id": "564f4b5f-789c-473b-adbf-44ed85de5550",
   "title": "%{response.body.title}",
   "ownerUserId": "bob",
   "createdAt": "%{response.body.createdAt}",
@@ -113,7 +113,7 @@ And the response body should be json:
 `}>
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -sSfX GET http://localhost:9090/v1/conversations/564f4b5f-789c-473b-adbf-44ed85de5550 \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
@@ -123,7 +123,7 @@ Example response:
 
 ```json
 {
-  "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+  "id": "564f4b5f-789c-473b-adbf-44ed85de5550",
   "title": "Give me a random number between 1 and 10",
   "ownerUserId": "bob",
   "createdAt": "2025-01-10T14:32:05Z",
@@ -142,7 +142,7 @@ And the response should contain "history"
 `}>
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/entries \
+curl -sSfX GET http://localhost:9090/v1/conversations/564f4b5f-789c-473b-adbf-44ed85de5550/entries \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
@@ -155,7 +155,7 @@ Example response:
   "data": [
     {
       "id": "d15ab065-ab94-4856-8def-a040d6d2d9db",
-      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "conversationId": "564f4b5f-789c-473b-adbf-44ed85de5550",
       "userId": "bob",
       "channel": "history",
       "epoch": null,
@@ -165,7 +165,7 @@ Example response:
     },
     {
       "id": "267158af-48bf-4000-b25b-c4f9932a48f4",
-      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "conversationId": "564f4b5f-789c-473b-adbf-44ed85de5550",
       "userId": "bob",
       "channel": "history",
       "epoch": null,
@@ -195,7 +195,7 @@ Test it with curl:
 
 <CurlTest steps={`
 Then the response status should be 200
-And the response should contain "3579aac5-c86e-4b67-bbea-6ec1a3644942"
+And the response should contain "564f4b5f-789c-473b-adbf-44ed85de5550"
 And the response should contain "owner"
 And the response should contain "bob"
 `}>
@@ -213,7 +213,7 @@ Example response:
 {
   "data": [
     {
-      "id": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "id": "564f4b5f-789c-473b-adbf-44ed85de5550",
       "title": "Give me a random number between 1 and 10",
       "ownerUserId": "bob",
       "createdAt": "2025-01-10T14:32:05Z",

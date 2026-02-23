@@ -36,7 +36,7 @@ Keep the chat endpoint the same shape as Quarkus and Spring (`text/plain` input)
   lines="49-72"
 />
 
-Checkpoint `04` keeps `/chat/{conversation_id}` as `text/plain` for regular turns. To fork, call the same endpoint with `forkedAtConversationId` and `forkedAtEntryId` query parameters while using a different target conversation ID.
+Checkpoint `04` keeps `/chat/{conversation_id}` as `text/plain` for regular turns. To create a fork, append the first forked entry through the Memory Service API with `forkedAtConversationId` and `forkedAtEntryId`, using a different target conversation ID.
 
 ### Listing Forks
 
@@ -74,7 +74,7 @@ Then the response status should be 200
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01 \
+curl -NsSfX POST http://localhost:9090/chat/16de0661-0dcf-4df2-9964-7f23c4de5fc6 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Hello from the root conversation."
@@ -96,7 +96,7 @@ And set "FORK_ENTRY_ID" to the json response field "data[1].id"
 `}>
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/entries \
+curl -sSfX GET http://localhost:9090/v1/conversations/16de0661-0dcf-4df2-9964-7f23c4de5fc6/entries \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
@@ -105,7 +105,7 @@ curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9d
 Manual bash equivalent (stores the value in a shell variable):
 
 ```bash
-FORK_ENTRY_ID="$(curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/entries \
+FORK_ENTRY_ID="$(curl -sSfX GET http://localhost:9090/v1/conversations/16de0661-0dcf-4df2-9964-7f23c4de5fc6/entries \
   -H "Authorization: Bearer $(get-token)" | jq -r '.data[0].id')"
 echo "$FORK_ENTRY_ID"
 ```
@@ -117,7 +117,7 @@ Example response from the entries API:
   "data": [
     {
       "id": "9dded20f-4118-4d7a-b633-141311ec589e",
-      "conversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "conversationId": "16de0661-0dcf-4df2-9964-7f23c4de5fc6",
       "channel": "history",
       "contentType": "history",
       "content": [{"role": "USER", "text": "Hello from the root conversation."}]
@@ -126,37 +126,50 @@ Example response from the entries API:
 }
 ```
 
-Create a fork by posting the first turn to a different conversation ID and passing fork metadata as query params:
+Create a fork by appending the first turn to a different conversation ID through the Memory Service API with fork metadata:
 
 <CurlTest steps={`
-Then the response status should be 200
+Then the response status should be 201
 `}>
 
 ```bash
-curl -NsSfX POST "http://localhost:9090/chat/5deea4ab-32d4-4587-b1c1-3e5707eb596f?forkedAtConversationId=2c9d7ab0-b842-4b08-91b0-9dc6f4825f01&forkedAtEntryId=${FORK_ENTRY_ID}" \
-  -H "Content-Type: text/plain" \
+curl -sSfX POST http://localhost:8082/v1/conversations/bb745717-236b-4c81-bc0a-766d10622e19/entries \
   -H "Authorization: Bearer $(get-token)" \
-  -d "Continue from this fork."
+  -H "X-API-Key: agent-api-key-1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel": "history",
+    "contentType": "history",
+    "content": [{"role": "USER", "text": "Continue from this fork."}],
+    "forkedAtConversationId": "16de0661-0dcf-4df2-9964-7f23c4de5fc6",
+    "forkedAtEntryId": "${FORK_ENTRY_ID}"
+  }' | jq
 ```
 
 </CurlTest>
 
 Example response:
 
-```text
-Sure, let's continue from that branch.
+```json
+{
+  "id": "b3a9d6dd-b499-44cc-8852-1d2dbab6f03c",
+  "conversationId": "bb745717-236b-4c81-bc0a-766d10622e19",
+  "channel": "history",
+  "contentType": "history",
+  "content": [{"role": "USER", "text": "Continue from this fork."}]
+}
 ```
 
 List forks for the source conversation through the Python proxy endpoint:
 
 <CurlTest steps={`
 Then the response status should be 200
-And the response should contain "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01"
-And the response should contain "5deea4ab-32d4-4587-b1c1-3e5707eb596f"
+And the response should contain "16de0661-0dcf-4df2-9964-7f23c4de5fc6"
+And the response should contain "bb745717-236b-4c81-bc0a-766d10622e19"
 `}>
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/2c9d7ab0-b842-4b08-91b0-9dc6f4825f01/forks \
+curl -sSfX GET http://localhost:9090/v1/conversations/16de0661-0dcf-4df2-9964-7f23c4de5fc6/forks \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
@@ -168,13 +181,13 @@ Example response:
 {
   "data": [
     {
-      "conversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "conversationId": "16de0661-0dcf-4df2-9964-7f23c4de5fc6",
       "title": "Hello from the root conversation.",
       "createdAt": "2026-02-23T03:56:55.880524Z"
     },
     {
-      "conversationId": "5deea4ab-32d4-4587-b1c1-3e5707eb596f",
-      "forkedAtConversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+      "conversationId": "bb745717-236b-4c81-bc0a-766d10622e19",
+      "forkedAtConversationId": "16de0661-0dcf-4df2-9964-7f23c4de5fc6",
       "title": "Continue from this fork.",
       "createdAt": "2026-02-23T03:57:31.598799Z"
     }

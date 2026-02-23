@@ -104,7 +104,7 @@ And the response should match pattern "\\d+"
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -NsSfX POST http://localhost:9090/chat/415afe24-61a5-49b0-99fb-fbb4a58308cc \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Give me a random number between 1 and 100."
@@ -129,14 +129,14 @@ Example response:
 {
   "data": [
     {
-      "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+      "conversationId": "415afe24-61a5-49b0-99fb-fbb4a58308cc",
       "conversationTitle": "Give me a random number between 1 and 100",
       "entryId": "d15ab065-ab94-4856-8def-a040d6d2d9db",
       "score": 0.95,
       "highlights": ["Give me a ==random number== between 1 and 100"],
       "entry": {
         "id": "d15ab065-ab94-4856-8def-a040d6d2d9db",
-        "conversationId": "3579aac5-c86e-4b67-bbea-6ec1a3644942",
+        "conversationId": "415afe24-61a5-49b0-99fb-fbb4a58308cc",
         "userId": "bob",
         "channel": "history",
         "contentType": "history",

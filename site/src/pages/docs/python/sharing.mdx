@@ -70,7 +70,7 @@ Then the response status should be 200
 `}>
 
 ```bash
-curl -sSfX POST http://localhost:9090/chat/2380a370-09c5-468d-965f-f247af507833 \
+curl -sSfX POST http://localhost:9090/chat/a37bf20b-34eb-4471-b481-107c68ac3a9d \
   -H "Authorization: Bearer $(get-token bob bob)" \
   -H "Content-Type: text/plain" \
   -d "Hello, starting a sharing test conversation."
@@ -86,7 +86,7 @@ And the response should contain "bob"
 `}>
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/2380a370-09c5-468d-965f-f247af507833/memberships \
+curl -sSfX GET http://localhost:9090/v1/conversations/a37bf20b-34eb-4471-b481-107c68ac3a9d/memberships \
   -H "Authorization: Bearer $(get-token bob bob)" | jq
 ```
 
@@ -100,7 +100,7 @@ And the response should contain "alice"
 `}>
 
 ```bash
-curl -sSfX POST http://localhost:9090/v1/conversations/2380a370-09c5-468d-965f-f247af507833/memberships \
+curl -sSfX POST http://localhost:9090/v1/conversations/a37bf20b-34eb-4471-b481-107c68ac3a9d/memberships \
   -H "Authorization: Bearer $(get-token bob bob)" \
   -H "Content-Type: application/json" \
   -d '{"userId":"alice","accessLevel":"writer"}' | jq
@@ -119,7 +119,7 @@ curl -sSfX POST http://localhost:9090/v1/ownership-transfers \
   -H "Authorization: Bearer $(get-token bob bob)" \
   -H "Content-Type: application/json" \
   -d '{
-    "conversationId": "2380a370-09c5-468d-965f-f247af507833",
+    "conversationId": "a37bf20b-34eb-4471-b481-107c68ac3a9d",
     "newOwnerUserId": "alice"
   }' | jq
 ```
