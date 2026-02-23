@@ -93,6 +93,7 @@ This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree
 **LangChain gRPC recorder default**: `MemoryServiceHistoryMiddleware` enables gRPC response recording only when `MEMORY_SERVICE_GRPC_TARGET` is set (or `MEMORY_SERVICE_GRPC_RECORDING_ENABLED=true`).
 
 **Python FastAPI helper reuse**: Prefer `memory_service_langchain.install_fastapi_authorization_middleware`, `memory_service_scope`, and `memory_service_request` over redefining ContextVars/middleware in checkpoint apps.
+**Spring memory repository limit gotcha**: `listConversationEntries` limit must be `<=200` (contract max). Using `1000` causes upstream `400` errors during chat memory reads and surfaces as app `500`s.
 
 **Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 

@@ -93,7 +93,7 @@ Sure! Here's a random number between 1 and 100: **42**.
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Give me a random number between 1 and 100."
 ```

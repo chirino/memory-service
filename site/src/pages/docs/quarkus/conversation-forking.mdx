@@ -88,7 +88,7 @@ Fetch the entry id to fork from:
 
 <CurlTest steps={`
 Then the response status should be 200
-And set "FORK_ENTRY_ID" to the json response field "data[0].id"
+And set "FORK_ENTRY_ID" to the json response field "data[1].id"
 `}>
 
 ```bash
@@ -118,7 +118,7 @@ Create a forked entry (this uses the Memory Service API directly so fork metadat
 Use a different conversation ID in the path (`5deea4ab-32d4-4587-b1c1-3e5707eb596f` below) than the root conversation ID:
 
 <CurlTest steps={`
-Then the response status should be 200
+Then the response status should be 201
 `}>
 
 ```bash
@@ -126,13 +126,13 @@ curl -sSfX POST http://localhost:8082/v1/conversations/5deea4ab-32d4-4587-b1c1-3
   -H "Authorization: Bearer $(get-token)" \
   -H "X-API-Key: agent-api-key-1" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"channel\": \"history\",
-    \"contentType\": \"history\",
-    \"content\": [{\"role\": \"USER\", \"text\": \"Continue from this fork.\"}],
-    \"forkedAtConversationId\": \"2c9d7ab0-b842-4b08-91b0-9dc6f4825f01\",
-    \"forkedAtEntryId\": \"${FORK_ENTRY_ID}\"
-  }" | jq
+  -d '{
+    "channel": "history",
+    "contentType": "history",
+    "content": [{"role": "USER", "text": "Continue from this fork."}],
+    "forkedAtConversationId": "2c9d7ab0-b842-4b08-91b0-9dc6f4825f01",
+    "forkedAtEntryId": "${FORK_ENTRY_ID}"
+  }' | jq
 ```
 
 </CurlTest>

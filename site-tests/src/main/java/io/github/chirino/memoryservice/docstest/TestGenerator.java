@@ -62,7 +62,15 @@ public class TestGenerator {
         // Scenario header
         String checkpointName =
                 scenario.checkpoint.substring(scenario.checkpoint.lastIndexOf('/') + 1);
-        feature.append("  Scenario: Test ").append(checkpointName).append("\n");
+        String framework = deriveFramework(scenario.sourceFile);
+        String tutorialName = deriveFeatureName(scenario.sourceFile);
+        feature.append("  Scenario: [")
+                .append(framework)
+                .append("] ")
+                .append(tutorialName)
+                .append(" - Test ")
+                .append(checkpointName)
+                .append("\n");
         feature.append("    # From ").append(scenario.sourceFile).append("\n");
 
         // Set up checkpoint
@@ -201,11 +209,12 @@ public class TestGenerator {
         List<String> tags = new ArrayList<>();
 
         String source = scenario.sourceFile != null ? scenario.sourceFile : "";
-        if (source.startsWith("/docs/python/")) {
+        String framework = deriveFramework(source);
+        if ("python".equals(framework)) {
             tags.add("@python");
-        } else if (source.startsWith("/docs/quarkus/")) {
+        } else if ("quarkus".equals(framework)) {
             tags.add("@quarkus");
-        } else if (source.startsWith("/docs/spring/")) {
+        } else if ("spring".equals(framework)) {
             tags.add("@spring");
         }
 
@@ -220,5 +229,19 @@ public class TestGenerator {
         }
 
         return tags;
+    }
+
+    private String deriveFramework(String sourceFile) {
+        String source = sourceFile != null ? sourceFile : "";
+        if (source.startsWith("/docs/python/")) {
+            return "python";
+        }
+        if (source.startsWith("/docs/quarkus/")) {
+            return "quarkus";
+        }
+        if (source.startsWith("/docs/spring/")) {
+            return "spring";
+        }
+        return "unknown";
     }
 }
