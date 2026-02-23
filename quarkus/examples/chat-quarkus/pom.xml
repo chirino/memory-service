@@ -116,9 +116,20 @@
   </dependencies>
 
   <profiles>
+    <!--
+      Quinoa profile: active in local dev (when CI env var is not set AND
+      the pre-built frontend directory does not already exist).
+      Both conditions are ANDed, so either one being false suppresses Quinoa:
+        - CI builds: CI=true → !env.CI false → Quinoa skipped (ci-frontend profile handles it)
+        - Docker builds: dist already copied into the dir → <missing> false → Quinoa skipped
+        - Local dev: neither condition blocks → Quinoa activates for live-reload
+    -->
     <profile>
       <id>quinoa</id>
       <activation>
+        <property>
+          <name>!env.CI</name>
+        </property>
         <file>
           <missing>${project.basedir}/src/main/resources/META-INF/resources</missing>
         </file>
@@ -131,6 +142,58 @@
           <version>${quarkus-quinoa.version}</version>
         </dependency>
       </dependencies>
+    </profile>
+
+    <!--
+      CI-frontend profile: active when the CI env var is set (GitHub Actions, etc.).
+      Copies the already-built frontend dist (produced by the chat-frontend module)
+      into src/main/resources/META-INF/resources so Quarkus serves it as static
+      content without needing npm at all.
+    -->
+    <profile>
+      <id>ci-frontend</id>
+      <activation>
+        <property>
+          <name>env.CI</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-clean-plugin</artifactId>
+            <configuration>
+              <filesets>
+                <fileset>
+                  <directory>${project.basedir}/src/main/resources/META-INF</directory>
+                </fileset>
+              </filesets>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>copy-frontend-dist</id>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <phase>generate-resources</phase>
+                <configuration>
+                  <outputDirectory>${project.basedir}/src/main/resources/META-INF/resources</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${project.basedir}/../../../frontends/chat-frontend/dist</directory>
+                      <filtering>false</filtering>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
     </profile>
   </profiles>
 
