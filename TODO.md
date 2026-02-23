@@ -24,5 +24,4 @@
    * We have added addional features to the interceptor that might not fit into a generic interceptor: thinks like forking support.
 * Do we need MORE multi-tenancy support?  What would it look like? Groups / Orgs? (see [060-multi-tenancy-groups-orgs.md](docs/enhancements/060-multi-tenancy-groups-orgs.md))
 * Allow runtime configured agents/api-keys?
-* How useful is the current index/search feature?
 * Do we need to support anonymous user conversations?
