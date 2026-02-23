@@ -21,7 +21,7 @@
   <build>
     <resources>
       <resource>
-        <targetPath>static</targetPath>
+        <targetPath>META-INF/resources</targetPath>
         <filtering>false</filtering>
         <directory>${project.basedir}/dist</directory>
       </resource>
