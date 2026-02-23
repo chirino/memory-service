@@ -14,137 +14,19 @@
   <name>Memory Service - Demo Chat App - Frontend</name>
 
   <properties>
-    <frontend-maven-plugin.version>2.0.0</frontend-maven-plugin.version>
-    <node.version>v22.19.0</node.version>
-    <npm.version>11.8.0</npm.version>
     <maven-jar-plugin.version>3.5.0</maven-jar-plugin.version>
-    <frontend.node.bin>${project.build.directory}/frontend/node/node</frontend.node.bin>
-    <frontend.npm.cli>${project.build.directory}/frontend/node/node_modules/npm/bin/npm-cli.js</frontend.npm.cli>
-    <frontend.dist.file>${project.basedir}/dist/index.html</frontend.dist.file>
-    <frontend.build.script><![CDATA[
-const {spawnSync} = require('child_process');
-const fs = require('fs');
-const targetFile = '${frontend.dist.file}';
-if (process.env.FRONTEND_DIST_UPTODATE === 'true') process.exit(0);
-const result = spawnSync(process.execPath, ['${frontend.npm.cli}', 'run', 'build'], {stdio: 'inherit'});
-if (result.error) throw result.error;
-if (result.status === 0) {
-  try {
-    fs.utimesSync(targetFile, new Date(), new Date());
-  } catch (e) {
-    // ignore missing file
-  }
-}
-process.exit(result.status);
-    ]]></frontend.build.script>
+    <node.docker.image>node:22.19.0-alpine</node.docker.image>
   </properties>
 
   <build>
     <resources>
       <resource>
-        <targetPath>static</targetPath>
+        <targetPath>META-INF/resources</targetPath>
         <filtering>false</filtering>
         <directory>${project.basedir}/dist</directory>
       </resource>
     </resources>
     <plugins>
-      <plugin>
-        <groupId>com.github.eirslett</groupId>
-        <artifactId>frontend-maven-plugin</artifactId>
-        <version>${frontend-maven-plugin.version}</version>
-        <configuration>
-          <workingDirectory>${project.basedir}</workingDirectory>
-          <installDirectory>${project.build.directory}/frontend</installDirectory>
-          <nodeVersion>${node.version}</nodeVersion>
-          <npmVersion>${npm.version}</npmVersion>
-        </configuration>
-        <executions>
-          <execution>
-            <id>install-node-and-npm</id>
-            <goals>
-              <goal>install-node-and-npm</goal>
-            </goals>
-            <phase>generate-resources</phase>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-antrun-plugin</artifactId>
-        <version>3.2.0</version>
-        <executions>
-          <execution>
-            <id>npm-build</id>
-            <goals>
-              <goal>run</goal>
-            </goals>
-            <phase>generate-resources</phase>
-            <configuration>
-              <target>
-                <available file="${project.basedir}/dist/index.html" property="frontend.dist.exists"/>
-                <uptodate property="frontend.dist.uptodate" targetfile="${project.basedir}/dist/index.html">
-                  <srcfiles dir="${project.basedir}">
-                    <include name="**/*"/>
-                    <exclude name="dist/**"/>
-                    <exclude name="target/**"/>
-                    <exclude name="package-lock.json"/>
-                    <exclude name="node_modules/**"/>
-                  </srcfiles>
-                </uptodate>
-                <condition property="build.will.run">
-                  <not>
-                    <isset property="frontend.dist.uptodate"/>
-                  </not>
-                </condition>
-                <echo message="[DEBUG] build.will.run property value: ${build.will.run}"/>
-                <condition property="build.decision" value="WILL RUN">
-                  <not>
-                    <isset property="frontend.dist.uptodate"/>
-                  </not>
-                </condition>
-                <condition property="build.decision" value="WILL SKIP">
-                  <isset property="frontend.dist.uptodate"/>
-                </condition>
-                <echo message="[DEBUG] BUILD DECISION: ${build.decision}"/>
-                <condition property="target.missing">
-                  <not>
-                    <available file="${project.basedir}/dist/index.html"/>
-                  </not>
-                </condition>
-                <condition property="target.exists">
-                  <available file="${project.basedir}/dist/index.html"/>
-                </condition>
-                <condition property="should.list.newer.files">
-                  <and>
-                    <not>
-                      <isset property="frontend.dist.uptodate"/>
-                    </not>
-                    <available file="${project.basedir}/dist/index.html"/>
-                    <os family="unix"/>
-                  </and>
-                </condition>
-                <echo message="[DEBUG] Listing newer source files (if any)..."/>
-                <exec dir="${project.basedir}" executable="sh" failonerror="false" outputproperty="newer.files.output">
-                  <arg value="-c"/>
-                  <arg value="if [ -f ./dist/index.html ]; then find . -type f ! -path './dist/*' ! -path './target/*' ! -path './node_modules/*' -newer ./dist/index.html 2&gt;/dev/null | head -30 | sed 's|^\./||' || echo ''; else echo '(target missing)'; fi"/>
-                </exec>
-                <echo message="[DEBUG] Newer source files:"/>
-                <echo message="${newer.files.output}"/>
-                <echo message="[DEBUG] ==========================================="/>
-                <exec dir="${project.basedir}" executable="${frontend.node.bin}" failonerror="true">
-                  <arg value="${frontend.npm.cli}"/>
-                  <arg value="install"/>
-                </exec>
-                <exec dir="${project.basedir}" executable="${frontend.node.bin}" failonerror="true">
-                  <env key="FRONTEND_DIST_UPTODATE" value="${frontend.dist.uptodate}"/>
-                  <arg value="-e"/>
-                  <arg value="${frontend.build.script}"/>
-                </exec>
-              </target>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
       <plugin>
         <artifactId>maven-jar-plugin</artifactId>
         <version>${maven-jar-plugin.version}</version>
@@ -155,6 +37,36 @@ process.exit(result.status);
             </manifest>
           </archive>
         </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>npm-build</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>generate-resources</phase>
+            <configuration>
+              <executable>docker</executable>
+              <arguments>
+                <argument>run</argument>
+                <argument>--rm</argument>
+                <argument>-v</argument>
+                <argument>${project.basedir}:/app</argument>
+                <argument>-v</argument>
+                <argument>chat-frontend-node-modules:/app/node_modules</argument>
+                <argument>-w</argument>
+                <argument>/app</argument>
+                <argument>${node.docker.image}</argument>
+                <argument>sh</argument>
+                <argument>/app/docker-npm-build.sh</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

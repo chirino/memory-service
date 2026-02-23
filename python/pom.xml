@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.chirino.memory-service</groupId>
+    <artifactId>memory-service-parent</artifactId>
+    <version>999-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>python</artifactId>
+  <packaging>pom</packaging>
+  <name>Memory Service :: Python</name>
+
+  <properties>
+    <python.build.skip>false</python.build.skip>
+    <python.docker.image>ghcr.io/astral-sh/uv:python3.11-bookworm</python.docker.image>
+    <grpcio.tools.version>1.74.0</grpcio.tools.version>
+    <python.repo.root>${project.basedir}/..</python.repo.root>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>generate-python-grpc-stubs</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>generate-sources</phase>
+            <configuration>
+              <skip>${python.build.skip}</skip>
+              <executable>bash</executable>
+              <arguments>
+                <argument>-lc</argument>
+                <argument>docker run --rm -e GRPC_TOOLS_VERSION=${grpcio.tools.version} -v "${python.repo.root}:/workspace" -w /workspace/python ${python.docker.image} ./scripts/generate-grpc-stubs.sh</argument>
+              </arguments>
+            </configuration>
+          </execution>
+
+          <execution>
+            <id>build-langchain-wheel</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <skip>${python.build.skip}</skip>
+              <executable>bash</executable>
+              <arguments>
+                <argument>-lc</argument>
+                <argument>docker run --rm -v "${python.repo.root}:/workspace" -w /workspace/python/langchain ${python.docker.image} uv build</argument>
+              </arguments>
+            </configuration>
+          </execution>
+
+          <execution>
+            <id>verify-python-package-install</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>verify</phase>
+            <configuration>
+              <skip>${python.build.skip}</skip>
+              <executable>bash</executable>
+              <arguments>
+                <argument>-lc</argument>
+                <argument>docker run --rm -v "${python.repo.root}:/workspace" -w /workspace/python ${python.docker.image} bash -lc "uv venv /tmp/memory-service-python &amp;&amp; uv pip install --python /tmp/memory-service-python/bin/python ./langchain &amp;&amp; /tmp/memory-service-python/bin/python -c 'import memory_service_langchain'"</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,187 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python Conversation History
+description: Record conversation history and expose APIs for frontend applications.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide continues from [Python Getting Started](/docs/python/getting-started/) and shows how to record conversation history and expose APIs for frontend applications.
+
+## Prerequisites
+
+**Starting checkpoint**: View the code from the previous section at [python/examples/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/02-with-memory)
+
+Make sure you've completed the [Python Getting Started](/docs/python/getting-started/) guide first. You should have:
+- A working LangChain agent with Memory Service checkpointing
+- Memory Service running via Docker Compose
+- OIDC authentication configured
+
+Also complete **Step 2** in [Python Dev Setup](/docs/python/dev-setup/) (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Enable Conversation History Recording
+
+In the previous guide, you added conversation memory, but frontend conversation views still need `history` channel entries.
+
+To enable that, wire `MemoryServiceHistoryMiddleware` into the agent and bind request context:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/03-with-history/app.py"
+  lang="python"
+  lines="52-64"
+/>
+
+The middleware records user and AI turns to the `history` channel while the checkpointer continues to store LangGraph state in the `memory` channel.
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/03-with-history">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Now test it again.
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "42"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/0ef33d7b-11b1-4992-9785-681e222dbcd2 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Give me a random number between 1 and 100."
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Expose Conversation Entries API
+
+Checkpoint `03` exposes the same conversation endpoints as the Quarkus checkpoint:
+- `GET /v1/conversations/{conversation_id}`
+- `GET /v1/conversations/{conversation_id}/entries`
+
+The entries endpoint forces `channel=history` so frontend clients always receive recorded conversation turns.
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/03-with-history/app.py"
+  lang="python"
+  lines="90-105"
+/>
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/03-with-history">
+
+Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "0ef33d7b-11b1-4992-9785-681e222dbcd2"
+And the response should contain "ownerUserId"
+And the response should contain "bob"
+And the response should contain "accessLevel"
+And the response should contain "owner"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/0ef33d7b-11b1-4992-9785-681e222dbcd2 \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be json:
+"""
+{
+  "data": [
+    {
+      "id": "%{response.body.data[0].id}",
+      "conversationId": "0ef33d7b-11b1-4992-9785-681e222dbcd2",
+      "userId": "bob",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Give me a random number between 1 and 100."}],
+      "createdAt": "%{response.body.data[0].createdAt}"
+    },
+    {
+      "id": "%{response.body.data[1].id}",
+      "conversationId": "0ef33d7b-11b1-4992-9785-681e222dbcd2",
+      "userId": "bob",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "AI", "text": "%{response.body.data[1].content[0].text}"}],
+      "createdAt": "%{response.body.data[1].createdAt}"
+    }
+  ],
+  "afterCursor": null
+}
+"""
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/0ef33d7b-11b1-4992-9785-681e222dbcd2/entries \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Expose Conversation Listing API
+
+To let users see all conversations they can access, expose `GET /v1/conversations`:
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/03-with-history/app.py"
+  lang="python"
+  lines="107-115"
+/>
+
+The endpoint proxies query parameters (`mode`, `afterCursor`, `limit`, `query`) directly to Memory Service.
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/03-with-history">
+
+Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "ownerUserId"
+And the response should contain "bob"
+And the response should contain "accessLevel"
+And the response should contain "owner"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Completed Checkpoint
+
+**Completed code**: View the full implementation at [python/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/03-with-history)
+
+## Next Steps
+
+Continue to:
+- [Indexing and Search](/docs/python/indexing-and-search/) — Add search indexing and semantic search to your conversations
+- [Conversation Forking](/docs/python/conversation-forking/) — Branch conversations to explore alternative paths
+- [Response Resumption](/docs/python/response-resumption/) — Streaming responses with resume and cancel support

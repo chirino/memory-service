@@ -177,7 +177,7 @@ Hi Hiram! I'm an AI created to help answer questions and provide information. Ho
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/b2c3d4e5-f6a7-4b8c-9d0e-1a2b3c4d5e6f \
+curl -NsSfX POST http://localhost:9090/chat/6a6e7762-4569-4f63-b01c-c3666a27428b \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Hi, I'm Hiram, who are you?"
@@ -193,7 +193,7 @@ And the response should contain "Hiram"
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/b2c3d4e5-f6a7-4b8c-9d0e-1a2b3c4d5e6f \
+curl -NsSfX POST http://localhost:9090/chat/6a6e7762-4569-4f63-b01c-c3666a27428b \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Who am I?"
@@ -205,7 +205,7 @@ curl -NsSfX POST http://localhost:9090/chat/b2c3d4e5-f6a7-4b8c-9d0e-1a2b3c4d5e6f
 
 The agent now remembers context within the same conversation ID!
 
-If you browse to the demo agent app at [http://localhost:8080/](http://localhost:8080/), you will see that a conversation has been created with the ID `b2c3d4e5-f6a7-4b8c-9d0e-1a2b3c4d5e6f`.
+If you browse to the demo agent app at [http://localhost:8080/](http://localhost:8080/), you will see that a conversation has been created with the ID `6a6e7762-4569-4f63-b01c-c3666a27428b`.
 But it won't show any messages.  That's because we are not yet storing what we call the history of the conversation.  The only thing being stored is the agent memory, and 
 that's not typically what you want to display to a user in a UI.
 

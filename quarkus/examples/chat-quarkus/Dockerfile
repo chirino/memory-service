@@ -41,6 +41,7 @@ COPY ./spring/memory-service-spring-boot-autoconfigure/pom.xml ./spring/memory-s
 COPY ./spring/memory-service-spring-boot-docker-compose-starter/pom.xml ./spring/memory-service-spring-boot-docker-compose-starter/pom.xml
 COPY ./spring/memory-service-spring-boot-starter/pom.xml ./spring/memory-service-spring-boot-starter/pom.xml
 COPY ./spring/pom.xml ./spring/pom.xml
+COPY ./python/pom.xml ./python/pom.xml
 
 RUN ./mvnw -B -q quarkus:go-offline
 

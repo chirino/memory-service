@@ -1,0 +1,15 @@
+{
+  "scenarioName": "chat-sequence",
+  "requiredScenarioState": "Started",
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/chat/completions"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\n  \"id\": \"chatcmpl-python-fixture-001\",\n  \"object\": \"chat.completion\",\n  \"created\": 1707440400,\n  \"model\": \"mock-gpt-markdown\",\n  \"choices\": [{\n    \"index\": 0,\n    \"message\": {\n      \"role\": \"assistant\",\n      \"content\": \"42\"\n    },\n    \"finish_reason\": \"stop\"\n  }]\n}"
+  }
+}

@@ -194,6 +194,7 @@
         <module>memory-service</module>
         <module>memory-service-contracts</module>
         <module>quarkus</module>
+        <module>python</module>
         <module>spring</module>
       </modules>
     </profile>

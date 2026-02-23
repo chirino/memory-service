@@ -74,7 +74,7 @@ Then the response status should be 200
 `}>
 
 ```bash
-curl -sSfX POST http://localhost:9090/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \
+curl -sSfX POST http://localhost:9090/chat/381ca8a4-7ade-4f45-a9dd-6f5d71a30292 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Hello, starting a conversation for sharing tests."
@@ -91,7 +91,7 @@ And the response body should be json:
 {
   "data": [
     {
-      "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+      "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
       "userId": "bob",
       "accessLevel": "owner",
       "createdAt": "%{response.body.data[0].createdAt}"
@@ -103,7 +103,7 @@ And the response body should be json:
 
 ```bash
 # As bob (owner), list members of the conversation
-curl -sSfX GET http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \
+curl -sSfX GET http://localhost:9090/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f5d71a30292/memberships \
   -H "Authorization: Bearer $(get-token bob bob)" | jq
 ```
 
@@ -115,7 +115,7 @@ Example response:
 {
   "data": [
     {
-      "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+      "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
       "userId": "bob",
       "accessLevel": "owner",
       "createdAt": "2025-01-10T14:32:05Z"
@@ -131,7 +131,7 @@ Then the response status should be 201
 And the response body should be json:
 """
 {
-  "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+  "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
   "userId": "alice",
   "accessLevel": "writer",
   "createdAt": "%{response.body.createdAt}"
@@ -141,7 +141,7 @@ And the response body should be json:
 
 ```bash
 # Share conversation with alice as a writer
-curl -sSfX POST http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \
+curl -sSfX POST http://localhost:9090/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f5d71a30292/memberships \
   -H "Authorization: Bearer $(get-token bob bob)" \
   -H "Content-Type: application/json" \
   -d '{
@@ -156,7 +156,7 @@ Example response:
 
 ```json
 {
-  "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+  "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
   "userId": "alice",
   "accessLevel": "writer",
   "createdAt": "2025-01-10T14:33:15Z"
@@ -170,7 +170,7 @@ Then the response status should be 200
 `}>
 
 ```bash
-curl -sSfX POST http://localhost:9090/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \
+curl -sSfX POST http://localhost:9090/chat/381ca8a4-7ade-4f45-a9dd-6f5d71a30292 \
   -H "Authorization: Bearer $(get-token alice alice)" \
   -H "Content-Type: text/plain" \
   -d "Hi from Alice!"
@@ -184,7 +184,7 @@ curl -sSfX POST http://localhost:9090/chat/a1b2c3d4-e5f6-4789-abcd-ef0123456789 
 
 ```bash
 # Promote alice from writer to manager
-curl -sSfX PATCH http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships/alice \
+curl -sSfX PATCH http://localhost:9090/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f5d71a30292/memberships/alice \
   -H "Authorization: Bearer $(get-token bob bob)" \
   -H "Content-Type: application/json" \
   -d '{
@@ -196,7 +196,7 @@ Example response:
 
 ```json
 {
-  "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+  "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
   "userId": "alice",
   "accessLevel": "manager",
   "createdAt": "2025-01-10T14:33:15Z"
@@ -206,7 +206,7 @@ Example response:
 Now alice can share with others (but only assign writer/reader levels):
 
 ```bash
-curl -sSfX POST http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \
+curl -sSfX POST http://localhost:9090/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f5d71a30292/memberships \
   -H "Authorization: Bearer $(get-token alice alice)" \
   -H "Content-Type: application/json" \
   -d '{
@@ -219,7 +219,7 @@ Example response:
 
 ```json
 {
-  "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+  "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
   "userId": "charlie",
   "accessLevel": "reader",
   "createdAt": "2025-01-10T14:34:00Z"
@@ -230,14 +230,14 @@ Example response:
 
 ```bash
 # Remove charlie from the conversation
-curl -sSfX DELETE http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships/charlie \
+curl -sSfX DELETE http://localhost:9090/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f5d71a30292/memberships/charlie \
   -H "Authorization: Bearer $(get-token bob bob)"
 ```
 
 Returns `204 No Content` on success. Charlie can no longer access the conversation:
 
 ```bash
-curl -sSf GET http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789 \
+curl -sSf GET http://localhost:9090/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f5d71a30292 \
   -H "Authorization: Bearer $(get-token charlie charlie)"
 ```
 
@@ -253,7 +253,7 @@ curl -sSfX POST http://localhost:9090/v1/ownership-transfers \
   -H "Authorization: Bearer $(get-token bob bob)" \
   -H "Content-Type: application/json" \
   -d '{
-    "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+    "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
     "newOwnerUserId": "alice"
   }' | jq
 ```
@@ -263,7 +263,7 @@ Example response:
 ```json
 {
   "id": "f3a8b2c1-1234-5678-9abc-def012345678",
-  "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+  "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
   "fromUserId": "bob",
   "toUserId": "alice",
   "createdAt": "2025-02-08T10:30:00Z"
@@ -285,7 +285,7 @@ Example response:
   "data": [
     {
       "id": "f3a8b2c1-1234-5678-9abc-def012345678",
-      "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+      "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
       "fromUserId": "bob",
       "toUserId": "alice",
       "createdAt": "2025-02-08T10:30:00Z"
@@ -318,7 +318,7 @@ curl -sSfX POST http://localhost:9090/v1/ownership-transfers/$TRANSFER_ID/accept
 Returns `204 No Content` on success. Verify the new membership state:
 
 ```bash
-curl -sSfX GET http://localhost:9090/v1/conversations/a1b2c3d4-e5f6-4789-abcd-ef0123456789/memberships \
+curl -sSfX GET http://localhost:9090/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f5d71a30292/memberships \
   -H "Authorization: Bearer $(get-token alice alice)" | jq
 ```
 
@@ -328,13 +328,13 @@ Example response:
 {
   "data": [
     {
-      "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+      "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
       "userId": "alice",
       "accessLevel": "owner",
       "createdAt": "2025-01-10T14:33:15Z"
     },
     {
-      "conversationId": "a1b2c3d4-e5f6-4789-abcd-ef0123456789",
+      "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
       "userId": "bob",
       "accessLevel": "manager",
       "createdAt": "2025-01-10T14:32:05Z"

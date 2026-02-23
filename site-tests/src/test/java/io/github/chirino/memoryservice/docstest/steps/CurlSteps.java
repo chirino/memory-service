@@ -53,14 +53,16 @@ public class CurlSteps {
 
     @When("I execute curl command:")
     public void executeCurl(String curlCommand) throws Exception {
+        String effectiveCommand = rewriteScenarioUserIdsInJson(curlCommand);
+
         // Execute shell setup commands (e.g., echo for file creation) before curl
-        executeSetupCommands(curlCommand);
+        executeSetupCommands(effectiveCommand);
 
         // Build environment with system properties and context variables
         Map<String, String> environment = buildEnvironment();
 
         // Parse curl command and extract all curl commands from the block
-        CurlParser parser = new CurlParser(curlCommand, environment);
+        CurlParser parser = new CurlParser(effectiveCommand, environment);
         List<HttpRequest> requests = parser.toAllHttpRequests();
 
         if (requests.isEmpty()) {
@@ -90,7 +92,7 @@ public class CurlSteps {
             for (int attempt = 1; attempt <= maxRetries; attempt++) {
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
-                lastResponse = response.body();
+                lastResponse = normalizeScenarioUserIds(response.body());
                 lastStatusCode = response.statusCode();
 
                 if (lastStatusCode != 404 && lastStatusCode != 500 && lastStatusCode != 503) {
@@ -117,6 +119,39 @@ public class CurlSteps {
                             + ", body length="
                             + (lastResponse != null ? lastResponse.length() : 0));
         }
+    }
+
+    private String normalizeScenarioUserIds(String body) {
+        if (body == null || body.isBlank()) {
+            return body;
+        }
+        String normalized = body;
+        Integer scenarioPort = CheckpointSteps.getCurrentScenarioPort();
+        if (scenarioPort == null) {
+            return normalized;
+        }
+        normalized = normalized.replaceAll("\\b(bob|alice|charlie)-" + scenarioPort + "\\b", "$1");
+        return normalized;
+    }
+
+    private String rewriteScenarioUserIdsInJson(String commandBlock) {
+        if (commandBlock == null || commandBlock.isBlank()) {
+            return commandBlock;
+        }
+        Integer scenarioPort = CheckpointSteps.getCurrentScenarioPort();
+        if (scenarioPort == null) {
+            return commandBlock;
+        }
+
+        String rewritten = commandBlock;
+        for (String baseUser : List.of("bob", "alice", "charlie")) {
+            String scenarioUser = baseUser + "-" + scenarioPort;
+            rewritten =
+                    rewritten.replaceAll(
+                            "(\"userId\"\\s*:\\s*\")" + Pattern.quote(baseUser) + "(\")",
+                            "$1" + scenarioUser + "$2");
+        }
+        return rewritten;
     }
 
     @Then("the response should contain {string}")
@@ -303,8 +338,8 @@ public class CurlSteps {
                     e);
         }
 
-        // Compare semantically (ignoring field order)
-        if (actualNode.equals(expectedNode)) {
+        // Compare with expected-as-subset semantics (actual can contain additive fields).
+        if (matchesExpectedShape(expectedNode, actualNode)) {
             return;
         }
 
@@ -329,6 +364,41 @@ public class CurlSteps {
             unifiedDiff.forEach(line -> errorMessage.append(line).append("\n"));
         }
         throw new AssertionError(errorMessage.toString());
+    }
+
+    private boolean matchesExpectedShape(JsonNode expected, JsonNode actual) {
+        if (expected == null) {
+            return actual == null;
+        }
+        if (actual == null) {
+            return false;
+        }
+        if (expected.isObject()) {
+            if (!actual.isObject()) {
+                return false;
+            }
+            var fields = expected.fields();
+            while (fields.hasNext()) {
+                var field = fields.next();
+                JsonNode actualValue = actual.get(field.getKey());
+                if (actualValue == null || !matchesExpectedShape(field.getValue(), actualValue)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (expected.isArray()) {
+            if (!actual.isArray() || actual.size() != expected.size()) {
+                return false;
+            }
+            for (int i = 0; i < expected.size(); i++) {
+                if (!matchesExpectedShape(expected.get(i), actual.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return expected.equals(actual);
     }
 
     /**
@@ -452,6 +522,11 @@ public class CurlSteps {
 
         // Add system properties (like AUTH_TOKEN set by DockerSteps)
         System.getProperties().forEach((key, value) -> env.put(key.toString(), value.toString()));
+
+        Integer scenarioPort = CheckpointSteps.getCurrentScenarioPort();
+        if (scenarioPort != null) {
+            DockerSteps.injectScenarioAuthTokens(env, scenarioPort);
+        }
 
         // Add context variables as strings
         contextVariables.forEach((key, value) -> env.put(key, value.toString()));

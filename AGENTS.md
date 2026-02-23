@@ -24,12 +24,20 @@ When you discover something meaningful about this project during your work—arc
 - `./mvnw quarkus:dev -pl memory-service` - backend dev mode (:8080)
 - `./mvnw test` - run tests
 - `./mvnw compile` - compile (always run after Java changes)
+- `./mvnw -pl python verify` - regenerate Python gRPC stubs and validate Python package build/install (runs in Docker)
 
 **Key paths**:
 - `memory-service-contracts/` - OpenAPI + proto sources of truth
 - `memory-service/` - core implementation
 - `quarkus/examples/chat-quarkus/` - Demo chat app (Quarkus)
+- `spring/examples/chat-spring/` - Demo chat app (Spring)
 - `frontends/chat-frontend/` - Demo chat app frontend (React)
+- `site-tests/` - Documentation test module (MDX `<TestScenario>/<CurlTest>` to Cucumber pipeline)
+
+**API gotchas**:
+- Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).
+- In gRPC `memory/v1/memory_service.proto`, response recorder fields use snake_case (`conversation_id`).
+- List endpoints may include `"afterCursor": null`; docs-test JSON assertions should tolerate additive pagination fields.
 
 ## Development Guidelines
 
@@ -57,6 +65,38 @@ This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree
 ./mvnw test > test.log 2>&1
 # Then search for errors using Grep tool on test.log
 ```
+
+**Docs test filtering**: `site-tests` scenarios are taggable by framework and checkpoint. For Python-only loops use:
+```bash
+./mvnw -Psite-tests -pl site-tests -Dcucumber.filter.tags=@python surefire:test
+```
+
+**Python checkpoint lineage**: Python docs checkpoints `04-conversation-forking`, `05-response-resumption`, `06-sharing`, and `07-with-search` are intentionally rebased from `03-with-history` (not chained from each other), mirroring the Quarkus tutorial branching model.
+**Python proxy pattern**: Use `memory_service_langchain.MemoryServiceProxy` plus `to_fastapi_response(...)` in checkpoint apps for API-like Memory Service passthrough methods (`list_conversation_entries`, `list_memberships`, etc.) instead of ad-hoc `memory_service_request(...)` calls.
+**Python chat simplification**: For checkpoint-style FastAPI chat routes, keep a single stateful agent and use `extract_assistant_text(...)`; fork metadata is passed via `memory_service_scope(...)` and consumed by the LangChain integration (middleware + checkpointer).
+**Python request scope helper**: Prefer `memory_service_langchain.memory_service_scope(conversation_id, forked_at_conversation_id, forked_at_entry_id)` for route context binding.
+**Quarkus/Spring forking curl gotcha**: Checkpoint `04-conversation-forking` chat routes are `text/plain`; to demo fork creation with curl, create root turns via `/chat/{id}` then append forked entries via Memory Service `/v1/conversations/{forkId}/entries` with `forkedAtConversationId`/`forkedAtEntryId`.
+**Python forking parity**: Python checkpoint `04-conversation-forking` keeps `/chat/{id}` as `text/plain` and accepts fork metadata via query params (`forkedAtConversationId`, `forkedAtEntryId`) which are bound through `memory_service_scope(...)`.
+**Python response resumption pattern**: Keep checkpoint `05` route handlers thin by delegating resume-check/replay/cancel state handling to `memory_service_langchain.MemoryServiceResponseResumer`, mirroring the Quarkus `ResumeResource` style.
+**Python true-streaming checkpoint**: `05-response-resumption` should stream live model tokens via `agent.astream(..., stream_mode=\"messages\")`; avoid `agent.invoke(...)` + post-hoc word-splitting.
+
+**Devcontainer Python tooling**: `uv` is installed in `.devcontainer/Dockerfile` (not via `devcontainer.json` features), so Python checkpoint workflows can run immediately after `wt up`.
+
+**Python module build**: `python/pom.xml` runs Python packaging tasks in Docker (`ghcr.io/astral-sh/uv:python3.11-bookworm`) so host setup only requires Docker.
+**Python package layout**: Python integration is now a single package at `python/langchain` (`memory-service-langchain`); the separate `python/langgraph` package was removed.
+
+**MDX `CodeFromFile` gotcha**: Match strings must be unique in the target file. Prefer function-signature anchors or `lines="start-end"` over route strings with `{...}` placeholders to avoid MDX parsing/smart-quote mismatches.
+**Docs scenario UUID gotcha**: When adding/replacing tutorial scenario conversation IDs, verify each new UUID is unique across docs pages (`rg -l '<uuid>' site/src/pages` should return one file).
+**`site-tests` sharing user isolation**: `CurlSteps` rewrites JSON payload `"userId"` values (`bob`/`alice`/`charlie`) to scenario users (`<user>-<port>`) so docs can stay readable while parallel test isolation still works.
+**Checkpoint 04 forking (Java docs)**: `quarkus` and `spring` checkpoint 04 keep chat handlers effectively unchanged; fork metadata is demonstrated by appending entries directly to the Memory Service API with `forkedAtConversationId`/`forkedAtEntryId` and exposing `listConversationForks` on the proxy resource/controller.
+**`site-tests` env var gotcha**: Curl command interpolation supports `${VAR}` but not shell default syntax like `${VAR:-default}`. Use explicit values or plain `${VAR}` placeholders in testable docs.
+
+**LangChain middleware callback gotcha**: In `wrap_model_call`, attach callbacks using `request.model.with_config({"callbacks": [...]})`, not `request.model_settings["callbacks"]`, to avoid `generate_prompt() got multiple values for keyword argument 'callbacks'`.
+
+**LangChain gRPC recorder default**: `MemoryServiceHistoryMiddleware` enables gRPC response recording only when `MEMORY_SERVICE_GRPC_TARGET` is set (or `MEMORY_SERVICE_GRPC_RECORDING_ENABLED=true`).
+
+**Python FastAPI helper reuse**: Prefer `memory_service_langchain.install_fastapi_authorization_middleware`, `memory_service_scope`, and `memory_service_request` over redefining ContextVars/middleware in checkpoint apps.
+**Spring memory repository limit gotcha**: `listConversationEntries` limit must be `<=200` (contract max). Using `1000` causes upstream `400` errors during chat memory reads and surfaces as app `500`s.
 
 **Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 

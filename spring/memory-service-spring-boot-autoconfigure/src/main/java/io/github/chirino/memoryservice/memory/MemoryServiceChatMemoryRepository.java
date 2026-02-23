@@ -38,6 +38,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
     private static final Logger LOG =
             LoggerFactory.getLogger(MemoryServiceChatMemoryRepository.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final int LIST_ENTRIES_LIMIT = 200;
 
     private final ConversationsApiFactory apiFactory;
     private final String bearerToken;
@@ -73,7 +74,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
                             .listConversationEntries(
                                     UUID.fromString(conversationId),
                                     null,
-                                    1000,
+                                    LIST_ENTRIES_LIMIT,
                                     Channel.MEMORY,
                                     null,
                                     null)

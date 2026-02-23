@@ -1,0 +1,145 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python Response Resumption
+description: Streaming responses with resume-check, resume, and cancel endpoints.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide covers streaming responses, response resumption, and cancellation so users can reconnect after a disconnect and continue where they left off.
+
+For the protocol and behavior model, see [Response Resumption Concepts](/docs/concepts/response-resumption/).
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [python/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/03-with-history)
+
+Make sure you've completed:
+- [Python Getting Started](/docs/python/getting-started/) - Minimal agent + memory checkpointer
+- [Python Conversation History](/docs/python/conversation-history/) - History recording and conversation APIs
+
+Also complete **Step 2** in [Python Dev Setup](/docs/python/dev-setup/) (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Streaming Responses
+
+Checkpoint `05` updates `/chat/{conversation_id}` to stream tokens back to the client.
+
+### New Imports in Checkpoint 05
+
+Compared to checkpoint `03-with-history`, add these imports:
+- `JSONResponse` and `StreamingResponse` from `fastapi.responses`
+- `MemoryServiceResponseResumer` from `memory_service_langchain`
+- `extract_stream_text` from `memory_service_langchain`
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/05-response-resumption/app.py"
+  lang="python"
+  lines="5-18"
+/>
+
+### What Changes in `chat(...)`
+
+Checkpoint `05` changes the chat handler from a one-shot `agent.invoke(...)` call to true token streaming:
+- It calls `agent.astream(..., stream_mode="messages")` to get incremental model output events.
+- It maps each event to text with `extract_stream_text(...)`.
+- It streams those chunks through `MemoryServiceResponseResumer.stream_from_source(...)` so the same stream can be resumed or canceled via the resumption endpoints.
+- It returns a `StreamingResponse` instead of a final plain-text body.
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/05-response-resumption/app.py"
+  lang="python"
+  lines="46-68"
+/>
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/05-response-resumption">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Start a streaming response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should match pattern "\\w+"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/2946ccfc-cf26-43e1-87fc-f71c944895b1 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Write a short story about a cat."
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Response Resumption APIs
+
+Checkpoint `05` also exposes three endpoints backed by `MemoryServiceResponseResumer`:
+- `POST /v1/conversations/resume-check`
+- `GET /v1/conversations/{conversation_id}/resume`
+- `POST /v1/conversations/{conversation_id}/cancel`
+
+<CodeFromFile
+  file="python/examples/doc-checkpoints/05-response-resumption/app.py"
+  lang="python"
+  lines="99-121"
+/>
+
+<TestScenario checkpoint="python/examples/doc-checkpoints/05-response-resumption">
+
+Check whether a conversation has an in-progress response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "["
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '["2946ccfc-cf26-43e1-87fc-f71c944895b1"]'
+```
+
+</CurlTest>
+
+</TestScenario>
+
+Resume manually from another terminal:
+
+```bash
+curl -NsSfX GET http://localhost:9090/v1/conversations/2946ccfc-cf26-43e1-87fc-f71c944895b1/resume \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+Cancel manually:
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/2946ccfc-cf26-43e1-87fc-f71c944895b1/cancel \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+## Completed Checkpoint
+
+**Completed code**: View the full implementation at [python/examples/doc-checkpoints/05-response-resumption](https://github.com/chirino/memory-service/tree/main/python/examples/doc-checkpoints/05-response-resumption)
+
+## Next Steps
+
+Continue to:
+- [Sharing](/docs/python/sharing/) - Membership and ownership transfer APIs
+- [Indexing and Search](/docs/python/indexing-and-search/) - Indexed content and semantic/full-text search

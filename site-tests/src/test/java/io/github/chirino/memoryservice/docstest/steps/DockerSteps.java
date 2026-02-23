@@ -13,16 +13,22 @@ import java.io.File;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -34,6 +40,7 @@ public class DockerSteps {
     private static WireMockServer wiremockServer;
     private static int wiremockPort = 8090;
     private static boolean wiremockStarted = false;
+    private static boolean databaseCleared = false;
 
     private static final String RECORD_SETTING = System.getenv("SITE_TEST_RECORD");
 
@@ -50,6 +57,15 @@ public class DockerSteps {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final HttpClient HTTP_CLIENT =
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    private static final String KEYCLOAK_URL = "http://localhost:8081";
+    private static final String KEYCLOAK_REALM = "memory-service";
+    private static final String KEYCLOAK_CLIENT_ID = "memory-service-client";
+    private static final String KEYCLOAK_CLIENT_SECRET = "change-me";
+    private static final String MASTER_ADMIN_USER = "admin";
+    private static final String MASTER_ADMIN_PASSWORD = "admin";
+    private static final Object AUTH_LOCK = new Object();
+    private static final Map<Integer, Map<String, String>> SCENARIO_TOKENS =
+            new ConcurrentHashMap<>();
 
     static {
         projectRoot = findProjectRoot();
@@ -199,6 +215,37 @@ public class DockerSteps {
                         .build();
         HttpResponse<String> response =
                 HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+        return response.body();
+    }
+
+    private static String httpPostForm(String url, Map<String, String> formData)
+            throws IOException, InterruptedException {
+        String body =
+                formData.entrySet().stream()
+                        .map(
+                                e ->
+                                        URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8)
+                                                + "="
+                                                + URLEncoder.encode(
+                                                        e.getValue(), StandardCharsets.UTF_8))
+                        .collect(Collectors.joining("&"));
+        HttpRequest request =
+                HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .POST(HttpRequest.BodyPublishers.ofString(body))
+                        .build();
+        HttpResponse<String> response =
+                HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new RuntimeException(
+                    "POST form failed ("
+                            + response.statusCode()
+                            + ") for "
+                            + url
+                            + ": "
+                            + response.body());
+        }
         return response.body();
     }
 
@@ -489,7 +536,20 @@ public class DockerSteps {
             dockerAlreadyRunning = true;
         }
 
-        clearDatabase();
+        clearDatabaseOnce();
+    }
+
+    private void clearDatabaseOnce() {
+        if (databaseCleared) {
+            return;
+        }
+        synchronized (DockerSteps.class) {
+            if (databaseCleared) {
+                return;
+            }
+            clearDatabase();
+            databaseCleared = true;
+        }
     }
 
     private void clearDatabase() {
@@ -531,17 +591,22 @@ public class DockerSteps {
 
     @Given("I set up authentication tokens")
     public void setupAuthTokens() {
-        for (String user : new String[] {"bob", "alice", "charlie"}) {
-            try {
-                String token = getAuthToken(user, user);
-                System.setProperty("CMD_get-token_" + user + "_" + user, token);
-            } catch (RuntimeException e) {
-                System.out.println(
-                        "Warning: Could not get token for " + user + ": " + e.getMessage());
-            }
+        Integer scenarioPort = CheckpointSteps.getCurrentScenarioPort();
+        if (scenarioPort != null) {
+            Map<String, String> env = new HashMap<>();
+            injectScenarioAuthTokens(env, scenarioPort);
+            env.forEach(System::setProperty);
+            return;
         }
-        String bobToken = System.getProperty("CMD_get-token_bob_bob");
-        System.setProperty("CMD_get-token", bobToken);
+
+        // Fallback for non-checkpoint scenarios.
+        try {
+            String bobToken = getAuthToken("bob", "bob");
+            System.setProperty("CMD_get-token", bobToken);
+            System.setProperty("CMD_get-token_bob_bob", bobToken);
+        } catch (RuntimeException e) {
+            System.out.println("Warning: Could not get fallback token for bob: " + e.getMessage());
+        }
     }
 
     private void startDockerCompose() {
@@ -592,46 +657,364 @@ public class DockerSteps {
 
     private String getAuthToken(String username, String password) {
         try {
-            ProcessBuilder pb =
-                    new ProcessBuilder(
-                            "curl",
-                            "-sSfX",
-                            "POST",
-                            "http://localhost:8081/realms/memory-service/protocol/openid-connect/token",
-                            "-H",
-                            "Content-Type: application/x-www-form-urlencoded",
-                            "-d",
-                            "client_id=memory-service-client",
-                            "-d",
-                            "client_secret=change-me",
-                            "-d",
-                            "grant_type=password",
-                            "-d",
-                            "username=" + username,
-                            "-d",
-                            "password=" + password);
-
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-
-            String output = new String(process.getInputStream().readAllBytes());
-            int exitCode = process.waitFor();
-
-            if (exitCode != 0) {
+            String responseBody =
+                    httpPostForm(
+                            KEYCLOAK_URL
+                                    + "/realms/"
+                                    + KEYCLOAK_REALM
+                                    + "/protocol/openid-connect/token",
+                            Map.of(
+                                    "client_id", KEYCLOAK_CLIENT_ID,
+                                    "client_secret", KEYCLOAK_CLIENT_SECRET,
+                                    "grant_type", "password",
+                                    "username", username,
+                                    "password", password));
+            JsonNode response = OBJECT_MAPPER.readTree(responseBody);
+            JsonNode accessToken = response.get("access_token");
+            if (accessToken == null || accessToken.asText().isBlank()) {
                 throw new RuntimeException(
-                        "Failed to get auth token for " + username + ": " + output);
+                        "No access_token in token response for " + username + ": " + responseBody);
+            }
+            return accessToken.asText();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get auth token for " + username, e);
+        }
+    }
+
+    static void injectScenarioAuthTokens(Map<String, String> env, int scenarioPort) {
+        Map<String, String> tokens = ensureScenarioAuthTokens(scenarioPort);
+        env.put("CMD_get-token", tokens.get("bob"));
+        env.put("CMD_get-token_bob_bob", tokens.get("bob"));
+        env.put("CMD_get-token_alice_alice", tokens.get("alice"));
+        env.put("CMD_get-token_charlie_charlie", tokens.get("charlie"));
+    }
+
+    private static Map<String, String> ensureScenarioAuthTokens(int scenarioPort) {
+        Map<String, String> cached = SCENARIO_TOKENS.get(scenarioPort);
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (AUTH_LOCK) {
+            cached = SCENARIO_TOKENS.get(scenarioPort);
+            if (cached != null) {
+                return cached;
             }
 
-            java.util.regex.Pattern pattern =
-                    java.util.regex.Pattern.compile("\"access_token\"\\s*:\\s*\"([^\"]+)\"");
-            java.util.regex.Matcher matcher = pattern.matcher(output);
+            Map<String, String> tokens = new HashMap<>();
+            for (String user : List.of("bob", "alice", "charlie")) {
+                String scenarioUsername = scenarioUser(user, scenarioPort);
+                String scenarioPassword = scenarioUsername;
+                List<String> roles =
+                        "alice".equals(user) ? List.of("user", "admin") : List.of("user");
+                ensureRealmUser(scenarioUsername, scenarioPassword, roles);
+                String token = getAuthTokenStatic(scenarioUsername, scenarioPassword);
+                tokens.put(user, token);
+            }
+            Map<String, String> immutable = Collections.unmodifiableMap(tokens);
+            SCENARIO_TOKENS.put(scenarioPort, immutable);
+            return immutable;
+        }
+    }
 
-            if (matcher.find()) {
-                return matcher.group(1);
+    private static String scenarioUser(String baseUser, int scenarioPort) {
+        return baseUser + "-" + scenarioPort;
+    }
+
+    private static void ensureRealmUser(String username, String password, List<String> roles) {
+        String adminToken = getMasterAdminToken();
+        String userId = getUserId(adminToken, username);
+        if (userId == null) {
+            createUser(adminToken, username, password);
+            userId = getUserId(adminToken, username);
+        } else {
+            resetPassword(adminToken, userId, password);
+        }
+        if (userId == null) {
+            throw new RuntimeException("Unable to create/find Keycloak user " + username);
+        }
+        reconcileUserState(adminToken, userId, username);
+        ensureRealmRoles(adminToken, userId, roles);
+    }
+
+    private static String getMasterAdminToken() {
+        try {
+            String responseBody =
+                    httpPostForm(
+                            KEYCLOAK_URL + "/realms/master/protocol/openid-connect/token",
+                            Map.of(
+                                    "client_id",
+                                    "admin-cli",
+                                    "grant_type",
+                                    "password",
+                                    "username",
+                                    MASTER_ADMIN_USER,
+                                    "password",
+                                    MASTER_ADMIN_PASSWORD));
+            JsonNode response = OBJECT_MAPPER.readTree(responseBody);
+            return response.path("access_token").asText();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get Keycloak master admin token", e);
+        }
+    }
+
+    private static String getUserId(String adminToken, String username) {
+        try {
+            String url =
+                    KEYCLOAK_URL
+                            + "/admin/realms/"
+                            + KEYCLOAK_REALM
+                            + "/users?username="
+                            + URLEncoder.encode(username, StandardCharsets.UTF_8)
+                            + "&exact=true";
+            HttpRequest request =
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(url))
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .GET()
+                            .build();
+            HttpResponse<String> response =
+                    HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                throw new RuntimeException(
+                        "Keycloak user lookup failed ("
+                                + response.statusCode()
+                                + "): "
+                                + response.body());
+            }
+            JsonNode users = OBJECT_MAPPER.readTree(response.body());
+            if (!users.isArray() || users.isEmpty()) {
+                return null;
+            }
+            return users.get(0).path("id").asText(null);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to query Keycloak user " + username, e);
+        }
+    }
+
+    private static void createUser(String adminToken, String username, String password) {
+        try {
+            String namePrefix = username.replace('-', ' ');
+            String body =
+                    OBJECT_MAPPER.writeValueAsString(
+                            Map.of(
+                                    "username",
+                                    username,
+                                    "firstName",
+                                    namePrefix,
+                                    "lastName",
+                                    "Scenario",
+                                    "email",
+                                    username + "@example.com",
+                                    "enabled",
+                                    true,
+                                    "emailVerified",
+                                    true,
+                                    "requiredActions",
+                                    List.of(),
+                                    "credentials",
+                                    List.of(
+                                            Map.of(
+                                                    "type",
+                                                    "password",
+                                                    "value",
+                                                    password,
+                                                    "temporary",
+                                                    false))));
+            HttpRequest request =
+                    HttpRequest.newBuilder()
+                            .uri(
+                                    URI.create(
+                                            KEYCLOAK_URL
+                                                    + "/admin/realms/"
+                                                    + KEYCLOAK_REALM
+                                                    + "/users"))
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(body))
+                            .build();
+            HttpResponse<String> response =
+                    HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 201 && response.statusCode() != 409) {
+                throw new RuntimeException(
+                        "Keycloak user create failed for "
+                                + username
+                                + " ("
+                                + response.statusCode()
+                                + "): "
+                                + response.body());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create Keycloak user " + username, e);
+        }
+    }
+
+    private static void reconcileUserState(String adminToken, String userId, String username) {
+        try {
+            String namePrefix = username.replace('-', ' ');
+            String body =
+                    OBJECT_MAPPER.writeValueAsString(
+                            Map.of(
+                                    "username",
+                                    username,
+                                    "firstName",
+                                    namePrefix,
+                                    "lastName",
+                                    "Scenario",
+                                    "email",
+                                    username + "@example.com",
+                                    "enabled",
+                                    true,
+                                    "emailVerified",
+                                    true,
+                                    "requiredActions",
+                                    List.of()));
+            HttpRequest request =
+                    HttpRequest.newBuilder()
+                            .uri(
+                                    URI.create(
+                                            KEYCLOAK_URL
+                                                    + "/admin/realms/"
+                                                    + KEYCLOAK_REALM
+                                                    + "/users/"
+                                                    + userId))
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .PUT(HttpRequest.BodyPublishers.ofString(body))
+                            .build();
+            HttpResponse<String> response =
+                    HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 204) {
+                throw new RuntimeException(
+                        "Keycloak user reconcile failed ("
+                                + response.statusCode()
+                                + "): "
+                                + response.body());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to reconcile Keycloak user " + username, e);
+        }
+    }
+
+    private static void resetPassword(String adminToken, String userId, String password) {
+        try {
+            String body =
+                    OBJECT_MAPPER.writeValueAsString(
+                            Map.of("type", "password", "value", password, "temporary", false));
+            HttpRequest request =
+                    HttpRequest.newBuilder()
+                            .uri(
+                                    URI.create(
+                                            KEYCLOAK_URL
+                                                    + "/admin/realms/"
+                                                    + KEYCLOAK_REALM
+                                                    + "/users/"
+                                                    + userId
+                                                    + "/reset-password"))
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .PUT(HttpRequest.BodyPublishers.ofString(body))
+                            .build();
+            HttpResponse<String> response =
+                    HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 204) {
+                throw new RuntimeException(
+                        "Keycloak password reset failed ("
+                                + response.statusCode()
+                                + "): "
+                                + response.body());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to reset password for userId " + userId, e);
+        }
+    }
+
+    private static void ensureRealmRoles(String adminToken, String userId, List<String> roleNames) {
+        try {
+            List<Map<String, Object>> roles = new ArrayList<>();
+            for (String roleName : roleNames) {
+                HttpRequest roleRequest =
+                        HttpRequest.newBuilder()
+                                .uri(
+                                        URI.create(
+                                                KEYCLOAK_URL
+                                                        + "/admin/realms/"
+                                                        + KEYCLOAK_REALM
+                                                        + "/roles/"
+                                                        + roleName))
+                                .header("Authorization", "Bearer " + adminToken)
+                                .GET()
+                                .build();
+                HttpResponse<String> roleResponse =
+                        HTTP_CLIENT.send(roleRequest, HttpResponse.BodyHandlers.ofString());
+                if (roleResponse.statusCode() != 200) {
+                    throw new RuntimeException(
+                            "Failed to fetch role "
+                                    + roleName
+                                    + " ("
+                                    + roleResponse.statusCode()
+                                    + "): "
+                                    + roleResponse.body());
+                }
+                JsonNode roleNode = OBJECT_MAPPER.readTree(roleResponse.body());
+                roles.add(
+                        Map.of(
+                                "id", roleNode.path("id").asText(),
+                                "name", roleNode.path("name").asText()));
             }
 
-            throw new RuntimeException("Could not parse access_token from: " + output);
+            String body = OBJECT_MAPPER.writeValueAsString(roles);
+            HttpRequest mappingRequest =
+                    HttpRequest.newBuilder()
+                            .uri(
+                                    URI.create(
+                                            KEYCLOAK_URL
+                                                    + "/admin/realms/"
+                                                    + KEYCLOAK_REALM
+                                                    + "/users/"
+                                                    + userId
+                                                    + "/role-mappings/realm"))
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(body))
+                            .build();
+            HttpResponse<String> mappingResponse =
+                    HTTP_CLIENT.send(mappingRequest, HttpResponse.BodyHandlers.ofString());
+            if (mappingResponse.statusCode() != 204) {
+                throw new RuntimeException(
+                        "Failed to map roles for userId "
+                                + userId
+                                + " ("
+                                + mappingResponse.statusCode()
+                                + "): "
+                                + mappingResponse.body());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to assign realm roles for userId " + userId, e);
+        }
+    }
 
+    private static String getAuthTokenStatic(String username, String password) {
+        try {
+            String responseBody =
+                    httpPostForm(
+                            KEYCLOAK_URL
+                                    + "/realms/"
+                                    + KEYCLOAK_REALM
+                                    + "/protocol/openid-connect/token",
+                            Map.of(
+                                    "client_id", KEYCLOAK_CLIENT_ID,
+                                    "client_secret", KEYCLOAK_CLIENT_SECRET,
+                                    "grant_type", "password",
+                                    "username", username,
+                                    "password", password));
+            JsonNode response = OBJECT_MAPPER.readTree(responseBody);
+            JsonNode accessToken = response.get("access_token");
+            if (accessToken == null || accessToken.asText().isBlank()) {
+                throw new RuntimeException(
+                        "No access_token in token response for " + username + ": " + responseBody);
+            }
+            return accessToken.asText();
         } catch (Exception e) {
             throw new RuntimeException("Failed to get auth token for " + username, e);
         }

@@ -116,9 +116,20 @@
   </dependencies>
 
   <profiles>
+    <!--
+      Quinoa profile: active in local dev (when CI env var is not set AND
+      the pre-built frontend directory does not already exist).
+      Both conditions are ANDed, so either one being false suppresses Quinoa:
+        - CI builds: CI=true → !env.CI false → Quinoa skipped (ci-frontend profile handles it)
+        - Docker builds: dist already copied into the dir → <missing> false → Quinoa skipped
+        - Local dev: neither condition blocks → Quinoa activates for live-reload
+    -->
     <profile>
       <id>quinoa</id>
       <activation>
+        <property>
+          <name>!env.CI</name>
+        </property>
         <file>
           <missing>${project.basedir}/src/main/resources/META-INF/resources</missing>
         </file>
@@ -129,6 +140,28 @@
           <groupId>io.quarkiverse.quinoa</groupId>
           <artifactId>quarkus-quinoa</artifactId>
           <version>${quarkus-quinoa.version}</version>
+        </dependency>
+      </dependencies>
+    </profile>
+
+    <!--
+      CI-frontend profile: active when the CI env var is set (GitHub Actions, etc.).
+      Adds the pre-built chat-frontend JAR as a dependency. The JAR packages the
+      built frontend assets at META-INF/resources, so Quarkus serves them as
+      static content without needing npm at all.
+    -->
+    <profile>
+      <id>ci-frontend</id>
+      <activation>
+        <property>
+          <name>env.CI</name>
+        </property>
+      </activation>
+      <dependencies>
+        <dependency>
+          <groupId>io.github.chirino.memory-service</groupId>
+          <artifactId>chat-frontend</artifactId>
+          <version>${project.version}</version>
         </dependency>
       </dependencies>
     </profile>

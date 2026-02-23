@@ -3,8 +3,7 @@ layout: ../../../layouts/DocsLayout.astro
 title: Response Resumption
 description: Streaming responses, response resumption, and cancellation.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
+import CodeFromFile from '../../../components/CodeFromFile.astro';
 import TestScenario from '../../../components/TestScenario.astro';
 import CurlTest from '../../../components/CurlTest.astro';
 
@@ -24,92 +23,10 @@ When users disconnect during a streaming response (page reload, network issues),
 
 Update `ChatController.java` to use streaming:
 
-```java
-package com.example.demo;
-
-import io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisorBuilder;
-import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryBuilder;
-import io.github.chirino.memoryservice.security.SecurityHelper;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.memory.MessageWindowChatMemory;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.http.MediaType;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.Disposable;
-import reactor.core.publisher.Flux;
-
-import java.io.IOException;
-
-@RestController
-@RequestMapping("/chat")
-class ChatController {
-    private final ChatClient.Builder chatClientBuilder;
-    private final MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder;
-    private final ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder;
-    private final OAuth2AuthorizedClientService authorizedClientService;
-
-    ChatController(
-            ChatClient.Builder chatClientBuilder,
-            MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder,
-            ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder,
-            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
-        this.chatClientBuilder = chatClientBuilder;
-        this.repositoryBuilder = repositoryBuilder;
-        this.historyAdvisorBuilder = historyAdvisorBuilder;
-        this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
-    }
-
-    @PostMapping(
-            path = "/{conversationId}",
-            consumes = MediaType.TEXT_PLAIN_VALUE,
-            produces = MediaType.TEXT_PLAIN_VALUE)
-    public SseEmitter chat(
-            @PathVariable String conversationId, @RequestBody String userMessage) {
-
-        String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
-        var chatMemoryAdvisor = MessageChatMemoryAdvisor.builder(MessageWindowChatMemory.builder()
-                .chatMemoryRepository(repositoryBuilder.build(bearerToken))
-                .build()).build();
-        var historyAdvisor = historyAdvisorBuilder.build(bearerToken);
-
-        var chatClient = chatClientBuilder.clone()
-                .defaultSystem("You are a helpful assistant.")
-                .defaultAdvisors(historyAdvisor, chatMemoryAdvisor)
-                .defaultAdvisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
-                .build();
-
-        Flux<String> responseFlux = chatClient.prompt().user(userMessage).stream().content();
-
-        SseEmitter emitter = new SseEmitter(0L);
-        Disposable subscription = responseFlux.subscribe(
-                chunk -> safeSend(emitter, chunk),
-                emitter::completeWithError,
-                emitter::complete);
-
-        emitter.onCompletion(subscription::dispose);
-        emitter.onTimeout(() -> {
-            subscription.dispose();
-            emitter.complete();
-        });
-        return emitter;
-    }
-
-    private void safeSend(SseEmitter emitter, String chunk) {
-        try {
-            emitter.send(chunk);
-        } catch (IOException | IllegalStateException ignored) {
-        }
-    }
-}
-```
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/05-response-resumption/src/main/java/com/example/demo/ChatController.java"
+  lang="java"
+/>
 
 <TestScenario checkpoint="spring/examples/doc-checkpoints/05-response-resumption">
 
@@ -121,7 +38,7 @@ And the response should match pattern "\\w+"
 `}>
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -NsSfX POST http://localhost:9090/chat/8337ca02-62de-43e1-b69b-c663cb50acc4 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Write a 4 paragraph story about a cat."
@@ -133,7 +50,7 @@ curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942
 
 You should see the response streaming to your command line.
 
-Now browse to the demo agent app at [http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942](http://localhost:8080/?conversationId=3579aac5-c86e-4b67-bbea-6ec1a3644942)
+Now browse to the demo agent app at [http://localhost:8080/?conversationId=8337ca02-62de-43e1-b69b-c663cb50acc4](http://localhost:8080/?conversationId=8337ca02-62de-43e1-b69b-c663cb50acc4)
 and you should see the response streaming to the browser.
 
 ## Response Resumption
@@ -143,84 +60,15 @@ The following creates a REST endpoint that will allow us to:
 * Resume a response that is in progress
 * Cancel a response that is in progress
 
-```java
-package com.example.demo;
-
-import io.github.chirino.memoryservice.history.ResponseResumer;
-import io.github.chirino.memoryservice.security.SecurityHelper;
-import io.github.chirino.memoryservice.client.MemoryServiceProxy;
-import java.io.IOException;
-import java.util.List;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.Disposable;
-
-@RestController
-@RequestMapping("/v1/conversations")
-class ResumeController {
-    private final ResponseResumer responseResumer;
-    private final MemoryServiceProxy proxy;
-    private final OAuth2AuthorizedClientService authorizedClientService;
-
-    ResumeController(
-            ResponseResumer responseResumer,
-            MemoryServiceProxy proxy,
-            ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
-        this.responseResumer = responseResumer;
-        this.proxy = proxy;
-        this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
-    }
-
-    @PostMapping("/resume-check")
-    public List<String> check(@RequestBody List<String> conversationIds) {
-        return responseResumer.check(
-                conversationIds, SecurityHelper.bearerToken(authorizedClientService));
-    }
-
-    @GetMapping(path = "/{conversationId}/resume", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter resume(@PathVariable String conversationId) {
-        String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
-        SseEmitter emitter = new SseEmitter(0L);
-
-        Disposable subscription = responseResumer.replay(conversationId, bearerToken)
-                .subscribe(
-                        chunk -> safeSend(emitter, chunk),
-                        emitter::completeWithError,
-                        emitter::complete);
-
-        emitter.onCompletion(subscription::dispose);
-        emitter.onTimeout(() -> { subscription.dispose(); emitter.complete(); });
-        return emitter;
-    }
-
-    @PostMapping("/{conversationId}/cancel")
-    public ResponseEntity<?> cancelResponse(@PathVariable String conversationId) {
-        return proxy.cancelResponse(conversationId);
-    }
-
-    private void safeSend(SseEmitter emitter, String chunk) {
-        try {
-            emitter.send(chunk);
-        } catch (IOException | IllegalStateException ignored) {
-            // Client disconnected or emitter already completed
-        }
-    }
-}
-```
+<CodeFromFile
+  file="spring/examples/doc-checkpoints/05-response-resumption/src/main/java/com/example/demo/ResumeController.java"
+  lang="java"
+/>
 
 Test it with curl:
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/3579aac5-c86e-4b67-bbea-6ec1a3644942 \
+curl -NsSfX POST http://localhost:9090/chat/8337ca02-62de-43e1-b69b-c663cb50acc4 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Write a 4 paragraph story about a cat."
@@ -232,13 +80,13 @@ And while the response is streaming, you can check use the following to check to
 curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $(get-token)" \
-  -d '["3579aac5-c86e-4b67-bbea-6ec1a3644942"]' | jq
+  -d '["8337ca02-62de-43e1-b69b-c663cb50acc4"]' | jq
 ```
 
 And to resume a conversation, you can run the following command in a new terminal:
 
 ```bash
-curl -NsSfX GET http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/resume \
+curl -NsSfX GET http://localhost:9090/v1/conversations/8337ca02-62de-43e1-b69b-c663cb50acc4/resume \
   -H "Authorization: Bearer $(get-token)"
 ```
 
@@ -249,7 +97,7 @@ You should see the response streaming to your command line.
 To cancel a response, you can run the following command:
 
 ```bash
-curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6ec1a3644942/cancel \
+curl -sSfX POST http://localhost:9090/v1/conversations/8337ca02-62de-43e1-b69b-c663cb50acc4/cancel \
   -H "Authorization: Bearer $(get-token)"
 ```
 
