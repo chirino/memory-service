@@ -24,6 +24,11 @@ if [ -d "$USER_HOME/.ssh" ]; then
   chmod 644 "$USER_HOME/.ssh/config" 2>/dev/null || true
 fi
 
+# Link to the ~/.m2 dir
+if [ -d "/home/vscode/.m2" ]; then
+  ln -s /home/vscode/.m2 "$USER_HOME/.m2"
+fi
+
 # Generate bash completions for tools installed by devcontainer features
 COMP_DIR="/etc/bash_completion.d"
 kubectl completion bash | sudo tee "$COMP_DIR/kubectl" > /dev/null 2>/dev/null || true
