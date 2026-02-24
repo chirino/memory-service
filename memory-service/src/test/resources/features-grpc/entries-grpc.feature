@@ -11,7 +11,7 @@ Feature: Entries gRPC API
   Scenario: List entries via gRPC
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     channel: HISTORY
     page {
       page_size: 10
@@ -22,7 +22,7 @@ Feature: Entries gRPC API
     And the gRPC response text should match text proto:
     """
     entries {
-      conversation_id: "${conversationId}"
+      conversation_id: "${conversationId | uuid_to_hex_string}"
       user_id: "alice"
       channel: HISTORY
       content_type: "history"
@@ -34,7 +34,7 @@ Feature: Entries gRPC API
     And the conversation has 5 entries
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     channel: HISTORY
     page {
       page_size: 2
@@ -46,7 +46,7 @@ Feature: Entries gRPC API
     And the gRPC response text should match text proto:
     """
     entries {
-      conversation_id: "${conversationId}"
+      conversation_id: "${conversationId | uuid_to_hex_string}"
       channel: HISTORY
       content_type: "history"
     }
@@ -61,7 +61,7 @@ Feature: Entries gRPC API
     And the conversation has an entry "History entry" in channel "HISTORY"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     channel: MEMORY
     page {
       page_size: 10
@@ -72,7 +72,7 @@ Feature: Entries gRPC API
     And the gRPC response text should match text proto:
     """
     entries {
-      conversation_id: "${conversationId}"
+      conversation_id: "${conversationId | uuid_to_hex_string}"
       channel: MEMORY
       content_type: "test.v1"
     }
@@ -84,7 +84,7 @@ Feature: Entries gRPC API
     And the conversation has a memory entry "Epoch Two" with epoch 2 and contentType "test.v1"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     channel: MEMORY
     epoch_filter: "1"
     page {
@@ -100,7 +100,7 @@ Feature: Entries gRPC API
     And the conversation has a memory entry "Stable gRPC epoch" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       channel: MEMORY
       content_type: "test.v1"
@@ -133,7 +133,7 @@ Feature: Entries gRPC API
     And the conversation has a memory entry "Original epoch entry" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       channel: MEMORY
       content_type: "test.v1"
@@ -154,7 +154,7 @@ Feature: Entries gRPC API
     And the conversation has a memory entry "Memory to clear" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       channel: MEMORY
       content_type: "test.v1"
@@ -172,7 +172,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       channel: MEMORY
       content_type: "test.v1"
@@ -188,7 +188,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       user_id: "alice"
       content_type: "message"
@@ -204,7 +204,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       user_id: "alice"
       channel: MEMORY
@@ -221,8 +221,8 @@ Feature: Entries gRPC API
     And the gRPC response field "contentType" should be "test.v1"
     And the gRPC response text should match text proto:
     """
-    id: "${response.body.id}"
-    conversation_id: "${conversationId}"
+    id: "${response.body.id | base64_to_hex_string}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "alice"
     channel: MEMORY
     content_type: "test.v1"
@@ -236,7 +236,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       user_id: "alice"
       channel: MEMORY
@@ -259,7 +259,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       user_id: "alice"
       channel: HISTORY
@@ -286,7 +286,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       user_id: "alice"
       channel: HISTORY
@@ -325,7 +325,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       user_id: "alice"
       channel: HISTORY

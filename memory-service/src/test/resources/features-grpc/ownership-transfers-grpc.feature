@@ -19,7 +19,7 @@ Feature: Ownership Transfers gRPC API
   Scenario: Owner can create ownership transfer via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -31,7 +31,7 @@ Feature: Ownership Transfers gRPC API
     Given I am authenticated as user "bob"
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "charlie"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
@@ -39,13 +39,13 @@ Feature: Ownership Transfers gRPC API
   Scenario: Cannot create second transfer while one is pending via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should have status "ALREADY_EXISTS"
@@ -53,7 +53,7 @@ Feature: Ownership Transfers gRPC API
   Scenario: Cannot transfer to non-member via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "stranger"
     """
     Then the gRPC response should have status "INVALID_ARGUMENT"
@@ -61,7 +61,7 @@ Feature: Ownership Transfers gRPC API
   Scenario: Cannot transfer to self via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "alice"
     """
     Then the gRPC response should have status "INVALID_ARGUMENT"
@@ -71,7 +71,7 @@ Feature: Ownership Transfers gRPC API
   Scenario: List transfers as sender via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -85,7 +85,7 @@ Feature: Ownership Transfers gRPC API
   Scenario: List transfers as recipient via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -101,7 +101,7 @@ Feature: Ownership Transfers gRPC API
   Scenario: List all transfers via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -116,14 +116,14 @@ Feature: Ownership Transfers gRPC API
   Scenario: Sender can get transfer details via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
     And set "transferId" to the gRPC response field "id"
     When I send gRPC request "OwnershipTransfersService/GetOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "id" should be "${transferId}"
@@ -131,7 +131,7 @@ Feature: Ownership Transfers gRPC API
   Scenario: Recipient can get transfer details via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -139,7 +139,7 @@ Feature: Ownership Transfers gRPC API
     Given I am authenticated as user "bob"
     When I send gRPC request "OwnershipTransfersService/GetOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "id" should be "${transferId}"
@@ -147,7 +147,7 @@ Feature: Ownership Transfers gRPC API
   Scenario: Non-participant cannot see transfer via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -155,7 +155,7 @@ Feature: Ownership Transfers gRPC API
     Given I am authenticated as user "charlie"
     When I send gRPC request "OwnershipTransfersService/GetOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"
 
@@ -164,7 +164,7 @@ Feature: Ownership Transfers gRPC API
   Scenario: Recipient can accept transfer via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -172,34 +172,34 @@ Feature: Ownership Transfers gRPC API
     Given I am authenticated as user "bob"
     When I send gRPC request "OwnershipTransfersService/AcceptOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should not have an error
     # Verify ownership changed
     When I send gRPC request "ConversationMembershipsService/ListMemberships" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
 
   Scenario: Sender cannot accept own transfer via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
     And set "transferId" to the gRPC response field "id"
     When I send gRPC request "OwnershipTransfersService/AcceptOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
   Scenario: Cannot accept already-accepted transfer via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -207,13 +207,13 @@ Feature: Ownership Transfers gRPC API
     Given I am authenticated as user "bob"
     When I send gRPC request "OwnershipTransfersService/AcceptOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should not have an error
     # Transfer is deleted after acceptance, so second accept returns NOT_FOUND
     When I send gRPC request "OwnershipTransfersService/AcceptOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"
 
@@ -222,27 +222,27 @@ Feature: Ownership Transfers gRPC API
   Scenario: Sender can cancel (delete) transfer via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
     And set "transferId" to the gRPC response field "id"
     When I send gRPC request "OwnershipTransfersService/DeleteOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should not have an error
     # Verify hard deleted
     When I send gRPC request "OwnershipTransfersService/GetOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"
 
   Scenario: Recipient can decline (delete) transfer via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -250,14 +250,14 @@ Feature: Ownership Transfers gRPC API
     Given I am authenticated as user "bob"
     When I send gRPC request "OwnershipTransfersService/DeleteOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should not have an error
 
   Scenario: Non-participant cannot delete transfer via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
     Then the gRPC response should not have an error
@@ -265,6 +265,6 @@ Feature: Ownership Transfers gRPC API
     Given I am authenticated as user "charlie"
     When I send gRPC request "OwnershipTransfersService/DeleteOwnershipTransfer" with body:
     """
-    transfer_id: "${transferId}"
+    transfer_id: "${transferId | base64_to_hex_string}"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"

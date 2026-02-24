@@ -10,7 +10,7 @@ Feature: Update Conversation gRPC API
   Scenario: Update conversation title via gRPC
     When I send gRPC request "ConversationsService/UpdateConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     title: "Updated Title"
     """
     Then the gRPC response should not have an error
@@ -21,7 +21,7 @@ Feature: Update Conversation gRPC API
   Scenario: Update non-existent conversation via gRPC
     When I send gRPC request "ConversationsService/UpdateConversation" with body:
     """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
+    conversation_id: "${"00000000-0000-0000-0000-000000000000" | uuid_to_hex_string}"
     title: "New Title"
     """
     Then the gRPC response should have status "NOT_FOUND"
@@ -30,7 +30,7 @@ Feature: Update Conversation gRPC API
     Given there is a conversation owned by "bob"
     When I send gRPC request "ConversationsService/UpdateConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     title: "Hacked Title"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
@@ -47,7 +47,7 @@ Feature: Update Conversation gRPC API
     Given I am authenticated as user "bob"
     When I send gRPC request "ConversationsService/UpdateConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     title: "Writer Updated Title"
     """
     Then the gRPC response should not have an error
@@ -66,7 +66,7 @@ Feature: Update Conversation gRPC API
     Given I am authenticated as user "charlie"
     When I send gRPC request "ConversationsService/UpdateConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     title: "Reader Title"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"

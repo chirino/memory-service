@@ -126,6 +126,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.eclipse.microprofile.config.Config;
@@ -136,6 +137,12 @@ public class StepDefinitions {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([^}]+)}");
+    private static final Map<String, Function<Object, Object>> PIPE_FUNCTIONS =
+            Map.of(
+                    "uuid_to_hex_string",
+                    value -> uuidToProtoEscapedBytes(value.toString()),
+                    "base64_to_hex_string",
+                    value -> base64ToProtoEscapedBytes(value.toString()));
     private static final Metadata.Key<String> AUTHORIZATION_METADATA =
             Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> API_KEY_METADATA =
@@ -166,61 +173,6 @@ public class StepDefinitions {
     private static final Pattern UUID_PATTERN =
             Pattern.compile(
                     "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
-
-    // Known UUID field names in proto messages (bytes fields that hold UUIDs)
-    private static final java.util.Set<String> UUID_BYTES_FIELDS =
-            java.util.Set.of(
-                    "id",
-                    "conversation_id",
-                    "conversation_ids",
-                    "entry_id",
-                    "after",
-                    "until_entry_id",
-                    "forked_at_entry_id",
-                    "forked_at_conversation_id",
-                    "transfer_id");
-
-    /**
-     * Preprocesses proto text format body to convert UUID strings and base64 values to proper
-     * bytes escape sequences. This is needed because bytes fields in proto text format interpret
-     * string literals as raw bytes, but we want to convert UUID strings (36 chars) or base64
-     * (from previous gRPC responses) to their 16-byte binary form.
-     */
-    private static String convertUuidStringsToProtoBytes(String protoText) {
-        if (protoText == null || protoText.isEmpty()) {
-            return protoText;
-        }
-        // Pattern to match field assignments like: field_name: "value"
-        Pattern fieldPattern = Pattern.compile("(\\w+):\\s*\"([^\"]+)\"");
-        java.util.regex.Matcher matcher = fieldPattern.matcher(protoText);
-        StringBuilder result = new StringBuilder();
-        int lastEnd = 0;
-        while (matcher.find()) {
-            String fieldName = matcher.group(1);
-            String fieldValue = matcher.group(2);
-            result.append(protoText, lastEnd, matcher.start());
-            if (UUID_BYTES_FIELDS.contains(fieldName)) {
-                String escapedBytes = null;
-                if (UUID_PATTERN.matcher(fieldValue).matches()) {
-                    // Convert UUID string to proto bytes escape sequence
-                    escapedBytes = uuidToProtoEscapedBytes(fieldValue);
-                } else if (looksLikeBase64(fieldValue)) {
-                    // Convert base64 (from previous gRPC response) to proto bytes escape sequence
-                    escapedBytes = base64ToProtoEscapedBytes(fieldValue);
-                }
-                if (escapedBytes != null) {
-                    result.append(fieldName).append(": \"").append(escapedBytes).append("\"");
-                } else {
-                    result.append(matcher.group());
-                }
-            } else {
-                result.append(matcher.group());
-            }
-            lastEnd = matcher.end();
-        }
-        result.append(protoText.substring(lastEnd));
-        return result.toString();
-    }
 
     /**
      * Converts a UUID string to proto text format escaped bytes representation.
@@ -280,35 +232,6 @@ public class StepDefinitions {
         long mostSig = buffer.getLong();
         long leastSig = buffer.getLong();
         return new UUID(mostSig, leastSig).toString();
-    }
-
-    /**
-     * Preprocesses proto text format body to convert base64 strings (from JSON responses)
-     * to proper bytes escape sequences for bytes fields.
-     */
-    private static String convertBase64StringsToProtoBytes(String protoText) {
-        if (protoText == null || protoText.isEmpty()) {
-            return protoText;
-        }
-        Pattern fieldPattern = Pattern.compile("(\\w+):\\s*\"([^\"]+)\"");
-        java.util.regex.Matcher matcher = fieldPattern.matcher(protoText);
-        StringBuilder result = new StringBuilder();
-        int lastEnd = 0;
-        while (matcher.find()) {
-            String fieldName = matcher.group(1);
-            String fieldValue = matcher.group(2);
-            result.append(protoText, lastEnd, matcher.start());
-            if (UUID_BYTES_FIELDS.contains(fieldName) && looksLikeBase64(fieldValue)) {
-                // Convert base64 string to proto bytes escape sequence
-                String escapedBytes = base64ToProtoEscapedBytes(fieldValue);
-                result.append(fieldName).append(": \"").append(escapedBytes).append("\"");
-            } else {
-                result.append(matcher.group());
-            }
-            lastEnd = matcher.end();
-        }
-        result.append(protoText.substring(lastEnd));
-        return result.toString();
     }
 
     @Inject MemoryStoreSelector memoryStoreSelector;
@@ -1635,8 +1558,6 @@ public class StepDefinitions {
         lastGrpcError = null;
         try {
             String renderedBody = renderTemplate(body);
-            // Convert UUID strings to proper proto bytes format for bytes fields
-            renderedBody = convertUuidStringsToProtoBytes(renderedBody);
             Message response = callGrpcService(serviceMethod, renderedBody);
             StringBuilder textBuilder = new StringBuilder();
             TextFormat.printer().print(response, textBuilder);
@@ -2014,9 +1935,6 @@ public class StepDefinitions {
         Message.Builder expectedBuilder = createGrpcResponseBuilder(lastGrpcServiceMethod);
         try {
             String rendered = renderTemplate(expectedText).trim();
-            // Convert UUID strings and base64 values to proper proto bytes format
-            rendered = convertUuidStringsToProtoBytes(rendered);
-            rendered = convertBase64StringsToProtoBytes(rendered);
             TextFormat.merge(rendered, expectedBuilder);
         } catch (TextFormat.ParseException e) {
             throw new AssertionError(
@@ -2222,9 +2140,35 @@ public class StepDefinitions {
         int lastIndex = 0;
         while (matcher.find()) {
             result.append(template, lastIndex, matcher.start());
-            String expression = matcher.group(1).trim();
+            String rawExpression = matcher.group(1).trim();
+
+            // Parse pipe functions: "expr | func1 | func2"
+            String[] parts = rawExpression.split("\\|");
+            String expression = parts[0].trim();
             Object value = resolveExpression(expression, responseJson, grpcJsonPath, contextJson);
-            boolean inQuotes = isSurroundedByQuotes(template, matcher.start(), matcher.end());
+
+            // Apply pipe functions in order
+            boolean hasPipes = parts.length > 1;
+            for (int i = 1; i < parts.length; i++) {
+                String funcName = parts[i].trim();
+                Function<Object, Object> pipeFunc = PIPE_FUNCTIONS.get(funcName);
+                if (pipeFunc == null) {
+                    throw new AssertionError(
+                            "Unknown pipe function '"
+                                    + funcName
+                                    + "' in expression '${"
+                                    + rawExpression
+                                    + "}'. Available: "
+                                    + PIPE_FUNCTIONS.keySet());
+                }
+                value = pipeFunc.apply(value);
+            }
+
+            // When pipe functions are applied, output the raw result without JSON escaping,
+            // since the pipe function already produces the exact format needed (e.g. \xHH
+            // proto escape sequences). Without pipes, use the original quote-aware serialization.
+            boolean inQuotes =
+                    !hasPipes && isSurroundedByQuotes(template, matcher.start(), matcher.end());
             result.append(serializeReplacement(value, inQuotes));
             lastIndex = matcher.end();
         }
@@ -2235,6 +2179,12 @@ public class StepDefinitions {
     private Object resolveExpression(
             String expression, JsonPath responseJson, JsonPath grpcJsonPath, JsonPath contextJson) {
         try {
+            // Handle quoted string literals: ${"some literal value" | func}
+            if (expression.startsWith("\"")
+                    && expression.endsWith("\"")
+                    && expression.length() >= 2) {
+                return expression.substring(1, expression.length() - 1);
+            }
             if (expression.equals("response.body")) {
                 if (responseJson != null) {
                     return responseJson.get("$");
