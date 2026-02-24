@@ -2,21 +2,28 @@ package io.github.chirino.memory.store.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.api.ConversationListMode;
+import io.github.chirino.memory.api.dto.AddOrganizationMemberRequest;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
+import io.github.chirino.memory.api.dto.CreateOrganizationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
+import io.github.chirino.memory.api.dto.CreateTeamRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
+import io.github.chirino.memory.api.dto.OrganizationDto;
+import io.github.chirino.memory.api.dto.OrganizationMemberDto;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.api.dto.TeamDto;
+import io.github.chirino.memory.api.dto.TeamMemberDto;
 import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
 import io.github.chirino.memory.api.dto.UnindexedEntry;
 import io.github.chirino.memory.cache.CachedMemoryEntries;
@@ -34,12 +41,20 @@ import io.github.chirino.memory.persistence.entity.ConversationGroupEntity;
 import io.github.chirino.memory.persistence.entity.ConversationMembershipEntity;
 import io.github.chirino.memory.persistence.entity.ConversationOwnershipTransferEntity;
 import io.github.chirino.memory.persistence.entity.EntryEntity;
+import io.github.chirino.memory.persistence.entity.OrganizationEntity;
+import io.github.chirino.memory.persistence.entity.OrganizationMemberEntity;
+import io.github.chirino.memory.persistence.entity.TeamEntity;
+import io.github.chirino.memory.persistence.entity.TeamMemberEntity;
 import io.github.chirino.memory.persistence.repo.ConversationGroupRepository;
 import io.github.chirino.memory.persistence.repo.ConversationMembershipRepository;
 import io.github.chirino.memory.persistence.repo.ConversationOwnershipTransferRepository;
 import io.github.chirino.memory.persistence.repo.ConversationRepository;
 import io.github.chirino.memory.persistence.repo.EntryRepository;
+import io.github.chirino.memory.persistence.repo.OrganizationMemberRepository;
+import io.github.chirino.memory.persistence.repo.OrganizationRepository;
 import io.github.chirino.memory.persistence.repo.TaskRepository;
+import io.github.chirino.memory.persistence.repo.TeamMemberRepository;
+import io.github.chirino.memory.persistence.repo.TeamRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.github.chirino.memory.store.MemoryStore;
@@ -90,6 +105,14 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Inject ConversationOwnershipTransferRepository ownershipTransferRepository;
 
+    @Inject OrganizationRepository organizationRepository;
+
+    @Inject OrganizationMemberRepository organizationMemberRepository;
+
+    @Inject TeamRepository teamRepository;
+
+    @Inject TeamMemberRepository teamMemberRepository;
+
     @Inject DataEncryptionService dataEncryptionService;
 
     @Inject ObjectMapper objectMapper;
@@ -132,6 +155,48 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID conversationId = UUID.randomUUID();
         ConversationGroupEntity conversationGroup = new ConversationGroupEntity();
         conversationGroup.setId(conversationId);
+
+        // Handle org/team scoping
+        if (request.getOrganizationId() != null) {
+            UUID orgId = UUID.fromString(request.getOrganizationId());
+            OrganizationEntity org =
+                    organizationRepository
+                            .findActiveById(orgId)
+                            .orElseThrow(
+                                    () ->
+                                            new ResourceNotFoundException(
+                                                    "organization", request.getOrganizationId()));
+            if (!organizationMemberRepository.isMember(orgId, userId)) {
+                throw new AccessDeniedException(
+                        "User must be an organization member to create org-scoped conversations");
+            }
+            conversationGroup.setOrganization(org);
+
+            if (request.getTeamId() != null) {
+                UUID teamId = UUID.fromString(request.getTeamId());
+                TeamEntity team =
+                        teamRepository
+                                .findActiveById(teamId)
+                                .orElseThrow(
+                                        () ->
+                                                new ResourceNotFoundException(
+                                                        "team", request.getTeamId()));
+                if (!team.getOrganization().getId().equals(orgId)) {
+                    throw new AccessDeniedException("Team does not belong to the organization");
+                }
+                // Org admins/owners can create team-scoped conversations without being team members
+                Optional<String> orgRole = organizationMemberRepository.findRole(orgId, userId);
+                boolean isOrgAdminOrOwner =
+                        orgRole.isPresent()
+                                && ("owner".equals(orgRole.get()) || "admin".equals(orgRole.get()));
+                if (!isOrgAdminOrOwner && !teamMemberRepository.isMember(teamId, userId)) {
+                    throw new AccessDeniedException(
+                            "User must be a team member to create team-scoped conversations");
+                }
+                conversationGroup.setTeam(team);
+            }
+        }
+
         conversationGroupRepository.persist(conversationGroup);
 
         ConversationEntity entity = new ConversationEntity();
@@ -150,10 +215,31 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Override
     public List<ConversationSummaryDto> listConversations(
-            String userId, String query, String afterCursor, int limit, ConversationListMode mode) {
+            String userId,
+            String query,
+            String afterCursor,
+            int limit,
+            ConversationListMode mode,
+            String organizationId) {
         // For now, list by memberships and ignore cursor/query for simplicity.
         List<ConversationMembershipEntity> memberships =
                 membershipRepository.listForUser(userId, limit);
+
+        // If organizationId filter is set, restrict to groups scoped to that org
+        if (organizationId != null && !organizationId.isBlank()) {
+            UUID orgUuid = UUID.fromString(organizationId);
+            Set<UUID> orgGroupIds =
+                    conversationGroupRepository
+                            .find("organization.id = ?1 and deletedAt IS NULL", orgUuid)
+                            .stream()
+                            .map(ConversationGroupEntity::getId)
+                            .collect(Collectors.toSet());
+            memberships =
+                    memberships.stream()
+                            .filter(m -> orgGroupIds.contains(m.getId().getConversationGroupId()))
+                            .collect(Collectors.toList());
+        }
+
         if (mode == ConversationListMode.ROOTS) {
             Map<UUID, AccessLevel> accessByGroup =
                     memberships.stream()
@@ -253,11 +339,8 @@ public class PostgresMemoryStore implements MemoryStore {
                                         new ResourceNotFoundException(
                                                 "conversation", conversationId));
         UUID groupId = entity.getConversationGroup().getId();
-        ConversationMembershipEntity membership =
-                membershipRepository
-                        .findMembership(groupId, userId)
-                        .orElseThrow(() -> new AccessDeniedException("No access to conversation"));
-        return toConversationDto(entity, membership.getAccessLevel(), null);
+        AccessLevel effectiveAccess = findEffectiveAccessLevel(groupId, userId);
+        return toConversationDto(entity, effectiveAccess, null);
     }
 
     @Override
@@ -274,11 +357,8 @@ public class PostgresMemoryStore implements MemoryStore {
         UUID groupId = conversation.getConversationGroup().getId();
         ensureHasAccess(groupId, userId, AccessLevel.WRITER);
         conversation.setTitle(encryptTitle(title));
-        ConversationMembershipEntity membership =
-                membershipRepository
-                        .findMembership(groupId, userId)
-                        .orElseThrow(() -> new AccessDeniedException("No access to conversation"));
-        return toConversationDto(conversation, membership.getAccessLevel(), null);
+        AccessLevel effectiveAccess = findEffectiveAccessLevel(groupId, userId);
+        return toConversationDto(conversation, effectiveAccess, null);
     }
 
     @Override
@@ -294,12 +374,7 @@ public class PostgresMemoryStore implements MemoryStore {
                                         new ResourceNotFoundException(
                                                 "conversation", conversationId));
         UUID groupId = conversation.getConversationGroup().getId();
-        // Use a projection query to get only the access level without loading the conversation
-        // relationship to avoid Hibernate transient entity issues
-        AccessLevel accessLevel =
-                membershipRepository
-                        .findAccessLevel(groupId, userId)
-                        .orElseThrow(() -> new AccessDeniedException("No access to conversation"));
+        AccessLevel accessLevel = findEffectiveAccessLevel(groupId, userId);
         if (accessLevel != AccessLevel.OWNER && accessLevel != AccessLevel.MANAGER) {
             throw new AccessDeniedException("Only owner or manager can delete conversation");
         }
@@ -352,6 +427,15 @@ public class PostgresMemoryStore implements MemoryStore {
                                         new ResourceNotFoundException(
                                                 "conversation", conversationId));
         ConversationGroupEntity conversationGroup = conversation.getConversationGroup();
+
+        // Org-scoped conversations can only be shared with org members
+        if (conversationGroup.getOrganization() != null) {
+            UUID orgId = conversationGroup.getOrganization().getId();
+            if (!organizationMemberRepository.isMember(orgId, request.getUserId())) {
+                throw new IllegalArgumentException(
+                        "Cannot share org-scoped conversation with non-org member");
+            }
+        }
 
         // Idempotent: if membership already exists, update access level if different
         var existing =
@@ -2001,6 +2085,435 @@ public class PostgresMemoryStore implements MemoryStore {
         return normalized.length() <= 40 ? normalized : normalized.substring(0, 40);
     }
 
+    // ---- Organization methods ----
+
+    @Override
+    @Transactional
+    public OrganizationDto createOrganization(String userId, CreateOrganizationRequest request) {
+        OrganizationEntity org = new OrganizationEntity();
+        org.setName(request.getName());
+        org.setSlug(request.getSlug());
+        org.setMetadata(
+                request.getMetadata() != null ? request.getMetadata() : Collections.emptyMap());
+        organizationRepository.persist(org);
+
+        // Creator becomes owner
+        OrganizationMemberEntity member = new OrganizationMemberEntity();
+        member.setId(new OrganizationMemberEntity.OrganizationMemberId(org.getId(), userId));
+        member.setOrganization(org);
+        member.setRole("owner");
+        organizationMemberRepository.persist(member);
+
+        return toOrganizationDto(org, "owner");
+    }
+
+    @Override
+    public List<OrganizationDto> listOrganizations(String userId) {
+        List<OrganizationMemberEntity> memberships =
+                organizationMemberRepository.listForUser(userId);
+        return memberships.stream()
+                .filter(m -> !m.getOrganization().isDeleted())
+                .map(m -> toOrganizationDto(m.getOrganization(), m.getRole()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public OrganizationDto getOrganization(String userId, String organizationId) {
+        UUID orgId = UUID.fromString(organizationId);
+        OrganizationEntity org =
+                organizationRepository
+                        .findActiveById(orgId)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "organization", organizationId));
+        OrganizationMemberEntity member =
+                organizationMemberRepository
+                        .findMembership(orgId, userId)
+                        .orElseThrow(
+                                () ->
+                                        new AccessDeniedException(
+                                                "Not a member of this organization"));
+        return toOrganizationDto(org, member.getRole());
+    }
+
+    @Override
+    @Transactional
+    public OrganizationDto updateOrganization(
+            String userId, String organizationId, String name, String slug) {
+        UUID orgId = UUID.fromString(organizationId);
+        OrganizationEntity org =
+                organizationRepository
+                        .findActiveById(orgId)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "organization", organizationId));
+        String role = ensureOrgRole(orgId, userId, "admin");
+        if (name != null) {
+            org.setName(name);
+        }
+        if (slug != null) {
+            org.setSlug(slug);
+        }
+        org.setUpdatedAt(OffsetDateTime.now());
+        return toOrganizationDto(org, role);
+    }
+
+    @Override
+    @Transactional
+    public void deleteOrganization(String userId, String organizationId) {
+        UUID orgId = UUID.fromString(organizationId);
+        OrganizationEntity org =
+                organizationRepository
+                        .findActiveById(orgId)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "organization", organizationId));
+        ensureOrgRole(orgId, userId, "owner");
+
+        org.setDeletedAt(OffsetDateTime.now());
+    }
+
+    @Override
+    public List<OrganizationMemberDto> listOrgMembers(String userId, String organizationId) {
+        UUID orgId = UUID.fromString(organizationId);
+        organizationRepository
+                .findActiveById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        if (!organizationMemberRepository.isMember(orgId, userId)) {
+            throw new AccessDeniedException("Not a member of this organization");
+        }
+        return organizationMemberRepository.listForOrg(orgId).stream()
+                .map(this::toOrgMemberDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public OrganizationMemberDto addOrgMember(
+            String userId, String organizationId, AddOrganizationMemberRequest request) {
+        UUID orgId = UUID.fromString(organizationId);
+        OrganizationEntity org =
+                organizationRepository
+                        .findActiveById(orgId)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "organization", organizationId));
+        ensureOrgRole(orgId, userId, "admin");
+
+        String role = request.getRole() != null ? request.getRole() : "member";
+        OrganizationMemberEntity member = new OrganizationMemberEntity();
+        member.setId(new OrganizationMemberEntity.OrganizationMemberId(orgId, request.getUserId()));
+        member.setOrganization(org);
+        member.setRole(role);
+        organizationMemberRepository.persist(member);
+
+        return toOrgMemberDto(member);
+    }
+
+    @Override
+    @Transactional
+    public OrganizationMemberDto updateOrgMemberRole(
+            String userId, String organizationId, String memberUserId, String role) {
+        UUID orgId = UUID.fromString(organizationId);
+        organizationRepository
+                .findActiveById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureOrgRole(orgId, userId, "admin");
+
+        OrganizationMemberEntity member =
+                organizationMemberRepository
+                        .findMembership(orgId, memberUserId)
+                        .orElseThrow(() -> new ResourceNotFoundException("member", memberUserId));
+        String oldRole = member.getRole();
+        member.setRole(role);
+
+        return toOrgMemberDto(member);
+    }
+
+    @Override
+    @Transactional
+    public void removeOrgMember(String userId, String organizationId, String memberUserId) {
+        UUID orgId = UUID.fromString(organizationId);
+        organizationRepository
+                .findActiveById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureOrgRole(orgId, userId, "admin");
+
+        OrganizationMemberEntity member =
+                organizationMemberRepository
+                        .findMembership(orgId, memberUserId)
+                        .orElseThrow(() -> new ResourceNotFoundException("member", memberUserId));
+
+        organizationMemberRepository.delete(member);
+    }
+
+    // ---- Team methods ----
+
+    @Override
+    @Transactional
+    public TeamDto createTeam(String userId, String organizationId, CreateTeamRequest request) {
+        UUID orgId = UUID.fromString(organizationId);
+        OrganizationEntity org =
+                organizationRepository
+                        .findActiveById(orgId)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "organization", organizationId));
+        ensureOrgRole(orgId, userId, "admin");
+
+        TeamEntity team = new TeamEntity();
+        team.setOrganization(org);
+        team.setName(request.getName());
+        team.setSlug(request.getSlug());
+        teamRepository.persist(team);
+
+        return toTeamDto(team);
+    }
+
+    @Override
+    public List<TeamDto> listTeams(String userId, String organizationId) {
+        UUID orgId = UUID.fromString(organizationId);
+        organizationRepository
+                .findActiveById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        if (!organizationMemberRepository.isMember(orgId, userId)) {
+            throw new AccessDeniedException("Not a member of this organization");
+        }
+        return teamRepository.listForOrg(orgId).stream()
+                .map(this::toTeamDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public TeamDto getTeam(String userId, String organizationId, String teamId) {
+        UUID orgId = UUID.fromString(organizationId);
+        organizationRepository
+                .findActiveById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        if (!organizationMemberRepository.isMember(orgId, userId)) {
+            throw new AccessDeniedException("Not a member of this organization");
+        }
+        UUID tid = UUID.fromString(teamId);
+        TeamEntity team =
+                teamRepository
+                        .findActiveById(tid)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.getOrganization().getId().equals(orgId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        return toTeamDto(team);
+    }
+
+    @Override
+    @Transactional
+    public TeamDto updateTeam(
+            String userId, String organizationId, String teamId, String name, String slug) {
+        UUID orgId = UUID.fromString(organizationId);
+        organizationRepository
+                .findActiveById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureOrgRole(orgId, userId, "admin");
+        UUID tid = UUID.fromString(teamId);
+        TeamEntity team =
+                teamRepository
+                        .findActiveById(tid)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.getOrganization().getId().equals(orgId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        if (name != null) {
+            team.setName(name);
+        }
+        if (slug != null) {
+            team.setSlug(slug);
+        }
+        team.setUpdatedAt(OffsetDateTime.now());
+        return toTeamDto(team);
+    }
+
+    @Override
+    @Transactional
+    public void deleteTeam(String userId, String organizationId, String teamId) {
+        UUID orgId = UUID.fromString(organizationId);
+        organizationRepository
+                .findActiveById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureOrgRole(orgId, userId, "admin");
+        UUID tid = UUID.fromString(teamId);
+        TeamEntity team =
+                teamRepository
+                        .findActiveById(tid)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.getOrganization().getId().equals(orgId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+
+        team.setDeletedAt(OffsetDateTime.now());
+    }
+
+    @Override
+    public List<TeamMemberDto> listTeamMembers(
+            String userId, String organizationId, String teamId) {
+        UUID orgId = UUID.fromString(organizationId);
+        organizationRepository
+                .findActiveById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        if (!organizationMemberRepository.isMember(orgId, userId)) {
+            throw new AccessDeniedException("Not a member of this organization");
+        }
+        UUID tid = UUID.fromString(teamId);
+        TeamEntity team =
+                teamRepository
+                        .findActiveById(tid)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.getOrganization().getId().equals(orgId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        return teamMemberRepository.listForTeam(tid).stream()
+                .map(this::toTeamMemberDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public TeamMemberDto addTeamMember(
+            String userId, String organizationId, String teamId, String memberUserId) {
+        UUID orgId = UUID.fromString(organizationId);
+        OrganizationEntity org =
+                organizationRepository
+                        .findActiveById(orgId)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "organization", organizationId));
+        ensureOrgRole(orgId, userId, "admin");
+        UUID tid = UUID.fromString(teamId);
+        TeamEntity team =
+                teamRepository
+                        .findActiveById(tid)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.getOrganization().getId().equals(orgId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        // Target user must be org member
+        if (!organizationMemberRepository.isMember(orgId, memberUserId)) {
+            throw new AccessDeniedException("User must be an organization member");
+        }
+
+        TeamMemberEntity member = new TeamMemberEntity();
+        member.setId(new TeamMemberEntity.TeamMemberId(tid, memberUserId));
+        member.setTeam(team);
+        teamMemberRepository.persist(member);
+
+        return toTeamMemberDto(member);
+    }
+
+    @Override
+    @Transactional
+    public void removeTeamMember(
+            String userId, String organizationId, String teamId, String memberUserId) {
+        UUID orgId = UUID.fromString(organizationId);
+        organizationRepository
+                .findActiveById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureOrgRole(orgId, userId, "admin");
+        UUID tid = UUID.fromString(teamId);
+        TeamEntity team =
+                teamRepository
+                        .findActiveById(tid)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.getOrganization().getId().equals(orgId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        TeamMemberEntity member =
+                teamMemberRepository
+                        .findMembership(tid, memberUserId)
+                        .orElseThrow(
+                                () -> new ResourceNotFoundException("team_member", memberUserId));
+
+        teamMemberRepository.delete(member);
+    }
+
+    /**
+     * Ensures the user has at least the given role within the organization. Role hierarchy:
+     * owner > admin > member. Returns the user's actual role.
+     */
+    private String ensureOrgRole(UUID orgId, String userId, String requiredRole) {
+        OrganizationMemberEntity member =
+                organizationMemberRepository
+                        .findMembership(orgId, userId)
+                        .orElseThrow(
+                                () ->
+                                        new AccessDeniedException(
+                                                "Not a member of this organization"));
+        String actualRole = member.getRole();
+        if (!hasOrgRoleLevel(actualRole, requiredRole)) {
+            throw new AccessDeniedException(
+                    "Requires " + requiredRole + " role in the organization");
+        }
+        return actualRole;
+    }
+
+    private boolean hasOrgRoleLevel(String actual, String required) {
+        int actualLevel = orgRoleLevel(actual);
+        int requiredLevel = orgRoleLevel(required);
+        return actualLevel >= requiredLevel;
+    }
+
+    private int orgRoleLevel(String role) {
+        return switch (role) {
+            case "owner" -> 3;
+            case "admin" -> 2;
+            case "member" -> 1;
+            default -> 0;
+        };
+    }
+
+    private OrganizationDto toOrganizationDto(OrganizationEntity entity, String role) {
+        OrganizationDto dto = new OrganizationDto();
+        dto.setId(entity.getId().toString());
+        dto.setName(entity.getName());
+        dto.setSlug(entity.getSlug());
+        dto.setMetadata(entity.getMetadata());
+        dto.setRole(role);
+        dto.setCreatedAt(ISO_FORMATTER.format(entity.getCreatedAt()));
+        dto.setUpdatedAt(ISO_FORMATTER.format(entity.getUpdatedAt()));
+        return dto;
+    }
+
+    private OrganizationMemberDto toOrgMemberDto(OrganizationMemberEntity entity) {
+        OrganizationMemberDto dto = new OrganizationMemberDto();
+        dto.setOrganizationId(entity.getId().getOrganizationId().toString());
+        dto.setUserId(entity.getId().getUserId());
+        dto.setRole(entity.getRole());
+        dto.setCreatedAt(ISO_FORMATTER.format(entity.getCreatedAt()));
+        return dto;
+    }
+
+    private TeamDto toTeamDto(TeamEntity entity) {
+        TeamDto dto = new TeamDto();
+        dto.setId(entity.getId().toString());
+        dto.setOrganizationId(entity.getOrganization().getId().toString());
+        dto.setName(entity.getName());
+        dto.setSlug(entity.getSlug());
+        dto.setCreatedAt(ISO_FORMATTER.format(entity.getCreatedAt()));
+        dto.setUpdatedAt(ISO_FORMATTER.format(entity.getUpdatedAt()));
+        return dto;
+    }
+
+    private TeamMemberDto toTeamMemberDto(TeamMemberEntity entity) {
+        TeamMemberDto dto = new TeamMemberDto();
+        dto.setTeamId(entity.getId().getTeamId().toString());
+        dto.setUserId(entity.getId().getUserId());
+        dto.setCreatedAt(ISO_FORMATTER.format(entity.getCreatedAt()));
+        return dto;
+    }
+
     private byte[] encryptTitle(String title) {
         if (title == null || title.isBlank()) {
             return null;
@@ -2035,6 +2548,14 @@ public class PostgresMemoryStore implements MemoryStore {
                             + " access to conversation "
                             + conversationId);
         }
+    }
+
+    private AccessLevel findEffectiveAccessLevel(UUID groupId, String userId) {
+        Optional<AccessLevel> direct = membershipRepository.findAccessLevel(groupId, userId);
+        if (direct.isPresent()) {
+            return direct.get();
+        }
+        throw new AccessDeniedException("No access to conversation");
     }
 
     private void softDeleteConversationGroup(UUID conversationGroupId, String actorUserId) {

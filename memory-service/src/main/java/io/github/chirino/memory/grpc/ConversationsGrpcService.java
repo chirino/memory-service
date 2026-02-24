@@ -47,7 +47,12 @@ public class ConversationsGrpcService extends AbstractGrpcService implements Con
                             ConversationListMode mode = toConversationListMode(request.getMode());
                             List<ConversationSummaryDto> internal =
                                     store().listConversations(
-                                                    currentUserId(), query, token, pageSize, mode);
+                                                    currentUserId(),
+                                                    query,
+                                                    token,
+                                                    pageSize,
+                                                    mode,
+                                                    null);
                             return ListConversationsResponse.newBuilder()
                                     .addAllConversations(
                                             internal.stream()

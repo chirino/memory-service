@@ -1,21 +1,28 @@
 package io.github.chirino.memory.store;
 
 import io.github.chirino.memory.api.ConversationListMode;
+import io.github.chirino.memory.api.dto.AddOrganizationMemberRequest;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
+import io.github.chirino.memory.api.dto.CreateOrganizationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
+import io.github.chirino.memory.api.dto.CreateTeamRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
+import io.github.chirino.memory.api.dto.OrganizationDto;
+import io.github.chirino.memory.api.dto.OrganizationMemberDto;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.api.dto.TeamDto;
+import io.github.chirino.memory.api.dto.TeamMemberDto;
 import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.model.AdminConversationQuery;
@@ -31,7 +38,12 @@ public interface MemoryStore {
     ConversationDto createConversation(String userId, CreateConversationRequest request);
 
     List<ConversationSummaryDto> listConversations(
-            String userId, String query, String afterCursor, int limit, ConversationListMode mode);
+            String userId,
+            String query,
+            String afterCursor,
+            int limit,
+            ConversationListMode mode,
+            String organizationId);
 
     ConversationDto getConversation(String userId, String conversationId);
 
@@ -172,4 +184,45 @@ public interface MemoryStore {
     long countEvictableGroups(OffsetDateTime cutoff);
 
     void hardDeleteConversationGroups(List<String> groupIds);
+
+    // Organization methods
+    OrganizationDto createOrganization(String userId, CreateOrganizationRequest request);
+
+    List<OrganizationDto> listOrganizations(String userId);
+
+    OrganizationDto getOrganization(String userId, String organizationId);
+
+    OrganizationDto updateOrganization(
+            String userId, String organizationId, String name, String slug);
+
+    void deleteOrganization(String userId, String organizationId);
+
+    List<OrganizationMemberDto> listOrgMembers(String userId, String organizationId);
+
+    OrganizationMemberDto addOrgMember(
+            String userId, String organizationId, AddOrganizationMemberRequest request);
+
+    OrganizationMemberDto updateOrgMemberRole(
+            String userId, String organizationId, String memberUserId, String role);
+
+    void removeOrgMember(String userId, String organizationId, String memberUserId);
+
+    // Team methods
+    TeamDto createTeam(String userId, String organizationId, CreateTeamRequest request);
+
+    List<TeamDto> listTeams(String userId, String organizationId);
+
+    TeamDto getTeam(String userId, String organizationId, String teamId);
+
+    TeamDto updateTeam(
+            String userId, String organizationId, String teamId, String name, String slug);
+
+    void deleteTeam(String userId, String organizationId, String teamId);
+
+    List<TeamMemberDto> listTeamMembers(String userId, String organizationId, String teamId);
+
+    TeamMemberDto addTeamMember(
+            String userId, String organizationId, String teamId, String memberUserId);
+
+    void removeTeamMember(String userId, String organizationId, String teamId, String memberUserId);
 }

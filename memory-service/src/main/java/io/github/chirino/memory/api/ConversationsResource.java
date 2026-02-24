@@ -133,11 +133,18 @@ public class ConversationsResource {
             @QueryParam("mode") String mode,
             @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") @Min(1) @Max(200) Integer limit,
-            @QueryParam("query") String query) {
+            @QueryParam("query") String query,
+            @QueryParam("organizationId") String organizationId) {
         int pageSize = limit != null ? limit : 20;
         ConversationListMode listMode = ConversationListMode.fromQuery(mode);
         List<ConversationSummaryDto> internal =
-                store().listConversations(currentUserId(), query, afterCursor, pageSize, listMode);
+                store().listConversations(
+                                currentUserId(),
+                                query,
+                                afterCursor,
+                                pageSize,
+                                listMode,
+                                organizationId);
         List<ConversationSummary> data =
                 internal.stream().map(this::toClientConversationSummary).toList();
         Map<String, Object> response = new HashMap<>();
@@ -152,11 +159,16 @@ public class ConversationsResource {
 
     @POST
     @Path("/conversations")
-    public Response createConversation(@Valid CreateConversationRequest request) {
+    public Response createConversation(
+            @Valid CreateConversationRequest request,
+            @QueryParam("organizationId") String organizationId,
+            @QueryParam("teamId") String teamId) {
         io.github.chirino.memory.api.dto.CreateConversationRequest internal =
                 new io.github.chirino.memory.api.dto.CreateConversationRequest();
         internal.setTitle(request.getTitle());
         internal.setMetadata(request.getMetadata());
+        internal.setOrganizationId(organizationId);
+        internal.setTeamId(teamId);
 
         ConversationDto dto = store().createConversation(currentUserId(), internal);
         Conversation result = toClientConversation(dto);
@@ -434,6 +446,8 @@ public class ConversationsResource {
                     store().shareConversation(currentUserId(), conversationId, internal);
             ConversationMembership result = toClientConversationMembership(dto, conversationId);
             return Response.status(Response.Status.CREATED).entity(result).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
         } catch (ResourceNotFoundException e) {
             return notFound(e);
         } catch (AccessDeniedException e) {

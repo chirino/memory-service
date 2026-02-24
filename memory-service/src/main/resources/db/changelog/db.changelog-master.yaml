@@ -21,3 +21,17 @@ databaseChangeLog:
         - sqlFile:
             path: db/pgvector-schema.sql
             relativeToChangelogFile: false
+  - changeSet:
+      id: 3-attachment-status
+      author: memory-service
+      changes:
+        - sqlFile:
+            path: db/changelog/003-attachment-status.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 4-organizations-teams
+      author: memory-service
+      changes:
+        - sqlFile:
+            path: db/changelog/004-organizations-teams.sql
+            relativeToChangelogFile: false
