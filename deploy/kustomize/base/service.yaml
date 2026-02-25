@@ -11,5 +11,9 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    - port: 8085
+      targetPort: management
+      protocol: TCP
+      name: management
   selector:
     app: memory-service

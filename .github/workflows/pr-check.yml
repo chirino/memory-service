@@ -32,36 +32,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          distribution: temurin
-          java-version: 21
-          cache: maven
+          go-version-file: go.mod
+          cache: true
 
-      - name: Cache npm packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('frontends/chat-frontend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+      - name: Generate Source Code
+        run: |
+          go generate .
 
-      - name: Build and test with Maven
-        run: ./mvnw -B -q clean install
+      - name: Check for uncommitted changes
+        id: check-changes
+        run: |
+          if [ "$(git diff --ignore-space-at-eol | wc -l)" -gt "0" ]; then
+            echo "Detected uncommitted changes after build.  See status below:"
+            git diff
+            echo "========================================================"
+            echo "  run 'go generate .' and commit the changes"
+            echo "========================================================"
+            exit 1
+          fi
 
-      - name: Upload test results
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+      - name: Run Go tests
+        run: |
+          mkdir -p reports
+          export GODOG_REPORT_DIR=./reports
+          # needed to allow -race option
+          export CGO_ENABLED=1 
+          gotestsum --format standard-quiet -- -race ./... 
+
+      - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
-          path: |
-            memory-service/target/cucumber-reports
-            **/target/surefire-reports
+          path: reports/
 
       - name: Build Docker images
         env:
-          # otherwise compose will fail if OPENAI_API_KEY is not set 
-          OPENAI_API_KEY: none 
+          # otherwise compose will fail if OPENAI_API_KEY is not set
+          OPENAI_API_KEY: none
         run: docker compose build
 

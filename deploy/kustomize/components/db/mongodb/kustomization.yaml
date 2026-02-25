@@ -10,20 +10,8 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
-      - MEMORY_SERVICE_DATASTORE_TYPE=mongo
-      - QUARKUS_MONGODB_CONNECTION_STRING=mongodb://mongodb:27017/?directConnection=true
-      - QUARKUS_MONGODB_DATABASE=memory_service
-      - QUARKUS_MONGODB_CREDENTIALS_AUTH_SOURCE=admin
-      # Dummy JDBC URL keeps Hibernate ORM's synthetic datasource bean active
-      # (prevents InactiveBeanException). No actual PostgreSQL connection is made.
-      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://unused:5432/unused
-      - QUARKUS_DATASOURCE_JDBC_INITIAL__SIZE=0
-      - QUARKUS_DATASOURCE_JDBC_MIN__SIZE=0
-      - QUARKUS_DATASOURCE_JDBC_MAX__SIZE=1
-      # Disable PostgreSQL Liquibase — migrations route to MongoDB Liquibase
-      # via the DatastoreConfigSourceFactory.
-      - QUARKUS_LIQUIBASE_MIGRATE_AT_START=false
-      - QUARKUS_LIQUIBASE_VALIDATE_ON_MIGRATE=false
+      - MEMORY_SERVICE_DB_KIND=mongo
+      - MEMORY_SERVICE_DB_MIGRATE_AT_START=true
 
 secretGenerator:
   - name: mongodb-secret
@@ -35,5 +23,4 @@ secretGenerator:
   - name: memory-service-secret
     behavior: merge
     literals:
-      - QUARKUS_MONGODB_CREDENTIALS_USERNAME=mongo
-      - QUARKUS_MONGODB_CREDENTIALS_PASSWORD=mongo
+      - MEMORY_SERVICE_DB_URL=mongodb://mongo:mongo@mongodb:27017/memory_service?authSource=admin

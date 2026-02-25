@@ -27,8 +27,10 @@ configMapGenerator:
     literals:
       - KEYCLOAK_FRONTEND_URL=http://keycloak.127.0.0.1.nip.io
       - OIDC_TOKEN_ISSUER=http://keycloak.127.0.0.1.nip.io/realms/memory-service
-      - QUARKUS_OIDC_AUTH_SERVER_URL=http://keycloak:8080/realms/memory-service
-      - QUARKUS_OIDC_TOKEN_ISSUER=http://keycloak.127.0.0.1.nip.io/realms/memory-service
+      # Tokens are issued with the external nip.io URL as the issuer claim
+      - MEMORY_SERVICE_OIDC_ISSUER=http://keycloak.127.0.0.1.nip.io/realms/memory-service
+      # Discover OIDC config via the internal cluster address (issuer URL is not reachable in-cluster)
+      - MEMORY_SERVICE_OIDC_DISCOVERY_URL=http://keycloak:8080/realms/memory-service
       - MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT=http://minio-api.127.0.0.1.nip.io
 
 patches:

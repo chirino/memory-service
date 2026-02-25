@@ -10,10 +10,8 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
-      - MEMORY_SERVICE_CACHE_TYPE=infinispan
-      - QUARKUS_INFINISPAN_CLIENT_HOSTS=infinispan:11222
-      - 'QUARKUS_INFINISPAN_CLIENT_CACHE__RESPONSE_RECORDINGS__CONFIGURATION=<distributed-cache><encoding media-type="application/x-protostream"/></distributed-cache>'
-      - 'QUARKUS_INFINISPAN_CLIENT_CACHE__MEMORY_ENTRIES__CONFIGURATION=<distributed-cache><encoding media-type="text/plain"/></distributed-cache>'
+      - MEMORY_SERVICE_CACHE_KIND=infinispan
+      - MEMORY_SERVICE_INFINISPAN_HOST=infinispan:11222
 
 secretGenerator:
   - name: infinispan-secret
@@ -23,5 +21,5 @@ secretGenerator:
   - name: memory-service-secret
     behavior: merge
     literals:
-      - QUARKUS_INFINISPAN_CLIENT_USERNAME=admin
-      - QUARKUS_INFINISPAN_CLIENT_PASSWORD=admin
+      - MEMORY_SERVICE_INFINISPAN_USERNAME=admin
+      - MEMORY_SERVICE_INFINISPAN_PASSWORD=admin

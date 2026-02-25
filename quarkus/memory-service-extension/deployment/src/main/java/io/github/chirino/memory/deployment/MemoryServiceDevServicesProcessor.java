@@ -216,9 +216,7 @@ public class MemoryServiceDevServicesProcessor {
                                                 .withEnv(
                                                         "MEMORY_SERVICE_API_KEYS_AGENT",
                                                         effectiveApiKey)
-                                                .withEnv(
-                                                        "MEMORY_SERVICE_VECTOR_STORE_TYPE",
-                                                        "pgvector")
+                                                .withEnv("MEMORY_SERVICE_VECTOR_KIND", "pgvector")
                                                 .withLabel(DEV_SERVICE_LABEL, "memory-service");
 
                                         // Apply additional environment variables from config
@@ -230,118 +228,173 @@ public class MemoryServiceDevServicesProcessor {
                                                     entry.getKey(), entry.getValue());
                                         }
 
-                                        // Pass cache configuration if set (for response resumer)
+                                        // Pass cache configuration if set
                                         if (responseResumerConfig != null
                                                 && !responseResumerConfig.isBlank()) {
-                                            // Set as Quarkus config property via environment
-                                            // variable.
-                                            // Note: Quarkus converts env vars to config properties
-                                            // by replacing
-                                            // underscores with dots. Since the property name is
-                                            // "memory-service.cache.type" (with dots), we
-                                            // need to set
-                                            // it in a way that Quarkus can map it correctly.
-                                            // We use the format where dots become underscores.
-                                            // Quarkus will attempt to match this to config
-                                            // properties.
                                             container.withEnv(
-                                                    "MEMORY_SERVICE_CACHE_TYPE",
+                                                    "MEMORY_SERVICE_CACHE_KIND",
                                                     responseResumerConfig);
                                             LOG.debugf(
                                                     "Configuring memory-service container with"
-                                                            + " cache.type: %s",
+                                                            + " cache kind: %s",
                                                     responseResumerConfig);
                                         }
 
-                                        // Wait for Quarkus to report that it is listening instead
-                                        // of relying on
-                                        // Testcontainers' default port check, which expects `nc`
-                                        // inside the image
-                                        // and leads to noisy warnings when it's not present.
+                                        // Wait for the Go service's /ready endpoint to return 200
+                                        // (all initialization complete: migrations, connections,
+                                        // listeners). Avoids log-scraping and works with nc-less
+                                        // images.
                                         container.waitingFor(
-                                                Wait.forLogMessage(".*Listening on.*", 1)
+                                                Wait.forHttp("/ready")
+                                                        .forPort(MEMORY_SERVICE_PORT)
+                                                        .forStatusCode(200)
                                                         .withStartupTimeout(Duration.ofMinutes(2)));
 
-                                        // If we have a postgres dev service, tell the
-                                        // memory-service container about it.
-                                        if (datasourceResult.isPresent()) {
-                                            String jdbcUrl =
+                                        // Connect the memory-service container to the postgres dev
+                                        // service.
+                                        // DevServicesDatasourceResultBuildItem is only produced on
+                                        // first start; on hot-reload of the extension with an
+                                        // already-running PG container Quarkus reuses the container
+                                        // without re-producing the build item. Fall back to
+                                        // ConfigProvider in that case.
+                                        String jdbcUrl = null;
+                                        String dbUsername = null;
+                                        String dbPassword = null;
+
+                                        if (datasourceResult.isPresent()
+                                                && datasourceResult.get().getDefaultDatasource()
+                                                        != null) {
+                                            Map<String, String> dsProps =
                                                     datasourceResult
                                                             .get()
                                                             .getDefaultDatasource()
-                                                            .getConfigProperties()
-                                                            .get("quarkus.datasource.jdbc.url");
-                                            if (jdbcUrl != null) {
-                                                String containerJdbcUrl =
-                                                        jdbcUrl.replace(
-                                                                "localhost",
-                                                                "host.docker.internal");
-                                                LOG.infof(
-                                                        "Configuring memory-service container with"
-                                                                + " JDBC URL: %s",
-                                                        containerJdbcUrl);
-                                                container.withEnv(
-                                                        "QUARKUS_DATASOURCE_JDBC_URL",
-                                                        containerJdbcUrl);
-                                                container.withEnv(
-                                                        "QUARKUS_DATASOURCE_USERNAME",
-                                                        datasourceResult
-                                                                .get()
-                                                                .getDefaultDatasource()
-                                                                .getConfigProperties()
-                                                                .get(
-                                                                        "quarkus.datasource.username"));
-                                                container.withEnv(
-                                                        "QUARKUS_DATASOURCE_PASSWORD",
-                                                        datasourceResult
-                                                                .get()
-                                                                .getDefaultDatasource()
-                                                                .getConfigProperties()
-                                                                .get(
-                                                                        "quarkus.datasource.password"));
-                                                container.withEnv(
-                                                        "QUARKUS_DATASOURCE_DB_KIND", "postgresql");
-                                                // Ensure migrations run on startup in the container
-                                                container.withEnv(
-                                                        "QUARKUS_LIQUIBASE_MIGRATE_AT_START",
-                                                        "true");
+                                                            .getConfigProperties();
+                                            jdbcUrl = dsProps.get("quarkus.datasource.jdbc.url");
+                                            dbUsername = dsProps.get("quarkus.datasource.username");
+                                            dbPassword = dsProps.get("quarkus.datasource.password");
+                                        }
+
+                                        // Fallback: read from live config (hot-reload case)
+                                        if (jdbcUrl == null) {
+                                            try {
+                                                var cfg = ConfigProvider.getConfig();
+                                                jdbcUrl =
+                                                        cfg.getOptionalValue(
+                                                                        "quarkus.datasource.jdbc.url",
+                                                                        String.class)
+                                                                .orElse(null);
+                                                dbUsername =
+                                                        cfg.getOptionalValue(
+                                                                        "quarkus.datasource.username",
+                                                                        String.class)
+                                                                .orElse(null);
+                                                dbPassword =
+                                                        cfg.getOptionalValue(
+                                                                        "quarkus.datasource.password",
+                                                                        String.class)
+                                                                .orElse(null);
+                                            } catch (IllegalStateException e) {
+                                                LOG.debug(
+                                                        "Unable to read datasource config from"
+                                                                + " ConfigProvider.",
+                                                        e);
                                             }
                                         }
 
-                                        // If we have a keycloak dev service, tell the
-                                        // memory-service container about it.
+                                        if (jdbcUrl != null) {
+                                            // Strip "jdbc:" prefix and any query params.
+                                            // Quarkus/Vert.x may append driver-specific params
+                                            // (e.g. "loggerLevel=OFF") that PostgreSQL rejects
+                                            // as unrecognised startup parameters.
+                                            String standardUrl = jdbcUrl.replaceFirst("^jdbc:", "");
+                                            String baseUrl =
+                                                    standardUrl.contains("?")
+                                                            ? standardUrl.substring(
+                                                                    0, standardUrl.indexOf("?"))
+                                                            : standardUrl;
+
+                                            // Embed credentials into the URL
+                                            String dbUrl;
+                                            if (dbUsername != null && !dbUsername.isBlank()) {
+                                                String credentials =
+                                                        dbPassword != null && !dbPassword.isBlank()
+                                                                ? dbUsername + ":" + dbPassword
+                                                                : dbUsername;
+                                                dbUrl =
+                                                        baseUrl.replaceFirst(
+                                                                "//", "//" + credentials + "@");
+                                            } else {
+                                                dbUrl = baseUrl;
+                                            }
+
+                                            // Dev service PG has no TLS; disable SSL so the
+                                            // Go pgx driver doesn't attempt a TLS handshake.
+                                            String containerDbUrl =
+                                                    dbUrl.replace(
+                                                                    "localhost",
+                                                                    "host.docker.internal")
+                                                            + "?sslmode=disable";
+                                            LOG.infof(
+                                                    "Configuring memory-service container with"
+                                                            + " DB URL: %s",
+                                                    containerDbUrl);
+                                            container.withEnv(
+                                                    "MEMORY_SERVICE_DB_URL", containerDbUrl);
+                                            container.withEnv("MEMORY_SERVICE_DB_KIND", "postgres");
+                                            container.withEnv(
+                                                    "MEMORY_SERVICE_DB_MIGRATE_AT_START", "true");
+                                        }
+
+                                        // Connect the memory-service container to the Keycloak dev
+                                        // service. MEMORY_SERVICE_OIDC_ISSUER must match the "iss"
+                                        // claim in JWTs (the external localhost URL); the container
+                                        // reaches Keycloak via host.docker.internal. Use
+                                        // MEMORY_SERVICE_OIDC_DISCOVERY_URL for the internal
+                                        // endpoint.
+                                        String authServerUrl = null;
                                         if (keycloakResult.isPresent()) {
-                                            String authServerUrl =
+                                            authServerUrl =
                                                     keycloakResult
                                                             .get()
                                                             .getConfig()
                                                             .get("quarkus.oidc.auth-server-url");
-                                            if (authServerUrl != null) {
-                                                String containerAuthServerUrl =
-                                                        authServerUrl.replace(
-                                                                "localhost",
-                                                                "host.docker.internal");
-                                                LOG.infof(
-                                                        "Configuring memory-service container with"
-                                                                + " OIDC Auth Server URL: %s",
-                                                        containerAuthServerUrl);
-                                                container.withEnv(
-                                                        "QUARKUS_OIDC_AUTH_SERVER_URL",
-                                                        containerAuthServerUrl);
-                                                // The token issuer in the JWT will be 'localhost'
-                                                // (from the browser/agent perspective).
-                                                // We must tell the containerized service to accept
-                                                // this issuer.
-                                                container.withEnv(
-                                                        "QUARKUS_OIDC_TOKEN_ISSUER", authServerUrl);
+                                        }
+                                        // Fallback: read from live config (hot-reload case)
+                                        if (authServerUrl == null) {
+                                            try {
+                                                authServerUrl =
+                                                        ConfigProvider.getConfig()
+                                                                .getOptionalValue(
+                                                                        "quarkus.oidc.auth-server-url",
+                                                                        String.class)
+                                                                .orElse(null);
+                                            } catch (IllegalStateException e) {
+                                                LOG.debug(
+                                                        "Unable to read OIDC config from"
+                                                                + " ConfigProvider.",
+                                                        e);
                                             }
+                                        }
+                                        if (authServerUrl != null) {
+                                            String containerAuthServerUrl =
+                                                    authServerUrl.replace(
+                                                            "localhost", "host.docker.internal");
+                                            LOG.infof(
+                                                    "Configuring memory-service container with"
+                                                            + " OIDC issuer=%s"
+                                                            + " discoveryUrl=%s",
+                                                    authServerUrl, containerAuthServerUrl);
+                                            // Issuer = external URL (matches JWT "iss" claim)
+                                            container.withEnv(
+                                                    "MEMORY_SERVICE_OIDC_ISSUER", authServerUrl);
+                                            // Discovery URL = internal URL reachable from container
+                                            container.withEnv(
+                                                    "MEMORY_SERVICE_OIDC_DISCOVERY_URL",
+                                                    containerAuthServerUrl);
                                         }
 
                                         // Configure Redis hosts for the memory-service container
-                                        // only if cache.type is set to "redis".
-                                        // First check if Redis hosts are already configured in the
-                                        // app config.
-                                        // If not, look for the Redis dev service container.
+                                        // only if cache.kind is set to "redis".
                                         if ("redis".equalsIgnoreCase(responseResumerConfig)) {
                                             String redisHosts = null;
                                             try {
@@ -367,10 +420,11 @@ public class MemoryServiceDevServicesProcessor {
                                                                 "host.docker.internal");
                                                 LOG.infof(
                                                         "Configuring memory-service container with"
-                                                                + " QUARKUS_REDIS_HOSTS=%s",
+                                                                + " MEMORY_SERVICE_REDIS_HOSTS=%s",
                                                         containerRedisHosts);
                                                 container.withEnv(
-                                                        "QUARKUS_REDIS_HOSTS", containerRedisHosts);
+                                                        "MEMORY_SERVICE_REDIS_HOSTS",
+                                                        containerRedisHosts);
                                             } else {
                                                 LOG.warn(
                                                         "Redis config not available. Container will"
@@ -380,7 +434,7 @@ public class MemoryServiceDevServicesProcessor {
                                         }
 
                                         // Configure Infinispan server list for the
-                                        // memory-service container only if cache.type is
+                                        // memory-service container only if cache.kind is
                                         // set to "infinispan".
                                         if ("infinispan".equalsIgnoreCase(responseResumerConfig)) {
                                             String serverList = null;
@@ -406,10 +460,10 @@ public class MemoryServiceDevServicesProcessor {
                                                                 "host.docker.internal");
                                                 LOG.infof(
                                                         "Configuring memory-service container with"
-                                                            + " QUARKUS_INFINISPAN_CLIENT_SERVER_LIST=%s",
+                                                            + " MEMORY_SERVICE_INFINISPAN_HOST=%s",
                                                         containerServerList);
                                                 container.withEnv(
-                                                        "QUARKUS_INFINISPAN_CLIENT_SERVER_LIST",
+                                                        "MEMORY_SERVICE_INFINISPAN_HOST",
                                                         containerServerList);
                                             } else {
                                                 LOG.warn(
@@ -450,8 +504,8 @@ public class MemoryServiceDevServicesProcessor {
     private String getResponseResumerConfig() {
         try {
             return ConfigProvider.getConfig()
-                    .getOptionalValue("memory-service.cache.type", String.class)
-                    .filter(type -> !"none".equals(type))
+                    .getOptionalValue("memory-service.cache.kind", String.class)
+                    .filter(kind -> !"none".equals(kind))
                     .orElse(null);
         } catch (IllegalStateException e) {
             LOG.debug("Unable to read cache configuration from config, using default.", e);
@@ -474,8 +528,8 @@ public class MemoryServiceDevServicesProcessor {
      * Reads additional environment variables from config properties with the prefix
      * "memory-service.devservices.env.". For example:
      * <pre>
-     * memory-service.devservices.env."QUARKUS_HTTP_CORS"=true
-     * memory-service.devservices.env."QUARKUS_HTTP_CORS_ORIGINS"=http://localhost:3000
+     * memory-service.devservices.env."MEMORY_SERVICE_CORS_ENABLED"=true
+     * memory-service.devservices.env."MEMORY_SERVICE_CORS_ORIGINS"=http://localhost:3000
      * </pre>
      *
      * @return a map of environment variable names to values

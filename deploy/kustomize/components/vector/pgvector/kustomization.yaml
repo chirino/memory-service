@@ -9,7 +9,7 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
-      - MEMORY_SERVICE_VECTOR_STORE_TYPE=pgvector
+      - MEMORY_SERVICE_VECTOR_KIND=pgvector
 
 patches:
   - path: patch-postgresql-image.yaml

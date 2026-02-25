@@ -1,0 +1,20 @@
+#
+# Runs the memory-service in dev mode, where it hot reloads on source code changes.
+#
+FROM golang:1.24-alpine AS builder
+RUN apk add --no-cache curl
+RUN go install github.com/go-delve/delve/cmd/dlv@v1.25.1
+RUN go install github.com/cosmtrek/air@v1.51.0
+
+RUN apk add --no-cache \
+    build-base \
+    ca-certificates
+
+# setup build caching
+WORKDIR /src
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+EXPOSE 8080
+ENTRYPOINT ["air", "-c", "air.toml"]

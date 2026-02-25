@@ -1520,7 +1520,6 @@ components:
             - `failed` - Download from sourceUrl failed
         sourceUrl:
           type: string
-          nullable: true
           description: Original source URL (only present for URL-created attachments).
       example:
         id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
@@ -1898,6 +1897,11 @@ components:
         score:
           type: number
           format: float
+          description: Relevance score. Higher is more relevant.
+        kind:
+          type: string
+          description: Identifies which search backend produced the score (e.g. `postgres`, `mongo`, `qdrant`, `pgvector`).
+          enum: [postgres, mongo, qdrant, pgvector]
         highlights:
           type: string
           nullable: true
@@ -1909,6 +1913,7 @@ components:
         conversationId: "550e8400-e29b-41d4-a716-446655440000"
         conversationTitle: "Memory Service Design Discussion"
         score: 0.93
+        kind: "qdrant"
         highlights: "design a memory service for my agent"
         entry:
           id: "6ba7b810-9dad-11d1-80b4-00c04fd430c9"

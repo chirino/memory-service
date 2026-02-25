@@ -14,10 +14,9 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
-      - MEMORY_SERVICE_VECTOR_STORE_TYPE=qdrant
+      - MEMORY_SERVICE_VECTOR_KIND=qdrant
       - MEMORY_SERVICE_VECTOR_QDRANT_HOST=qdrant
       - MEMORY_SERVICE_VECTOR_QDRANT_PORT=6334
-      - QUARKUS_GRPC_SERVER_GRPC_HEALTH_ENABLED=false
 
 secretGenerator:
   - name: memory-service-secret

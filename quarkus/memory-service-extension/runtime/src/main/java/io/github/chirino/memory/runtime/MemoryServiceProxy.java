@@ -319,10 +319,7 @@ public class MemoryServiceProxy {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
 
-            String bearer = bearerToken(securityIdentity);
-            if (bearer != null) {
-                conn.setRequestProperty("Authorization", "Bearer " + bearer);
-            }
+            applyAuthHeaders(conn);
 
             try (OutputStream out = conn.getOutputStream()) {
                 out.write(jsonBody.getBytes(StandardCharsets.UTF_8));
@@ -398,10 +395,7 @@ public class MemoryServiceProxy {
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
             conn.setChunkedStreamingMode(8192);
 
-            String bearer = bearerToken(securityIdentity);
-            if (bearer != null) {
-                conn.setRequestProperty("Authorization", "Bearer " + bearer);
-            }
+            applyAuthHeaders(conn);
 
             try (OutputStream out = conn.getOutputStream()) {
                 String partHeader =
@@ -459,10 +453,7 @@ public class MemoryServiceProxy {
             String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + id;
             jakarta.ws.rs.client.Invocation.Builder req = client.target(url).request();
 
-            String bearer = bearerToken(securityIdentity);
-            if (bearer != null) {
-                req = req.header("Authorization", "Bearer " + bearer);
-            }
+            req = applyAuthHeaders(req);
 
             Response upstream = req.get();
 
@@ -511,10 +502,7 @@ public class MemoryServiceProxy {
                             + "/download-url";
             jakarta.ws.rs.client.Invocation.Builder req = client.target(url).request();
 
-            String bearer = bearerToken(securityIdentity);
-            if (bearer != null) {
-                req = req.header("Authorization", "Bearer " + bearer);
-            }
+            req = applyAuthHeaders(req);
 
             Response upstream = req.get();
 
@@ -536,10 +524,7 @@ public class MemoryServiceProxy {
             String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + id;
             jakarta.ws.rs.client.Invocation.Builder req = client.target(url).request();
 
-            String bearer = bearerToken(securityIdentity);
-            if (bearer != null) {
-                req = req.header("Authorization", "Bearer " + bearer);
-            }
+            req = applyAuthHeaders(req);
 
             Response upstream = req.delete();
 
@@ -598,6 +583,32 @@ public class MemoryServiceProxy {
         } finally {
             client.close();
         }
+    }
+
+    // ---- Auth header helpers ----
+
+    private void applyAuthHeaders(HttpURLConnection conn) {
+        String bearer = bearerToken(securityIdentity);
+        if (bearer != null) {
+            conn.setRequestProperty("Authorization", "Bearer " + bearer);
+        }
+        String apiKey = memoryServiceApiBuilder.getApiKey();
+        if (apiKey != null) {
+            conn.setRequestProperty("X-API-Key", apiKey);
+        }
+    }
+
+    private jakarta.ws.rs.client.Invocation.Builder applyAuthHeaders(
+            jakarta.ws.rs.client.Invocation.Builder req) {
+        String bearer = bearerToken(securityIdentity);
+        if (bearer != null) {
+            req = req.header("Authorization", "Bearer " + bearer);
+        }
+        String apiKey = memoryServiceApiBuilder.getApiKey();
+        if (apiKey != null) {
+            req = req.header("X-API-Key", apiKey);
+        }
+        return req;
     }
 
     // ---- Private helpers ----

@@ -9,5 +9,5 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
-      - MEMORY_SERVICE_CACHE_TYPE=redis
+      - MEMORY_SERVICE_CACHE_KIND=redis
       - MEMORY_SERVICE_REDIS_HOSTS=redis://redis:6379

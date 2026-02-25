@@ -21,6 +21,9 @@ Dev Services auto-starts dependencies (Postgres, Keycloak, Redis) when Docker is
 
 ## Debugging Build Failures
 ```bash
-./mvnw compile 2>&1 | tail -50
-./mvnw test 2>&1 | tail -50
+./mvnw compile > compile.log 2>&1
+rg -n "ERROR|FAIL|Exception|\\[ERROR\\]" compile.log
+
+./mvnw test > test.log 2>&1
+rg -n "ERROR|FAIL|Exception|\\[ERROR\\]" test.log
 ```

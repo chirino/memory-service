@@ -6,6 +6,9 @@
 * ponder how to implement hierarchical / cross conversation memory adn how to apply access control policies against them.
 * support getting getting the clientID from the bearer token.
 * Add tsx/js support vercel AI api.
+* Go BDD: add `I execute MongoDB query:` style steps with MongoDB-specific assertions equivalent to the SQL verification steps (currently skipped on MongoDB backend, matching Java parity).
+* Go: Avoid using file buffer for the encryption store.
+* can we use generated server stubs?
 
 # Performance Related
 
@@ -21,7 +24,7 @@
 
 * Can the @RecordConversation bits be moved into Quarkus Langchain4j? https://github.com/quarkiverse/quarkus-langchain4j/issues/2068#issuecomment-3816044002
    * We have added addional features to the interceptor that might not fit into a generic interceptor: thinks like forking support.
-* Do we need MORE multi-tenancy support?  What would it look like? Groups / Orgs? (see [060-multi-tenancy-groups-orgs.md](docs/enhancements/060-multi-tenancy-groups-orgs.md)). 
+* Do we need MORE multi-tenancy support?  What would it look like? Groups / Orgs? (see [060-multi-tenancy-groups-orgs.md](docs/enhancements/060-multi-tenancy-groups-orgs.md)).
 
 # Future Directions
 

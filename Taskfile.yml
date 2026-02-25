@@ -8,6 +8,7 @@ vars:
   KIND_CLUSTER_NAME: memory-service
   ENVOY_GATEWAY_VERSION: v1.7.0
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
+  
 
 tasks:
 
@@ -28,12 +29,49 @@ tasks:
     cmds:
       - docker build -t ghcr.io/chirino/memory-service-chat-quarkus:latest -f quarkus/examples/chat-quarkus/Dockerfile .
 
+  test:
+    cmds: 
+    - |
+      set -e
+      GOTESTSUM_FMT=standard-quiet
+      # GOTESTSUM_FMT=standard-verbose
+      CGO_ENABLED=1 gotestsum --format ${GOTESTSUM_FMT} -- -race ./...
+      mvn -T 1C clean test 
+
   dev:memory-service:
-    desc: Run the memory-service app in dev mode. Use quick=true to skip dependency compilation.
+    desc: Run the memory-service app in dev mode.
+    env:
+      MEMORY_SERVICE_PORT: 8082
+      # ── Datastore ──────────────────────────────────────────────
+      MEMORY_SERVICE_DB_URL: postgres://postgres:postgres@localhost:5432/memory_service?sslmode=disable
+      MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
+      # ── Cache ──────────────────────────────────────────────────
+      MEMORY_SERVICE_CACHE_KIND: redis
+      MEMORY_SERVICE_REDIS_HOSTS: redis://localhost:6379
+      # ── Authentication & authorization ─────────────────────────
+      MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
+      MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
+      MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
+      MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1
+      # ── CORS ───────────────────────────────────────────────────
+      MEMORY_SERVICE_CORS_ENABLED: "true"
+      MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
+      # ── Observability ──────────────────────────────────────────
+      MEMORY_SERVICE_PROMETHEUS_URL: http://localhost:9092
+      # ── Attachments ────────────────────────────────────────────
+      MEMORY_SERVICE_ATTACHMENTS_KIND: db
+      # ── Vector search ──────────────────────────────────────────
+      MEMORY_SERVICE_VECTOR_KIND: qdrant
+      MEMORY_SERVICE_VECTOR_QDRANT_HOST: localhost
+      MEMORY_SERVICE_VECTOR_QDRANT_PORT: "6334"
+      MEMORY_SERVICE_VECTOR_QDRANT_API_KEY: change-me
+      # ── Embeddings ─────────────────────────────────────────────
+      MEMORY_SERVICE_EMBEDDING_KIND: '{{.MEMORY_SERVICE_EMBEDDING_KIND | default "openai"}}'
+      MEMORY_SERVICE_OPENAI_API_KEY: '{{.OPENAI_API_KEY | default "none"}}'
     cmds:
-      - cmd: ./mvnw -T 1C install -pl ':memory-service' -am -DskipTests
-        if: '{{eq .quick ""}}'
-      - ./mvnw -T 1C -pl :memory-service quarkus:dev > memory-service.log
+      - air -c air.toml
 
   dev:chat-quarkus:
     desc: Run the chat-quarkus app in dev mode. Use quick=true to skip npm install and dependency compilation.

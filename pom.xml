@@ -191,7 +191,7 @@
       </activation>
       <modules>
         <module>frontends/chat-frontend</module>
-        <module>memory-service</module>
+        <!-- <module>memory-service</module> -->
         <module>memory-service-contracts</module>
         <module>quarkus</module>
         <module>python</module>

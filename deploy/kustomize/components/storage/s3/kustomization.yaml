@@ -10,7 +10,7 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
-      - MEMORY_SERVICE_ATTACHMENTS_STORE=s3
+      - MEMORY_SERVICE_ATTACHMENTS_KIND=s3
       - MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET=memory-service-attachments
       - MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=true
 

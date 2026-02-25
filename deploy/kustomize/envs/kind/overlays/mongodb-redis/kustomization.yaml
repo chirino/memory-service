@@ -13,8 +13,8 @@ patches:
       name: memory-service-config
     patch: |
       - op: add
-        path: /data/MEMORY_SERVICE_ATTACHMENTS_STORE
+        path: /data/MEMORY_SERVICE_ATTACHMENTS_KIND
         value: db
       - op: add
-        path: /data/MEMORY_SERVICE_EMBEDDING_TYPE
+        path: /data/MEMORY_SERVICE_EMBEDDING_KIND
         value: openai

@@ -6,6 +6,7 @@ import "google/protobuf/struct.proto";
 
 option java_multiple_files = true;
 option java_package = "io.github.chirino.memory.grpc.v1";
+option go_package = "github.com/chirino/memory-service/internal/generated/pb";
 
 // UUID fields are represented as 16-byte big-endian binary values.
 // Use the most significant 64 bits first, then least significant 64 bits.

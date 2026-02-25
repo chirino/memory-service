@@ -38,3 +38,5 @@ gh completion -s bash | sudo tee "$COMP_DIR/gh" > /dev/null 2>/dev/null || true
 kustomize completion bash | sudo tee "$COMP_DIR/kustomize" > /dev/null 2>/dev/null || true
 docker completion bash | sudo tee "$COMP_DIR/docker" > /dev/null 2>/dev/null || true
 npm completion | sudo tee "$COMP_DIR/npm" > /dev/null 2>/dev/null || true
+
+go install gotest.tools/gotestsum@latest
