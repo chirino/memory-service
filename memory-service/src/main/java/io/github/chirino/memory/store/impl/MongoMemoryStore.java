@@ -33,6 +33,7 @@ import io.github.chirino.memory.cache.CachedMemoryEntries;
 import io.github.chirino.memory.cache.MemoryEntriesCache;
 import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
+import io.github.chirino.memory.config.AuthorizationServiceSelector;
 import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.AdminConversationQuery;
@@ -141,6 +142,8 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
 
+    @Inject AuthorizationServiceSelector authorizationServiceSelector;
+
     private MemoryEntriesCache memoryEntriesCache;
 
     /**
@@ -184,6 +187,8 @@ public class MongoMemoryStore implements MemoryStore {
         group.id = c.id;
         group.createdAt = Instant.now();
 
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+
         // Handle org/team scoping
         if (request.getOrganizationId() != null) {
             MongoOrganization org =
@@ -198,6 +203,7 @@ public class MongoMemoryStore implements MemoryStore {
                         "User must be an organization member to create org-scoped conversations");
             }
             group.organizationId = org.id;
+            authzService.writeOrgConversationGroup(group.id, org.id);
 
             if (request.getTeamId() != null) {
                 MongoTeam team =
@@ -220,6 +226,7 @@ public class MongoMemoryStore implements MemoryStore {
                             "User must be a team member to create team-scoped conversations");
                 }
                 group.teamId = team.id;
+                authzService.writeTeamConversationGroup(group.id, team.id);
             }
         }
 
@@ -234,6 +241,7 @@ public class MongoMemoryStore implements MemoryStore {
         conversationRepository.persist(c);
 
         membershipRepository.createMembership(c.conversationGroupId, userId, AccessLevel.OWNER);
+        authzService.writeRelationship(c.conversationGroupId, userId, AccessLevel.OWNER);
 
         return toConversationDto(c, AccessLevel.OWNER, null);
     }
@@ -427,6 +435,9 @@ public class MongoMemoryStore implements MemoryStore {
         MongoConversationMembership m =
                 membershipRepository.createMembership(
                         groupId, request.getUserId(), request.getAccessLevel());
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeRelationship(groupId, request.getUserId(), request.getAccessLevel());
 
         // Audit log the addition
         membershipAuditLogger.logAdd(
@@ -454,6 +465,10 @@ public class MongoMemoryStore implements MemoryStore {
             m.accessLevel = request.getAccessLevel();
             membershipRepository.update(m);
 
+            var authzService = authorizationServiceSelector.getAuthorizationService();
+            authzService.deleteRelationship(groupId, memberUserId, oldLevel);
+            authzService.writeRelationship(groupId, memberUserId, request.getAccessLevel());
+
             // Audit log the update
             membershipAuditLogger.logUpdate(
                     userId, conversationId, memberUserId, oldLevel, request.getAccessLevel());
@@ -476,6 +491,9 @@ public class MongoMemoryStore implements MemoryStore {
 
             // Hard delete the membership
             membershipRepository.deleteById(membership.get().id);
+            authorizationServiceSelector
+                    .getAuthorizationService()
+                    .deleteRelationship(groupId, memberUserId, level);
 
             // Audit log the removal
             membershipAuditLogger.logRemove(userId, conversationId, memberUserId, level);
@@ -689,6 +707,12 @@ public class MongoMemoryStore implements MemoryStore {
             oldOwnerMembership.accessLevel = AccessLevel.MANAGER;
             membershipRepository.update(oldOwnerMembership);
         }
+
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        authzService.deleteRelationship(groupId, transfer.toUserId, AccessLevel.MANAGER);
+        authzService.writeRelationship(groupId, transfer.toUserId, AccessLevel.OWNER);
+        authzService.deleteRelationship(groupId, transfer.fromUserId, AccessLevel.OWNER);
+        authzService.writeRelationship(groupId, transfer.fromUserId, AccessLevel.MANAGER);
 
         // Update conversation owner_user_id for all conversations in the group
         List<MongoConversation> conversations =
@@ -1787,7 +1811,9 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     private void ensureHasAccess(String conversationId, String userId, AccessLevel level) {
-        if (!membershipRepository.hasAtLeastAccess(conversationId, userId, level)) {
+        if (!authorizationServiceSelector
+                .getAuthorizationService()
+                .hasAtLeastAccess(conversationId, userId, level)) {
             throw new AccessDeniedException(
                     "User "
                             + userId
@@ -1808,6 +1834,16 @@ public class MongoMemoryStore implements MemoryStore {
                 membershipRepository.findMembership(groupId, userId);
         if (direct.isPresent()) {
             return direct.get().accessLevel;
+        }
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        if (authzService.hasAtLeastAccess(groupId, userId, AccessLevel.MANAGER)) {
+            return AccessLevel.MANAGER;
+        }
+        if (authzService.hasAtLeastAccess(groupId, userId, AccessLevel.WRITER)) {
+            return AccessLevel.WRITER;
+        }
+        if (authzService.hasAtLeastAccess(groupId, userId, AccessLevel.READER)) {
+            return AccessLevel.READER;
         }
         throw new AccessDeniedException("No access to conversation");
     }
@@ -2026,9 +2062,11 @@ public class MongoMemoryStore implements MemoryStore {
         // Log and hard delete memberships BEFORE soft-deleting the group
         List<MongoConversationMembership> memberships =
                 membershipRepository.listForConversationGroup(conversationGroupId);
+        var authzService = authorizationServiceSelector.getAuthorizationService();
         for (MongoConversationMembership m : memberships) {
             membershipAuditLogger.logRemove(
                     actorUserId, conversationGroupId, m.userId, m.accessLevel);
+            authzService.deleteRelationship(conversationGroupId, m.userId, m.accessLevel);
             membershipRepository.deleteById(m.id);
         }
 
@@ -2076,6 +2114,10 @@ public class MongoMemoryStore implements MemoryStore {
         member.role = "owner";
         member.createdAt = now;
         organizationMemberRepository.persist(member);
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeOrgMembership(org.id, userId, "owner");
 
         return toOrganizationDto(org, "owner");
     }
@@ -2151,6 +2193,17 @@ public class MongoMemoryStore implements MemoryStore {
                                                 "organization", organizationId));
         ensureMongoOrgRole(organizationId, userId, "owner");
 
+        // Clean up SpiceDB relationships before soft-delete
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        for (var m : organizationMemberRepository.listForOrg(organizationId)) {
+            authzService.deleteOrgMembership(organizationId, m.userId, m.role);
+        }
+        for (var t : mongoTeamRepository.listForOrg(organizationId)) {
+            for (var tm : mongoTeamMemberRepository.listForTeam(t.id)) {
+                authzService.deleteTeamMembership(t.id, tm.userId);
+            }
+        }
+
         org.deletedAt = Instant.now();
         organizationRepository.update(org);
     }
@@ -2186,6 +2239,10 @@ public class MongoMemoryStore implements MemoryStore {
         member.createdAt = Instant.now();
         organizationMemberRepository.persist(member);
 
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeOrgMembership(organizationId, request.getUserId(), role);
+
         return toMongoOrgMemberDto(member);
     }
 
@@ -2206,6 +2263,10 @@ public class MongoMemoryStore implements MemoryStore {
         member.role = role;
         organizationMemberRepository.update(member);
 
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        authzService.deleteOrgMembership(organizationId, memberUserId, oldRole);
+        authzService.writeOrgMembership(organizationId, memberUserId, role);
+
         return toMongoOrgMemberDto(member);
     }
 
@@ -2221,6 +2282,10 @@ public class MongoMemoryStore implements MemoryStore {
                 organizationMemberRepository
                         .findMembership(organizationId, memberUserId)
                         .orElseThrow(() -> new ResourceNotFoundException("member", memberUserId));
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .deleteOrgMembership(organizationId, memberUserId, member.role);
 
         organizationMemberRepository.delete(member);
     }
@@ -2244,6 +2309,10 @@ public class MongoMemoryStore implements MemoryStore {
         team.createdAt = now;
         team.updatedAt = now;
         mongoTeamRepository.persist(team);
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeTeamOrg(team.id, organizationId);
 
         return toMongoTeamDto(team);
     }
@@ -2320,6 +2389,12 @@ public class MongoMemoryStore implements MemoryStore {
             throw new ResourceNotFoundException("team", teamId);
         }
 
+        // Clean up SpiceDB relationships before soft-delete
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        for (var tm : mongoTeamMemberRepository.listForTeam(teamId)) {
+            authzService.deleteTeamMembership(teamId, tm.userId);
+        }
+
         team.deletedAt = Instant.now();
         mongoTeamRepository.update(team);
     }
@@ -2371,6 +2446,10 @@ public class MongoMemoryStore implements MemoryStore {
         member.createdAt = Instant.now();
         mongoTeamMemberRepository.persist(member);
 
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeTeamMembership(teamId, memberUserId);
+
         return toMongoTeamMemberDto(member);
     }
 
@@ -2394,6 +2473,10 @@ public class MongoMemoryStore implements MemoryStore {
                         .findMembership(teamId, memberUserId)
                         .orElseThrow(
                                 () -> new ResourceNotFoundException("team_member", memberUserId));
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .deleteTeamMembership(teamId, memberUserId);
 
         mongoTeamMemberRepository.delete(member);
     }

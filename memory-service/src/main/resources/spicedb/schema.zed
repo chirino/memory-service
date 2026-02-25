@@ -1,0 +1,34 @@
+definition user {}
+
+definition organization {
+    relation owner: user
+    relation admin: user
+    relation member: user
+
+    permission delete = owner
+    permission manage_members = owner + admin
+    permission view_all_conversations = owner + admin
+    permission create_conversation = owner + admin + member
+    permission is_member = owner + admin + member
+}
+
+definition team {
+    relation org: organization
+    relation member: user
+
+    permission is_member = member
+}
+
+definition conversation_group {
+    relation org: organization
+    relation team: team
+    relation owner: user
+    relation manager: user
+    relation writer: user
+    relation reader: user
+
+    permission can_own = owner
+    permission can_manage = owner + manager + org->view_all_conversations
+    permission can_write = can_manage + writer + team->is_member
+    permission can_read = can_write + reader
+}

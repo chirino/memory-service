@@ -45,6 +45,18 @@ services:
       timeout: 3s
       retries: 10
 
+  spicedb:
+    image: authzed/spicedb:latest
+    command: ["serve", "--grpc-preshared-key", "memory-service-dev-key", "--datastore-engine", "memory"]
+    ports:
+      - "50051:50051"
+      - "8443:8443"
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
     command: ["start-dev", "--import-realm"]

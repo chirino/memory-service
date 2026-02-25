@@ -30,6 +30,7 @@ import io.github.chirino.memory.cache.CachedMemoryEntries;
 import io.github.chirino.memory.cache.MemoryEntriesCache;
 import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
+import io.github.chirino.memory.config.AuthorizationServiceSelector;
 import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.AdminConversationQuery;
@@ -135,6 +136,8 @@ public class PostgresMemoryStore implements MemoryStore {
 
     @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
 
+    @Inject AuthorizationServiceSelector authorizationServiceSelector;
+
     private MemoryEntriesCache memoryEntriesCache;
 
     /**
@@ -156,6 +159,8 @@ public class PostgresMemoryStore implements MemoryStore {
         ConversationGroupEntity conversationGroup = new ConversationGroupEntity();
         conversationGroup.setId(conversationId);
 
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+
         // Handle org/team scoping
         if (request.getOrganizationId() != null) {
             UUID orgId = UUID.fromString(request.getOrganizationId());
@@ -171,6 +176,7 @@ public class PostgresMemoryStore implements MemoryStore {
                         "User must be an organization member to create org-scoped conversations");
             }
             conversationGroup.setOrganization(org);
+            authzService.writeOrgConversationGroup(conversationId.toString(), orgId.toString());
 
             if (request.getTeamId() != null) {
                 UUID teamId = UUID.fromString(request.getTeamId());
@@ -194,6 +200,8 @@ public class PostgresMemoryStore implements MemoryStore {
                             "User must be a team member to create team-scoped conversations");
                 }
                 conversationGroup.setTeam(team);
+                authzService.writeTeamConversationGroup(
+                        conversationId.toString(), teamId.toString());
             }
         }
 
@@ -209,6 +217,7 @@ public class PostgresMemoryStore implements MemoryStore {
         conversationRepository.persist(entity);
 
         membershipRepository.createMembership(conversationGroup, userId, AccessLevel.OWNER);
+        authzService.writeRelationship(conversationId.toString(), userId, AccessLevel.OWNER);
 
         return toConversationDto(entity, AccessLevel.OWNER, null);
     }
@@ -452,6 +461,11 @@ public class PostgresMemoryStore implements MemoryStore {
                             conversationGroup, request.getUserId(), request.getAccessLevel());
         }
 
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeRelationship(
+                        groupId.toString(), request.getUserId(), request.getAccessLevel());
+
         // Audit log the addition
         membershipAuditLogger.logAdd(
                 userId, conversationId, request.getUserId(), request.getAccessLevel());
@@ -478,6 +492,11 @@ public class PostgresMemoryStore implements MemoryStore {
             AccessLevel oldLevel = membership.getAccessLevel();
             membership.setAccessLevel(request.getAccessLevel());
 
+            var authzService = authorizationServiceSelector.getAuthorizationService();
+            authzService.deleteRelationship(groupId.toString(), memberUserId, oldLevel);
+            authzService.writeRelationship(
+                    groupId.toString(), memberUserId, request.getAccessLevel());
+
             // Audit log the update
             membershipAuditLogger.logUpdate(
                     userId, conversationId, memberUserId, oldLevel, request.getAccessLevel());
@@ -502,6 +521,9 @@ public class PostgresMemoryStore implements MemoryStore {
             // Hard delete the membership
             membershipRepository.delete(
                     "id.conversationGroupId = ?1 AND id.userId = ?2", groupId, memberUserId);
+            authorizationServiceSelector
+                    .getAuthorizationService()
+                    .deleteRelationship(groupId.toString(), memberUserId, level);
 
             // Audit log the removal
             membershipAuditLogger.logRemove(userId, conversationId, memberUserId, level);
@@ -747,6 +769,13 @@ public class PostgresMemoryStore implements MemoryStore {
                 AccessLevel.MANAGER,
                 groupId,
                 transfer.getFromUserId());
+
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        String gid = groupId.toString();
+        authzService.deleteRelationship(gid, transfer.getToUserId(), AccessLevel.MANAGER);
+        authzService.writeRelationship(gid, transfer.getToUserId(), AccessLevel.OWNER);
+        authzService.deleteRelationship(gid, transfer.getFromUserId(), AccessLevel.OWNER);
+        authzService.writeRelationship(gid, transfer.getFromUserId(), AccessLevel.MANAGER);
 
         // Update conversation owner_user_id for all conversations in the group
         conversationRepository.update(
@@ -2104,6 +2133,10 @@ public class PostgresMemoryStore implements MemoryStore {
         member.setRole("owner");
         organizationMemberRepository.persist(member);
 
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeOrgMembership(org.getId().toString(), userId, "owner");
+
         return toOrganizationDto(org, "owner");
     }
 
@@ -2173,6 +2206,17 @@ public class PostgresMemoryStore implements MemoryStore {
                                                 "organization", organizationId));
         ensureOrgRole(orgId, userId, "owner");
 
+        // Clean up SpiceDB relationships before soft-delete
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        for (var m : organizationMemberRepository.listForOrg(orgId)) {
+            authzService.deleteOrgMembership(orgId.toString(), m.getId().getUserId(), m.getRole());
+        }
+        for (var t : teamRepository.listForOrg(orgId)) {
+            for (var tm : teamMemberRepository.listForTeam(t.getId())) {
+                authzService.deleteTeamMembership(t.getId().toString(), tm.getId().getUserId());
+            }
+        }
+
         org.setDeletedAt(OffsetDateTime.now());
     }
 
@@ -2211,6 +2255,10 @@ public class PostgresMemoryStore implements MemoryStore {
         member.setRole(role);
         organizationMemberRepository.persist(member);
 
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeOrgMembership(orgId.toString(), request.getUserId(), role);
+
         return toOrgMemberDto(member);
     }
 
@@ -2231,6 +2279,10 @@ public class PostgresMemoryStore implements MemoryStore {
         String oldRole = member.getRole();
         member.setRole(role);
 
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        authzService.deleteOrgMembership(orgId.toString(), memberUserId, oldRole);
+        authzService.writeOrgMembership(orgId.toString(), memberUserId, role);
+
         return toOrgMemberDto(member);
     }
 
@@ -2247,6 +2299,10 @@ public class PostgresMemoryStore implements MemoryStore {
                 organizationMemberRepository
                         .findMembership(orgId, memberUserId)
                         .orElseThrow(() -> new ResourceNotFoundException("member", memberUserId));
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .deleteOrgMembership(orgId.toString(), memberUserId, member.getRole());
 
         organizationMemberRepository.delete(member);
     }
@@ -2271,6 +2327,10 @@ public class PostgresMemoryStore implements MemoryStore {
         team.setName(request.getName());
         team.setSlug(request.getSlug());
         teamRepository.persist(team);
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeTeamOrg(team.getId().toString(), orgId.toString());
 
         return toTeamDto(team);
     }
@@ -2353,6 +2413,12 @@ public class PostgresMemoryStore implements MemoryStore {
             throw new ResourceNotFoundException("team", teamId);
         }
 
+        // Clean up SpiceDB relationships before soft-delete
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        for (var tm : teamMemberRepository.listForTeam(tid)) {
+            authzService.deleteTeamMembership(tid.toString(), tm.getId().getUserId());
+        }
+
         team.setDeletedAt(OffsetDateTime.now());
     }
 
@@ -2410,6 +2476,10 @@ public class PostgresMemoryStore implements MemoryStore {
         member.setTeam(team);
         teamMemberRepository.persist(member);
 
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeTeamMembership(tid.toString(), memberUserId);
+
         return toTeamMemberDto(member);
     }
 
@@ -2435,6 +2505,10 @@ public class PostgresMemoryStore implements MemoryStore {
                         .findMembership(tid, memberUserId)
                         .orElseThrow(
                                 () -> new ResourceNotFoundException("team_member", memberUserId));
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .deleteTeamMembership(tid.toString(), memberUserId);
 
         teamMemberRepository.delete(member);
     }
@@ -2539,7 +2613,9 @@ public class PostgresMemoryStore implements MemoryStore {
     }
 
     private void ensureHasAccess(UUID conversationId, String userId, AccessLevel level) {
-        if (!membershipRepository.hasAtLeastAccess(conversationId, userId, level)) {
+        if (!authorizationServiceSelector
+                .getAuthorizationService()
+                .hasAtLeastAccess(conversationId.toString(), userId, level)) {
             throw new AccessDeniedException(
                     "User "
                             + userId
@@ -2550,10 +2626,27 @@ public class PostgresMemoryStore implements MemoryStore {
         }
     }
 
+    /**
+     * Returns the effective access level for a user on a conversation group, considering both direct
+     * membership and implicit access (org admin/owner, team membership). Throws AccessDeniedException
+     * if no access at all.
+     */
     private AccessLevel findEffectiveAccessLevel(UUID groupId, String userId) {
+        // 1. Direct membership
         Optional<AccessLevel> direct = membershipRepository.findAccessLevel(groupId, userId);
         if (direct.isPresent()) {
             return direct.get();
+        }
+        // 2. Implicit access via AuthorizationService (org admin → MANAGER, team member → WRITER)
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        if (authzService.hasAtLeastAccess(groupId.toString(), userId, AccessLevel.MANAGER)) {
+            return AccessLevel.MANAGER;
+        }
+        if (authzService.hasAtLeastAccess(groupId.toString(), userId, AccessLevel.WRITER)) {
+            return AccessLevel.WRITER;
+        }
+        if (authzService.hasAtLeastAccess(groupId.toString(), userId, AccessLevel.READER)) {
+            return AccessLevel.READER;
         }
         throw new AccessDeniedException("No access to conversation");
     }
@@ -2564,12 +2657,15 @@ public class PostgresMemoryStore implements MemoryStore {
         // Log and hard delete memberships BEFORE soft-deleting the group
         List<ConversationMembershipEntity> memberships =
                 membershipRepository.listForConversationGroup(conversationGroupId);
+        var authzService = authorizationServiceSelector.getAuthorizationService();
         for (ConversationMembershipEntity m : memberships) {
             membershipAuditLogger.logRemove(
                     actorUserId,
                     conversationGroupId.toString(),
                     m.getId().getUserId(),
                     m.getAccessLevel());
+            authzService.deleteRelationship(
+                    conversationGroupId.toString(), m.getId().getUserId(), m.getAccessLevel());
         }
         membershipRepository.delete("id.conversationGroupId", conversationGroupId);
 
