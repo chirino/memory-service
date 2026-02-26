@@ -9,6 +9,7 @@
 * Go BDD: add `I execute MongoDB query:` style steps with MongoDB-specific assertions equivalent to the SQL verification steps (currently skipped on MongoDB backend, matching Java parity).
 * Go: Avoid using file buffer for the encryption store.
 * can we use generated server stubs?
+* encrypt temp files.
 
 # Performance Related
 

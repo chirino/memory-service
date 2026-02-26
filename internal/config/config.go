@@ -162,8 +162,12 @@ type Config struct {
 	EncryptionProviderDEKType    string
 	EncryptionProviderDEKEnabled bool
 	EncryptionVaultTransitKey    string
-	EncryptionKey                string
-	EncryptionDecryptionKeys     string
+	// EncryptionKMSKeyID is the AWS KMS key ID or ARN used by the "kms" provider.
+	EncryptionKMSKeyID string
+	// EncryptionKey is a comma-separated list of AES keys for the "dek" provider.
+	// The first key is primary (used for new encryptions); subsequent keys are legacy
+	// (decryption-only, for zero-downtime key rotation).
+	EncryptionKey string
 	// EncryptionDBDisabled skips GCM cipher setup in the postgres/mongo stores even when
 	// EncryptionKey is set. Useful when you want signed download URLs without encrypting data at rest.
 	EncryptionDBDisabled bool

@@ -232,3 +232,16 @@ CREATE INDEX IF NOT EXISTS idx_attachments_user_id
     ON attachments(user_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_created_at_id
     ON attachments(created_at DESC, id DESC);
+
+------------------------------------------------------------
+-- Encryption DEK table (vault and kms providers)
+-- One row per provider; wrapped_deks[1] is the primary (newest),
+-- subsequent elements are legacy (decryption-only key rotation).
+-- revision enables optimistic updates (key rotation).
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS encryption_deks (
+    provider     TEXT    NOT NULL PRIMARY KEY,   -- "vault" or "kms"
+    wrapped_deks BYTEA[] NOT NULL,               -- wrapped by Vault Transit / KMS Encrypt
+    revision     BIGINT  NOT NULL DEFAULT 0
+);

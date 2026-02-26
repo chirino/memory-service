@@ -1,187 +1,86 @@
 package encrypt
 
 import (
-	"bufio"
+	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net/url"
 	"time"
 
-	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/dataencryption"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 )
 
-// Wrap wraps an existing AttachmentStore with AES-GCM encryption.
-// Returns the store unchanged if encryptionKey is empty.
-func Wrap(inner registryattach.AttachmentStore, encryptionKey string) (registryattach.AttachmentStore, error) {
-	if encryptionKey == "" {
-		return inner, nil
-	}
-
-	key, err := config.DecodeEncryptionKey(encryptionKey)
-	if err != nil {
-		return nil, fmt.Errorf("encrypt attach: %w", err)
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("encrypt attach: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("encrypt attach: %w", err)
-	}
-
-	return &EncryptStore{
-		inner: inner,
-		gcm:   gcm,
-	}, nil
+// Wrap wraps an AttachmentStore with MSEH-based AES-GCM encryption via svc.
+func Wrap(inner registryattach.AttachmentStore, svc *dataencryption.Service) (registryattach.AttachmentStore, error) {
+	return &EncryptStore{inner: inner, svc: svc}, nil
 }
 
+// EncryptStore wraps an AttachmentStore with MSEH encryption on write and
+// MSEH decryption on read.
 type EncryptStore struct {
 	inner registryattach.AttachmentStore
-	gcm   cipher.AEAD
+	svc   *dataencryption.Service
 }
 
+var _ registryattach.AttachmentStore = (*EncryptStore)(nil)
+
+// Store buffers the full plaintext (required for AES-GCM), computes SHA-256 and
+// size on the plaintext, encrypts with MSEH, then writes to the inner store.
 func (s *EncryptStore) Store(ctx context.Context, data io.Reader, maxSize int64, contentType string) (*registryattach.FileStoreResult, error) {
-	const chunkSize = 64 * 1024
-	hasher := sha256.New()
 	limited := io.LimitReader(data, maxSize+1)
-	pr, pw := io.Pipe()
-	type encryptionMeta struct {
-		size   int64
-		sha256 string
-		err    error
-	}
-	done := make(chan encryptionMeta, 1)
+	hasher := sha256.New()
 
-	go func() {
-		var total int64
-		buf := make([]byte, chunkSize)
-		for {
-			n, err := limited.Read(buf)
-			if n > 0 {
-				total += int64(n)
-				if total > maxSize {
-					_ = pw.CloseWithError(fmt.Errorf("file exceeds maximum size of %d bytes", maxSize))
-					done <- encryptionMeta{err: fmt.Errorf("file exceeds maximum size of %d bytes", maxSize)}
-					return
-				}
-				plain := append([]byte(nil), buf[:n]...)
-				if _, hErr := hasher.Write(plain); hErr != nil {
-					_ = pw.CloseWithError(hErr)
-					done <- encryptionMeta{err: hErr}
-					return
-				}
-				nonce := make([]byte, s.gcm.NonceSize())
-				if _, nErr := rand.Read(nonce); nErr != nil {
-					_ = pw.CloseWithError(nErr)
-					done <- encryptionMeta{err: nErr}
-					return
-				}
-				ciphertext := s.gcm.Seal(nil, nonce, plain, nil)
-				frameLen := uint32(len(nonce) + len(ciphertext))
-				var header [4]byte
-				binary.BigEndian.PutUint32(header[:], frameLen)
-				if _, wErr := pw.Write(header[:]); wErr != nil {
-					done <- encryptionMeta{err: wErr}
-					return
-				}
-				if _, wErr := pw.Write(nonce); wErr != nil {
-					done <- encryptionMeta{err: wErr}
-					return
-				}
-				if _, wErr := pw.Write(ciphertext); wErr != nil {
-					done <- encryptionMeta{err: wErr}
-					return
-				}
-			}
-			if err == io.EOF {
-				_ = pw.Close()
-				done <- encryptionMeta{size: total, sha256: fmt.Sprintf("%x", hasher.Sum(nil))}
-				return
-			}
-			if err != nil {
-				_ = pw.CloseWithError(err)
-				done <- encryptionMeta{err: err}
-				return
-			}
-		}
-	}()
-
-	result, err := s.inner.Store(ctx, pr, encryptedUpperBound(maxSize, chunkSize, s.gcm.NonceSize(), s.gcm.Overhead()), contentType)
-	meta := <-done
-	if meta.err != nil {
-		return nil, meta.err
-	}
+	// Read all plaintext so we can compute hash and encrypt in one pass.
+	var plainBuf bytes.Buffer
+	n, err := io.Copy(io.MultiWriter(&plainBuf, hasher), limited)
 	if err != nil {
 		return nil, err
 	}
-	// Return plaintext size and SHA256 — callers see the logical (unencrypted) values.
-	result.Size = meta.size
-	result.SHA256 = meta.sha256
+	if n > maxSize {
+		return nil, fmt.Errorf("file exceeds maximum size of %d bytes", maxSize)
+	}
+
+	// Encrypt into a buffer. EncryptStream writes the MSEH header immediately;
+	// Close() seals and flushes the GCM ciphertext + tag.
+	var encBuf bytes.Buffer
+	enc, err := s.svc.EncryptStream(&encBuf)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := enc.Write(plainBuf.Bytes()); err != nil {
+		return nil, err
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+
+	encSize := int64(encBuf.Len())
+	result, err := s.inner.Store(ctx, &encBuf, encSize, contentType)
+	if err != nil {
+		return nil, err
+	}
+	// Callers receive the logical (plaintext) size and SHA-256.
+	result.Size = n
+	result.SHA256 = fmt.Sprintf("%x", hasher.Sum(nil))
 	return result, nil
 }
 
+// Retrieve decrypts an MSEH-wrapped attachment.
 func (s *EncryptStore) Retrieve(ctx context.Context, storageKey string) (io.ReadCloser, error) {
 	rc, err := s.inner.Retrieve(ctx, storageKey)
 	if err != nil {
 		return nil, err
 	}
 
-	pr, pw := io.Pipe()
-	go func() {
-		defer rc.Close()
-		defer pw.Close()
-
-		reader := bufio.NewReader(rc)
-		nonceSize := s.gcm.NonceSize()
-
-		for {
-			var hdr [4]byte
-			if _, err := io.ReadFull(reader, hdr[:]); err != nil {
-				if err == io.EOF {
-					return
-				}
-				if err == io.ErrUnexpectedEOF {
-					_ = pw.CloseWithError(fmt.Errorf("decrypt failed: truncated frame header"))
-					return
-				}
-				_ = pw.CloseWithError(fmt.Errorf("decrypt failed: %w", err))
-				return
-			}
-			frameLen := binary.BigEndian.Uint32(hdr[:])
-			if frameLen < uint32(nonceSize+s.gcm.Overhead()) {
-				_ = pw.CloseWithError(fmt.Errorf("decrypt failed: invalid frame length"))
-				return
-			}
-
-			frame := make([]byte, frameLen)
-			if _, err := io.ReadFull(reader, frame); err != nil {
-				_ = pw.CloseWithError(fmt.Errorf("decrypt failed: truncated frame payload"))
-				return
-			}
-			nonce := frame[:nonceSize]
-			ciphertext := frame[nonceSize:]
-			plaintext, err := s.gcm.Open(nil, nonce, ciphertext, nil)
-			if err != nil {
-				_ = pw.CloseWithError(fmt.Errorf("decrypt failed: %w", err))
-				return
-			}
-			if _, err := pw.Write(plaintext); err != nil {
-				_ = pw.CloseWithError(err)
-				return
-			}
-		}
-	}()
-
-	return pr, nil
+	reader, err := s.svc.DecryptStream(rc)
+	if err != nil {
+		_ = rc.Close()
+		return nil, err
+	}
+	return &readCloser{Reader: reader, close: rc.Close}, nil
 }
 
 func (s *EncryptStore) Delete(ctx context.Context, storageKey string) error {
@@ -189,16 +88,14 @@ func (s *EncryptStore) Delete(ctx context.Context, storageKey string) error {
 }
 
 func (s *EncryptStore) GetSignedURL(ctx context.Context, storageKey string, expiry time.Duration) (*url.URL, error) {
-	_ = ctx
-	_ = storageKey
-	_ = expiry
 	return nil, fmt.Errorf("signed URLs not supported for encrypted attachment store")
 }
 
-func encryptedUpperBound(maxSize int64, chunkSize int64, nonceSize int, overhead int) int64 {
-	if maxSize <= 0 {
-		return maxSize
-	}
-	chunks := (maxSize + chunkSize - 1) / chunkSize
-	return maxSize + chunks*int64(nonceSize+overhead+4)
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+type readCloser struct {
+	io.Reader
+	close func() error
 }
+
+func (r *readCloser) Close() error { return r.close() }

@@ -11,6 +11,7 @@ import (
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
+	"github.com/chirino/memory-service/internal/registry/encrypt"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,10 @@ import (
 	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
 	_ "github.com/chirino/memory-service/internal/plugin/embed/local"
 	_ "github.com/chirino/memory-service/internal/plugin/embed/openai"
+	_ "github.com/chirino/memory-service/internal/plugin/encrypt/awskms"
+	_ "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
+	_ "github.com/chirino/memory-service/internal/plugin/encrypt/plain"
+	_ "github.com/chirino/memory-service/internal/plugin/encrypt/vault"
 	_ "github.com/chirino/memory-service/internal/plugin/route/system"
 	_ "github.com/chirino/memory-service/internal/plugin/store/mongo"
 	_ "github.com/chirino/memory-service/internal/plugin/store/postgres"
@@ -40,6 +45,60 @@ func Command() *cli.Command {
 	return &cli.Command{
 		Name:  "serve",
 		Usage: "Start the memory service HTTP and gRPC servers",
+		CustomHelpTemplate: cli.CommandHelpTemplate + `NOTES:
+   API key authentication is configured via environment variables — one per client ID:
+   MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=key1,key2,...
+
+   Example:
+   MEMORY_SERVICE_API_KEYS_AGENT_A=secret-key-1
+   MEMORY_SERVICE_API_KEYS_AGENT_B=key-one,key-two
+
+   ── Encryption Kind ─────────────────────────────────────────────────────────
+   MEMORY_SERVICE_ENCRYPTION_KIND is a comma-separated ordered list of
+   provider names. The first provider is the PRIMARY — used for all new
+   encryptions. Additional providers are used as fallbacks for decryption only,
+   enabling zero-downtime key rotation.
+
+   Available providers:
+
+     plain   No encryption. Data is stored as-is. Default when no providers
+             are configured. Safe for development; not for production.
+
+     dek     AES-256-GCM with a locally-held key. Fast, no external dependency.
+             Required env vars:
+               MEMORY_SERVICE_ENCRYPTION_DEK_KEY=<key>[,<legacy-key>,...]
+             The value is a comma-separated list of hex or base64 AES-256 keys.
+             The first key encrypts new data; additional keys are decryption-only
+             (zero-downtime key rotation — remove old keys once all data is re-keyed).
+
+     vault   HashiCorp Vault Transit — DEKs are loaded from the application
+             database (encryption_deks table) at startup; Vault Transit is used
+             only to wrap/unwrap DEKs at load time (zero per-request API calls).
+             A random DEK is generated on first start and stored wrapped. Key
+             rotation: INSERT a new row into encryption_deks via the CLI tool.
+             Required env vars:
+               VAULT_ADDR=https://vault.example.com
+               VAULT_TOKEN=<token>  (or other Vault auth env vars)
+               MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY=<key-name>
+
+     kms     AWS KMS — same DB-stored DEK pattern as vault but backed by AWS KMS.
+             DEKs are wrapped via kms:Encrypt at startup and stored in the
+             encryption_deks table; kms:Decrypt is called once per DEK at load.
+             Required env vars:
+               AWS_REGION=us-east-1
+               MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID=<key-id-or-arn>
+             Standard AWS credential env vars are also honoured
+             (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_PROFILE, etc.)
+
+   Key rotation example (migrate from dek to vault):
+     MEMORY_SERVICE_ENCRYPTION_KIND=vault,dek
+       → new data encrypted with vault; existing dek ciphertext still readable
+
+   Disabling encryption for specific subsystems:
+     MEMORY_SERVICE_ENCRYPTION_DB_DISABLED=true
+     MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED=true
+
+`,
 		Flags: flags(&cfg, &readHeaderTimeoutSecs),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			if err := cfg.ApplyJavaCompatFromEnv(); err != nil {
@@ -100,6 +159,13 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Destination: &cfg.ManagementAccessLog,
 			Usage:       "Enable HTTP access logging for management endpoints (/health, /ready, /metrics)",
 		},
+		&cli.BoolFlag{
+			Name:        "admin-require-justification",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION"),
+			Destination: &cfg.RequireJustification,
+			Usage:       "Require justification for admin API calls",
+		},
 
 		// ── Network Listener ──────────────────────────────────────
 		&cli.IntFlag{
@@ -127,10 +193,10 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Usage:       "Enable TLS HTTP/1.1 + HTTP/2 + gRPC",
 		},
 
-		// ── Management Network Listener ───────────────────────────
+		// ── Network Listener: Management ─────────────────────────
 		&cli.IntFlag{
 			Name:        "management-port",
-			Category:    "Management Network Listener:",
+			Category:    "Network Listener: Management:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_PORT"),
 			Destination: &cfg.ManagementListener.Port,
 			Value:       cfg.ManagementListener.Port,
@@ -138,7 +204,7 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "management-plain-text",
-			Category:    "Management Network Listener:",
+			Category:    "Network Listener: Management:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT"),
 			Destination: &cfg.ManagementListener.EnablePlainText,
 			Value:       cfg.ManagementListener.EnablePlainText,
@@ -146,7 +212,7 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "management-tls",
-			Category:    "Management Network Listener:",
+			Category:    "Network Listener: Management:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_TLS"),
 			Destination: &cfg.ManagementListener.EnableTLS,
 			Value:       cfg.ManagementListener.EnableTLS,
@@ -257,25 +323,47 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 		},
 		// ── Encryption ────────────────────────────────────────────
 		&cli.StringFlag{
+			Name:        "encryption-kind",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_KIND"),
+			Destination: &cfg.EncryptionProviders,
+			Value:       cfg.EncryptionProviders,
+			Usage:       "Comma-separated ordered list of encryption providers (" + strings.Join(encrypt.Names(), "|") + "). First is primary (used for new encryptions).",
+		},
+		&cli.StringFlag{
 			Name:        "encryption-dek-key",
 			Category:    "Encryption:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DEK_KEY"),
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DEK_KEY", "MEMORY_SERVICE_ENCRYPTION_KEY"),
 			Destination: &cfg.EncryptionKey,
-			Usage:       "Encryption key (hex or base64, 16/24/32 bytes). Enables at-rest encryption and signed download URLs",
+			Usage:       "Comma-separated AES keys for the 'dek' provider (hex or base64, 32 bytes). First is primary; additional keys are legacy (decryption-only key rotation). Also derives attachment URL signing keys.",
+		},
+		&cli.StringFlag{
+			Name:        "encryption-vault-transit-key",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY"),
+			Destination: &cfg.EncryptionVaultTransitKey,
+			Usage:       "Vault Transit key name for the 'vault' provider",
+		},
+		&cli.StringFlag{
+			Name:        "encryption-kms-key-id",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID"),
+			Destination: &cfg.EncryptionKMSKeyID,
+			Usage:       "AWS KMS key ID or ARN for the 'kms' provider",
 		},
 		&cli.BoolFlag{
 			Name:        "encryption-db-disabled",
 			Category:    "Encryption:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DB_DISABLED"),
 			Destination: &cfg.EncryptionDBDisabled,
-			Usage:       "Disable at-rest encryption for the database even when --encryption-dek-key is set",
+			Usage:       "Disable at-rest encryption for the database even when encryption is configured",
 		},
 		&cli.BoolFlag{
 			Name:        "encryption-attachments-disabled",
 			Category:    "Encryption:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED"),
 			Destination: &cfg.EncryptionAttachmentsDisabled,
-			Usage:       "Disable at-rest encryption for the attachment store even when --encryption-dek-key is set",
+			Usage:       "Disable at-rest encryption for the attachment store even when encryption is configured",
 		},
 
 		// ── Vector Store ──────────────────────────────────────────
@@ -401,14 +489,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Destination: &cfg.IndexerClients,
 			Usage:       "Comma-separated API client IDs with indexer permissions",
 		},
-		&cli.BoolFlag{
-			Name:        "admin-require-justification",
-			Category:    "Authorization:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION"),
-			Destination: &cfg.RequireJustification,
-			Usage:       "Require justification for admin API calls",
-		},
-
 		// ── Monitoring ────────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "prometheus-url",

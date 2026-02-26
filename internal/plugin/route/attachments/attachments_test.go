@@ -99,10 +99,13 @@ func setupAttachmentsRouter(t *testing.T) *gin.Engine {
 	store, err := loader(ctx)
 	require.NoError(t, err)
 
+	signingKeys, err := cfg.AttachmentSigningKeys()
+	require.NoError(t, err)
+
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	auth := func(c *gin.Context) { c.Set("userID", "test-user"); c.Next() }
-	attachments.MountRoutes(router, store, newMemAttachmentStore(), &cfg, auth)
+	attachments.MountRoutes(router, store, newMemAttachmentStore(), &cfg, auth, signingKeys)
 	return router
 }
 

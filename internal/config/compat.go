@@ -93,13 +93,12 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 		return err
 	}
 	applyStringEnv("MEMORY_SERVICE_CORS_ORIGINS", &c.CORSOrigins)
-	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_PROVIDERS", &c.EncryptionProviders)
+	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_KIND", &c.EncryptionProviders)
 	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_TYPE", &c.EncryptionProviderDEKType)
 	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_ENABLED", &c.EncryptionProviderDEKEnabled); err != nil {
 		return err
 	}
 	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY", &c.EncryptionVaultTransitKey)
-	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_DEK_DECRYPTION_KEYS", &c.EncryptionDecryptionKeys)
 
 	// API keys: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=<key-value> (Java parity).
 	c.APIKeys = loadAPIKeysFromEnv()

@@ -50,35 +50,34 @@ func validAESKeyLen(n int) bool {
 }
 
 // AttachmentSigningKey returns the HMAC key used to sign new attachment download tokens.
-// A domain-specific 32-byte key is derived from EncryptionKey via HKDF-SHA256.
-// Returns (nil, nil) when EncryptionKey is not set — download token signing is disabled.
+// A domain-specific 32-byte key is derived from the first (primary) key in EncryptionKey
+// via HKDF-SHA256. Returns (nil, nil) when EncryptionKey is not set.
 func (c *Config) AttachmentSigningKey() ([]byte, error) {
 	if c.EncryptionKey == "" {
 		return nil, nil
 	}
-	return deriveTokenSigningKey(c.EncryptionKey)
+	first := strings.SplitN(c.EncryptionKey, ",", 2)[0]
+	return deriveTokenSigningKey(strings.TrimSpace(first))
 }
 
 // AttachmentSigningKeys returns all signing keys for token verification, supporting rolling
-// key rotation. The primary key (derived from EncryptionKey) is first; keys derived from
-// EncryptionDecryptionKeys follow so tokens signed under old keys remain valid during rotation.
-// Returns (nil, nil) when EncryptionKey is not set.
+// key rotation. EncryptionKey is a comma-separated list; a signing key is derived from each
+// entry via HKDF-SHA256, primary first. Returns (nil, nil) when EncryptionKey is not set.
 func (c *Config) AttachmentSigningKeys() ([][]byte, error) {
-	primary, err := c.AttachmentSigningKey()
-	if err != nil || primary == nil {
-		return nil, err
+	if c.EncryptionKey == "" {
+		return nil, nil
 	}
-	keys := [][]byte{primary}
-	legacyRaws, err := DecodeEncryptionKeysCSV(c.EncryptionDecryptionKeys)
+	raws, err := DecodeEncryptionKeysCSV(c.EncryptionKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid decryption key list: %w", err)
+		return nil, fmt.Errorf("invalid encryption key list: %w", err)
 	}
-	for _, raw := range legacyRaws {
-		legacyKey, legacyErr := hkdf.Key(sha256.New, raw, nil, "attachment-download-tokens", 32)
-		if legacyErr != nil {
-			return nil, fmt.Errorf("HKDF derivation failed for legacy key: %w", legacyErr)
+	keys := make([][]byte, 0, len(raws))
+	for _, raw := range raws {
+		derived, derivedErr := hkdf.Key(sha256.New, raw, nil, "attachment-download-tokens", 32)
+		if derivedErr != nil {
+			return nil, fmt.Errorf("HKDF derivation failed: %w", derivedErr)
 		}
-		keys = append(keys, legacyKey)
+		keys = append(keys, derived)
 	}
 	return keys, nil
 }

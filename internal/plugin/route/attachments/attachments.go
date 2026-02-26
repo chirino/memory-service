@@ -28,15 +28,11 @@ import (
 )
 
 // MountRoutes mounts attachment routes.
-func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, auth gin.HandlerFunc) {
+// signingKeys is the ordered set of HMAC keys for download URL signing (primary first);
+// pass nil to disable signed download URL support.
+func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, auth gin.HandlerFunc, signingKeys [][]byte) {
 	if attachStore == nil {
 		return
-	}
-
-	signingKeys, err := cfg.AttachmentSigningKeys()
-	if err != nil {
-		log.Warn("Attachment signing keys unavailable; signed download URLs disabled", "err", err)
-		signingKeys = nil
 	}
 
 	v1 := r.Group("/v1")

@@ -31,6 +31,9 @@ func main() {
 	// Generate gRPC stubs
 	generateGRPC(root)
 
+	// Generate EncryptionHeader proto (message only, no gRPC service)
+	generateEncryptionHeader(root)
+
 	// Align struct tags in generated Go code
 	fmt.Println("Aligning struct tags...")
 	run("go", "run", "github.com/4meepo/tagalign/cmd/tagalign", "-fix", "-sort", "-order", "json,gorm,enum,example", "./internal/...")
@@ -220,6 +223,26 @@ func generateOpenAPI(root string) {
 	os.MkdirAll(adminOut, 0o755)
 	fmt.Println("Generating Admin API types + server interfaces...")
 	run("go", "run", "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen", "--config="+adminCfg, adminSpec)
+}
+
+func generateEncryptionHeader(root string) {
+	protoFile := filepath.Join(root, "memory-service-contracts", "src", "main", "resources", "dataencryption", "v1", "encryption_header.proto")
+	pbOut := filepath.Join(root, "internal", "generated", "pb")
+	os.MkdirAll(pbOut, 0o755)
+
+	protoInclude := filepath.Join(root, "memory-service-contracts", "src", "main", "resources")
+	binDir := filepath.Join(root, "bin")
+	protocBin := filepath.Join(binDir, "protoc")
+	wellKnownIncludes := filepath.Join(binDir, "include")
+
+	fmt.Println("Generating EncryptionHeader proto...")
+	run(protocBin,
+		"--proto_path="+protoInclude,
+		"--proto_path="+wellKnownIncludes,
+		"--plugin=protoc-gen-go="+filepath.Join(binDir, "protoc-gen-go"),
+		"--go_out="+pbOut, "--go_opt=paths=source_relative",
+		protoFile,
+	)
 }
 
 func generateGRPC(root string) {
