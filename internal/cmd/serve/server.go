@@ -139,8 +139,8 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 			}
 		}
 	}
-	// Wrap with encryption if an encryption key is configured.
-	if attachStore != nil && cfg.EncryptionKey != "" {
+	// Wrap with encryption if an encryption key is configured and attachment encryption is not disabled.
+	if attachStore != nil && cfg.EncryptionKey != "" && !cfg.EncryptionAttachmentsDisabled {
 		attachStore, err = encrypt.Wrap(attachStore, cfg.EncryptionKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize attachment encryption: %w", err)

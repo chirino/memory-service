@@ -46,7 +46,9 @@ func TestFeaturesMongo(t *testing.T) {
 	cfg.RedisURL = redisURL
 	cfg.VectorType = "qdrant"
 	cfg.QdrantHost = qdrantHost
-	cfg.AdminAPIKey = "test-admin-key"
+	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = "alice"
 	cfg.AuditorUsers = "alice,charlie"
 	cfg.IndexerUsers = "dave,alice"

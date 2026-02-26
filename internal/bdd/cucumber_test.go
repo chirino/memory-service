@@ -39,7 +39,9 @@ func TestFeatures(t *testing.T) {
 	cfg.InfinispanHost = infinispan.Host
 	cfg.InfinispanUsername = infinispan.Username
 	cfg.InfinispanPassword = infinispan.Password
-	cfg.AdminAPIKey = "test-admin-key"
+	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = "alice"
 	cfg.AuditorUsers = "alice,charlie"
 	cfg.IndexerUsers = "dave,alice"

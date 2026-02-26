@@ -38,7 +38,6 @@ func TestFeaturesPgEncrypted(t *testing.T) {
 	cfg.CacheType = "none"
 	cfg.AttachType = "db"
 	cfg.EncryptionKey = testEncryptionKey
-	cfg.AdminAPIKey = "test-admin-key"
 	cfg.AdminUsers = "alice"
 	cfg.AuditorUsers = "alice,charlie"
 	cfg.IndexerUsers = "dave,alice"

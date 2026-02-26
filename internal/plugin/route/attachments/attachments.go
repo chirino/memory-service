@@ -33,6 +33,12 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 		return
 	}
 
+	signingKeys, err := cfg.AttachmentSigningKeys()
+	if err != nil {
+		log.Warn("Attachment signing keys unavailable; signed download URLs disabled", "err", err)
+		signingKeys = nil
+	}
+
 	v1 := r.Group("/v1")
 	v1.POST("/attachments", auth, func(c *gin.Context) {
 		upload(c, store, attachStore, cfg)
@@ -44,11 +50,17 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 		deleteAttachment(c, store, attachStore)
 	})
 	v1.GET("/attachments/:attachmentId/download-url", auth, func(c *gin.Context) {
-		downloadURL(c, store, attachStore, cfg)
+		var primaryKey []byte
+		if len(signingKeys) > 0 {
+			primaryKey = signingKeys[0]
+		}
+		downloadURL(c, store, attachStore, cfg, primaryKey)
 	})
-	v1.GET("/attachments/download/:token/:filename", func(c *gin.Context) {
-		downloadByToken(c, store, attachStore, cfg)
-	})
+	if len(signingKeys) > 0 {
+		v1.GET("/attachments/download/:token/:filename", func(c *gin.Context) {
+			downloadByToken(c, store, attachStore, signingKeys)
+		})
+	}
 }
 
 func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
@@ -209,7 +221,7 @@ func deleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachSto
 	c.Status(http.StatusNoContent)
 }
 
-func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
+func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, signingKey []byte) {
 	userID := security.GetUserID(c)
 	attachID, err := uuid.Parse(c.Param("attachmentId"))
 	if err != nil {
@@ -250,19 +262,24 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 		}
 	}
 
+	if len(signingKey) == 0 {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "download URLs are not available: encryption key is not configured"})
+		return
+	}
+
 	filename := "download"
 	if attachment.Filename != nil && strings.TrimSpace(*attachment.Filename) != "" {
 		filename = *attachment.Filename
 	}
-	token := signDownloadToken(*attachment.StorageKey, cfg.AdminAPIKey, time.Now().Add(cfg.AttachmentDownloadURLExpiresIn))
+	token := signDownloadToken(*attachment.StorageKey, signingKey, time.Now().Add(cfg.AttachmentDownloadURLExpiresIn))
 	c.JSON(http.StatusOK, gin.H{
 		"url":       fmt.Sprintf("/v1/attachments/download/%s/%s", token, filename),
 		"expiresIn": int(cfg.AttachmentDownloadURLExpiresIn.Seconds()),
 	})
 }
 
-func downloadByToken(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
-	storageKey, ok := verifyDownloadToken(c.Param("token"), cfg.AdminAPIKey, time.Now())
+func downloadByToken(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte) {
+	storageKey, ok := verifyDownloadToken(c.Param("token"), signingKeys, time.Now())
 	if !ok {
 		c.JSON(http.StatusForbidden, gin.H{"error": "invalid or expired token"})
 		return
@@ -371,16 +388,16 @@ func parseExpiresIn(raw string, cfg *config.Config) (time.Duration, error) {
 	return 0, fmt.Errorf("invalid expiresIn value")
 }
 
-func signDownloadToken(storageKey string, secret string, expiresAt time.Time) string {
+func signDownloadToken(storageKey string, secret []byte, expiresAt time.Time) string {
 	payload := fmt.Sprintf("%s|%d", storageKey, expiresAt.Unix())
-	mac := hmac.New(sha256.New, []byte(secret))
+	mac := hmac.New(sha256.New, secret)
 	_, _ = mac.Write([]byte(payload))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	encodedPayload := base64.RawURLEncoding.EncodeToString([]byte(payload))
 	return encodedPayload + "." + sig
 }
 
-func verifyDownloadToken(token string, secret string, now time.Time) (string, bool) {
+func verifyDownloadToken(token string, secrets [][]byte, now time.Time) (string, bool) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
 		return "", false
@@ -391,10 +408,17 @@ func verifyDownloadToken(token string, secret string, now time.Time) (string, bo
 	}
 	payload := string(payloadBytes)
 
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(payload))
-	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(parts[1]), []byte(expected)) {
+	matched := false
+	for _, secret := range secrets {
+		mac := hmac.New(sha256.New, secret)
+		_, _ = mac.Write([]byte(payload))
+		expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+		if hmac.Equal([]byte(parts[1]), []byte(expected)) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
 		return "", false
 	}
 

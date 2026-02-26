@@ -380,7 +380,7 @@ Flag                       Env var                          Default
 --tls-cert-file            MEMORY_SERVICE_TLS_CERT_FILE     (optional)
 --tls-key-file             MEMORY_SERVICE_TLS_KEY_FILE      (optional)
 --read-header-timeout-seconds MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS 5
---admin-api-key            MEMORY_SERVICE_ADMIN_API_KEY     (required)
+--attachment-signing-secret MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET (optional, required for download URLs)
 --roles-admin-oidc-role    MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE admin
 --roles-auditor-oidc-role  MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE auditor
 --roles-admin-users        MEMORY_SERVICE_ROLES_ADMIN_USERS (optional CSV)

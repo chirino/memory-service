@@ -86,6 +86,9 @@ func setupAttachmentsRouter(t *testing.T) *gin.Engine {
 	cfg.DBURL = dbURL
 	cfg.MaxBodySize = 1024 * 1024
 	cfg.AllowPrivateSourceURLs = true
+	cfg.EncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	ctx := config.WithContext(context.Background(), &cfg)
 
 	_ = postgres.ForceImport

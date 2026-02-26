@@ -116,6 +116,11 @@ services:
       MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
       MEMORY_SERVICE_MANAGEMENT_PORT: 8085
 
+      # ── Encryption ─────────────────────────────────────────────
+      # Dev key — replace with a securely generated value in production.
+      # Enables at-rest encryption and signed attachment download URLs.
+      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+
       # ── Attachments ────────────────────────────────────────────
       MEMORY_SERVICE_ATTACHMENTS_KIND: db
 

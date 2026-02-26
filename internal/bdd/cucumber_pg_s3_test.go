@@ -43,7 +43,9 @@ func TestFeaturesPgS3(t *testing.T) {
 	cfg.AttachType = "s3"
 	cfg.S3Bucket = bucket
 	cfg.S3UsePathStyle = true
-	cfg.AdminAPIKey = "test-admin-key"
+	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = "alice"
 	cfg.AuditorUsers = "alice,charlie"
 	cfg.IndexerUsers = "dave,alice"

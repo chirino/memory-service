@@ -56,10 +56,107 @@ func Command() *cli.Command {
 func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 	return []cli.Flag{
 
-		// ── Datastore ──────────────────────────────────────────────
+		// ── Server ────────────────────────────────────────────────
+		&cli.StringFlag{
+			Name:        "tls-cert-file",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_TLS_CERT_FILE"),
+			Destination: &cfg.Listener.TLSCertFile,
+			Usage:       "TLS certificate file for single-port TLS mode",
+		},
+		&cli.StringFlag{
+			Name:        "tls-key-file",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_TLS_KEY_FILE"),
+			Destination: &cfg.Listener.TLSKeyFile,
+			Usage:       "TLS private key file for single-port TLS mode",
+		},
+		&cli.StringFlag{
+			Name:        "advertised-address",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ADVERTISED_ADDRESS"),
+			Destination: &cfg.ResumerAdvertisedAddress,
+			Usage:       "Advertised host:port for client redirects",
+		},
+		&cli.IntFlag{
+			Name:        "read-header-timeout-seconds",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS"),
+			Destination: readHeaderTimeoutSecs,
+			Value:       *readHeaderTimeoutSecs,
+			Usage:       "HTTP read header timeout in seconds",
+		},
+		&cli.StringFlag{
+			Name:        "temp-dir",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_TEMP_DIR"),
+			Destination: &cfg.TempDir,
+			Usage:       "Directory for temporary files; defaults to OS temp directory",
+		},
+		&cli.BoolFlag{
+			Name:        "management-access-log",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG"),
+			Destination: &cfg.ManagementAccessLog,
+			Usage:       "Enable HTTP access logging for management endpoints (/health, /ready, /metrics)",
+		},
+
+		// ── Network Listener ──────────────────────────────────────
+		&cli.IntFlag{
+			Name:        "port",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_PORT"),
+			Destination: &cfg.Listener.Port,
+			Value:       cfg.Listener.Port,
+			Usage:       "HTTP server port",
+		},
+		&cli.BoolFlag{
+			Name:        "plain-text",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_PLAIN_TEXT"),
+			Destination: &cfg.Listener.EnablePlainText,
+			Value:       cfg.Listener.EnablePlainText,
+			Usage:       "Enable plaintext HTTP/1.1 + h2c + gRPC",
+		},
+		&cli.BoolFlag{
+			Name:        "tls",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_TLS"),
+			Destination: &cfg.Listener.EnableTLS,
+			Value:       cfg.Listener.EnableTLS,
+			Usage:       "Enable TLS HTTP/1.1 + HTTP/2 + gRPC",
+		},
+
+		// ── Management Network Listener ───────────────────────────
+		&cli.IntFlag{
+			Name:        "management-port",
+			Category:    "Management Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_PORT"),
+			Destination: &cfg.ManagementListener.Port,
+			Value:       cfg.ManagementListener.Port,
+			Usage:       "Dedicated port for health and metrics (0 = OS-assigned random port); when unset, served on the main port",
+		},
+		&cli.BoolFlag{
+			Name:        "management-plain-text",
+			Category:    "Management Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT"),
+			Destination: &cfg.ManagementListener.EnablePlainText,
+			Value:       cfg.ManagementListener.EnablePlainText,
+			Usage:       "Enable plaintext HTTP for management server",
+		},
+		&cli.BoolFlag{
+			Name:        "management-tls",
+			Category:    "Management Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_TLS"),
+			Destination: &cfg.ManagementListener.EnableTLS,
+			Value:       cfg.ManagementListener.EnableTLS,
+			Usage:       "Enable TLS for management server",
+		},
+
+		// ── Database ───────────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "db-kind",
-			Category:    "Datastore:",
+			Category:    "Database:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_DB_KIND"),
 			Destination: &cfg.DatastoreType,
 			Value:       cfg.DatastoreType,
@@ -67,7 +164,7 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "db-url",
-			Category:    "Datastore:",
+			Category:    "Database:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_DB_URL"),
 			Destination: &cfg.DBURL,
 			Usage:       "Database connection URL",
@@ -75,7 +172,7 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 		},
 		&cli.IntFlag{
 			Name:        "db-max-open-conns",
-			Category:    "Datastore:",
+			Category:    "Database:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_DB_MAX_OPEN_CONNS"),
 			Destination: &cfg.DBMaxOpenConns,
 			Value:       cfg.DBMaxOpenConns,
@@ -83,58 +180,14 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 		},
 		&cli.IntFlag{
 			Name:        "db-max-idle-conns",
-			Category:    "Datastore:",
+			Category:    "Database:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_DB_MAX_IDLE_CONNS"),
 			Destination: &cfg.DBMaxIdleConns,
 			Value:       cfg.DBMaxIdleConns,
 			Usage:       "Maximum number of idle database connections",
 		},
 
-		// ── Storage backends ──────────────────────────────────────
-		&cli.StringFlag{
-			Name:        "vector-kind",
-			Category:    "Vector Store:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_KIND"),
-			Destination: &cfg.VectorType,
-			Value:       cfg.VectorType,
-			Usage:       "Vector store (" + strings.Join(registryvector.Names(), "|") + ")",
-		},
-		&cli.IntFlag{
-			Name:        "vector-indexer-batch-size",
-			Category:    "Vector Store:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_INDEXER_BATCH_SIZE"),
-			Destination: &cfg.VectorIndexerBatchSize,
-			Value:       cfg.VectorIndexerBatchSize,
-			Usage:       "Number of entries to embed and index per background indexer tick",
-		},
-
-		&cli.StringFlag{
-			Name:        "vector-qdrant-host",
-			Category:    "Vector Store:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_QDRANT_HOST", "MEMORY_SERVICE_QDRANT_HOST"),
-			Destination: &cfg.QdrantHost,
-			Value:       cfg.QdrantAddress(),
-			Usage:       "Qdrant host or host:port",
-		},
-
-		// ── Embeddings ────────────────────────────────────────────
-		&cli.StringFlag{
-			Name:        "embedding-kind",
-			Category:    "Embeddings:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_EMBEDDING_KIND"),
-			Destination: &cfg.EmbedType,
-			Value:       cfg.EmbedType,
-			Usage:       "Embedding provider (" + strings.Join(registryembed.Names(), "|") + ")",
-		},
-		&cli.StringFlag{
-			Name:        "embedding-openai-api-key",
-			Category:    "Embeddings:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY", "MEMORY_SERVICE_OPENAI_API_KEY", "OPENAI_API_KEY"),
-			Destination: &cfg.OpenAIAPIKey,
-			Usage:       "OpenAI API key",
-		},
-
-		// ── Cache connections ─────────────────────────────────────
+		// ── Cache ─────────────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "cache-kind",
 			Category:    "Cache:",
@@ -172,10 +225,10 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Usage:       "Infinispan password",
 		},
 
-		// ── Attachments ───────────────────────────────────────────
+		// ── Attachment Storage ────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "attachments-kind",
-			Category:    "Attachments:",
+			Category:    "Attachment Storage:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_KIND"),
 			Destination: &cfg.AttachType,
 			Value:       cfg.AttachType,
@@ -183,69 +236,109 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "attachments-s3-bucket",
-			Category:    "Attachments:",
+			Category:    "Attachment Storage:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET"),
 			Destination: &cfg.S3Bucket,
 			Usage:       "S3 bucket for attachments",
 		},
 		&cli.BoolFlag{
 			Name:        "attachments-s3-use-path-style",
-			Category:    "Attachments:",
+			Category:    "Attachment Storage:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE"),
 			Destination: &cfg.S3UsePathStyle,
 			Usage:       "Use path-style S3 addressing (required for LocalStack/MinIO)",
 		},
 		&cli.BoolFlag{
 			Name:        "attachments-allow-private-source-urls",
-			Category:    "Attachments:",
+			Category:    "Attachment Storage:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_ALLOW_PRIVATE_SOURCE_URLS"),
 			Destination: &cfg.AllowPrivateSourceURLs,
 			Usage:       "Allow sourceUrl attachment downloads from private/loopback network addresses (unsafe)",
 		},
-
-		// ── System ────────────────────────────────────────────
-		&cli.StringFlag{
-			Name:        "temp-dir",
-			Category:    "System:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_TEMP_DIR"),
-			Destination: &cfg.TempDir,
-			Usage:       "Directory for temporary files; defaults to OS temp directory",
-		},
-
 		// ── Encryption ────────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "encryption-dek-key",
 			Category:    "Encryption:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DEK_KEY"),
 			Destination: &cfg.EncryptionKey,
-			Usage:       "Encryption key for at-rest encryption",
+			Usage:       "Encryption key (hex or base64, 16/24/32 bytes). Enables at-rest encryption and signed download URLs",
+		},
+		&cli.BoolFlag{
+			Name:        "encryption-db-disabled",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DB_DISABLED"),
+			Destination: &cfg.EncryptionDBDisabled,
+			Usage:       "Disable at-rest encryption for the database even when --encryption-dek-key is set",
+		},
+		&cli.BoolFlag{
+			Name:        "encryption-attachments-disabled",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED"),
+			Destination: &cfg.EncryptionAttachmentsDisabled,
+			Usage:       "Disable at-rest encryption for the attachment store even when --encryption-dek-key is set",
 		},
 
-		// ── Authentication & authorization ────────────────────────
+		// ── Vector Store ──────────────────────────────────────────
+		&cli.StringFlag{
+			Name:        "vector-kind",
+			Category:    "Vector Store:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_KIND"),
+			Destination: &cfg.VectorType,
+			Value:       cfg.VectorType,
+			Usage:       "Vector store (" + strings.Join(registryvector.Names(), "|") + ")",
+		},
+		&cli.IntFlag{
+			Name:        "vector-indexer-batch-size",
+			Category:    "Vector Store:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_INDEXER_BATCH_SIZE"),
+			Destination: &cfg.VectorIndexerBatchSize,
+			Value:       cfg.VectorIndexerBatchSize,
+			Usage:       "Number of entries to embed and index per background indexer tick",
+		},
+		&cli.StringFlag{
+			Name:        "vector-qdrant-host",
+			Category:    "Vector Store:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_QDRANT_HOST", "MEMORY_SERVICE_QDRANT_HOST"),
+			Destination: &cfg.QdrantHost,
+			Value:       cfg.QdrantAddress(),
+			Usage:       "Qdrant host or host:port",
+		},
+
+		// ── Embedding ─────────────────────────────────────────────
+		&cli.StringFlag{
+			Name:        "embedding-kind",
+			Category:    "Embedding:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EMBEDDING_KIND"),
+			Destination: &cfg.EmbedType,
+			Value:       cfg.EmbedType,
+			Usage:       "Embedding provider (" + strings.Join(registryembed.Names(), "|") + ")",
+		},
+		&cli.StringFlag{
+			Name:        "embedding-openai-api-key",
+			Category:    "Embedding:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY", "MEMORY_SERVICE_OPENAI_API_KEY", "OPENAI_API_KEY"),
+			Destination: &cfg.OpenAIAPIKey,
+			Usage:       "OpenAI API key",
+		},
+
+		// ── Authorization ─────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "oidc-issuer",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ISSUER"),
 			Destination: &cfg.OIDCIssuer,
 			Usage:       "OIDC issuer URL (enables OIDC auth)",
 		},
 		&cli.StringFlag{
 			Name:        "oidc-discovery-url",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_DISCOVERY_URL"),
 			Destination: &cfg.OIDCDiscoveryURL,
 			Usage:       "OIDC discovery URL (internal URL when issuer is not directly reachable)",
 		},
 		&cli.StringFlag{
-			Name:        "admin-api-key",
-			Category:    "Authentication & Authorization:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ADMIN_API_KEY"),
-			Destination: &cfg.AdminAPIKey,
-			Usage:       "Secret key used for signed download token generation",
-		},
-		&cli.StringFlag{
 			Name:        "roles-admin-oidc-role",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE"),
 			Destination: &cfg.AdminOIDCRole,
 			Value:       cfg.AdminOIDCRole,
@@ -253,7 +346,7 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "roles-auditor-oidc-role",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE"),
 			Destination: &cfg.AuditorOIDCRole,
 			Value:       cfg.AuditorOIDCRole,
@@ -261,160 +354,72 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "roles-indexer-oidc-role",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE"),
 			Destination: &cfg.IndexerOIDCRole,
 			Usage:       "OIDC role name that maps to indexer permissions",
 		},
 		&cli.StringFlag{
 			Name:        "roles-admin-users",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_ADMIN_USERS"),
 			Destination: &cfg.AdminUsers,
 			Usage:       "Comma-separated user IDs with admin permissions",
 		},
 		&cli.StringFlag{
 			Name:        "roles-auditor-users",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_AUDITOR_USERS"),
 			Destination: &cfg.AuditorUsers,
 			Usage:       "Comma-separated user IDs with auditor permissions",
 		},
 		&cli.StringFlag{
 			Name:        "roles-indexer-users",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_INDEXER_USERS"),
 			Destination: &cfg.IndexerUsers,
 			Usage:       "Comma-separated user IDs with indexer permissions",
 		},
 		&cli.StringFlag{
 			Name:        "roles-admin-clients",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_ADMIN_CLIENTS"),
 			Destination: &cfg.AdminClients,
 			Usage:       "Comma-separated API client IDs with admin permissions",
 		},
 		&cli.StringFlag{
 			Name:        "roles-auditor-clients",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_AUDITOR_CLIENTS"),
 			Destination: &cfg.AuditorClients,
 			Usage:       "Comma-separated API client IDs with auditor permissions",
 		},
 		&cli.StringFlag{
 			Name:        "roles-indexer-clients",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_INDEXER_CLIENTS"),
 			Destination: &cfg.IndexerClients,
 			Usage:       "Comma-separated API client IDs with indexer permissions",
 		},
 		&cli.BoolFlag{
 			Name:        "admin-require-justification",
-			Category:    "Authentication & Authorization:",
+			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION"),
 			Destination: &cfg.RequireJustification,
 			Usage:       "Require justification for admin API calls",
 		},
 
-		// ── Server / network ──────────────────────────────────────
-		&cli.IntFlag{
-			Name:        "port",
-			Category:    "Server:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_PORT"),
-			Destination: &cfg.Listener.Port,
-			Value:       cfg.Listener.Port,
-			Usage:       "HTTP server port",
-		},
-		&cli.StringFlag{
-			Name:        "advertised-address",
-			Category:    "Server:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ADVERTISED_ADDRESS"),
-			Destination: &cfg.ResumerAdvertisedAddress,
-			Usage:       "Advertised host:port for client redirects",
-		},
-		&cli.BoolFlag{
-			Name:        "plain-text",
-			Category:    "Server:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_PLAIN_TEXT"),
-			Destination: &cfg.Listener.EnablePlainText,
-			Value:       cfg.Listener.EnablePlainText,
-			Usage:       "Enable plaintext HTTP/1.1 + h2c + gRPC",
-		},
-		&cli.BoolFlag{
-			Name:        "tls",
-			Category:    "Server:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_TLS"),
-			Destination: &cfg.Listener.EnableTLS,
-			Value:       cfg.Listener.EnableTLS,
-			Usage:       "Enable TLS HTTP/1.1 + HTTP/2 + gRPC",
-		},
-		&cli.StringFlag{
-			Name:        "tls-cert-file",
-			Category:    "Server:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_TLS_CERT_FILE"),
-			Destination: &cfg.Listener.TLSCertFile,
-			Usage:       "TLS certificate file for single-port TLS mode",
-		},
-		&cli.StringFlag{
-			Name:        "tls-key-file",
-			Category:    "Server:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_TLS_KEY_FILE"),
-			Destination: &cfg.Listener.TLSKeyFile,
-			Usage:       "TLS private key file for single-port TLS mode",
-		},
-		&cli.IntFlag{
-			Name:        "read-header-timeout-seconds",
-			Category:    "Server:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS"),
-			Destination: readHeaderTimeoutSecs,
-			Value:       *readHeaderTimeoutSecs,
-			Usage:       "HTTP read header timeout in seconds",
-		},
-
-		// ── Management server ─────────────────────────────────────
-		&cli.IntFlag{
-			Name:        "management-port",
-			Category:    "Management:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_PORT"),
-			Destination: &cfg.ManagementListener.Port,
-			Value:       cfg.ManagementListener.Port,
-			Usage:       "Dedicated port for health and metrics (0 = OS-assigned random port); when unset, served on the main port",
-		},
-		&cli.BoolFlag{
-			Name:        "management-plain-text",
-			Category:    "Management:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT"),
-			Destination: &cfg.ManagementListener.EnablePlainText,
-			Value:       cfg.ManagementListener.EnablePlainText,
-			Usage:       "Enable plaintext HTTP for management server",
-		},
-		&cli.BoolFlag{
-			Name:        "management-tls",
-			Category:    "Management:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_TLS"),
-			Destination: &cfg.ManagementListener.EnableTLS,
-			Value:       cfg.ManagementListener.EnableTLS,
-			Usage:       "Enable TLS for management server",
-		},
-		&cli.BoolFlag{
-			Name:        "management-access-log",
-			Category:    "Management:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG"),
-			Destination: &cfg.ManagementAccessLog,
-			Usage:       "Enable HTTP access logging for management endpoints (/health, /ready, /metrics)",
-		},
-
-		// ── Observability ─────────────────────────────────────────
+		// ── Monitoring ────────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "prometheus-url",
-			Category:    "Observability:",
+			Category:    "Monitoring:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_PROMETHEUS_URL"),
 			Destination: &cfg.PrometheusURL,
 			Usage:       "Prometheus base URL for admin stats (e.g. http://prometheus:9090)",
 		},
 		&cli.StringFlag{
 			Name:        "metrics-labels",
-			Category:    "Observability:",
+			Category:    "Monitoring:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_METRICS_LABELS"),
 			Destination: &cfg.MetricsLabels,
 			Value:       "service=memory-service",

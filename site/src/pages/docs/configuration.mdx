@@ -18,11 +18,11 @@ Memory Service is configured through CLI flags or environment variables. Use the
 
 | Flag | Values | Default | Description |
 |------|--------|---------|-------------|
-| <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" /> | path | system temp dir | Directory for temporary files |
 | <Cfg p="--tls-cert-file" e="MEMORY_SERVICE_TLS_CERT_FILE" /> | path | _(none)_ | TLS certificate file (self-signed if omitted) |
 | <Cfg p="--tls-key-file" e="MEMORY_SERVICE_TLS_KEY_FILE" /> | path | _(none)_ | TLS private key file (self-signed if omitted) |
 | <Cfg p="--advertised-address" e="MEMORY_SERVICE_ADVERTISED_ADDRESS" /> | `host:port` | auto-detected | Advertised address for client redirects |
 | <Cfg p="--read-header-timeout-seconds" e="MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS" /> | integer | `5` | HTTP read header timeout in seconds |
+| <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" /> | path | system temp dir | Directory for temporary files |
 | <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" /> | `true`, `false` | `false` | Enable HTTP access logging for `/health`, `/ready`, `/metrics` |
 
 ### Network Listener
@@ -170,6 +170,7 @@ Configure file attachment storage, size limits, and lifecycle.
 | `MEMORY_SERVICE_ATTACHMENTS_MAX_EXPIRES_IN` | duration | `PT24H` | Maximum allowed TTL clients can request |
 | `MEMORY_SERVICE_ATTACHMENTS_CLEANUP_INTERVAL` | duration | `PT5M` | How often the cleanup job runs |
 | `MEMORY_SERVICE_ATTACHMENTS_DOWNLOAD_URL_EXPIRES_IN` | duration | `PT5M` | Signed download URL expiry |
+| — | — | — | Signed download URLs are enabled automatically when `--encryption-dek-key` is set; the signing key is derived from it via HKDF-SHA256. |
 
 ### Attachment Storage: DB Configuration
 
@@ -222,12 +223,14 @@ Memory Service supports transparent encryption of stored data using AES-256-GCM.
 
 | Flag / Env Var | Values | Default | Description |
 |----------------|--------|---------|-------------|
-| <Cfg p="--encryption-dek-key" e="MEMORY_SERVICE_ENCRYPTION_DEK_KEY" /> | base64 string | _(none)_ | Primary AES-256-GCM key (base64-encoded 32 bytes) |
+| <Cfg p="--encryption-dek-key" e="MEMORY_SERVICE_ENCRYPTION_DEK_KEY" /> | hex or base64 string | _(none)_ | Primary AES-256-GCM key (16/24/32 bytes). Enables at-rest encryption and signed download URLs. |
 | `MEMORY_SERVICE_ENCRYPTION_PROVIDERS` | comma-separated IDs | `plain` | Ordered list of providers; first active provider encrypts new data |
 | `MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_TYPE` | `plain`, `dek`, `vault` | _(required)_ | Provider type |
 | `MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_ENABLED` | `true`, `false` | `true` | Whether this provider is active |
-| `MEMORY_SERVICE_ENCRYPTION_DEK_DECRYPTION_KEYS` | comma-separated base64 strings | _(none)_ | Additional old keys for decryption during key rotation |
+| `MEMORY_SERVICE_ENCRYPTION_DEK_DECRYPTION_KEYS` | comma-separated hex/base64 strings | _(none)_ | Additional old keys for decryption and token verification during key rotation |
 | `MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY` | string | _(none)_ | Vault transit key name |
+| <Cfg p="--encryption-db-disabled" e="MEMORY_SERVICE_ENCRYPTION_DB_DISABLED" /> | `true`, `false` | `false` | Disable at-rest encryption for the database even when `--encryption-dek-key` is set. |
+| <Cfg p="--encryption-attachments-disabled" e="MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED" /> | `true`, `false` | `false` | Disable at-rest encryption for the attachment store even when `--encryption-dek-key` is set. |
 
 ### AES-256-GCM (DEK provider)
 

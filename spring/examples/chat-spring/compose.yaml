@@ -133,6 +133,11 @@ services:
       # Prometheus URL for admin stats endpoints
       MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
 
+      # ── Encryption ─────────────────────────────────────────────
+      # Dev key — replace with a securely generated value in production.
+      # Enables at-rest encryption and signed attachment download URLs.
+      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+
       # S3 attachment storage via LocalStack
       MEMORY_SERVICE_ATTACHMENTS_KIND: s3
       MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments

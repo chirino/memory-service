@@ -66,7 +66,7 @@ func init() {
 				cfg:          cfg,
 				entriesCache: registrycache.EntriesCacheFromContext(ctx),
 			}
-			if cfg.EncryptionKey != "" {
+			if cfg.EncryptionKey != "" && !cfg.EncryptionDBDisabled {
 				key, err := config.DecodeEncryptionKey(cfg.EncryptionKey)
 				if err != nil {
 					return nil, fmt.Errorf("invalid encryption key: %w", err)
@@ -134,16 +134,16 @@ type PostgresStore struct {
 	entriesCache registrycache.MemoryEntriesCache
 }
 
-func (s *PostgresStore) encrypt(plaintext []byte) []byte {
+func (s *PostgresStore) encrypt(plaintext []byte) ([]byte, error) {
 	if len(s.gcms) == 0 || plaintext == nil {
-		return plaintext
+		return plaintext, nil
 	}
 	gcm := s.gcms[0]
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		panic(fmt.Sprintf("failed to generate nonce: %v", err))
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
 	}
-	return gcm.Seal(nonce, nonce, plaintext, nil)
+	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }
 
 func (s *PostgresStore) decrypt(ciphertext []byte) ([]byte, error) {
@@ -259,9 +259,13 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		_ = groupID // unused for root conversations when convID is specified
 	}
 
+	encTitle, err := s.encrypt([]byte(title))
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt title: %w", err)
+	}
 	conv := model.Conversation{
 		ID:                     convID,
-		Title:                  s.encrypt([]byte(title)),
+		Title:                  encTitle,
 		OwnerUserID:            userID,
 		Metadata:               metadata,
 		ConversationGroupID:    actualGroupID,
@@ -440,7 +444,11 @@ func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, c
 
 	updates := map[string]interface{}{"updated_at": time.Now()}
 	if title != nil {
-		updates["title"] = s.encrypt([]byte(*title))
+		encTitle, err := s.encrypt([]byte(*title))
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt title: %w", err)
+		}
+		updates["title"] = encTitle
 	}
 	if metadata != nil {
 		updates["metadata"] = metadata
@@ -963,11 +971,15 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 		if err != nil {
 			return nil, err
 		}
+		encTitle, err := s.encrypt([]byte(detail.Title))
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt title: %w", err)
+		}
 		conv = model.Conversation{
 			ID:                  detail.ID,
 			ConversationGroupID: detail.ConversationGroupID,
 			OwnerUserID:         detail.OwnerUserID,
-			Title:               s.encrypt([]byte(detail.Title)),
+			Title:               encTitle,
 			CreatedAt:           detail.CreatedAt,
 			UpdatedAt:           detail.UpdatedAt,
 		}
@@ -991,6 +1003,10 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			entryEpoch = &one
 		}
 
+		encContent, err := s.encrypt(req.Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
+		}
 		entry := model.Entry{
 			ID:                  uuid.New(),
 			ConversationID:      conversationID,
@@ -1000,7 +1016,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			Channel:             ch,
 			Epoch:               entryEpoch,
 			ContentType:         req.ContentType,
-			Content:             s.encrypt(req.Content),
+			Content:             encContent,
 			IndexedContent:      req.IndexedContent,
 			CreatedAt:           now,
 		}
@@ -1164,6 +1180,10 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 	}
 
 	now := time.Now()
+	encContent, err := s.encrypt(appendContent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
+	}
 	newEntry := model.Entry{
 		ID:                  uuid.New(),
 		ConversationID:      conversationID,
@@ -1173,7 +1193,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		Channel:             model.ChannelMemory,
 		Epoch:               &epochToUse,
 		ContentType:         entry.ContentType,
-		Content:             s.encrypt(appendContent),
+		Content:             encContent,
 		IndexedContent:      entry.IndexedContent,
 		CreatedAt:           now,
 	}
