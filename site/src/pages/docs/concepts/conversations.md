@@ -64,17 +64,17 @@ curl -X DELETE http://localhost:8080/v1/conversations/{conversationId} \
 
 ## Conversation Properties
 
-| Property | Description |
-|----------|-------------|
-| `id` | Unique identifier (string) |
-| `title` | Optional conversation title |
-| `ownerUserId` | User who owns the conversation |
-| `createdAt` | Creation timestamp |
-| `updatedAt` | Last modification timestamp |
-| `lastEntryPreview` | Preview of the last entry |
-| `accessLevel` | Current user's access level (`owner`, `manager`, `writer`, `reader`) |
-| `forkedAtConversationId` | ID of conversation this was forked from (if forked) |
-| `forkedAtEntryId` | Entry ID where the fork occurred (if forked) |
+| Property                 | Description                                                          |
+| ------------------------ | -------------------------------------------------------------------- |
+| `id`                     | Unique identifier (string)                                           |
+| `title`                  | Optional conversation title                                          |
+| `ownerUserId`            | User who owns the conversation                                       |
+| `createdAt`              | Creation timestamp                                                   |
+| `updatedAt`              | Last modification timestamp                                          |
+| `lastEntryPreview`       | Preview of the last entry                                            |
+| `accessLevel`            | Current user's access level (`owner`, `manager`, `writer`, `reader`) |
+| `forkedAtConversationId` | ID of conversation this was forked from (if forked)                  |
+| `forkedAtEntryId`        | Entry ID where the fork occurred (if forked)                         |
 
 ## Best Practices
 

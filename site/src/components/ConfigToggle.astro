@@ -1,5 +1,7 @@
 ---
+
 ---
+
 <div class="config-toggle not-prose">
   <span class="config-toggle-label">Config format</span>
   <div class="config-toggle-buttons">
@@ -9,20 +11,24 @@
 </div>
 
 <script is:inline>
-  (function() {
+  (function () {
     var f;
-    try { f = localStorage.getItem('config-format'); } catch(e) {}
-    document.documentElement.setAttribute('data-config-format', f || 'env');
+    try {
+      f = localStorage.getItem("config-format");
+    } catch (e) {}
+    document.documentElement.setAttribute("data-config-format", f || "env");
   })();
 </script>
 
 <script>
-  document.querySelectorAll('.config-toggle-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const format = btn.getAttribute('data-format');
+  document.querySelectorAll(".config-toggle-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const format = btn.getAttribute("data-format");
       if (format) {
-        document.documentElement.setAttribute('data-config-format', format);
-        try { localStorage.setItem('config-format', format); } catch(e) {}
+        document.documentElement.setAttribute("data-config-format", format);
+        try {
+          localStorage.setItem("config-format", format);
+        } catch (e) {}
       }
     });
   });

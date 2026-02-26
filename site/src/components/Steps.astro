@@ -18,10 +18,13 @@ interface Props {
 }
 const { steps } = Astro.props;
 ---
-{steps ? (
-  <div class="steps" hidden data-steps={steps}></div>
-) : (
-  <div class="steps" hidden>
-    <slot />
-  </div>
-)}
+
+{
+  steps ? (
+    <div class="steps" hidden data-steps={steps} />
+  ) : (
+    <div class="steps" hidden>
+      <slot />
+    </div>
+  )
+}

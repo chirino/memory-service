@@ -8,7 +8,7 @@ Conversation forking allows you to create a new conversation branch from any poi
 
 ## What is Forking?
 
-Forking creates a copy of a conversation up to, but not including, the specified user entry.  Forking allows you to:
+Forking creates a copy of a conversation up to, but not including, the specified user entry. Forking allows you to:
 
 - **Explore alternatives** - Try different responses or approaches
 - **Debug issues** - Isolate problematic conversation states
@@ -49,11 +49,11 @@ The forked conversation inherits entries from the original up to (but not includ
 
 When you fork a conversation, the new conversation has:
 
-| Property | Description |
-|----------|-------------|
+| Property                 | Description                                    |
+| ------------------------ | ---------------------------------------------- |
 | `forkedAtConversationId` | ID of the conversation where the fork occurred |
-| `forkedAtEntryId` | Entry ID at which the fork diverged |
-| `ownerUserId` | Same owner as the original conversation |
+| `forkedAtEntryId`        | Entry ID at which the fork diverged            |
+| `ownerUserId`            | Same owner as the original conversation        |
 
 ## Fork Trees
 

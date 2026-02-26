@@ -68,27 +68,27 @@ rpc Record(stream RecordRequest) returns (RecordResponse);
 
 **Request stream** — the agent sends one message per token:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `conversation_id` | `bytes` | UUID (16-byte big-endian). Required in the **first** message only. |
-| `content` | `string` | The token content. |
-| `complete` | `bool` | Set to `true` in the **final** message to signal the response is finished. |
+| Field             | Type     | Description                                                                |
+| ----------------- | -------- | -------------------------------------------------------------------------- |
+| `conversation_id` | `bytes`  | UUID (16-byte big-endian). Required in the **first** message only.         |
+| `content`         | `string` | The token content.                                                         |
+| `complete`        | `bool`   | Set to `true` in the **final** message to signal the response is finished. |
 
 **Response** — returned when the stream completes or is cancelled:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `status` | `RecordStatus` | `RECORD_STATUS_SUCCESS`, `RECORD_STATUS_CANCELLED`, or `RECORD_STATUS_ERROR`. |
-| `error_message` | `string` | Set only when `status` is `RECORD_STATUS_ERROR`. |
+| Field           | Type           | Description                                                                   |
+| --------------- | -------------- | ----------------------------------------------------------------------------- |
+| `status`        | `RecordStatus` | `RECORD_STATUS_SUCCESS`, `RECORD_STATUS_CANCELLED`, or `RECORD_STATUS_ERROR`. |
+| `error_message` | `string`       | Set only when `status` is `RECORD_STATUS_ERROR`.                              |
 
 The `RecordStatus` enum values:
 
-| Value | Description |
-|-------|-------------|
-| `RECORD_STATUS_UNSPECIFIED` | Default/unset. |
-| `RECORD_STATUS_SUCCESS` | Recording completed normally. |
-| `RECORD_STATUS_CANCELLED` | A user requested cancellation — the agent should stop generating. |
-| `RECORD_STATUS_ERROR` | An error occurred during recording. |
+| Value                       | Description                                                       |
+| --------------------------- | ----------------------------------------------------------------- |
+| `RECORD_STATUS_UNSPECIFIED` | Default/unset.                                                    |
+| `RECORD_STATUS_SUCCESS`     | Recording completed normally.                                     |
+| `RECORD_STATUS_CANCELLED`   | A user requested cancellation — the agent should stop generating. |
+| `RECORD_STATUS_ERROR`       | An error occurred during recording.                               |
 
 When the server returns `RECORD_STATUS_CANCELLED`, the agent should stop calling the LLM.
 
@@ -102,15 +102,15 @@ rpc Replay(ReplayRequest) returns (stream ReplayResponse);
 
 **Request:**
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field             | Type    | Description                |
+| ----------------- | ------- | -------------------------- |
 | `conversation_id` | `bytes` | UUID (16-byte big-endian). |
 
 **Response stream:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `content` | `string` | Token content. |
+| Field              | Type     | Description                                                      |
+| ------------------ | -------- | ---------------------------------------------------------------- |
+| `content`          | `string` | Token content.                                                   |
 | `redirect_address` | `string` | If set, the tokens are on another instance. Format: `host:port`. |
 
 If the response is still in progress, the replay stream stays open and delivers new tokens as they arrive. Once the response completes, the stream closes.
@@ -127,15 +127,15 @@ rpc Cancel(CancelRecordRequest) returns (CancelRecordResponse);
 
 **Request:**
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field             | Type    | Description                |
+| ----------------- | ------- | -------------------------- |
 | `conversation_id` | `bytes` | UUID (16-byte big-endian). |
 
 **Response:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `accepted` | `bool` | `true` if the cancellation was accepted. |
+| Field              | Type     | Description                                                        |
+| ------------------ | -------- | ------------------------------------------------------------------ |
+| `accepted`         | `bool`   | `true` if the cancellation was accepted.                           |
 | `redirect_address` | `string` | If set, the recording is on another instance. Format: `host:port`. |
 
 After cancellation is accepted, the server completes the agent's `Record` call with `RecordStatus.RECORD_STATUS_CANCELLED`, signaling the agent to stop.
@@ -153,14 +153,14 @@ rpc CheckRecordings(CheckRecordingsRequest)
 
 **Request:**
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field              | Type             | Description             |
+| ------------------ | ---------------- | ----------------------- |
 | `conversation_ids` | `repeated bytes` | List of UUIDs to check. |
 
 **Response:**
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field              | Type             | Description                                              |
+| ------------------ | ---------------- | -------------------------------------------------------- |
 | `conversation_ids` | `repeated bytes` | Subset of the input IDs that have responses in progress. |
 
 This is useful for frontends that need to show a "response in progress" indicator when a user opens a conversation list. The agent app can batch-check multiple conversations in a single call.
@@ -175,8 +175,8 @@ rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
 
 **Response:**
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field     | Type   | Description                                 |
+| --------- | ------ | ------------------------------------------- |
 | `enabled` | `bool` | `true` if response resumption is available. |
 
 ## Agent Integration Flow

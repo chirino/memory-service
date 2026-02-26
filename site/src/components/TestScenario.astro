@@ -1,9 +1,9 @@
 ---
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
+import { join } from "path";
 
 interface Props {
-    checkpoint: string;
+  checkpoint: string;
 }
 
 const { checkpoint } = Astro.props;
@@ -11,181 +11,176 @@ const { checkpoint } = Astro.props;
 // During build, extract test data and save to JSON
 // This runs during static site generation
 try {
-        // Get the slot content as HTML
-        const slotHtml = await Astro.slots.render('default');
+  // Get the slot content as HTML
+  const slotHtml = await Astro.slots.render("default");
 
-        // Extract bash blocks and steps from the rendered content
-        const scenarios = extractTestScenarios(slotHtml);
+  // Extract bash blocks and steps from the rendered content
+  const scenarios = extractTestScenarios(slotHtml);
 
-        // Only save if we found scenarios
-        if (scenarios.length > 0) {
-            const testData = {
-                checkpoint,
-                sourceFile: Astro.url.pathname,
-                scenarios
-            };
+  // Only save if we found scenarios
+  if (scenarios.length > 0) {
+    const testData = {
+      checkpoint,
+      sourceFile: Astro.url.pathname,
+      scenarios,
+    };
 
-            // Append to test scenarios file
-            const testDataDir = join(process.cwd(), '..', 'site-tests', 'target', 'generated-test-resources');
-            const testDataFile = join(testDataDir, 'test-scenarios.json');
+    // Append to test scenarios file
+    const testDataDir = join(process.cwd(), "..", "site-tests", "target", "generated-test-resources");
+    const testDataFile = join(testDataDir, "test-scenarios.json");
 
-            if (!existsSync(testDataDir)) {
-                mkdirSync(testDataDir, { recursive: true });
-            }
+    if (!existsSync(testDataDir)) {
+      mkdirSync(testDataDir, { recursive: true });
+    }
 
-            // Read existing scenarios or create new array
-            let allScenarios: any[] = [];
-            if (existsSync(testDataFile)) {
-                try {
-                    allScenarios = JSON.parse(readFileSync(testDataFile, 'utf-8'));
-                } catch (e) {
-                    // If file is corrupt, start fresh
-                    allScenarios = [];
-                }
-            }
+    // Read existing scenarios or create new array
+    let allScenarios: any[] = [];
+    if (existsSync(testDataFile)) {
+      try {
+        allScenarios = JSON.parse(readFileSync(testDataFile, "utf-8"));
+      } catch (e) {
+        // If file is corrupt, start fresh
+        allScenarios = [];
+      }
+    }
 
-            // Merge: append scenarios to existing entry or add new one
-            const existingIndex = allScenarios.findIndex(
-                s => s.checkpoint === testData.checkpoint && s.sourceFile === testData.sourceFile
-            );
+    // Merge: append scenarios to existing entry or add new one
+    const existingIndex = allScenarios.findIndex(
+      (s) => s.checkpoint === testData.checkpoint && s.sourceFile === testData.sourceFile,
+    );
 
-            if (existingIndex >= 0) {
-                // Append new scenarios to existing entry, skipping duplicates
-                // (Astro may render pages twice during build)
-                const existing = allScenarios[existingIndex].scenarios;
-                for (const newScenario of testData.scenarios) {
-                    const isDuplicate = existing.some(
-                        (s: any) => s.bash === newScenario.bash
-                    );
-                    if (!isDuplicate) {
-                        existing.push(newScenario);
-                    }
-                }
-            } else {
-                allScenarios.push(testData);
-            }
-            writeFileSync(testDataFile, JSON.stringify(allScenarios, null, 2));
+    if (existingIndex >= 0) {
+      // Append new scenarios to existing entry, skipping duplicates
+      // (Astro may render pages twice during build)
+      const existing = allScenarios[existingIndex].scenarios;
+      for (const newScenario of testData.scenarios) {
+        const isDuplicate = existing.some((s: any) => s.bash === newScenario.bash);
+        if (!isDuplicate) {
+          existing.push(newScenario);
         }
+      }
+    } else {
+      allScenarios.push(testData);
+    }
+    writeFileSync(testDataFile, JSON.stringify(allScenarios, null, 2));
+  }
 } catch (error: any) {
-    console.warn('Failed to extract test scenario:', error);
+  console.warn("Failed to extract test scenario:", error);
 }
 
 function extractTestScenarios(html: string) {
-    const scenarios: any[] = [];
+  const scenarios: any[] = [];
 
-    // Pre-extract all Steps blocks with their positions.
-    // Supports two formats:
-    //   1. Prop-based (preferred): <div class="steps" hidden data-steps="..."></div>
-    //   2. Legacy body-based: <div class="steps" hidden>...content...</div>
-    const allStepsBlocks: { startPos: number; endPos: number; steps: string }[] = [];
+  // Pre-extract all Steps blocks with their positions.
+  // Supports two formats:
+  //   1. Prop-based (preferred): <div class="steps" hidden data-steps="..."></div>
+  //   2. Legacy body-based: <div class="steps" hidden>...content...</div>
+  const allStepsBlocks: { startPos: number; endPos: number; steps: string }[] = [];
 
-    // Pattern 1: data-steps attribute (prop-based, raw text)
-    const stepsAttrRegex = /<div class="steps" hidden data-steps="([^"]*)"[^>]*>\s*<\/div>/gs;
-    let stepsMatch;
-    while ((stepsMatch = stepsAttrRegex.exec(html)) !== null) {
-        const rawSteps = stepsMatch[1]
-            .replace(/&#34;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&amp;/g, '&')
-            .replace(/&quot;/g, '"');
+  // Pattern 1: data-steps attribute (prop-based, raw text)
+  const stepsAttrRegex = /<div class="steps" hidden data-steps="([^"]*)"[^>]*>\s*<\/div>/gs;
+  let stepsMatch;
+  while ((stepsMatch = stepsAttrRegex.exec(html)) !== null) {
+    const rawSteps = stepsMatch[1]
+      .replace(/&#34;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"');
 
-        allStepsBlocks.push({
-            startPos: stepsMatch.index,
-            endPos: stepsMatch.index + stepsMatch[0].length,
-            steps: rawSteps
-        });
+    allStepsBlocks.push({
+      startPos: stepsMatch.index,
+      endPos: stepsMatch.index + stepsMatch[0].length,
+      steps: rawSteps,
+    });
+  }
+
+  // Pattern 2: body content (legacy, HTML-stripped)
+  const stepsBodyRegex = /<div class="steps" hidden>(?!\s*<\/div>)([\s\S]*?)<\/div>/gs;
+  let stepsBodyMatch;
+  while ((stepsBodyMatch = stepsBodyRegex.exec(html)) !== null) {
+    // Skip if this position already matched by pattern 1
+    const alreadyMatched = allStepsBlocks.some((s) => Math.abs(s.startPos - stepsBodyMatch!.index) < 10);
+    if (alreadyMatched) continue;
+
+    const stepsContent = stepsBodyMatch[1]
+      .replace(/<[^>]+>/g, "") // Remove HTML tags
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .trim();
+
+    allStepsBlocks.push({
+      startPos: stepsBodyMatch.index,
+      endPos: stepsBodyMatch.index + stepsBodyMatch[0].length,
+      steps: stepsContent,
+    });
+  }
+
+  // Sort by position to ensure correct association
+  allStepsBlocks.sort((a, b) => a.startPos - b.startPos);
+
+  // Find bash code blocks - Astro/Shiki uses <pre data-language="bash"><code>...</code></pre>
+  const bashBlockRegex = /<pre[^>]*data-language="bash"[^>]*>\s*<code>(.*?)<\/code>\s*<\/pre>/gs;
+  let match;
+
+  // Collect all bash block positions first
+  const bashBlocks: { startPos: number; endPos: number; bashCode: string }[] = [];
+  while ((match = bashBlockRegex.exec(html)) !== null) {
+    // Extract text from <span> elements and decode HTML entities
+    let bashCode = match[1];
+
+    // Recursively remove all span tags
+    while (bashCode.includes("<span")) {
+      bashCode = bashCode.replace(/<span[^>]*>/g, "").replace(/<\/span>/g, "");
     }
 
-    // Pattern 2: body content (legacy, HTML-stripped)
-    const stepsBodyRegex = /<div class="steps" hidden>(?!\s*<\/div>)([\s\S]*?)<\/div>/gs;
-    let stepsBodyMatch;
-    while ((stepsBodyMatch = stepsBodyRegex.exec(html)) !== null) {
-        // Skip if this position already matched by pattern 1
-        const alreadyMatched = allStepsBlocks.some(
-            s => Math.abs(s.startPos - stepsBodyMatch!.index) < 10
-        );
-        if (alreadyMatched) continue;
+    // Decode HTML entities
+    bashCode = bashCode
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .trim();
 
-        const stepsContent = stepsBodyMatch[1]
-            .replace(/<[^>]+>/g, '') // Remove HTML tags
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&amp;/g, '&')
-            .replace(/&#39;/g, "'")
-            .replace(/&quot;/g, '"')
-            .trim();
+    bashBlocks.push({
+      startPos: match.index,
+      endPos: match.index + match[0].length,
+      bashCode,
+    });
+  }
 
-        allStepsBlocks.push({
-            startPos: stepsBodyMatch.index,
-            endPos: stepsBodyMatch.index + stepsBodyMatch[0].length,
-            steps: stepsContent
-        });
+  // Associate each bash block with the Steps block that follows it
+  // (before the next bash block)
+  for (let i = 0; i < bashBlocks.length; i++) {
+    const bash = bashBlocks[i];
+    const nextBashStart = i + 1 < bashBlocks.length ? bashBlocks[i + 1].startPos : html.length;
+
+    // Find the Steps block between this bash block and the next one
+    const customSteps: string[] = [];
+    const matchingSteps = allStepsBlocks.find((s) => s.startPos >= bash.endPos && s.startPos < nextBashStart);
+
+    if (matchingSteps) {
+      // Split the raw steps text into lines
+      const stepLines = matchingSteps.steps
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      customSteps.push(...stepLines);
     }
 
-    // Sort by position to ensure correct association
-    allStepsBlocks.sort((a, b) => a.startPos - b.startPos);
+    scenarios.push({
+      bash: bash.bashCode,
+      expectations: [],
+      customSteps,
+    });
+  }
 
-    // Find bash code blocks - Astro/Shiki uses <pre data-language="bash"><code>...</code></pre>
-    const bashBlockRegex = /<pre[^>]*data-language="bash"[^>]*>\s*<code>(.*?)<\/code>\s*<\/pre>/gs;
-    let match;
-
-    // Collect all bash block positions first
-    const bashBlocks: { startPos: number; endPos: number; bashCode: string }[] = [];
-    while ((match = bashBlockRegex.exec(html)) !== null) {
-        // Extract text from <span> elements and decode HTML entities
-        let bashCode = match[1];
-
-        // Recursively remove all span tags
-        while (bashCode.includes('<span')) {
-            bashCode = bashCode.replace(/<span[^>]*>/g, '').replace(/<\/span>/g, '');
-        }
-
-        // Decode HTML entities
-        bashCode = bashCode
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&amp;/g, '&')
-            .replace(/&#39;/g, "'")
-            .replace(/&quot;/g, '"')
-            .trim();
-
-        bashBlocks.push({
-            startPos: match.index,
-            endPos: match.index + match[0].length,
-            bashCode
-        });
-    }
-
-    // Associate each bash block with the Steps block that follows it
-    // (before the next bash block)
-    for (let i = 0; i < bashBlocks.length; i++) {
-        const bash = bashBlocks[i];
-        const nextBashStart = i + 1 < bashBlocks.length ? bashBlocks[i + 1].startPos : html.length;
-
-        // Find the Steps block between this bash block and the next one
-        const customSteps: string[] = [];
-        const matchingSteps = allStepsBlocks.find(
-            s => s.startPos >= bash.endPos && s.startPos < nextBashStart
-        );
-
-        if (matchingSteps) {
-            // Split the raw steps text into lines
-            const stepLines = matchingSteps.steps.split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0);
-            customSteps.push(...stepLines);
-        }
-
-        scenarios.push({
-            bash: bash.bashCode,
-            expectations: [],
-            customSteps
-        });
-    }
-
-    return scenarios;
+  return scenarios;
 }
 ---
 

@@ -40,6 +40,7 @@ docker compose up -d
 ```
 
 This will start:
+
 - **Demo Chat App** for an AI chat interface
 - **Memory Service** this project's service (used by the demo chat app)
 - **Keycloak** for authentication (used by the memory service and demo chat app)
@@ -51,6 +52,7 @@ This will start:
 ### 4. Access the Demo Chat App
 
 Open `http://localhost:8080` in your browser and sign in with:
+
 - Username: `bob`
 - Password: `bob`
 
@@ -58,23 +60,23 @@ Open `http://localhost:8080` in your browser and sign in with:
 
 Keycloak is pre-configured with these test users:
 
-| Username | Password | Role |
-|----------|----------|------|
-| bob | bob | user |
-| alice | alice | user, admin |
-| charlie | charlie | user |
+| Username | Password | Role        |
+| -------- | -------- | ----------- |
+| bob      | bob      | user        |
+| alice    | alice    | user, admin |
+| charlie  | charlie  | user        |
 
 ## Things to notice in the Demo.
 
-* You can fork any user entry and switch between forks
-* Agent memory stays consistent with the fork you're on.  Ask it to recall previous fact you have told it.
-* Streaming responses survive browser page reloads.  You can even switch to a different device and still view the response that is currently being generated.
-* Users can see a list of all their previous conversations.
+- You can fork any user entry and switch between forks
+- Agent memory stays consistent with the fork you're on. Ask it to recall previous fact you have told it.
+- Streaming responses survive browser page reloads. You can even switch to a different device and still view the response that is currently being generated.
+- Users can see a list of all their previous conversations.
 
 ## Next Steps
 
 - Understand [Core Concepts](/docs/concepts/)
 - Explore Developer Guides for
-  * [Quarkus Langchain4j](/docs/quarkus/)
-  * [Spring AI](/docs/spring/)
+  - [Quarkus Langchain4j](/docs/quarkus/)
+  - [Spring AI](/docs/spring/)
 - Learn about [Server Configuration Options](/docs/configuration/)

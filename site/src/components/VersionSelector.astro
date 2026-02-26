@@ -15,7 +15,7 @@ let versions: Version[] = [];
 try {
   // Try to load versions.json if it exists
   // This file is generated during the deployment workflow
-  const versionsModule = await import('../data/versions.json').catch(() => null);
+  const versionsModule = await import("../data/versions.json").catch(() => null);
   if (versionsModule?.default) {
     versions = versionsModule.default;
   }
@@ -25,10 +25,8 @@ try {
 
 // Always include current version
 const basePath = import.meta.env.BASE_URL;
-const isVersionedBuild = basePath.includes('/docs/v');
-const currentVersion = isVersionedBuild
-  ? basePath.match(/\/docs\/(v[\d.]+)\//)?.[1] || 'latest'
-  : 'latest';
+const isVersionedBuild = basePath.includes("/docs/v");
+const currentVersion = isVersionedBuild ? basePath.match(/\/docs\/(v[\d.]+)\//)?.[1] || "latest" : "latest";
 
 // If no versions loaded, show at minimum the current version
 if (versions.length === 0) {
@@ -36,12 +34,12 @@ if (versions.length === 0) {
 }
 
 // Mark current version
-versions = versions.map(v => ({
+versions = versions.map((v) => ({
   ...v,
-  current: v.version === currentVersion || (v.version === 'latest' && currentVersion === 'latest'),
+  current: v.version === currentVersion || (v.version === "latest" && currentVersion === "latest"),
 }));
 
-const selectedVersion = versions.find(v => v.current) || versions[0];
+const selectedVersion = versions.find((v) => v.current) || versions[0];
 ---
 
 <div class="version-selector">
@@ -55,32 +53,36 @@ const selectedVersion = versions.find(v => v.current) || versions[0];
              focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
              cursor-pointer"
     >
-      {versions.map(v => (
-        <option value={v.path} selected={v.current}>
-          {v.version === 'latest' ? 'Latest (main)' : v.version}
-        </option>
-      ))}
+      {
+        versions.map((v) => (
+          <option value={v.path} selected={v.current}>
+            {v.version === "latest" ? "Latest (main)" : v.version}
+          </option>
+        ))
+      }
     </select>
     <div class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
       <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
       </svg>
     </div>
   </div>
 
-  {versions.length > 1 && (
-    <a
-      href={`${basePath}docs/versions/`}
-      class="block mt-2 text-xs text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-    >
-      View all versions
-    </a>
-  )}
+  {
+    versions.length > 1 && (
+      <a
+        href={`${basePath}docs/versions/`}
+        class="block mt-2 text-xs text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+      >
+        View all versions
+      </a>
+    )
+  }
 </div>
 
 <script>
-  const select = document.getElementById('version-select') as HTMLSelectElement;
-  select?.addEventListener('change', (e) => {
+  const select = document.getElementById("version-select") as HTMLSelectElement;
+  select?.addEventListener("change", (e) => {
     const target = e.target as HTMLSelectElement;
     const newPath = target.value;
     // Navigate to the equivalent page in the new version

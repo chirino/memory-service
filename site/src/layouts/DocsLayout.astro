@@ -1,10 +1,10 @@
 ---
-import '../styles/global.css';
-import Header from '../components/Header.astro';
-import Footer from '../components/Footer.astro';
-import DocsSidebar from '../components/DocsSidebar.astro';
-import VersionSelector from '../components/VersionSelector.astro';
-import TableOfContents from '../components/TableOfContents.astro';
+import "../styles/global.css";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import DocsSidebar from "../components/DocsSidebar.astro";
+import VersionSelector from "../components/VersionSelector.astro";
+import TableOfContents from "../components/TableOfContents.astro";
 
 interface Props {
   title: string;
@@ -12,13 +12,13 @@ interface Props {
   headings?: { depth: number; slug: string; text: string }[];
 }
 
-const { title, description = 'Memory Service Documentation' } = (Astro.props as any).content || {};
+const { title, description = "Memory Service Documentation" } = (Astro.props as any).content || {};
 const headings = (Astro.props as any).headings || [];
-const siteTitle = 'Memory Service Docs';
+const siteTitle = "Memory Service Docs";
 const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${siteTitle}`;
 ---
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
@@ -38,16 +38,12 @@ const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${site
         aria-label="Toggle sidebar"
       >
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
         </svg>
       </button>
 
       <!-- Sidebar overlay for mobile -->
-      <div
-        id="sidebar-overlay"
-        class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden"
-        aria-hidden="true"
-      ></div>
+      <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" aria-hidden="true"></div>
 
       <!-- Sidebar -->
       <aside
@@ -65,12 +61,14 @@ const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${site
       <!-- Main content -->
       <div class="flex-1 min-w-0">
         <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <article class="prose prose-gray dark:prose-invert max-w-none
+          <article
+            class="prose prose-gray dark:prose-invert max-w-none
                          prose-headings:scroll-mt-20
                          prose-a:text-primary-600 dark:prose-a:text-primary-400
                          prose-code:text-primary-600 dark:prose-code:text-primary-400
                          prose-code:before:content-none prose-code:after:content-none
-                         prose-pre:bg-gray-900 prose-pre:border-0">
+                         prose-pre:bg-gray-900 prose-pre:border-0"
+          >
             <h1 class="text-3xl font-bold mb-8">{title}</h1>
             <slot />
           </article>
@@ -78,77 +76,79 @@ const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${site
       </div>
 
       <!-- Table of Contents (right sidebar, desktop only) -->
-      {headings.length > 0 && (
-        <aside class="hidden xl:block w-64 flex-shrink-0">
-          <div class="sticky top-20 py-8 pr-4">
-            <TableOfContents headings={headings} />
-          </div>
-        </aside>
-      )}
+      {
+        headings.length > 0 && (
+          <aside class="hidden xl:block w-64 flex-shrink-0">
+            <div class="sticky top-20 py-8 pr-4">
+              <TableOfContents headings={headings} />
+            </div>
+          </aside>
+        )
+      }
     </div>
 
     <Footer />
 
     <script>
       // Mobile sidebar toggle
-      const toggle = document.getElementById('sidebar-toggle');
-      const sidebar = document.getElementById('sidebar');
-      const overlay = document.getElementById('sidebar-overlay');
+      const toggle = document.getElementById("sidebar-toggle");
+      const sidebar = document.getElementById("sidebar");
+      const overlay = document.getElementById("sidebar-overlay");
 
       function closeSidebar() {
-        sidebar?.classList.add('-translate-x-full');
-        overlay?.classList.add('hidden');
+        sidebar?.classList.add("-translate-x-full");
+        overlay?.classList.add("hidden");
       }
 
       function openSidebar() {
-        sidebar?.classList.remove('-translate-x-full');
-        overlay?.classList.remove('hidden');
+        sidebar?.classList.remove("-translate-x-full");
+        overlay?.classList.remove("hidden");
       }
 
-      toggle?.addEventListener('click', () => {
-        if (sidebar?.classList.contains('-translate-x-full')) {
+      toggle?.addEventListener("click", () => {
+        if (sidebar?.classList.contains("-translate-x-full")) {
           openSidebar();
         } else {
           closeSidebar();
         }
       });
 
-      overlay?.addEventListener('click', closeSidebar);
+      overlay?.addEventListener("click", closeSidebar);
 
       // Close sidebar on navigation (for SPAs)
-      document.querySelectorAll('#sidebar a').forEach(link => {
-        link.addEventListener('click', closeSidebar);
+      document.querySelectorAll("#sidebar a").forEach((link) => {
+        link.addEventListener("click", closeSidebar);
       });
 
       // Add copy buttons to code blocks
-      document.querySelectorAll('pre:not(.mermaid)').forEach(pre => {
+      document.querySelectorAll("pre:not(.mermaid)").forEach((pre) => {
         // Create copy button
-        const btn = document.createElement('button');
-        btn.className = 'code-copy-btn';
-        btn.setAttribute('aria-label', 'Copy code');
+        const btn = document.createElement("button");
+        btn.className = "code-copy-btn";
+        btn.setAttribute("aria-label", "Copy code");
         btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
         </svg>`;
 
-        btn.addEventListener('click', async () => {
-          const code = pre.querySelector('code');
+        btn.addEventListener("click", async () => {
+          const code = pre.querySelector("code");
           const text = code ? code.textContent : pre.textContent;
 
           try {
-            await navigator.clipboard.writeText(text || '');
-            btn.classList.add('copied');
+            await navigator.clipboard.writeText(text || "");
+            btn.classList.add("copied");
             btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
             </svg>`;
 
             setTimeout(() => {
-              btn.classList.remove('copied');
+              btn.classList.remove("copied");
               btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>`;
             }, 2000);
           } catch (err) {
-            console.error('Failed to copy:', err);
+            console.error("Failed to copy:", err);
           }
         });
 
@@ -157,82 +157,80 @@ const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${site
     </script>
 
     <script type="module">
-      const mermaidBlocks = document.querySelectorAll('pre.mermaid');
+      const mermaidBlocks = document.querySelectorAll("pre.mermaid");
       if (mermaidBlocks.length > 0) {
-        const { default: mermaid } = await import(
-          'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'
-        );
-        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
+        const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
         const darkVars = {
-          background: '#111827',
-          primaryColor: '#3730a3',
-          primaryTextColor: '#e0e7ff',
-          primaryBorderColor: '#6366f1',
-          secondaryColor: '#134e4a',
-          secondaryTextColor: '#ccfbf1',
-          secondaryBorderColor: '#2dd4bf',
-          tertiaryColor: '#1e1b4b',
-          tertiaryTextColor: '#e0e7ff',
-          lineColor: '#818cf8',
-          textColor: '#f1f5f9',
-          mainBkg: '#3730a3',
-          nodeBorder: '#6366f1',
-          clusterBkg: '#1e1b4b',
-          clusterBorder: '#4338ca',
-          titleColor: '#f1f5f9',
-          actorBkg: '#312e81',
-          actorBorder: '#6366f1',
-          actorTextColor: '#f1f5f9',
-          actorLineColor: '#818cf8',
-          signalColor: '#818cf8',
-          signalTextColor: '#f1f5f9',
-          noteBkgColor: '#134e4a',
-          noteTextColor: '#ccfbf1',
-          noteBorderColor: '#2dd4bf',
-          activationBkgColor: '#3730a3',
-          activationBorderColor: '#818cf8',
-          loopTextColor: '#e0e7ff',
-          labelBoxBkgColor: '#1e1b4b',
-          labelBoxBorderColor: '#4338ca',
-          labelTextColor: '#e0e7ff',
+          background: "#111827",
+          primaryColor: "#3730a3",
+          primaryTextColor: "#e0e7ff",
+          primaryBorderColor: "#6366f1",
+          secondaryColor: "#134e4a",
+          secondaryTextColor: "#ccfbf1",
+          secondaryBorderColor: "#2dd4bf",
+          tertiaryColor: "#1e1b4b",
+          tertiaryTextColor: "#e0e7ff",
+          lineColor: "#818cf8",
+          textColor: "#f1f5f9",
+          mainBkg: "#3730a3",
+          nodeBorder: "#6366f1",
+          clusterBkg: "#1e1b4b",
+          clusterBorder: "#4338ca",
+          titleColor: "#f1f5f9",
+          actorBkg: "#312e81",
+          actorBorder: "#6366f1",
+          actorTextColor: "#f1f5f9",
+          actorLineColor: "#818cf8",
+          signalColor: "#818cf8",
+          signalTextColor: "#f1f5f9",
+          noteBkgColor: "#134e4a",
+          noteTextColor: "#ccfbf1",
+          noteBorderColor: "#2dd4bf",
+          activationBkgColor: "#3730a3",
+          activationBorderColor: "#818cf8",
+          loopTextColor: "#e0e7ff",
+          labelBoxBkgColor: "#1e1b4b",
+          labelBoxBorderColor: "#4338ca",
+          labelTextColor: "#e0e7ff",
         };
         const lightVars = {
-          background: '#ffffff',
-          primaryColor: '#e0e7ff',
-          primaryTextColor: '#312e81',
-          primaryBorderColor: '#6366f1',
-          secondaryColor: '#ccfbf1',
-          secondaryTextColor: '#134e4a',
-          secondaryBorderColor: '#14b8a6',
-          tertiaryColor: '#eef2ff',
-          tertiaryTextColor: '#3730a3',
-          lineColor: '#6366f1',
-          textColor: '#1e293b',
-          mainBkg: '#e0e7ff',
-          nodeBorder: '#6366f1',
-          clusterBkg: '#eef2ff',
-          clusterBorder: '#818cf8',
-          titleColor: '#312e81',
-          actorBkg: '#e0e7ff',
-          actorBorder: '#6366f1',
-          actorTextColor: '#312e81',
-          actorLineColor: '#6366f1',
-          signalColor: '#6366f1',
-          signalTextColor: '#1e293b',
-          noteBkgColor: '#ccfbf1',
-          noteTextColor: '#134e4a',
-          noteBorderColor: '#14b8a6',
-          activationBkgColor: '#e0e7ff',
-          activationBorderColor: '#818cf8',
-          loopTextColor: '#3730a3',
-          labelBoxBkgColor: '#eef2ff',
-          labelBoxBorderColor: '#818cf8',
-          labelTextColor: '#3730a3',
+          background: "#ffffff",
+          primaryColor: "#e0e7ff",
+          primaryTextColor: "#312e81",
+          primaryBorderColor: "#6366f1",
+          secondaryColor: "#ccfbf1",
+          secondaryTextColor: "#134e4a",
+          secondaryBorderColor: "#14b8a6",
+          tertiaryColor: "#eef2ff",
+          tertiaryTextColor: "#3730a3",
+          lineColor: "#6366f1",
+          textColor: "#1e293b",
+          mainBkg: "#e0e7ff",
+          nodeBorder: "#6366f1",
+          clusterBkg: "#eef2ff",
+          clusterBorder: "#818cf8",
+          titleColor: "#312e81",
+          actorBkg: "#e0e7ff",
+          actorBorder: "#6366f1",
+          actorTextColor: "#312e81",
+          actorLineColor: "#6366f1",
+          signalColor: "#6366f1",
+          signalTextColor: "#1e293b",
+          noteBkgColor: "#ccfbf1",
+          noteTextColor: "#134e4a",
+          noteBorderColor: "#14b8a6",
+          activationBkgColor: "#e0e7ff",
+          activationBorderColor: "#818cf8",
+          loopTextColor: "#3730a3",
+          labelBoxBkgColor: "#eef2ff",
+          labelBoxBorderColor: "#818cf8",
+          labelTextColor: "#3730a3",
         };
         mermaid.initialize({
           startOnLoad: false,
-          theme: 'base',
-          fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+          theme: "base",
+          fontFamily: "ui-sans-serif, system-ui, sans-serif",
           themeVariables: isDark ? darkVars : lightVars,
         });
         await mermaid.run({ nodes: mermaidBlocks });

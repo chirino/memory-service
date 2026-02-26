@@ -59,10 +59,10 @@ memory-service.vector-store.lists=100
 
 ### Index Types
 
-| Type | Description | Best For |
-|------|-------------|----------|
-| `ivfflat` | Inverted file with flat storage | General use |
-| `hnsw` | Hierarchical navigable small world | High recall |
+| Type      | Description                        | Best For    |
+| --------- | ---------------------------------- | ----------- |
+| `ivfflat` | Inverted file with flat storage    | General use |
+| `hnsw`    | Hierarchical navigable small world | High recall |
 
 ```sql
 -- Create HNSW index for better performance
