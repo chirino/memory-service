@@ -50,7 +50,7 @@ func TestFeaturesPgKeycloak(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
 
 	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
-	featurePath := filepath.Join("..", "..", "memory-service", "src", "test", "resources", "features-oidc", "keycloak-oidc-rest.feature")
+	featurePath := filepath.Join("testdata", "features-oidc", "keycloak-oidc-rest.feature")
 	if _, err := os.Stat(featurePath); os.IsNotExist(err) {
 		t.Skipf("Feature file not found: %s", featurePath)
 	}

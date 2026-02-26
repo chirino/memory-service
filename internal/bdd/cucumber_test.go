@@ -58,7 +58,7 @@ func TestFeatures(t *testing.T) {
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
 	// Discover feature files
-	featuresDir := filepath.Join("..", "..", "memory-service", "src", "test", "resources", "features")
+	featuresDir := filepath.Join("testdata", "features")
 	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
 		t.Skipf("Feature files directory not found: %s", featuresDir)
 	}

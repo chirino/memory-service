@@ -12,9 +12,9 @@ import (
 // TestRoundTrip verifies that WriteHeader and ReadHeader are inverses.
 func TestRoundTrip(t *testing.T) {
 	headers := []dataencryption.Header{
-		{Version: 1, ProviderID: "dek", Nonce:      make([]byte, 12)},
-		{Version: 1, ProviderID: "vault", Nonce:      make([]byte, 12)},
-		{Version: 1, ProviderID: "kms", Nonce:      bytes.Repeat([]byte{0xAB}, 12)},
+		{Version: 1, ProviderID: "dek", Nonce: make([]byte, 12)},
+		{Version: 1, ProviderID: "vault", Nonce: make([]byte, 12)},
+		{Version: 1, ProviderID: "kms", Nonce: bytes.Repeat([]byte{0xAB}, 12)},
 	}
 	for _, h := range headers {
 		var buf bytes.Buffer
@@ -33,7 +33,7 @@ func TestRoundTrip(t *testing.T) {
 func TestHasMagic(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, dataencryption.WriteHeader(&buf, dataencryption.Header{
-		Version: 1, ProviderID: "dek", Nonce:      make([]byte, 12),
+		Version: 1, ProviderID: "dek", Nonce: make([]byte, 12),
 	}))
 	ciphertext := append(buf.Bytes(), []byte("payload")...)
 

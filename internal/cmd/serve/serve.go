@@ -3,6 +3,7 @@ package serve
 import (
 	"context"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -52,57 +53,23 @@ func Command() *cli.Command {
    Example:
    MEMORY_SERVICE_API_KEYS_AGENT_A=secret-key-1
    MEMORY_SERVICE_API_KEYS_AGENT_B=key-one,key-two
-
-   ── Encryption Kind ─────────────────────────────────────────────────────────
-   MEMORY_SERVICE_ENCRYPTION_KIND is a comma-separated ordered list of
-   provider names. The first provider is the PRIMARY — used for all new
-   encryptions. Additional providers are used as fallbacks for decryption only,
-   enabling zero-downtime key rotation.
-
-   Available providers:
-
-     plain   No encryption. Data is stored as-is. Default when no providers
-             are configured. Safe for development; not for production.
-
-     dek     AES-256-GCM with a locally-held key. Fast, no external dependency.
-             Required env vars:
-               MEMORY_SERVICE_ENCRYPTION_DEK_KEY=<key>[,<legacy-key>,...]
-             The value is a comma-separated list of hex or base64 AES-256 keys.
-             The first key encrypts new data; additional keys are decryption-only
-             (zero-downtime key rotation — remove old keys once all data is re-keyed).
-
-     vault   HashiCorp Vault Transit — DEKs are loaded from the application
-             database (encryption_deks table) at startup; Vault Transit is used
-             only to wrap/unwrap DEKs at load time (zero per-request API calls).
-             A random DEK is generated on first start and stored wrapped. Key
-             rotation: INSERT a new row into encryption_deks via the CLI tool.
-             Required env vars:
-               VAULT_ADDR=https://vault.example.com
-               VAULT_TOKEN=<token>  (or other Vault auth env vars)
-               MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY=<key-name>
-
-     kms     AWS KMS — same DB-stored DEK pattern as vault but backed by AWS KMS.
-             DEKs are wrapped via kms:Encrypt at startup and stored in the
-             encryption_deks table; kms:Decrypt is called once per DEK at load.
-             Required env vars:
-               AWS_REGION=us-east-1
-               MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID=<key-id-or-arn>
-             Standard AWS credential env vars are also honoured
-             (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_PROFILE, etc.)
-
-   Key rotation example (migrate from dek to vault):
-     MEMORY_SERVICE_ENCRYPTION_KIND=vault,dek
-       → new data encrypted with vault; existing dek ciphertext still readable
-
-   Disabling encryption for specific subsystems:
-     MEMORY_SERVICE_ENCRYPTION_DB_DISABLED=true
-     MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED=true
-
 `,
 		Flags: flags(&cfg, &readHeaderTimeoutSecs),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			if err := cfg.ApplyJavaCompatFromEnv(); err != nil {
 				return err
+			}
+			// Forward Vault/AWS CLI flags to env vars so the SDKs pick them up.
+			for flagName, envVar := range map[string]string{
+				"encryption-vault-addr":                "VAULT_ADDR",
+				"encryption-vault-token":               "VAULT_TOKEN",
+				"encryption-kms-aws-region":            "AWS_REGION",
+				"encryption-kms-aws-access-key-id":     "AWS_ACCESS_KEY_ID",
+				"encryption-kms-aws-secret-access-key": "AWS_SECRET_ACCESS_KEY",
+			} {
+				if v := cmd.String(flagName); v != "" {
+					os.Setenv(envVar, v)
+				}
 			}
 			cfg.Listener.ReadHeaderTimeout = time.Duration(readHeaderTimeoutSecs) * time.Second
 			cfg.ManagementListener.ReadHeaderTimeout = cfg.Listener.ReadHeaderTimeout
@@ -330,27 +297,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Value:       cfg.EncryptionProviders,
 			Usage:       "Comma-separated ordered list of encryption providers (" + strings.Join(encrypt.Names(), "|") + "). First is primary (used for new encryptions).",
 		},
-		&cli.StringFlag{
-			Name:        "encryption-dek-key",
-			Category:    "Encryption:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DEK_KEY", "MEMORY_SERVICE_ENCRYPTION_KEY"),
-			Destination: &cfg.EncryptionKey,
-			Usage:       "Comma-separated AES keys for the 'dek' provider (hex or base64, 32 bytes). First is primary; additional keys are legacy (decryption-only key rotation). Also derives attachment URL signing keys.",
-		},
-		&cli.StringFlag{
-			Name:        "encryption-vault-transit-key",
-			Category:    "Encryption:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY"),
-			Destination: &cfg.EncryptionVaultTransitKey,
-			Usage:       "Vault Transit key name for the 'vault' provider",
-		},
-		&cli.StringFlag{
-			Name:        "encryption-kms-key-id",
-			Category:    "Encryption:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID"),
-			Destination: &cfg.EncryptionKMSKeyID,
-			Usage:       "AWS KMS key ID or ARN for the 'kms' provider",
-		},
 		&cli.BoolFlag{
 			Name:        "encryption-db-disabled",
 			Category:    "Encryption:",
@@ -364,6 +310,63 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED"),
 			Destination: &cfg.EncryptionAttachmentsDisabled,
 			Usage:       "Disable at-rest encryption for the attachment store even when encryption is configured",
+		},
+
+		// ── Encryption: DEK ───────────────────────────────────────
+		&cli.StringFlag{
+			Name:        "encryption-dek-key",
+			Category:    "Encryption: DEK:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DEK_KEY", "MEMORY_SERVICE_ENCRYPTION_KEY"),
+			Destination: &cfg.EncryptionKey,
+			Usage:       "Comma-separated AES keys for the 'dek' provider (hex or base64, 32 bytes). First is primary; additional keys are legacy (decryption-only key rotation). Also derives attachment URL signing keys.",
+		},
+
+		// ── Encryption: Vault ─────────────────────────────────────
+		&cli.StringFlag{
+			Name:        "encryption-vault-transit-key",
+			Category:    "Encryption: Vault:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY"),
+			Destination: &cfg.EncryptionVaultTransitKey,
+			Usage:       "Vault Transit key name for the 'vault' provider",
+		},
+		&cli.StringFlag{
+			Name:     "encryption-vault-addr",
+			Category: "Encryption: Vault:",
+			Sources:  cli.EnvVars("VAULT_ADDR"),
+			Usage:    "Vault server URL (e.g. https://vault.example.com)",
+		},
+		&cli.StringFlag{
+			Name:     "encryption-vault-token",
+			Category: "Encryption: Vault:",
+			Sources:  cli.EnvVars("VAULT_TOKEN"),
+			Usage:    "Vault token for authentication",
+		},
+
+		// ── Encryption: KMS ───────────────────────────────────────
+		&cli.StringFlag{
+			Name:        "encryption-kms-key-id",
+			Category:    "Encryption: KMS:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID"),
+			Destination: &cfg.EncryptionKMSKeyID,
+			Usage:       "AWS KMS key ID or ARN for the 'kms' provider",
+		},
+		&cli.StringFlag{
+			Name:     "encryption-kms-aws-region",
+			Category: "Encryption: KMS:",
+			Sources:  cli.EnvVars("AWS_REGION"),
+			Usage:    "AWS region (e.g. us-east-1)",
+		},
+		&cli.StringFlag{
+			Name:     "encryption-kms-aws-access-key-id",
+			Category: "Encryption: KMS:",
+			Sources:  cli.EnvVars("AWS_ACCESS_KEY_ID"),
+			Usage:    "AWS access key ID",
+		},
+		&cli.StringFlag{
+			Name:     "encryption-kms-aws-secret-access-key",
+			Category: "Encryption: KMS:",
+			Sources:  cli.EnvVars("AWS_SECRET_ACCESS_KEY"),
+			Usage:    "AWS secret access key",
 		},
 
 		// ── Vector Store ──────────────────────────────────────────

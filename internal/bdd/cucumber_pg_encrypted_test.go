@@ -54,7 +54,7 @@ func TestFeaturesPgEncrypted(t *testing.T) {
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
 	// Run only features-encrypted/ feature files
-	resourcesDir := filepath.Join("..", "..", "memory-service", "src", "test", "resources")
+	resourcesDir := "testdata"
 	encryptedDir := filepath.Join(resourcesDir, "features-encrypted")
 	if _, err := os.Stat(encryptedDir); os.IsNotExist(err) {
 		t.Skipf("Encrypted feature files directory not found: %s", encryptedDir)

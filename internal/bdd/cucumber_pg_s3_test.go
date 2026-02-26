@@ -63,7 +63,7 @@ func TestFeaturesPgS3(t *testing.T) {
 
 	// Run only attachments-rest.feature, excluding @direct-stream-only scenarios
 	// (S3 returns redirects instead of streaming, so cache header assertions don't apply).
-	featuresDir := filepath.Join("..", "..", "memory-service", "src", "test", "resources", "features")
+	featuresDir := filepath.Join("testdata", "features")
 	featurePath := filepath.Join(featuresDir, "attachments-rest.feature")
 	if _, err := os.Stat(featurePath); os.IsNotExist(err) {
 		t.Skipf("Feature file not found: %s", featurePath)
