@@ -380,7 +380,7 @@ Flag                       Env var                          Default
 --tls-cert-file            MEMORY_SERVICE_TLS_CERT_FILE     (optional)
 --tls-key-file             MEMORY_SERVICE_TLS_KEY_FILE      (optional)
 --read-header-timeout-seconds MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS 5
---admin-api-key            MEMORY_SERVICE_ADMIN_API_KEY     (required)
+--attachment-signing-secret MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET (optional, required for download URLs)
 --roles-admin-oidc-role    MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE admin
 --roles-auditor-oidc-role  MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE auditor
 --roles-admin-users        MEMORY_SERVICE_ROLES_ADMIN_USERS (optional CSV)
@@ -950,6 +950,38 @@ The OpenAPI specs in `memory-service-contracts/` are the source of truth. Route 
 **gRPC codegen** follows the same pattern: edit `memory_service.proto`, run `go generate ./...`, fix compilation errors in `internal/grpc/`, commit together.
 
 `internal/generated/` is committed so CI does not need `oapi-codegen` or `protoc` installed — only `go build` is required in CI.
+
+### Phase 14: Encryption provider parity (MSEH + multi-provider SPI)
+
+> **Status**: Complete.
+
+**Motivation**: The Go port used a hardcoded single-key AES-256-GCM implementation with no envelope format. Java uses a multi-provider plugin system where every ciphertext is wrapped in an MSEH envelope (4-byte magic + varint-prefixed proto header). Without MSEH, Go-encrypted data could not be decrypted by Java and vice-versa.
+
+#### What was implemented
+
+- **`internal/registry/encrypt/plugin.go`** — Provider SPI registry mirroring the `cache`/`store` plugin pattern. Defines `Provider` interface (`Encrypt`, `Decrypt`, `EncryptStream`, `DecryptStream`, `AttachmentSigningKeys`), `Plugin` struct, and `Register`/`Select`/`Names` functions.
+- **`internal/dataencryption/mseh.go`** — Java-compatible MSEH wire format encoder/decoder. Hand-coded varint32 protobuf encoding matches Java's `EncryptionHeader` exactly. Supports 4 proto fields: version (tag 0x08), provider_id (tag 0x12), iv (tag 0x1A), encrypted_dek (tag 0x22 — Go extension, backward-compatible, ignored by Java).
+- **`internal/dataencryption/service.go`** — `DataEncryptionService` orchestrator. `New()` reads `MEMORY_SERVICE_ENCRYPTION_PROVIDERS`, instantiates providers, picks first as primary. `Decrypt()` and `DecryptStream()` route to the provider named in the MSEH header; fall back to primary for legacy formats. Context key pattern: `dataencryption.WithContext`/`FromContext`.
+- **`internal/dataencryption/kek.go`** — `KeyEncryptionService` interface abstracting KEK backends: `GenerateDEK`, `DecryptDEK`, `SigningKey`.
+- **`internal/plugin/encrypt/plain/`** — `"plain"` no-op provider (pass-through).
+- **`internal/plugin/encrypt/dek/`** — `"dek"` AES-256-GCM provider. Writes MSEH on encrypt; decrypts MSEH, legacy bare (`nonce||ciphertext`), or plaintext on decrypt. Exports `AESGCMSeal`, `AESGCMOpen`, `NewGCMEncryptWriter` for KEK provider reuse.
+- **`internal/plugin/encrypt/vault/`** — `"vault"` provider backed by HashiCorp Vault Transit. Generates ephemeral DEK per encryption, stores Vault-wrapped DEK in MSEH `EncryptedDEK` field. Auto-bootstraps attachment signing key in Vault KV on first use.
+- **`internal/plugin/encrypt/awskms/`** — `"kms"` provider backed by AWS KMS. Uses `kms:GenerateDataKey` / `kms:Decrypt`. Signing key auto-bootstrapped in AWS Secrets Manager.
+- **`internal/plugin/store/postgres/postgres.go`** and **`mongo.go`** — Replaced inline GCM slice with `*dataencryption.Service` from context. `encrypt()`/`decrypt()` delegate to service.
+- **`internal/plugin/attach/encrypt/encrypt.go`** — Replaced chunked-GCM with MSEH-based encryption via service. Legacy chunked attachments (no MSEH magic) are transparently decrypted using the legacy GCM for backward compatibility.
+- **`internal/cmd/serve/server.go`** — Constructs `DataEncryptionService` early and injects into context; attachment encryption guard uses `encSvc.IsPrimaryReal()`; signing keys sourced from service.
+- **`internal/cmd/serve/serve.go`** — Added CLI flags for `--encryption-providers`, `--encryption-vault-transit-key`, `--encryption-vault-signing-key-path`, `--encryption-kms-key-id`, `--encryption-kms-signing-key-path`; added blank imports for all four encrypt plugins.
+- **`internal/config/config.go`** — Added `EncryptionVaultSigningKeyPath`, `EncryptionKMSKeyID`, `EncryptionKMSSigningKeyPath` fields.
+- **Tests**: `internal/dataencryption/mseh_test.go` (round-trip, wire format, field 4), `internal/plugin/encrypt/dek/dek_test.go` (encrypt/decrypt, key rotation, legacy bare format, stream round-trip).
+
+#### Fallback decryption rules
+
+| Input | Action |
+|-------|--------|
+| Starts with MSEH magic `4D534548` | Parse header → route to provider named in `provider_id` |
+| Length ≥ 28, no magic (DB legacy) | Treated as bare `nonce(12)‖ciphertext` by DEK provider |
+| Short / no recognizable format | Returned as-is (unencrypted legacy data) |
+| Attachment, no magic (chunked legacy) | Decoded by legacy 4-byte-length-prefixed chunk reader |
 
 ## Open Questions
 

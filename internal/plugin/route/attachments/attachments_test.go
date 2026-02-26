@@ -86,6 +86,9 @@ func setupAttachmentsRouter(t *testing.T) *gin.Engine {
 	cfg.DBURL = dbURL
 	cfg.MaxBodySize = 1024 * 1024
 	cfg.AllowPrivateSourceURLs = true
+	cfg.EncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	ctx := config.WithContext(context.Background(), &cfg)
 
 	_ = postgres.ForceImport
@@ -96,10 +99,13 @@ func setupAttachmentsRouter(t *testing.T) *gin.Engine {
 	store, err := loader(ctx)
 	require.NoError(t, err)
 
+	signingKeys, err := cfg.AttachmentSigningKeys()
+	require.NoError(t, err)
+
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	auth := func(c *gin.Context) { c.Set("userID", "test-user"); c.Next() }
-	attachments.MountRoutes(router, store, newMemAttachmentStore(), &cfg, auth)
+	attachments.MountRoutes(router, store, newMemAttachmentStore(), &cfg, auth, signingKeys)
 	return router
 }
 

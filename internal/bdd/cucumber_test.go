@@ -39,7 +39,9 @@ func TestFeatures(t *testing.T) {
 	cfg.InfinispanHost = infinispan.Host
 	cfg.InfinispanUsername = infinispan.Username
 	cfg.InfinispanPassword = infinispan.Password
-	cfg.AdminAPIKey = "test-admin-key"
+	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = "alice"
 	cfg.AuditorUsers = "alice,charlie"
 	cfg.IndexerUsers = "dave,alice"
@@ -56,7 +58,7 @@ func TestFeatures(t *testing.T) {
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
 	// Discover feature files
-	featuresDir := filepath.Join("..", "..", "memory-service", "src", "test", "resources", "features")
+	featuresDir := filepath.Join("testdata", "features")
 	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
 		t.Skipf("Feature files directory not found: %s", featuresDir)
 	}

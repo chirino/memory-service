@@ -135,6 +135,9 @@ func (s *Store) RecorderWithAddress(ctx context.Context, conversationID string, 
 	locator := locatorFromAddress(advertisedAddress, filepath.Base(file.Name()))
 	if s.locatorStore.Available() {
 		if err := s.locatorStore.Upsert(ctx, conversationID, locator, s.locatorTTL); err != nil {
+			delete(s.recordings, conversationID)
+			_ = file.Close()
+			_ = os.Remove(file.Name())
 			return nil, err
 		}
 		s.startLocatorRefresh(conversationID, rec, locator)

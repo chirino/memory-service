@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package dataencryption.v1;
+
+option go_package = "github.com/chirino/memory-service/internal/generated/pb/dataencryption/v1";
+
+// EncryptionHeader is the protobuf-encoded portion of the MSEH envelope.
+//
+// Full wire format:
+//   [4 bytes magic: 0x4D 0x53 0x45 0x48]  "MSEH"
+//   [varint32: byte length of this message]
+//   [EncryptionHeader proto bytes]
+//   [raw ciphertext]
+//
+// This matches the format used by the Java EncryptionHeader class.
+message EncryptionHeader {
+  uint32 version     = 1;
+  string provider_id = 2;
+  bytes  nonce       = 3; // 12 bytes for AES-GCM; empty for the plain provider
+}

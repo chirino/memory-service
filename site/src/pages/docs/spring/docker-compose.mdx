@@ -85,15 +85,11 @@ services:
     environment:
       # Trusted agent API keys (first value is surfaced to the Spring app via the service connection)
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
-      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/memory_service
-      QUARKUS_DATASOURCE_USERNAME: postgres
-      QUARKUS_DATASOURCE_PASSWORD: postgres
-      QUARKUS_DATASOURCE_DB_KIND: postgresql
-      QUARKUS_LIQUIBASE_MIGRATE_AT_START: "true"
-      QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080/realms/memory-service
-      QUARKUS_OIDC_TOKEN_ISSUER: http://localhost:8081/realms/memory-service
-      KEYCLOAK_CLIENT_SECRET: change-me
-      MEMORY_SERVICE_CACHE_TYPE: redis
+      MEMORY_SERVICE_DB_URL: postgresql://postgres:postgres@postgres:5432/memory_service
+      MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
+      MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
+      MEMORY_SERVICE_CACHE_KIND: redis
       MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
     depends_on:
       postgres:
@@ -105,7 +101,7 @@ services:
     ports:
       - "8082:8080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ready || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12

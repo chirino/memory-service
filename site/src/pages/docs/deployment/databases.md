@@ -26,18 +26,14 @@ docker run -d \
 
 ### Configuration
 
-```properties
-quarkus.datasource.db-kind=postgresql
-quarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/memoryservice
-quarkus.datasource.username=postgres
-quarkus.datasource.password=postgres
-
-# Schema management
-quarkus.hibernate-orm.database.generation=update
+```bash
+MEMORY_SERVICE_DB_KIND=postgres
+MEMORY_SERVICE_DB_URL=postgres://postgres:postgres@localhost:5432/memoryservice?sslmode=disable
+MEMORY_SERVICE_DB_MIGRATE_AT_START=true
 
 # Connection pool
-quarkus.datasource.jdbc.max-size=20
-quarkus.datasource.jdbc.min-size=5
+MEMORY_SERVICE_DB_MAX_OPEN_CONNS=20
+MEMORY_SERVICE_DB_MAX_IDLE_CONNS=5
 ```
 
 ### pgvector Extension
@@ -50,11 +46,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 Configure in Memory Service:
 
-```properties
-memory-service.vector-store.type=pgvector
-memory-service.vector-store.dimension=1536
-memory-service.vector-store.index-type=ivfflat
-memory-service.vector-store.lists=100
+```bash
+MEMORY_SERVICE_VECTOR_KIND=pgvector
 ```
 
 ### Index Types
@@ -86,9 +79,9 @@ docker run -d \
 
 ### Configuration
 
-```properties
-quarkus.mongodb.connection-string=mongodb://admin:password@localhost:27017
-quarkus.mongodb.database=memoryservice
+```bash
+MEMORY_SERVICE_DB_KIND=mongo
+MEMORY_SERVICE_DB_URL=mongodb://admin:password@localhost:27017/memoryservice
 ```
 
 ## Embedding Configuration
@@ -97,54 +90,46 @@ Configure the embedding model for vector generation:
 
 ### OpenAI
 
-```properties
-memory-service.embedding.provider=openai
-memory-service.embedding.model=text-embedding-ada-002
-memory-service.embedding.api-key=${OPENAI_API_KEY}
-memory-service.embedding.dimension=1536
+```bash
+MEMORY_SERVICE_EMBEDDING_KIND=openai
+MEMORY_SERVICE_EMBEDDING_OPENAI_MODEL_NAME=text-embedding-ada-002
+MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY=${OPENAI_API_KEY}
+MEMORY_SERVICE_EMBEDDING_OPENAI_DIMENSIONS=1536
 ```
 
 ### Azure OpenAI
 
-```properties
-memory-service.embedding.provider=azure
-memory-service.embedding.azure.endpoint=https://your-resource.openai.azure.com
-memory-service.embedding.azure.deployment=text-embedding-ada-002
-memory-service.embedding.azure.api-key=${AZURE_OPENAI_API_KEY}
+Use the OpenAI provider with the Azure base URL:
+
+```bash
+MEMORY_SERVICE_EMBEDDING_KIND=openai
+MEMORY_SERVICE_EMBEDDING_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/deployments/text-embedding-ada-002
+MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
 ```
 
 ### Local Model
 
-```properties
-memory-service.embedding.provider=local
-memory-service.embedding.local.model-path=/models/all-MiniLM-L6-v2
-memory-service.embedding.dimension=384
+The built-in local provider uses all-MiniLM-L6-v2 (384 dimensions) with no external API calls:
+
+```bash
+MEMORY_SERVICE_EMBEDDING_KIND=local
 ```
 
 ## Performance Tuning
 
 ### Connection Pooling
 
-```properties
-# PostgreSQL
-quarkus.datasource.jdbc.max-size=50
-quarkus.datasource.jdbc.min-size=10
-quarkus.datasource.jdbc.initial-size=10
-quarkus.datasource.jdbc.acquisition-timeout=30
-
-# MongoDB
-quarkus.mongodb.max-pool-size=100
-quarkus.mongodb.min-pool-size=10
+```bash
+# PostgreSQL / MongoDB
+MEMORY_SERVICE_DB_MAX_OPEN_CONNS=50
+MEMORY_SERVICE_DB_MAX_IDLE_CONNS=10
 ```
 
 ### Batch Operations
 
-```properties
-# Batch embedding requests
-memory-service.embedding.batch-size=100
-
-# Batch database inserts
-memory-service.storage.batch-size=50
+```bash
+# Background vector indexer batch size
+MEMORY_SERVICE_VECTOR_INDEXER_BATCH_SIZE=100
 ```
 
 ## Backup and Recovery

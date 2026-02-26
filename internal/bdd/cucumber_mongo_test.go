@@ -46,7 +46,9 @@ func TestFeaturesMongo(t *testing.T) {
 	cfg.RedisURL = redisURL
 	cfg.VectorType = "qdrant"
 	cfg.QdrantHost = qdrantHost
-	cfg.AdminAPIKey = "test-admin-key"
+	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = "alice"
 	cfg.AuditorUsers = "alice,charlie"
 	cfg.IndexerUsers = "dave,alice"
@@ -63,7 +65,7 @@ func TestFeaturesMongo(t *testing.T) {
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
 	// Discover feature files: main features/ + features-qdrant/ + features-grpc/ + features-encrypted/
-	resourcesDir := filepath.Join("..", "..", "memory-service", "src", "test", "resources")
+	resourcesDir := "testdata"
 	featuresDir := filepath.Join(resourcesDir, "features")
 	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
 		t.Skipf("Feature files directory not found: %s", featuresDir)

@@ -261,9 +261,12 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore) {
 	for _, link := range pendingLinks {
 		if link.entryIndex < len(result) {
 			entryID := result[link.entryIndex].ID
-			store.UpdateAttachment(c.Request.Context(), userID, link.attachmentID, registrystore.AttachmentUpdate{
+			if _, err := store.UpdateAttachment(c.Request.Context(), userID, link.attachmentID, registrystore.AttachmentUpdate{
 				EntryID: &entryID,
-			})
+			}); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to link attachment to entry"})
+				return
+			}
 		}
 	}
 

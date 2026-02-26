@@ -18,11 +18,11 @@ Memory Service is configured through CLI flags or environment variables. Use the
 
 | Flag | Values | Default | Description |
 |------|--------|---------|-------------|
-| <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" /> | path | system temp dir | Directory for temporary files |
 | <Cfg p="--tls-cert-file" e="MEMORY_SERVICE_TLS_CERT_FILE" /> | path | _(none)_ | TLS certificate file (self-signed if omitted) |
 | <Cfg p="--tls-key-file" e="MEMORY_SERVICE_TLS_KEY_FILE" /> | path | _(none)_ | TLS private key file (self-signed if omitted) |
 | <Cfg p="--advertised-address" e="MEMORY_SERVICE_ADVERTISED_ADDRESS" /> | `host:port` | auto-detected | Advertised address for client redirects |
 | <Cfg p="--read-header-timeout-seconds" e="MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS" /> | integer | `5` | HTTP read header timeout in seconds |
+| <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" /> | path | system temp dir | Directory for temporary files |
 | <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" /> | `true`, `false` | `false` | Enable HTTP access logging for `/health`, `/ready`, `/metrics` |
 
 ### Network Listener
@@ -170,6 +170,7 @@ Configure file attachment storage, size limits, and lifecycle.
 | `MEMORY_SERVICE_ATTACHMENTS_MAX_EXPIRES_IN` | duration | `PT24H` | Maximum allowed TTL clients can request |
 | `MEMORY_SERVICE_ATTACHMENTS_CLEANUP_INTERVAL` | duration | `PT5M` | How often the cleanup job runs |
 | `MEMORY_SERVICE_ATTACHMENTS_DOWNLOAD_URL_EXPIRES_IN` | duration | `PT5M` | Signed download URL expiry |
+| — | — | — | Signed download URLs are enabled automatically when `--encryption-dek-key` is set; the signing key is derived from it via HKDF-SHA256. |
 
 ### Attachment Storage: DB Configuration
 
@@ -218,25 +219,28 @@ See [Attachments](/docs/concepts/attachments/) for details on how attachments wo
 
 ## Encryption
 
-Memory Service supports transparent encryption of stored data using AES-256-GCM.
+Memory Service supports transparent encryption of stored data using AES-256-GCM. Configure encryption by selecting one or more providers via `--encryption-kind`. The first provider is primary — used for all new encryptions. Additional providers are decryption-only fallbacks, enabling zero-downtime key rotation.
 
 | Flag / Env Var | Values | Default | Description |
 |----------------|--------|---------|-------------|
-| <Cfg p="--encryption-dek-key" e="MEMORY_SERVICE_ENCRYPTION_DEK_KEY" /> | base64 string | _(none)_ | Primary AES-256-GCM key (base64-encoded 32 bytes) |
-| `MEMORY_SERVICE_ENCRYPTION_PROVIDERS` | comma-separated IDs | `plain` | Ordered list of providers; first active provider encrypts new data |
-| `MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_TYPE` | `plain`, `dek`, `vault` | _(required)_ | Provider type |
-| `MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_ENABLED` | `true`, `false` | `true` | Whether this provider is active |
-| `MEMORY_SERVICE_ENCRYPTION_DEK_DECRYPTION_KEYS` | comma-separated base64 strings | _(none)_ | Additional old keys for decryption during key rotation |
-| `MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY` | string | _(none)_ | Vault transit key name |
+| <Cfg p="--encryption-kind" e="MEMORY_SERVICE_ENCRYPTION_KIND" /> | comma-separated IDs | `plain` | Ordered list of providers (`plain`, `dek`, `vault`, `kms`); first provider encrypts new data |
+| <Cfg p="--encryption-db-disabled" e="MEMORY_SERVICE_ENCRYPTION_DB_DISABLED" /> | `true`, `false` | `false` | Disable at-rest encryption for the database even when an encryption provider is active |
+| <Cfg p="--encryption-attachments-disabled" e="MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED" /> | `true`, `false` | `false` | Disable at-rest encryption for the attachment store even when an encryption provider is active |
 
-### AES-256-GCM (DEK provider)
+### Encryption: DEK (AES-256-GCM)
+
+The `dek` provider encrypts data locally using AES-256-GCM with a key you supply. No external service is required — all encryption happens in-process. Signed attachment download URLs are automatically derived from this key via HKDF-SHA256.
+
+| Flag / Env Var | Values | Default | Description |
+|----------------|--------|---------|-------------|
+| <Cfg p="--encryption-dek-key" e="MEMORY_SERVICE_ENCRYPTION_DEK_KEY" /> | hex or base64 string | _(none)_ | Comma-separated AES-256 keys (16/24/32 bytes). First key encrypts new data; additional keys are legacy decryption-only (for key rotation). |
 
 <ConfigBlock
   property={`# Enable DEK encryption
+--encryption-kind=dek
 --encryption-dek-key=<base64-encoded-32-byte-key>`}
   env={`# Enable DEK encryption
-MEMORY_SERVICE_ENCRYPTION_PROVIDERS=dek
-MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_TYPE=dek
+MEMORY_SERVICE_ENCRYPTION_KIND=dek
 MEMORY_SERVICE_ENCRYPTION_DEK_KEY=<base64-encoded-32-byte-key>`}
 />
 
@@ -246,13 +250,89 @@ Generate a key with:
 openssl rand -base64 32
 ```
 
+**Key rotation:** Supply a comma-separated list of keys — the first key encrypts new data; additional keys are tried in order for decryption only. Remove old keys once all stored data has been re-encrypted with the primary key.
+
+```
+MEMORY_SERVICE_ENCRYPTION_DEK_KEY=new-primary-key,old-legacy-key
+```
+
+### Encryption: Vault (HashiCorp Vault Transit)
+
+The `vault` provider uses HashiCorp Vault Transit to wrap data-encryption keys (DEKs). DEKs are loaded from the `encryption_deks` database table at startup — Vault is called only once at load time (never per request). A random DEK is generated on first start, wrapped via Vault Transit, and stored in the table. Loss of Vault access prevents startup but does not affect already-running instances.
+
+| Flag / Env Var | Values | Default | Description |
+|----------------|--------|---------|-------------|
+| <Cfg p="--encryption-vault-transit-key" e="MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY" /> | string | _(required)_ | Vault Transit key name |
+
+Standard HashiCorp Vault environment variables are used for authentication:
+
+| Env Var | Description |
+|---------|-------------|
+| `VAULT_ADDR` | Vault server URL (e.g. `https://vault.example.com`) |
+| `VAULT_TOKEN` | Vault token (or use any other Vault auth method) |
+
+<ConfigBlock
+  property={`# Enable Vault encryption
+--encryption-kind=vault
+--encryption-vault-transit-key=memory-service`}
+  env={`# Enable Vault encryption
+MEMORY_SERVICE_ENCRYPTION_KIND=vault
+MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY=memory-service
+
+# HashiCorp Vault connection (standard env vars)
+VAULT_ADDR=https://vault.example.com
+VAULT_TOKEN=<token>`}
+/>
+
+### Encryption: KMS (AWS KMS)
+
+The `kms` provider uses AWS KMS to wrap data-encryption keys (DEKs). DEKs are loaded from the `encryption_deks` database table at startup — KMS is called only once at load time (never per request). A random DEK is generated on first start, wrapped via `kms:Encrypt`, and stored in the table. Loss of KMS access prevents startup but does not affect already-running instances.
+
+| Flag / Env Var | Values | Default | Description |
+|----------------|--------|---------|-------------|
+| <Cfg p="--encryption-kms-key-id" e="MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID" /> | string | _(required)_ | AWS KMS key ID or ARN |
+
+Standard AWS SDK environment variables are used for authentication:
+
+| Env Var | Description |
+|---------|-------------|
+| `AWS_REGION` | AWS region (e.g. `us-east-1`) |
+| `AWS_ACCESS_KEY_ID` | AWS access key ID |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret access key |
+
+Any other credential source supported by the AWS SDK (IAM roles, `AWS_PROFILE`, instance metadata, etc.) is also honoured.
+
+<ConfigBlock
+  property={`# Enable KMS encryption
+--encryption-kind=kms
+--encryption-kms-key-id=arn:aws:kms:us-east-1:123456789012:key/mrk-...`}
+  env={`# Enable KMS encryption
+MEMORY_SERVICE_ENCRYPTION_KIND=kms
+MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID=arn:aws:kms:us-east-1:123456789012:key/mrk-...
+
+# AWS authentication (standard env vars)
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...`}
+/>
+
 ### Automatic attachment encryption
 
-When a non-plain provider is the primary provider, file attachments are encrypted automatically — no extra flag is needed. When the `plain` provider is active (the default), attachments are stored as-is with no overhead.
+When a non-`plain` provider is the primary provider, file attachments are encrypted automatically — no extra configuration is needed. When `plain` is active (the default), attachments are stored as-is with no overhead.
+
+> **S3 incompatibility**: Attachment encryption is incompatible with S3 direct download. Set `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=false` when using encryption with S3.
 
 ### Key rotation
 
-Set `MEMORY_SERVICE_ENCRYPTION_DEK_DECRYPTION_KEYS` to a comma-separated list of old (retired) Base64-encoded keys. New data is always encrypted with the primary key; stored data is decrypted by trying the primary key first and then each key in order.
+To rotate between providers, list the new provider first and the old provider as a fallback in `--encryption-kind`. New data is always encrypted by the first (primary) provider; existing ciphertext is decrypted by trying each provider in order.
+
+**Example: migrate from `dek` to `vault`:**
+
+```
+MEMORY_SERVICE_ENCRYPTION_KIND=vault,dek
+```
+
+New data is encrypted with Vault; existing `dek`-encrypted data is still readable. Remove `dek` from the list once all data has been re-encrypted.
 
 ## Vector Store Configuration
 

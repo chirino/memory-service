@@ -1006,6 +1006,12 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 		err error
 	}
 	var writer *io.PipeWriter
+	defer func() {
+		if writer != nil {
+			// Ensure the background store goroutine unblocks if the handler returns early.
+			_ = writer.CloseWithError(io.ErrUnexpectedEOF)
+		}
+	}()
 
 	for {
 		req, err := stream.Recv()

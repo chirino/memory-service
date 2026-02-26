@@ -43,7 +43,9 @@ func TestFeaturesPgS3(t *testing.T) {
 	cfg.AttachType = "s3"
 	cfg.S3Bucket = bucket
 	cfg.S3UsePathStyle = true
-	cfg.AdminAPIKey = "test-admin-key"
+	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = "alice"
 	cfg.AuditorUsers = "alice,charlie"
 	cfg.IndexerUsers = "dave,alice"
@@ -61,7 +63,7 @@ func TestFeaturesPgS3(t *testing.T) {
 
 	// Run only attachments-rest.feature, excluding @direct-stream-only scenarios
 	// (S3 returns redirects instead of streaming, so cache header assertions don't apply).
-	featuresDir := filepath.Join("..", "..", "memory-service", "src", "test", "resources", "features")
+	featuresDir := filepath.Join("testdata", "features")
 	featurePath := filepath.Join(featuresDir, "attachments-rest.feature")
 	if _, err := os.Stat(featurePath); os.IsNotExist(err) {
 		t.Skipf("Feature file not found: %s", featurePath)

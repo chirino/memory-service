@@ -70,11 +70,11 @@ tasks:
     cmds:
       - |
         GOTESTSUM_FMT=standard-quiet # standard-verbose
-        CGO_ENABLED=1 go run gotest.tools/gotestsum --format ${GOTESTSUM_FMT} -- -race ./...
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format ${GOTESTSUM_FMT} -- -race ./... {{.CLI_ARGS}}
 
   test:java:
     cmds:
-      - mvn -T 1C clean test
+      - mvn -T 1C clean test {{.CLI_ARGS}}
 
   dev:memory-service:
     desc: Run the memory-service app in dev mode.

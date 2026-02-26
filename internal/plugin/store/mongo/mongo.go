@@ -2,19 +2,16 @@ package mongo
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"reflect"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/dataencryption"
 	"github.com/chirino/memory-service/internal/model"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
@@ -52,28 +49,8 @@ func init() {
 				db:           client.Database(dbName),
 				entriesCache: registrycache.EntriesCacheFromContext(ctx),
 			}
-			if cfg.EncryptionKey != "" {
-				key, err := config.DecodeEncryptionKey(cfg.EncryptionKey)
-				if err != nil {
-					return nil, fmt.Errorf("invalid encryption key: %w", err)
-				}
-				gcm, err := newGCM(key)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create GCM: %w", err)
-				}
-				store.gcms = append(store.gcms, gcm)
-
-				legacyKeys, err := config.DecodeEncryptionKeysCSV(cfg.EncryptionDecryptionKeys)
-				if err != nil {
-					return nil, fmt.Errorf("invalid decryption key list: %w", err)
-				}
-				for _, legacyKey := range legacyKeys {
-					legacyGCM, legacyErr := newGCM(legacyKey)
-					if legacyErr != nil {
-						return nil, fmt.Errorf("failed to create legacy decryption GCM: %w", legacyErr)
-					}
-					store.gcms = append(store.gcms, legacyGCM)
-				}
+			if !cfg.EncryptionDBDisabled {
+				store.enc = dataencryption.FromContext(ctx)
 			}
 			return store, nil
 		},
@@ -148,6 +125,12 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 				Options: options.Index().SetUnique(true).SetSparse(true),
 			},
 		},
+		"encryption_deks": {
+			{
+				Keys:    bson.D{{Key: "provider", Value: 1}},
+				Options: options.Index().SetUnique(true),
+			},
+		},
 	}
 
 	for name, indexes := range collections {
@@ -168,7 +151,7 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 type MongoStore struct {
 	client       *mongo.Client
 	db           *mongo.Database
-	gcms         []cipher.AEAD
+	enc          *dataencryption.Service
 	entriesCache registrycache.MemoryEntriesCache
 }
 
@@ -177,49 +160,18 @@ var ForceImport = 0
 
 // --- Encryption helpers ---
 
-func (s *MongoStore) encrypt(plaintext []byte) []byte {
-	if len(s.gcms) == 0 || plaintext == nil {
-		return plaintext
+func (s *MongoStore) encrypt(plaintext []byte) ([]byte, error) {
+	if s.enc == nil || plaintext == nil {
+		return plaintext, nil
 	}
-	gcm := s.gcms[0]
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		panic(fmt.Sprintf("failed to generate nonce: %v", err))
-	}
-	return gcm.Seal(nonce, nonce, plaintext, nil)
+	return s.enc.Encrypt(plaintext)
 }
 
 func (s *MongoStore) decrypt(ciphertext []byte) ([]byte, error) {
-	if len(s.gcms) == 0 || ciphertext == nil {
+	if s.enc == nil || ciphertext == nil {
 		return ciphertext, nil
 	}
-	var lastErr error
-	for _, gcm := range s.gcms {
-		nonceSize := gcm.NonceSize()
-		if len(ciphertext) < nonceSize {
-			lastErr = fmt.Errorf("ciphertext too short")
-			continue
-		}
-		nonce, ct := ciphertext[:nonceSize], ciphertext[nonceSize:]
-		plaintext, err := gcm.Open(nil, nonce, ct, nil)
-		if err == nil {
-			return plaintext, nil
-		}
-		lastErr = err
-	}
-	return nil, lastErr
-}
-
-func newGCM(key []byte) (cipher.AEAD, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	return gcm, nil
+	return s.enc.Decrypt(ciphertext)
 }
 
 func (s *MongoStore) decryptString(data []byte) string {
@@ -480,9 +432,13 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, conv
 		}
 	}
 
+	encTitle, err := s.encrypt([]byte(title))
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt title: %w", err)
+	}
 	doc := convDoc{
 		ID:                     uuidToStr(convID),
-		Title:                  s.encrypt([]byte(title)),
+		Title:                  encTitle,
 		OwnerUserID:            userID,
 		Metadata:               metadata,
 		ConversationGroupID:    actualGroupID,
@@ -730,7 +686,11 @@ func (s *MongoStore) UpdateConversation(ctx context.Context, userID string, conv
 	update := bson.M{"$set": bson.M{"updated_at": time.Now()}}
 	sets := update["$set"].(bson.M)
 	if title != nil {
-		sets["title"] = s.encrypt([]byte(*title))
+		encTitle, err := s.encrypt([]byte(*title))
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt title: %w", err)
+		}
+		sets["title"] = encTitle
 	}
 	if metadata != nil {
 		sets["metadata"] = metadata
@@ -1327,6 +1287,10 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			entryEpoch = &one
 		}
 
+		encContent, err := s.encrypt(req.Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
+		}
 		doc := entryDoc{
 			ID:                  uuidToStr(uuid.New()),
 			ConversationID:      uuidToStr(conversationID),
@@ -1336,7 +1300,7 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			Channel:             ch,
 			Epoch:               entryEpoch,
 			ContentType:         req.ContentType,
-			Content:             s.encrypt(req.Content),
+			Content:             encContent,
 			IndexedContent:      req.IndexedContent,
 			Role:                req.Role,
 			CreatedAt:           now,
@@ -1365,7 +1329,9 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			if e.Channel == model.ChannelHistory {
 				title := deriveTitleFromContent(string(e.Content))
 				if title != "" {
-					s.conversations().UpdateByID(ctx, uuidToStr(conversationID), bson.M{"$set": bson.M{"title": s.encrypt([]byte(title)), "updated_at": now}})
+					if encTitle, encErr := s.encrypt([]byte(title)); encErr == nil {
+						s.conversations().UpdateByID(ctx, uuidToStr(conversationID), bson.M{"$set": bson.M{"title": encTitle, "updated_at": now}})
+					}
 				}
 				break
 			}
@@ -1494,6 +1460,10 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 	}
 
 	now := time.Now()
+	encContent, err := s.encrypt(appendContent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
+	}
 	doc := entryDoc{
 		ID:                  uuidToStr(uuid.New()),
 		ConversationID:      uuidToStr(conversationID),
@@ -1503,7 +1473,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		Channel:             string(model.ChannelMemory),
 		Epoch:               &epochToUse,
 		ContentType:         entry.ContentType,
-		Content:             s.encrypt(appendContent),
+		Content:             encContent,
 		IndexedContent:      entry.IndexedContent,
 		CreatedAt:           now,
 	}

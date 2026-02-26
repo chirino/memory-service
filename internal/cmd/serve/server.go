@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/dataencryption"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	grpcserver "github.com/chirino/memory-service/internal/grpc"
 	"github.com/chirino/memory-service/internal/plugin/attach/encrypt"
@@ -73,6 +74,13 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("migrations failed: %w", err)
 	}
 
+	// Initialize encryption service and inject into context so store loaders can read it.
+	encSvc, err := dataencryption.New(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize encryption service: %w", err)
+	}
+	ctx = dataencryption.WithContext(ctx, encSvc)
+
 	// Initialize cache and inject into context so store loaders can read it.
 	if cacheLoader, err := registrycache.Select(cfg.CacheType); err != nil {
 		log.Warn("Cache not available", "cache", cfg.CacheType, "err", err)
@@ -139,9 +147,10 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 			}
 		}
 	}
-	// Wrap with encryption if an encryption key is configured.
-	if attachStore != nil && cfg.EncryptionKey != "" {
-		attachStore, err = encrypt.Wrap(attachStore, cfg.EncryptionKey)
+	// Wrap with encryption when the primary provider is real (not plain) and attachment
+	// encryption is not explicitly disabled.
+	if attachStore != nil && encSvc.IsPrimaryReal() && !cfg.EncryptionAttachmentsDisabled {
+		attachStore, err = encrypt.Wrap(attachStore, encSvc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize attachment encryption: %w", err)
 		}
@@ -194,7 +203,11 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	memberships.MountRoutes(router, store, auth)
 	transfers.MountRoutes(router, store, auth)
 	search.MountRoutes(router, store, cfg, auth, embedder, vectorStore)
-	attachments.MountRoutes(router, store, attachStore, cfg, auth)
+	attachSigningKeys, signingKeysErr := encSvc.AttachmentSigningKeys(ctx)
+	if signingKeysErr != nil {
+		log.Warn("Attachment signing keys unavailable; signed download URLs disabled", "err", signingKeysErr)
+	}
+	attachments.MountRoutes(router, store, attachStore, cfg, auth, attachSigningKeys)
 
 	// Mount Admin API routes
 	admin.MountRoutes(router, store, attachStore, cfg, auth)

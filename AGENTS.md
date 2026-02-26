@@ -43,7 +43,7 @@ have completed deploying.
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).
 - In gRPC `memory/v1/memory_service.proto`, response recorder fields use snake_case (`conversation_id`).
 - List endpoints may include `"afterCursor": null`; docs-test JSON assertions should tolerate additive pagination fields.
-- Attachment download tokens (`/v1/attachments/download/:token/:filename`) are HMAC-signed with `AdminAPIKey`; keep `MEMORY_SERVICE_ADMIN_API_KEY` non-empty, especially with DB attachment stores where storage keys are guessable.
+- Attachment download tokens (`/v1/attachments/download/:token/:filename`) are HMAC-signed with `AttachmentSigningSecret`; keep `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET` non-empty, especially with DB attachment stores where storage keys are guessable. The unauthenticated download route is not registered when this secret is unset.
 - Go cache serialization gotcha: `model.Entry` has custom JSON marshaling for `content`; keep marshal/unmarshal behavior symmetric or cached memory entries lose content and break sync/list semantics.
 
 ## Development Guidelines

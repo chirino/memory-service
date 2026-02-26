@@ -145,7 +145,6 @@ type Config struct {
 	CORSOrigins         string
 
 	// Security
-	AdminAPIKey string
 	// APIKeys maps API key values to client IDs (Java parity: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=<key>).
 	APIKeys         map[string]string // key value → clientId
 	AdminOIDCRole   string
@@ -163,8 +162,18 @@ type Config struct {
 	EncryptionProviderDEKType    string
 	EncryptionProviderDEKEnabled bool
 	EncryptionVaultTransitKey    string
-	EncryptionKey                string
-	EncryptionDecryptionKeys     string
+	// EncryptionKMSKeyID is the AWS KMS key ID or ARN used by the "kms" provider.
+	EncryptionKMSKeyID string
+	// EncryptionKey is a comma-separated list of AES keys for the "dek" provider.
+	// The first key is primary (used for new encryptions); subsequent keys are legacy
+	// (decryption-only, for zero-downtime key rotation).
+	EncryptionKey string
+	// EncryptionDBDisabled skips GCM cipher setup in the postgres/mongo stores even when
+	// EncryptionKey is set. Useful when you want signed download URLs without encrypting data at rest.
+	EncryptionDBDisabled bool
+	// EncryptionAttachmentsDisabled skips the encrypt.Wrap layer on the attachment store even when
+	// EncryptionKey is set.
+	EncryptionAttachmentsDisabled bool
 
 	// Body size limit (bytes)
 	MaxBodySize int64
