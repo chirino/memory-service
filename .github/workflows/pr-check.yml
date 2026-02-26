@@ -27,18 +27,23 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: true   # cancels other matrix jobs on first failure
+      matrix:
+        job: [verify-generated, test:go, test:java, image:memory-service, image:chat-quarkus]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Go
+        if: contains('verify-generated test:go', matrix.job)
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Set up Java
+        if: contains('verify-generated test:java', matrix.job)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -46,6 +51,7 @@ jobs:
           cache: maven
 
       - name: Set up Node
+        if: contains('verify-generated test:java', matrix.job)
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -55,11 +61,12 @@ jobs:
             site/package-lock.json
 
       - name: Generate Source Code
+        if: contains('verify-generated', matrix.job)
         run: |
           go run github.com/go-task/task/v3/cmd/task generate
 
       - name: Check for uncommitted changes
-        id: check-changes
+        if: contains('verify-generated', matrix.job)
         run: |
           if [ "$(git diff --ignore-space-at-eol | wc -l)" -gt "0" ]; then
             echo "Detected uncommitted changes after build.  See status below:"
@@ -70,22 +77,47 @@ jobs:
             exit 1
           fi
 
-      - name: Run Go tests
+      - name: Run Go Tests
+        if: contains('test:go', matrix.job)
         run: |
           mkdir -p reports
           export GODOG_REPORT_DIR=./reports
-          go run github.com/go-task/task/v3/cmd/task test
+          go run github.com/go-task/task/v3/cmd/task test:go
+
+      - name: Run Java Tests
+        if: contains('test:java', matrix.job)
+        run: mvn -T 1C clean test
 
       - name: Upload test reports
-        if: always()
+        if: always() && contains('test:go', matrix.job)
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
           path: reports/
 
-      - name: Build Docker images
-        env:
-          # otherwise compose will fail if OPENAI_API_KEY is not set
-          OPENAI_API_KEY: none
-        run: docker compose build
+      - name: Set up Docker Buildx
+        if: startsWith(matrix.job, 'image:')
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (memory-service)
+        if: matrix.job == 'image:memory-service'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: ghcr.io/chirino/memory-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Docker image (chat-quarkus)
+        if: matrix.job == 'image:chat-quarkus'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: quarkus/examples/chat-quarkus/Dockerfile
+          push: false
+          tags: ghcr.io/chirino/memory-service-chat-quarkus:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
