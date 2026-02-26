@@ -1,24 +1,24 @@
 ---
-import { Code } from 'astro:components';
-import { readFileSync } from 'fs';
-import { basename, resolve } from 'path';
+import { Code } from "astro:components";
+import { readFileSync } from "fs";
+import { basename, resolve } from "path";
 
 interface Props {
-    file: string;
-    lang?: string;
-    lines?: string;
-    before?: number;
-    after?: number;
+  file: string;
+  lang?: string;
+  lines?: string;
+  before?: number;
+  after?: number;
 }
 
-const { file, lang = 'java', lines, before = 0, after = 0 } = Astro.props;
+const { file, lang = "java", lines, before = 0, after = 0 } = Astro.props;
 
 // Get match string from slot content (if provided)
-const slotContent = await Astro.slots.render('default');
+const slotContent = await Astro.slots.render("default");
 const matchString = slotContent ? slotContent.trim() : null;
 
 // Resolve relative to project root (parent of site/ directory)
-const filePath = resolve(process.cwd(), '..', file);
+const filePath = resolve(process.cwd(), "..", file);
 
 let content: string;
 let lineStart = 1;
@@ -26,118 +26,119 @@ let lineEnd = 0;
 let totalLines = 0;
 
 try {
-    const fileContent = readFileSync(filePath, 'utf-8');
-    const allLines = fileContent.split('\n');
-    totalLines = allLines.length;
+  const fileContent = readFileSync(filePath, "utf-8");
+  const allLines = fileContent.split("\n");
+  totalLines = allLines.length;
 
-    if (lines) {
-        // Extract specific line range (e.g., "10-20")
-        const [start, end] = lines.split('-').map(Number);
-        content = allLines.slice(start - 1, end).join('\n');
-        lineStart = start;
-        lineEnd = end;
-    } else if (matchString) {
-        // Find matching lines - support multi-line matches
-        const matchLines = matchString.split('\n');
-        let matchIndex = -1;
-        let matchCount = 0;
+  if (lines) {
+    // Extract specific line range (e.g., "10-20")
+    const [start, end] = lines.split("-").map(Number);
+    content = allLines.slice(start - 1, end).join("\n");
+    lineStart = start;
+    lineEnd = end;
+  } else if (matchString) {
+    // Find matching lines - support multi-line matches
+    const matchLines = matchString.split("\n");
+    let matchIndex = -1;
+    let matchCount = 0;
 
-        // Search for the match pattern
-        for (let i = 0; i <= allLines.length - matchLines.length; i++) {
-            let found = true;
-            for (let j = 0; j < matchLines.length; j++) {
-                if (!allLines[i + j].includes(matchLines[j].trim())) {
-                    found = false;
-                    break;
-                }
-            }
-            if (found) {
-                matchCount++;
-                if (matchCount === 1) {
-                    matchIndex = i;
-                } else {
-                    // Found more than one match - this is ambiguous!
-                    throw new Error(
-                        `Match string found multiple times in ${file}:\n` +
-                        `First match at line ${matchIndex + 1}, second match at line ${i + 1}\n` +
-                        `Match string:\n${matchString}\n\n` +
-                        `Please make the match string more specific to uniquely identify the code section.`
-                    );
-                }
-            }
+    // Search for the match pattern
+    for (let i = 0; i <= allLines.length - matchLines.length; i++) {
+      let found = true;
+      for (let j = 0; j < matchLines.length; j++) {
+        if (!allLines[i + j].includes(matchLines[j].trim())) {
+          found = false;
+          break;
         }
-
-        if (matchIndex === -1) {
-            throw new Error(
-                `Match string not found in ${file}:\n${matchString}\n\n` +
-                `Please verify the match string exists in the file.`
-            );
+      }
+      if (found) {
+        matchCount++;
+        if (matchCount === 1) {
+          matchIndex = i;
+        } else {
+          // Found more than one match - this is ambiguous!
+          throw new Error(
+            `Match string found multiple times in ${file}:\n` +
+              `First match at line ${matchIndex + 1}, second match at line ${i + 1}\n` +
+              `Match string:\n${matchString}\n\n` +
+              `Please make the match string more specific to uniquely identify the code section.`,
+          );
         }
-
-        // Extract content with before/after context
-        const start = Math.max(0, matchIndex - before);
-        const end = Math.min(allLines.length, matchIndex + matchLines.length + after);
-        content = allLines.slice(start, end).join('\n');
-        lineStart = start + 1;
-        lineEnd = end;
-    } else {
-        // Return entire file
-        content = fileContent;
-        lineEnd = allLines.length;
+      }
     }
+
+    if (matchIndex === -1) {
+      throw new Error(
+        `Match string not found in ${file}:\n${matchString}\n\n` + `Please verify the match string exists in the file.`,
+      );
+    }
+
+    // Extract content with before/after context
+    const start = Math.max(0, matchIndex - before);
+    const end = Math.min(allLines.length, matchIndex + matchLines.length + after);
+    content = allLines.slice(start, end).join("\n");
+    lineStart = start + 1;
+    lineEnd = end;
+  } else {
+    // Return entire file
+    content = fileContent;
+    lineEnd = allLines.length;
+  }
 } catch (error: any) {
-    throw new Error(`Failed to read ${file}: ${error.message}`);
+  throw new Error(`Failed to read ${file}: ${error.message}`);
 }
 
 const isSubset = lineStart > 1 || lineEnd < totalLines;
-const lineFragment = isSubset ? (lineStart === lineEnd ? `#L${lineStart}` : `#L${lineStart}-L${lineEnd}`) : '';
+const lineFragment = isSubset ? (lineStart === lineEnd ? `#L${lineStart}` : `#L${lineStart}-L${lineEnd}`) : "";
 const sourceHref = `https://github.com/chirino/memory-service/tree/main/${file}${lineFragment}`;
 const fileName = basename(file);
 ---
 
 <div class="my-6">
-    <div class="flex items-end">
-        <div class="inline-flex items-center border border-b-0 border-gray-300 rounded-t-lg px-3.5 py-1.5 bg-gray-100">
-            <span class="font-mono text-[1.05rem] font-bold text-gray-700 tracking-[0.01em] whitespace-nowrap leading-none">{fileName}</span>
-        </div>
+  <div class="flex items-end">
+    <div class="inline-flex items-center border border-b-0 border-gray-300 rounded-t-lg px-3.5 py-1.5 bg-gray-100">
+      <span class="font-mono text-[1.05rem] font-bold text-gray-700 tracking-[0.01em] whitespace-nowrap leading-none"
+        >{fileName}</span
+      >
     </div>
-    <div class="code-from-file" data-source={file} data-source-href={sourceHref}>
-        <Code code={content} lang={lang} />
-    </div>
+  </div>
+  <div class="code-from-file" data-source={file} data-source-href={sourceHref}>
+    <Code code={content} lang={lang} />
+  </div>
 </div>
 
 <script>
-document.querySelectorAll('.code-from-file').forEach(wrapper => {
-    const pre = wrapper.querySelector('pre');
+  document.querySelectorAll(".code-from-file").forEach((wrapper) => {
+    const pre = wrapper.querySelector("pre");
     if (!pre) return;
 
-    const href = wrapper.getAttribute('data-source-href');
-    const source = wrapper.getAttribute('data-source');
+    const href = wrapper.getAttribute("data-source-href");
+    const source = wrapper.getAttribute("data-source");
 
-    const link = document.createElement('a');
-    link.className = 'code-source-btn';
-    link.href = href || '';
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.setAttribute('aria-label', `View source: ${source}`);
+    const link = document.createElement("a");
+    link.className = "code-source-btn";
+    link.href = href || "";
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.setAttribute("aria-label", `View source: ${source}`);
     link.title = `View source: ${source}`;
     link.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
     </svg>`;
 
     pre.appendChild(link);
-});
+  });
 </script>
 
 <style>
-    /* Target internals of Astro's <Code> component — can't reach these with Tailwind classes on the parent */
-    .code-from-file :global(*) {
-        margin-top: 0 !important;
-    }
+  /* Target internals of Astro's <Code> component — can't reach these with Tailwind classes on the parent */
+  .code-from-file :global(*) {
+    margin-top: 0 !important;
+  }
 
-    .code-from-file :global(pre) {
-        margin: 0;
-        border-top-left-radius: 0;
-        border-top-right-radius: 0;
-    }
+  .code-from-file :global(pre) {
+    margin: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
 </style>

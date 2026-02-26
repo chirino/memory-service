@@ -10,10 +10,10 @@ Entries are the individual units of communication within a conversation. Memory 
 
 Entries are organized into logical channels within a conversation:
 
-| Channel | Description |
-|---------|-------------|
-| `history` | User-visible conversation between users and agents |
-| `memory` | Agent memory entries, scoped to the calling client ID |
+| Channel      | Description                                               |
+| ------------ | --------------------------------------------------------- |
+| `history`    | User-visible conversation between users and agents        |
+| `memory`     | Agent memory entries, scoped to the calling client ID     |
 | `transcript` | Transcript index entries (not visible in agent API lists) |
 
 ## Entry Structure
@@ -38,16 +38,16 @@ Each entry contains:
 }
 ```
 
-| Property | Description |
-|----------|-------------|
-| `id` | Unique entry identifier |
-| `conversationId` | ID of the parent conversation |
-| `userId` | Human user associated with the entry |
-| `channel` | Logical channel (`history`, `memory`, `transcript`) |
-| `contentType` | Type of content (e.g., `history`, `history/lc4j`) |
-| `epoch` | Memory epoch number (for `memory` channel entries) |
-| `content` | Array of content blocks (opaque, agent-defined) |
-| `createdAt` | Creation timestamp |
+| Property         | Description                                         |
+| ---------------- | --------------------------------------------------- |
+| `id`             | Unique entry identifier                             |
+| `conversationId` | ID of the parent conversation                       |
+| `userId`         | Human user associated with the entry                |
+| `channel`        | Logical channel (`history`, `memory`, `transcript`) |
+| `contentType`    | Type of content (e.g., `history`, `history/lc4j`)   |
+| `epoch`          | Memory epoch number (for `memory` channel entries)  |
+| `content`        | Array of content blocks (opaque, agent-defined)     |
+| `createdAt`      | Creation timestamp                                  |
 
 ## Adding Entries
 
@@ -71,7 +71,7 @@ Response:
   "userId": "user_1234",
   "channel": "history",
   "contentType": "history",
-  "content": [{"role": "USER", "text": "Hello!"}],
+  "content": [{ "role": "USER", "text": "Hello!" }],
   "createdAt": "2025-01-10T14:40:12Z"
 }
 ```
@@ -98,7 +98,7 @@ Response:
       "userId": "user_1234",
       "channel": "history",
       "contentType": "history",
-      "content": [{"role": "USER", "text": "Hello!"}],
+      "content": [{ "role": "USER", "text": "Hello!" }],
       "createdAt": "2025-01-10T14:40:12Z"
     }
   ],
@@ -107,6 +107,7 @@ Response:
 ```
 
 Query parameters:
+
 - `limit` - Maximum entries to return (default: 50)
 - `after` - Cursor for pagination (entry ID)
 - `channel` - Filter by channel: `history` (default), `memory`, or `transcript`
@@ -132,11 +133,11 @@ Epoch 2: [new_summary_entry, entry8, entry9, ...]
 
 You can query entries from different epochs using the `epoch` parameter:
 
-| Value | Description |
-|-------|-------------|
-| `latest` | Returns only entries from the most recent epoch (default for agent use) |
-| `all` | Returns entries from all epochs |
-| `{number}` | Returns entries from a specific epoch (e.g., `0`, `1`, `2`) |
+| Value      | Description                                                             |
+| ---------- | ----------------------------------------------------------------------- |
+| `latest`   | Returns only entries from the most recent epoch (default for agent use) |
+| `all`      | Returns entries from all epochs                                         |
+| `{number}` | Returns entries from a specific epoch (e.g., `0`, `1`, `2`)             |
 
 ```bash
 # Get latest epoch only (what the agent currently uses)

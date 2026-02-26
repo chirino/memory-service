@@ -43,11 +43,11 @@ The `indexedContent` field is typically set by client-side code when creating en
 
 The Memory Service supports three search modes:
 
-| Search Type | How It Works | Best For |
-|-------------|-------------|----------|
-| **`fulltext`** | Keyword matching against indexed content | Exact terms, names, error messages |
-| **`semantic`** | Vector similarity using embeddings | Conceptual queries, finding related discussions |
-| **`auto`** | Automatically selects the best search type | General use (default) |
+| Search Type    | How It Works                               | Best For                                        |
+| -------------- | ------------------------------------------ | ----------------------------------------------- |
+| **`fulltext`** | Keyword matching against indexed content   | Exact terms, names, error messages              |
+| **`semantic`** | Vector similarity using embeddings         | Conceptual queries, finding related discussions |
+| **`auto`**     | Automatically selects the best search type | General use (default)                           |
 
 ### Full-Text Search
 
@@ -83,13 +83,13 @@ curl -X POST http://localhost:8080/v1/conversations/search \
 
 ### Search Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `query` | string | *(required)* | The search query text |
-| `searchType` | string | `"auto"` | `"auto"`, `"semantic"`, or `"fulltext"` |
-| `limit` | integer | `20` | Maximum number of results to return |
-| `groupByConversation` | boolean | `true` | Group results by conversation |
-| `includeEntry` | boolean | `true` | Include the full entry in each result |
+| Option                | Type    | Default      | Description                             |
+| --------------------- | ------- | ------------ | --------------------------------------- |
+| `query`               | string  | _(required)_ | The search query text                   |
+| `searchType`          | string  | `"auto"`     | `"auto"`, `"semantic"`, or `"fulltext"` |
+| `limit`               | integer | `20`         | Maximum number of results to return     |
+| `groupByConversation` | boolean | `true`       | Group results by conversation           |
+| `includeEntry`        | boolean | `true`       | Include the full entry in each result   |
 
 ### Search Response
 
@@ -108,7 +108,7 @@ curl -X POST http://localhost:8080/v1/conversations/search \
         "userId": "bob",
         "channel": "history",
         "contentType": "history",
-        "content": [{"role": "USER", "text": "How do I configure authentication?"}],
+        "content": [{ "role": "USER", "text": "How do I configure authentication?" }],
         "createdAt": "2025-01-10T14:32:05Z"
       }
     }
@@ -119,14 +119,14 @@ curl -X POST http://localhost:8080/v1/conversations/search \
 
 ### Result Fields
 
-| Field | Description |
-|-------|-------------|
-| `conversationId` | ID of the conversation containing the match |
-| `conversationTitle` | Title of the conversation (for display) |
-| `entryId` | ID of the matching entry (for deep-linking) |
-| `score` | Relevance score |
-| `highlights` | Matched text with `==highlight==` markers |
-| `entry` | Full entry content (when `includeEntry` is true) |
+| Field               | Description                                      |
+| ------------------- | ------------------------------------------------ |
+| `conversationId`    | ID of the conversation containing the match      |
+| `conversationTitle` | Title of the conversation (for display)          |
+| `entryId`           | ID of the matching entry (for deep-linking)      |
+| `score`             | Relevance score                                  |
+| `highlights`        | Matched text with `==highlight==` markers        |
+| `entry`             | Full entry content (when `includeEntry` is true) |
 
 ## Use Cases
 
@@ -160,6 +160,7 @@ For framework-specific implementations and code examples:
 - [Quarkus Implementation](/docs/quarkus/indexing-and-search/) - Complete guide with Quarkus code examples
 
 Both guides include:
+
 - Configuring indexed content with redaction support
 - Search endpoint setup
 - Working curl examples with authentication

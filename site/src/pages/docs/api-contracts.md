@@ -15,6 +15,7 @@ The REST API is defined using OpenAPI 3.0 specification.
 - **Base Path**: `/api/v1`
 
 You can use the OpenAPI specification to:
+
 - Generate client SDKs in any language
 - Import into API testing tools (Postman, Insomnia)
 - Generate API documentation
@@ -28,6 +29,7 @@ The gRPC API is defined using Protocol Buffers v3.
 - **Package**: `memoryservice.v1`
 
 The gRPC API provides:
+
 - High-performance binary protocol
 - Bi-directional streaming for real-time updates
 - Strong typing with generated stubs
@@ -35,6 +37,7 @@ The gRPC API provides:
 ## ID Formats
 
 All resource identifiers in the Memory Service API are UUIDs (Universally Unique Identifiers). This applies to:
+
 - Conversation IDs
 - Entry IDs
 - Fork reference IDs
@@ -58,6 +61,7 @@ The OpenAPI specification uses `format: uuid` for these fields, which enables ty
 UUIDs are represented as 16-byte binary values (big-endian). The most significant 64 bits come first, followed by the least significant 64 bits.
 
 **Java example:**
+
 ```java
 // UUID to bytes
 ByteBuffer buffer = ByteBuffer.allocate(16);
@@ -71,6 +75,7 @@ UUID uuid = new UUID(buffer.getLong(), buffer.getLong());
 ```
 
 **Go example:**
+
 ```go
 // UUID to bytes - google/uuid package stores as [16]byte
 id := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
@@ -86,5 +91,5 @@ id, err := uuid.FromBytes(bytes)
 For Quarkus and Spring applications, pre-built clients are available:
 
 - [Quarkus Extension](/docs/quarkus/) - Includes REST and gRPC clients
-- [Spring Integration](/docs/spring/) - Spring Boot starter (coming soon) 
+- [Spring Integration](/docs/spring/) - Spring Boot starter (coming soon)
 -->

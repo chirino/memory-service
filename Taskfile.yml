@@ -29,14 +29,52 @@ tasks:
     cmds:
       - docker build -t ghcr.io/chirino/memory-service-chat-quarkus:latest -f quarkus/examples/chat-quarkus/Dockerfile .
 
+  generate:
+    desc: "generate and format source files"
+    deps:
+      - generate:go
+      - generate:chat-frontend
+      - generate:site
+      - generate:spotless
+
+  generate:go:
+    internal: true
+    cmds:
+      - go generate ./...
+
+  generate:chat-frontend:
+    internal: true
+    dir: frontends/chat-frontend
+    cmds:
+      - npm ci
+      - npm run generate
+
+  generate:site:
+    internal: true
+    dir: site
+    cmds:
+      - npm ci
+      - npm run prettier
+
+  generate:spotless:
+    internal: true
+    cmds:
+      - mvn -q -B -T 1C spotless:apply
+
   test:
-    cmds: 
-    - |
-      set -e
-      GOTESTSUM_FMT=standard-quiet
-      # GOTESTSUM_FMT=standard-verbose
-      CGO_ENABLED=1 gotestsum --format ${GOTESTSUM_FMT} -- -race ./...
-      mvn -T 1C clean test 
+    deps:
+      - test:go
+      - test:java
+
+  test:go:
+    cmds:
+      - |
+        GOTESTSUM_FMT=standard-quiet # standard-verbose
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format ${GOTESTSUM_FMT} -- -race ./...
+
+  test:java:
+    cmds:
+      - mvn -T 1C clean test
 
   dev:memory-service:
     desc: Run the memory-service app in dev mode.
