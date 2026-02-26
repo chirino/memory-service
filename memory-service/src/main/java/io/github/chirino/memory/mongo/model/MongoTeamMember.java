@@ -4,14 +4,12 @@ import io.quarkus.mongodb.panache.common.MongoEntity;
 import java.time.Instant;
 import org.bson.codecs.pojo.annotations.BsonId;
 
-@MongoEntity(collection = "conversation_groups")
-public class MongoConversationGroup {
+@MongoEntity(collection = "team_members")
+public class MongoTeamMember {
 
-    @BsonId public String id;
+    @BsonId public String id; // teamId:userId
 
-    public String organizationId;
     public String teamId;
+    public String userId;
     public Instant createdAt;
-
-    public Instant deletedAt;
 }

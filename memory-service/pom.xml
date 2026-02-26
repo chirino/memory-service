@@ -15,6 +15,13 @@
 
   <dependencies>
 
+    <!-- SpiceDB (Zanzibar-inspired) authorization service client -->
+    <dependency>
+      <groupId>com.authzed.api</groupId>
+      <artifactId>authzed</artifactId>
+      <version>1.5.4</version>
+    </dependency>
+
     <!-- In-process embedding model (384 dimensions, no external API calls) -->
     <dependency>
       <groupId>dev.langchain4j</groupId>

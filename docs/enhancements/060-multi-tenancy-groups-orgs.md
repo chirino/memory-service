@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: experimental
 ---
 
 # Enhancement 060: Multi-Tenancy — Groups & Organizations
 
-> **Status**: Proposed.
+> **Status**: Experimental (branch: `experiment/spicedb-authz`)
 
 ## Summary
 
@@ -338,9 +338,31 @@ Scenario: Existing conversations remain accessible after migration
 5. **Slug for URL-safe identification**: Organizations have both a display `name` and a unique `slug` for use in URLs and API references (e.g., `acme-corp`).
 6. **No row-level security (RLS)**: PostgreSQL RLS could enforce tenant isolation at the database level, but adds complexity to the Hibernate/Panache integration. Application-level filtering is simpler and sufficient for the current scale. RLS can be considered as a hardening step later.
 
+## Implementation Notes
+
+### Teams (Implemented)
+
+Teams were added as part of this enhancement, contrary to the original "no teams in v1" decision. Teams provide sub-group access within organizations:
+
+- **Teams belong to an organization** — team-scoped conversations also inherit org scope.
+- **Team members get implicit WRITER access** on team-scoped conversations (via SpiceDB `team->is_member` on `can_write`).
+- **Team slugs are unique per org** (not globally).
+- Team management requires org admin/owner role.
+
+### SpiceDB Integration
+
+This enhancement was implemented alongside Enhancement 063 (SpiceDB authorization). The SpiceDB schema includes `team` and `organization` definitions with proper permission inheritance. Both `LocalAuthorizationService` and `SpiceDbAuthorizationService` support implicit org/team access.
+
+### Key Files Added
+
+- `persistence/entity/OrganizationEntity.java`, `TeamEntity.java`, `OrganizationMemberEntity.java`, `TeamMemberEntity.java`
+- `mongo/model/MongoOrganization.java`, `MongoTeam.java`, `MongoOrganizationMember.java`, `MongoTeamMember.java`
+- `api/OrganizationsResource.java` — all org/team REST endpoints
+- `db/changelog/004-organizations-teams.sql` — Postgres migration
+- `features/organizations-rest.feature` — Cucumber test scenarios
+
 ## Future Considerations
 
-- **Teams**: Sub-groups within organizations for finer-grained access control.
 - **Billing/quotas**: Per-org conversation limits, storage quotas, rate limiting.
 - **SSO/directory sync**: Automatically sync org membership from an identity provider (e.g., SCIM).
 - **Row-level security**: Database-level tenant isolation for defense-in-depth.

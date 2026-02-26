@@ -1,21 +1,28 @@
 package io.github.chirino.memory.store;
 
 import io.github.chirino.memory.api.ConversationListMode;
+import io.github.chirino.memory.api.dto.AddOrganizationMemberRequest;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
+import io.github.chirino.memory.api.dto.CreateOrganizationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
+import io.github.chirino.memory.api.dto.CreateTeamRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
+import io.github.chirino.memory.api.dto.OrganizationDto;
+import io.github.chirino.memory.api.dto.OrganizationMemberDto;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.api.dto.TeamDto;
+import io.github.chirino.memory.api.dto.TeamMemberDto;
 import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.model.AdminConversationQuery;
@@ -50,9 +57,17 @@ public class MeteredMemoryStore implements MemoryStore {
 
     @Override
     public List<ConversationSummaryDto> listConversations(
-            String userId, String query, String afterCursor, int limit, ConversationListMode mode) {
+            String userId,
+            String query,
+            String afterCursor,
+            int limit,
+            ConversationListMode mode,
+            String organizationId) {
         return registry.timer("memory.store.operation", "operation", "listConversations")
-                .record(() -> delegate.listConversations(userId, query, afterCursor, limit, mode));
+                .record(
+                        () ->
+                                delegate.listConversations(
+                                        userId, query, afterCursor, limit, mode, organizationId));
     }
 
     @Override
@@ -305,5 +320,120 @@ public class MeteredMemoryStore implements MemoryStore {
     public void hardDeleteConversationGroups(List<String> groupIds) {
         registry.timer("memory.store.operation", "operation", "hardDeleteConversationGroups")
                 .record(() -> delegate.hardDeleteConversationGroups(groupIds));
+    }
+
+    @Override
+    public OrganizationDto createOrganization(String userId, CreateOrganizationRequest request) {
+        return registry.timer("memory.store.operation", "operation", "createOrganization")
+                .record(() -> delegate.createOrganization(userId, request));
+    }
+
+    @Override
+    public List<OrganizationDto> listOrganizations(String userId) {
+        return registry.timer("memory.store.operation", "operation", "listOrganizations")
+                .record(() -> delegate.listOrganizations(userId));
+    }
+
+    @Override
+    public OrganizationDto getOrganization(String userId, String organizationId) {
+        return registry.timer("memory.store.operation", "operation", "getOrganization")
+                .record(() -> delegate.getOrganization(userId, organizationId));
+    }
+
+    @Override
+    public OrganizationDto updateOrganization(
+            String userId, String organizationId, String name, String slug) {
+        return registry.timer("memory.store.operation", "operation", "updateOrganization")
+                .record(() -> delegate.updateOrganization(userId, organizationId, name, slug));
+    }
+
+    @Override
+    public void deleteOrganization(String userId, String organizationId) {
+        registry.timer("memory.store.operation", "operation", "deleteOrganization")
+                .record(() -> delegate.deleteOrganization(userId, organizationId));
+    }
+
+    @Override
+    public List<OrganizationMemberDto> listOrgMembers(String userId, String organizationId) {
+        return registry.timer("memory.store.operation", "operation", "listOrgMembers")
+                .record(() -> delegate.listOrgMembers(userId, organizationId));
+    }
+
+    @Override
+    public OrganizationMemberDto addOrgMember(
+            String userId, String organizationId, AddOrganizationMemberRequest request) {
+        return registry.timer("memory.store.operation", "operation", "addOrgMember")
+                .record(() -> delegate.addOrgMember(userId, organizationId, request));
+    }
+
+    @Override
+    public OrganizationMemberDto updateOrgMemberRole(
+            String userId, String organizationId, String memberUserId, String role) {
+        return registry.timer("memory.store.operation", "operation", "updateOrgMemberRole")
+                .record(
+                        () ->
+                                delegate.updateOrgMemberRole(
+                                        userId, organizationId, memberUserId, role));
+    }
+
+    @Override
+    public void removeOrgMember(String userId, String organizationId, String memberUserId) {
+        registry.timer("memory.store.operation", "operation", "removeOrgMember")
+                .record(() -> delegate.removeOrgMember(userId, organizationId, memberUserId));
+    }
+
+    @Override
+    public TeamDto createTeam(String userId, String organizationId, CreateTeamRequest request) {
+        return registry.timer("memory.store.operation", "operation", "createTeam")
+                .record(() -> delegate.createTeam(userId, organizationId, request));
+    }
+
+    @Override
+    public List<TeamDto> listTeams(String userId, String organizationId) {
+        return registry.timer("memory.store.operation", "operation", "listTeams")
+                .record(() -> delegate.listTeams(userId, organizationId));
+    }
+
+    @Override
+    public TeamDto getTeam(String userId, String organizationId, String teamId) {
+        return registry.timer("memory.store.operation", "operation", "getTeam")
+                .record(() -> delegate.getTeam(userId, organizationId, teamId));
+    }
+
+    @Override
+    public TeamDto updateTeam(
+            String userId, String organizationId, String teamId, String name, String slug) {
+        return registry.timer("memory.store.operation", "operation", "updateTeam")
+                .record(() -> delegate.updateTeam(userId, organizationId, teamId, name, slug));
+    }
+
+    @Override
+    public void deleteTeam(String userId, String organizationId, String teamId) {
+        registry.timer("memory.store.operation", "operation", "deleteTeam")
+                .record(() -> delegate.deleteTeam(userId, organizationId, teamId));
+    }
+
+    @Override
+    public List<TeamMemberDto> listTeamMembers(
+            String userId, String organizationId, String teamId) {
+        return registry.timer("memory.store.operation", "operation", "listTeamMembers")
+                .record(() -> delegate.listTeamMembers(userId, organizationId, teamId));
+    }
+
+    @Override
+    public TeamMemberDto addTeamMember(
+            String userId, String organizationId, String teamId, String memberUserId) {
+        return registry.timer("memory.store.operation", "operation", "addTeamMember")
+                .record(() -> delegate.addTeamMember(userId, organizationId, teamId, memberUserId));
+    }
+
+    @Override
+    public void removeTeamMember(
+            String userId, String organizationId, String teamId, String memberUserId) {
+        registry.timer("memory.store.operation", "operation", "removeTeamMember")
+                .record(
+                        () ->
+                                delegate.removeTeamMember(
+                                        userId, organizationId, teamId, memberUserId));
     }
 }

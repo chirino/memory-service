@@ -11,23 +11,28 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "conversation_groups")
-public class ConversationGroupEntity {
+@Table(name = "teams")
+public class TeamEntity {
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
     @ManyToOne
-    @JoinColumn(name = "organization_id")
+    @JoinColumn(name = "organization_id", nullable = false)
     private OrganizationEntity organization;
 
-    @ManyToOne
-    @JoinColumn(name = "team_id")
-    private TeamEntity team;
+    @Column(name = "name", nullable = false)
+    private String name;
+
+    @Column(name = "slug", nullable = false)
+    private String slug;
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private OffsetDateTime updatedAt;
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
@@ -40,12 +45,44 @@ public class ConversationGroupEntity {
         this.id = id;
     }
 
+    public OrganizationEntity getOrganization() {
+        return organization;
+    }
+
+    public void setOrganization(OrganizationEntity organization) {
+        this.organization = organization;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getSlug() {
+        return slug;
+    }
+
+    public void setSlug(String slug) {
+        this.slug = slug;
+    }
+
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
 
     public void setCreatedAt(OffsetDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public OffsetDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(OffsetDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public OffsetDateTime getDeletedAt() {
@@ -60,29 +97,17 @@ public class ConversationGroupEntity {
         return deletedAt != null;
     }
 
-    public OrganizationEntity getOrganization() {
-        return organization;
-    }
-
-    public void setOrganization(OrganizationEntity organization) {
-        this.organization = organization;
-    }
-
-    public TeamEntity getTeam() {
-        return team;
-    }
-
-    public void setTeam(TeamEntity team) {
-        this.team = team;
-    }
-
     @PrePersist
     public void prePersist() {
-        if (createdAt == null) {
-            createdAt = OffsetDateTime.now();
-        }
         if (id == null) {
             id = UUID.randomUUID();
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        if (createdAt == null) {
+            createdAt = now;
+        }
+        if (updatedAt == null) {
+            updatedAt = now;
         }
     }
 }

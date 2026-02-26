@@ -5,27 +5,35 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
 import io.github.chirino.memory.api.ConversationListMode;
+import io.github.chirino.memory.api.dto.AddOrganizationMemberRequest;
 import io.github.chirino.memory.api.dto.ConversationDto;
 import io.github.chirino.memory.api.dto.ConversationForkSummaryDto;
 import io.github.chirino.memory.api.dto.ConversationMembershipDto;
 import io.github.chirino.memory.api.dto.ConversationSummaryDto;
 import io.github.chirino.memory.api.dto.CreateConversationRequest;
+import io.github.chirino.memory.api.dto.CreateOrganizationRequest;
 import io.github.chirino.memory.api.dto.CreateOwnershipTransferRequest;
+import io.github.chirino.memory.api.dto.CreateTeamRequest;
 import io.github.chirino.memory.api.dto.EntryDto;
 import io.github.chirino.memory.api.dto.IndexConversationsResponse;
 import io.github.chirino.memory.api.dto.IndexEntryRequest;
+import io.github.chirino.memory.api.dto.OrganizationDto;
+import io.github.chirino.memory.api.dto.OrganizationMemberDto;
 import io.github.chirino.memory.api.dto.OwnershipTransferDto;
 import io.github.chirino.memory.api.dto.PagedEntries;
 import io.github.chirino.memory.api.dto.SearchResultDto;
 import io.github.chirino.memory.api.dto.SearchResultsDto;
 import io.github.chirino.memory.api.dto.ShareConversationRequest;
 import io.github.chirino.memory.api.dto.SyncResult;
+import io.github.chirino.memory.api.dto.TeamDto;
+import io.github.chirino.memory.api.dto.TeamMemberDto;
 import io.github.chirino.memory.api.dto.UnindexedEntriesResponse;
 import io.github.chirino.memory.api.dto.UnindexedEntry;
 import io.github.chirino.memory.cache.CachedMemoryEntries;
 import io.github.chirino.memory.cache.MemoryEntriesCache;
 import io.github.chirino.memory.cache.MemoryEntriesCacheSelector;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
+import io.github.chirino.memory.config.AuthorizationServiceSelector;
 import io.github.chirino.memory.config.SearchStoreSelector;
 import io.github.chirino.memory.model.AccessLevel;
 import io.github.chirino.memory.model.AdminConversationQuery;
@@ -37,12 +45,20 @@ import io.github.chirino.memory.mongo.model.MongoConversationGroup;
 import io.github.chirino.memory.mongo.model.MongoConversationMembership;
 import io.github.chirino.memory.mongo.model.MongoConversationOwnershipTransfer;
 import io.github.chirino.memory.mongo.model.MongoEntry;
+import io.github.chirino.memory.mongo.model.MongoOrganization;
+import io.github.chirino.memory.mongo.model.MongoOrganizationMember;
+import io.github.chirino.memory.mongo.model.MongoTeam;
+import io.github.chirino.memory.mongo.model.MongoTeamMember;
 import io.github.chirino.memory.mongo.repo.MongoConversationGroupRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationMembershipRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationOwnershipTransferRepository;
 import io.github.chirino.memory.mongo.repo.MongoConversationRepository;
 import io.github.chirino.memory.mongo.repo.MongoEntryRepository;
+import io.github.chirino.memory.mongo.repo.MongoOrganizationMemberRepository;
+import io.github.chirino.memory.mongo.repo.MongoOrganizationRepository;
 import io.github.chirino.memory.mongo.repo.MongoTaskRepository;
+import io.github.chirino.memory.mongo.repo.MongoTeamMemberRepository;
+import io.github.chirino.memory.mongo.repo.MongoTeamRepository;
 import io.github.chirino.memory.store.AccessDeniedException;
 import io.github.chirino.memory.store.MemoryEpochFilter;
 import io.github.chirino.memory.store.MemoryStore;
@@ -96,6 +112,14 @@ public class MongoMemoryStore implements MemoryStore {
 
     @Inject MongoConversationOwnershipTransferRepository ownershipTransferRepository;
 
+    @Inject MongoOrganizationRepository organizationRepository;
+
+    @Inject MongoOrganizationMemberRepository organizationMemberRepository;
+
+    @Inject MongoTeamRepository mongoTeamRepository;
+
+    @Inject MongoTeamMemberRepository mongoTeamMemberRepository;
+
     @Inject ObjectMapper objectMapper;
 
     @Inject DataEncryptionService dataEncryptionService;
@@ -117,6 +141,8 @@ public class MongoMemoryStore implements MemoryStore {
     @Inject io.github.chirino.memory.attachment.AttachmentDeletionService attachmentDeletionService;
 
     @Inject io.github.chirino.memory.security.MembershipAuditLogger membershipAuditLogger;
+
+    @Inject AuthorizationServiceSelector authorizationServiceSelector;
 
     private MemoryEntriesCache memoryEntriesCache;
 
@@ -160,6 +186,50 @@ public class MongoMemoryStore implements MemoryStore {
         MongoConversationGroup group = new MongoConversationGroup();
         group.id = c.id;
         group.createdAt = Instant.now();
+
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+
+        // Handle org/team scoping
+        if (request.getOrganizationId() != null) {
+            MongoOrganization org =
+                    organizationRepository
+                            .findActiveById(request.getOrganizationId())
+                            .orElseThrow(
+                                    () ->
+                                            new ResourceNotFoundException(
+                                                    "organization", request.getOrganizationId()));
+            if (!organizationMemberRepository.isMember(org.id, userId)) {
+                throw new AccessDeniedException(
+                        "User must be an organization member to create org-scoped conversations");
+            }
+            group.organizationId = org.id;
+            authzService.writeOrgConversationGroup(group.id, org.id);
+
+            if (request.getTeamId() != null) {
+                MongoTeam team =
+                        mongoTeamRepository
+                                .findActiveById(request.getTeamId())
+                                .orElseThrow(
+                                        () ->
+                                                new ResourceNotFoundException(
+                                                        "team", request.getTeamId()));
+                if (!team.organizationId.equals(org.id)) {
+                    throw new AccessDeniedException("Team does not belong to the organization");
+                }
+                // Org admins/owners can create team-scoped conversations without being team members
+                Optional<String> orgRole = organizationMemberRepository.findRole(org.id, userId);
+                boolean isOrgAdminOrOwner =
+                        orgRole.isPresent()
+                                && ("owner".equals(orgRole.get()) || "admin".equals(orgRole.get()));
+                if (!isOrgAdminOrOwner && !mongoTeamMemberRepository.isMember(team.id, userId)) {
+                    throw new AccessDeniedException(
+                            "User must be a team member to create team-scoped conversations");
+                }
+                group.teamId = team.id;
+                authzService.writeTeamConversationGroup(group.id, team.id);
+            }
+        }
+
         conversationGroupRepository.persist(group);
         c.conversationGroupId = group.id;
         c.ownerUserId = userId;
@@ -171,15 +241,36 @@ public class MongoMemoryStore implements MemoryStore {
         conversationRepository.persist(c);
 
         membershipRepository.createMembership(c.conversationGroupId, userId, AccessLevel.OWNER);
+        authzService.writeRelationship(c.conversationGroupId, userId, AccessLevel.OWNER);
 
         return toConversationDto(c, AccessLevel.OWNER, null);
     }
 
     @Override
     public List<ConversationSummaryDto> listConversations(
-            String userId, String query, String afterCursor, int limit, ConversationListMode mode) {
+            String userId,
+            String query,
+            String afterCursor,
+            int limit,
+            ConversationListMode mode,
+            String organizationId) {
         List<MongoConversationMembership> memberships =
                 membershipRepository.listForUser(userId, limit);
+
+        // If organizationId filter is set, restrict to groups scoped to that org
+        if (organizationId != null && !organizationId.isBlank()) {
+            Set<String> orgGroupIds =
+                    conversationGroupRepository
+                            .find("organizationId = ?1 and deletedAt is null", organizationId)
+                            .stream()
+                            .map(g -> g.id)
+                            .collect(Collectors.toSet());
+            memberships =
+                    memberships.stream()
+                            .filter(m -> orgGroupIds.contains(m.conversationGroupId))
+                            .collect(Collectors.toList());
+        }
+
         if (mode == ConversationListMode.ROOTS) {
             Map<String, AccessLevel> accessByGroup =
                     memberships.stream()
@@ -269,11 +360,8 @@ public class MongoMemoryStore implements MemoryStore {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
         String groupId = c.conversationGroupId;
-        MongoConversationMembership membership =
-                membershipRepository
-                        .findMembership(groupId, userId)
-                        .orElseThrow(() -> new AccessDeniedException("No access to conversation"));
-        return toConversationDto(c, membership.accessLevel, null);
+        AccessLevel effectiveAccess = findEffectiveAccessLevel(groupId, userId);
+        return toConversationDto(c, effectiveAccess, null);
     }
 
     @Override
@@ -288,23 +376,16 @@ public class MongoMemoryStore implements MemoryStore {
         c.title = encryptTitle(title);
         c.updatedAt = Instant.now();
         conversationRepository.update(c);
-        MongoConversationMembership membership =
-                membershipRepository
-                        .findMembership(groupId, userId)
-                        .orElseThrow(() -> new AccessDeniedException("No access to conversation"));
-        return toConversationDto(c, membership.accessLevel, null);
+        AccessLevel effectiveAccess = findEffectiveAccessLevel(groupId, userId);
+        return toConversationDto(c, effectiveAccess, null);
     }
 
     @Override
     @Transactional
     public void deleteConversation(String userId, String conversationId) {
         String groupId = resolveGroupId(conversationId);
-        MongoConversationMembership membership =
-                membershipRepository
-                        .findMembership(groupId, userId)
-                        .orElseThrow(() -> new AccessDeniedException("No access to conversation"));
-        if (membership.accessLevel != AccessLevel.OWNER
-                && membership.accessLevel != AccessLevel.MANAGER) {
+        AccessLevel accessLevel = findEffectiveAccessLevel(groupId, userId);
+        if (accessLevel != AccessLevel.OWNER && accessLevel != AccessLevel.MANAGER) {
             throw new AccessDeniedException("Only owner or manager can delete conversation");
         }
         softDeleteConversationGroup(groupId, userId);
@@ -341,9 +422,22 @@ public class MongoMemoryStore implements MemoryStore {
         if (c == null || c.deletedAt != null) {
             throw new ResourceNotFoundException("conversation", conversationId);
         }
+
+        // Org-scoped conversations can only be shared with org members
+        MongoConversationGroup group = conversationGroupRepository.findById(groupId);
+        if (group != null && group.organizationId != null) {
+            if (!organizationMemberRepository.isMember(group.organizationId, request.getUserId())) {
+                throw new IllegalArgumentException(
+                        "Cannot share org-scoped conversation with non-org member");
+            }
+        }
+
         MongoConversationMembership m =
                 membershipRepository.createMembership(
                         groupId, request.getUserId(), request.getAccessLevel());
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeRelationship(groupId, request.getUserId(), request.getAccessLevel());
 
         // Audit log the addition
         membershipAuditLogger.logAdd(
@@ -371,6 +465,10 @@ public class MongoMemoryStore implements MemoryStore {
             m.accessLevel = request.getAccessLevel();
             membershipRepository.update(m);
 
+            var authzService = authorizationServiceSelector.getAuthorizationService();
+            authzService.deleteRelationship(groupId, memberUserId, oldLevel);
+            authzService.writeRelationship(groupId, memberUserId, request.getAccessLevel());
+
             // Audit log the update
             membershipAuditLogger.logUpdate(
                     userId, conversationId, memberUserId, oldLevel, request.getAccessLevel());
@@ -393,6 +491,9 @@ public class MongoMemoryStore implements MemoryStore {
 
             // Hard delete the membership
             membershipRepository.deleteById(membership.get().id);
+            authorizationServiceSelector
+                    .getAuthorizationService()
+                    .deleteRelationship(groupId, memberUserId, level);
 
             // Audit log the removal
             membershipAuditLogger.logRemove(userId, conversationId, memberUserId, level);
@@ -606,6 +707,12 @@ public class MongoMemoryStore implements MemoryStore {
             oldOwnerMembership.accessLevel = AccessLevel.MANAGER;
             membershipRepository.update(oldOwnerMembership);
         }
+
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        authzService.deleteRelationship(groupId, transfer.toUserId, AccessLevel.MANAGER);
+        authzService.writeRelationship(groupId, transfer.toUserId, AccessLevel.OWNER);
+        authzService.deleteRelationship(groupId, transfer.fromUserId, AccessLevel.OWNER);
+        authzService.writeRelationship(groupId, transfer.fromUserId, AccessLevel.MANAGER);
 
         // Update conversation owner_user_id for all conversations in the group
         List<MongoConversation> conversations =
@@ -1704,7 +1811,9 @@ public class MongoMemoryStore implements MemoryStore {
     }
 
     private void ensureHasAccess(String conversationId, String userId, AccessLevel level) {
-        if (!membershipRepository.hasAtLeastAccess(conversationId, userId, level)) {
+        if (!authorizationServiceSelector
+                .getAuthorizationService()
+                .hasAtLeastAccess(conversationId, userId, level)) {
             throw new AccessDeniedException(
                     "User "
                             + userId
@@ -1713,6 +1822,30 @@ public class MongoMemoryStore implements MemoryStore {
                             + " access to conversation "
                             + conversationId);
         }
+    }
+
+    /**
+     * Returns the effective access level for a user on a conversation group, considering both direct
+     * membership and implicit access (org admin/owner, team membership). Throws AccessDeniedException
+     * if no access at all.
+     */
+    private AccessLevel findEffectiveAccessLevel(String groupId, String userId) {
+        Optional<MongoConversationMembership> direct =
+                membershipRepository.findMembership(groupId, userId);
+        if (direct.isPresent()) {
+            return direct.get().accessLevel;
+        }
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        if (authzService.hasAtLeastAccess(groupId, userId, AccessLevel.MANAGER)) {
+            return AccessLevel.MANAGER;
+        }
+        if (authzService.hasAtLeastAccess(groupId, userId, AccessLevel.WRITER)) {
+            return AccessLevel.WRITER;
+        }
+        if (authzService.hasAtLeastAccess(groupId, userId, AccessLevel.READER)) {
+            return AccessLevel.READER;
+        }
+        throw new AccessDeniedException("No access to conversation");
     }
 
     private ConversationSummaryDto toConversationSummaryDto(
@@ -1929,9 +2062,11 @@ public class MongoMemoryStore implements MemoryStore {
         // Log and hard delete memberships BEFORE soft-deleting the group
         List<MongoConversationMembership> memberships =
                 membershipRepository.listForConversationGroup(conversationGroupId);
+        var authzService = authorizationServiceSelector.getAuthorizationService();
         for (MongoConversationMembership m : memberships) {
             membershipAuditLogger.logRemove(
                     actorUserId, conversationGroupId, m.userId, m.accessLevel);
+            authzService.deleteRelationship(conversationGroupId, m.userId, m.accessLevel);
             membershipRepository.deleteById(m.id);
         }
 
@@ -1954,6 +2089,464 @@ public class MongoMemoryStore implements MemoryStore {
 
         // Hard delete ownership transfers
         ownershipTransferRepository.deleteByConversationGroup(conversationGroupId);
+    }
+
+    // ---- Organization methods ----
+
+    @Override
+    @Transactional
+    public OrganizationDto createOrganization(String userId, CreateOrganizationRequest request) {
+        MongoOrganization org = new MongoOrganization();
+        org.id = UUID.randomUUID().toString();
+        org.name = request.getName();
+        org.slug = request.getSlug();
+        org.metadata =
+                request.getMetadata() != null ? request.getMetadata() : Collections.emptyMap();
+        Instant now = Instant.now();
+        org.createdAt = now;
+        org.updatedAt = now;
+        organizationRepository.persist(org);
+
+        MongoOrganizationMember member = new MongoOrganizationMember();
+        member.id = org.id + ":" + userId;
+        member.organizationId = org.id;
+        member.userId = userId;
+        member.role = "owner";
+        member.createdAt = now;
+        organizationMemberRepository.persist(member);
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeOrgMembership(org.id, userId, "owner");
+
+        return toOrganizationDto(org, "owner");
+    }
+
+    @Override
+    public List<OrganizationDto> listOrganizations(String userId) {
+        List<MongoOrganizationMember> memberships =
+                organizationMemberRepository.listForUser(userId);
+        return memberships.stream()
+                .map(
+                        m -> {
+                            MongoOrganization org =
+                                    organizationRepository
+                                            .findActiveById(m.organizationId)
+                                            .orElse(null);
+                            return org != null ? toOrganizationDto(org, m.role) : null;
+                        })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public OrganizationDto getOrganization(String userId, String organizationId) {
+        MongoOrganization org =
+                organizationRepository
+                        .findActiveById(organizationId)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "organization", organizationId));
+        MongoOrganizationMember member =
+                organizationMemberRepository
+                        .findMembership(organizationId, userId)
+                        .orElseThrow(
+                                () ->
+                                        new AccessDeniedException(
+                                                "Not a member of this organization"));
+        return toOrganizationDto(org, member.role);
+    }
+
+    @Override
+    @Transactional
+    public OrganizationDto updateOrganization(
+            String userId, String organizationId, String name, String slug) {
+        MongoOrganization org =
+                organizationRepository
+                        .findActiveById(organizationId)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "organization", organizationId));
+        String role = ensureMongoOrgRole(organizationId, userId, "admin");
+        if (name != null) {
+            org.name = name;
+        }
+        if (slug != null) {
+            org.slug = slug;
+        }
+        org.updatedAt = Instant.now();
+        organizationRepository.update(org);
+        return toOrganizationDto(org, role);
+    }
+
+    @Override
+    @Transactional
+    public void deleteOrganization(String userId, String organizationId) {
+        MongoOrganization org =
+                organizationRepository
+                        .findActiveById(organizationId)
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "organization", organizationId));
+        ensureMongoOrgRole(organizationId, userId, "owner");
+
+        // Clean up SpiceDB relationships before soft-delete
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        for (var m : organizationMemberRepository.listForOrg(organizationId)) {
+            authzService.deleteOrgMembership(organizationId, m.userId, m.role);
+        }
+        for (var t : mongoTeamRepository.listForOrg(organizationId)) {
+            for (var tm : mongoTeamMemberRepository.listForTeam(t.id)) {
+                authzService.deleteTeamMembership(t.id, tm.userId);
+            }
+        }
+
+        org.deletedAt = Instant.now();
+        organizationRepository.update(org);
+    }
+
+    @Override
+    public List<OrganizationMemberDto> listOrgMembers(String userId, String organizationId) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        if (!organizationMemberRepository.isMember(organizationId, userId)) {
+            throw new AccessDeniedException("Not a member of this organization");
+        }
+        return organizationMemberRepository.listForOrg(organizationId).stream()
+                .map(this::toMongoOrgMemberDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public OrganizationMemberDto addOrgMember(
+            String userId, String organizationId, AddOrganizationMemberRequest request) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureMongoOrgRole(organizationId, userId, "admin");
+
+        String role = request.getRole() != null ? request.getRole() : "member";
+        MongoOrganizationMember member = new MongoOrganizationMember();
+        member.id = organizationId + ":" + request.getUserId();
+        member.organizationId = organizationId;
+        member.userId = request.getUserId();
+        member.role = role;
+        member.createdAt = Instant.now();
+        organizationMemberRepository.persist(member);
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeOrgMembership(organizationId, request.getUserId(), role);
+
+        return toMongoOrgMemberDto(member);
+    }
+
+    @Override
+    @Transactional
+    public OrganizationMemberDto updateOrgMemberRole(
+            String userId, String organizationId, String memberUserId, String role) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureMongoOrgRole(organizationId, userId, "admin");
+
+        MongoOrganizationMember member =
+                organizationMemberRepository
+                        .findMembership(organizationId, memberUserId)
+                        .orElseThrow(() -> new ResourceNotFoundException("member", memberUserId));
+        String oldRole = member.role;
+        member.role = role;
+        organizationMemberRepository.update(member);
+
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        authzService.deleteOrgMembership(organizationId, memberUserId, oldRole);
+        authzService.writeOrgMembership(organizationId, memberUserId, role);
+
+        return toMongoOrgMemberDto(member);
+    }
+
+    @Override
+    @Transactional
+    public void removeOrgMember(String userId, String organizationId, String memberUserId) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureMongoOrgRole(organizationId, userId, "admin");
+
+        MongoOrganizationMember member =
+                organizationMemberRepository
+                        .findMembership(organizationId, memberUserId)
+                        .orElseThrow(() -> new ResourceNotFoundException("member", memberUserId));
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .deleteOrgMembership(organizationId, memberUserId, member.role);
+
+        organizationMemberRepository.delete(member);
+    }
+
+    // ---- Team methods ----
+
+    @Override
+    @Transactional
+    public TeamDto createTeam(String userId, String organizationId, CreateTeamRequest request) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureMongoOrgRole(organizationId, userId, "admin");
+
+        MongoTeam team = new MongoTeam();
+        team.id = UUID.randomUUID().toString();
+        team.organizationId = organizationId;
+        team.name = request.getName();
+        team.slug = request.getSlug();
+        Instant now = Instant.now();
+        team.createdAt = now;
+        team.updatedAt = now;
+        mongoTeamRepository.persist(team);
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeTeamOrg(team.id, organizationId);
+
+        return toMongoTeamDto(team);
+    }
+
+    @Override
+    public List<TeamDto> listTeams(String userId, String organizationId) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        if (!organizationMemberRepository.isMember(organizationId, userId)) {
+            throw new AccessDeniedException("Not a member of this organization");
+        }
+        return mongoTeamRepository.listForOrg(organizationId).stream()
+                .map(this::toMongoTeamDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public TeamDto getTeam(String userId, String organizationId, String teamId) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        if (!organizationMemberRepository.isMember(organizationId, userId)) {
+            throw new AccessDeniedException("Not a member of this organization");
+        }
+        MongoTeam team =
+                mongoTeamRepository
+                        .findActiveById(teamId)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.organizationId.equals(organizationId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        return toMongoTeamDto(team);
+    }
+
+    @Override
+    @Transactional
+    public TeamDto updateTeam(
+            String userId, String organizationId, String teamId, String name, String slug) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureMongoOrgRole(organizationId, userId, "admin");
+        MongoTeam team =
+                mongoTeamRepository
+                        .findActiveById(teamId)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.organizationId.equals(organizationId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        if (name != null) {
+            team.name = name;
+        }
+        if (slug != null) {
+            team.slug = slug;
+        }
+        team.updatedAt = Instant.now();
+        mongoTeamRepository.update(team);
+        return toMongoTeamDto(team);
+    }
+
+    @Override
+    @Transactional
+    public void deleteTeam(String userId, String organizationId, String teamId) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureMongoOrgRole(organizationId, userId, "admin");
+        MongoTeam team =
+                mongoTeamRepository
+                        .findActiveById(teamId)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.organizationId.equals(organizationId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+
+        // Clean up SpiceDB relationships before soft-delete
+        var authzService = authorizationServiceSelector.getAuthorizationService();
+        for (var tm : mongoTeamMemberRepository.listForTeam(teamId)) {
+            authzService.deleteTeamMembership(teamId, tm.userId);
+        }
+
+        team.deletedAt = Instant.now();
+        mongoTeamRepository.update(team);
+    }
+
+    @Override
+    public List<TeamMemberDto> listTeamMembers(
+            String userId, String organizationId, String teamId) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        if (!organizationMemberRepository.isMember(organizationId, userId)) {
+            throw new AccessDeniedException("Not a member of this organization");
+        }
+        MongoTeam team =
+                mongoTeamRepository
+                        .findActiveById(teamId)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.organizationId.equals(organizationId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        return mongoTeamMemberRepository.listForTeam(teamId).stream()
+                .map(this::toMongoTeamMemberDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public TeamMemberDto addTeamMember(
+            String userId, String organizationId, String teamId, String memberUserId) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureMongoOrgRole(organizationId, userId, "admin");
+        MongoTeam team =
+                mongoTeamRepository
+                        .findActiveById(teamId)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.organizationId.equals(organizationId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        if (!organizationMemberRepository.isMember(organizationId, memberUserId)) {
+            throw new AccessDeniedException("User must be an organization member");
+        }
+
+        MongoTeamMember member = new MongoTeamMember();
+        member.id = teamId + ":" + memberUserId;
+        member.teamId = teamId;
+        member.userId = memberUserId;
+        member.createdAt = Instant.now();
+        mongoTeamMemberRepository.persist(member);
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .writeTeamMembership(teamId, memberUserId);
+
+        return toMongoTeamMemberDto(member);
+    }
+
+    @Override
+    @Transactional
+    public void removeTeamMember(
+            String userId, String organizationId, String teamId, String memberUserId) {
+        organizationRepository
+                .findActiveById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("organization", organizationId));
+        ensureMongoOrgRole(organizationId, userId, "admin");
+        MongoTeam team =
+                mongoTeamRepository
+                        .findActiveById(teamId)
+                        .orElseThrow(() -> new ResourceNotFoundException("team", teamId));
+        if (!team.organizationId.equals(organizationId)) {
+            throw new ResourceNotFoundException("team", teamId);
+        }
+        MongoTeamMember member =
+                mongoTeamMemberRepository
+                        .findMembership(teamId, memberUserId)
+                        .orElseThrow(
+                                () -> new ResourceNotFoundException("team_member", memberUserId));
+
+        authorizationServiceSelector
+                .getAuthorizationService()
+                .deleteTeamMembership(teamId, memberUserId);
+
+        mongoTeamMemberRepository.delete(member);
+    }
+
+    private String ensureMongoOrgRole(String orgId, String userId, String requiredRole) {
+        MongoOrganizationMember member =
+                organizationMemberRepository
+                        .findMembership(orgId, userId)
+                        .orElseThrow(
+                                () ->
+                                        new AccessDeniedException(
+                                                "Not a member of this organization"));
+        if (!hasMongoOrgRoleLevel(member.role, requiredRole)) {
+            throw new AccessDeniedException(
+                    "Requires " + requiredRole + " role in the organization");
+        }
+        return member.role;
+    }
+
+    private boolean hasMongoOrgRoleLevel(String actual, String required) {
+        return mongoOrgRoleLevel(actual) >= mongoOrgRoleLevel(required);
+    }
+
+    private int mongoOrgRoleLevel(String role) {
+        return switch (role) {
+            case "owner" -> 3;
+            case "admin" -> 2;
+            case "member" -> 1;
+            default -> 0;
+        };
+    }
+
+    private OrganizationDto toOrganizationDto(MongoOrganization org, String role) {
+        OrganizationDto dto = new OrganizationDto();
+        dto.setId(org.id);
+        dto.setName(org.name);
+        dto.setSlug(org.slug);
+        dto.setMetadata(org.metadata);
+        dto.setRole(role);
+        dto.setCreatedAt(ISO_FORMATTER.format(org.createdAt.atOffset(ZoneOffset.UTC)));
+        dto.setUpdatedAt(ISO_FORMATTER.format(org.updatedAt.atOffset(ZoneOffset.UTC)));
+        return dto;
+    }
+
+    private OrganizationMemberDto toMongoOrgMemberDto(MongoOrganizationMember m) {
+        OrganizationMemberDto dto = new OrganizationMemberDto();
+        dto.setOrganizationId(m.organizationId);
+        dto.setUserId(m.userId);
+        dto.setRole(m.role);
+        dto.setCreatedAt(ISO_FORMATTER.format(m.createdAt.atOffset(ZoneOffset.UTC)));
+        return dto;
+    }
+
+    private TeamDto toMongoTeamDto(MongoTeam team) {
+        TeamDto dto = new TeamDto();
+        dto.setId(team.id);
+        dto.setOrganizationId(team.organizationId);
+        dto.setName(team.name);
+        dto.setSlug(team.slug);
+        dto.setCreatedAt(ISO_FORMATTER.format(team.createdAt.atOffset(ZoneOffset.UTC)));
+        dto.setUpdatedAt(ISO_FORMATTER.format(team.updatedAt.atOffset(ZoneOffset.UTC)));
+        return dto;
+    }
+
+    private TeamMemberDto toMongoTeamMemberDto(MongoTeamMember m) {
+        TeamMemberDto dto = new TeamMemberDto();
+        dto.setTeamId(m.teamId);
+        dto.setUserId(m.userId);
+        dto.setCreatedAt(ISO_FORMATTER.format(m.createdAt.atOffset(ZoneOffset.UTC)));
+        return dto;
     }
 
     private byte[] encryptTitle(String title) {

@@ -86,3 +86,75 @@ databaseChangeLog:
                   }
                 ]
               }
+
+  - changeSet:
+      id: mongo-3-organizations-teams
+      author: memory-service
+      comment: Create indexes for organizations, teams, and their members
+      changes:
+        - runCommand:
+            command: |
+              {
+                "createIndexes": "organizations",
+                "indexes": [
+                  {
+                    "key": { "slug": 1 },
+                    "name": "idx_organizations_slug",
+                    "unique": true
+                  },
+                  {
+                    "key": { "deletedAt": 1 },
+                    "name": "idx_organizations_deleted_at"
+                  }
+                ]
+              }
+        - runCommand:
+            command: |
+              {
+                "createIndexes": "organization_members",
+                "indexes": [
+                  {
+                    "key": { "organizationId": 1 },
+                    "name": "idx_org_members_org"
+                  },
+                  {
+                    "key": { "userId": 1 },
+                    "name": "idx_org_members_user"
+                  }
+                ]
+              }
+        - runCommand:
+            command: |
+              {
+                "createIndexes": "teams",
+                "indexes": [
+                  {
+                    "key": { "organizationId": 1, "slug": 1 },
+                    "name": "idx_teams_org_slug",
+                    "unique": true
+                  },
+                  {
+                    "key": { "organizationId": 1 },
+                    "name": "idx_teams_organization"
+                  },
+                  {
+                    "key": { "deletedAt": 1 },
+                    "name": "idx_teams_deleted_at"
+                  }
+                ]
+              }
+        - runCommand:
+            command: |
+              {
+                "createIndexes": "team_members",
+                "indexes": [
+                  {
+                    "key": { "teamId": 1 },
+                    "name": "idx_team_members_team"
+                  },
+                  {
+                    "key": { "userId": 1 },
+                    "name": "idx_team_members_user"
+                  }
+                ]
+              }
