@@ -10,7 +10,7 @@ Feature: Conversation Sharing gRPC API
   Scenario: Share a conversation with a user via gRPC
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "bob"
     access_level: WRITER
     """
@@ -19,7 +19,7 @@ Feature: Conversation Sharing gRPC API
     And the gRPC response field "accessLevel" should be "WRITER"
     And the gRPC response text should match text proto:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "bob"
     access_level: WRITER
     """
@@ -27,7 +27,7 @@ Feature: Conversation Sharing gRPC API
   Scenario: Share a conversation with reader access via gRPC
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "charlie"
     access_level: READER
     """
@@ -38,7 +38,7 @@ Feature: Conversation Sharing gRPC API
   Scenario: Share a conversation with manager access via gRPC
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "dave"
     access_level: MANAGER
     """
@@ -49,13 +49,13 @@ Feature: Conversation Sharing gRPC API
   Scenario: List conversation memberships via gRPC
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "bob"
     access_level: WRITER
     """
     When I send gRPC request "ConversationMembershipsService/ListMemberships" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "memberships" should not be null
@@ -67,13 +67,13 @@ Feature: Conversation Sharing gRPC API
   Scenario: Update membership access level via gRPC
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "bob"
     access_level: READER
     """
     When I send gRPC request "ConversationMembershipsService/UpdateMembership" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     member_user_id: "bob"
     access_level: WRITER
     """
@@ -82,7 +82,7 @@ Feature: Conversation Sharing gRPC API
     And the gRPC response field "accessLevel" should be "WRITER"
     And the gRPC response text should match text proto:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "bob"
     access_level: WRITER
     """
@@ -90,19 +90,19 @@ Feature: Conversation Sharing gRPC API
   Scenario: Delete a membership via gRPC
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "bob"
     access_level: WRITER
     """
     When I send gRPC request "ConversationMembershipsService/DeleteMembership" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     member_user_id: "bob"
     """
     Then the gRPC response should not have an error
     When I send gRPC request "ConversationMembershipsService/ListMemberships" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "memberships" should not be null
@@ -110,7 +110,7 @@ Feature: Conversation Sharing gRPC API
   Scenario: Share non-existent conversation via gRPC
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
+    conversation_id: "${"00000000-0000-0000-0000-000000000000" | uuid_to_hex_string}"
     user_id: "bob"
     access_level: WRITER
     """
@@ -120,7 +120,7 @@ Feature: Conversation Sharing gRPC API
     Given there is a conversation owned by "bob"
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "charlie"
     access_level: WRITER
     """
@@ -132,7 +132,7 @@ Feature: Conversation Sharing gRPC API
     And the conversation is shared with user "charlie" with access level "reader"
     When I send gRPC request "ConversationMembershipsService/ListMemberships" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
 
@@ -142,7 +142,7 @@ Feature: Conversation Sharing gRPC API
     And the conversation is shared with user "charlie" with access level "writer"
     When I send gRPC request "ConversationMembershipsService/UpdateMembership" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     member_user_id: "dave"
     access_level: READER
     """
@@ -154,7 +154,7 @@ Feature: Conversation Sharing gRPC API
     And the conversation is shared with user "charlie" with access level "writer"
     When I send gRPC request "ConversationMembershipsService/DeleteMembership" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     member_user_id: "dave"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
@@ -162,7 +162,7 @@ Feature: Conversation Sharing gRPC API
   Scenario: Membership response contains conversation_id instead of conversation_group_id via gRPC
     When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "bob"
     access_level: WRITER
     """

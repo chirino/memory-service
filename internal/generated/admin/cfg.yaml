@@ -1,0 +1,9 @@
+package: admin
+generate:
+  gin-server: true
+  strict-server: true
+  models: true
+  embedded-spec: true
+output: internal/generated/admin/admin.gen.go
+output-options:
+  skip-prune: true

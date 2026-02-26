@@ -235,6 +235,8 @@ Feature: Index Entries REST API
     Then the response status should be 200
     And the search response should contain 1 results
     And the response body "data[0].entryId" should be "${firstEntryId}"
+    And search result at index 0 should have conversationTitle "Test Conversation"
+    And the response body field "data[0].highlights" should not be null
 
   Scenario: Search conversations without entry content
     When I list entries for the conversation

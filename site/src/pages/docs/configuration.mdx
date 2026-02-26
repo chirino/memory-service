@@ -1,90 +1,97 @@
 ---
 layout: ../../layouts/DocsLayout.astro
 title: Configuration
-description: Configure Memory Service databases, vector stores, and authentication using environment variables or application properties.
+description: Configure Memory Service databases, vector stores, and authentication using CLI flags or environment variables.
 ---
 
 import ConfigToggle from '../../components/ConfigToggle.astro';
 import Cfg from '../../components/Cfg.astro';
 import ConfigBlock from '../../components/ConfigBlock.astro';
 
-Memory Service is configured through environment variables or application properties. Use the toggle below to switch between formats.
+Memory Service is configured through CLI flags or environment variables. Use the toggle below to switch between formats.
 
 <ConfigToggle />
 
-> **Tip:** Your format preference is saved across visits. Environment variables follow Quarkus conventions: dots and hyphens become underscores, all uppercase.
+> **Tip:** Your format preference is saved across visits. Every CLI flag has a corresponding environment variable.
 
 ## Server Configuration
 
-These are the core server configuration options:
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" /> | path | system temp dir | Directory for temporary files |
+| <Cfg p="--tls-cert-file" e="MEMORY_SERVICE_TLS_CERT_FILE" /> | path | _(none)_ | TLS certificate file (self-signed if omitted) |
+| <Cfg p="--tls-key-file" e="MEMORY_SERVICE_TLS_KEY_FILE" /> | path | _(none)_ | TLS private key file (self-signed if omitted) |
+| <Cfg p="--advertised-address" e="MEMORY_SERVICE_ADVERTISED_ADDRESS" /> | `host:port` | auto-detected | Advertised address for client redirects |
+| <Cfg p="--read-header-timeout-seconds" e="MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS" /> | integer | `5` | HTTP read header timeout in seconds |
+| <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" /> | `true`, `false` | `false` | Enable HTTP access logging for `/health`, `/ready`, `/metrics` |
 
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.datastore.type" /> | `postgres`, `mongo`, `mongodb` | `postgres` | Database backend for storing conversations |
-| <Cfg p="memory-service.datastore.migrate-at-start" /> | `true`, `false` | `true` | Run database migrations at startup (routed to the correct backend automatically) |
-| <Cfg p="memory-service.cache.type" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching (used by response resumer and future cache features) |
-| <Cfg p="memory-service.vector.store.type" /> | `none`, `pgvector`, `qdrant` | `none` | Optional vector store for semantic search |
-| <Cfg p="memory-service.temp-dir" /> | path | system temp dir | Directory for temporary files (attachment downloads, response resumer, etc.) |
+### Network Listener
 
-## Database Configuration
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--port" e="MEMORY_SERVICE_PORT" /> | integer | `8080` | HTTP/gRPC server port |
+| <Cfg p="--plain-text" e="MEMORY_SERVICE_PLAIN_TEXT" /> | `true`, `false` | `true` | Enable plaintext HTTP/1.1 + h2c + gRPC |
+| <Cfg p="--tls" e="MEMORY_SERVICE_TLS" /> | `true`, `false` | `true` | Enable TLS HTTP/1.1 + HTTP/2 + gRPC |
 
-Memory Service supports multiple database backends for storing conversation data. When you set <Cfg p="memory-service.datastore.type" />, the service automatically routes database migrations to the correct Liquibase backend. Selecting `mongo` requires a few additional settings to keep the unused PostgreSQL/Hibernate ORM subsystem inactive (see the MongoDB section below).
+### Management Network Listener
 
-### PostgreSQL (Recommended)
+By default, `/health`, `/ready`, and `/metrics` are served on the main port alongside the API. Set `--management-port` to move them onto a dedicated port, keeping them out of the main API's auth middleware — and making Prometheus scrape configuration more straightforward.
+
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--management-port" e="MEMORY_SERVICE_MANAGEMENT_PORT" /> | integer | _(unset)_ | Dedicated port for health and metrics. When unset, served on the main port. |
+| <Cfg p="--management-plain-text" e="MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT" /> | `true`, `false` | `true` | Enable plaintext HTTP for management server |
+| <Cfg p="--management-tls" e="MEMORY_SERVICE_MANAGEMENT_TLS" /> | `true`, `false` | `true` | Enable TLS for management server (uses same cert/key as main listener) |
+
+## DB Configuration
+
+Memory Service supports PostgreSQL and MongoDB as database backends. The database URL uses standard connection string formats (not JDBC).
+
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--db-kind" e="MEMORY_SERVICE_DB_KIND" /> | `postgres`, `mongo` | `postgres` | Database backend |
+| <Cfg p="--db-url" e="MEMORY_SERVICE_DB_URL" /> | URL | _(required)_ | Database connection URL |
+| <Cfg p="--db-max-open-conns" e="MEMORY_SERVICE_DB_MAX_OPEN_CONNS" /> | integer | `25` | Maximum number of open database connections (see backend notes below) |
+| <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> | integer | `5` | Idle/minimum connections (see backend notes below) |
+| `MEMORY_SERVICE_DB_MIGRATE_AT_START` | `true`, `false` | `true` | Run database migrations at startup |
+
+### DB: PostgreSQL Configuration
+
+PostgreSQL is the recommended database backend for Memory Service.
+
+- <Cfg p="--db-max-open-conns" e="MEMORY_SERVICE_DB_MAX_OPEN_CONNS" /> sets the maximum number of open connections.
+- <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> sets the maximum number of idle connections kept in the pool.
 
 <ConfigBlock property={`# Select PostgreSQL as the datastore
-memory-service.datastore.type=postgres
+--db-kind=postgres
 
-# PostgreSQL connection
-quarkus.datasource.db-kind=postgresql
-quarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/memoryservice
-quarkus.datasource.username=postgres
-quarkus.datasource.password=postgres`} />
+# PostgreSQL connection (standard URL format)
+--db-url=postgresql://postgres:postgres@localhost:5432/memoryservice`} />
 
-### MongoDB
+### DB: MongoDB Configuration
+
+- <Cfg p="--db-max-open-conns" e="MEMORY_SERVICE_DB_MAX_OPEN_CONNS" /> sets the maximum connection pool size.
+- <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> sets the **minimum** pool size — connections MongoDB keeps open proactively. This is _not_ an idle-connection cap.
 
 <ConfigBlock property={`# Select MongoDB as the datastore
-memory-service.datastore.type=mongo
+--db-kind=mongo
 
 # MongoDB connection
-quarkus.mongodb.connection-string=mongodb://localhost:27017
-quarkus.mongodb.database=memoryservice
-quarkus.mongodb.credentials.auth-source=admin`} />
+--db-url=mongodb://localhost:27017/memoryservice`} />
 
-In production, MongoDB deployments also require settings to keep the unused PostgreSQL/Hibernate ORM subsystem inactive. The `DatastoreConfigSourceFactory` handles MongoDB Liquibase routing automatically, but the JDBC datasource and PostgreSQL Liquibase settings use Quarkus `BUILD_AND_RUN_TIME_FIXED` config properties that must be set via environment variables:
-
-<ConfigBlock property={`# Dummy JDBC URL keeps Hibernate ORM active (no actual connection is made)
-quarkus.datasource.jdbc.url=jdbc:postgresql://unused:5432/unused
-quarkus.datasource.jdbc.initial-size=0
-quarkus.datasource.jdbc.min-size=0
-quarkus.datasource.jdbc.max-size=1
-
-# Disable PostgreSQL Liquibase (migrations route to MongoDB automatically)
-quarkus.liquibase.migrate-at-start=false
-quarkus.liquibase.validate-on-migrate=false`} />
-
-> **Note:** These settings are pre-configured in the [kustomize MongoDB component](/docs/deployment/kubernetes/) and the Docker Compose MongoDB example below. You only need to set them manually for custom deployments.
 
 ## Cache Configuration
 
 Memory Service uses a unified cache configuration for all cache-dependent features, including the response resumer and memory entries cache. Configure the cache backend once, and all features will use it automatically.
 
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.cache.type" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching |
-| <Cfg p="memory-service.redis.hosts" /> | Redis URL | `redis://localhost:6379` | Redis connection URL |
-| <Cfg p="memory-service.cache.redis.client" /> | client name | default | Optional: specify a named Redis client |
-| <Cfg p="memory-service.cache.infinispan.startup-timeout" /> | duration | `PT30S` | Startup timeout for Infinispan connection |
-| <Cfg p="memory-service.cache.infinispan.memory-entries-cache-name" /> | string | `memory-entries` | Infinispan cache name for memory entries |
-| <Cfg p="memory-service.cache.infinispan.response-recordings-cache-name" /> | string | `response-recordings` | Infinispan cache name for response recordings |
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--cache-kind" e="MEMORY_SERVICE_CACHE_KIND" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching |
+| `MEMORY_SERVICE_CACHE_EPOCH_TTL` | duration | `PT10M` | TTL for cached memory entries (sliding window) |
 
 ### Memory Entries Cache
 
 When a cache backend is configured, Memory Service caches memory entries to reduce database load and improve GET/sync latency. The cache stores the complete list of memory entries at the latest epoch for each conversation/client pair.
-
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.cache.epoch.ttl" /> | duration | `PT10M` | TTL for cached memory entries (sliding window - refreshed on access) |
 
 Features of the memory entries cache:
 
@@ -95,109 +102,143 @@ Features of the memory entries cache:
 
 ### Response Resumer Settings
 
-The Response Resumer enables clients to reconnect to in-progress streaming responses after a network interruption. It automatically uses the configured cache backend.
+The Response Resumer enables clients to reconnect to in-progress streaming responses after a network interruption. It automatically uses the configured cache backend — enabled when cache is `redis` or `infinispan`.
 
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.response-resumer.enabled" /> | `true`, `false` | auto-detect | Enable/disable response resumer (auto-enabled when cache.type is redis or infinispan) |
-| <Cfg p="memory-service.response-resumer.temp-file-retention" /> | duration | `PT30M` | How long to retain temp files |
-| <Cfg p="memory-service.grpc-advertised-address" /> | `host:port` | auto-detected | Address clients use to reconnect (for multi-instance deployments) |
+| Env Var | Values | Default | Description |
+|---------|--------|---------|-------------|
+| `MEMORY_SERVICE_RESPONSE_RESUMER_TEMP_FILE_RETENTION` | duration | `PT30M` | How long to retain temp files |
 
-### Redis Backend
+### Cache: Redis Configuration
+
+Redis provides a fast, distributed cache with full support for the memory entries cache and response resumer.
+
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--redis-hosts" e="MEMORY_SERVICE_REDIS_HOSTS" /> | Redis URL | `redis://localhost:6379` | Redis connection URL |
+| `MEMORY_SERVICE_CACHE_REDIS_CLIENT` | client name | default | Optional: specify a named Redis client |
 
 <ConfigBlock property={`# Enable Redis cache (response resumer will automatically use it)
-memory-service.cache.type=redis
+--cache-kind=redis
 
 # Redis connection
-memory-service.redis.hosts=redis://localhost:6379
+--redis-hosts=redis://localhost:6379`}
+  env={`# Enable Redis cache (response resumer will automatically use it)
+MEMORY_SERVICE_CACHE_KIND=redis
 
-# Optional: specify a named Redis client
-memory-service.cache.redis.client=my-redis-client
+# Redis connection
+MEMORY_SERVICE_REDIS_HOSTS=redis://localhost:6379`}
+/>
 
-# Optional: disable response resumer even with cache enabled
-memory-service.response-resumer.enabled=false`} />
+### Cache: Infinispan Configuration
 
-### Infinispan Backend
+Infinispan provides a distributed cache with configurable cache names for memory entries and response recordings.
+
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--infinispan-host" e="MEMORY_SERVICE_INFINISPAN_HOST" /> | `host:port` | `localhost:11222` | Infinispan server host |
+| <Cfg p="--infinispan-username" e="MEMORY_SERVICE_INFINISPAN_USERNAME" /> | string | _(none)_ | Infinispan username |
+| <Cfg p="--infinispan-password" e="MEMORY_SERVICE_INFINISPAN_PASSWORD" /> | string | _(none)_ | Infinispan password |
+| `MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT` | duration | `PT30S` | Startup timeout for Infinispan connection |
+| `MEMORY_SERVICE_CACHE_INFINISPAN_MEMORY_ENTRIES_CACHE_NAME` | string | `memory-entries` | Infinispan cache name for memory entries |
+| `MEMORY_SERVICE_CACHE_INFINISPAN_RESPONSE_RECORDINGS_CACHE_NAME` | string | `response-recordings` | Infinispan cache name for response recordings |
 
 <ConfigBlock property={`# Enable Infinispan cache (response resumer will automatically use it)
-memory-service.cache.type=infinispan
+--cache-kind=infinispan
 
 # Infinispan connection
-quarkus.infinispan-client.hosts=localhost:11222
-quarkus.infinispan-client.username=admin
-quarkus.infinispan-client.password=password
+--infinispan-host=localhost:11222
+--infinispan-username=admin
+--infinispan-password=password`}
+  env={`# Enable Infinispan cache (response resumer will automatically use it)
+MEMORY_SERVICE_CACHE_KIND=infinispan
 
-# Optional: startup timeout for Infinispan connection
-memory-service.cache.infinispan.startup-timeout=PT30S
-
-# Optional: custom cache names (useful for multi-tenant or multi-environment clusters)
-# memory-service.cache.infinispan.memory-entries-cache-name=my-memory-entries
-# memory-service.cache.infinispan.response-recordings-cache-name=my-response-recordings
-
-# Optional: disable response resumer even with cache enabled
-memory-service.response-resumer.enabled=false`} />
+# Infinispan connection
+MEMORY_SERVICE_INFINISPAN_HOST=localhost:11222
+MEMORY_SERVICE_INFINISPAN_USERNAME=admin
+MEMORY_SERVICE_INFINISPAN_PASSWORD=password`}
+/>
 
 ## Attachment Storage
 
 Configure file attachment storage, size limits, and lifecycle.
 
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.attachments.store" /> | `db`, `s3` | `db` | Storage backend for uploaded files |
-| <Cfg p="memory-service.attachments.max-size" /> | memory size | `10M` | Maximum file size per upload (e.g., `10M`, `512K`, `1G`). The HTTP body size limit is auto-derived as 2x this value. |
-| <Cfg p="memory-service.attachments.default-expires-in" /> | duration | `PT1H` | Default TTL for unlinked attachments |
-| <Cfg p="memory-service.attachments.max-expires-in" /> | duration | `PT24H` | Maximum allowed TTL clients can request |
-| <Cfg p="memory-service.attachments.cleanup-interval" /> | duration | `PT5M` | How often the cleanup job runs to delete expired unlinked attachments |
-| <Cfg p="memory-service.attachments.download-url-expires-in" /> | duration | `PT5M` | Signed download URL expiry |
+| Flag / Env Var | Values | Default | Description |
+|----------------|--------|---------|-------------|
+| <Cfg p="--attachments-kind" e="MEMORY_SERVICE_ATTACHMENTS_KIND" /> | `db`, `s3` | `db` | Storage backend for uploaded files |
+| `MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE` | memory size | `10M` | Maximum file size per upload (e.g., `10M`, `512K`, `1G`) |
+| `MEMORY_SERVICE_ATTACHMENTS_DEFAULT_EXPIRES_IN` | duration | `PT1H` | Default TTL for unlinked attachments |
+| `MEMORY_SERVICE_ATTACHMENTS_MAX_EXPIRES_IN` | duration | `PT24H` | Maximum allowed TTL clients can request |
+| `MEMORY_SERVICE_ATTACHMENTS_CLEANUP_INTERVAL` | duration | `PT5M` | How often the cleanup job runs |
+| `MEMORY_SERVICE_ATTACHMENTS_DOWNLOAD_URL_EXPIRES_IN` | duration | `PT5M` | Signed download URL expiry |
 
-### S3 Storage
+### Attachment Storage: DB Configuration
 
-When using S3 as the attachment storage backend:
+The default `db` backend stores attachments directly in the primary database (PostgreSQL or MongoDB). No additional configuration is required.
 
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.attachments.s3.bucket" /> | string | `memory-service-attachments` | S3 bucket name |
-| <Cfg p="memory-service.attachments.s3.prefix" /> | string | _(empty)_ | Optional key prefix for all objects |
-| <Cfg p="memory-service.attachments.s3.direct-download" /> | `true`, `false` | `true` | When `true`, download URLs redirect clients directly to S3 via presigned URLs. When `false`, downloads are proxied through memory-service. |
-| <Cfg p="memory-service.attachments.s3.external-endpoint" /> | URL | _(none)_ | Override the endpoint used in presigned URLs. Only relevant when `direct-download` is `true`. Use this when the internal S3 endpoint (e.g., `http://minio:9000`) is not reachable from clients. |
+<ConfigBlock property={`# Use database storage (default)
+--attachments-kind=db`}
+  env={`# Use database storage (default)
+MEMORY_SERVICE_ATTACHMENTS_KIND=db`}
+/>
+
+### Attachment Storage: S3 Configuration
+
+S3 storage offloads attachments to any S3-compatible object store. Use this for large files or high-throughput workloads.
+
+| Flag / Env Var | Values | Default | Description |
+|----------------|--------|---------|-------------|
+| <Cfg p="--attachments-s3-bucket" e="MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET" /> | string | `memory-service-attachments` | S3 bucket name |
+| <Cfg p="--attachments-s3-use-path-style" e="MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE" /> | `true`, `false` | `false` | Use path-style S3 addressing (required for LocalStack/MinIO) |
+| `MEMORY_SERVICE_ATTACHMENTS_S3_PREFIX` | string | _(empty)_ | Optional key prefix for all objects |
+| `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD` | `true`, `false` | `true` | Redirect clients directly to S3 via presigned URLs |
+| `MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT` | URL | _(none)_ | Override endpoint in presigned URLs |
 
 <ConfigBlock property={`# Select S3 storage
-memory-service.attachments.store=s3
+--attachments-kind=s3
 
 # S3 bucket configuration
-memory-service.attachments.s3.bucket=memory-service-attachments`} />
+--attachments-s3-bucket=memory-service-attachments`}
+  env={`# Select S3 storage
+MEMORY_SERVICE_ATTACHMENTS_KIND=s3
 
-**Direct download vs. proxy mode:** By default, the `/v1/attachments/{id}` and `/v1/attachments/{id}/download-url` endpoints return presigned S3 URLs that redirect clients directly to the S3 backend. This offloads bandwidth from memory-service but requires S3 to be reachable from the client. Set <Cfg p="memory-service.attachments.s3.direct-download" /> to `false` to proxy downloads through memory-service instead.
+# S3 bucket configuration
+MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET=memory-service-attachments`}
+/>
+
+**Direct download vs. proxy mode:** By default, download endpoints return presigned S3 URLs that redirect clients directly to the S3 backend. Set `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=false` to proxy downloads through memory-service instead.
 
 When using a self-hosted S3-compatible store (like MinIO) that is only reachable at an internal address, you have two options:
 
-1. **Proxy mode** — set <Cfg p="memory-service.attachments.s3.direct-download" /> to `false`. Downloads stream through memory-service; no client-reachable S3 endpoint needed.
-2. **Direct download with external endpoint** — keep `direct-download` as `true` and set <Cfg p="memory-service.attachments.s3.external-endpoint" /> to a client-reachable URL (e.g., `http://minio-api.example.com`). Presigned URLs will use this endpoint instead of the internal one.
+1. **Proxy mode** — set `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=false`. Downloads stream through memory-service; no client-reachable S3 endpoint needed.
+2. **Direct download with external endpoint** — keep direct download enabled and set `MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT` to a client-reachable URL (e.g., `http://minio-api.example.com`).
+
+> **S3 incompatibility**: S3 direct download is incompatible with encryption. Disable direct download when using a real encryption provider.
 
 See [Attachments](/docs/concepts/attachments/) for details on how attachments work.
 
 ## Encryption
 
-Memory Service supports transparent encryption of all stored data — conversation titles, entry content, and file attachments — using the `memory-service.encryption.*` configuration namespace.
+Memory Service supports transparent encryption of stored data using AES-256-GCM.
 
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.encryption.providers" /> | comma-separated provider IDs | `plain` | Ordered list of providers; first active provider encrypts new data |
-| <Cfg p="memory-service.encryption.provider.<id>.type" /> | `plain`, `dek`, `vault` | _(required)_ | Provider type for the named ID |
-| <Cfg p="memory-service.encryption.provider.<id>.enabled" /> | `true`, `false` | `true` | Whether this provider is active |
-| <Cfg p="memory-service.encryption.dek.key" /> | base64 string | _(required for dek)_ | Primary AES-256-GCM key (base64-encoded 32 bytes) |
-| <Cfg p="memory-service.encryption.dek.decryption-keys" /> | comma-separated base64 strings | _(none)_ | Additional old keys for decryption during key rotation |
-| <Cfg p="memory-service.encryption.vault.transit-key" /> | string | _(required for vault)_ | Vault transit key name |
+| Flag / Env Var | Values | Default | Description |
+|----------------|--------|---------|-------------|
+| <Cfg p="--encryption-dek-key" e="MEMORY_SERVICE_ENCRYPTION_DEK_KEY" /> | base64 string | _(none)_ | Primary AES-256-GCM key (base64-encoded 32 bytes) |
+| `MEMORY_SERVICE_ENCRYPTION_PROVIDERS` | comma-separated IDs | `plain` | Ordered list of providers; first active provider encrypts new data |
+| `MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_TYPE` | `plain`, `dek`, `vault` | _(required)_ | Provider type |
+| `MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_ENABLED` | `true`, `false` | `true` | Whether this provider is active |
+| `MEMORY_SERVICE_ENCRYPTION_DEK_DECRYPTION_KEYS` | comma-separated base64 strings | _(none)_ | Additional old keys for decryption during key rotation |
+| `MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY` | string | _(none)_ | Vault transit key name |
 
 ### AES-256-GCM (DEK provider)
 
-The built-in `dek` provider encrypts data with AES-256-GCM using a static key you supply:
-
-```properties
-memory-service.encryption.providers=dek
-memory-service.encryption.provider.dek.type=dek
-memory-service.encryption.dek.key=<base64-encoded-32-byte-key>
-```
+<ConfigBlock
+  property={`# Enable DEK encryption
+--encryption-dek-key=<base64-encoded-32-byte-key>`}
+  env={`# Enable DEK encryption
+MEMORY_SERVICE_ENCRYPTION_PROVIDERS=dek
+MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_TYPE=dek
+MEMORY_SERVICE_ENCRYPTION_DEK_KEY=<base64-encoded-32-byte-key>`}
+/>
 
 Generate a key with:
 
@@ -209,107 +250,102 @@ openssl rand -base64 32
 
 When a non-plain provider is the primary provider, file attachments are encrypted automatically — no extra flag is needed. When the `plain` provider is active (the default), attachments are stored as-is with no overhead.
 
-> **S3 incompatibility**: S3 direct download (`memory-service.attachments.s3.direct-download=true`) is incompatible with encryption. Disable direct download when using a real encryption provider.
-
 ### Key rotation
 
-Set `memory-service.encryption.dek.decryption-keys` to a comma-separated list of old (retired) Base64-encoded keys. New data is always encrypted with the primary `dek.key`; stored data is decrypted by trying the primary key first and then each key in `decryption-keys` in order.
-
-```properties
-memory-service.encryption.dek.key=<new-base64-key>
-memory-service.encryption.dek.decryption-keys=<old-base64-key-1>,<old-base64-key-2>
-```
+Set `MEMORY_SERVICE_ENCRYPTION_DEK_DECRYPTION_KEYS` to a comma-separated list of old (retired) Base64-encoded keys. New data is always encrypted with the primary key; stored data is decrypted by trying the primary key first and then each key in order.
 
 ## Vector Store Configuration
 
-For semantic search capabilities, configure a vector store and embedding provider.
+For semantic search capabilities, configure a vector store backend. The vector store holds embeddings alongside the metadata needed to map them back to memory entries.
 
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.vector.store.type" /> | `none`, `pgvector`, `qdrant` | `none` | Optional vector store backend for semantic search |
-| <Cfg p="memory-service.vector.migrate-at-start" /> | `true`, `false` | `true` | Run vector store migrations/provisioning at startup |
-| <Cfg p="memory-service.search.semantic.enabled" /> | `true`, `false` | `true` | Enable semantic (vector) search |
-| <Cfg p="memory-service.search.fulltext.enabled" /> | `true`, `false` | `true` | Enable full-text search |
+> **Note:** A vector store requires an embedding provider. When a vector store is enabled, configure <Cfg p="--embedding-kind" e="MEMORY_SERVICE_EMBEDDING_KIND" /> to a value other than `none`. See [Embedding Configuration](#embedding-configuration).
 
-### Embedding Provider
+| Flag / Env Var | Values | Default | Description |
+|----------------|--------|---------|-------------|
+| <Cfg p="--vector-kind" e="MEMORY_SERVICE_VECTOR_KIND" /> | `none`, `pgvector`, `qdrant` | `none` | Vector store backend |
+| `MEMORY_SERVICE_VECTOR_MIGRATE_AT_START` | `true`, `false` | `true` | Run vector store migrations at startup |
+| `MEMORY_SERVICE_SEARCH_SEMANTIC_ENABLED` | `true`, `false` | `true` | Enable semantic (vector) search |
+| `MEMORY_SERVICE_SEARCH_FULLTEXT_ENABLED` | `true`, `false` | `true` | Enable full-text search |
 
-The embedding provider controls how text is converted to vectors for semantic search.
+### Vector Store: pgvector Configuration
 
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.embedding.type" /> | `local`, `openai`, `none` | `local` | Embedding provider selection |
-
-**Local** (default) — uses an in-process all-MiniLM-L6-v2 ONNX model (384 dimensions). No external API calls required.
-
-**OpenAI** — uses the OpenAI Embeddings API for higher-quality embeddings:
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| <Cfg p="memory-service.embedding.openai.api-key" /> | _(required)_ | OpenAI API key |
-| <Cfg p="memory-service.embedding.openai.model-name" /> | `text-embedding-3-small` | OpenAI model name |
-| <Cfg p="memory-service.embedding.openai.base-url" /> | `https://api.openai.com/v1` | API base URL (for Azure OpenAI or proxies) |
-| <Cfg p="memory-service.embedding.openai.dimensions" /> | _(model default)_ | Optional dimension override |
-
-<ConfigBlock property={`# Use OpenAI embeddings
-memory-service.embedding.type=openai
-memory-service.embedding.openai.api-key=sk-...
-memory-service.embedding.openai.model-name=text-embedding-3-small`} />
-
-**None** — disables embedding and semantic search. Full-text search remains available.
-
-### pgvector (PostgreSQL)
-
-When using PostgreSQL, the vector store uses pgvector for semantic search:
+pgvector integrates directly with PostgreSQL to add vector search capabilities alongside your existing data. It is the natural choice when the datastore is already PostgreSQL.
 
 <ConfigBlock property={`# pgvector (auto-selected when datastore is postgres)
-memory-service.vector.store.type=pgvector
+--vector-kind=pgvector`}
+  env={`# pgvector (auto-selected when datastore is postgres)
+MEMORY_SERVICE_VECTOR_KIND=pgvector`}
+/>
 
-# Use local embedding model (default)
-memory-service.embedding.type=local`} />
+### Vector Store: Qdrant Configuration
 
-### Qdrant
+Qdrant is a dedicated vector database for semantic search. When using Qdrant, the primary datastore (PostgreSQL or MongoDB) still stores all conversation data — Qdrant only stores embeddings and metadata.
 
-Qdrant is a dedicated vector database that can be used as an external vector store for semantic search. When using Qdrant, the primary datastore (PostgreSQL or MongoDB) still stores all conversation data — Qdrant only stores embeddings and metadata for vector search.
+| Flag / Env Var | Default | Description |
+|----------------|---------|-------------|
+| <Cfg p="--vector-qdrant-host" e="MEMORY_SERVICE_VECTOR_QDRANT_HOST" /> | `localhost` | Qdrant server hostname or host:port |
+| `MEMORY_SERVICE_VECTOR_QDRANT_PORT` | `6334` | Qdrant gRPC port |
+| `MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_PREFIX` | `memory-service` | Prefix for derived collection name |
+| `MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_NAME` | _(none)_ | Optional explicit collection name override |
+| `MEMORY_SERVICE_VECTOR_QDRANT_API_KEY` | _(none)_ | API key for authentication |
+| `MEMORY_SERVICE_VECTOR_QDRANT_USE_TLS` | `false` | Enable TLS for gRPC connection |
+| `MEMORY_SERVICE_VECTOR_QDRANT_STARTUP_TIMEOUT` | `PT30S` | Startup migration timeout |
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| <Cfg p="memory-service.vector.qdrant.host" /> | `localhost` | Qdrant server hostname |
-| <Cfg p="memory-service.vector.qdrant.port" /> | `6334` | Qdrant gRPC port |
-| <Cfg p="memory-service.vector.qdrant.collection-prefix" /> | `memory-service` | Prefix for derived collection name |
-| <Cfg p="memory-service.vector.qdrant.collection-name" /> | _(none)_ | Optional explicit collection name override |
-| <Cfg p="memory-service.vector.qdrant.api-key" /> | _(none)_ | API key for authentication |
-| <Cfg p="memory-service.vector.qdrant.use-tls" /> | `false` | Enable TLS for gRPC connection |
-| <Cfg p="memory-service.vector.qdrant.startup-timeout" /> | `PT30S` | Startup migration timeout for Qdrant API calls |
+<ConfigBlock property={`# Qdrant vector store
+--vector-kind=qdrant
+--vector-qdrant-host=localhost:6334`}
+  env={`# Qdrant vector store
+MEMORY_SERVICE_VECTOR_KIND=qdrant
+MEMORY_SERVICE_VECTOR_QDRANT_HOST=localhost:6334`}
+/>
 
-<ConfigBlock property={`# Qdrant vector store with local embeddings
-memory-service.vector.store.type=qdrant
-memory-service.vector.migrate-at-start=true
-memory-service.vector.qdrant.host=localhost
-memory-service.vector.qdrant.port=6334
-memory-service.embedding.type=local`} />
+By default, memory-service derives the collection name as `memory-service_<model>-<dimensions>`, for example `memory-service_openai-text-embedding-3-small-1536`. Set `MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_NAME` to force a specific collection.
 
-By default, memory-service derives the collection name as `memory-service_<model>-<dimensions>`, for example `memory-service_openai-text-embedding-3-small-1536`. Set <Cfg p="memory-service.vector.qdrant.collection-name" /> to force a specific collection.
+## Embedding Configuration
 
-With <Cfg p="memory-service.vector.migrate-at-start" /> enabled (default), memory-service ensures the effective Qdrant collection exists at startup.
+The embedding provider controls how text is converted to vectors for semantic search. Embedding requires a vector store to be configured.
 
-When using PostgreSQL as the primary datastore with Qdrant for vector search, full-text search is also available (using PostgreSQL's built-in text search). When using MongoDB as the primary datastore with Qdrant, MongoDB full-text search is also available.
+| Flag / Env Var | Values | Default | Description |
+|----------------|--------|---------|-------------|
+| <Cfg p="--embedding-kind" e="MEMORY_SERVICE_EMBEDDING_KIND" /> | `none`, `local`, `openai` | `local` | Embedding provider selection |
 
-### MongoDB
+### Embedding: Local Configuration
 
-When using MongoDB, full-text search uses MongoDB text indexes. Semantic search requires an explicit vector store (`qdrant`).
+The default `local` provider uses an in-process all-MiniLM-L6-v2 ONNX model (384 dimensions). No external API calls are required.
 
-<ConfigBlock property={`# MongoDB datastore with no vector store (full-text only)
-memory-service.datastore.type=mongo
-memory-service.vector.store.type=none`} />
+<ConfigBlock property={`# Use local embedding model (default)
+--embedding-kind=local`}
+  env={`# Use local embedding model (default)
+MEMORY_SERVICE_EMBEDDING_KIND=local`}
+/>
+
+### Embedding: OpenAI Configuration
+
+The `openai` provider uses the OpenAI Embeddings API for higher-quality embeddings.
+
+| Flag / Env Var | Default | Description |
+|----------------|---------|-------------|
+| <Cfg p="--embedding-openai-api-key" e="MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY" /> | _(required)_ | OpenAI API key |
+| `MEMORY_SERVICE_EMBEDDING_OPENAI_MODEL_NAME` | `text-embedding-3-small` | OpenAI model name |
+| `MEMORY_SERVICE_EMBEDDING_OPENAI_BASE_URL` | `https://api.openai.com/v1` | API base URL (for Azure OpenAI or proxies) |
+| `MEMORY_SERVICE_EMBEDDING_OPENAI_DIMENSIONS` | _(model default)_ | Optional dimension override |
+
+<ConfigBlock property={`# Use OpenAI embeddings
+--embedding-kind=openai
+--embedding-openai-api-key=sk-...`}
+  env={`# Use OpenAI embeddings
+MEMORY_SERVICE_EMBEDDING_KIND=openai
+MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY=sk-...`}
+/>
 
 ## API Key Authentication
 
-Memory Service supports API key authentication for trusted agents. Configure API keys by client ID:
+Memory Service supports API key authentication for trusted agents. Configure API keys by client ID using environment variables:
 
 <ConfigBlock
-  property={`# Format: memory-service.api-keys.<client-id>=key1,key2,...
-memory-service.api-keys.agent-a=agent-a-key-1,agent-a-key-2
-memory-service.api-keys.agent-b=agent-b-key-1`}
+  property={`# Format: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=key1,key2,...
+MEMORY_SERVICE_API_KEYS_AGENT_A=agent-a-key-1,agent-a-key-2
+MEMORY_SERVICE_API_KEYS_AGENT_B=agent-b-key-1`}
   env={`# Format: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=key1,key2,...
 MEMORY_SERVICE_API_KEYS_AGENT_A=agent-a-key-1,agent-a-key-2
 MEMORY_SERVICE_API_KEYS_AGENT_B=agent-b-key-1`}
@@ -322,9 +358,10 @@ Clients include the API key in requests via the `X-API-Key` header.
 Memory Service supports OIDC authentication via Keycloak or any compliant provider.
 
 <ConfigBlock property={`# OIDC configuration
-quarkus.oidc.auth-server-url=http://localhost:8180/realms/memory-service
-quarkus.oidc.client-id=memory-service
-quarkus.oidc.credentials.secret=your-client-secret`} />
+--oidc-issuer=http://localhost:8180/realms/memory-service`}
+  env={`# OIDC configuration
+MEMORY_SERVICE_OIDC_ISSUER=http://localhost:8180/realms/memory-service`}
+/>
 
 ## Admin Access Configuration
 
@@ -347,285 +384,137 @@ Roles can be assigned through three complementary mechanisms:
 
 #### OIDC Role Mapping
 
-Map OIDC token roles to internal Memory Service roles. This is useful when the OIDC
-provider uses different role names (e.g., `administrator` instead of `admin`).
+Map OIDC token roles to internal Memory Service roles.
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| <Cfg p="memory-service.roles.admin.oidc.role" /> | _(none)_ | OIDC role name that maps to the internal `admin` role |
-| <Cfg p="memory-service.roles.auditor.oidc.role" /> | _(none)_ | OIDC role name that maps to the internal `auditor` role |
-| <Cfg p="memory-service.roles.indexer.oidc.role" /> | _(none)_ | OIDC role name that maps to the internal `indexer` role |
+| Flag | Default | Description |
+|------|---------|-------------|
+| <Cfg p="--roles-admin-oidc-role" e="MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE" /> | _(none)_ | OIDC role name that maps to `admin` |
+| <Cfg p="--roles-auditor-oidc-role" e="MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE" /> | _(none)_ | OIDC role name that maps to `auditor` |
+| <Cfg p="--roles-indexer-oidc-role" e="MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE" /> | _(none)_ | OIDC role name that maps to `indexer` |
 
 <ConfigBlock property={`# Map OIDC "administrator" role to internal "admin" role
-memory-service.roles.admin.oidc.role=administrator
+--roles-admin-oidc-role=administrator
 
 # Map OIDC "manager" role to internal "auditor" role
-memory-service.roles.auditor.oidc.role=manager
+--roles-auditor-oidc-role=manager
 
 # Map OIDC "transcript-indexer" role to internal "indexer" role
-memory-service.roles.indexer.oidc.role=transcript-indexer`} />
+--roles-indexer-oidc-role=transcript-indexer`} />
 
 #### User-Based Assignment
 
 Assign roles directly to user IDs (matched against the OIDC token principal name):
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| <Cfg p="memory-service.roles.admin.users" /> | _(empty)_ | Comma-separated list of user IDs with admin access |
-| <Cfg p="memory-service.roles.auditor.users" /> | _(empty)_ | Comma-separated list of user IDs with auditor access |
-| <Cfg p="memory-service.roles.indexer.users" /> | _(empty)_ | Comma-separated list of user IDs with indexer access |
+| Flag | Default | Description |
+|------|---------|-------------|
+| <Cfg p="--roles-admin-users" e="MEMORY_SERVICE_ROLES_ADMIN_USERS" /> | _(empty)_ | Comma-separated user IDs with admin access |
+| <Cfg p="--roles-auditor-users" e="MEMORY_SERVICE_ROLES_AUDITOR_USERS" /> | _(empty)_ | Comma-separated user IDs with auditor access |
+| <Cfg p="--roles-indexer-users" e="MEMORY_SERVICE_ROLES_INDEXER_USERS" /> | _(empty)_ | Comma-separated user IDs with indexer access |
 
-<ConfigBlock property={`memory-service.roles.admin.users=alice,bob
-memory-service.roles.auditor.users=charlie,dave
-memory-service.roles.indexer.users=indexer-user`} />
+<ConfigBlock property={`--roles-admin-users=alice,bob
+--roles-auditor-users=charlie,dave
+--roles-indexer-users=indexer-user`} />
 
 #### Client-Based Assignment (API Key)
 
 Assign roles to API key client IDs, allowing agents or services to call admin APIs.
-The client ID is resolved from the `X-API-Key` header via the existing API key configuration.
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| <Cfg p="memory-service.roles.admin.clients" /> | _(empty)_ | Comma-separated list of API key client IDs with admin access |
-| <Cfg p="memory-service.roles.auditor.clients" /> | _(empty)_ | Comma-separated list of API key client IDs with auditor access |
-| <Cfg p="memory-service.roles.indexer.clients" /> | _(empty)_ | Comma-separated list of API key client IDs with indexer access |
+| Flag | Default | Description |
+|------|---------|-------------|
+| <Cfg p="--roles-admin-clients" e="MEMORY_SERVICE_ROLES_ADMIN_CLIENTS" /> | _(empty)_ | Comma-separated API client IDs with admin access |
+| <Cfg p="--roles-auditor-clients" e="MEMORY_SERVICE_ROLES_AUDITOR_CLIENTS" /> | _(empty)_ | Comma-separated API client IDs with auditor access |
+| <Cfg p="--roles-indexer-clients" e="MEMORY_SERVICE_ROLES_INDEXER_CLIENTS" /> | _(empty)_ | Comma-separated API client IDs with indexer access |
 
-<ConfigBlock property={`memory-service.roles.admin.clients=admin-agent
-memory-service.roles.auditor.clients=monitoring-agent,audit-agent
-memory-service.roles.indexer.clients=indexer-service,summarizer-agent`} />
+<ConfigBlock property={`--roles-admin-clients=admin-agent
+--roles-auditor-clients=monitoring-agent,audit-agent
+--roles-indexer-clients=indexer-service,summarizer-agent`} />
 
 ### Audit Logging
 
-All admin API calls are logged to a dedicated logger (`io.github.chirino.memory.admin.audit`).
-Each request can include a `justification` field explaining why the admin action was taken.
+All admin API calls are logged. Each request can include a `justification` field explaining why the admin action was taken.
 
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.admin.require-justification" /> | `true`, `false` | `false` | When `true`, all admin API calls must include a `justification` or receive `400 Bad Request` |
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--admin-require-justification" e="MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION" /> | `true`, `false` | `false` | Require justification for all admin API calls |
 
-<ConfigBlock property={`# Require justification for all admin operations
-memory-service.admin.require-justification=true`} />
+### CORS Configuration
 
-To route admin audit logs to a separate file or external system, configure the Quarkus
-logging category:
+| Env Var | Values | Default | Description |
+|---------|--------|---------|-------------|
+| `MEMORY_SERVICE_CORS_ENABLED` | `true`, `false` | `false` | Enable CORS |
+| `MEMORY_SERVICE_CORS_ORIGINS` | comma-separated origins | _(none)_ | Allowed CORS origins |
 
-<ConfigBlock property={`# Set admin audit log level
-quarkus.log.category."io.github.chirino.memory.admin.audit".level=INFO`} />
-
-## Server Configuration
-
-<ConfigBlock property={`# HTTP port (default: 8080)
-quarkus.http.port=8080
-
-# gRPC port (uses HTTP port when use-separate-server=false)
-quarkus.grpc.server.use-separate-server=false
-
-# Enable CORS
-memory-service.cors.enabled=true
-memory-service.cors.origins=http://localhost:3000`} />
-
-## Production Recommendations
-
-For production deployments, consider the following environment variables:
-
-### Connection Pooling
-
-<ConfigBlock property={`# Database connection pool
-quarkus.datasource.jdbc.max-size=20
-quarkus.datasource.jdbc.min-size=5`} />
-
-### Health Checks
-
-<ConfigBlock property={`# Enable health endpoints
-quarkus.health.extensions.enabled=true`} />
-
-### Logging
-
-<ConfigBlock property={`# Set log level
-quarkus.log.level=INFO
-quarkus.log.category."io.github.chirino".level=DEBUG`} />
+<ConfigBlock property={`# Enable CORS
+MEMORY_SERVICE_CORS_ENABLED=true
+MEMORY_SERVICE_CORS_ORIGINS=http://localhost:3000`}
+  env={`# Enable CORS
+MEMORY_SERVICE_CORS_ENABLED=true
+MEMORY_SERVICE_CORS_ORIGINS=http://localhost:3000`}
+/>
 
 ## Monitoring
 
 Memory Service exposes Prometheus metrics and provides admin stats endpoints that query Prometheus for aggregated metrics across all service replicas.
 
-### Metrics Endpoint
+### Management Endpoints
 
-Memory Service exposes metrics in Prometheus format at `/q/metrics`:
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Liveness — returns `200 {"status":"ok"}` as soon as the process is up |
+| `GET /ready` | Readiness — returns `200 {"status":"ready"}` once all initialization (migrations, store connections, network listeners) has completed; returns `503 {"status":"starting"}` before that |
+| `GET /metrics` | Prometheus metrics |
 
-<ConfigBlock property={`# Enable Prometheus metrics endpoint (enabled by default)
-quarkus.micrometer.export.prometheus.enabled=true
+Use `/ready` for Kubernetes readiness probes and Docker Compose `healthcheck` (so dependent services wait for full startup). Use `/health` for liveness probes.
 
-# Metrics endpoint path (default: /q/metrics)
-quarkus.micrometer.export.prometheus.path=/q/metrics`} />
+### Prometheus Configuration
 
-### Application Tag
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--prometheus-url" e="MEMORY_SERVICE_PROMETHEUS_URL" /> | URL | _(none)_ | Prometheus server URL for admin stats queries |
 
-All Memory Service metrics include an `application="memory-service"` tag. This tag helps:
-
-- **Filter metrics** when multiple services are scraped by the same Prometheus
-- **Build dashboards** that only show memory-service data
-- **Configure alerts** specific to memory-service
-
-Example PromQL queries using the application tag:
-
-```promql
-# Request rate for memory-service only
-sum(rate(http_server_requests_seconds_count{application="memory-service"}[5m]))
-
-# Store operation latency (P95) for memory-service
-histogram_quantile(0.95, sum(rate(memory_store_operation_seconds_bucket{application="memory-service"}[5m])) by (le, operation))
-```
-
-### Prometheus Scrape Configuration
-
-Configure Prometheus to scrape metrics from all Memory Service replicas:
-
-```yaml
-# prometheus.yml
-scrape_configs:
-  - job_name: 'memory-service'
-    scrape_interval: 15s
-    metrics_path: /q/metrics
-    static_configs:
-      - targets: ['memory-service:8080']
-    # For Kubernetes, use service discovery instead:
-    # kubernetes_sd_configs:
-    #   - role: pod
-    #     selectors:
-    #       - role: pod
-    #         label: "app=memory-service"
-```
-
-To keep only Memory Service metrics (useful when scraping multiple services):
-
-```yaml
-scrape_configs:
-  - job_name: 'memory-service'
-    scrape_interval: 15s
-    metrics_path: /q/metrics
-    static_configs:
-      - targets: ['memory-service:8080']
-    # Keep only metrics with application="memory-service" tag
-    metric_relabel_configs:
-      - source_labels: [application]
-        regex: memory-service
-        action: keep
-```
-
-### Admin Stats Endpoints
-
-Memory Service provides `/v1/admin/stats/*` endpoints that query Prometheus for pre-aggregated metrics. These endpoints require the Prometheus URL to be configured:
-
-| Property | Values | Default | Description |
-|----------|--------|---------|-------------|
-| <Cfg p="memory-service.prometheus.url" /> | URL | _(none)_ | Prometheus server URL for admin stats queries |
-
-<ConfigBlock property={`# Configure Prometheus URL for admin stats endpoints
-memory-service.prometheus.url=http://prometheus:9090`} />
-
-When <Cfg p="memory-service.prometheus.url" /> is not configured, admin stats endpoints return **501 Not Implemented**. All other Memory Service functionality works normally.
+When `--prometheus-url` is not configured, admin stats endpoints return **501 Not Implemented**. All other Memory Service functionality works normally.
 
 #### Available Stats Endpoints
 
-| Endpoint | Description | Required Metrics |
-|----------|-------------|------------------|
-| `/v1/admin/stats/request-rate` | HTTP request rate (requests/sec) | `http_server_requests_seconds_count` |
-| `/v1/admin/stats/error-rate` | 5xx error rate (percent) | `http_server_requests_seconds_count` |
-| `/v1/admin/stats/latency-p95` | P95 response latency (seconds) | `http_server_requests_seconds_bucket` |
-| `/v1/admin/stats/cache-hit-rate` | Cache hit rate (percent) | `memory_entries_cache_hits_total`, `memory_entries_cache_misses_total` |
-| `/v1/admin/stats/db-pool-utilization` | DB connection pool usage (percent) | `agroal_active_count`, `agroal_available_count` |
-| `/v1/admin/stats/store-latency-p95` | Store operation P95 latency by type | `memory_store_operation_seconds_bucket` |
-| `/v1/admin/stats/store-throughput` | Store operations/sec by type | `memory_store_operation_seconds_count` |
+| Endpoint | Description |
+|----------|-------------|
+| `/v1/admin/stats/request-rate` | HTTP request rate (requests/sec) |
+| `/v1/admin/stats/error-rate` | 5xx error rate (percent) |
+| `/v1/admin/stats/latency-p95` | P95 response latency (seconds) |
+| `/v1/admin/stats/cache-hit-rate` | Cache hit rate (percent) |
+| `/v1/admin/stats/db-pool-utilization` | DB connection pool usage (percent) |
+| `/v1/admin/stats/store-latency-p95` | Store operation P95 latency by type |
+| `/v1/admin/stats/store-throughput` | Store operations/sec by type |
 
-### Required Metrics
+### Prometheus Scrape Configuration
 
-For all admin stats endpoints to function correctly, Prometheus must scrape the following metrics from Memory Service:
+For production, use a dedicated management port so Prometheus scrapes only the metrics endpoint without going through the main API's middleware:
 
-#### HTTP Metrics (Automatic)
-
-These are automatically provided by Quarkus Micrometer:
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `http_server_requests_seconds_count` | Counter | Total HTTP requests by method, uri, status |
-| `http_server_requests_seconds_sum` | Counter | Total request duration |
-| `http_server_requests_seconds_bucket` | Histogram | Request duration distribution |
-
-#### Cache Metrics (When Cache Enabled)
-
-Available when <Cfg p="memory-service.cache.type" /> is `redis` or `infinispan`:
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `memory_entries_cache_hits_total` | Counter | Cache hits for memory entries |
-| `memory_entries_cache_misses_total` | Counter | Cache misses for memory entries |
-| `memory_entries_cache_errors_total` | Counter | Cache errors for memory entries |
-
-#### Database Pool Metrics (Automatic)
-
-Automatically provided by Quarkus/Agroal for PostgreSQL:
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `agroal_active_count` | Gauge | Active database connections |
-| `agroal_available_count` | Gauge | Available database connections |
-| `agroal_awaiting_count` | Gauge | Requests waiting for a connection |
-
-#### Store Operation Metrics (Automatic)
-
-Automatically provided by MeteredMemoryStore:
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `memory_store_operation_seconds_count` | Counter | Store operations by operation type |
-| `memory_store_operation_seconds_sum` | Counter | Total operation duration by type |
-| `memory_store_operation_seconds_bucket` | Histogram | Operation duration distribution by type |
-
-The `operation` label identifies the operation type (e.g., `createConversation`, `appendAgentEntries`, `getEntries`).
-
-### Example: Full Monitoring Stack
+<ConfigBlock
+  property={`# Expose health and metrics on a dedicated port\n--management-port=8085`}
+  env={`# Expose health and metrics on a dedicated port\nMEMORY_SERVICE_MANAGEMENT_PORT=8085`}
+/>
 
 ```yaml
-# docker-compose.yml
-services:
-  memory-service:
-    image: ghcr.io/chirino/memory-service:latest
-    environment:
-      MEMORY_SERVICE_DATASTORE_TYPE: postgres
-      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/memoryservice
-      QUARKUS_DATASOURCE_USERNAME: postgres
-      QUARKUS_DATASOURCE_PASSWORD: postgres
-      # Enable admin stats to query Prometheus
-      MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
-    ports:
-      - "8080:8080"
-
-  prometheus:
-    image: prom/prometheus:latest
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-
-  grafana:
-    image: grafana/grafana:latest
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    ports:
-      - "3000:3000"
-```
-
-```yaml
-# prometheus.yml
-global:
-  scrape_interval: 15s
-
+# prometheus.yml — scrape the management port
 scrape_configs:
   - job_name: 'memory-service'
+    scrape_interval: 15s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['memory-service:8085']
+```
+
+Without a management port, scrape the main port instead:
+
+```yaml
+# prometheus.yml — no dedicated management port
+scrape_configs:
+  - job_name: 'memory-service'
+    scrape_interval: 15s
+    metrics_path: /metrics
     static_configs:
       - targets: ['memory-service:8080']
-    metrics_path: /q/metrics
 ```
 
 ## Example: Docker Compose
@@ -636,24 +525,26 @@ services:
     image: ghcr.io/chirino/memory-service:latest
     environment:
       # Datastore selection
-      MEMORY_SERVICE_DATASTORE_TYPE: postgres
+      MEMORY_SERVICE_DB_KIND: postgres
 
-      # PostgreSQL connection
-      QUARKUS_DATASOURCE_DB_KIND: postgresql
-      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/memoryservice
-      QUARKUS_DATASOURCE_USERNAME: postgres
-      QUARKUS_DATASOURCE_PASSWORD: postgres
+      # PostgreSQL connection (standard URL format)
+      MEMORY_SERVICE_DB_URL: postgresql://postgres:postgres@postgres:5432/memoryservice
 
-      # Cache with Redis (response resumer and memory entries cache automatically enabled)
-      MEMORY_SERVICE_CACHE_TYPE: redis
+      # Cache with Redis (response resumer automatically enabled)
+      MEMORY_SERVICE_CACHE_KIND: redis
       MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
-      # Optional: memory entries cache TTL (default: 10 minutes)
-      # MEMORY_SERVICE_CACHE_EPOCH_TTL: PT10M
 
       # Authentication
-      QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8180/realms/memory-service
-      QUARKUS_OIDC_CLIENT_ID: memory-service
-      QUARKUS_OIDC_CREDENTIALS_SECRET: ${OIDC_SECRET}
+      MEMORY_SERVICE_OIDC_ISSUER: http://keycloak:8180/realms/memory-service
+
+      # Admin stats
+      MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
+
+      # Management port (health + metrics on a dedicated port)
+      MEMORY_SERVICE_MANAGEMENT_PORT: 8085
+    ports:
+      - "8080:8080"
+      - "8085:8085"
     depends_on:
       - postgres
       - redis

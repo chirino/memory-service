@@ -29,7 +29,7 @@ Feature: Conversations gRPC API
     And the gRPC response field "accessLevel" should be "OWNER"
     And the gRPC response text should match text proto:
     """
-    id: "${response.body.id}"
+    id: "${response.body.id | base64_to_hex_string}"
     title: "My First Conversation"
     owner_user_id: "alice"
     access_level: OWNER
@@ -116,14 +116,14 @@ Feature: Conversations gRPC API
     Given I have a conversation with title "Test Conversation"
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "id" should be "${conversationId}"
     And the gRPC response field "title" should be "Test Conversation"
     And the gRPC response text should match text proto:
     """
-    id: "${conversationId}"
+    id: "${conversationId | uuid_to_hex_string}"
     title: "Test Conversation"
     owner_user_id: "alice"
     access_level: OWNER
@@ -132,7 +132,7 @@ Feature: Conversations gRPC API
   Scenario: Get non-existent conversation via gRPC
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
+    conversation_id: "${"00000000-0000-0000-0000-000000000000" | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"
 
@@ -140,7 +140,7 @@ Feature: Conversations gRPC API
     Given there is a conversation owned by "bob"
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
@@ -148,19 +148,19 @@ Feature: Conversations gRPC API
     Given I have a conversation with title "To Be Deleted"
     When I send gRPC request "ConversationsService/DeleteConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"
 
   Scenario: Delete non-existent conversation via gRPC
     When I send gRPC request "ConversationsService/DeleteConversation" with body:
     """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
+    conversation_id: "${"00000000-0000-0000-0000-000000000000" | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"
 
@@ -168,7 +168,7 @@ Feature: Conversations gRPC API
     Given there is a conversation owned by "bob"
     When I send gRPC request "ConversationsService/DeleteConversation" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
@@ -195,16 +195,16 @@ Feature: Conversations gRPC API
     And set "forkConversationId" to "${response.body.id}"
     When I send gRPC request "ConversationsService/DeleteConversation" with body:
     """
-    conversation_id: "${rootConversationId}"
+    conversation_id: "${rootConversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
-    conversation_id: "${rootConversationId}"
+    conversation_id: "${rootConversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
-    conversation_id: "${forkConversationId}"
+    conversation_id: "${forkConversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"

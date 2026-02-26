@@ -1,19 +1,19 @@
 /**
- * Convert a Quarkus property name to its environment variable equivalent.
- * Handles quoted segments (e.g., "io.github.chirino") with double underscore boundaries.
+ * Convert a CLI flag name to its environment variable equivalent.
+ * e.g. "--db-url" → "MEMORY_SERVICE_DB_URL"
+ *      "--port"   → "MEMORY_SERVICE_PORT"
  */
-export function toEnvKey(prop: string): string {
-  return prop
-    .replace(/\."/g, '__')
-    .replace(/"\./g, '__')
-    .replace(/"/g, '')
-    .replace(/[.\-]/g, '_')
+export function toEnvKey(flag: string): string {
+  const base = flag
+    .replace(/^--/, '')
+    .replace(/-/g, '_')
     .toUpperCase();
+  return 'MEMORY_SERVICE_' + base;
 }
 
 /**
- * Convert a block of property-format config to environment variable format.
- * Converts key=value lines; passes through comments and blank lines unchanged.
+ * Convert a block of CLI-flag-format config to environment variable format.
+ * Converts --flag=value lines; passes through comments and blank lines unchanged.
  */
 export function toEnvBlock(text: string): string {
   return text.split('\n').map(line => {

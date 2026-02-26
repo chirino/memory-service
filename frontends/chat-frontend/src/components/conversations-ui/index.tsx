@@ -513,13 +513,13 @@ function ConversationsUIEmptyState({
 
   const suggestions = [
     {
-      text: "Write me a 4 paragraph essay on the benefits of AI",
+      text: "Write me a 12 paragraph essay on the benefits of AI",
       icon: PenLine,
       iconBg: "bg-ink/10",
       iconColor: "text-ink/60",
     },
     {
-      text: "Pick a random number between 1 and 100",
+      text: "Help me pick random things.  first one: a book",
       icon: Shuffle,
       iconBg: "bg-sage/20",
       iconColor: "text-sage",

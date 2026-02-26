@@ -14,10 +14,11 @@ labels:
 configMapGenerator:
   - name: memory-service-config
     literals:
-      - MEMORY_SERVICE_DATASTORE_TYPE=postgres
-      - MEMORY_SERVICE_CACHE_TYPE=none
-      - MEMORY_SERVICE_VECTOR_STORE_TYPE=none
-      - MEMORY_SERVICE_ATTACHMENTS_STORE=db
+      - MEMORY_SERVICE_DB_KIND=postgres
+      - MEMORY_SERVICE_CACHE_KIND=none
+      - MEMORY_SERVICE_VECTOR_KIND=none
+      - MEMORY_SERVICE_ATTACHMENTS_KIND=db
+      - MEMORY_SERVICE_MANAGEMENT_PORT=8085
 
 secretGenerator:
   - name: memory-service-secret

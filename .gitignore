@@ -55,6 +55,7 @@ __pycache__/
 
 /*.log
 /*.png
-vendor
+/vendor
+/tmp
 .claude
 .playwright-mcp

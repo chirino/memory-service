@@ -5,8 +5,6 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.MapsId;
@@ -28,7 +26,6 @@ public class ConversationMembershipEntity {
     @JoinColumn(name = "conversation_group_id", nullable = false)
     private ConversationGroupEntity conversationGroup;
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "access_level", nullable = false)
     private AccessLevel accessLevel;
 

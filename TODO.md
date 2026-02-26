@@ -1,20 +1,22 @@
 # TODO List
 
 * document index/search apis: provide RAG example (see [042-index-search-docs.md](docs/enhancements/042-index-search-docs.md))
-* Brand the project and move it to an org/foundation.
-* move the ChatEvent json serializer to quarkus
 * make all common memory-service config options prefixed with "memory-service." (see [057-unified-config-key-naming.md](docs/enhancements/057-unified-config-key-naming.md))
 * bug: delete a fork, restore: it does not show up restored.
 * ponder how to implement hierarchical / cross conversation memory adn how to apply access control policies against them.
 * support getting getting the clientID from the bearer token.
+* Add tsx/js support vercel AI api.
+* Go BDD: add `I execute MongoDB query:` style steps with MongoDB-specific assertions equivalent to the SQL verification steps (currently skipped on MongoDB backend, matching Java parity).
+* Go: Avoid using file buffer for the encryption store.
+* can we use generated server stubs?
 
 # Performance Related
 
 * Think about supporting operating against postgresql read replicas.
-* protect against large syncs that create new epochs
 
 # Hardening Work
 
+* protect against large syncs that create new epochs
 * limit the size of memory entries.
 * update clients to split large contexts into multiple entries to aovid hitting size limits
 
@@ -22,6 +24,16 @@
 
 * Can the @RecordConversation bits be moved into Quarkus Langchain4j? https://github.com/quarkiverse/quarkus-langchain4j/issues/2068#issuecomment-3816044002
    * We have added addional features to the interceptor that might not fit into a generic interceptor: thinks like forking support.
-* Do we need MORE multi-tenancy support?  What would it look like? Groups / Orgs? (see [060-multi-tenancy-groups-orgs.md](docs/enhancements/060-multi-tenancy-groups-orgs.md))
-* Allow runtime configured agents/api-keys?
-* Do we need to support anonymous user conversations?
+* Do we need MORE multi-tenancy support?  What would it look like? Groups / Orgs? (see [060-multi-tenancy-groups-orgs.md](docs/enhancements/060-multi-tenancy-groups-orgs.md)).
+
+# Future Directions
+
+* Implement LlamaStack apis, so that the memory-service can be used in a stack.
+
+# Cross Project Work
+
+* move the ChatEvent json serializer to quarkus
+
+# Organizational
+
+* Brand the project and move it to an org/foundation.

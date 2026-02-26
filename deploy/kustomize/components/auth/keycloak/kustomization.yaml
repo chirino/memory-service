@@ -18,11 +18,11 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
+      # KEYCLOAK_FRONTEND_URL and OIDC_TOKEN_ISSUER are read by the chat-quarkus demo app
+      # via configMapKeyRef in its deployment — not used by the Go memory-service itself.
       - KEYCLOAK_FRONTEND_URL=http://keycloak:8080
       - OIDC_TOKEN_ISSUER=http://keycloak:8080/realms/memory-service
-      - QUARKUS_OIDC_AUTH_SERVER_URL=http://keycloak:8080/realms/memory-service
-      - QUARKUS_OIDC_TOKEN_ISSUER=http://keycloak:8080/realms/memory-service
-      - QUARKUS_OIDC_CLIENT_ID=memory-service-client
+      - MEMORY_SERVICE_OIDC_ISSUER=http://keycloak:8080/realms/memory-service
       - MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE=admin
       - MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE=auditor
 
@@ -37,7 +37,3 @@ secretGenerator:
       - POSTGRES_USER=keycloak
       - POSTGRES_PASSWORD=keycloak
       - POSTGRES_DB=keycloak
-  - name: memory-service-secret
-    behavior: merge
-    literals:
-      - KEYCLOAK_CLIENT_SECRET=change-me

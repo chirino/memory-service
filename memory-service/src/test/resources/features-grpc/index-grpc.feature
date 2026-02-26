@@ -17,8 +17,8 @@ Feature: Index Entries gRPC API
     When I send gRPC request "SearchService/IndexConversations" with body:
     """
     entries {
-      conversation_id: "${conversationId}"
-      entry_id: "${firstEntryId}"
+      conversation_id: "${conversationId | uuid_to_hex_string}"
+      entry_id: "${firstEntryId | uuid_to_hex_string}"
       indexed_content: "This is a test text"
     }
     """
@@ -33,8 +33,8 @@ Feature: Index Entries gRPC API
     When I send gRPC request "SearchService/IndexConversations" with body:
     """
     entries {
-      conversation_id: "${conversationId}"
-      entry_id: "${firstEntryId}"
+      conversation_id: "${conversationId | uuid_to_hex_string}"
+      entry_id: "${firstEntryId | uuid_to_hex_string}"
       indexed_content: "This is a test text"
     }
     """
@@ -49,8 +49,8 @@ Feature: Index Entries gRPC API
     And I send gRPC request "SearchService/IndexConversations" with body:
     """
     entries {
-      conversation_id: "${conversationId}"
-      entry_id: "${firstEntryId}"
+      conversation_id: "${conversationId | uuid_to_hex_string}"
+      entry_id: "${firstEntryId | uuid_to_hex_string}"
       indexed_content: "Admin indexed this text"
     }
     """
@@ -66,8 +66,8 @@ Feature: Index Entries gRPC API
     When I send gRPC request "SearchService/IndexConversations" with body:
     """
     entries {
-      conversation_id: "${conversationId}"
-      entry_id: "${firstEntryId}"
+      conversation_id: "${conversationId | uuid_to_hex_string}"
+      entry_id: "${firstEntryId | uuid_to_hex_string}"
       indexed_content: "This text discusses gRPC search functionality"
     }
     """
@@ -112,8 +112,8 @@ Feature: Index Entries gRPC API
     When I send gRPC request "SearchService/IndexConversations" with body:
     """
     entries {
-      conversation_id: "${conversationA}"
-      entry_id: "${entryA}"
+      conversation_id: "${conversationA | uuid_to_hex_string}"
+      entry_id: "${entryA | uuid_to_hex_string}"
       indexed_content: "Discussion about apples and oranges."
     }
     """
@@ -127,8 +127,8 @@ Feature: Index Entries gRPC API
     When I send gRPC request "SearchService/IndexConversations" with body:
     """
     entries {
-      conversation_id: "${conversationB}"
-      entry_id: "${entryB}"
+      conversation_id: "${conversationB | uuid_to_hex_string}"
+      entry_id: "${entryB | uuid_to_hex_string}"
       indexed_content: "Discussion about apples and bananas."
     }
     """
@@ -142,8 +142,8 @@ Feature: Index Entries gRPC API
     When I send gRPC request "SearchService/IndexConversations" with body:
     """
     entries {
-      conversation_id: "${conversationC}"
-      entry_id: "${entryC}"
+      conversation_id: "${conversationC | uuid_to_hex_string}"
+      entry_id: "${entryC | uuid_to_hex_string}"
       indexed_content: "Discussion about apples and grapes."
     }
     """
@@ -166,8 +166,8 @@ Feature: Index Entries gRPC API
     When I send gRPC request "SearchService/IndexConversations" with body:
     """
     entries {
-      conversation_id: "${conversationId}"
-      entry_id: "${firstEntryId}"
+      conversation_id: "${conversationId | uuid_to_hex_string}"
+      entry_id: "${firstEntryId | uuid_to_hex_string}"
       indexed_content: "Testing search without returning entry content"
     }
     """

@@ -3,11 +3,12 @@
 A memory service for AI agents that stores messages exchanged with LLMs and users, supporting conversation replay and forking.
 
 **Self-Updating Knowledge:**
-When you discover something meaningful about this project during your work—architecture patterns, naming conventions, gotchas, dependency quirks, correct/incorrect assumptions in existing docs—update `AGENTS.md` (or the relevant skill file) immediately so future sessions benefit without re-discovering it. Specifically:
+When you discover something meaningful about this project during your work—architecture patterns, naming conventions, gotchas, dependency quirks, correct/incorrect assumptions in existing docs — update `AGENTS.md` (or the relevant skill file) immediately so future sessions benefit without re-discovering it. Specifically:
 
 - **Correct** any skill or doc content you find to be outdated or wrong.
 - **Refine trigger criteria** in skill descriptions if a skill was loaded but wasn't relevant to the task—tighten its description so it activates more precisely.
 - Keep updates concise and factual. Don't bloat files with obvious or generic information.
+- Module specific knowlege should be placed into a FACTS.md in the top level directory of that module to avoid poluting AGENTS.md
 
 ## Key Concepts
 - **Agent apps mediate all operations**: Agent apps are the primary consumers. They sit between end users and the memory service, mediating all interactions.
@@ -15,6 +16,9 @@ When you discover something meaningful about this project during your work—arc
 - **Admin API**: For administrative operations and system management.
 - **User access control**: Conversations are owned by users with read/write/manager/owner access levels.
 - **Data stores**: PostgreSQL, MongoDB; Redis, Infinispan (caching); PGVector, Qdrant (vector search).
+- **Porting Server To Go**: we are porting the ./memory-service java module to ./main.go
+- **Docker Compose dev environment**: `docker compose up -d` runs the Go-based memory service using [air](https://github.com/air-verse/air) for hot reloading on port 8083. It runs in parallel with the Java version on port 8082.  I will have it running on the host, so to connect to it don't use `wt`.  Tail the docker logs for the container to check to see if code changes
+have completed deploying.
 
 ## Quick Reference
 
@@ -25,6 +29,7 @@ When you discover something meaningful about this project during your work—arc
 - `./mvnw test` - run tests
 - `./mvnw compile` - compile (always run after Java changes)
 - `./mvnw -pl python verify` - regenerate Python gRPC stubs and validate Python package build/install (runs in Docker)
+- `go test ./internal/bdd -run TestFeaturesPgKeycloak -count=1` - Go BDD runner for Postgres + Keycloak OIDC integration
 
 **Key paths**:
 - `memory-service-contracts/` - OpenAPI + proto sources of truth
@@ -38,16 +43,19 @@ When you discover something meaningful about this project during your work—arc
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).
 - In gRPC `memory/v1/memory_service.proto`, response recorder fields use snake_case (`conversation_id`).
 - List endpoints may include `"afterCursor": null`; docs-test JSON assertions should tolerate additive pagination fields.
+- Attachment download tokens (`/v1/attachments/download/:token/:filename`) are HMAC-signed with `AdminAPIKey`; keep `MEMORY_SERVICE_ADMIN_API_KEY` non-empty, especially with DB attachment stores where storage keys are guessable.
+- Go cache serialization gotcha: `model.Entry` has custom JSON marshaling for `content`; keep marshal/unmarshal behavior symmetric or cached memory entries lose content and break sync/list semantics.
 
 ## Development Guidelines
 
 **Coding style**: Java 4-space indent, UTF-8, constructor injection. Packages `io.github.chirino`, classes `PascalCase`, methods/fields `camelCase`.
 
-**Error observability**: All 500-level errors MUST produce a full stack trace in the server logs. The `GlobalExceptionMapper` in `memory-service/src/main/java/.../api/GlobalExceptionMapper.java` catches unhandled exceptions and logs them with `LOG.errorf(e, ...)`. When adding new endpoints or error paths, never swallow exceptions silently — always log the stack trace for server errors.
+**Error observability**: All 500-level errors MUST produce a full stack trace in the server logs. Never swallow exceptions silently — always log the stack trace for server errors. See `memory-service/FACTS.md` for details.
 
 **Security**: Don't commit secrets; use env vars or Quarkus config (`QUARKUS_*`).
 
 **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`). Include test commands and config changes.
+
 
 
 ## Worktree-Isolated Execution
@@ -66,37 +74,14 @@ This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree
 # Then search for errors using Grep tool on test.log
 ```
 
-**Docs test filtering**: `site-tests` scenarios are taggable by framework and checkpoint. For Python-only loops use:
-```bash
-./mvnw -Psite-tests -pl site-tests -Dcucumber.filter.tags=@python surefire:test
-```
+**GORM `record not found` log-noise rule**: If a `record not found` log line is found, treat expected-miss lookups as noise and refactor those call sites from `First(...).Error` to `Limit(1).Find(...)` with `RowsAffected` checks. Keep `First` for true not-found error paths; don't use global logger suppression.
 
-**Python checkpoint lineage**: Python docs checkpoints `04-conversation-forking`, `05-response-resumption`, `06-sharing`, and `07-with-search` are intentionally rebased from `03-with-history` (not chained from each other), mirroring the Quarkus tutorial branching model.
-**Python proxy pattern**: Use `memory_service_langchain.MemoryServiceProxy` plus `to_fastapi_response(...)` in checkpoint apps for API-like Memory Service passthrough methods (`list_conversation_entries`, `list_memberships`, etc.) instead of ad-hoc `memory_service_request(...)` calls.
-**Python chat simplification**: For checkpoint-style FastAPI chat routes, keep a single stateful agent and use `extract_assistant_text(...)`; fork metadata is passed via `memory_service_scope(...)` and consumed by the LangChain integration (middleware + checkpointer).
-**Python request scope helper**: Prefer `memory_service_langchain.memory_service_scope(conversation_id, forked_at_conversation_id, forked_at_entry_id)` for route context binding.
-**Quarkus/Spring forking curl gotcha**: Checkpoint `04-conversation-forking` chat routes are `text/plain`; to demo fork creation with curl, create root turns via `/chat/{id}` then append forked entries via Memory Service `/v1/conversations/{forkId}/entries` with `forkedAtConversationId`/`forkedAtEntryId`.
-**Python forking parity**: Python checkpoint `04-conversation-forking` keeps `/chat/{id}` as `text/plain` and accepts fork metadata via query params (`forkedAtConversationId`, `forkedAtEntryId`) which are bound through `memory_service_scope(...)`.
-**Python response resumption pattern**: Keep checkpoint `05` route handlers thin by delegating resume-check/replay/cancel state handling to `memory_service_langchain.MemoryServiceResponseResumer`, mirroring the Quarkus `ResumeResource` style.
-**Python true-streaming checkpoint**: `05-response-resumption` should stream live model tokens via `agent.astream(..., stream_mode=\"messages\")`; avoid `agent.invoke(...)` + post-hoc word-splitting.
-
-**Devcontainer Python tooling**: `uv` is installed in `.devcontainer/Dockerfile` (not via `devcontainer.json` features), so Python checkpoint workflows can run immediately after `wt up`.
-
-**Python module build**: `python/pom.xml` runs Python packaging tasks in Docker (`ghcr.io/astral-sh/uv:python3.11-bookworm`) so host setup only requires Docker.
-**Python package layout**: Python integration is now a single package at `python/langchain` (`memory-service-langchain`); the separate `python/langgraph` package was removed.
-
-**MDX `CodeFromFile` gotcha**: Match strings must be unique in the target file. Prefer function-signature anchors or `lines="start-end"` over route strings with `{...}` placeholders to avoid MDX parsing/smart-quote mismatches.
-**Docs scenario UUID gotcha**: When adding/replacing tutorial scenario conversation IDs, verify each new UUID is unique across docs pages (`rg -l '<uuid>' site/src/pages` should return one file).
-**`site-tests` sharing user isolation**: `CurlSteps` rewrites JSON payload `"userId"` values (`bob`/`alice`/`charlie`) to scenario users (`<user>-<port>`) so docs can stay readable while parallel test isolation still works.
-**Checkpoint 04 forking (Java docs)**: `quarkus` and `spring` checkpoint 04 keep chat handlers effectively unchanged; fork metadata is demonstrated by appending entries directly to the Memory Service API with `forkedAtConversationId`/`forkedAtEntryId` and exposing `listConversationForks` on the proxy resource/controller.
-**`site-tests` env var gotcha**: Curl command interpolation supports `${VAR}` but not shell default syntax like `${VAR:-default}`. Use explicit values or plain `${VAR}` placeholders in testable docs.
-
-**LangChain middleware callback gotcha**: In `wrap_model_call`, attach callbacks using `request.model.with_config({"callbacks": [...]})`, not `request.model_settings["callbacks"]`, to avoid `generate_prompt() got multiple values for keyword argument 'callbacks'`.
-
-**LangChain gRPC recorder default**: `MemoryServiceHistoryMiddleware` enables gRPC response recording only when `MEMORY_SERVICE_GRPC_TARGET` is set (or `MEMORY_SERVICE_GRPC_RECORDING_ENABLED=true`).
-
-**Python FastAPI helper reuse**: Prefer `memory_service_langchain.install_fastapi_authorization_middleware`, `memory_service_scope`, and `memory_service_request` over redefining ContextVars/middleware in checkpoint apps.
-**Spring memory repository limit gotcha**: `listConversationEntries` limit must be `<=200` (contract max). Using `1000` causes upstream `400` errors during chat memory reads and surfaces as app `500`s.
+**Module-specific knowledge** lives in `FACTS.md` files within each module directory:
+- `python/FACTS.md` — Python/LangChain checkpoint patterns, proxy pattern, streaming, build, gotchas
+- `site-tests/FACTS.md` — Docs test filtering, MDX gotchas, user isolation, env var interpolation
+- `quarkus/FACTS.md` — Forking curl gotcha
+- `spring/FACTS.md` — Memory repository limit gotcha
+- `memory-service/FACTS.md` — GlobalExceptionMapper details
 
 **Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 

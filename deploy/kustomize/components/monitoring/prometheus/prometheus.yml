@@ -4,10 +4,9 @@ global:
 
 scrape_configs:
   - job_name: 'memory-service'
-    metrics_path: '/q/metrics'
+    metrics_path: '/metrics'
     static_configs:
-      - targets: ['memory-service:8080']
-    # Optional: Add labels to identify the instance
+      - targets: ['memory-service:8085']
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance

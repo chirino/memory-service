@@ -58,6 +58,7 @@ services:
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak
       KC_HTTP_RELATIVE_PATH: /
+      KC_HEALTH_ENABLED: "true"
       # External hostname for browser redirects (configurable via env var)
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
       KC_HOSTNAME_PORT: ${KEYCLOAK_HOSTNAME_PORT:-8081}
@@ -70,6 +71,12 @@ services:
         condition: service_healthy
     ports:
       - "8081:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'UP'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
   prometheus:
     image: prom/prometheus:latest
@@ -108,15 +115,12 @@ services:
       # Trusted agent API keys (first value is surfaced to the Spring app via the service connection)
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
 
-      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/memory_service
-      QUARKUS_DATASOURCE_USERNAME: postgres
-      QUARKUS_DATASOURCE_PASSWORD: postgres
-      QUARKUS_DATASOURCE_DB_KIND: postgresql
-      QUARKUS_LIQUIBASE_MIGRATE_AT_START: "true"
-      QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080/realms/memory-service
-      QUARKUS_OIDC_TOKEN_ISSUER: http://localhost:8081/realms/memory-service
-      KEYCLOAK_CLIENT_SECRET: change-me
-      MEMORY_SERVICE_CACHE_TYPE: redis
+      MEMORY_SERVICE_DB_KIND: postgres
+      MEMORY_SERVICE_DB_URL: postgresql://postgres:postgres@postgres:5432/memory_service
+      MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
+      MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
+      MEMORY_SERVICE_CACHE_KIND: redis
       MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
 
       # To allow admin access to the memory service
@@ -130,20 +134,21 @@ services:
       MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
 
       # S3 attachment storage via LocalStack
-      MEMORY_SERVICE_ATTACHMENTS_STORE: s3
+      MEMORY_SERVICE_ATTACHMENTS_KIND: s3
       MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
-      QUARKUS_S3_ENDPOINT_OVERRIDE: http://localstack:4566
-      QUARKUS_S3_AWS_REGION: us-east-1
-      QUARKUS_S3_AWS_CREDENTIALS_TYPE: static
-      QUARKUS_S3_AWS_CREDENTIALS_STATIC_PROVIDER_ACCESS_KEY_ID: test
-      QUARKUS_S3_AWS_CREDENTIALS_STATIC_PROVIDER_SECRET_ACCESS_KEY: test
+      MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE: "true"
+      MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD: "false"
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
       prometheus:
         condition: service_healthy
       localstack:
@@ -151,7 +156,7 @@ services:
     ports:
       - "8082:8080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ready || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12

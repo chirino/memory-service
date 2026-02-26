@@ -24,6 +24,9 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+            - name: management
+              containerPort: 8085
+              protocol: TCP
           # Environment variables are loaded from a ConfigMap (non-secret
           # values) and a Secret (credentials, API keys). Both are optional;
           # missing keys are simply unset. Component patches can override
@@ -32,48 +35,37 @@ spec:
           #
           # Available ConfigMap keys (see docs/configuration for details):
           #
-          # Server:       MEMORY_SERVICE_DATASTORE_TYPE, MEMORY_SERVICE_DATASTORE_MIGRATE_AT_START,
-          #               MEMORY_SERVICE_CACHE_TYPE, MEMORY_SERVICE_VECTOR_STORE_TYPE, MEMORY_SERVICE_TEMP_DIR
-          # PostgreSQL:   QUARKUS_DATASOURCE_DB_KIND, QUARKUS_DATASOURCE_JDBC_URL, QUARKUS_DATASOURCE_USERNAME
-          # MongoDB:      QUARKUS_MONGODB_CONNECTION_STRING, QUARKUS_MONGODB_DATABASE,
-          #               QUARKUS_MONGODB_CREDENTIALS_AUTH_SOURCE
-          # MongoDB workarounds: QUARKUS_DATASOURCE_JDBC_INITIAL_SIZE, QUARKUS_DATASOURCE_JDBC_MIN_SIZE,
-          #               QUARKUS_DATASOURCE_JDBC_MAX_SIZE, QUARKUS_LIQUIBASE_MIGRATE_AT_START,
-          #               QUARKUS_LIQUIBASE_VALIDATE_ON_MIGRATE
-          # Cache:        MEMORY_SERVICE_CACHE_REDIS_CLIENT, MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT,
-          #               MEMORY_SERVICE_CACHE_EPOCH_TTL
-          # Resumer:      MEMORY_SERVICE_RESPONSE_RESUMER_ENABLED,
-          #               MEMORY_SERVICE_RESPONSE_RESUMER_TEMP_FILE_RETENTION,
-          #               MEMORY_SERVICE_GRPC_ADVERTISED_ADDRESS
-          # Redis:        QUARKUS_REDIS_HOSTS
-          # Infinispan:   QUARKUS_INFINISPAN_CLIENT_HOSTS, QUARKUS_INFINISPAN_CLIENT_USERNAME
-          # Attachments:  MEMORY_SERVICE_ATTACHMENTS_STORE, MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE,
+          # Server:       MEMORY_SERVICE_PORT, MEMORY_SERVICE_PLAIN_TEXT, MEMORY_SERVICE_TLS,
+          #               MEMORY_SERVICE_MANAGEMENT_PORT, MEMORY_SERVICE_TEMP_DIR
+          # DB:           MEMORY_SERVICE_DB_KIND, MEMORY_SERVICE_DB_MIGRATE_AT_START,
+          #               MEMORY_SERVICE_DB_MAX_OPEN_CONNS, MEMORY_SERVICE_DB_MAX_IDLE_CONNS
+          # Cache:        MEMORY_SERVICE_CACHE_KIND, MEMORY_SERVICE_CACHE_EPOCH_TTL,
+          #               MEMORY_SERVICE_CACHE_REDIS_CLIENT
+          # Resumer:      MEMORY_SERVICE_RESPONSE_RESUMER_TEMP_FILE_RETENTION
+          # Redis:        MEMORY_SERVICE_REDIS_HOSTS
+          # Infinispan:   MEMORY_SERVICE_INFINISPAN_HOST
+          # Vector:       MEMORY_SERVICE_VECTOR_KIND, MEMORY_SERVICE_VECTOR_MIGRATE_AT_START
+          # Embedding:    MEMORY_SERVICE_EMBEDDING_KIND
+          # Attachments:  MEMORY_SERVICE_ATTACHMENTS_KIND, MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE,
           #               MEMORY_SERVICE_ATTACHMENTS_DEFAULT_EXPIRES_IN, MEMORY_SERVICE_ATTACHMENTS_MAX_EXPIRES_IN,
           #               MEMORY_SERVICE_ATTACHMENTS_CLEANUP_INTERVAL,
           #               MEMORY_SERVICE_ATTACHMENTS_DOWNLOAD_URL_EXPIRES_IN,
           #               MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET
-          # Embedding:    MEMORY_EMBEDDING_TYPE, MEMORY_EMBEDDING_DIMENSION
-          # OIDC:         QUARKUS_OIDC_AUTH_SERVER_URL, QUARKUS_OIDC_CLIENT_ID
+          # OIDC:         MEMORY_SERVICE_OIDC_ISSUER, MEMORY_SERVICE_OIDC_DISCOVERY_URL
           # Roles:        MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE, MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE,
           #               MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE, MEMORY_SERVICE_ROLES_ADMIN_USERS,
           #               MEMORY_SERVICE_ROLES_AUDITOR_USERS, MEMORY_SERVICE_ROLES_INDEXER_USERS,
           #               MEMORY_SERVICE_ROLES_ADMIN_CLIENTS, MEMORY_SERVICE_ROLES_AUDITOR_CLIENTS,
           #               MEMORY_SERVICE_ROLES_INDEXER_CLIENTS
           # Admin:        MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION
-          # Server:       QUARKUS_HTTP_PORT, QUARKUS_GRPC_SERVER_USE_SEPARATE_SERVER,
-          #               MEMORY_SERVICE_CORS_ENABLED, MEMORY_SERVICE_CORS_ORIGINS
-          # Health:       QUARKUS_HEALTH_EXTENSIONS_ENABLED
-          # Logging:      QUARKUS_LOG_LEVEL
-          # Metrics:      QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED,
-          #               QUARKUS_MICROMETER_EXPORT_PROMETHEUS_PATH
+          # CORS:         MEMORY_SERVICE_CORS_ENABLED, MEMORY_SERVICE_CORS_ORIGINS
           # Monitoring:   MEMORY_SERVICE_PROMETHEUS_URL
           #
           # Available Secret keys:
           #
-          # PostgreSQL:   QUARKUS_DATASOURCE_USERNAME, QUARKUS_DATASOURCE_PASSWORD
-          # MongoDB:      QUARKUS_MONGODB_CREDENTIALS_USERNAME, QUARKUS_MONGODB_CREDENTIALS_PASSWORD
-          # OIDC:         QUARKUS_OIDC_CREDENTIALS_SECRET
-          # Infinispan:   QUARKUS_INFINISPAN_CLIENT_USERNAME, QUARKUS_INFINISPAN_CLIENT_PASSWORD
+          # DB:           MEMORY_SERVICE_DB_URL
+          # Infinispan:   MEMORY_SERVICE_INFINISPAN_USERNAME, MEMORY_SERVICE_INFINISPAN_PASSWORD
+          # OpenAI:       MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY
           # API keys:     MEMORY_SERVICE_API_KEYS_<CLIENT_ID> (one per client)
           envFrom:
             - configMapRef:
@@ -82,19 +74,24 @@ spec:
             - secretRef:
                 name: memory-service-secret
                 optional: true
-          env: []
+          env:
+            # Kubernetes auto-injects MEMORY_SERVICE_PORT=tcp://<clusterIP>:8080 as a service
+            # discovery env var (for the memory-service Service). Explicitly override it here
+            # so the Go server receives an integer, not a TCP URL.
+            - name: MEMORY_SERVICE_PORT
+              value: "8080"
           livenessProbe:
             httpGet:
-              path: /v1/health
-              port: http
+              path: /health
+              port: management
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /v1/health
-              port: http
+              path: /ready
+              port: management
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3

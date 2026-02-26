@@ -17,7 +17,7 @@ Feature: Response Recorder gRPC API
   Scenario: Check if conversation has recording in progress when none exists
     When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
-    conversation_ids: "${conversationId}"
+    conversation_ids: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "conversationIds" should be "[]"
@@ -25,7 +25,7 @@ Feature: Response Recorder gRPC API
   Scenario: Check recording in progress for non-existent conversation
     When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
-    conversation_ids: "00000000-0000-0000-0000-000000000000"
+    conversation_ids: "${"00000000-0000-0000-0000-000000000000" | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "conversationIds" should be "[]"
@@ -34,7 +34,7 @@ Feature: Response Recorder gRPC API
     Given there is a conversation owned by "bob"
     When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
-    conversation_ids: "${conversationId}"
+    conversation_ids: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "conversationIds" should be "[]"
@@ -46,8 +46,8 @@ Feature: Response Recorder gRPC API
     And I set context variable "conversationId2" to "${conversationId}"
     When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
-    conversation_ids: "${conversationId1}"
-    conversation_ids: "${conversationId2}"
+    conversation_ids: "${conversationId1 | uuid_to_hex_string}"
+    conversation_ids: "${conversationId2 | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "conversationIds" should not be null
@@ -59,8 +59,8 @@ Feature: Response Recorder gRPC API
     And I set context variable "bobConversationId" to "${conversationId}"
     When I send gRPC request "ResponseRecorderService/CheckRecordings" with body:
     """
-    conversation_ids: "${myConversationId}"
-    conversation_ids: "${bobConversationId}"
+    conversation_ids: "${myConversationId | uuid_to_hex_string}"
+    conversation_ids: "${bobConversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "conversationIds" should not be null
@@ -68,7 +68,7 @@ Feature: Response Recorder gRPC API
   Scenario: Record response content for a conversation
     When I send gRPC request "ResponseRecorderService/Record" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     content: "Hello"
     complete: true
     """
@@ -93,7 +93,7 @@ Feature: Response Recorder gRPC API
     And I wait for the response stream to send at least 2 tokens
     When I send gRPC request "ResponseRecorderService/Cancel" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "accepted" should be true
@@ -111,7 +111,7 @@ Feature: Response Recorder gRPC API
     Given there is a conversation owned by "bob"
     When I send gRPC request "ResponseRecorderService/Record" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     content: "Hello"
     complete: false
     """
@@ -120,7 +120,7 @@ Feature: Response Recorder gRPC API
   Scenario: Record for non-existent conversation
     When I send gRPC request "ResponseRecorderService/Record" with body:
     """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
+    conversation_id: "${"00000000-0000-0000-0000-000000000000" | uuid_to_hex_string}"
     content: "Hello"
     complete: false
     """
@@ -130,7 +130,7 @@ Feature: Response Recorder gRPC API
     Given I have streamed tokens "Hello World" to the conversation
     When I send gRPC request "ResponseRecorderService/Replay" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     # Note: Server streaming responses need special handling in step definitions
@@ -139,13 +139,13 @@ Feature: Response Recorder gRPC API
     Given there is a conversation owned by "bob"
     When I send gRPC request "ResponseRecorderService/Replay" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
   Scenario: Replay for non-existent conversation
     When I send gRPC request "ResponseRecorderService/Replay" with body:
     """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
+    conversation_id: "${"00000000-0000-0000-0000-000000000000" | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"

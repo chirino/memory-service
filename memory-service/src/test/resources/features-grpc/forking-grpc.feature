@@ -20,7 +20,7 @@ Feature: Conversation Forking gRPC API
     And set "forkedConversationId" to "${forkedConversationId}"
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
-    conversation_id: "${forkedConversationId}"
+    conversation_id: "${forkedConversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "id" should be "${forkedConversationId}"
@@ -38,7 +38,7 @@ Feature: Conversation Forking gRPC API
     Given I am authenticated as agent with API key "test-agent-key"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${forkedConversationId}"
+    conversation_id: "${forkedConversationId | uuid_to_hex_string}"
     channel: HISTORY
     """
     Then the gRPC response should not have an error
@@ -51,7 +51,7 @@ Feature: Conversation Forking gRPC API
     Given I am authenticated as agent with API key "test-agent-key"
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee01"
+    conversation_id: "${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee01" | uuid_to_hex_string}"
     entry {
       user_id: "alice"
       channel: HISTORY
@@ -68,8 +68,8 @@ Feature: Conversation Forking gRPC API
           }
         }
       }
-      forked_at_conversation_id: "${parentConversationId}"
-      forked_at_entry_id: "${secondEntryId}"
+      forked_at_conversation_id: "${parentConversationId | uuid_to_hex_string}"
+      forked_at_entry_id: "${secondEntryId | uuid_to_hex_string}"
     }
     """
     Then the gRPC response should not have an error
@@ -77,7 +77,7 @@ Feature: Conversation Forking gRPC API
     # Verify the fork conversation was created correctly
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
-    conversation_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee01"
+    conversation_id: "${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee01" | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "forkedAtEntryId" should be "${firstEntryId}"
@@ -92,7 +92,7 @@ Feature: Conversation Forking gRPC API
     And set "fork2Id" to "${forkedConversationId}"
     When I send gRPC request "ConversationsService/ListForks" with body:
     """
-    conversation_id: "${parentConversationId}"
+    conversation_id: "${parentConversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "forks" should not be null
@@ -100,7 +100,7 @@ Feature: Conversation Forking gRPC API
   Scenario: List forks for non-existent conversation via gRPC
     When I send gRPC request "ConversationsService/ListForks" with body:
     """
-    conversation_id: "00000000-0000-0000-0000-000000000000"
+    conversation_id: "${"00000000-0000-0000-0000-000000000000" | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "NOT_FOUND"
 
@@ -108,6 +108,6 @@ Feature: Conversation Forking gRPC API
     Given there is a conversation owned by "bob"
     When I send gRPC request "ConversationsService/ListForks" with body:
     """
-    conversation_id: "${conversationId}"
+    conversation_id: "${conversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
