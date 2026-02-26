@@ -18,7 +18,6 @@ COPY .mvn .mvn
 
 COPY ./frontends/chat-frontend/pom.xml ./frontends/chat-frontend/pom.xml
 COPY ./memory-service-contracts/pom.xml ./memory-service-contracts/pom.xml
-COPY ./memory-service/pom.xml ./memory-service/pom.xml
 COPY ./pom.xml ./pom.xml
 COPY ./quarkus/examples/chat-quarkus/pom.xml ./quarkus/examples/chat-quarkus/pom.xml
 COPY ./quarkus/examples/pom.xml ./quarkus/examples/pom.xml

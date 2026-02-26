@@ -11,21 +11,13 @@ export const productionConfig = `services:
     image: ghcr.io/chirino/memory-service:${PROJECT_VERSION}  # Pin to specific version
     restart: unless-stopped
     environment:
-      # Use secrets instead of plain text
-      - QUARKUS_DATASOURCE_PASSWORD_FILE=/run/secrets/db_password
+      # Database connection
+      - MEMORY_SERVICE_DB_URL=postgres://postgres:\${DB_PASSWORD}@postgres:5432/memoryservice?sslmode=disable
       # Enable TLS
-      - QUARKUS_HTTP_SSL_CERTIFICATE_FILES=/certs/server.crt
-      - QUARKUS_HTTP_SSL_CERTIFICATE_KEY_FILES=/certs/server.key
-      # Production logging
-      - QUARKUS_LOG_LEVEL=INFO
-    secrets:
-      - db_password
+      - MEMORY_SERVICE_TLS_CERT_FILE=/certs/server.crt
+      - MEMORY_SERVICE_TLS_KEY_FILE=/certs/server.key
     volumes:
-      - ./certs:/certs:ro
-
-secrets:
-  db_password:
-    file: ./secrets/db_password.txt`;
+      - ./certs:/certs:ro`;
 
 Memory Service is distributed as a Docker image, making it easy to deploy in any container environment.
 
@@ -37,10 +29,7 @@ Pull and run the latest image:
 docker run -d \
   --name memory-service \
   -p 8080:8080 \
-  -p 9000:9000 \
-  -e QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://host.docker.internal:5432/memoryservice \
-  -e QUARKUS_DATASOURCE_USERNAME=postgres \
-  -e QUARKUS_DATASOURCE_PASSWORD=postgres \
+  -e MEMORY_SERVICE_DB_URL=postgres://postgres:postgres@host.docker.internal:5432/memoryservice?sslmode=disable \
   ghcr.io/chirino/memory-service:latest
 ```
 
@@ -58,10 +47,8 @@ services:
       - "8080:8080"   # REST API
       - "9000:9000"   # gRPC API
     environment:
-      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://postgres:5432/memoryservice
-      - QUARKUS_DATASOURCE_USERNAME=postgres
-      - QUARKUS_DATASOURCE_PASSWORD=postgres
-      - QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION=update
+      - MEMORY_SERVICE_DB_URL=postgres://postgres:postgres@postgres:5432/memoryservice?sslmode=disable
+      - MEMORY_SERVICE_DB_MIGRATE_AT_START=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,26 +83,26 @@ docker compose up -d
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `QUARKUS_DATASOURCE_DB_KIND` | Database type | `postgresql` |
-| `QUARKUS_DATASOURCE_JDBC_URL` | JDBC connection URL | - |
-| `QUARKUS_DATASOURCE_USERNAME` | Database username | - |
-| `QUARKUS_DATASOURCE_PASSWORD` | Database password | - |
+| `MEMORY_SERVICE_DB_KIND` | Database type (`postgres` or `mongo`) | `postgres` |
+| `MEMORY_SERVICE_DB_URL` | Database connection URL | - |
+| `MEMORY_SERVICE_DB_MIGRATE_AT_START` | Run schema migrations on startup | `true` |
+| `MEMORY_SERVICE_DB_MAX_OPEN_CONNS` | Maximum open database connections | `25` |
+| `MEMORY_SERVICE_DB_MAX_IDLE_CONNS` | Idle/minimum connections in pool | `5` |
 
 ### Vector Store Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MEMORY_SERVICE_VECTOR_TYPE` | Vector store type | `pgvector` |
-| `MEMORY_SERVICE_EMBEDDING_MODEL` | Embedding model | - |
-| `MEMORY_SERVICE_EMBEDDING_API_KEY` | API key for embeddings | - |
+| `MEMORY_SERVICE_VECTOR_KIND` | Vector store type (`none`, `pgvector`, `qdrant`) | `none` |
+| `MEMORY_SERVICE_EMBEDDING_KIND` | Embedding provider (`none`, `local`, `openai`) | `local` |
+| `MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY` | OpenAI API key for embeddings | - |
 
 ### Authentication
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `QUARKUS_OIDC_AUTH_SERVER_URL` | OIDC provider URL | - |
-| `QUARKUS_OIDC_CLIENT_ID` | OIDC client ID | - |
-| `QUARKUS_OIDC_CREDENTIALS_SECRET` | OIDC client secret | - |
+| `MEMORY_SERVICE_OIDC_ISSUER` | OIDC issuer URL | - |
+| `MEMORY_SERVICE_API_KEYS_<CLIENT>` | API key(s) for a client ID | - |
 
 ## Health Checks
 
@@ -123,21 +110,21 @@ The container exposes health endpoints:
 
 ```bash
 # Liveness
-curl http://localhost:8080/q/health/live
+curl http://localhost:8080/health
 
 # Readiness
-curl http://localhost:8080/q/health/ready
+curl http://localhost:8080/ready
 ```
 
 Configure in Docker Compose:
 
 ```yaml
 healthcheck:
-  test: ["CMD", "curl", "-f", "http://localhost:8080/q/health/live"]
+  test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
   interval: 30s
   timeout: 10s
   retries: 3
-  start_period: 40s
+  start_period: 10s
 ```
 
 ## Resource Limits
@@ -196,13 +183,7 @@ View container logs:
 docker logs -f memory-service
 ```
 
-Configure log level:
-
-```yaml
-environment:
-  - QUARKUS_LOG_LEVEL=DEBUG
-  - QUARKUS_LOG_CATEGORY__IO_GITHUB_CHIRINO__LEVEL=DEBUG
-```
+The service writes structured log output to stdout. Use your container runtime's log driver or a sidecar to ship logs to your preferred backend.
 
 ## Networking
 
