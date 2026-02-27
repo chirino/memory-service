@@ -1172,6 +1172,17 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 		UpdatedAt:           now,
 	}
 	if err := s.db.WithContext(ctx).Create(&conv).Error; err != nil {
+		// Clean up the orphaned group before handling the error.
+		_ = s.db.WithContext(ctx).Delete(&group).Error
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			// A concurrent request already created this conversation; fetch and return it.
+			var existing model.Conversation
+			if findErr := s.db.WithContext(ctx).Limit(1).Find(&existing, "id = ?", conversationID).Error; findErr != nil {
+				return model.Conversation{}, fmt.Errorf("failed to fetch existing conversation: %w", findErr)
+			}
+			return existing, nil
+		}
 		return model.Conversation{}, fmt.Errorf("failed to create conversation: %w", err)
 	}
 

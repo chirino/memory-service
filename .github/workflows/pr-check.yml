@@ -30,20 +30,20 @@ jobs:
     strategy:
       fail-fast: true   # cancels other matrix jobs on first failure
       matrix:
-        job: [verify-generated, test:go, test:java, image:memory-service, image:chat-quarkus]
+        job: [verify-generated, test-go, test-site, test-java, image-memory-service, image-chat-quarkus]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Go
-        if: contains('verify-generated test:go', matrix.job)
+        if: contains('verify-generated test-go test-site', matrix.job)
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Set up Java
-        if: contains('verify-generated test:java', matrix.job)
+        if: contains('verify-generated test-java test-site', matrix.job)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -51,7 +51,7 @@ jobs:
           cache: maven
 
       - name: Set up Node
-        if: contains('verify-generated test:java', matrix.job)
+        if: contains('verify-generated test-java test-site', matrix.job)
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -78,29 +78,42 @@ jobs:
           fi
 
       - name: Run Go Tests
-        if: contains('test:go', matrix.job)
+        if: contains('test-go', matrix.job)
         run: |
           mkdir -p reports
           export GODOG_REPORT_DIR=./reports
           go run github.com/go-task/task/v3/cmd/task test:go
 
+      - name: Install uv
+        if: contains('test-site', matrix.job)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Run Site Tests
+        if: contains('test-site', matrix.job)
+        run: |
+          mkdir -p reports
+          export GODOG_REPORT_DIR=./reports
+          go run github.com/go-task/task/v3/cmd/task test:site
+
       - name: Run Java Tests
-        if: contains('test:java', matrix.job)
+        if: contains('test-java', matrix.job)
         run: mvn -T 1C clean test
 
       - name: Upload test reports
-        if: always() && contains('test:go', matrix.job)
+        if: always() && contains('test-go test-site', matrix.job)
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
-          path: reports/
+          name: ${{ matrix.job }}
+          path: reports
 
       - name: Set up Docker Buildx
-        if: startsWith(matrix.job, 'image:')
+        if: startsWith(matrix.job, 'image-')
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image (memory-service)
-        if: matrix.job == 'image:memory-service'
+        if: matrix.job == 'image-memory-service'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -111,7 +124,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build Docker image (chat-quarkus)
-        if: matrix.job == 'image:chat-quarkus'
+        if: matrix.job == 'image-chat-quarkus'
         uses: docker/build-push-action@v6
         with:
           context: .

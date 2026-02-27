@@ -227,11 +227,5 @@
         <quarkus.native.enabled>true</quarkus.native.enabled>
       </properties>
     </profile>
-    <profile>
-      <id>site-tests</id>
-      <modules>
-        <module>site-tests</module>
-      </modules>
-    </profile>
   </profiles>
 </project>

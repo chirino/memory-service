@@ -25,8 +25,8 @@ try {
       scenarios,
     };
 
-    // Append to test scenarios file
-    const testDataDir = join(process.cwd(), "..", "site-tests", "target", "generated-test-resources");
+    // Append to test scenarios file (written to site/dist/ alongside other build artifacts)
+    const testDataDir = join(process.cwd(), "dist");
     const testDataFile = join(testDataDir, "test-scenarios.json");
 
     if (!existsSync(testDataDir)) {
