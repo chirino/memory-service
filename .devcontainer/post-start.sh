@@ -29,14 +29,5 @@ if [ -d "/home/vscode/.m2" ]; then
   ln -s /home/vscode/.m2 "$USER_HOME/.m2"
 fi
 
-# Generate bash completions for tools installed by devcontainer features
-COMP_DIR="/etc/bash_completion.d"
-kubectl completion bash | sudo tee "$COMP_DIR/kubectl" > /dev/null 2>/dev/null || true
-task --completion bash | sudo tee "$COMP_DIR/task" > /dev/null 2>/dev/null || true
-kind completion bash | sudo tee "$COMP_DIR/kind" > /dev/null 2>/dev/null || true
-gh completion -s bash | sudo tee "$COMP_DIR/gh" > /dev/null 2>/dev/null || true
-kustomize completion bash | sudo tee "$COMP_DIR/kustomize" > /dev/null 2>/dev/null || true
-docker completion bash | sudo tee "$COMP_DIR/docker" > /dev/null 2>/dev/null || true
-npm completion | sudo tee "$COMP_DIR/npm" > /dev/null 2>/dev/null || true
-
-go install gotest.tools/gotestsum@latest
+# Generate bash completion for docker (installed by docker-in-docker feature, not baked in)
+docker completion bash | sudo tee /etc/bash_completion.d/docker > /dev/null 2>/dev/null || true

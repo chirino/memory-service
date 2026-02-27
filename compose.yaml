@@ -78,18 +78,29 @@ services:
       start_period: 30s
 
   memory-service:
+
     image: ghcr.io/chirino/memory-service:latest
     ports:
       - 8082:8080
-      - 8085:8085
-      - 2345:2345
-    volumes:
-      - type: bind
-        source: .
-        target: /src
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
+
+    ### <dev-mode> Uncomment below and Comment above to enable dev mode ###
+    # image: ghcr.io/chirino/memory-service-dev:latest
+    # ports:
+    #   - 8082:8080
+    #   - 2345:2345 # go debug port
+    # volumes:
+    #   - type: bind
+    #     source: .
+    #     target: /workspaces/memory-service
+    # build:
+    #   context: .devcontainer 
+    #   dockerfile: Dockerfile
+    # command: ["air", "-c", "air.toml"]
+    ### </dev-mode> #######################################################
+
     environment:
 
       # ── Datastore ──────────────────────────────────────────────
