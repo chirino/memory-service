@@ -26,7 +26,7 @@ type mockScenarioState struct {
 	mu           sync.Mutex
 	checkpointID string
 	recording    bool
-	fixtureIndex int          // next fixture index (0-based) to serve in playback
+	fixtureIndex int            // next fixture index (0-based) to serve in playback
 	journal      []capturedCall // accumulated during recording
 }
 
