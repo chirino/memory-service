@@ -42,7 +42,7 @@ COPY ./spring/memory-service-spring-boot-starter/pom.xml ./spring/memory-service
 COPY ./spring/pom.xml ./spring/pom.xml
 COPY ./python/pom.xml ./python/pom.xml
 
-RUN ./mvnw -B -q quarkus:go-offline
+RUN ./mvnw -B -q -Daether.connector.basic.threads=8 -Daether.metadataResolver.threads=8 -Daether.syncContext.named.time=120 quarkus:go-offline
 
 # Copy the frontend build into the chat app resources
 COPY --chmod=755 --from=frontend-builder /build/dist ./quarkus/examples/chat-quarkus/src/main/resources/META-INF/resources

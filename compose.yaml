@@ -209,6 +209,7 @@ services:
       KEYCLOAK_CLIENT_SECRET: change-me
       OPENAI_API_KEY: ${OPENAI_API_KEY:-none}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
     depends_on:
       memory-service:
         condition: service_healthy
