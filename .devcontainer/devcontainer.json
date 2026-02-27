@@ -1,5 +1,6 @@
 {
-  "name": "Memory Service",
+  "name": "Memory Service Dev",
+  // "image": "ghcr.io/chirino/memory-service-dev:latest",
   "build": {
     "dockerfile": "Dockerfile"
   },
@@ -29,18 +30,6 @@
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "dockerDashComposeVersion": "v2"
     },
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
-    },
-    "ghcr.io/devcontainers/features/go:1": {
-      "version": "1.26.0"
-    },
-    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
-      "version": "latest",
-      "helm": "none",
-      "minikube": "none"
-    },
-    "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/common-utils:2": {
       "configureZshAsDefaultShell": false,
       "upgradePackages": false,
