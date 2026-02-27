@@ -55,3 +55,26 @@ CREATE INDEX IF NOT EXISTS idx_entry_embeddings_model
 --       WITH (m = 16, ef_construction = 64);
 --
 -- Replace 384 with your embedding model's dimension (e.g., 1536 for OpenAI text-embedding-3-small).
+
+------------------------------------------------------------
+-- Memory vectors (episodic memory semantic search)
+-- One row per (memory_id, field_name). Multi-field items produce multiple rows.
+-- No FK to memories — primary DB and vector DB may be separate services.
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    memory_id         UUID  NOT NULL,
+    field_name        TEXT  NOT NULL,  -- embedded field name, e.g. "text"
+    namespace         TEXT  NOT NULL,  -- RS-encoded namespace (redundant copy for prefix filtering)
+    policy_attributes JSONB,           -- redundant copy of OPA-extracted attributes for filtering
+    embedding         vector NOT NULL, -- dimension from configured embedding model
+    PRIMARY KEY (memory_id, field_name)
+);
+
+-- Namespace prefix filtering (for search scoping)
+CREATE INDEX IF NOT EXISTS memory_vectors_ns_idx
+    ON memory_vectors (namespace);
+
+-- Attribute-based pre-filtering
+CREATE INDEX IF NOT EXISTS memory_vectors_policy_attrs_gin_idx
+    ON memory_vectors USING GIN (policy_attributes) WHERE policy_attributes IS NOT NULL;

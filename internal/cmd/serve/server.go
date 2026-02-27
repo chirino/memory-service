@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/dataencryption"
+	"github.com/chirino/memory-service/internal/episodic"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	grpcserver "github.com/chirino/memory-service/internal/grpc"
 	"github.com/chirino/memory-service/internal/plugin/attach/encrypt"
@@ -15,6 +16,7 @@ import (
 	"github.com/chirino/memory-service/internal/plugin/route/conversations"
 	"github.com/chirino/memory-service/internal/plugin/route/entries"
 	"github.com/chirino/memory-service/internal/plugin/route/memberships"
+	routememories "github.com/chirino/memory-service/internal/plugin/route/memories"
 	"github.com/chirino/memory-service/internal/plugin/route/search"
 	routesystem "github.com/chirino/memory-service/internal/plugin/route/system"
 	"github.com/chirino/memory-service/internal/plugin/route/transfers"
@@ -22,6 +24,7 @@ import (
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
+	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registryroute "github.com/chirino/memory-service/internal/registry/route"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -212,6 +215,16 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// Mount Admin API routes
 	admin.MountRoutes(router, store, attachStore, cfg, auth)
 
+	// Initialize and mount episodic memory store + routes.
+	episodicStore, episodicPolicy, err := initEpisodic(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	episodicTTL := service.NewEpisodicTTLService(episodicStore, cfg.EpisodicTTLInterval, cfg.EpisodicEvictionBatchSize, cfg.EpisodicTombstoneRetention)
+	episodicIdx := service.NewEpisodicIndexer(episodicStore, embedder, cfg.EpisodicIndexingInterval, cfg.EpisodicIndexingBatchSize)
+	routememories.MountRoutes(router, episodicStore, episodicPolicy, cfg, auth, embedder)
+	routememories.MountAdminRoutes(router, episodicStore, episodicPolicy, cfg, episodicIdx, auth, security.RequireAdminRole())
+
 	// Start background services
 	indexer := service.NewBackgroundIndexer(store, embedder, vectorStore, cfg.VectorIndexerBatchSize)
 	go indexer.Start(ctx)
@@ -225,6 +238,10 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	attachmentCleanup := service.NewAttachmentCleanupService(store, attachStore, cfg.AttachmentCleanupInterval)
 	go attachmentCleanup.Start(ctx)
 
+	go episodicTTL.Start(ctx)
+
+	go episodicIdx.Start(ctx)
+
 	// Set up gRPC server with auth interceptors.
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(security.GRPCUnaryInterceptor(resolver)),
@@ -236,6 +253,12 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	pb.RegisterConversationMembershipsServiceServer(grpcServer, &grpcserver.MembershipsServer{Store: store})
 	pb.RegisterOwnershipTransfersServiceServer(grpcServer, &grpcserver.TransfersServer{Store: store})
 	pb.RegisterSearchServiceServer(grpcServer, &grpcserver.SearchServer{Store: store, Config: cfg})
+	pb.RegisterMemoriesServiceServer(grpcServer, &grpcserver.MemoriesServer{
+		Store:    episodicStore,
+		Policy:   episodicPolicy,
+		Config:   cfg,
+		Embedder: embedder,
+	})
 	pb.RegisterAttachmentsServiceServer(grpcServer, &grpcserver.AttachmentsServer{
 		Store:       store,
 		AttachStore: attachStore,
@@ -301,4 +324,25 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		Running:         running,
 		closeManagement: closeManagement,
 	}, nil
+}
+
+// initEpisodic initializes the episodic memory store and OPA policy engine.
+// Returns nil, nil, nil when the episodic store is not available for the configured datastore.
+func initEpisodic(ctx context.Context, cfg *config.Config) (registryepisodic.EpisodicStore, *episodic.PolicyEngine, error) {
+	loader, err := registryepisodic.Select(cfg.DatastoreType)
+	if err != nil {
+		log.Warn("Episodic store not available for datastore", "datastore", cfg.DatastoreType, "err", err)
+		return nil, nil, nil
+	}
+	eStore, err := loader(ctx)
+	if err != nil {
+		log.Warn("Failed to initialize episodic store", "err", err)
+		return nil, nil, nil
+	}
+
+	policy, err := episodic.NewPolicyEngine(ctx, cfg.EpisodicPolicyDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize episodic OPA policy engine: %w", err)
+	}
+	return eStore, policy, nil
 }

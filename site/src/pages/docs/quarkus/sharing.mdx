@@ -34,6 +34,8 @@ Add the membership endpoints to your `ConversationsResource`:
   after={35}
 >// Membership management endpoints</CodeFromFile>
 
+**Why**: These endpoints let your frontend implement a sharing UI without directly exposing the Memory Service. The proxy pattern ensures that all calls carry both the service account API key (for Memory Service authentication) and the caller's Bearer token (for authorization checks), so users can only manage memberships on conversations they own or manage.
+
 ## Ownership Transfer Endpoints
 
 Create a new `OwnershipTransfersResource`:
@@ -42,6 +44,8 @@ Create a new `OwnershipTransfersResource`:
   file="quarkus/examples/doc-checkpoints/06-sharing/src/main/java/org/acme/OwnershipTransfersResource.java"
   lang="java"
 />
+
+**Why**: Ownership transfer is a two-step process — the current owner initiates it and the recipient must explicitly accept. Keeping this in its own resource class separates membership management (granting access) from ownership transfer (changing who is ultimately responsible for a conversation), making each concern easier to reason about and audit.
 
 ## Testing Membership Management
 
@@ -109,21 +113,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations/4f65f1b4-d0fb-41ab-b8f9-0a
 
 </CurlTest>
 
-Example response:
-
-```json
-{
-  "data": [
-    {
-      "conversationId": "4f65f1b4-d0fb-41ab-b8f9-0aedcc721103",
-      "userId": "bob",
-      "accessLevel": "owner",
-      "createdAt": "2025-01-10T14:32:05Z"
-    }
-  ]
-}
-```
-
 ### Add a Member
 
 <CurlTest steps={`
@@ -151,17 +140,6 @@ curl -sSfX POST http://localhost:9090/v1/conversations/4f65f1b4-d0fb-41ab-b8f9-0
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "conversationId": "4f65f1b4-d0fb-41ab-b8f9-0aedcc721103",
-  "userId": "alice",
-  "accessLevel": "writer",
-  "createdAt": "2025-01-10T14:33:15Z"
-}
-```
 
 Alice can now read and write to the conversation:
 
@@ -262,7 +240,7 @@ Example response:
 
 ```json
 {
-  "id": "f3a8b2c1-1234-5678-9abc-def012345678",
+  "id": "17c661b1-aa73-4b1d-91d1-f68c180a0b21",
   "conversationId": "4f65f1b4-d0fb-41ab-b8f9-0aedcc721103",
   "fromUserId": "bob",
   "toUserId": "alice",
@@ -284,7 +262,7 @@ Example response:
 {
   "data": [
     {
-      "id": "f3a8b2c1-1234-5678-9abc-def012345678",
+      "id": "17c661b1-aa73-4b1d-91d1-f68c180a0b21",
       "conversationId": "4f65f1b4-d0fb-41ab-b8f9-0aedcc721103",
       "fromUserId": "bob",
       "toUserId": "alice",
@@ -310,7 +288,7 @@ curl -sSfX GET "http://localhost:9090/v1/ownership-transfers?role=all" \
 
 ```bash
 # Alice accepts the transfer (use the transfer ID from the create response)
-TRANSFER_ID="f3a8b2c1-1234-5678-9abc-def012345678"
+TRANSFER_ID="17c661b1-aa73-4b1d-91d1-f68c180a0b21"
 curl -sSfX POST http://localhost:9090/v1/ownership-transfers/$TRANSFER_ID/accept \
   -H "Authorization: Bearer $(get-token alice alice)"
 ```
@@ -349,7 +327,7 @@ Alice is now the owner. Bob was automatically demoted to manager.
 
 ```bash
 # Alice can decline the transfer (or bob can cancel it)
-TRANSFER_ID="f3a8b2c1-1234-5678-9abc-def012345678"
+TRANSFER_ID="17c661b1-aa73-4b1d-91d1-f68c180a0b21"
 curl -sSfX DELETE http://localhost:9090/v1/ownership-transfers/$TRANSFER_ID \
   -H "Authorization: Bearer $(get-token alice alice)"
 ```
@@ -360,12 +338,4 @@ Returns `204 No Content`. The transfer is deleted and ownership remains unchange
 
 **Completed code**: View the full implementation at [quarkus/examples/doc-checkpoints/06-sharing](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/06-sharing)
 
-## What's Next
 
-You've now learned how to:
-- Share conversations with different access levels
-- Manage conversation memberships
-- Transfer ownership between users
-- Build collaborative applications with proper access control
-
-For a production-ready example with a frontend, see the [chat-quarkus example](https://github.com/chirino/memory-service/tree/main/quarkus/examples/chat-quarkus).

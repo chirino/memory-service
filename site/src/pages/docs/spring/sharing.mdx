@@ -34,6 +34,8 @@ Add the membership endpoints to your `MemoryServiceProxyController`:
   after={23}
 >// Membership management endpoints</CodeFromFile>
 
+**Why**: These endpoints give the agent app's frontend everything it needs to build a sharing UI — listing who has access, inviting new collaborators, promoting or demoting their access level, and revoking access. The `MemoryServiceProxy` handles authentication forwarding, so the Memory Service's access-level enforcement (owner, manager, writer, reader) is automatically applied based on the authenticated user's token.
+
 ## Ownership Transfer Endpoints
 
 Create a new `OwnershipTransfersController`:
@@ -42,6 +44,8 @@ Create a new `OwnershipTransfersController`:
   file="spring/examples/doc-checkpoints/06-sharing/src/main/java/com/example/demo/OwnershipTransfersController.java"
   lang="java"
 />
+
+**Why**: Ownership transfers are a two-step flow — the current owner initiates, and the intended new owner must accept — which prevents accidental or unauthorized ownership changes. Separating this into its own controller keeps the membership CRUD in `MemoryServiceProxyController` clean and groups transfer lifecycle operations together for clarity.
 
 ## Testing Membership Management
 
@@ -109,21 +113,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f
 
 </CurlTest>
 
-Example response:
-
-```json
-{
-  "data": [
-    {
-      "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
-      "userId": "bob",
-      "accessLevel": "owner",
-      "createdAt": "2025-01-10T14:32:05Z"
-    }
-  ]
-}
-```
-
 ### Add a Member
 
 <CurlTest steps={`
@@ -151,17 +140,6 @@ curl -sSfX POST http://localhost:9090/v1/conversations/381ca8a4-7ade-4f45-a9dd-6
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
-  "userId": "alice",
-  "accessLevel": "writer",
-  "createdAt": "2025-01-10T14:33:15Z"
-}
-```
 
 Alice can now read and write to the conversation:
 
@@ -262,7 +240,7 @@ Example response:
 
 ```json
 {
-  "id": "f3a8b2c1-1234-5678-9abc-def012345678",
+  "id": "34c87e19-d146-46f0-a93a-493d9670c399",
   "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
   "fromUserId": "bob",
   "toUserId": "alice",
@@ -284,7 +262,7 @@ Example response:
 {
   "data": [
     {
-      "id": "f3a8b2c1-1234-5678-9abc-def012345678",
+      "id": "34c87e19-d146-46f0-a93a-493d9670c399",
       "conversationId": "381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
       "fromUserId": "bob",
       "toUserId": "alice",
@@ -310,7 +288,7 @@ curl -sSfX GET "http://localhost:9090/v1/ownership-transfers?role=all" \
 
 ```bash
 # Alice accepts the transfer (use the transfer ID from the create response)
-TRANSFER_ID="f3a8b2c1-1234-5678-9abc-def012345678"
+TRANSFER_ID="34c87e19-d146-46f0-a93a-493d9670c399"
 curl -sSfX POST http://localhost:9090/v1/ownership-transfers/$TRANSFER_ID/accept \
   -H "Authorization: Bearer $(get-token alice alice)"
 ```
@@ -349,7 +327,7 @@ Alice is now the owner. Bob was automatically demoted to manager.
 
 ```bash
 # Alice can decline the transfer (or bob can cancel it)
-TRANSFER_ID="f3a8b2c1-1234-5678-9abc-def012345678"
+TRANSFER_ID="34c87e19-d146-46f0-a93a-493d9670c399"
 curl -sSfX DELETE http://localhost:9090/v1/ownership-transfers/$TRANSFER_ID \
   -H "Authorization: Bearer $(get-token alice alice)"
 ```
@@ -360,12 +338,4 @@ Returns `204 No Content`. The transfer is deleted and ownership remains unchange
 
 **Completed code**: View the full implementation at [spring/examples/doc-checkpoints/06-sharing](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/06-sharing)
 
-## What's Next
 
-You've now learned how to:
-- Share conversations with different access levels
-- Manage conversation memberships
-- Transfer ownership between users
-- Build collaborative applications with proper access control
-
-For a production-ready example with a frontend, see the [chat-spring example](https://github.com/chirino/memory-service/tree/main/spring/examples/chat-spring).

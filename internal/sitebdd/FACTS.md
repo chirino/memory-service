@@ -19,14 +19,28 @@ go test -tags=site_tests ./internal/sitebdd/ -v -count=1 -godog.tags=@quarkus
 go test -tags=site_tests ./internal/sitebdd/ -v -count=1 \
   -godog.tags=@checkpoint_quarkus_examples_chat_quarkus_01_basic_agent
 
-# Record fixtures for checkpoints that have none
-SITE_TEST_RECORD=true OPENAI_API_KEY=sk-... \
+# Record fixtures only for checkpoints that have none
+SITE_TEST_RECORD=missing OPENAI_API_KEY=sk-... \
   go test -tags=site_tests ./internal/sitebdd/ -v -count=1
 
 # Re-record all fixtures
 SITE_TEST_RECORD=all OPENAI_API_KEY=sk-... OPENAI_MODEL=gpt-4o \
   go test -tags=site_tests ./internal/sitebdd/ -v -count=1
 ```
+
+Site BDD build/checkpoint subprocess output is controlled by
+`SITE_TEST_BUILD_OUTPUT`:
+- `on-fail` (default): capture output and replay only on failures
+- `stream`: stream output live during the run
+- `quiet`: suppress captured output replay even on failures
+
+`task test:site` now sets `SITE_TEST_BUILD_OUTPUT=on-fail` by default, so
+`gotestsum`/`go test -json` no longer forces streamed `[mvn]` logs.
+
+After recording fixtures, update scenario expectations if model outputs changed.
+In practice this means adjusting the source MDX `<CurlTest steps={...}>`
+assertions (and any expected JSON/text blocks) so generated feature files match
+the newly recorded fixture content.
 
 ## Architecture
 
@@ -55,12 +69,22 @@ substitute canonical user names:
 Response bodies are normalized back before assertions (`alice-<uid>` → `alice`).
 This keeps feature file content matching the documentation.
 
+Site BDD also enforces cross-scenario UUID uniqueness for executed curl requests.
+A shared UUID (for example, conversation IDs reused in two scenario files) now
+fails the later scenario with a registry conflict error to prevent data races.
+
 ## OpenAI mock routing
 
 Checkpoint subprocesses receive `OPENAI_API_KEY=sitebdd-<uid>` (not a real key).
 The in-process mock reads the Authorization header to identify which scenario's
 fixture counter / recording journal to use.  In recording mode the mock proxies to
 real OpenAI using `OPENAI_API_KEY` from the test environment.
+
+Playback fallback is now fatal: if a chat completion request has no registered
+scenario state or no matching fixture, the mock logs a FATAL line and exits the
+test process via `os.Exit(2)` to force fixture/isolation fixes. Before exiting,
+the mock force-kills all currently tracked checkpoint subprocesses to avoid
+leaking background servers.
 
 ## Checkpoint framework detection
 
@@ -98,15 +122,22 @@ compatibility.
 | Value | Behaviour |
 |-------|-----------|
 | _(unset or "false")_ | Playback only |
-| `true` | Record checkpoints with no existing fixtures; play back the rest |
+| `missing` / `true` | Record checkpoints with no existing fixtures; play back the rest |
 | `all` / `force` | Re-record all checkpoints (overwrites existing fixtures) |
 
 ## Port allocation
 
-Checkpoint apps start on ports 10090, 10091, … allocated via an `atomic.Int32`
-counter. Each scenario gets its port in `Given checkpoint X is active`.  If a port
-is somehow already in use when the checkpoint tries to start, the `waitForPort`
-check will time out — investigate with `lsof -i :<port>`.
+Checkpoint apps prefer ports 10090, 10091, … allocated via an `atomic.Int32`
+counter, but now skip already-occupied ports and can fall back to an ephemeral OS
+port if needed. This avoids false startup success when stale checkpoint processes
+from earlier aborted runs are still listening.
+
+A mutex-guarded checkpoint path registry also enforces that one checkpoint
+directory can only be owned by one active scenario at a time; concurrent reuse
+fails with a checkpoint isolation conflict.
+
+`task test:site` now hard-fails with an explicit message if gotest output contains
+`(unknown)`, so abrupt test-process termination patterns are surfaced immediately.
 
 ## Common failures
 
@@ -116,9 +147,11 @@ check will time out — investigate with `lsof -i :<port>`.
 directories from `internal/sitebdd/scenarios.go`. If the package was moved, update
 the walk logic or set `SITE_TESTS_JSON` to an absolute path.
 
-**Checkpoint doesn't respond within 90s**: Check the checkpoint app logs printed
-with prefix `[checkpoint:<port>]`. Common causes: wrong memory service URL, missing
-dependency, build not run first.
+**Checkpoint doesn't respond within 90s**: Re-run with
+`SITE_TEST_BUILD_OUTPUT=stream` to stream checkpoint app logs live. With the
+default `on-fail` mode, checkpoint stdout/stderr is captured and replayed only
+if the scenario fails. Common causes: wrong memory service URL, missing dependency,
+build not run first.
 
 **Recording fails**: Ensure `OPENAI_API_KEY` is set in the environment. The mock
 proxies to `https://api.openai.com` (or `OPENAI_API_BASE` if set).

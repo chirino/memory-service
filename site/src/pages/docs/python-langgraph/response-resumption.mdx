@@ -1,0 +1,145 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: LangGraph Response Resumption
+description: Streaming responses with resume-check, resume, and cancel endpoints.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide covers streaming responses, response resumption, and cancellation so users can reconnect after a disconnect and continue where they left off.
+
+For the protocol and behavior model, see [Response Resumption Concepts](/docs/concepts/response-resumption/).
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [python/examples/langgraph/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/03-with-history)
+
+Make sure you've completed:
+- [LangGraph Getting Started](/docs/python-langgraph/getting-started/) - Minimal agent + memory checkpointer
+- [LangGraph Conversation History](/docs/python-langgraph/conversation-history/) - History recording and conversation APIs
+
+Also complete **Step 2** in [LangGraph Dev Setup](/docs/python-langgraph/dev-setup/) (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Streaming Responses
+
+Checkpoint `05` updates `/chat/{conversation_id}` to stream the response back to the client using `StreamingResponse` with `MemoryServiceResponseResumer`.
+
+### New Imports in Checkpoint 05
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/05-response-resumption/app.py"
+  lang="python"
+  lines="5-19"
+/>
+
+**What changed**: `JSONResponse` and `StreamingResponse` are added from `fastapi.responses`, and `MemoryServiceResponseResumer` and `extract_assistant_text` are imported from `memory_service_langchain`.
+
+**Why**: `StreamingResponse` is needed to return text incrementally rather than buffering the full reply. `MemoryServiceResponseResumer` tracks the in-progress stream so it can be replayed or canceled from a separate request. `extract_assistant_text` pulls the final assistant text out of the completed `graph.ainvoke()` result dict.
+
+### What Changes in `chat(...)`
+
+Checkpoint `05` wraps the chat handler's response in a `StreamingResponse` backed by `MemoryServiceResponseResumer`:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/05-response-resumption/app.py"
+  lang="python"
+  lines="54-74"
+/>
+
+**What changed**: The graph is invoked with `graph.ainvoke()` inside a `memory_service_scope` block (same as checkpoints 03/04). After the graph completes, `extract_assistant_text(result)` pulls out the assistant's reply text. `resumer.stream(conversation_id, ai_text)` registers the text as a resumable stream and yields its tokens, and the endpoint returns a `StreamingResponse` over that stream.
+
+**Why**: FastAPI middleware resets authentication context variables in its `finally` block before the `StreamingResponse` body is iterated by the server. If the graph ran inside the streaming generator instead, those variables would be `None` when the checkpoint saver and history middleware make calls to the memory service. Running `graph.ainvoke()` synchronously within the request context — before the middleware's `finally` block runs — ensures authentication is available throughout the graph execution. `resumer.stream()` then provides the streaming and resumption capability without requiring auth at stream time.
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/05-response-resumption">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Start a streaming response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should match pattern "\\w+"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/12b08143-3edb-4a86-a34e-e91aacc7fc02 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Write a short story about a cat."
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Response Resumption APIs
+
+Checkpoint `05` also exposes three endpoints backed by `MemoryServiceResponseResumer`:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/05-response-resumption/app.py"
+  lang="python"
+  lines="105-127"
+/>
+
+**What changed**: Three new endpoints are added: `POST /v1/conversations/resume-check`, `GET /v1/conversations/{conversation_id}/resume`, and `POST /v1/conversations/{conversation_id}/cancel`, all backed by the `resumer` instance.
+
+**Why**: `resume-check` accepts a list of conversation IDs and returns which ones have an active in-progress stream — useful for a frontend polling on load to decide whether to show a "Reconnect" button. `resume` replays the buffered tokens from a prior stream so a disconnected client can catch up without the agent re-invoking the model. `cancel` signals the generator to stop and clears the buffer, freeing resources when the user navigates away.
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/05-response-resumption">
+
+Check whether a conversation has an in-progress response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "["
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '["12b08143-3edb-4a86-a34e-e91aacc7fc02"]'
+```
+
+</CurlTest>
+
+</TestScenario>
+
+Resume manually from another terminal:
+
+```bash
+curl -NsSfX GET http://localhost:9090/v1/conversations/12b08143-3edb-4a86-a34e-e91aacc7fc02/resume \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+Cancel manually:
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/12b08143-3edb-4a86-a34e-e91aacc7fc02/cancel \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+## Completed Checkpoint
+
+**Completed code**: View the full implementation at [python/examples/langgraph/doc-checkpoints/05-response-resumption](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/05-response-resumption)
+
+## Next Steps
+
+Continue to:
+- [Sharing](/docs/python-langgraph/sharing/) - Membership and ownership transfer APIs
+- [Indexing and Search](/docs/python-langgraph/indexing-and-search/) - Indexed content and semantic/full-text search

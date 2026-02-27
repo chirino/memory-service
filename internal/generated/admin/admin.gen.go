@@ -261,6 +261,41 @@ type LabeledTimeSeries struct {
 	Label string `json:"label"`
 }
 
+// MemoryIndexRunStats defines model for MemoryIndexRunStats.
+type MemoryIndexRunStats struct {
+	Embedded           *int `json:"embedded,omitempty"`
+	Failures           *int `json:"failures,omitempty"`
+	Pending            *int `json:"pending,omitempty"`
+	Processed          *int `json:"processed,omitempty"`
+	SkippedNoEmbedding *int `json:"skipped_no_embedding,omitempty"`
+	VectorDeletes      *int `json:"vector_deletes,omitempty"`
+	VectorUpserts      *int `json:"vector_upserts,omitempty"`
+}
+
+// MemoryIndexStatusResponse defines model for MemoryIndexStatusResponse.
+type MemoryIndexStatusResponse struct {
+	// Pending Number of memories where `indexed_at` is null.
+	Pending *int64 `json:"pending,omitempty"`
+}
+
+// MemoryIndexTriggerResponse defines model for MemoryIndexTriggerResponse.
+type MemoryIndexTriggerResponse struct {
+	Stats     *MemoryIndexRunStats `json:"stats,omitempty"`
+	Triggered *bool                `json:"triggered,omitempty"`
+}
+
+// MemoryPolicyBundle defines model for MemoryPolicyBundle.
+type MemoryPolicyBundle struct {
+	// Attributes Rego source for `package memories.attributes`.
+	Attributes string `json:"attributes"`
+
+	// Authz Rego source for `package memories.authz`.
+	Authz string `json:"authz"`
+
+	// Filter Rego source for `package memories.filter`.
+	Filter string `json:"filter"`
+}
+
 // MultiSeriesResponse Multi-series time series data for metrics grouped by a label (e.g., operation type).
 type MultiSeriesResponse struct {
 	// Metric Metric identifier (e.g., "store_latency_p95", "store_throughput").
@@ -554,6 +589,9 @@ type GetStoreThroughputParams struct {
 	Step *StatsStep `form:"step,omitempty" json:"step,omitempty"`
 }
 
+// AdminPutMemoryPoliciesJSONRequestBody defines body for AdminPutMemoryPolicies for application/json ContentType.
+type AdminPutMemoryPoliciesJSONRequestBody = MemoryPolicyBundle
+
 // AdminDeleteAttachmentJSONRequestBody defines body for AdminDeleteAttachment for application/json ContentType.
 type AdminDeleteAttachmentJSONRequestBody = AdminActionRequest
 
@@ -571,6 +609,21 @@ type AdminEvictJSONRequestBody = EvictRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Get episodic memory indexing queue status
+	// (GET /admin/v1/memories/index/status)
+	AdminGetMemoryIndexStatus(c *gin.Context)
+	// Trigger one episodic memory indexing cycle
+	// (POST /admin/v1/memories/index/trigger)
+	AdminTriggerMemoryIndex(c *gin.Context)
+	// Download active episodic memory policy bundle
+	// (GET /admin/v1/memories/policies)
+	AdminGetMemoryPolicies(c *gin.Context)
+	// Upload episodic memory policy bundle
+	// (PUT /admin/v1/memories/policies)
+	AdminPutMemoryPolicies(c *gin.Context)
+	// Force-delete an episodic memory by ID
+	// (DELETE /admin/v1/memories/{id})
+	AdminDeleteMemory(c *gin.Context, id openapi_types.UUID)
 	// List all attachments across users (admin/auditor)
 	// (GET /v1/admin/attachments)
 	AdminListAttachments(c *gin.Context, params AdminListAttachmentsParams)
@@ -647,6 +700,92 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// AdminGetMemoryIndexStatus operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetMemoryIndexStatus(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminGetMemoryIndexStatus(c)
+}
+
+// AdminTriggerMemoryIndex operation middleware
+func (siw *ServerInterfaceWrapper) AdminTriggerMemoryIndex(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminTriggerMemoryIndex(c)
+}
+
+// AdminGetMemoryPolicies operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetMemoryPolicies(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminGetMemoryPolicies(c)
+}
+
+// AdminPutMemoryPolicies operation middleware
+func (siw *ServerInterfaceWrapper) AdminPutMemoryPolicies(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminPutMemoryPolicies(c)
+}
+
+// AdminDeleteMemory operation middleware
+func (siw *ServerInterfaceWrapper) AdminDeleteMemory(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminDeleteMemory(c, id)
+}
 
 // AdminListAttachments operation middleware
 func (siw *ServerInterfaceWrapper) AdminListAttachments(c *gin.Context) {
@@ -1613,6 +1752,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/admin/v1/memories/index/status", wrapper.AdminGetMemoryIndexStatus)
+	router.POST(options.BaseURL+"/admin/v1/memories/index/trigger", wrapper.AdminTriggerMemoryIndex)
+	router.GET(options.BaseURL+"/admin/v1/memories/policies", wrapper.AdminGetMemoryPolicies)
+	router.PUT(options.BaseURL+"/admin/v1/memories/policies", wrapper.AdminPutMemoryPolicies)
+	router.DELETE(options.BaseURL+"/admin/v1/memories/:id", wrapper.AdminDeleteMemory)
 	router.GET(options.BaseURL+"/v1/admin/attachments", wrapper.AdminListAttachments)
 	router.DELETE(options.BaseURL+"/v1/admin/attachments/:id", wrapper.AdminDeleteAttachment)
 	router.GET(options.BaseURL+"/v1/admin/attachments/:id", wrapper.AdminGetAttachment)
@@ -1640,6 +1784,146 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 type ErrorJSONResponse ErrorResponse
 
 type NotFoundJSONResponse ErrorResponse
+
+type AdminGetMemoryIndexStatusRequestObject struct {
+}
+
+type AdminGetMemoryIndexStatusResponseObject interface {
+	VisitAdminGetMemoryIndexStatusResponse(w http.ResponseWriter) error
+}
+
+type AdminGetMemoryIndexStatus200JSONResponse MemoryIndexStatusResponse
+
+func (response AdminGetMemoryIndexStatus200JSONResponse) VisitAdminGetMemoryIndexStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminGetMemoryIndexStatusdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminGetMemoryIndexStatusdefaultJSONResponse) VisitAdminGetMemoryIndexStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AdminTriggerMemoryIndexRequestObject struct {
+}
+
+type AdminTriggerMemoryIndexResponseObject interface {
+	VisitAdminTriggerMemoryIndexResponse(w http.ResponseWriter) error
+}
+
+type AdminTriggerMemoryIndex200JSONResponse MemoryIndexTriggerResponse
+
+func (response AdminTriggerMemoryIndex200JSONResponse) VisitAdminTriggerMemoryIndexResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminTriggerMemoryIndexdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminTriggerMemoryIndexdefaultJSONResponse) VisitAdminTriggerMemoryIndexResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AdminGetMemoryPoliciesRequestObject struct {
+}
+
+type AdminGetMemoryPoliciesResponseObject interface {
+	VisitAdminGetMemoryPoliciesResponse(w http.ResponseWriter) error
+}
+
+type AdminGetMemoryPolicies200JSONResponse MemoryPolicyBundle
+
+func (response AdminGetMemoryPolicies200JSONResponse) VisitAdminGetMemoryPoliciesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminGetMemoryPoliciesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminGetMemoryPoliciesdefaultJSONResponse) VisitAdminGetMemoryPoliciesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AdminPutMemoryPoliciesRequestObject struct {
+	Body *AdminPutMemoryPoliciesJSONRequestBody
+}
+
+type AdminPutMemoryPoliciesResponseObject interface {
+	VisitAdminPutMemoryPoliciesResponse(w http.ResponseWriter) error
+}
+
+type AdminPutMemoryPolicies204Response struct {
+}
+
+func (response AdminPutMemoryPolicies204Response) VisitAdminPutMemoryPoliciesResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type AdminPutMemoryPoliciesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminPutMemoryPoliciesdefaultJSONResponse) VisitAdminPutMemoryPoliciesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AdminDeleteMemoryRequestObject struct {
+	Id openapi_types.UUID `json:"id"`
+}
+
+type AdminDeleteMemoryResponseObject interface {
+	VisitAdminDeleteMemoryResponse(w http.ResponseWriter) error
+}
+
+type AdminDeleteMemory204Response struct {
+}
+
+func (response AdminDeleteMemory204Response) VisitAdminDeleteMemoryResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type AdminDeleteMemorydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminDeleteMemorydefaultJSONResponse) VisitAdminDeleteMemoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
 
 type AdminListAttachmentsRequestObject struct {
 	Params AdminListAttachmentsParams
@@ -2592,6 +2876,21 @@ func (response GetHealthdefaultJSONResponse) VisitGetHealthResponse(w http.Respo
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// Get episodic memory indexing queue status
+	// (GET /admin/v1/memories/index/status)
+	AdminGetMemoryIndexStatus(ctx context.Context, request AdminGetMemoryIndexStatusRequestObject) (AdminGetMemoryIndexStatusResponseObject, error)
+	// Trigger one episodic memory indexing cycle
+	// (POST /admin/v1/memories/index/trigger)
+	AdminTriggerMemoryIndex(ctx context.Context, request AdminTriggerMemoryIndexRequestObject) (AdminTriggerMemoryIndexResponseObject, error)
+	// Download active episodic memory policy bundle
+	// (GET /admin/v1/memories/policies)
+	AdminGetMemoryPolicies(ctx context.Context, request AdminGetMemoryPoliciesRequestObject) (AdminGetMemoryPoliciesResponseObject, error)
+	// Upload episodic memory policy bundle
+	// (PUT /admin/v1/memories/policies)
+	AdminPutMemoryPolicies(ctx context.Context, request AdminPutMemoryPoliciesRequestObject) (AdminPutMemoryPoliciesResponseObject, error)
+	// Force-delete an episodic memory by ID
+	// (DELETE /admin/v1/memories/{id})
+	AdminDeleteMemory(ctx context.Context, request AdminDeleteMemoryRequestObject) (AdminDeleteMemoryResponseObject, error)
 	// List all attachments across users (admin/auditor)
 	// (GET /v1/admin/attachments)
 	AdminListAttachments(ctx context.Context, request AdminListAttachmentsRequestObject) (AdminListAttachmentsResponseObject, error)
@@ -2670,6 +2969,141 @@ func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareF
 type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
+}
+
+// AdminGetMemoryIndexStatus operation middleware
+func (sh *strictHandler) AdminGetMemoryIndexStatus(ctx *gin.Context) {
+	var request AdminGetMemoryIndexStatusRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetMemoryIndexStatus(ctx, request.(AdminGetMemoryIndexStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetMemoryIndexStatus")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminGetMemoryIndexStatusResponseObject); ok {
+		if err := validResponse.VisitAdminGetMemoryIndexStatusResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminTriggerMemoryIndex operation middleware
+func (sh *strictHandler) AdminTriggerMemoryIndex(ctx *gin.Context) {
+	var request AdminTriggerMemoryIndexRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminTriggerMemoryIndex(ctx, request.(AdminTriggerMemoryIndexRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminTriggerMemoryIndex")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminTriggerMemoryIndexResponseObject); ok {
+		if err := validResponse.VisitAdminTriggerMemoryIndexResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetMemoryPolicies operation middleware
+func (sh *strictHandler) AdminGetMemoryPolicies(ctx *gin.Context) {
+	var request AdminGetMemoryPoliciesRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetMemoryPolicies(ctx, request.(AdminGetMemoryPoliciesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetMemoryPolicies")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminGetMemoryPoliciesResponseObject); ok {
+		if err := validResponse.VisitAdminGetMemoryPoliciesResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminPutMemoryPolicies operation middleware
+func (sh *strictHandler) AdminPutMemoryPolicies(ctx *gin.Context) {
+	var request AdminPutMemoryPoliciesRequestObject
+
+	var body AdminPutMemoryPoliciesJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminPutMemoryPolicies(ctx, request.(AdminPutMemoryPoliciesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminPutMemoryPolicies")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminPutMemoryPoliciesResponseObject); ok {
+		if err := validResponse.VisitAdminPutMemoryPoliciesResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminDeleteMemory operation middleware
+func (sh *strictHandler) AdminDeleteMemory(ctx *gin.Context, id openapi_types.UUID) {
+	var request AdminDeleteMemoryRequestObject
+
+	request.Id = id
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminDeleteMemory(ctx, request.(AdminDeleteMemoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminDeleteMemory")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminDeleteMemoryResponseObject); ok {
+		if err := validResponse.VisitAdminDeleteMemoryResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // AdminListAttachments operation middleware
@@ -3314,106 +3748,114 @@ func (sh *strictHandler) GetHealth(ctx *gin.Context) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"jQAA",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

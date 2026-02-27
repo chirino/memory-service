@@ -28,6 +28,12 @@ import (
 )
 
 func TestSiteDocs(t *testing.T) {
+	globalScenarioUUIDRegistry.Reset()
+	globalCheckpointPathRegistry.Reset()
+	t.Cleanup(func() {
+		killAllActiveCheckpoints("suite cleanup")
+	})
+
 	// Find project root
 	projectRoot, err := findProjectRoot()
 	require.NoError(t, err, "find project root")
@@ -42,6 +48,10 @@ func TestSiteDocs(t *testing.T) {
 	// Java checkpoint docs depend on local 999-SNAPSHOT artifacts. Install them
 	// once up front so parallel scenario builds can resolve dependencies reliably.
 	ensureJavaCheckpointArtifacts(t, projectRoot, scenarios)
+
+	// Python checkpoint docs depend on locally-built wheels (memory-service-langchain,
+	// memory-service-langgraph). Build them once up front so uv sync can find them.
+	ensurePythonPackages(t, projectRoot, scenarios)
 
 	if len(scenarios) == 0 {
 		t.Skip("no scenarios found in test-scenarios.json")
@@ -106,10 +116,8 @@ func TestSiteDocs(t *testing.T) {
 	}
 
 	// Pretty output when -v is passed
-	for _, arg := range os.Args[1:] {
-		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
-			opts.Format = "pretty"
-		}
+	if testing.Verbose() {
+		opts.Format = "pretty"
 	}
 
 	// Pass through godog tag filters via GODOG_TAGS env var
@@ -172,11 +180,7 @@ func ensureScenariosJSON(t *testing.T, projectRoot string) string {
 		t.Helper()
 		cmd := exec.Command(name, args...)
 		cmd.Dir = siteDir
-		// Stream build output so the developer can see progress
-		cmd.Stdout = &testWriter{t: t, prefix: "[npm] "}
-		cmd.Stderr = cmd.Stdout
-		t.Logf("  > %s %s", name, fmt.Sprint(args))
-		if err := cmd.Run(); err != nil {
+		if err := runBuildCommand(t, cmd, "[npm] "); err != nil {
 			t.Fatalf("site build command %q failed: %v\n"+
 				"Fix the error above, or set SITE_TESTS_JSON to point to an existing test-scenarios.json.",
 				name+" "+fmt.Sprint(args), err)
@@ -218,12 +222,40 @@ func ensureJavaCheckpointArtifacts(t *testing.T, projectRoot string, scenarios [
 	}
 	cmd := exec.Command(mvnw, args...)
 	cmd.Dir = projectRoot
-	cmd.Stdout = &testWriter{t: t, prefix: "[mvn] "}
-	cmd.Stderr = cmd.Stdout
 
 	t.Logf("Installing Java checkpoint artifacts: %s %s", mvnw, strings.Join(args, " "))
-	if err := cmd.Run(); err != nil {
+	if err := runBuildCommand(t, cmd, "[mvn] "); err != nil {
 		t.Fatalf("failed to install Java checkpoint artifacts: %v", err)
+	}
+}
+
+func ensurePythonPackages(t *testing.T, projectRoot string, scenarios []ScenarioData) {
+	t.Helper()
+	needsLangchain := false
+	needsLanggraph := false
+	for _, s := range scenarios {
+		if strings.HasPrefix(s.Checkpoint, "python/examples/langchain/") {
+			needsLangchain = true
+		}
+		if strings.HasPrefix(s.Checkpoint, "python/examples/langgraph/") {
+			needsLanggraph = true
+		}
+	}
+	runBuild := func(dir string) {
+		t.Helper()
+		cmd := exec.Command("uv", "--directory="+dir, "build")
+		cmd.Dir = projectRoot
+		cmd.Env = append(os.Environ(), "VIRTUAL_ENV=")
+		t.Logf("Building Python package in %s", dir)
+		if err := runBuildCommand(t, cmd, "[uv-build] "); err != nil {
+			t.Fatalf("failed to build Python package in %s: %v", dir, err)
+		}
+	}
+	if needsLangchain {
+		runBuild("python/langchain")
+	}
+	if needsLanggraph {
+		runBuild("python/langgraph")
 	}
 }
 
@@ -256,3 +288,42 @@ func (w *testWriter) Write(p []byte) (int, error) {
 
 // Ensure testWriter satisfies io.Writer at compile time.
 var _ io.Writer = (*testWriter)(nil)
+
+func runBuildCommand(t *testing.T, cmd *exec.Cmd, prefix string) error {
+	t.Helper()
+
+	if shouldStreamBuildOutput() {
+		t.Logf("  > %s", cmd.String())
+		cmd.Stdout = &testWriter{t: t, prefix: prefix}
+		cmd.Stderr = cmd.Stdout
+		return cmd.Run()
+	}
+
+	f, err := os.CreateTemp("", "sitebdd-build-*.log")
+	if err != nil {
+		return fmt.Errorf("create temp build log: %w", err)
+	}
+	capturePath := f.Name()
+	cmd.Stdout = &prefixWriter{prefix: prefix, dst: f}
+	cmd.Stderr = cmd.Stdout
+
+	runErr := cmd.Run()
+	if closeErr := flushAndCloseBuildOutput(cmd.Stdout); closeErr != nil {
+		if runErr == nil {
+			return fmt.Errorf("flush/close build output: %w", closeErr)
+		}
+		fmt.Printf("[sitebdd] Warning: flush/close captured output failed: %v\n", closeErr)
+	}
+	defer os.Remove(capturePath)
+
+	if runErr != nil {
+		fmt.Printf("[sitebdd] Build command failed: %s\n", cmd.String())
+		if shouldReplayCapturedBuildOutput() {
+			if replayErr := replayBuildOutput(capturePath); replayErr != nil {
+				fmt.Printf("[sitebdd] Warning: replay captured output failed: %v\n", replayErr)
+			}
+		}
+		return runErr
+	}
+	return nil
+}

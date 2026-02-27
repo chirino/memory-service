@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -134,13 +135,23 @@ func (m *MockServer) SaveJournal(checkpointID string, journal []capturedCall) er
 }
 
 // fixtureDir returns the path to the fixture directory for a checkpoint.
-// Mapping: "quarkus/examples/chat-quarkus/01-basic-agent"
+// Mapping examples:
 //
-//	→ <fixturesDir>/quarkus/01-basic-agent
+//	"quarkus/examples/chat-quarkus/01-basic-agent"         → <fixturesDir>/quarkus/01-basic-agent
+//	"python/examples/langchain/doc-checkpoints/03-with-history" → <fixturesDir>/python-langchain/03-with-history
+//	"python/examples/langgraph/doc-checkpoints/30-memories"     → <fixturesDir>/python-langgraph/30-memories
 func (m *MockServer) fixtureDir(checkpointID string) string {
-	parts := strings.SplitN(checkpointID, "/", 2)
-	framework := parts[0]
 	name := lastSegment(checkpointID)
+	var framework string
+	switch {
+	case strings.HasPrefix(checkpointID, "python/") && strings.Contains(checkpointID, "/langchain/"):
+		framework = "python-langchain"
+	case strings.HasPrefix(checkpointID, "python/") && strings.Contains(checkpointID, "/langgraph/"):
+		framework = "python-langgraph"
+	default:
+		parts := strings.SplitN(checkpointID, "/", 2)
+		framework = parts[0]
+	}
 	return filepath.Join(m.fixturesDir, framework, name)
 }
 
@@ -191,7 +202,8 @@ func (m *MockServer) handleModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MockServer) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	uid := extractUID(r.Header.Get("Authorization"))
+	authHeader := r.Header.Get("Authorization")
+	uid := extractUID(authHeader)
 	state := m.getState(uid)
 
 	// Read request body (needed for recording and for detecting streaming)
@@ -225,14 +237,22 @@ func (m *MockServer) handleChatCompletions(w http.ResponseWriter, r *http.Reques
 			}
 			w.WriteHeader(status)
 			_, _ = w.Write([]byte(body))
-			fmt.Printf("[openai-mock] Served fixture %d for %s (uid=%s)\n", idx+1, checkpointID, uid)
 			return
 		}
-		fmt.Printf("[openai-mock] No fixture %d for %s, using fallback\n", idx+1, checkpointID)
+		m.fatalMockFailure(
+			"missing fixture during playback",
+			fmt.Sprintf("uid=%q checkpoint=%q fixtureIndex=%d auth=%q", uid, checkpointID, idx+1, authHeader),
+			reqBody,
+		)
+		return
+	} else {
+		m.fatalMockFailure(
+			"request had no registered scenario state",
+			fmt.Sprintf("uid=%q auth=%q", uid, authHeader),
+			reqBody,
+		)
+		return
 	}
-
-	// Fallback generic response
-	m.serveFallback(w, reqBody)
 }
 
 // loadFixture reads NNN.json for the given 0-based index from the fixture directory.
@@ -279,21 +299,10 @@ func (m *MockServer) loadFixture(checkpointID string, idx int) (body string, hea
 	return stub.Response.Body, stub.Response.Headers, s, true
 }
 
-// serveFallback returns a generic chat completion response.
-func (m *MockServer) serveFallback(w http.ResponseWriter, reqBody []byte) {
-	// Try to read the model name from the request body
-	model := "mock-gpt-markdown"
-	var req struct {
-		Model string `json:"model"`
-	}
-	if err := json.Unmarshal(reqBody, &req); err == nil && req.Model != "" {
-		model = req.Model
-	}
-
-	resp := fmt.Sprintf(`{"id":"chatcmpl-fallback","object":"chat.completion","created":1707440400,"model":%q,"choices":[{"index":0,"message":{"role":"assistant","content":"I am a helpful AI assistant. How can I help you today?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}`, model)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, _ = w.Write([]byte(resp))
+func (m *MockServer) fatalMockFailure(reason, context string, reqBody []byte) {
+	log.Printf("[openai-mock] FATAL: %s; %s; request-body=%s", reason, context, string(reqBody))
+	killAllActiveCheckpoints("mock fatal failure")
+	os.Exit(2)
 }
 
 // proxyToOpenAI forwards the request to the real OpenAI API and captures the response.
@@ -320,6 +329,9 @@ func (m *MockServer) proxyToOpenAI(w http.ResponseWriter, r *http.Request, reqBo
 		}
 	}
 	proxyReq.Header.Set("Authorization", "Bearer "+apiKey)
+	// Record plain JSON payloads so saved fixtures are replayable without
+	// Content-Encoding metadata.
+	proxyReq.Header.Set("Accept-Encoding", "identity")
 
 	client := &http.Client{}
 	resp, err := client.Do(proxyReq)

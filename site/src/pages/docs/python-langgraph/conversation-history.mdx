@@ -1,0 +1,191 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: LangGraph Conversation History
+description: Record conversation history and expose APIs for frontend applications.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide continues from [LangGraph Getting Started](/docs/python-langgraph/getting-started/) and shows how to record conversation history and expose APIs for frontend applications.
+
+## Prerequisites
+
+**Starting checkpoint**: View the code from the previous section at [python/examples/langgraph/doc-checkpoints/02-with-checkpointing](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/02-with-checkpointing)
+
+Make sure you've completed the [LangGraph Getting Started](/docs/python-langgraph/getting-started/) guide first. You should have:
+- A working LangGraph agent with Memory Service checkpointing
+- Memory Service running via Docker Compose
+- OIDC authentication configured
+
+Also complete **Step 2** in [LangGraph Dev Setup](/docs/python-langgraph/dev-setup/) (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Enable Conversation History Recording
+
+In the previous guide, you added conversation memory through LangGraph checkpointing. Frontend apps also need `history` channel entries to display conversation turns.
+
+To enable that, wire `MemoryServiceHistoryMiddleware` into the `call_model` node and bind request context:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py"
+  lang="python"
+  lines="27-47"
+/>
+
+**What changed**: `MemoryServiceHistoryMiddleware` is imported and instantiated, `call_model` is updated to call `history_middleware.wrap_model_call(user_text, lambda: model.invoke(messages))`, and the endpoint wraps `graph.ainvoke()` in a `with memory_service_scope(conversation_id):` block.
+
+**Why**: `wrap_model_call` records the user's message and the AI response as a paired `history` entry in Memory Service after every turn. The `memory_service_scope(conversation_id)` context manager must be set in the endpoint — not inside the graph node — so the middleware knows which conversation to write to. Without `memory_service_scope`, the middleware has no conversation ID and cannot write history entries.
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/03-with-history">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Now test it again.
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "42"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/53d23c96-6b29-4fbb-879d-db18bf4d94ff \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Give me a random number between 1 and 100."
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Expose Conversation Entries API
+
+Checkpoint `03` exposes conversation endpoints for frontend apps:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py"
+  lang="python"
+  lines="76-96"
+/>
+
+**What changed**: `GET /v1/conversations/{conversation_id}` and `GET /v1/conversations/{conversation_id}/entries` are added, both implemented by forwarding to `MemoryServiceProxy`. The entries endpoint hard-codes `channel="history"` so callers always receive recorded conversation turns.
+
+**Why**: Frontend apps need these endpoints to display conversation metadata and message history. `MemoryServiceProxy` forwards the request — along with the user's bearer token — to Memory Service, then translates the response into a FastAPI-compatible format via `to_fastapi_response`. Hard-coding `channel="history"` prevents frontend apps from accidentally reading low-level `memory` channel entries written by the checkpointer.
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/03-with-history">
+
+Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "53d23c96-6b29-4fbb-879d-db18bf4d94ff"
+And the response should contain "ownerUserId"
+And the response should contain "bob"
+And the response should contain "accessLevel"
+And the response should contain "owner"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/53d23c96-6b29-4fbb-879d-db18bf4d94ff \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response body should be json:
+"""
+{
+  "data": [
+    {
+      "id": "%{response.body.data[0].id}",
+      "conversationId": "53d23c96-6b29-4fbb-879d-db18bf4d94ff",
+      "userId": "bob",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Give me a random number between 1 and 100."}],
+      "createdAt": "%{response.body.data[0].createdAt}"
+    },
+    {
+      "id": "%{response.body.data[1].id}",
+      "conversationId": "53d23c96-6b29-4fbb-879d-db18bf4d94ff",
+      "userId": "bob",
+      "channel": "history",
+      "contentType": "history",
+      "content": [{"role": "AI", "text": "%{response.body.data[1].content[0].text}"}],
+      "createdAt": "%{response.body.data[1].createdAt}"
+    }
+  ],
+  "afterCursor": null
+}
+"""
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/53d23c96-6b29-4fbb-879d-db18bf4d94ff/entries \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Expose Conversation Listing API
+
+To let users see all conversations they can access, expose `GET /v1/conversations`:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py"
+  lang="python"
+  lines="99-107"
+/>
+
+**What changed**: `GET /v1/conversations` is added, forwarding `mode`, `afterCursor`, `limit`, and `query` parameters to `proxy.list_conversations()`.
+
+**Why**: Users need a way to retrieve all conversations they have access to — not just a single conversation by ID. By proxying these parameters directly, frontend apps can support pagination (`afterCursor`, `limit`) and full-text search (`query`) over the conversation list without the agent app implementing any listing logic itself.
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/03-with-history">
+
+Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "ownerUserId"
+And the response should contain "bob"
+And the response should contain "accessLevel"
+And the response should contain "owner"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Completed Checkpoint
+
+**Completed code**: View the full implementation at [python/examples/langgraph/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/03-with-history)
+
+## Next Steps
+
+Continue to:
+- [Indexing and Search](/docs/python-langgraph/indexing-and-search/) — Add search indexing and semantic search to your conversations
+- [Conversation Forking](/docs/python-langgraph/conversation-forking/) — Branch conversations to explore alternative paths
+- [Response Resumption](/docs/python-langgraph/response-resumption/) — Streaming responses with resume and cancel support

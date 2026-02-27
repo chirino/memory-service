@@ -1264,6 +1264,300 @@ var SearchService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	MemoriesService_PutMemory_FullMethodName            = "/memory.v1.MemoriesService/PutMemory"
+	MemoriesService_GetMemory_FullMethodName            = "/memory.v1.MemoriesService/GetMemory"
+	MemoriesService_DeleteMemory_FullMethodName         = "/memory.v1.MemoriesService/DeleteMemory"
+	MemoriesService_SearchMemories_FullMethodName       = "/memory.v1.MemoriesService/SearchMemories"
+	MemoriesService_ListMemoryNamespaces_FullMethodName = "/memory.v1.MemoriesService/ListMemoryNamespaces"
+	MemoriesService_GetMemoryIndexStatus_FullMethodName = "/memory.v1.MemoriesService/GetMemoryIndexStatus"
+)
+
+// MemoriesServiceClient is the client API for MemoriesService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type MemoriesServiceClient interface {
+	PutMemory(ctx context.Context, in *PutMemoryRequest, opts ...grpc.CallOption) (*MemoryWriteResult, error)
+	GetMemory(ctx context.Context, in *GetMemoryRequest, opts ...grpc.CallOption) (*MemoryItem, error)
+	DeleteMemory(ctx context.Context, in *DeleteMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	SearchMemories(ctx context.Context, in *SearchMemoriesRequest, opts ...grpc.CallOption) (*SearchMemoriesResponse, error)
+	ListMemoryNamespaces(ctx context.Context, in *ListMemoryNamespacesRequest, opts ...grpc.CallOption) (*ListMemoryNamespacesResponse, error)
+	// Admin-only: returns count of memories with pending index synchronization.
+	GetMemoryIndexStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MemoryIndexStatusResponse, error)
+}
+
+type memoriesServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewMemoriesServiceClient(cc grpc.ClientConnInterface) MemoriesServiceClient {
+	return &memoriesServiceClient{cc}
+}
+
+func (c *memoriesServiceClient) PutMemory(ctx context.Context, in *PutMemoryRequest, opts ...grpc.CallOption) (*MemoryWriteResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MemoryWriteResult)
+	err := c.cc.Invoke(ctx, MemoriesService_PutMemory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *memoriesServiceClient) GetMemory(ctx context.Context, in *GetMemoryRequest, opts ...grpc.CallOption) (*MemoryItem, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MemoryItem)
+	err := c.cc.Invoke(ctx, MemoriesService_GetMemory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *memoriesServiceClient) DeleteMemory(ctx context.Context, in *DeleteMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, MemoriesService_DeleteMemory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *memoriesServiceClient) SearchMemories(ctx context.Context, in *SearchMemoriesRequest, opts ...grpc.CallOption) (*SearchMemoriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchMemoriesResponse)
+	err := c.cc.Invoke(ctx, MemoriesService_SearchMemories_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *memoriesServiceClient) ListMemoryNamespaces(ctx context.Context, in *ListMemoryNamespacesRequest, opts ...grpc.CallOption) (*ListMemoryNamespacesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMemoryNamespacesResponse)
+	err := c.cc.Invoke(ctx, MemoriesService_ListMemoryNamespaces_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *memoriesServiceClient) GetMemoryIndexStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MemoryIndexStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MemoryIndexStatusResponse)
+	err := c.cc.Invoke(ctx, MemoriesService_GetMemoryIndexStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// MemoriesServiceServer is the server API for MemoriesService service.
+// All implementations must embed UnimplementedMemoriesServiceServer
+// for forward compatibility.
+type MemoriesServiceServer interface {
+	PutMemory(context.Context, *PutMemoryRequest) (*MemoryWriteResult, error)
+	GetMemory(context.Context, *GetMemoryRequest) (*MemoryItem, error)
+	DeleteMemory(context.Context, *DeleteMemoryRequest) (*emptypb.Empty, error)
+	SearchMemories(context.Context, *SearchMemoriesRequest) (*SearchMemoriesResponse, error)
+	ListMemoryNamespaces(context.Context, *ListMemoryNamespacesRequest) (*ListMemoryNamespacesResponse, error)
+	// Admin-only: returns count of memories with pending index synchronization.
+	GetMemoryIndexStatus(context.Context, *emptypb.Empty) (*MemoryIndexStatusResponse, error)
+	mustEmbedUnimplementedMemoriesServiceServer()
+}
+
+// UnimplementedMemoriesServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedMemoriesServiceServer struct{}
+
+func (UnimplementedMemoriesServiceServer) PutMemory(context.Context, *PutMemoryRequest) (*MemoryWriteResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutMemory not implemented")
+}
+func (UnimplementedMemoriesServiceServer) GetMemory(context.Context, *GetMemoryRequest) (*MemoryItem, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMemory not implemented")
+}
+func (UnimplementedMemoriesServiceServer) DeleteMemory(context.Context, *DeleteMemoryRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteMemory not implemented")
+}
+func (UnimplementedMemoriesServiceServer) SearchMemories(context.Context, *SearchMemoriesRequest) (*SearchMemoriesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchMemories not implemented")
+}
+func (UnimplementedMemoriesServiceServer) ListMemoryNamespaces(context.Context, *ListMemoryNamespacesRequest) (*ListMemoryNamespacesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMemoryNamespaces not implemented")
+}
+func (UnimplementedMemoriesServiceServer) GetMemoryIndexStatus(context.Context, *emptypb.Empty) (*MemoryIndexStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMemoryIndexStatus not implemented")
+}
+func (UnimplementedMemoriesServiceServer) mustEmbedUnimplementedMemoriesServiceServer() {}
+func (UnimplementedMemoriesServiceServer) testEmbeddedByValue()                         {}
+
+// UnsafeMemoriesServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MemoriesServiceServer will
+// result in compilation errors.
+type UnsafeMemoriesServiceServer interface {
+	mustEmbedUnimplementedMemoriesServiceServer()
+}
+
+func RegisterMemoriesServiceServer(s grpc.ServiceRegistrar, srv MemoriesServiceServer) {
+	// If the following call panics, it indicates UnimplementedMemoriesServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&MemoriesService_ServiceDesc, srv)
+}
+
+func _MemoriesService_PutMemory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutMemoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoriesServiceServer).PutMemory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoriesService_PutMemory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoriesServiceServer).PutMemory(ctx, req.(*PutMemoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MemoriesService_GetMemory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMemoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoriesServiceServer).GetMemory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoriesService_GetMemory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoriesServiceServer).GetMemory(ctx, req.(*GetMemoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MemoriesService_DeleteMemory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteMemoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoriesServiceServer).DeleteMemory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoriesService_DeleteMemory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoriesServiceServer).DeleteMemory(ctx, req.(*DeleteMemoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MemoriesService_SearchMemories_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchMemoriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoriesServiceServer).SearchMemories(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoriesService_SearchMemories_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoriesServiceServer).SearchMemories(ctx, req.(*SearchMemoriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MemoriesService_ListMemoryNamespaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMemoryNamespacesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoriesServiceServer).ListMemoryNamespaces(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoriesService_ListMemoryNamespaces_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoriesServiceServer).ListMemoryNamespaces(ctx, req.(*ListMemoryNamespacesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MemoriesService_GetMemoryIndexStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoriesServiceServer).GetMemoryIndexStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoriesService_GetMemoryIndexStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoriesServiceServer).GetMemoryIndexStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// MemoriesService_ServiceDesc is the grpc.ServiceDesc for MemoriesService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var MemoriesService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "memory.v1.MemoriesService",
+	HandlerType: (*MemoriesServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "PutMemory",
+			Handler:    _MemoriesService_PutMemory_Handler,
+		},
+		{
+			MethodName: "GetMemory",
+			Handler:    _MemoriesService_GetMemory_Handler,
+		},
+		{
+			MethodName: "DeleteMemory",
+			Handler:    _MemoriesService_DeleteMemory_Handler,
+		},
+		{
+			MethodName: "SearchMemories",
+			Handler:    _MemoriesService_SearchMemories_Handler,
+		},
+		{
+			MethodName: "ListMemoryNamespaces",
+			Handler:    _MemoriesService_ListMemoryNamespaces_Handler,
+		},
+		{
+			MethodName: "GetMemoryIndexStatus",
+			Handler:    _MemoriesService_GetMemoryIndexStatus_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "memory/v1/memory_service.proto",
+}
+
+const (
 	ResponseRecorderService_Record_FullMethodName          = "/memory.v1.ResponseRecorderService/Record"
 	ResponseRecorderService_Replay_FullMethodName          = "/memory.v1.ResponseRecorderService/Replay"
 	ResponseRecorderService_Cancel_FullMethodName          = "/memory.v1.ResponseRecorderService/Cancel"

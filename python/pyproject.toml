@@ -1,0 +1,6 @@
+[tool.uv.workspace]
+members = [
+  "langgraph",
+  "langchain",
+  "examples/langchain/chat-python",
+]

@@ -492,6 +492,47 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Destination: &cfg.IndexerClients,
 			Usage:       "Comma-separated API client IDs with indexer permissions",
 		},
+		// ── Episodic Memory ───────────────────────────────────────
+		&cli.IntFlag{
+			Name:        "episodic-max-depth",
+			Category:    "Episodic Memory:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EPISODIC_MAX_DEPTH"),
+			Destination: &cfg.EpisodicMaxDepth,
+			Value:       cfg.EpisodicMaxDepth,
+			Usage:       "Maximum namespace depth for episodic memory",
+		},
+		&cli.StringFlag{
+			Name:        "episodic-policy-dir",
+			Category:    "Episodic Memory:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EPISODIC_POLICY_DIR"),
+			Destination: &cfg.EpisodicPolicyDir,
+			Usage:       "Directory containing OPA Rego policies for episodic memory (authz.rego, attributes.rego, filter.rego); defaults to built-in policies",
+		},
+		&cli.IntFlag{
+			Name:        "episodic-indexing-batch-size",
+			Category:    "Episodic Memory:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EPISODIC_INDEXING_BATCH_SIZE"),
+			Destination: &cfg.EpisodicIndexingBatchSize,
+			Value:       cfg.EpisodicIndexingBatchSize,
+			Usage:       "Items processed per episodic indexer cycle",
+		},
+		&cli.IntFlag{
+			Name:        "episodic-eviction-batch-size",
+			Category:    "Episodic Memory:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EPISODIC_EVICTION_BATCH_SIZE"),
+			Destination: &cfg.EpisodicEvictionBatchSize,
+			Value:       cfg.EpisodicEvictionBatchSize,
+			Usage:       "Max soft-deleted rows processed per episodic eviction pass",
+		},
+		&cli.DurationFlag{
+			Name:        "episodic-tombstone-retention",
+			Category:    "Episodic Memory:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EPISODIC_TOMBSTONE_RETENTION"),
+			Destination: &cfg.EpisodicTombstoneRetention,
+			Value:       cfg.EpisodicTombstoneRetention,
+			Usage:       "How long to retain delete/expired tombstones for event history (default 90d)",
+		},
+
 		// ── Monitoring ────────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "prometheus-url",

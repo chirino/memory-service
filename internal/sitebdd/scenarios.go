@@ -13,9 +13,10 @@ import (
 
 // ScenarioData mirrors the JSON structure produced by the Astro build.
 type ScenarioData struct {
-	Checkpoint string        `json:"checkpoint"`
-	SourceFile string        `json:"sourceFile"`
-	Scenarios  []ScenarioCmd `json:"scenarios"`
+	Checkpoint  string        `json:"checkpoint"`
+	SourceFile  string        `json:"sourceFile"`
+	Description string        `json:"description,omitempty"`
+	Scenarios   []ScenarioCmd `json:"scenarios"`
 }
 
 type ScenarioCmd struct {
@@ -124,9 +125,12 @@ func writeScenario(sb *strings.Builder, s ScenarioData) error {
 	}
 
 	framework := deriveFramework(s.SourceFile)
-	featureName := deriveFeatureName(s.SourceFile)
+	title := s.Description
+	if title == "" {
+		title = deriveFeatureName(s.SourceFile)
+	}
 	checkpointName := lastSegment(s.Checkpoint)
-	sb.WriteString(fmt.Sprintf("  Scenario: [%s] %s - %s\n", framework, featureName, checkpointName))
+	sb.WriteString(fmt.Sprintf("  Scenario: [%s] %s - %s\n", framework, title, checkpointName))
 	sb.WriteString(fmt.Sprintf("    # From %s\n", s.SourceFile))
 
 	sb.WriteString(fmt.Sprintf("    Given checkpoint %q is active\n", s.Checkpoint))
@@ -219,8 +223,12 @@ func deriveTags(s ScenarioData) []string {
 
 func deriveFramework(sourceFile string) string {
 	switch {
+	case strings.HasPrefix(sourceFile, "/docs/python-langchain/"):
+		return "python-langchain"
+	case strings.HasPrefix(sourceFile, "/docs/python-langgraph/"):
+		return "python-langgraph"
 	case strings.HasPrefix(sourceFile, "/docs/python/"):
-		return "python"
+		return "python-langchain" // legacy URL prefix
 	case strings.HasPrefix(sourceFile, "/docs/quarkus/"):
 		return "quarkus"
 	case strings.HasPrefix(sourceFile, "/docs/spring/"):

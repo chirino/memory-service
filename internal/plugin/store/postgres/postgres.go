@@ -915,19 +915,43 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 		title := inferTitleFromEntries(entries)
 		detail, err := s.createConversationWithID(ctx, userID, conversationID, title, nil, forkedAtConvID, forkedAtEntryID)
 		if err != nil {
-			return nil, err
-		}
-		encTitle, err := s.encrypt([]byte(detail.Title))
-		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt title: %w", err)
-		}
-		conv = model.Conversation{
-			ID:                  detail.ID,
-			ConversationGroupID: detail.ConversationGroupID,
-			OwnerUserID:         detail.OwnerUserID,
-			Title:               encTitle,
-			CreatedAt:           detail.CreatedAt,
-			UpdatedAt:           detail.UpdatedAt,
+			// Concurrent writers can race to auto-create the same root conversation.
+			// If another request won the insert, load the conversation and continue.
+			var pgErr *pgconn.PgError
+			if !(errors.As(err, &pgErr) && pgErr.Code == "23505") {
+				return nil, err
+			}
+			loaded := false
+			for attempt := 0; attempt < 10; attempt++ {
+				convResult = s.db.WithContext(ctx).
+					Where("id = ? AND deleted_at IS NULL", conversationID).
+					Limit(1).
+					Find(&conv)
+				if convResult.Error != nil {
+					return nil, convResult.Error
+				}
+				if convResult.RowsAffected > 0 {
+					loaded = true
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if !loaded {
+				return nil, err
+			}
+		} else {
+			encTitle, err := s.encrypt([]byte(detail.Title))
+			if err != nil {
+				return nil, fmt.Errorf("failed to encrypt title: %w", err)
+			}
+			conv = model.Conversation{
+				ID:                  detail.ID,
+				ConversationGroupID: detail.ConversationGroupID,
+				OwnerUserID:         detail.OwnerUserID,
+				Title:               encTitle,
+				CreatedAt:           detail.CreatedAt,
+				UpdatedAt:           detail.UpdatedAt,
+			}
 		}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {

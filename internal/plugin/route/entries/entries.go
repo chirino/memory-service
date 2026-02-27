@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -554,6 +555,7 @@ func handleError(c *gin.Context, err error) {
 	case errors.As(err, &forbidden):
 		c.JSON(http.StatusForbidden, gin.H{"code": "forbidden", "error": err.Error()})
 	default:
+		log.Printf("[entries] internal error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}
 }

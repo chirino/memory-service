@@ -40,9 +40,9 @@ Update your controller to include the history advisor:
   lang="java"
 />
 
-The `historyAdvisor` automatically records:
-- User messages before calling the LLM
-- Complete agent responses after the call completes
+**What changed**: A `ConversationHistoryStreamAdvisorBuilder` is injected and used to create a `historyAdvisor` that is registered alongside the existing memory advisor. The history advisor is listed first so it intercepts both the outgoing user message and the incoming AI response.
+
+**Why**: The memory advisor only writes messages to the internal `memory` channel that the LLM uses for context; it does not produce entries visible in a frontend UI. The history advisor writes to the `history` channel, which is what the demo app (and any chat frontend) reads to display the conversation thread to the user.
 
 Run your agent again:
 
@@ -79,7 +79,7 @@ you should see the messages that were exchanged between you and the agent.
 
 ## Expose Conversation APIs
 
-The Memory Service starter auto-configures a `MemoryServiceProxy` bean that makes it easy to expose conversation APIs to your frontend. This helper handles authentication with the memory service and passes through the user's bearer token for authorization.
+The Memory Service starter auto-configures a `MemoryServiceProxy` bean that makes it easy to expose conversation APIs to your frontend.
 
 Create a REST controller that proxies requests to Memory Service:
 
@@ -87,6 +87,10 @@ Create a REST controller that proxies requests to Memory Service:
   file="spring/examples/doc-checkpoints/03-with-history/src/main/java/com/example/demo/MemoryServiceProxyController.java"
   lang="java"
 />
+
+**What changed**: A new `MemoryServiceProxyController` is introduced, mapping to `/v1/conversations`. It injects the auto-configured `MemoryServiceProxy` bean and exposes three endpoints: `GET /{conversationId}` to fetch a single conversation, `GET /{conversationId}/entries` to list its messages (filtered by channel, cursor, and epoch), and `GET /` to list all conversations with pagination and query filtering.
+
+**Why**: Frontend SPAs and mobile clients need to query conversation data directly without going through the agent's chat endpoint. By proxying these calls through your Spring Boot app, the Memory Service never needs to be exposed to the public internet, and the `MemoryServiceProxy` handles auth forwarding — it injects the service-account API key for the backend leg while propagating the user's Bearer token for access control.
 
 The `MemoryServiceProxy` also handles proper error handling and response mapping.
 
@@ -119,22 +123,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations/564f4b5f-789c-473b-adbf-44
 
 </CurlTest>
 
-Example response:
-
-```json
-{
-  "id": "564f4b5f-789c-473b-adbf-44ed85de5550",
-  "title": "Give me a random number between 1 and 10",
-  "ownerUserId": "bob",
-  "createdAt": "2025-01-10T14:32:05Z",
-  "updatedAt": "2025-01-10T14:32:06Z",
-  "lastMessagePreview": null,
-  "accessLevel": "owner",
-  "forkedAtEntryId": null,
-  "forkedAtConversationId": null
-}
-```
-
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Give me a random number"
@@ -154,7 +142,7 @@ Example response:
 {
   "data": [
     {
-      "id": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+      "id": "ca29a4e1-f112-44d2-8a5b-425f3b3bccce",
       "conversationId": "564f4b5f-789c-473b-adbf-44ed85de5550",
       "userId": "bob",
       "channel": "history",
@@ -164,7 +152,7 @@ Example response:
       "createdAt": "2025-01-10T14:32:05Z"
     },
     {
-      "id": "267158af-48bf-4000-b25b-c4f9932a48f4",
+      "id": "c13fbe60-1162-4c7b-b48c-e759a490c089",
       "conversationId": "564f4b5f-789c-473b-adbf-44ed85de5550",
       "userId": "bob",
       "channel": "history",
@@ -179,8 +167,6 @@ Example response:
 ```
 
 </TestScenario>
-
-You should see the conversation and entries that were exchanged between you and the agent.
 
 ## Expose Conversation Listing API
 

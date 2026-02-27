@@ -28,6 +28,8 @@ Update the `Agent.java` to use streaming responses:
   lang="java"
 />
 
+**What changed**: The `chat` method return type changed from `String` to `Multi<String>`. **Why**: `Multi<String>` is Mutiny's reactive stream type and tells LangChain4j to emit each token as it arrives from the LLM rather than waiting for the complete response. This is a prerequisite for streaming to clients and for response resumption — the Memory Service can only replay a stream if it was produced as a stream in the first place.
+
 Update the `HistoryRecordingAgent.java` to use streaming responses:
 
 <CodeFromFile
@@ -35,12 +37,16 @@ Update the `HistoryRecordingAgent.java` to use streaming responses:
   lang="java"
 />
 
+**What changed**: The wrapper's `chat` method return type was updated from `String` to `Multi<String>` to match the agent. **Why**: The `@RecordConversation` interceptor needs to observe the full token stream to record the complete response only after it finishes. By passing through `Multi<String>`, the interceptor can transparently tap into the stream, accumulate tokens, and write the final entry to the history channel once the stream completes.
+
 Update `ChatResource.java` to use Server Sent Events (SSE) to stream the responses to the client:
 
 <CodeFromFile
   file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/ChatResource.java"
   lang="java"
 />
+
+**What changed**: The `chat` method now returns `Multi<String>` instead of `String`. **Why**: Returning a reactive stream from a JAX-RS endpoint causes Quarkus RESTEasy Reactive to automatically stream each emitted token to the HTTP client as a Server-Sent Event. The client receives tokens incrementally as the LLM produces them, instead of waiting for the full response.
 
 <TestScenario checkpoint="quarkus/examples/doc-checkpoints/05-response-resumption">
 
@@ -70,15 +76,12 @@ and you should see the response streaming to the browser.
 
 ## Response Resumption
 
-The following creates a REST endpoint that will allow us to:
-* Check if a conversation has a response that is in progress
-* Resume a response that is in progress
-* Cancel a response that is in progress
-
 <CodeFromFile
   file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/ResumeResource.java"
   lang="java"
 />
+
+**What changed**: Created `ResumeResource` with three endpoints: `POST /resume-check` to check whether a response is in progress for a list of conversation IDs, `GET /{conversationId}/resume` to replay the in-progress stream via SSE, and `POST /{conversationId}/cancel` to abort a running response. **Why**: When a user disconnects mid-stream (page reload, network drop), the LLM is still generating tokens on the server. The `ResponseResumer` lets the client reconnect and receive the remainder of the response without resubmitting the message, and `cancelResponse` lets users abort a generation that is taking too long.
 
 Test it with curl:
 
@@ -117,14 +120,6 @@ curl -sSfX POST http://localhost:9090/v1/conversations/bafd53b0-ee0d-4d5f-83e3-4
 ```
 
 You should see the response get canceled.
-
-## Complete Example
-
-**Completed code**: View the full implementation at [quarkus/examples/doc-checkpoints/05-response-resumption](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/05-response-resumption)
-
-For a complete working example with frontend, see the [quarkus/examples/chat-quarkus](https://github.com/chirino/memory-service/tree/main/quarkus/examples/chat-quarkus) directory in the repository.
-
-This example is the demo agent application that gets started by the [Getting Started](/docs/getting-started/) guide.
 
 ## Next Steps
 

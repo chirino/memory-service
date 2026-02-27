@@ -1,0 +1,21 @@
+[project]
+name = "chat-python"
+version = "0.1.0"
+description = "Python chat app example with Memory Service APIs"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115.0,<1.0.0",
+  "langchain>=1.0.0,<2.0.0",
+  "langchain-openai>=1.0.0,<2.0.0",
+  "memory-service-langchain",
+  "httpx>=0.28.0,<1.0.0",
+  "python-multipart>=0.0.20,<1.0.0",
+  "uvicorn>=0.34.0,<1.0.0"
+]
+
+[tool.uv]
+package = false
+
+
+[tool.uv.sources]
+memory-service-langchain = { workspace = true }

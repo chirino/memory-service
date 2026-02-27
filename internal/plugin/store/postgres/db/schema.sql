@@ -245,3 +245,62 @@ CREATE TABLE IF NOT EXISTS encryption_deks (
     wrapped_deks BYTEA[] NOT NULL,               -- wrapped by Vault Transit / KMS Encrypt
     revision     BIGINT  NOT NULL DEFAULT 0
 );
+
+------------------------------------------------------------
+-- Namespaced Episodic Memory
+-- Each row is a write event for a (namespace, key).
+-- The active value of a key is the single row where deleted_at IS NULL.
+-- On update: a new row is inserted; the previous active row is soft-deleted
+--            with deleted_at set to the same timestamp (same txn).
+-- On delete: the active row is soft-deleted with deleted_at = NOW(); no new row.
+-- When a row is soft-deleted its indexed_at is reset to NULL so the background
+-- indexer removes it from the vector store on its next cycle.
+------------------------------------------------------------
+
+-- kind values (SMALLINT): 0=add (first write), 1=update (subsequent write)
+-- deleted_reason values (SMALLINT):
+--   0 = updated  — superseded by a newer write; hard-deleted on eviction
+--   1 = deleted  — explicit DELETE; tombstoned on eviction (data cleared, row kept for event history)
+--   2 = expired  — TTL elapsed;    tombstoned on eviction (data cleared, row kept for event history)
+CREATE TABLE IF NOT EXISTS memories (
+    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    namespace         TEXT        NOT NULL,   -- RS-encoded: "users\x1ealice\x1ememories"
+    key               TEXT        NOT NULL,
+    value_encrypted   BYTEA,                  -- AES-256-GCM encrypted JSON value; NULL for tombstones
+    attributes        BYTEA,                  -- AES-256-GCM encrypted user-supplied attributes; NULL for tombstones
+    policy_attributes JSONB,                  -- plaintext OPA-extracted attributes for filtering
+    index_fields      JSONB,                  -- optional explicit value field names to embed
+    index_disabled    BOOLEAN     NOT NULL DEFAULT FALSE,
+    kind              SMALLINT    NOT NULL DEFAULT 0,  -- 0=add, 1=update — set at write time, never changed
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at        TIMESTAMPTZ,            -- NULL = no TTL
+    deleted_at        TIMESTAMPTZ,            -- NULL = active; non-NULL = superseded or deleted
+    deleted_reason    SMALLINT,               -- NULL=active, 0=updated, 1=deleted, 2=expired
+    indexed_at        TIMESTAMPTZ             -- NULL = pending vector index sync
+);
+
+-- History / audit queries: all versions of a key, ordered by creation
+CREATE INDEX IF NOT EXISTS memories_namespace_key_idx
+    ON memories (namespace, key, created_at DESC);
+
+-- Active-record point lookups (GET, search)
+CREATE INDEX IF NOT EXISTS memories_active_idx
+    ON memories (namespace, key) WHERE deleted_at IS NULL;
+
+-- TTL expiry cleanup
+CREATE INDEX IF NOT EXISTS memories_expires_idx
+    ON memories (expires_at) WHERE expires_at IS NOT NULL;
+
+-- Background vector indexer queue (pending sync)
+CREATE INDEX IF NOT EXISTS memories_indexed_at_idx
+    ON memories (indexed_at) WHERE indexed_at IS NULL;
+
+-- Attribute-based pre-filtering
+CREATE INDEX IF NOT EXISTS memories_policy_attrs_gin_idx
+    ON memories USING GIN (policy_attributes) WHERE policy_attributes IS NOT NULL;
+
+-- Event timeline queries
+CREATE INDEX IF NOT EXISTS memories_write_events_idx
+    ON memories (namespace, created_at, id) WHERE kind IN (0, 1);
+CREATE INDEX IF NOT EXISTS memories_delete_events_idx
+    ON memories (namespace, deleted_at, id) WHERE deleted_reason IN (1, 2);

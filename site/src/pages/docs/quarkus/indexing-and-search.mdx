@@ -40,10 +40,10 @@ To enable search indexing, create a bean that implements the `IndexedContentProv
   lang="java"
 />
 
+**What changed**: Created `PassThroughIndexedContentProvider`, a CDI `@ApplicationScoped` bean that implements `IndexedContentProvider` and returns the message text as-is. **Why**: By providing even a pass-through implementation, every message recorded by `@RecordConversation` will have its text placed in the cleartext search index. This single class activates the entire search pipeline with no other changes required.
+
 The `IndexedContentProvider` interface has a single method:
 - **`getIndexedContent(String text, String role)`** — Transforms message text into content for the search index. The `role` parameter is either `"USER"` or `"AI"`. Return `null` to skip indexing for that message.
-
-The framework automatically discovers your `IndexedContentProvider` bean via CDI. When present, every message recorded by `@RecordConversation` will have its `indexedContent` field populated.
 
 ### Custom Redaction
 
@@ -71,6 +71,8 @@ To let the frontend search across conversations, add a search endpoint to your `
   before={4}
   after={2}
 >public Response searchConversations</CodeFromFile>
+
+**Why**: Exposing search through the Quarkus proxy rather than directly to clients ensures the Memory Service enforces that results are scoped to conversations the authenticated user has access to. The raw JSON forwarding keeps the endpoint simple while still letting callers control search type, grouping, and result limits via the request body.
 
 This endpoint accepts a JSON request body with the following fields:
 - **`query`** (required) — The search query text
@@ -131,11 +133,11 @@ Example response:
     {
       "conversationId": "415afe24-61a5-49b0-99fb-fbb4a58308cc",
       "conversationTitle": "Give me a random number between 1 and 100",
-      "entryId": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+      "entryId": "38ad11b2-493d-4eb0-885c-43971950b9b4",
       "score": 0.95,
       "highlights": ["Give me a ==random number== between 1 and 100"],
       "entry": {
-        "id": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+        "id": "38ad11b2-493d-4eb0-885c-43971950b9b4",
         "conversationId": "415afe24-61a5-49b0-99fb-fbb4a58308cc",
         "userId": "bob",
         "channel": "history",

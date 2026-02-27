@@ -8,7 +8,7 @@ When you discover something meaningful about this project during your work—arc
 - **Correct** any skill or doc content you find to be outdated or wrong.
 - **Refine trigger criteria** in skill descriptions if a skill was loaded but wasn't relevant to the task—tighten its description so it activates more precisely.
 - Keep updates concise and factual. Don't bloat files with obvious or generic information.
-- Module specific knowlege should be placed into a FACTS.md in the top level directory of that module to avoid poluting AGENTS.md
+- Module specific knowlege should be placed into a `FACTS.md` in the top level directory of that module to avoid poluting AGENTS.md
 
 ## Key Concepts
 - **Agent apps mediate all operations**: Agent apps are the primary consumers. They sit between end users and the memory service, mediating all interactions.
@@ -17,8 +17,7 @@ When you discover something meaningful about this project during your work—arc
 - **User access control**: Conversations are owned by users with read/write/manager/owner access levels.
 - **Data stores**: PostgreSQL, MongoDB; Redis, Infinispan (caching); PGVector, Qdrant (vector search).
 - **Porting Server To Go**: we are porting the ./memory-service java module to ./main.go
-- **Docker Compose dev environment**: `docker compose up -d` runs the Go-based memory service using [air](https://github.com/air-verse/air) for hot reloading on port 8083. It runs in parallel with the Java version on port 8082.  I will have it running on the host, so to connect to it don't use `wt`.  Tail the docker logs for the container to check to see if code changes
-have completed deploying.
+- **dev mode**: `task dev:memory-service` runs the go-based memory service using [air](https://github.com/air-verse/air) for hot reloading on port 8082 and it's dependencies get started with docker compose.
 
 ## Quick Reference
 
@@ -45,18 +44,12 @@ have completed deploying.
 - List endpoints may include `"afterCursor": null`; docs-test JSON assertions should tolerate additive pagination fields.
 - Attachment download tokens (`/v1/attachments/download/:token/:filename`) are HMAC-signed with `AttachmentSigningSecret`; keep `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET` non-empty, especially with DB attachment stores where storage keys are guessable. The unauthenticated download route is not registered when this secret is unset.
 - Go cache serialization gotcha: `model.Entry` has custom JSON marshaling for `content`; keep marshal/unmarshal behavior symmetric or cached memory entries lose content and break sync/list semantics.
+- Devcontainer Go gotcha: if `.devcontainer/Dockerfile` installs an older Go version than `go.mod` (e.g. 1.24.2 vs 1.24.6), Go auto-downloads a newer toolchain into `GOPATH`; keep `/go` writable by `vscode` (or set `GOPATH` to a user-owned path) to avoid `mkdir .../golang.org/toolchain: permission denied`.
 
 ## Development Guidelines
 
-**Coding style**: Java 4-space indent, UTF-8, constructor injection. Packages `io.github.chirino`, classes `PascalCase`, methods/fields `camelCase`.
-
-**Error observability**: All 500-level errors MUST produce a full stack trace in the server logs. Never swallow exceptions silently — always log the stack trace for server errors. See `memory-service/FACTS.md` for details.
-
-**Security**: Don't commit secrets; use env vars or Quarkus config (`QUARKUS_*`).
-
+**Security**: Don't commit secrets; pass them with env vars
 **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`). Include test commands and config changes.
-
-
 
 ## Worktree-Isolated Execution
 
@@ -65,23 +58,23 @@ This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree
 ## Notes for AI Assistants
 
 **ALWAYS compile after changes**:
+- Go: `go build ./...`
 - Java: `./mvnw compile`
 - TypeScript: `npm run lint && npm run build` from `frontends/chat-frontend/`
 
 **Test output strategy**: When running tests, redirect output to a file and search for errors instead of using `| tail`. This ensures you see all relevant error context:
 ```bash
-./mvnw test > test.log 2>&1
+task test:go > test.log 2>&1
 # Then search for errors using Grep tool on test.log
 ```
 
-**GORM `record not found` log-noise rule**: If a `record not found` log line is found, treat expected-miss lookups as noise and refactor those call sites from `First(...).Error` to `Limit(1).Find(...)` with `RowsAffected` checks. Keep `First` for true not-found error paths; don't use global logger suppression.
-
 **Module-specific knowledge** lives in `FACTS.md` files within each module directory:
-- `python/FACTS.md` — Python/LangChain checkpoint patterns, proxy pattern, streaming, build, gotchas
-- `site-tests/FACTS.md` — Docs test filtering, MDX gotchas, user isolation, env var interpolation
-- `quarkus/FACTS.md` — Forking curl gotcha
-- `spring/FACTS.md` — Memory repository limit gotcha
-- `memory-service/FACTS.md` — GlobalExceptionMapper details
+- `./quarkus/FACTS.md`
+- `./python/FACTS.md`
+- `./internal/sitebdd/FACTS.md`
+- `./internal/FACTS.md`
+- `./site/FACTS.md`
+- `./spring/FACTS.md`
 
 **Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 

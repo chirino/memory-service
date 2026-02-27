@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 import os
+from threading import RLock
 from typing import Any, Callable, Mapping, overload
 
 import httpx
@@ -24,6 +25,8 @@ _request_forked_at_entry_id: ContextVar[str | None] = ContextVar(
     "request_forked_at_entry_id",
     default=None,
 )
+_conversation_authorizations: dict[str, list[str]] = {}
+_conversation_authorizations_lock = RLock()
 
 
 def get_request_authorization() -> str | None:
@@ -40,6 +43,14 @@ def get_request_forked_at_conversation_id() -> str | None:
 
 def get_request_forked_at_entry_id() -> str | None:
     return _request_forked_at_entry_id.get()
+
+
+def get_conversation_authorization(conversation_id: str) -> str | None:
+    with _conversation_authorizations_lock:
+        stack = _conversation_authorizations.get(conversation_id)
+        if not stack:
+            return None
+        return stack[-1]
 
 
 def install_fastapi_authorization_middleware(app: Any, *, header_name: str = "Authorization") -> None:
@@ -70,14 +81,28 @@ def memory_service_scope(
     forked_at_conversation_id: str | None = None,
     forked_at_entry_id: str | None = None,
 ):
+    authorization = get_request_authorization()
     conversation_token = _request_conversation_id.set(conversation_id)
     forked_conversation_token = _request_forked_at_conversation_id.set(
         forked_at_conversation_id
     )
     forked_entry_token = _request_forked_at_entry_id.set(forked_at_entry_id)
+    pushed_authorization = False
+    if authorization:
+        with _conversation_authorizations_lock:
+            stack = _conversation_authorizations.setdefault(conversation_id, [])
+            stack.append(authorization)
+            pushed_authorization = True
     try:
         yield
     finally:
+        if pushed_authorization:
+            with _conversation_authorizations_lock:
+                stack = _conversation_authorizations.get(conversation_id)
+                if stack:
+                    stack.pop()
+                    if not stack:
+                        _conversation_authorizations.pop(conversation_id, None)
         _request_forked_at_entry_id.reset(forked_entry_token)
         _request_forked_at_conversation_id.reset(forked_conversation_token)
         _request_conversation_id.reset(conversation_token)

@@ -1,0 +1,147 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python Getting Started
+description: Step-by-step guide to integrating Memory Service with a Python FastAPI + LangGraph-style agent.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide walks you through a minimal Python agent first using [LangChain](https://docs.langchain.com/oss/python/langchain/overview), then adds incremental memory-service integration. The goal is to keep code changes small while unlocking memory features one step at a time.
+
+Make sure you have completed [Python Dev Setup](/docs/python-langchain/dev-setup/) first.
+Also complete **Step 2** on that page (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Step 1: Start with a Minimal Agent
+
+**Starting checkpoint**: [python/examples/langchain/doc-checkpoints/01-basic-agent](https://github.com/chirino/memory-service/tree/main/python/examples/langchain/doc-checkpoints/01-basic-agent)
+
+Create a minimal LangChain agent and expose it over HTTP with FastAPI (no memory-service imports yet):
+
+<CodeFromFile
+  file="python/examples/langchain/doc-checkpoints/01-basic-agent/app.py"
+  lang="python"
+/>
+
+`create_agent()` builds a LangChain agent graph with the given model. Passing an empty `tools=[]` list gives a pure chat agent with no tool calls. The `system_prompt` primes every conversation with the agent's role.
+
+The `POST /chat` endpoint accepts a raw text body and returns raw text — no JSON serialization, keeping curl testing simple.
+
+`OPENAI_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` are read from environment variables, so you can point the same code at any OpenAI-compatible model endpoint without edits.
+
+Add LangChain dependencies:
+
+<CodeFromFile
+  file="python/examples/langchain/doc-checkpoints/01-basic-agent/pyproject.toml"
+  lang="toml"
+/>
+
+<TestScenario checkpoint="python/examples/langchain/doc-checkpoints/01-basic-agent">
+
+Run the app:
+
+```bash
+cd python/examples/langchain/doc-checkpoints/01-basic-agent
+uv sync --frozen
+uv run uvicorn app:app --host 0.0.0.0 --port 9090
+```
+
+Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Python memory-service demo agent"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat \
+  -H "Content-Type: text/plain" \
+  -d "Hi, who are you?"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Step 2: Enable Memory-Backed Conversations
+
+**Starting checkpoint**: [python/examples/langchain/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/python/examples/langchain/doc-checkpoints/02-with-memory)
+
+Checkpoint `02` is built from checkpoint `01` with three additions.
+
+### Add a checkpointer and wire it into the agent
+
+<CodeFromFile
+  file="python/examples/langchain/doc-checkpoints/02-with-memory/app.py"
+  lang="python"
+  lines="46-56"
+/>
+
+**What changed**: `MemoryServiceCheckpointSaver()` is created and passed to `create_agent()` as `checkpointer=`.
+
+**Why**: Without a checkpointer, the LangChain agent is stateless — each call starts with an empty message list. The `MemoryServiceCheckpointSaver` persists the full message thread after every agent step to the Memory Service `memory` channel, keyed by `thread_id`. On the next call with the same `thread_id`, the agent loads that thread and continues the conversation where it left off.
+
+`install_fastapi_authorization_middleware(app)` is also added. It reads the `Authorization: Bearer <token>` header from every request and stores it in a request-scoped context variable. The checkpointer automatically reads this token when making Memory Service API calls — you don't need to pass it explicitly.
+
+### Change the endpoint to accept a `conversation_id`
+
+<CodeFromFile
+  file="python/examples/langchain/doc-checkpoints/02-with-memory/app.py"
+  lang="python"
+  lines="59-68"
+/>
+
+**What changed**: The route changes from `POST /chat` to `POST /chat/{conversation_id}`, and the agent invocation passes `{"configurable": {"thread_id": conversation_id}}`.
+
+**Why**: The `thread_id` in `configurable` is the key the checkpointer uses to load and save state. By mapping it to `conversation_id` from the URL path, each unique URL path corresponds to one persistent conversation thread. Two calls to `/chat/abc` share the same message history; a call to `/chat/xyz` starts a fresh one.
+
+Make sure Memory Service and Keycloak are running, then define a helper to get a user token:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+<TestScenario checkpoint="python/examples/langchain/doc-checkpoints/02-with-memory">
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hi Hiram"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/46711077-9752-4cb1-ae45-9bad182503fc \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Hi, I'm Hiram, who are you?"
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hiram"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/46711077-9752-4cb1-ae45-9bad182503fc \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Who am I?"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Next Steps
+
+Continue to [Conversation History](/docs/python-langchain/conversation-history/) to record user/AI turns and expose conversation APIs for frontend clients.

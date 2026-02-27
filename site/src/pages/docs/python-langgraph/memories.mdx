@@ -1,0 +1,204 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: LangGraph Episodic Memories
+description: Add persistent per-user memories to a LangGraph agent using the Memory Service episodic store.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide adds the Memory Service episodic store to your LangGraph agent. Unlike conversation checkpointing — which persists the message thread for a single conversation — episodic memories cross conversation boundaries, giving the agent a persistent long-term view of each user.
+
+Memory values are stored encrypted at rest; only metadata, derived attributes, and embedding vectors of the cleartext content are stored in plaintext.
+
+> The agent recalls relevant memories before each response and stores new ones afterward —
+> giving users a continuously improving, personalised experience without modifying the graph structure.
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [python/examples/langgraph/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/03-with-history)
+
+Make sure you've completed:
+- [LangGraph Getting Started](/docs/python-langgraph/getting-started/) — checkpointing and conversation memory
+- [LangGraph Conversation History](/docs/python-langgraph/conversation-history/) — history recording
+
+Also build both local wheels before starting (temporary until the packages are released):
+
+```bash
+cd python/langchain && uv build && export UV_FIND_LINKS="$PWD/dist"
+cd python/langgraph && uv build && export UV_FIND_LINKS="$UV_FIND_LINKS:$PWD/dist"
+```
+
+## How Episodic Memory Works
+
+The Memory Service provides a LangGraph `BaseStore` implementation (`AsyncMemoryServiceStore`) that stores and retrieves arbitrary key-value memories, namespaced per user.
+
+Memories are:
+- **Isolated per user** via namespace: `("user", user_id, "memories")`
+- **Recalled before each response** with `store.asearch()`
+- **Saved after each turn** with `store.aput()`
+- **Available immediately** — no waiting for background indexing
+
+## The Changes from Checkpoint 03
+
+Checkpoint `30` adds episodic memories on top of the existing checkpointing and history recording. The four key changes:
+
+1. Import `AsyncMemoryServiceStore` from `memory_service_langgraph`
+2. Make `call_model` async; extract `user_id` and `token` from config
+3. Recall per-user memories before the model call, inject them into the system prompt
+4. Save the user's message as a new memory after the response
+5. Change the endpoint to `POST /chat/{user_id}/{conversation_id}`, threading both into the graph config
+
+### Imports
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/30-memories/app.py"
+  lang="python"
+  lines="1-20"
+/>
+
+**What changed**: `RunnableConfig` is imported from `langchain_core.runnables` and `AsyncMemoryServiceStore` is imported from `memory_service_langgraph`. `uuid` is also imported to generate unique memory keys.
+
+**Why**: `AsyncMemoryServiceStore` is a LangGraph `BaseStore` implementation backed by Memory Service. It is imported from a separate `memory_service_langgraph` package (distinct from `memory_service_langchain`) because it implements the async LangGraph store interface rather than the LangChain checkpoint interface. `RunnableConfig` is needed so the `call_model` node can receive `user_id` and `token` from the graph's `configurable` dict.
+
+`AsyncMemoryServiceStore` reads the Memory Service base URL from the environment:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MEMORY_SERVICE_URL` | `http://localhost:8083` | Memory Service base URL |
+
+The bearer token is forwarded from each incoming `Authorization` header — no static token configuration required.
+
+### The `call_model` Node
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/30-memories/app.py"
+  lang="python"
+  lines="36-68"
+/>
+
+**What changed**: `call_model` becomes `async` and accepts a second `config: RunnableConfig` argument. It extracts `user_id` and `token` from `config["configurable"]`, builds a namespace `("user", user_id, "memories")`, then uses `AsyncMemoryServiceStore(token=token)` as an async context manager to recall memories before the model call and save the user's message as a new memory afterward.
+
+**Why**: Making the node `async` allows `await store.asearch(...)` and `await store.aput(...)` without blocking the event loop. The namespace isolates each user's memories from every other user's. Recalling memories before building the `messages` list lets the system prompt include personalized context that carries across conversations.
+
+The OPA default policy enforces that `namespace[1]` must match the authenticated user's identity.
+
+`store.asearch(namespace, limit=10)` performs an attribute-only search returning the most recent memories, with no dependency on the background vector indexer.
+
+The `history_middleware.wrap_model_call(...)` line records the user/AI turn to the `history` channel, exactly as in checkpoint `03`.
+
+### Graph, App, and Endpoint
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/30-memories/app.py"
+  lang="python"
+  lines="71-101"
+/>
+
+**What changed**: The graph is compiled and the app is set up as before, but the endpoint changes from `POST /chat/{conversation_id}` to `POST /chat/{user_id}/{conversation_id}`. The endpoint extracts the bearer token from the `Authorization` header and passes `user_id`, `conversation_id` (as `thread_id`), and `token` through `config["configurable"]` into the graph.
+
+**Why**: The `call_model` node needs the bearer token to authenticate `AsyncMemoryServiceStore` calls, and the user ID to build the correct memory namespace. The endpoint must extract the token explicitly because the `memory_service_langchain` middleware only makes the token available via the request-scoped context variable — not via `configurable`. Putting `user_id` in the URL path keeps it visible and lets the OPA policy verify that the URL user matches the token's subject.
+
+## Run It
+
+Make sure Memory Service and Keycloak are running:
+
+```bash
+docker compose up -d
+```
+
+Define a shell function to obtain a bearer token:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Because the OPA default policy checks that `namespace[1]` matches the token's user ID, the URL user ID and token user ID must agree. The examples below use `bob` throughout.
+
+Start the app:
+
+```bash
+cd python/examples/langgraph/doc-checkpoints/30-memories
+uv sync
+uv run uvicorn app:app --host 0.0.0.0 --port 9090
+```
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/30-memories">
+
+Tell the agent something to remember:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/bob/c1234567-0000-0000-0000-000000000001 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "My name is Bob and I love hiking and Python programming."
+```
+
+</CurlTest>
+
+Start a **new conversation** and ask the agent to recall it. The memory persists across conversations:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Bob"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/bob/c1234567-0000-0000-0000-000000000002 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "What is my name?"
+```
+
+</CurlTest>
+
+Verify the history was recorded for the second conversation:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "c1234567-0000-0000-0000-000000000002"
+And the response should contain "bob"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/c1234567-0000-0000-0000-000000000002 \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+Because `aput` completes before each response returns, memories are immediately available for the next `asearch` call — no waiting for the background vector indexer.
+
+## Semantic Search
+
+By default, `call_model` uses attribute-only recall — all memories in the namespace ordered by recency. To rank by relevance to the current message, pass `query=`:
+
+```python
+memories = await store.asearch(
+    namespace,
+    query=state["messages"][-1].content,
+    limit=5,
+)
+```
+
+Semantic search requires the background vector indexer to have processed the memories first. The indexer polls every 30 seconds by default; the admin endpoint `POST /admin/v1/memories/index/trigger` forces an immediate cycle.
+
+## Next Steps
+
+- See [Memories](/docs/concepts/memories/) for the full episodic memory data model, OPA policy reference, TTL configuration, and admin API.
+- Explore the [`AsyncMemoryServiceStore`](https://github.com/chirino/memory-service/tree/main/python/langgraph) source to understand all supported `BaseStore` operations: `aput`, `aget`, `adelete`, `asearch`, `alist_namespaces`.

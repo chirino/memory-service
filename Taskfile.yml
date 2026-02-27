@@ -5,6 +5,7 @@ version: '3'
 dotenv: ['.env']
 
 vars:
+  DEFAULT_GOTESTSUM_FMT: standard-quiet # e.g. task test:go GOTESTSUM_FMT=standard-verbose
   KIND_CLUSTER_NAME: memory-service
   ENVOY_GATEWAY_VERSION: v1.7.0
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
@@ -69,18 +70,59 @@ tasks:
   test:go:
     cmds:
       - |
-        GOTESTSUM_FMT=standard-quiet # standard-verbose
-        CGO_ENABLED=1 go run gotest.tools/gotestsum --format ${GOTESTSUM_FMT} -- -race ./... {{.CLI_ARGS}}
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race ./... {{.CLI_ARGS}}
 
   test:site:
+    env:
+      SITE_TEST_BUILD_OUTPUT: '{{.SITE_TEST_BUILD_OUTPUT | default "on-fail"}}'
     cmds:
       - |
-        GOTESTSUM_FMT=standard-quiet # standard-verbose
-        CGO_ENABLED=1 go run gotest.tools/gotestsum --format ${GOTESTSUM_FMT} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+
+  test:site:record-missing:
+    desc: Run site tests and record only missing OpenAI fixtures
+    env:
+      SITE_TEST_RECORD: missing
+      SITE_TEST_BUILD_OUTPUT: '{{.SITE_TEST_BUILD_OUTPUT | default "on-fail"}}'
+    cmds:
+      - |
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+
+  test:site:record-all:
+    desc: Run site tests and re-record all OpenAI fixtures
+    env:
+      SITE_TEST_RECORD: all
+      SITE_TEST_BUILD_OUTPUT: '{{.SITE_TEST_BUILD_OUTPUT | default "on-fail"}}'
+    cmds:
+      - |
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
 
   test:java:
     cmds:
       - mvn -T 1C clean test {{.CLI_ARGS}}
+
+  run:example:langgraph:
+    cmds:
+      - |
+        set -e
+        unset VIRTUAL_ENV
+        uv --directory=python/langgraph build
+        export UV_FIND_LINKS=$(pwd)/python/dist
+        cd python/examples/langgraph/doc-checkpoints/02-with-memory-store
+        uv sync --reinstall-package memory-service-langgraph
+        uv run python -m uvicorn app:app --host 0.0.0.0 --port 9090
+
+  run:example:langchain:
+    cmds:
+      - |
+        set -ex
+        unset VIRTUAL_ENV
+        uv --directory=python/langchain build
+        export UV_FIND_LINKS=$(pwd)/python/dist
+        cd python/examples/langchain/doc-checkpoints/02-with-memory
+        uv sync --reinstall-package memory-service-langchain
+        uv run python -m uvicorn app:app --host 0.0.0.0 --port 9090
+
 
   dev:memory-service:
     desc: Run the memory-service app in dev mode.
@@ -115,6 +157,8 @@ tasks:
       MEMORY_SERVICE_EMBEDDING_KIND: '{{.MEMORY_SERVICE_EMBEDDING_KIND | default "openai"}}'
       MEMORY_SERVICE_OPENAI_API_KEY: '{{.OPENAI_API_KEY | default "none"}}'
     cmds:
+      - docker compose up -d 
+      - docker compose stop memory-service 2&>1 > /dev/null || true
       - air -c air.toml
 
   dev:chat-quarkus:
