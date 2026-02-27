@@ -1507,6 +1507,16 @@ func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, 
 		UpdatedAt:           now,
 	}
 	if _, err := s.conversations().InsertOne(ctx, conv); err != nil {
+		// Clean up the orphaned group before handling the error.
+		_, _ = s.groups().DeleteOne(ctx, bson.M{"_id": groupID})
+		if mongo.IsDuplicateKeyError(err) {
+			// A concurrent request already created this conversation; fetch and return it.
+			var existing convDoc
+			if findErr := s.conversations().FindOne(ctx, bson.M{"_id": conv.ID}).Decode(&existing); findErr != nil {
+				return convDoc{}, fmt.Errorf("failed to fetch existing conversation: %w", findErr)
+			}
+			return existing, nil
+		}
 		return convDoc{}, fmt.Errorf("failed to create conversation: %w", err)
 	}
 

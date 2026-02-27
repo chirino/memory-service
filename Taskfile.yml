@@ -72,6 +72,12 @@ tasks:
         GOTESTSUM_FMT=standard-quiet # standard-verbose
         CGO_ENABLED=1 go run gotest.tools/gotestsum --format ${GOTESTSUM_FMT} -- -race ./... {{.CLI_ARGS}}
 
+  test:site:
+    cmds:
+      - |
+        GOTESTSUM_FMT=standard-quiet # standard-verbose
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format ${GOTESTSUM_FMT} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+
   test:java:
     cmds:
       - mvn -T 1C clean test {{.CLI_ARGS}}

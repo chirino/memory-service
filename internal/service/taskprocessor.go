@@ -47,21 +47,28 @@ func (p *TaskProcessor) Start(ctx context.Context) {
 	}
 }
 
+func (p *TaskProcessor) logErr(ctx context.Context, msg string, args ...any) {
+	if ctx.Err() != nil {
+		return // shutting down — suppress errors after context cancellation
+	}
+	log.Error(msg, args...)
+}
+
 func (p *TaskProcessor) processBatch(ctx context.Context) {
 	tasks, err := p.store.ClaimReadyTasks(ctx, p.batchSize)
 	if err != nil {
-		log.Error("TaskProcessor: claim tasks failed", "err", err)
+		p.logErr(ctx, "TaskProcessor: claim tasks failed", "err", err)
 		return
 	}
 	for _, task := range tasks {
 		if err := p.executeTask(ctx, task.TaskType, task.TaskBody); err != nil {
-			log.Error("TaskProcessor: task failed", "taskId", task.ID, "type", task.TaskType, "err", err)
+			p.logErr(ctx, "TaskProcessor: task failed", "taskId", task.ID, "type", task.TaskType, "err", err)
 			if fErr := p.store.FailTask(ctx, task.ID, err.Error(), p.retryDelay); fErr != nil {
-				log.Error("TaskProcessor: fail task record failed", "taskId", task.ID, "err", fErr)
+				p.logErr(ctx, "TaskProcessor: fail task record failed", "taskId", task.ID, "err", fErr)
 			}
 		} else {
 			if dErr := p.store.DeleteTask(ctx, task.ID); dErr != nil {
-				log.Error("TaskProcessor: delete task failed", "taskId", task.ID, "err", dErr)
+				p.logErr(ctx, "TaskProcessor: delete task failed", "taskId", task.ID, "err", dErr)
 			}
 		}
 	}
