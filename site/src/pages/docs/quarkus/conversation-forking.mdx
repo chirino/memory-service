@@ -22,8 +22,6 @@ Make sure you've completed the previous guides:
 
 ## Conversation Forking
 
-Conversation forking lets users branch off from any point in a conversation to explore alternative paths.
-
 ### How Forking Works
 
 Forks are created implicitly when the first entry is appended to a new conversation with fork metadata. In this checkpoint, `HistoryRecordingAgent` remains the same as the previous step, and fork metadata is passed when creating entries through the Memory Service API:
@@ -32,6 +30,8 @@ Forks are created implicitly when the first entry is appended to a new conversat
   file="quarkus/examples/doc-checkpoints/04-conversation-forking/src/main/java/org/acme/HistoryRecordingAgent.java"
   lang="java"
 />
+
+**Why**: Forking is initiated at the history entry level, not at the agent level. When the first entry in a new conversation includes `forkedAtConversationId` and `forkedAtEntryId` fields, the Memory Service automatically establishes the fork relationship and replays the parent conversation's memory up to the fork point.
 
 ### Listing Forks
 
@@ -43,6 +43,8 @@ Add this method to `ConversationsResource.java` to list forks for a conversation
   before={2}
   after={1}
 >public Response listConversationForks</CodeFromFile>
+
+**What changed**: Added a `listConversationForks` endpoint at `GET /{conversationId}/forks` that calls `proxy.listConversationForks`. **Why**: Frontends need to discover all branches stemming from a conversation so users can navigate between them. The endpoint returns the root conversation and all its forks in a flat list, each annotated with its `forkedAtConversationId` so the UI can reconstruct the branch tree.
 
 ## Try It With Curl
 
@@ -104,7 +106,7 @@ Example response from the entries API:
 {
   "data": [
     {
-      "id": "9dded20f-4118-4d7a-b633-141311ec589e",
+      "id": "2a9c8fd3-c11a-4b12-9a7f-43fd6d580034",
       "conversationId": "88a1db4c-ce91-4391-a6c1-baf9bcc65a86",
       "channel": "history",
       "contentType": "history",
@@ -141,7 +143,7 @@ Example response:
 
 ```json
 {
-  "id": "b3a9d6dd-b499-44cc-8852-1d2dbab6f03c",
+  "id": "3eefa9b1-8d2c-449a-8d07-6b2d670b453a",
   "conversationId": "d517e108-28f0-49a1-93cc-d0f48ebedf42",
   "channel": "history",
   "contentType": "history",
@@ -186,12 +188,6 @@ Example response:
 ```
 
 </TestScenario>
-
-## Complete Example
-
-**Completed code**: View the full implementation at [quarkus/examples/doc-checkpoints/04-conversation-forking](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/04-conversation-forking)
-
-For a complete working example with frontend, see the [quarkus/examples/chat-quarkus](https://github.com/chirino/memory-service/tree/main/quarkus/examples/chat-quarkus) directory in the repository.
 
 ## Next Steps
 

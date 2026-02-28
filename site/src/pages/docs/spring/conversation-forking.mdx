@@ -22,8 +22,6 @@ Make sure you've completed the previous guides:
 
 ## Conversation Forking
 
-Conversation forking lets users branch off from any point in a conversation to explore alternative paths.
-
 ### How Forking Works
 
 Forks are created implicitly when the first entry is appended to a new conversation with fork metadata. In this checkpoint, the `ChatController` remains the same as the previous step, and fork metadata is passed when creating entries through the Memory Service API:
@@ -35,6 +33,8 @@ Forks are created implicitly when the first entry is appended to a new conversat
   after={1}
 >public String chat(@PathVariable String conversationId, @RequestBody String message)</CodeFromFile>
 
+**Why**: Keeping fork metadata out of the controller keeps the chat endpoint simple and generic. The forking relationship is stored by the Memory Service when the first history entry is written with the fork fields populated, so the same `ChatController` can serve both root conversations and forks without branching logic.
+
 ### Listing Forks
 
 Add this method to the `MemoryServiceProxyController` to list forks for a conversation:
@@ -45,6 +45,10 @@ Add this method to the `MemoryServiceProxyController` to list forks for a conver
   before={2}
   after={1}
 >listConversationForks(@PathVariable String conversationId)</CodeFromFile>
+
+**What changed**: A new `GET /{conversationId}/forks` endpoint is added to `MemoryServiceProxyController`, delegating to `proxy.listConversationForks()`.
+
+**Why**: Frontend UIs need to discover all conversations that branched off from a given point so they can render a fork tree or allow users to navigate between branches. Exposing this as a proxied endpoint keeps the Memory Service behind your Spring Boot app while giving the frontend everything it needs to build a branching conversation UI.
 
 ## Try It With Curl
 
@@ -106,7 +110,7 @@ Example response from the entries API:
 {
   "data": [
     {
-      "id": "9dded20f-4118-4d7a-b633-141311ec589e",
+      "id": "f4f78014-a89a-40c6-8823-7144a4fb4b31",
       "conversationId": "a8391789-592d-4273-90df-7349b08b5d3d",
       "channel": "history",
       "contentType": "history",
@@ -143,7 +147,7 @@ Example response:
 
 ```json
 {
-  "id": "b3a9d6dd-b499-44cc-8852-1d2dbab6f03c",
+  "id": "a0ce0657-87ce-45f6-a8c7-39beeb35fbe0",
   "conversationId": "6dcb8f3f-bd21-459f-9127-96e5a94d276c",
   "channel": "history",
   "contentType": "history",
@@ -189,11 +193,6 @@ Example response:
 
 </TestScenario>
 
-## Complete Example
-
-**Completed code**: View the full implementation at [spring/examples/doc-checkpoints/04-conversation-forking](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/04-conversation-forking)
-
-For a complete working example with frontend, see the [spring/examples/chat-spring](https://github.com/chirino/memory-service/tree/main/spring/examples/chat-spring) directory in the repository.
 
 ## Next Steps
 

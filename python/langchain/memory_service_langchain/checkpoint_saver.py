@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import os
+import uuid as _uuid_module
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
@@ -18,10 +19,14 @@ from langgraph.checkpoint.base import (
 )
 
 from .request_context import (
+    get_conversation_authorization,
     get_request_authorization,
     get_request_forked_at_conversation_id,
     get_request_forked_at_entry_id,
 )
+
+# Stable namespace UUID for deriving conversation UUIDs from arbitrary thread_ids.
+_CONV_ID_NAMESPACE = _uuid_module.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 
 class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
@@ -48,12 +53,29 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
         )
         self.forked_at_entry_id_getter = forked_at_entry_id_getter or get_request_forked_at_entry_id
 
-    def _headers(self) -> dict[str, str]:
+    def _conv_id(self, thread_id: str) -> str:
+        """Return a deterministic UUID string for any thread_id.
+
+        If thread_id is already a valid UUID, it is returned unchanged.
+        Otherwise a stable UUID v5 is derived so the server (which requires
+        UUID-format conversation IDs) always receives a valid UUID while the
+        caller can still use human-friendly thread IDs like "bob".
+        """
+        try:
+            _uuid_module.UUID(thread_id)
+            return thread_id
+        except ValueError:
+            return str(_uuid_module.uuid5(_CONV_ID_NAMESPACE, thread_id))
+
+    def _headers(self, thread_id: str | None = None) -> dict[str, str]:
         headers = {"X-API-Key": self.api_key}
+        authorization: str | None = None
         if self.authorization_getter:
             authorization = self.authorization_getter()
-            if authorization:
-                headers["Authorization"] = authorization
+        if not authorization and thread_id:
+            authorization = get_conversation_authorization(thread_id)
+        if authorization:
+            headers["Authorization"] = authorization
         return headers
 
     def _request(
@@ -61,6 +83,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
         method: str,
         path: str,
         *,
+        thread_id: str | None = None,
         params: dict[str, Any] | None = None,
         json_body: Any | None = None,
     ) -> httpx.Response:
@@ -70,7 +93,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
                 url=path,
                 params=params,
                 json=json_body,
-                headers=self._headers(),
+                headers=self._headers(thread_id),
             )
 
     def _forked_at_conversation_id(self) -> str | None:
@@ -173,13 +196,15 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
 
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         thread_id: str = config["configurable"]["thread_id"]
+        conv_id = self._conv_id(thread_id)
         checkpoint_ns: str = config["configurable"].get("checkpoint_ns", "")
         checkpoint_id = get_checkpoint_id(config)
 
         if checkpoint_id:
             response = self._request(
                 "GET",
-                f"/v1/conversations/{thread_id}/entries/{checkpoint_id}",
+                f"/v1/conversations/{conv_id}/entries/{checkpoint_id}",
+                thread_id=thread_id,
             )
             if response.status_code == 404:
                 return None
@@ -193,7 +218,8 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
 
         response = self._request(
             "GET",
-            f"/v1/conversations/{thread_id}/entries",
+            f"/v1/conversations/{conv_id}/entries",
+            thread_id=thread_id,
             params={"channel": "memory"},
         )
         if response.status_code == 404:
@@ -226,12 +252,14 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             return iter(())
 
         thread_id: str = config["configurable"]["thread_id"]
+        conv_id = self._conv_id(thread_id)
         checkpoint_ns: str = config["configurable"].get("checkpoint_ns", "")
         before_id = get_checkpoint_id(before) if before else None
 
         response = self._request(
             "GET",
-            f"/v1/conversations/{thread_id}/entries",
+            f"/v1/conversations/{conv_id}/entries",
+            thread_id=thread_id,
             params={"channel": "memory"},
         )
         if response.status_code >= 400:
@@ -269,6 +297,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
     ) -> RunnableConfig:
         del new_versions
         thread_id: str = config["configurable"]["thread_id"]
+        conv_id = self._conv_id(thread_id)
         checkpoint_ns: str = config["configurable"].get("checkpoint_ns", "")
         parent_checkpoint_id = get_checkpoint_id(config)
 
@@ -288,31 +317,38 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
 
         response = self._request(
             "POST",
-            f"/v1/conversations/{thread_id}/entries",
+            f"/v1/conversations/{conv_id}/entries",
+            thread_id=thread_id,
             json_body=payload,
         )
         if response.status_code == 404:
             fork_payload = self._payload_with_fork_metadata(payload)
             response = self._request(
                 "POST",
-                f"/v1/conversations/{thread_id}/entries",
+                f"/v1/conversations/{conv_id}/entries",
+                thread_id=thread_id,
                 json_body=fork_payload,
             )
         if response.status_code == 404:
+            # Auto-create the conversation with the derived UUID so subsequent
+            # retries (and future calls) can find it by the same conv_id.
             self._request(
                 "POST",
                 "/v1/conversations",
-                json_body={"title": f"Python checkpoint {thread_id}"},
+                thread_id=thread_id,
+                json_body={"id": conv_id, "title": f"Python checkpoint {thread_id}"},
             )
             response = self._request(
                 "POST",
-                f"/v1/conversations/{thread_id}/entries",
+                f"/v1/conversations/{conv_id}/entries",
+                thread_id=thread_id,
                 json_body=payload,
             )
         if self._is_duplicate_conversation_error(response):
             response = self._request(
                 "POST",
-                f"/v1/conversations/{thread_id}/entries",
+                f"/v1/conversations/{conv_id}/entries",
+                thread_id=thread_id,
                 json_body=payload,
             )
         if response.status_code >= 400:

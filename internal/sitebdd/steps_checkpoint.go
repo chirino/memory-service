@@ -24,9 +24,14 @@ func registerCheckpointSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
 	ctx.Step(`^the application should be running$`, s.theApplicationShouldBeRunning)
 	ctx.Step(`^I stop the checkpoint$`, s.iStopTheCheckpoint)
 
+	ctx.Before(func(ctx context.Context, sc *godog.Scenario) (context.Context, error) {
+		s.ScenarioName = sc.Name
+		return ctx, nil
+	})
+
 	// Cleanup after each scenario (handles panics / step failures)
 	ctx.After(func(ctx context.Context, sc *godog.Scenario, err error) (context.Context, error) {
-		s.stopCheckpoint()
+		s.stopCheckpoint(err != nil)
 		return ctx, nil
 	})
 }
@@ -36,6 +41,7 @@ func (s *SiteScenario) checkpointIsActive(checkpointID string) error {
 	s.CheckpointID = checkpointID
 	s.CheckpointPath = filepath.Join(s.ProjectRoot, checkpointID)
 	s.CheckpointPort = allocatePort()
+	s.checkpointPathClaimed = false
 
 	// Generate a short unique ID for user isolation
 	uid := uuid.New().String()
@@ -51,13 +57,10 @@ func (s *SiteScenario) checkpointIsActive(checkpointID string) error {
 	if !fileExists(s.CheckpointPath) {
 		return fmt.Errorf("checkpoint directory does not exist: %s", s.CheckpointPath)
 	}
-
-	mode := "playback"
-	if s.Recording {
-		mode = "RECORDING"
+	if err := s.claimCheckpointPath(); err != nil {
+		return fmt.Errorf("checkpoint isolation conflict: %w", err)
 	}
-	fmt.Printf("[sitebdd] Scenario UID=%s  checkpoint=%s  port=%d  mode=%s\n",
-		s.ScenarioUID, checkpointID, s.CheckpointPort, mode)
+
 	return nil
 }
 
@@ -100,6 +103,6 @@ func (s *SiteScenario) theApplicationShouldBeRunning() error {
 }
 
 func (s *SiteScenario) iStopTheCheckpoint() error {
-	s.stopCheckpoint()
+	s.stopCheckpoint(false)
 	return nil
 }

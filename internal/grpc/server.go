@@ -8,14 +8,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/episodic"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	"github.com/chirino/memory-service/internal/model"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
+	registryembed "github.com/chirino/memory-service/internal/registry/embed"
+	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
@@ -979,6 +984,445 @@ func (s *SearchServer) ListUnindexedEntries(ctx context.Context, req *pb.ListUni
 		resp.Cursor = cursor
 	}
 	return resp, nil
+}
+
+// --- Memories Service ---
+
+type MemoriesServer struct {
+	pb.UnimplementedMemoriesServiceServer
+	Store    registryepisodic.EpisodicStore
+	Policy   *episodic.PolicyEngine
+	Config   *config.Config
+	Embedder registryembed.Embedder
+}
+
+func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest) (*pb.MemoryWriteResult, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if req.GetValue() == nil {
+		return nil, status.Error(codes.InvalidArgument, "value is required")
+	}
+	if req.GetTtlSeconds() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "ttl_seconds must be >= 0")
+	}
+
+	namespace := req.GetNamespace()
+	if err := validateMemoryNamespace(namespace, s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	key := req.GetKey()
+	if key == "" || len(key) > 1024 {
+		return nil, status.Error(codes.InvalidArgument, "key must be non-empty and at most 1024 bytes")
+	}
+
+	value := req.GetValue().AsMap()
+	var attributes map[string]interface{}
+	if req.GetAttributes() != nil {
+		attributes = req.GetAttributes().AsMap()
+	}
+
+	pc := memoryPolicyContext(ctx)
+	policyAttrs := map[string]interface{}{}
+	if s.Policy != nil {
+		allowed, err := s.Policy.IsAllowed(ctx, "write", namespace, key, pc)
+		if err != nil {
+			return nil, episodicInternalError("policy evaluation error", err)
+		}
+		if !allowed {
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		}
+		extracted, err := s.Policy.ExtractAttributes(ctx, namespace, key, value, attributes)
+		if err != nil {
+			return nil, episodicInternalError("attribute extraction error", err)
+		}
+		policyAttrs = extracted
+	}
+
+	result, err := s.Store.PutMemory(ctx, registryepisodic.PutMemoryRequest{
+		Namespace:        namespace,
+		Key:              key,
+		Value:            value,
+		Attributes:       attributes,
+		TTLSeconds:       int(req.GetTtlSeconds()),
+		IndexFields:      req.GetIndexFields(),
+		IndexDisabled:    req.GetIndexDisabled(),
+		PolicyAttributes: policyAttrs,
+	})
+	if err != nil {
+		return nil, episodicInternalError("failed to store memory", err)
+	}
+	resp, err := memoryWriteResultToProto(result)
+	if err != nil {
+		return nil, episodicInternalError("failed to encode memory write response", err)
+	}
+	return resp, nil
+}
+
+func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest) (*pb.MemoryItem, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+
+	namespace := req.GetNamespace()
+	if err := validateMemoryNamespace(namespace, s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	key := req.GetKey()
+	if key == "" {
+		return nil, status.Error(codes.InvalidArgument, "key is required")
+	}
+
+	if s.Policy != nil {
+		allowed, err := s.Policy.IsAllowed(ctx, "read", namespace, key, memoryPolicyContext(ctx))
+		if err != nil {
+			return nil, episodicInternalError("policy evaluation error", err)
+		}
+		if !allowed {
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		}
+	}
+
+	item, err := s.Store.GetMemory(ctx, namespace, key)
+	if err != nil {
+		return nil, episodicInternalError("failed to fetch memory", err)
+	}
+	if item == nil {
+		return nil, status.Error(codes.NotFound, "memory not found")
+	}
+	resp, err := memoryItemToProto(*item)
+	if err != nil {
+		return nil, episodicInternalError("failed to encode memory response", err)
+	}
+	return resp, nil
+}
+
+func (s *MemoriesServer) DeleteMemory(ctx context.Context, req *pb.DeleteMemoryRequest) (*emptypb.Empty, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+
+	namespace := req.GetNamespace()
+	if err := validateMemoryNamespace(namespace, s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	key := req.GetKey()
+	if key == "" {
+		return nil, status.Error(codes.InvalidArgument, "key is required")
+	}
+
+	if s.Policy != nil {
+		allowed, err := s.Policy.IsAllowed(ctx, "delete", namespace, key, memoryPolicyContext(ctx))
+		if err != nil {
+			return nil, episodicInternalError("policy evaluation error", err)
+		}
+		if !allowed {
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		}
+	}
+
+	if err := s.Store.DeleteMemory(ctx, namespace, key); err != nil {
+		return nil, episodicInternalError("failed to delete memory", err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemoriesRequest) (*pb.SearchMemoriesResponse, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+
+	if len(req.GetNamespacePrefix()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "namespace_prefix is required")
+	}
+	if err := validateMemoryNamespace(req.GetNamespacePrefix(), s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	limit := int(req.GetLimit())
+	if limit <= 0 || limit > 100 {
+		limit = 10
+	}
+	offset := int(req.GetOffset())
+
+	filter := map[string]interface{}{}
+	if req.GetFilter() != nil {
+		filter = req.GetFilter().AsMap()
+	}
+	effectivePrefix := req.GetNamespacePrefix()
+	if s.Policy != nil {
+		var err error
+		effectivePrefix, filter, err = s.Policy.InjectFilter(ctx, req.GetNamespacePrefix(), filter, memoryPolicyContext(ctx))
+		if err != nil {
+			return nil, episodicInternalError("filter injection error", err)
+		}
+	}
+
+	query := strings.TrimSpace(req.GetQuery())
+	if query != "" && s.Embedder != nil {
+		items, err := semanticSearchMemories(ctx, s.Store, s.Embedder, effectivePrefix, filter, query, limit)
+		if err != nil {
+			return nil, episodicInternalError("semantic search error", err)
+		}
+		if len(items) > 0 {
+			return memoryItemsToSearchResponse(items)
+		}
+	}
+
+	items, err := s.Store.SearchMemories(ctx, effectivePrefix, filter, limit, offset)
+	if err != nil {
+		return nil, episodicInternalError("failed to search memories", err)
+	}
+	return memoryItemsToSearchResponse(items)
+}
+
+func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListMemoryNamespacesRequest) (*pb.ListMemoryNamespacesResponse, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+
+	maxDepth := int(req.GetMaxDepth())
+	if maxDepth < 0 {
+		return nil, status.Error(codes.InvalidArgument, "max_depth must be >= 0")
+	}
+
+	prefix := req.GetPrefix()
+	if len(prefix) == 0 {
+		prefix = []string{}
+	} else if err := validateMemoryNamespace(prefix, s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	suffix := req.GetSuffix()
+	for i, seg := range suffix {
+		if seg == "" {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("suffix segment %d is empty", i))
+		}
+	}
+
+	if s.Policy != nil {
+		var err error
+		prefix, _, err = s.Policy.InjectFilter(ctx, prefix, nil, memoryPolicyContext(ctx))
+		if err != nil {
+			return nil, episodicInternalError("filter injection error", err)
+		}
+	}
+
+	namespaces, err := s.Store.ListNamespaces(ctx, registryepisodic.ListNamespacesRequest{
+		Prefix:   prefix,
+		Suffix:   suffix,
+		MaxDepth: maxDepth,
+	})
+	if err != nil {
+		return nil, episodicInternalError("failed to list namespaces", err)
+	}
+	resp := &pb.ListMemoryNamespacesResponse{}
+	for _, ns := range namespaces {
+		resp.Namespaces = append(resp.Namespaces, &pb.MemoryNamespace{Segments: ns})
+	}
+	return resp, nil
+}
+
+func (s *MemoriesServer) GetMemoryIndexStatus(ctx context.Context, _ *emptypb.Empty) (*pb.MemoryIndexStatusResponse, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	id := security.IdentityFromContext(ctx)
+	if id == nil || !id.Roles[security.RoleAdmin] {
+		return nil, status.Error(codes.PermissionDenied, "admin role required")
+	}
+
+	count, err := s.Store.AdminCountPendingIndexing(ctx)
+	if err != nil {
+		return nil, episodicInternalError("failed to read memory index status", err)
+	}
+	return &pb.MemoryIndexStatusResponse{Pending: count}, nil
+}
+
+func (s *MemoriesServer) maxDepth() int {
+	if s.Config == nil {
+		return 0
+	}
+	return s.Config.EpisodicMaxDepth
+}
+
+func validateMemoryNamespace(ns []string, maxDepth int) error {
+	if len(ns) == 0 {
+		return fmt.Errorf("namespace must have at least one segment")
+	}
+	for i, seg := range ns {
+		if seg == "" {
+			return fmt.Errorf("namespace segment %d is empty", i)
+		}
+	}
+	if maxDepth > 0 && len(ns) > maxDepth {
+		return fmt.Errorf("namespace depth %d exceeds configured limit %d", len(ns), maxDepth)
+	}
+	return nil
+}
+
+func memoryPolicyContext(ctx context.Context) episodic.PolicyContext {
+	roles := []string{}
+	if id := security.IdentityFromContext(ctx); id != nil {
+		if id.Roles[security.RoleAdmin] {
+			roles = append(roles, security.RoleAdmin)
+		}
+	}
+	return episodic.PolicyContext{
+		UserID:   getUserID(ctx),
+		ClientID: getClientID(ctx),
+		JWTClaims: map[string]interface{}{
+			"roles": roles,
+		},
+	}
+}
+
+func episodicInternalError(message string, err error) error {
+	log.Error("episodic gRPC error", "error", err, "stack", string(debug.Stack()))
+	return status.Error(codes.Internal, message)
+}
+
+func memoryWriteResultToProto(item *registryepisodic.MemoryWriteResult) (*pb.MemoryWriteResult, error) {
+	resp := &pb.MemoryWriteResult{
+		Id:        uuidToBytes(item.ID),
+		Namespace: append([]string(nil), item.Namespace...),
+		Key:       item.Key,
+		CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if item.Attributes != nil {
+		attrs, err := structpb.NewStruct(item.Attributes)
+		if err != nil {
+			return nil, err
+		}
+		resp.Attributes = attrs
+	}
+	if item.ExpiresAt != nil {
+		expiresAt := item.ExpiresAt.UTC().Format(time.RFC3339)
+		resp.ExpiresAt = &expiresAt
+	}
+	return resp, nil
+}
+
+func memoryItemToProto(item registryepisodic.MemoryItem) (*pb.MemoryItem, error) {
+	value, err := structpb.NewStruct(item.Value)
+	if err != nil {
+		return nil, err
+	}
+	resp := &pb.MemoryItem{
+		Id:        uuidToBytes(item.ID),
+		Namespace: append([]string(nil), item.Namespace...),
+		Key:       item.Key,
+		Value:     value,
+		CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if item.Attributes != nil {
+		attrs, err := structpb.NewStruct(item.Attributes)
+		if err != nil {
+			return nil, err
+		}
+		resp.Attributes = attrs
+	}
+	if item.Score != nil {
+		resp.Score = item.Score
+	}
+	if item.ExpiresAt != nil {
+		expiresAt := item.ExpiresAt.UTC().Format(time.RFC3339)
+		resp.ExpiresAt = &expiresAt
+	}
+	return resp, nil
+}
+
+func memoryItemsToSearchResponse(items []registryepisodic.MemoryItem) (*pb.SearchMemoriesResponse, error) {
+	resp := &pb.SearchMemoriesResponse{}
+	for _, item := range items {
+		pItem, err := memoryItemToProto(item)
+		if err != nil {
+			return nil, err
+		}
+		resp.Items = append(resp.Items, pItem)
+	}
+	return resp, nil
+}
+
+func semanticSearchMemories(ctx context.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter map[string]interface{}, query string, limit int) ([]registryepisodic.MemoryItem, error) {
+	embeddings, err := embedder.EmbedTexts(ctx, []string{query})
+	if err != nil {
+		return nil, fmt.Errorf("embed query: %w", err)
+	}
+	if len(embeddings) == 0 {
+		return nil, nil
+	}
+
+	nsEncoded, err := episodic.EncodeNamespace(namespacePrefix, 0)
+	if err != nil {
+		return nil, err
+	}
+	vectorResults, err := store.SearchMemoryVectors(ctx, nsEncoded, embeddings[0], filter, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search memory vectors: %w", err)
+	}
+	if len(vectorResults) == 0 {
+		return nil, nil
+	}
+
+	scoreByID := make(map[uuid.UUID]float64, len(vectorResults))
+	orderedIDs := make([]uuid.UUID, 0, len(vectorResults))
+	for _, vr := range vectorResults {
+		if prev, exists := scoreByID[vr.MemoryID]; !exists {
+			scoreByID[vr.MemoryID] = vr.Score
+			orderedIDs = append(orderedIDs, vr.MemoryID)
+		} else if vr.Score > prev {
+			scoreByID[vr.MemoryID] = vr.Score
+		}
+	}
+	if len(orderedIDs) == 0 {
+		return nil, nil
+	}
+
+	items, err := store.GetMemoriesByIDs(ctx, orderedIDs)
+	if err != nil {
+		return nil, fmt.Errorf("get memories by ids: %w", err)
+	}
+	itemByID := make(map[uuid.UUID]registryepisodic.MemoryItem, len(items))
+	for _, item := range items {
+		itemByID[item.ID] = item
+	}
+
+	results := make([]registryepisodic.MemoryItem, 0, len(orderedIDs))
+	for _, id := range orderedIDs {
+		item, ok := itemByID[id]
+		if !ok {
+			continue
+		}
+		score := scoreByID[id]
+		item.Score = &score
+		results = append(results, item)
+	}
+	return results, nil
 }
 
 // --- Attachments Service ---

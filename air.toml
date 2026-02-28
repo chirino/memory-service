@@ -5,7 +5,7 @@ tmp_dir = "/tmp"
   pre_cmd = []
   cmd = "CGO_ENABLED=0 go build ${GO_BUILD_FLAGS} -ldflags=\"${GO_LD_FLAGS}\" -o ./bin/memory-service ."
   post_cmd = []
-  full_bin = "TERM=dumb dlv --continue --listen=:2345 --api-version=2 --only-same-user=false --headless --accept-multiclient exec -- ./bin/memory-service serve"
+  full_bin = "TERM=dumb dlv --check-go-version=false --continue --listen=:2345 --api-version=2 --only-same-user=false --headless --accept-multiclient exec -- ./bin/memory-service serve"
   # full_bin = "./bin/memory-service serve"
   bin = "TERM=dumb ./bin/memory-service"
   delay = 1000

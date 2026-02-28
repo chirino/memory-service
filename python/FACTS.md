@@ -18,10 +18,12 @@
 
 **Module build**: `python/pom.xml` runs Python packaging tasks in Docker (`ghcr.io/astral-sh/uv:python3.11-bookworm`) so host setup only requires Docker.
 
-**Package layout**: Python integration is now a single package at `python/langchain` (`memory-service-langchain`); the separate `python/langgraph` package was removed.
+**Package layout**: Python integrations currently include both `python/langchain` (`memory-service-langchain`) and `python/langgraph` (`memory-service-langgraph`) for episodic memory `BaseStore` support.
 
 **LangChain middleware callback gotcha**: In `wrap_model_call`, attach callbacks using `request.model.with_config({"callbacks": [...]})`, not `request.model_settings["callbacks"]`, to avoid `generate_prompt() got multiple values for keyword argument 'callbacks'`.
 
 **LangChain gRPC recorder default**: `MemoryServiceHistoryMiddleware` enables gRPC response recording only when `MEMORY_SERVICE_GRPC_TARGET` is set (or `MEMORY_SERVICE_GRPC_RECORDING_ENABLED=true`).
 
 **FastAPI helper reuse**: Prefer `memory_service_langchain.install_fastapi_authorization_middleware`, `memory_service_scope`, and `memory_service_request` over redefining ContextVars/middleware in checkpoint apps.
+
+**LangGraph threadpool auth gotcha**: `ContextVar` request auth does not reliably flow into LangGraph checkpointer worker threads. `memory_service_scope(...)` now also tracks `conversation_id -> Authorization` for the active scope, and `MemoryServiceCheckpointSaver` falls back to that mapping when the direct getter is empty; this avoids intermittent `{"code":"forbidden","error":"forbidden"}` on checkpoint writes under parallel site tests.

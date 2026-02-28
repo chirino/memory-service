@@ -33,13 +33,9 @@ Create a wrapper class:
   lang="java"
 />
 
-The `@RecordConversation` interceptor automatically:
-- Stores the user message before calling your method
-- Stores the complete agent response after streaming completes
+**What changed**: Created `HistoryRecordingAgent`, a CDI bean that wraps `Agent` and annotates the `chat` method with `@RecordConversation`, `@ConversationId`, and `@UserMessage`. **Why**: This wrapper separates the concern of history recording from the AI service interface. The `@RecordConversation` interceptor automatically saves the user's message and the agent's response to the Memory Service's `history` channel, making them available for display in a frontend UI without any manual recording code.
 
-Use `HistoryRecordingAgent` in your endpoints instead of calling `Agent` directly.
-
-Update the `ChatResource.java`:
+Update `ChatResource.java` to inject `HistoryRecordingAgent` instead of `Agent`:
 
 <CodeFromFile
   file="quarkus/examples/doc-checkpoints/03-with-history/src/main/java/org/acme/ChatResource.java"
@@ -47,6 +43,7 @@ Update the `ChatResource.java`:
   before={2}
 >@Inject HistoryRecordingAgent agent</CodeFromFile>
 
+**What changed**: The injected field was changed from `Agent` to `HistoryRecordingAgent`. **Why**: Routing calls through `HistoryRecordingAgent` instead of `Agent` directly activates the `@RecordConversation` interceptor, so every exchange is automatically persisted to the history channel without any additional code in the resource class.
 
 <TestScenario checkpoint="quarkus/examples/doc-checkpoints/03-with-history">
 
@@ -99,15 +96,15 @@ add a jackson dependency to enable JSON serialization/deserialization to the `po
   after={1}
 >quarkus-rest-jackson</CodeFromFile>
 
+**What changed**: Added the `quarkus-rest-jackson` dependency. **Why**: This enables automatic JSON serialization and deserialization for JAX-RS responses, which is needed for the conversation and entry list endpoints that return JSON from the Memory Service.
+
 Then create a REST resource that proxies requests to Memory Service:
 
 <CodeFromFile
   file="quarkus/examples/doc-checkpoints/03-with-history/src/main/java/org/acme/ConversationsResource.java"
   lang="java"/>
 
-The `MemoryServiceProxy` is helper class that makes it easier to implement a JAXRS proxy to the memory service apis.  It handles:
-- Authentication with the memory service
-- Passing through the user's bearer token for authorization
+**What changed**: Created `ConversationsResource` with `getConversation` and `listConversationEntries` endpoints that delegate to an injected `MemoryServiceProxy`. **Why**: Agent apps should expose a subset of the Memory Service API to their frontends rather than giving clients direct access. The `MemoryServiceProxy` adds the service account API key for Memory Service authentication and passes through the caller's Bearer token so the Memory Service can enforce per-user access control.
 
 The `Channel.HISTORY` parameter ensures you get entries from the history channel (recorded by `@RecordConversation`) rather than the memory channel (used by agents internally).
 
@@ -192,7 +189,7 @@ Example response:
 {
   "data": [
     {
-      "id": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+      "id": "0485af58-42f4-45a0-96f2-fa519ea86bc2",
       "conversationId": "a2e24090-9de7-411b-8b50-e8b9d709ec9a",
       "userId": "bob",
       "channel": "history",
@@ -201,7 +198,7 @@ Example response:
       "createdAt": "2025-01-10T14:32:05Z"
     },
     {
-      "id": "267158af-48bf-4000-b25b-c4f9932a48f4",
+      "id": "63fad673-d36f-4277-8460-ebe70820ae9f",
       "conversationId": "a2e24090-9de7-411b-8b50-e8b9d709ec9a",
       "userId": "bob",
       "channel": "history",
@@ -219,8 +216,7 @@ You should see the conversation and entries that were exchanged between you and 
 
 ## Expose Conversation Listing API
 
-A more advanced frontend might want to list all conversations a user has had and display them in a list.
-To let users see all their conversations, add these methods to the `ConversationsResource.java`:
+To let users browse all their conversations, add a listing method to `ConversationsResource.java`:
 
 <CodeFromFile
   file="quarkus/examples/doc-checkpoints/03-with-history/src/main/java/org/acme/ConversationsResource.java"
@@ -228,6 +224,8 @@ To let users see all their conversations, add these methods to the `Conversation
   before={2}
   after={6}
 >public Response listConversations</CodeFromFile>
+
+**What changed**: Added a `listConversations` endpoint that accepts `mode`, `afterCursor`, `limit`, and `query` query parameters and forwards them to `MemoryServiceProxy`. **Why**: This gives frontends a paginated, filterable view of a user's conversations. The `mode` parameter can restrict results to conversations owned by the user or ones shared with them, while `query` enables keyword filtering without requiring a separate search index.
 
 <TestScenario checkpoint="quarkus/examples/doc-checkpoints/03-with-history">
 
@@ -277,11 +275,6 @@ Example response:
 ```
 
 </TestScenario>
-
-The `listConversations` endpoint supports:
-- **Pagination** via `after` (cursor) and `limit` parameters
-- **Search** via the `query` parameter for filtering conversations
-- **Mode** for different listing modes (e.g., `owned`, `shared`)
 
 ## Completed Checkpoint
 

@@ -203,6 +203,15 @@ type Config struct {
 
 	// Admin
 	RequireJustification bool
+
+	// Episodic memory settings
+	EpisodicMaxDepth           int           // Maximum namespace depth (default 5)
+	EpisodicIndexingBatchSize  int           // Items processed per indexer cycle (default 100)
+	EpisodicIndexingInterval   time.Duration // Polling interval for vector indexer (default 30s)
+	EpisodicTTLInterval        time.Duration // Polling interval for TTL expiry + eviction (default 60s)
+	EpisodicEvictionBatchSize  int           // Max rows processed per eviction pass (default 100)
+	EpisodicTombstoneRetention time.Duration // How long to keep delete/expired tombstones (default 90 days)
+	EpisodicPolicyDir          string        // Directory for OPA Rego policies (default: built-in)
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -258,6 +267,14 @@ func DefaultConfig() Config {
 		EncryptionProviders:          "plain",
 		EncryptionProviderDEKType:    "dek",
 		EncryptionProviderDEKEnabled: true,
+
+		// Episodic memory defaults
+		EpisodicMaxDepth:           5,
+		EpisodicIndexingBatchSize:  100,
+		EpisodicIndexingInterval:   30 * time.Second,
+		EpisodicTTLInterval:        60 * time.Second,
+		EpisodicEvictionBatchSize:  100,
+		EpisodicTombstoneRetention: 90 * 24 * time.Hour,
 	}
 }
 

@@ -74,6 +74,7 @@ func listConversations(c *gin.Context, store registrystore.MemoryStore) {
 func createConversation(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
 	var req struct {
+		ID                     *string                `json:"id"`
 		Title                  string                 `json:"title"`
 		Metadata               map[string]interface{} `json:"metadata"`
 		ForkedAtConversationId *string                `json:"forkedAtConversationId"`
@@ -86,6 +87,16 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore) {
 	if len(req.Title) > 500 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": "title exceeds maximum length"})
 		return
+	}
+
+	var convID *uuid.UUID
+	if req.ID != nil {
+		id, err := uuid.Parse(*req.ID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+			return
+		}
+		convID = &id
 	}
 
 	var forkConvID, forkEntryID *uuid.UUID
@@ -106,7 +117,13 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore) {
 		forkEntryID = &id
 	}
 
-	conv, err := store.CreateConversation(c.Request.Context(), userID, req.Title, req.Metadata, forkConvID, forkEntryID)
+	var conv *registrystore.ConversationDetail
+	var err error
+	if convID != nil {
+		conv, err = store.CreateConversationWithID(c.Request.Context(), userID, *convID, req.Title, req.Metadata, forkConvID, forkEntryID)
+	} else {
+		conv, err = store.CreateConversation(c.Request.Context(), userID, req.Title, req.Metadata, forkConvID, forkEntryID)
+	}
 	if err != nil {
 		handleError(c, err)
 		return

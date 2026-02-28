@@ -211,7 +211,7 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
                 if response.status_code == 404:
                     client.post(
                         "/v1/conversations",
-                        json={"title": f"Python checkpoint {conversation_id}"},
+                        json={"id": conversation_id, "title": f"Python checkpoint {conversation_id}"},
                         headers=self._headers(),
                     )
                     response = client.post(
@@ -285,9 +285,30 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
 
     def wrap_model_call(
         self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
+        request: "ModelRequest | str",
+        handler: "Callable",
+    ) -> Any:
+        # LangGraph pattern: wrap_model_call(user_text: str, lambda: model.invoke(messages))
+        if isinstance(request, str):
+            conversation_id = self._conversation_id()
+            if not conversation_id:
+                return handler()
+            user_text = request
+            if user_text:
+                self._append_history(
+                    conversation_id,
+                    "USER",
+                    user_text,
+                    forked_at_conversation_id=self._forked_at_conversation_id(),
+                    forked_at_entry_id=self._forked_at_entry_id(),
+                )
+            response = handler()
+            ai_text = self._extract_text(response)
+            if ai_text:
+                self._append_history(conversation_id, "AI", ai_text)
+            return response
+
+        # Original LangChain agent pattern: wrap_model_call(ModelRequest, handler)
         conversation_id = self._conversation_id()
         if not conversation_id:
             return handler(request)
@@ -326,9 +347,30 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
 
     async def awrap_model_call(
         self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], Any],
-    ) -> ModelResponse:
+        request: "ModelRequest | str",
+        handler: "Callable",
+    ) -> Any:
+        # LangGraph pattern: awrap_model_call(user_text: str, lambda: model.ainvoke(messages))
+        if isinstance(request, str):
+            conversation_id = self._conversation_id()
+            if not conversation_id:
+                return await handler()
+            user_text = request
+            if user_text:
+                self._append_history(
+                    conversation_id,
+                    "USER",
+                    user_text,
+                    forked_at_conversation_id=self._forked_at_conversation_id(),
+                    forked_at_entry_id=self._forked_at_entry_id(),
+                )
+            response = await handler()
+            ai_text = self._extract_text(response)
+            if ai_text:
+                self._append_history(conversation_id, "AI", ai_text)
+            return response
+
+        # Original LangChain agent pattern: awrap_model_call(ModelRequest, async handler)
         conversation_id = self._conversation_id()
         if not conversation_id:
             return await handler(request)

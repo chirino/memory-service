@@ -1,0 +1,16 @@
+[project]
+name = "memory-service-langgraph"
+version = "0.1.0"
+description = "LangGraph BaseStore implementation backed by the Memory Service episodic memory API"
+requires-python = ">=3.10"
+dependencies = [
+  "httpx>=0.28.0,<1.0.0",
+  "langgraph>=1.0.0,<2.0.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["memory_service_langgraph"]

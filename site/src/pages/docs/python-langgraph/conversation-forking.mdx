@@ -1,0 +1,151 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: LangGraph Conversation Forking
+description: Branch conversations to explore alternative paths.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide covers conversation forking, letting users branch from any point in a conversation to explore alternative paths.
+
+> **New to forking concepts?**
+> Read [Forking](/docs/concepts/forking/) first to understand how conversation forking works. This guide focuses on the Python LangGraph implementation.
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [python/examples/langgraph/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/03-with-history)
+
+Make sure you've completed the previous guides:
+- [LangGraph Getting Started](/docs/python-langgraph/getting-started/) - Minimal agent + memory-service checkpointer
+- [LangGraph Conversation History](/docs/python-langgraph/conversation-history/) - History recording and conversation APIs
+
+Also complete **Step 2** in [LangGraph Dev Setup](/docs/python-langgraph/dev-setup/) (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Conversation Forking
+
+### How Forking Works
+
+Keep the chat endpoint the same shape (`text/plain` input). Fork creation is done by appending the first entry to a new conversation with fork metadata.
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/04-conversation-forking/app.py"
+  lang="python"
+  lines="53-79"
+/>
+
+**What changed**: The `chat` endpoint now reads optional `forkedAtConversationId` and `forkedAtEntryId` query parameters, and passes them as additional arguments to `memory_service_scope(conversation_id, forked_at_conversation_id, forked_at_entry_id)`.
+
+**Why**: When three arguments are passed to `memory_service_scope`, the first history entry written in that scope is tagged with fork metadata (`forkedAtConversationId`, `forkedAtEntryId`). Memory Service uses that metadata to link the new conversation back to the branch point in the source conversation. The fork parameters must both be present or both absent — providing only one would create an incomplete link, so the endpoint returns HTTP 400 if they do not match.
+
+### Listing Forks
+
+Expose a forks endpoint so frontend clients can discover branches from a conversation:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/04-conversation-forking/app.py"
+  lang="python"
+  lines="109-116"
+/>
+
+**Why**: Frontend apps need to know what branches exist off a given conversation so they can display a fork tree or let users navigate to a branched conversation. The endpoint forwards optional `afterCursor` and `limit` parameters to support paginated listing of forks.
+
+## Try It With Curl
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/04-conversation-forking">
+
+Define a helper to get a bearer token for `bob`:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Create a turn on the source conversation:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/43b16f9d-a995-40e2-8538-c010ea2276ac \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Hello from the root conversation."
+```
+
+</CurlTest>
+
+Fetch the entry id to fork from:
+
+<CurlTest steps={`
+Then the response status should be 200
+And set "FORK_ENTRY_ID" to the json response field "data[1].id"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/43b16f9d-a995-40e2-8538-c010ea2276ac/entries \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+Manual bash equivalent (stores the value in a shell variable):
+
+```bash
+FORK_ENTRY_ID="$(curl -sSfX GET http://localhost:9090/v1/conversations/43b16f9d-a995-40e2-8538-c010ea2276ac/entries \
+  -H "Authorization: Bearer $(get-token)" | jq -r '.data[0].id')"
+echo "$FORK_ENTRY_ID"
+```
+
+Create a fork by appending the first turn to a different conversation ID through the Memory Service API with fork metadata:
+
+<CurlTest steps={`
+Then the response status should be 201
+`}>
+
+```bash
+curl -sSfX POST http://localhost:8082/v1/conversations/bdb74451-1164-47f5-823e-b71cff4b7855/entries \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "X-API-Key: agent-api-key-1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel": "history",
+    "contentType": "history",
+    "content": [{"role": "USER", "text": "Continue from this fork."}],
+    "forkedAtConversationId": "43b16f9d-a995-40e2-8538-c010ea2276ac",
+    "forkedAtEntryId": "${FORK_ENTRY_ID}"
+  }' | jq
+```
+
+</CurlTest>
+
+List forks for the source conversation through the Python proxy endpoint:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "43b16f9d-a995-40e2-8538-c010ea2276ac"
+And the response should contain "bdb74451-1164-47f5-823e-b71cff4b7855"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/43b16f9d-a995-40e2-8538-c010ea2276ac/forks \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Next Steps
+
+- [Response Resumption](/docs/python-langgraph/response-resumption/) - Streaming responses with resume and cancel endpoints
+- [Sharing](/docs/python-langgraph/sharing/) - Membership and ownership transfer APIs

@@ -34,12 +34,16 @@ Add the LangChain4j OpenAI dependency to your `pom.xml`:
   after={2}
 >quarkus-langchain4j-openai</CodeFromFile>
 
+**Why**: This extension integrates LangChain4j with Quarkus and provides built-in support for calling OpenAI-compatible LLMs, along with CDI-managed AI service beans via `@RegisterAiService`.
+
 Create a simple AI service interface:
 
 <CodeFromFile
   file="quarkus/examples/doc-checkpoints/01-basic-agent/src/main/java/org/acme/Agent.java"
   lang="java"
 />
+
+**Why**: LangChain4j generates the LLM-calling implementation at compile time from the interface signature. Declaring it as an interface means you never write networking code — Quarkus injects a fully configured AI service bean wherever you use `@Inject Agent`.
 
 Create a REST resource to expose the agent:
 
@@ -48,6 +52,8 @@ Create a REST resource to expose the agent:
   lang="java"
 />
 
+**Why**: This is the entry point that HTTP clients hit. The resource delegates immediately to the AI service, keeping the REST layer thin and the LLM interaction logic in the `Agent` interface.
+
 Configure your LLM in `application.properties` so it gets OpenAI credentials from the environment variables and change the HTTP port to 9090 to avoid conflict with services that will be started later:
 
 <CodeFromFile
@@ -55,6 +61,7 @@ Configure your LLM in `application.properties` so it gets OpenAI credentials fro
   lang="properties"
 />
 
+**Why**: Reading credentials from environment variables keeps secrets out of source control. The port is moved to 9090 so it doesn't conflict with the Memory Service and Keycloak that will be started on ports 8082 and 8081 in later steps.
 
 <TestScenario checkpoint="quarkus/examples/doc-checkpoints/01-basic-agent">
 
@@ -102,7 +109,7 @@ curl -NsSfX POST http://localhost:9090/chat \
 
 </TestScenario>
 
-This works, but you may have noticed that the agent has no memory.  Each request is independent.  Let's add conversation memory.
+Let's add conversation memory.
 
 ## Step 2: Add Memory Service Extension
 
@@ -124,12 +131,16 @@ Update the Agent interface to accept a conversation ID using the `@MemoryId` ann
   lang="java"
 />
 
-Update the REST resource to accept a conversation ID. Note the `@Blocking` annotation — this is required because the Memory Service extension uses a REST client that performs blocking I/O. Quarkus RESTEasy Reactive runs endpoints on the Vert.x event loop by default, which does not allow blocking calls. The `@Blocking` annotation moves the endpoint to a worker thread where blocking I/O is permitted.
+**Why**: The `@MemoryId` annotation tells LangChain4j which conversation the call belongs to. The Memory Service extension uses this ID to load and save the agent's memory so each conversation is isolated and the LLM receives only the history for that specific conversation.
+
+Update the REST resource to accept a conversation ID:
 
 <CodeFromFile
   file="quarkus/examples/doc-checkpoints/02-with-memory/src/main/java/org/acme/ChatResource.java"
   lang="java"
 />
+
+**What changed**: The endpoint path now includes `/{conversationId}` and the method accepts it as a `@PathParam`. The `@Blocking` annotation was also added. **Why**: Passing the conversation ID in the URL makes each conversation addressable by the caller. `@Blocking` is required here because the Memory Service client makes synchronous HTTP calls to store and retrieve memory, which would deadlock on Vert.x's non-blocking event loop.
 
 Start the Memory Service in Docker Compose following the [Getting Started](/docs/getting-started/) guide.
 
@@ -140,6 +151,8 @@ Configure the agent to connect to the Memory Service and configure OIDC authenti
   lang="properties"
   after={11}
 ># Memory Service Client</CodeFromFile>
+
+**What changed**: Added Memory Service client URL and API key, OIDC server configuration, and a route policy that requires authentication on `/chat/*`. **Why**: The Memory Service uses a dual-authentication pattern — your Quarkus app authenticates to it using a service account API key, while the user's Bearer token is passed through to enforce ownership of conversations. Enabling OIDC on the Quarkus side allows it to validate and propagate the user's identity automatically.
 
 <TestScenario checkpoint="quarkus/examples/doc-checkpoints/02-with-memory">
 
@@ -203,8 +216,6 @@ curl -NsSfX POST http://localhost:9090/chat/6a6e7762-4569-4f63-b01c-c3666a27428b
 
 </TestScenario>
 
-The agent now remembers context within the same conversation ID!
-
 If you browse to the demo agent app at [http://localhost:8080/](http://localhost:8080/), you will see that a conversation has been created with the ID `6a6e7762-4569-4f63-b01c-c3666a27428b`.
 But it won't show any messages.  That's because we are not yet storing what we call the history of the conversation.  The only thing being stored is the agent memory, and 
 that's not typically what you want to display to a user in a UI.
@@ -220,6 +231,3 @@ Or jump ahead to:
 - [Conversation Forking](/docs/quarkus/conversation-forking/) - Branch conversations to explore alternative paths
 - [Response Resumption](/docs/quarkus/response-resumption/) - Streaming responses with resume and cancel support
 
-## Complete Example
-
-For a complete working example, see the `examples/chat-quarkus` directory in the repository.

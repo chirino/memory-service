@@ -4,9 +4,10 @@ import { join } from "path";
 
 interface Props {
   checkpoint: string;
+  description?: string;
 }
 
-const { checkpoint } = Astro.props;
+const { checkpoint, description } = Astro.props;
 
 // During build, extract test data and save to JSON
 // This runs during static site generation
@@ -22,6 +23,7 @@ try {
     const testData = {
       checkpoint,
       sourceFile: Astro.url.pathname,
+      ...(description ? { description } : {}),
       scenarios,
     };
 

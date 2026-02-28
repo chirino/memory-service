@@ -378,6 +378,79 @@ message UnindexedEntry {
   Entry entry = 2;
 }
 
+// Episodic memory messages
+message PutMemoryRequest {
+  repeated string namespace = 1;
+  string key = 2;
+  google.protobuf.Struct value = 3;
+  optional google.protobuf.Struct attributes = 4;
+  int32 ttl_seconds = 5;
+  repeated string index_fields = 6;
+  bool index_disabled = 7;
+}
+
+message MemoryWriteResult {
+  // Memory identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  repeated string namespace = 2;
+  string key = 3;
+  optional google.protobuf.Struct attributes = 4;
+  string created_at = 5;
+  optional string expires_at = 6;
+}
+
+message GetMemoryRequest {
+  repeated string namespace = 1;
+  string key = 2;
+}
+
+message DeleteMemoryRequest {
+  repeated string namespace = 1;
+  string key = 2;
+}
+
+message MemoryItem {
+  // Memory identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  repeated string namespace = 2;
+  string key = 3;
+  google.protobuf.Struct value = 4;
+  optional google.protobuf.Struct attributes = 5;
+  optional double score = 6;
+  string created_at = 7;
+  optional string expires_at = 8;
+}
+
+message SearchMemoriesRequest {
+  repeated string namespace_prefix = 1;
+  string query = 2;
+  optional google.protobuf.Struct filter = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+}
+
+message SearchMemoriesResponse {
+  repeated MemoryItem items = 1;
+}
+
+message ListMemoryNamespacesRequest {
+  repeated string prefix = 1;
+  repeated string suffix = 2;
+  int32 max_depth = 3;
+}
+
+message MemoryNamespace {
+  repeated string segments = 1;
+}
+
+message ListMemoryNamespacesResponse {
+  repeated MemoryNamespace namespaces = 1;
+}
+
+message MemoryIndexStatusResponse {
+  int64 pending = 1;
+}
+
 message HealthResponse {
   string status = 1;
 }
@@ -431,6 +504,16 @@ service SearchService {
   rpc IndexConversations(IndexConversationsRequest) returns (IndexConversationsResponse);
   // List entries needing indexing. Requires indexer or admin role.
   rpc ListUnindexedEntries(ListUnindexedEntriesRequest) returns (ListUnindexedEntriesResponse);
+}
+
+service MemoriesService {
+  rpc PutMemory(PutMemoryRequest) returns (MemoryWriteResult);
+  rpc GetMemory(GetMemoryRequest) returns (MemoryItem);
+  rpc DeleteMemory(DeleteMemoryRequest) returns (google.protobuf.Empty);
+  rpc SearchMemories(SearchMemoriesRequest) returns (SearchMemoriesResponse);
+  rpc ListMemoryNamespaces(ListMemoryNamespacesRequest) returns (ListMemoryNamespacesResponse);
+  // Admin-only: returns count of memories with pending index synchronization.
+  rpc GetMemoryIndexStatus(google.protobuf.Empty) returns (MemoryIndexStatusResponse);
 }
 
 service ResponseRecorderService {

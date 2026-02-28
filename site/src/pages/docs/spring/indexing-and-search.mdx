@@ -40,10 +40,12 @@ To enable search indexing, create a bean that implements the `IndexedContentProv
   lang="java"
 />
 
+**What changed**: A new `@Component` class `PassThroughIndexedContentProvider` is introduced, implementing the `IndexedContentProvider` interface. Its `getIndexedContent` method simply returns the message text as-is for all roles.
+
+**Why**: Registering an `IndexedContentProvider` bean activates the feature — Spring Boot auto-configuration detects it and instructs the history advisor to call `getIndexedContent` for every recorded message. A pass-through implementation is the simplest starting point; in production, replace the return value with redaction logic.
+
 The `IndexedContentProvider` interface has a single method:
 - **`getIndexedContent(String text, String role)`** — Transforms message text into content for the search index. The `role` parameter is either `"USER"` or `"AI"`. Return `null` to skip indexing for that message.
-
-Spring Boot auto-configuration automatically discovers your `IndexedContentProvider` bean. When present, every message recorded by the `ConversationHistoryStreamAdvisor` will have its `indexedContent` field populated.
 
 ### Custom Redaction
 
@@ -71,6 +73,8 @@ To let the frontend search across conversations, add a search endpoint to your `
   before={1}
   after={2}
 >searchConversations(@RequestBody</CodeFromFile>
+
+**Why**: Exposing search through the proxy controller means the frontend can issue search queries with the user's Bearer token, and the Memory Service automatically scopes results to conversations the user has access to. Passing the body through as a raw string avoids the need to model every search parameter as a Java type — the JSON is serialized and forwarded as-is, so new search fields added to the Memory Service API become available immediately without controller changes.
 
 This endpoint accepts a JSON request body with the following fields:
 - **`query`** (required) — The search query text
@@ -119,11 +123,11 @@ Example response:
     {
       "conversationId": "9f95b53b-4e99-4fab-b929-35a3c5e91f1b",
       "conversationTitle": "Give me a random number between 1 and 100",
-      "entryId": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+      "entryId": "26123f29-366b-4e59-b6eb-7de2e5e3bec6",
       "score": 0.95,
       "highlights": ["Give me a ==random number== between 1 and 100"],
       "entry": {
-        "id": "d15ab065-ab94-4856-8def-a040d6d2d9db",
+        "id": "26123f29-366b-4e59-b6eb-7de2e5e3bec6",
         "conversationId": "9f95b53b-4e99-4fab-b929-35a3c5e91f1b",
         "userId": "bob",
         "channel": "history",

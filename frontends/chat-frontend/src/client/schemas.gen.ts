@@ -128,6 +128,13 @@ export const $Conversation = {
 export const $CreateConversationRequest = {
   type: "object",
   properties: {
+    id: {
+      type: "string",
+      format: "uuid",
+      nullable: true,
+      description:
+        "Optional client-supplied UUID for the conversation. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.",
+    },
     title: {
       type: "string",
       nullable: true,
@@ -233,6 +240,232 @@ export const $Channel = {
   type: "string",
   description: "Logical channel of the entry within the conversation.",
   enum: ["history", "memory"],
+} as const;
+
+export const $PutMemoryRequest = {
+  type: "object",
+  required: ["namespace", "key", "value"],
+  properties: {
+    namespace: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+    key: {
+      type: "string",
+      minLength: 1,
+      maxLength: 1024,
+    },
+    value: {
+      type: "object",
+      additionalProperties: true,
+    },
+    attributes: {
+      type: "object",
+      additionalProperties: true,
+    },
+    ttl_seconds: {
+      type: "integer",
+      minimum: 0,
+    },
+    index_fields: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+    index_disabled: {
+      type: "boolean",
+    },
+  },
+} as const;
+
+export const $MemoryWriteResult = {
+  type: "object",
+  properties: {
+    id: {
+      type: "string",
+      format: "uuid",
+    },
+    namespace: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+    key: {
+      type: "string",
+    },
+    attributes: {
+      type: "object",
+      additionalProperties: true,
+    },
+    createdAt: {
+      type: "string",
+      format: "date-time",
+    },
+    expiresAt: {
+      type: "string",
+      format: "date-time",
+      nullable: true,
+    },
+  },
+} as const;
+
+export const $MemoryItem = {
+  type: "object",
+  properties: {
+    id: {
+      type: "string",
+      format: "uuid",
+    },
+    namespace: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+    key: {
+      type: "string",
+    },
+    value: {
+      type: "object",
+      additionalProperties: true,
+    },
+    attributes: {
+      type: "object",
+      additionalProperties: true,
+    },
+    score: {
+      type: "number",
+      format: "double",
+      nullable: true,
+    },
+    createdAt: {
+      type: "string",
+      format: "date-time",
+    },
+    expiresAt: {
+      type: "string",
+      format: "date-time",
+      nullable: true,
+    },
+  },
+} as const;
+
+export const $SearchMemoriesRequest = {
+  type: "object",
+  required: ["namespace_prefix"],
+  properties: {
+    namespace_prefix: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+    query: {
+      type: "string",
+    },
+    filter: {
+      type: "object",
+      additionalProperties: true,
+    },
+    limit: {
+      type: "integer",
+      minimum: 1,
+      maximum: 100,
+    },
+    offset: {
+      type: "integer",
+      minimum: 0,
+    },
+  },
+} as const;
+
+export const $SearchMemoriesResponse = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        $ref: "#/components/schemas/MemoryItem",
+      },
+    },
+  },
+} as const;
+
+export const $ListMemoryNamespacesResponse = {
+  type: "object",
+  properties: {
+    namespaces: {
+      type: "array",
+      items: {
+        type: "array",
+        items: {
+          type: "string",
+        },
+      },
+    },
+  },
+} as const;
+
+export const $MemoryEventItem = {
+  type: "object",
+  properties: {
+    id: {
+      type: "string",
+      format: "uuid",
+    },
+    namespace: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+    key: {
+      type: "string",
+    },
+    kind: {
+      type: "string",
+      enum: ["add", "update", "delete", "expired"],
+    },
+    occurred_at: {
+      type: "string",
+      format: "date-time",
+    },
+    value: {
+      type: "object",
+      additionalProperties: true,
+      nullable: true,
+    },
+    attributes: {
+      type: "object",
+      additionalProperties: true,
+      nullable: true,
+    },
+    expires_at: {
+      type: "string",
+      format: "date-time",
+      nullable: true,
+    },
+  },
+} as const;
+
+export const $ListMemoryEventsResponse = {
+  type: "object",
+  properties: {
+    events: {
+      type: "array",
+      items: {
+        $ref: "#/components/schemas/MemoryEventItem",
+      },
+    },
+    after_cursor: {
+      type: "string",
+      nullable: true,
+    },
+  },
 } as const;
 
 export const $Attachment = {

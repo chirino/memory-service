@@ -748,6 +748,158 @@ export class SearchService {
   }
 }
 
+export class MemoriesService {
+  /**
+   * Upsert a memory item
+   * @param data The data for the request.
+   * @param data.requestBody
+   * @returns MemoryWriteResult Memory stored.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static putMemory(
+    data: $OpenApiTs["/v1/memories"]["put"]["req"],
+  ): CancelablePromise<$OpenApiTs["/v1/memories"]["put"]["res"][200] | $OpenApiTs["/v1/memories"]["put"]["res"][200]> {
+    return __request(OpenAPI, {
+      method: "PUT",
+      url: "/v1/memories",
+      body: data.requestBody,
+      mediaType: "application/json",
+    });
+  }
+
+  /**
+   * Get a memory item
+   * @param data The data for the request.
+   * @param data.ns Namespace segments. Repeat once per segment.
+   * @param data.key
+   * @returns MemoryItem Memory found.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static getMemory(
+    data: $OpenApiTs["/v1/memories"]["get"]["req"],
+  ): CancelablePromise<$OpenApiTs["/v1/memories"]["get"]["res"][200] | $OpenApiTs["/v1/memories"]["get"]["res"][200]> {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/memories",
+      query: {
+        ns: data.ns,
+        key: data.key,
+      },
+      errors: {
+        404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * Delete a memory item
+   * @param data The data for the request.
+   * @param data.ns Namespace segments. Repeat once per segment.
+   * @param data.key
+   * @returns ErrorResponse Error response
+   * @returns void Memory deleted.
+   * @throws ApiError
+   */
+  public static deleteMemory(
+    data: $OpenApiTs["/v1/memories"]["delete"]["req"],
+  ): CancelablePromise<
+    $OpenApiTs["/v1/memories"]["delete"]["res"][200] | $OpenApiTs["/v1/memories"]["delete"]["res"][204]
+  > {
+    return __request(OpenAPI, {
+      method: "DELETE",
+      url: "/v1/memories",
+      query: {
+        ns: data.ns,
+        key: data.key,
+      },
+    });
+  }
+
+  /**
+   * Search memory items
+   * @param data The data for the request.
+   * @param data.requestBody
+   * @returns SearchMemoriesResponse Search results.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static searchMemories(
+    data: $OpenApiTs["/v1/memories/search"]["post"]["req"],
+  ): CancelablePromise<
+    $OpenApiTs["/v1/memories/search"]["post"]["res"][200] | $OpenApiTs["/v1/memories/search"]["post"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/v1/memories/search",
+      body: data.requestBody,
+      mediaType: "application/json",
+    });
+  }
+
+  /**
+   * List memory namespaces
+   * @param data The data for the request.
+   * @param data.prefix Namespace prefix segments. Repeat once per segment.
+   * @param data.suffix Namespace suffix segments. Repeat once per segment.
+   * @param data.maxDepth
+   * @returns ListMemoryNamespacesResponse Distinct namespaces.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static listMemoryNamespaces(
+    data: $OpenApiTs["/v1/memories/namespaces"]["get"]["req"] = {},
+  ): CancelablePromise<
+    $OpenApiTs["/v1/memories/namespaces"]["get"]["res"][200] | $OpenApiTs["/v1/memories/namespaces"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/memories/namespaces",
+      query: {
+        prefix: data.prefix,
+        suffix: data.suffix,
+        max_depth: data.maxDepth,
+      },
+    });
+  }
+
+  /**
+   * List memory lifecycle events
+   * Returns a paginated, time-ordered stream of memory lifecycle events —
+   * `add`, `update`, `delete`, and `expired` — for namespaces under the
+   * given prefix. Cursor-based pagination via `after_cursor`.
+   * @param data The data for the request.
+   * @param data.ns Namespace prefix segments. Repeat once per segment.
+   * @param data.kinds Filter by event kind. Repeat to include multiple. Values: add, update, delete, expired.
+   * @param data.after Return events with occurred_at strictly after this ISO 8601 timestamp.
+   * @param data.before Return events with occurred_at strictly before this ISO 8601 timestamp.
+   * @param data.afterCursor Opaque cursor from a previous response for pagination.
+   * @param data.limit
+   * @returns ListMemoryEventsResponse Memory event page.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static listMemoryEvents(
+    data: $OpenApiTs["/v1/memories/events"]["get"]["req"] = {},
+  ): CancelablePromise<
+    $OpenApiTs["/v1/memories/events"]["get"]["res"][200] | $OpenApiTs["/v1/memories/events"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/memories/events",
+      query: {
+        ns: data.ns,
+        kinds: data.kinds,
+        after: data.after,
+        before: data.before,
+        after_cursor: data.afterCursor,
+        limit: data.limit,
+      },
+    });
+  }
+}
+
 export class AttachmentsService {
   /**
    * Upload or create an attachment

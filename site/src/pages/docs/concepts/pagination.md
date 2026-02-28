@@ -13,7 +13,7 @@ Every paginated endpoint returns a response with two fields:
 ```json
 {
   "data": [ ... ],
-  "afterCursor": "550e8400-e29b-41d4-a716-446655440000"
+  "afterCursor": "d8c78c2b-b24a-46f4-86fd-22f066f74526"
 }
 ```
 
@@ -73,7 +73,7 @@ Response:
 {
   "data": [
     {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "id": "d8c78c2b-b24a-46f4-86fd-22f066f74526",
       "title": "Support chat",
       "ownerUserId": "user_1234",
       "createdAt": "2025-01-10T14:32:05Z",
@@ -140,7 +140,7 @@ Response:
   "data": [
     {
       "id": "aaa7b810-9dad-11d1-80b4-00c04fd430c8",
-      "conversationId": "550e8400-e29b-41d4-a716-446655440000",
+      "conversationId": "d8c78c2b-b24a-46f4-86fd-22f066f74526",
       "userId": "user_1234",
       "channel": "history",
       "contentType": "history",
@@ -149,7 +149,7 @@ Response:
     },
     {
       "id": "bbb7b810-9dad-11d1-80b4-00c04fd430c9",
-      "conversationId": "550e8400-e29b-41d4-a716-446655440000",
+      "conversationId": "d8c78c2b-b24a-46f4-86fd-22f066f74526",
       "userId": "user_1234",
       "channel": "history",
       "contentType": "history",
@@ -190,7 +190,7 @@ Response:
 {
   "data": [
     {
-      "conversationId": "550e8400-e29b-41d4-a716-446655440000",
+      "conversationId": "d8c78c2b-b24a-46f4-86fd-22f066f74526",
       "conversationTitle": "Design Discussion",
       "entryId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
       "score": 0.93,

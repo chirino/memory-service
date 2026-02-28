@@ -1,0 +1,153 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: LangGraph Getting Started
+description: Step-by-step guide to integrating Memory Service with a Python FastAPI + LangGraph agent.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide walks you through a minimal LangGraph chatbot first, then adds incremental memory-service integration. The goal is to keep code changes small while unlocking memory features one step at a time.
+
+Make sure you have completed [LangGraph Dev Setup](/docs/python-langgraph/dev-setup/) first.
+Also complete **Step 2** on that page (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## Step 1: Start with a Minimal LangGraph Chatbot
+
+**Starting checkpoint**: [python/examples/langgraph/doc-checkpoints/01-basic-langgraph](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/01-basic-langgraph)
+
+Create a minimal LangGraph chatbot using `StateGraph(MessagesState)` and expose it over HTTP with FastAPI (no memory-service imports yet):
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/01-basic-langgraph/app.py"
+  lang="python"
+/>
+
+**Why**: `StateGraph(MessagesState)` is LangGraph's way of describing the computation as a directed graph where each node transforms state. `MessagesState` gives the graph a built-in `messages` list so nodes can append to it naturally. Starting with a single node keeps the structure clear before adding memory features.
+
+Add LangGraph dependencies:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/01-basic-langgraph/pyproject.toml"
+  lang="toml"
+/>
+
+The checkpoint reads model configuration from environment variables (`OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`) so local dev and `site-tests` can inject provider settings without code changes.
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/01-basic-langgraph">
+
+Run the app:
+
+```bash
+cd python/examples/langgraph/doc-checkpoints/01-basic-langgraph
+uv sync --frozen
+uv run uvicorn app:app --host 0.0.0.0 --port 9090
+```
+
+Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "2"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat \
+  -H "Content-Type: text/plain" \
+  -d "What is 1 + 1?"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+Each request is stateless — the chatbot has no memory of previous turns.
+
+## Step 2: Enable Memory-Backed Conversations
+
+**Starting checkpoint**: [python/examples/langgraph/doc-checkpoints/01-basic-langgraph](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/01-basic-langgraph)
+
+Checkpoint `02` adds `MemoryServiceCheckpointSaver` so the LangGraph graph persists conversation state across requests, keyed by `conversation_id`.
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/02-with-checkpointing/app.py"
+  lang="python"
+  lines="1-15"
+/>
+
+**What changed**: `MemoryServiceCheckpointSaver` and `install_fastapi_authorization_middleware` are imported from `memory_service_langchain`, and a `checkpointer = MemoryServiceCheckpointSaver()` instance is created at module level.
+
+**Why**: `MemoryServiceCheckpointSaver` is a LangGraph `BaseCheckpointSaver` that stores and loads graph state in the Memory Service `memory` channel. `install_fastapi_authorization_middleware` reads the `Authorization: Bearer <token>` header from every incoming request and stores it in a request-scoped context variable so the checkpointer can forward it to Memory Service without you passing it explicitly.
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/02-with-checkpointing/app.py"
+  lang="python"
+  lines="26-34"
+/>
+
+**What changed**: `checkpointer=checkpointer` is passed to `builder.compile()`, and `install_fastapi_authorization_middleware(app)` is called after the FastAPI app is created.
+
+**Why**: Passing `checkpointer` to `compile()` makes LangGraph automatically save the graph state after every node and load it at the start of every subsequent call with the same `thread_id`. This is the LangGraph pattern — unlike the LangChain `create_agent()` API, the checkpointer is attached at compile time rather than agent-creation time.
+
+The endpoint extracts `conversation_id` from the path and threads it into the graph as `thread_id`:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/02-with-checkpointing/app.py"
+  lang="python"
+  lines="40-52"
+/>
+
+**What changed**: The route changes from `POST /chat` to `POST /chat/{conversation_id}`, and `config={"configurable": {"thread_id": conversation_id}}` is passed to `graph.ainvoke()`.
+
+**Why**: By mapping `thread_id` to `conversation_id` from the URL path, each unique path corresponds to one persistent conversation thread. Two calls to `/chat/abc` share the same message history; a call to `/chat/xyz` starts a fresh one.
+
+Make sure Memory Service and Keycloak are running, then define a helper to get a user token:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/02-with-checkpointing">
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hi Hiram"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/08c5bb33-05aa-4e4d-85cd-a1dd7ab1e137 \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Hi, I'm Hiram, who are you?"
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hiram"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/08c5bb33-05aa-4e4d-85cd-a1dd7ab1e137 \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Who am I?"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Next Steps
+
+Continue to [Conversation History](/docs/python-langgraph/conversation-history/) to record user/AI turns and expose conversation APIs for frontend clients.

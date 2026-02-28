@@ -444,6 +444,41 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				})
 		}
 
+	case "MemoriesService":
+		client := pb.NewMemoriesServiceClient(conn)
+		switch method {
+		case "PutMemory":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.PutMemoryRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.PutMemory(ctx, req.(*pb.PutMemoryRequest))
+				})
+		case "GetMemory":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.GetMemoryRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.GetMemory(ctx, req.(*pb.GetMemoryRequest))
+				})
+		case "DeleteMemory":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.DeleteMemoryRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.DeleteMemory(ctx, req.(*pb.DeleteMemoryRequest))
+				})
+		case "SearchMemories":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.SearchMemoriesRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.SearchMemories(ctx, req.(*pb.SearchMemoriesRequest))
+				})
+		case "ListMemoryNamespaces":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.ListMemoryNamespacesRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListMemoryNamespaces(ctx, req.(*pb.ListMemoryNamespacesRequest))
+				})
+		case "GetMemoryIndexStatus":
+			return g.invokeUnary(conn, ctx, "", func() proto.Message { return &emptypb.Empty{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.GetMemoryIndexStatus(ctx, req.(*emptypb.Empty))
+				})
+		}
+
 	case "ResponseRecorderService":
 		client := pb.NewResponseRecorderServiceClient(conn)
 		switch method {

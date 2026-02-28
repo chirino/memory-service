@@ -1,6 +1,8 @@
 services:
   postgres:
     image: pgvector/pgvector:pg18
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: memory_service
       POSTGRES_USER: postgres
@@ -35,6 +37,8 @@ services:
 
   redis:
     image: redis:7-alpine
+    ports:
+      - "6379:6379"
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     tmpfs:
       # Keep Redis data in-memory and drop it with the container
@@ -96,7 +100,7 @@ services:
     #     source: .
     #     target: /workspaces/memory-service
     # build:
-    #   context: .devcontainer 
+    #   context: .devcontainer
     #   dockerfile: Dockerfile
     # command: ["air", "-c", "air.toml"]
     ### </dev-mode> #######################################################

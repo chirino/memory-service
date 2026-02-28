@@ -35,12 +35,16 @@ Create a simple REST controller:
   lang="java"
 />
 
+**Why**: This is the minimal wiring needed to call an LLM from a Spring Boot app. `ChatClient` is Spring AI's fluent facade over the underlying model; injecting `ChatClient.Builder` lets Spring Boot auto-configure the OpenAI connection from properties, so the controller stays free of credential logic.
+
 Configure the server port and OpenAI credentials in `application.properties`:
 
 <CodeFromFile
   file="spring/examples/doc-checkpoints/01-basic-agent/src/main/resources/application.properties"
   lang="properties"
 />
+
+**Why**: Keeping credentials in environment variables rather than hardcoded values prevents secrets from being committed to source control and makes it straightforward to point the app at a different model or a local proxy without code changes.
 
 <TestScenario checkpoint="spring/examples/doc-checkpoints/01-basic-agent">
 
@@ -88,7 +92,7 @@ curl -NsSfX POST http://localhost:9090/chat \
 
 </TestScenario>
 
-This works, but you may have noticed that the agent has no memory. Each request is independent. Let's add conversation memory.
+Let's add conversation memory.
 
 ## Step 2: Add Memory Service Starter
 
@@ -132,19 +136,27 @@ spring.security.oauth2.client.registration.memory-service-client.redirect-uri={b
 spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8081/realms/memory-service
 ```
 
-Configure security. The configuration supports both browser-based OAuth2 login and Bearer token authentication:
+Configure security:
 
 <CodeFromFile
   file="spring/examples/doc-checkpoints/02-with-memory/src/main/java/com/example/demo/SecurityConfig.java"
   lang="java"
 />
 
-Now let's update the controller to use chat memory. The Memory Service starter provides `MemoryServiceChatMemoryRepositoryBuilder` which you can use to build a `MessageWindowChatMemory`:
+**What changed**: A `SecurityConfig` bean enables both `oauth2Login` (browser session-based) and `oauth2ResourceServer` JWT validation (Bearer token) in a single filter chain, with CSRF disabled and every request requiring authentication.
+
+**Why**: Agent apps typically need to serve two audiences at once — browser users who log in interactively via Keycloak, and API clients (curl, frontends, other services) that present a Bearer token. Enabling both modes in one chain means you don't need separate endpoints or ports; Spring Security picks the right authentication mechanism based on the `Authorization` header present in each request.
+
+Update the controller to use chat memory:
 
 <CodeFromFile
   file="spring/examples/doc-checkpoints/02-with-memory/src/main/java/com/example/demo/ChatController.java"
   lang="java"
 />
+
+**What changed**: The endpoint now accepts a `{conversationId}` path variable, retrieves the authenticated user's Bearer token via `SecurityHelper.bearerToken()`, builds a `MessageWindowChatMemory` backed by the Memory Service using `MemoryServiceChatMemoryRepositoryBuilder`, wraps it in a `MessageChatMemoryAdvisor`, and passes the conversation ID as an advisor parameter.
+
+**Why**: `MemoryServiceChatMemoryRepositoryBuilder.build(bearerToken)` creates a repository that reads and writes the agent's context window to and from the Memory Service under the current user's identity, so every user's conversation history is stored separately and securely. `MessageWindowChatMemory` keeps only the most recent N messages in the prompt, preventing the context window from growing unbounded across many turns.
 
 <TestScenario checkpoint="spring/examples/doc-checkpoints/02-with-memory">
 
@@ -189,8 +201,6 @@ curl -NsSfX POST http://localhost:9090/chat/2cdbd4b0-b48d-4f75-8f7a-9616301e5143
 
 </CurlTest>
 
-**Expected**: The agent now remembers your name from the previous message.
-
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Hiram"
@@ -207,8 +217,6 @@ curl -NsSfX POST http://localhost:9090/chat/2cdbd4b0-b48d-4f75-8f7a-9616301e5143
 
 </TestScenario>
 
-The agent now remembers context within the same conversation ID!
-
 If you browse to the demo agent app at [http://localhost:8080/](http://localhost:8080/), you will see that a conversation has been created with the ID `2cdbd4b0-b48d-4f75-8f7a-9616301e5143`.
 But it won't show any messages.  That's because we are not yet storing what we call the history of the conversation.  The only thing being stored is the agent memory, and
 that's not typically what you want to display to a user in a UI.
@@ -224,6 +232,3 @@ Or jump ahead to:
 - [Conversation Forking](/docs/spring/conversation-forking/) - Branch conversations to explore alternative paths
 - [Response Resumption](/docs/spring/response-resumption/) - Streaming responses with resume and cancel support
 
-## Complete Example
-
-For a complete working example, see the `spring/examples/chat-spring` directory in the repository.

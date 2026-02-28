@@ -56,6 +56,10 @@ export type Conversation = ConversationSummary & {
 };
 
 export type CreateConversationRequest = {
+  /**
+   * Optional client-supplied UUID for the conversation. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
+   */
+  id?: string | null;
   title?: string | null;
   metadata?: {
     [key: string]: unknown;
@@ -106,6 +110,84 @@ export type ShareConversationRequest = {
  * Logical channel of the entry within the conversation.
  */
 export type Channel = "history" | "memory";
+
+export type PutMemoryRequest = {
+  namespace: Array<string>;
+  key: string;
+  value: {
+    [key: string]: unknown;
+  };
+  attributes?: {
+    [key: string]: unknown;
+  };
+  ttl_seconds?: number;
+  index_fields?: Array<string>;
+  index_disabled?: boolean;
+};
+
+export type MemoryWriteResult = {
+  id?: string;
+  namespace?: Array<string>;
+  key?: string;
+  attributes?: {
+    [key: string]: unknown;
+  };
+  createdAt?: string;
+  expiresAt?: string | null;
+};
+
+export type MemoryItem = {
+  id?: string;
+  namespace?: Array<string>;
+  key?: string;
+  value?: {
+    [key: string]: unknown;
+  };
+  attributes?: {
+    [key: string]: unknown;
+  };
+  score?: number | null;
+  createdAt?: string;
+  expiresAt?: string | null;
+};
+
+export type SearchMemoriesRequest = {
+  namespace_prefix: Array<string>;
+  query?: string;
+  filter?: {
+    [key: string]: unknown;
+  };
+  limit?: number;
+  offset?: number;
+};
+
+export type SearchMemoriesResponse = {
+  items?: Array<MemoryItem>;
+};
+
+export type ListMemoryNamespacesResponse = {
+  namespaces?: Array<Array<string>>;
+};
+
+export type MemoryEventItem = {
+  id?: string;
+  namespace?: Array<string>;
+  key?: string;
+  kind?: "add" | "update" | "delete" | "expired";
+  occurred_at?: string;
+  value?: {
+    [key: string]: unknown;
+  } | null;
+  attributes?: {
+    [key: string]: unknown;
+  } | null;
+  expires_at?: string | null;
+};
+
+export type ListMemoryEventsResponse = {
+  events?: Array<MemoryEventItem>;
+  after_cursor?: string | null;
+};
 
 /**
  * A reference to an attachment on a history entry. Supports two modes:
@@ -1050,6 +1132,124 @@ export type $OpenApiTs = {
          * Error response
          */
         403: ErrorResponse;
+      };
+    };
+  };
+  "/v1/memories": {
+    put: {
+      req: {
+        requestBody: PutMemoryRequest;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+      };
+    };
+    get: {
+      req: {
+        key: string;
+        /**
+         * Namespace segments. Repeat once per segment.
+         */
+        ns: Array<string>;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Resource not found
+         */
+        404: ErrorResponse;
+      };
+    };
+    delete: {
+      req: {
+        key: string;
+        /**
+         * Namespace segments. Repeat once per segment.
+         */
+        ns: Array<string>;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Memory deleted.
+         */
+        204: void;
+      };
+    };
+  };
+  "/v1/memories/search": {
+    post: {
+      req: {
+        requestBody: SearchMemoriesRequest;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+      };
+    };
+  };
+  "/v1/memories/namespaces": {
+    get: {
+      req: {
+        maxDepth?: number;
+        /**
+         * Namespace prefix segments. Repeat once per segment.
+         */
+        prefix?: Array<string>;
+        /**
+         * Namespace suffix segments. Repeat once per segment.
+         */
+        suffix?: Array<string>;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+      };
+    };
+  };
+  "/v1/memories/events": {
+    get: {
+      req: {
+        /**
+         * Return events with occurred_at strictly after this ISO 8601 timestamp.
+         */
+        after?: string;
+        /**
+         * Opaque cursor from a previous response for pagination.
+         */
+        afterCursor?: string;
+        /**
+         * Return events with occurred_at strictly before this ISO 8601 timestamp.
+         */
+        before?: string;
+        /**
+         * Filter by event kind. Repeat to include multiple. Values: add, update, delete, expired.
+         */
+        kinds?: Array<"add" | "update" | "delete" | "expired">;
+        limit?: number;
+        /**
+         * Namespace prefix segments. Repeat once per segment.
+         */
+        ns?: Array<string>;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
       };
     };
   };

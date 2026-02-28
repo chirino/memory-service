@@ -18,6 +18,8 @@ tags:
     description: Semantic and keyword search APIs.
   - name: Sharing
     description: APIs for managing conversation ownership and sharing.
+  - name: Memories
+    description: Namespaced episodic memory APIs.
 paths:
 
   ############################################################
@@ -971,6 +973,230 @@ paths:
         - BearerAuth: []
 
   ############################################################
+  # Memories
+  ############################################################
+
+  /v1/memories:
+    put:
+      tags: [Memories]
+      summary: Upsert a memory item
+      operationId: putMemory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutMemoryRequest'
+      responses:
+        '200':
+          description: Memory stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryWriteResult'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    get:
+      tags: [Memories]
+      summary: Get a memory item
+      operationId: getMemory
+      parameters:
+        - name: ns
+          in: query
+          required: true
+          description: Namespace segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Memory found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryItem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    delete:
+      tags: [Memories]
+      summary: Delete a memory item
+      operationId: deleteMemory
+      parameters:
+        - name: ns
+          in: query
+          required: true
+          description: Namespace segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Memory deleted.
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/memories/search:
+    post:
+      tags: [Memories]
+      summary: Search memory items
+      operationId: searchMemories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchMemoriesRequest'
+      responses:
+        '200':
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchMemoriesResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/memories/namespaces:
+    get:
+      tags: [Memories]
+      summary: List memory namespaces
+      operationId: listMemoryNamespaces
+      parameters:
+        - name: prefix
+          in: query
+          required: false
+          description: Namespace prefix segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: suffix
+          in: query
+          required: false
+          description: Namespace suffix segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: max_depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Distinct namespaces.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListMemoryNamespacesResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /v1/memories/events:
+    get:
+      tags: [Memories]
+      summary: List memory lifecycle events
+      operationId: listMemoryEvents
+      description: |-
+        Returns a paginated, time-ordered stream of memory lifecycle events —
+        `add`, `update`, `delete`, and `expired` — for namespaces under the
+        given prefix. Cursor-based pagination via `after_cursor`.
+      parameters:
+        - name: ns
+          in: query
+          required: false
+          description: Namespace prefix segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: kinds
+          in: query
+          required: false
+          description: "Filter by event kind. Repeat to include multiple. Values: add, update, delete, expired."
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [add, update, delete, expired]
+          style: form
+          explode: true
+        - name: after
+          in: query
+          required: false
+          description: Return events with occurred_at strictly after this ISO 8601 timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: before
+          in: query
+          required: false
+          description: Return events with occurred_at strictly before this ISO 8601 timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: after_cursor
+          in: query
+          required: false
+          description: Opaque cursor from a previous response for pagination.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Memory event page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListMemoryEventsResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  ############################################################
   # Attachments
   ############################################################
 
@@ -1335,6 +1561,15 @@ components:
     CreateConversationRequest:
       type: object
       properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            Optional client-supplied UUID for the conversation. When provided, the
+            server creates the conversation with exactly this ID instead of generating
+            one. Useful for agents that need a deterministic conversation ID derived
+            from an external thread identifier.
         title:
           type: string
           nullable: true
@@ -1417,6 +1652,172 @@ components:
       enum:
         - history
         - memory
+
+    PutMemoryRequest:
+      type: object
+      required:
+        - namespace
+        - key
+        - value
+      properties:
+        namespace:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        value:
+          type: object
+          additionalProperties: true
+        attributes:
+          type: object
+          additionalProperties: true
+        ttl_seconds:
+          type: integer
+          minimum: 0
+        index_fields:
+          type: array
+          items:
+            type: string
+        index_disabled:
+          type: boolean
+
+    MemoryWriteResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        namespace:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+        attributes:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    MemoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        namespace:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+        value:
+          type: object
+          additionalProperties: true
+        attributes:
+          type: object
+          additionalProperties: true
+        score:
+          type: number
+          format: double
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    SearchMemoriesRequest:
+      type: object
+      required:
+        - namespace_prefix
+      properties:
+        namespace_prefix:
+          type: array
+          items:
+            type: string
+        query:
+          type: string
+        filter:
+          type: object
+          additionalProperties: true
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+
+    SearchMemoriesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoryItem'
+
+    ListMemoryNamespacesResponse:
+      type: object
+      properties:
+        namespaces:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+
+    MemoryEventItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        namespace:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+        kind:
+          type: string
+          enum: [add, update, delete, expired]
+        occurred_at:
+          type: string
+          format: date-time
+        value:
+          type: object
+          additionalProperties: true
+          nullable: true
+        attributes:
+          type: object
+          additionalProperties: true
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ListMemoryEventsResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoryEventItem'
+        after_cursor:
+          type: string
+          nullable: true
 
     Attachment:
       type: object

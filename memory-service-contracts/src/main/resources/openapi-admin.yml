@@ -38,6 +38,97 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /admin/v1/memories/policies:
+    get:
+      tags: [Admin]
+      summary: Download active episodic memory policy bundle
+      description: Returns the currently active OPA/Rego policy sources for episodic memory.
+      operationId: adminGetMemoryPolicies
+      responses:
+        '200':
+          description: Current episodic policy bundle.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryPolicyBundle'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    put:
+      tags: [Admin]
+      summary: Upload episodic memory policy bundle
+      description: Replaces active episodic OPA/Rego policies and hot-reloads evaluation without restart.
+      operationId: adminPutMemoryPolicies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemoryPolicyBundle'
+      responses:
+        '204':
+          description: Policies updated.
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /admin/v1/memories/{id}:
+    delete:
+      tags: [Admin]
+      summary: Force-delete an episodic memory by ID
+      operationId: adminDeleteMemory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Memory identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Memory deleted.
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /admin/v1/memories/index/status:
+    get:
+      tags: [Admin]
+      summary: Get episodic memory indexing queue status
+      operationId: adminGetMemoryIndexStatus
+      responses:
+        '200':
+          description: Episodic indexing status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryIndexStatusResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /admin/v1/memories/index/trigger:
+    post:
+      tags: [Admin]
+      summary: Trigger one episodic memory indexing cycle
+      operationId: adminTriggerMemoryIndex
+      responses:
+        '200':
+          description: Indexing cycle trigger response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryIndexTriggerResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
   /v1/admin/conversations:
     get:
       tags: [Admin]
@@ -1128,6 +1219,57 @@ components:
           type: object
           additionalProperties: true
 
+    MemoryPolicyBundle:
+      type: object
+      required:
+        - authz
+        - attributes
+        - filter
+      properties:
+        authz:
+          type: string
+          description: Rego source for `package memories.authz`.
+        attributes:
+          type: string
+          description: Rego source for `package memories.attributes`.
+        filter:
+          type: string
+          description: Rego source for `package memories.filter`.
+
+    MemoryIndexStatusResponse:
+      type: object
+      properties:
+        pending:
+          type: integer
+          format: int64
+          description: Number of memories where `indexed_at` is null.
+
+    MemoryIndexRunStats:
+      type: object
+      properties:
+        pending:
+          type: integer
+        processed:
+          type: integer
+        skipped_no_embedding:
+          type: integer
+        embedded:
+          type: integer
+        vector_upserts:
+          type: integer
+        vector_deletes:
+          type: integer
+        failures:
+          type: integer
+
+    MemoryIndexTriggerResponse:
+      type: object
+      properties:
+        triggered:
+          type: boolean
+        stats:
+          $ref: '#/components/schemas/MemoryIndexRunStats'
+
     AccessLevel:
       type: string
       description: Access level of a user for a conversation.
@@ -1512,4 +1654,3 @@ components:
         expiresIn:
           type: integer
           description: URL validity duration in seconds.
-

@@ -9,7 +9,6 @@
 * Go BDD: add `I execute MongoDB query:` style steps with MongoDB-specific assertions equivalent to the SQL verification steps (currently skipped on MongoDB backend, matching Java parity).
 * Go: Avoid using file buffer for the encryption store.
 * can we use generated server stubs?
-* encrypt temp files.
 
 # Performance Related
 
@@ -24,7 +23,7 @@
 # Need Dev Feedback for:
 
 * Can the @RecordConversation bits be moved into Quarkus Langchain4j? https://github.com/quarkiverse/quarkus-langchain4j/issues/2068#issuecomment-3816044002
-   * We have added addional features to the interceptor that might not fit into a generic interceptor: thinks like forking support.
+   * We have added addional features to the interceptor that might not fit into a generic interceptor: things like forking support.
 * Do we need MORE multi-tenancy support?  What would it look like? Groups / Orgs? (see [060-multi-tenancy-groups-orgs.md](docs/enhancements/060-multi-tenancy-groups-orgs.md)).
 
 # Future Directions

@@ -1,0 +1,123 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: LangGraph Indexing and Search
+description: Add search indexing and semantic search to your conversations.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide continues from [Conversation History](/docs/python-langgraph/conversation-history/) and shows how to add search indexing to history entries and expose a search API for frontend applications.
+
+> **New to indexing and search concepts?**
+> Read [Indexing & Search](/docs/concepts/indexing-and-search/) first to understand `indexedContent`, redaction, and search types.
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [python/examples/langgraph/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/03-with-history)
+
+Make sure you've completed the [LangGraph Conversation History](/docs/python-langgraph/conversation-history/) guide first.
+Also complete **Step 2** in [LangGraph Dev Setup](/docs/python-langgraph/dev-setup/) (build local `memory-service-langchain` wheel + `UV_FIND_LINKS`); this is temporary until the package is released.
+
+## How Search Indexing Works
+
+Conversation history content is encrypted at rest, so text search needs a separate cleartext index field.
+
+Checkpoint `07` configures `MemoryServiceHistoryMiddleware` with an `indexed_content_provider`. The provider transforms each history message into `indexedContent` before the entry is written.
+
+This gives you a redaction point. You can remove sensitive data from `indexedContent` while still storing the full encrypted message content.
+
+## Add an Indexed Content Provider
+
+The simplest provider is pass-through:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/07-with-search/app.py"
+  lang="python"
+  lines="30-40"
+/>
+
+**What changed**: A `pass_through_indexed_content(text, role)` function is defined and passed to `MemoryServiceHistoryMiddleware(indexed_content_provider=pass_through_indexed_content)`.
+
+**Why**: Passing `indexed_content_provider` to `MemoryServiceHistoryMiddleware` activates indexing: the function is called for every message before the history entry is written, and its return value becomes `indexedContent`. A pass-through provider indexes everything as-is. You can swap it for a redaction function to strip sensitive data from the search index while keeping the full encrypted message in storage.
+
+For production, replace pass-through with redaction logic. Example:
+
+```python
+def redacting_indexed_content(text: str, role: str) -> str:
+    del role
+    return re.sub(r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b", "[REDACTED]", text)
+```
+
+## Expose the Search API
+
+Expose `POST /v1/conversations/search` so frontend apps can query across conversations:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/07-with-search/app.py"
+  lang="python"
+  lines="88-90"
+/>
+
+**Why**: Frontend apps need a single endpoint to run both full-text and semantic search across all conversations the user has access to. Proxying through the agent app means the user's bearer token is forwarded to Memory Service so only conversations the user can read are returned in results.
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/07-with-search">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+First, create searchable conversation content:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/b344ba48-6958-41c9-a8e3-c641ea633dab \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Give me a random number between 1 and 100."
+```
+
+</CurlTest>
+
+Search conversations:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "data"
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/search \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "random number", "searchType": "auto"}' | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Completed Checkpoint
+
+**Completed code**: View the full implementation at [python/examples/langgraph/doc-checkpoints/07-with-search](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/07-with-search)
+
+## Next Steps
+
+Continue to:
+- [Conversation Forking](/docs/python-langgraph/conversation-forking/) - Branch conversations to explore alternative paths
+- [Response Resumption](/docs/python-langgraph/response-resumption/) - Streaming responses with resume and cancel support
+- [Episodic Memories](/docs/python-langgraph/memories/) - Persistent per-user memories using the LangGraph BaseStore

@@ -28,6 +28,10 @@ Update `ChatController.java` to use streaming:
   lang="java"
 />
 
+**What changed**: The return type changes from `String` to `SseEmitter`. The chat client's `.call().content()` is replaced with `.stream().content()`, which returns a `Flux<String>`. Tokens from that flux are forwarded to the `SseEmitter` chunk by chunk, and the subscription is disposed when the emitter completes or times out.
+
+**Why**: Server-Sent Events (SSE) allow the browser to receive tokens as they are generated rather than waiting for the full response. This makes the app feel significantly more responsive for longer answers. The `SseEmitter` with a `0L` timeout means the connection stays open indefinitely until the stream finishes, the client disconnects, or a cancel request arrives.
+
 <TestScenario checkpoint="spring/examples/doc-checkpoints/05-response-resumption">
 
 Test it with curl:
@@ -55,15 +59,14 @@ and you should see the response streaming to the browser.
 
 ## Response Resumption
 
-The following creates a REST endpoint that will allow us to:
-* Check if a conversation has a response that is in progress
-* Resume a response that is in progress
-* Cancel a response that is in progress
-
 <CodeFromFile
   file="spring/examples/doc-checkpoints/05-response-resumption/src/main/java/com/example/demo/ResumeController.java"
   lang="java"
 />
+
+**What changed**: A new `ResumeController` is introduced at `/v1/conversations` with three endpoints: `POST /resume-check` (batch check for in-progress responses), `GET /{conversationId}/resume` (SSE stream that replays the buffered response), and `POST /{conversationId}/cancel` (stops an in-progress response). It depends on the auto-configured `ResponseResumer` and `MemoryServiceProxy` beans.
+
+**Why**: When a user's browser disconnects mid-stream (page reload, network drop), the LLM response continues generating on the server but is lost to the client. `ResponseResumer` buffers the in-flight tokens in the Memory Service so a reconnecting client can call `/resume` and receive the complete response from the beginning, giving a seamless experience. The cancel endpoint lets users or the frontend interrupt a long-running generation without leaving the server in an orphaned state.
 
 Test it with curl:
 
@@ -102,15 +105,6 @@ curl -sSfX POST http://localhost:9090/v1/conversations/8337ca02-62de-43e1-b69b-c
 ```
 
 You should see the response get canceled.
-
-## Complete Example
-
-**Completed code**: View the full implementation at [spring/examples/doc-checkpoints/05-response-resumption](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/05-response-resumption)
-
-For a complete working example with frontend, see the [spring/examples/chat-spring](https://github.com/chirino/memory-service/tree/main/spring/examples/chat-spring) directory in the repository.
-
-This example is the demo agent application that gets started by the [Getting Started](/docs/getting-started/) guide.
-
 
 ## Next Steps
 

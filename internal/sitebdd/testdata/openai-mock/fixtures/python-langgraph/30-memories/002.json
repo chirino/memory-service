@@ -1,0 +1,15 @@
+{
+  "scenarioName": "chat-sequence",
+  "requiredScenarioState": "step-2",
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/chat/completions"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\n  \"id\": \"chatcmpl-langgraph-fixture-002\",\n  \"object\": \"chat.completion\",\n  \"created\": 1707440401,\n  \"model\": \"mock-gpt-markdown\",\n  \"choices\": [{\n    \"index\": 0,\n    \"message\": {\n      \"role\": \"assistant\",\n      \"content\": \"Your name is Bob. You also mentioned you love hiking and Python programming.\"\n    },\n    \"finish_reason\": \"stop\"\n  }]\n}"
+  }
+}

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -79,6 +80,9 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 
 	for i, cr := range requests {
 		fmt.Printf("  [curl %d/%d] %s %s\n", i+1, len(requests), cr.Method, cr.URL)
+		if err := s.claimRequestUUIDs(cr); err != nil {
+			return fmt.Errorf("uuid registry conflict on curl %d: %w", i+1, err)
+		}
 
 		req, err := cr.toHTTPRequest()
 		if err != nil {
@@ -125,8 +129,23 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 	return nil
 }
 
+func (s *SiteScenario) claimRequestUUIDs(cr curlRequest) error {
+	values := []string{cr.URL, cr.Body}
+	values = append(values, cr.Headers...)
+	values = append(values, cr.FormFields...)
+	uuids := extractUUIDs(values...)
+	if len(uuids) == 0 {
+		return nil
+	}
+	sort.Strings(uuids)
+	if err := globalScenarioUUIDRegistry.ClaimScenarioUUIDs(s.scenarioKey(), uuids); err != nil {
+		return fmt.Errorf("%w (current scenario=%q, command=%q)", err, s.scenarioKey(), cr.Method+" "+cr.URL)
+	}
+	return nil
+}
+
 // rewriteUsers replaces canonical user names with scenario-isolated names.
-// Applied in Authorization headers and "userId" JSON fields.
+// Applied in Authorization headers, "userId" JSON fields, and URL path segments.
 func (s *SiteScenario) rewriteUsers(text string) string {
 	for _, base := range []string{"alice", "bob", "charlie"} {
 		isolated := s.isolatedUser(base)
@@ -135,6 +154,8 @@ func (s *SiteScenario) rewriteUsers(text string) string {
 		// "userId": "alice" in JSON payloads
 		text = strings.ReplaceAll(text, `"userId": "`+base+`"`, `"userId": "`+isolated+`"`)
 		text = strings.ReplaceAll(text, `"userId":"`+base+`"`, `"userId":"`+isolated+`"`)
+		// URL path segments: /alice/ → /alice-<uid>/
+		text = strings.ReplaceAll(text, "/"+base+"/", "/"+isolated+"/")
 	}
 	return text
 }

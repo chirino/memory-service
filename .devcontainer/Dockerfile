@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/devcontainers/base:bookworm
 
-ARG GO_VERSION=1.24.2
+ARG GO_VERSION=1.24.6
 ARG NODE_VERSION=20
 ARG USERNAME=vscode
 
@@ -31,6 +31,8 @@ RUN ARCH=$(dpkg --print-architecture) \
 
 ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
 ENV GOPATH="/go"
+RUN mkdir -p /go \
+    && chown -R ${USERNAME}:${USERNAME} /go
 
 # Install Node via NodeSource
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
@@ -100,6 +102,7 @@ RUN COMP_DIR="/etc/bash_completion.d" \
 RUN go install gotest.tools/gotestsum@latest
 RUN go install github.com/go-delve/delve/cmd/dlv@v1.25.1
 RUN go install github.com/cosmtrek/air@v1.51.0
+RUN chown -R ${USERNAME}:${USERNAME} /go
 
 
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
