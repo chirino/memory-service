@@ -41,6 +41,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+          cache-dependency-path: |
+            go.sum
+            .github/cache/go-${{ matrix.job }}.sum
 
       - name: Set up Java
         if: contains('verify-generated test-java test-site', matrix.job)
@@ -49,6 +52,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .github/cache/maven-${{ matrix.job }}.key
 
       - name: Set up Node
         if: contains('verify-generated test-java test-site', matrix.job)
@@ -59,6 +65,7 @@ jobs:
           cache-dependency-path: |
             frontends/chat-frontend/package-lock.json
             site/package-lock.json
+            .github/cache/npm-${{ matrix.job }}.key
 
       - name: Generate Source Code
         if: contains('verify-generated', matrix.job)
@@ -120,8 +127,8 @@ jobs:
           file: Dockerfile
           push: false
           tags: ghcr.io/chirino/memory-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=image-memory-service
+          cache-to: type=gha,mode=max,scope=image-memory-service
 
       - name: Build Docker image (chat-quarkus)
         if: matrix.job == 'image-chat-quarkus'
@@ -131,6 +138,5 @@ jobs:
           file: quarkus/examples/chat-quarkus/Dockerfile
           push: false
           tags: ghcr.io/chirino/memory-service-chat-quarkus:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
+          cache-from: type=gha,scope=image-chat-quarkus
+          cache-to: type=gha,mode=max,scope=image-chat-quarkus
