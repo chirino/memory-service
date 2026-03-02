@@ -274,7 +274,7 @@ The same OPA access control that governs memory reads applies here — callers o
 | `namespace`  | Ordered list of string segments forming the address                      |
 | `key`        | Unique key within the namespace                                          |
 | `value`      | Arbitrary JSON object; encrypted at rest                                 |
-| `attributes` | Policy-derived plaintext attributes used for filtering/search scoping     |
+| `attributes` | Policy-derived plaintext attributes used for filtering/search scoping    |
 | `created_at` | Timestamp of this version                                                |
 | `expires_at` | TTL expiry timestamp, or `null` for no expiry                            |
 | `score`      | Cosine similarity score (search results only; `null` for attribute-only) |
@@ -315,28 +315,28 @@ Each policy is evaluated with an `input` object. Available fields differ by poli
 
 #### `authz.rego` (`data.memories.authz.decision`)
 
-| `input` field | Type | Description |
-| --- | --- | --- |
-| `operation` | `string` | Operation being authorized: `write`, `read`, or `delete` |
-| `namespace` | `string[]` | Full namespace segments from the request |
-| `key` | `string` | Memory key from the request |
-| `value` | `object` | Present for `write`; full memory value payload |
-| `index` | `object<string,string>` | Present for `write`; caller-provided redacted index payload |
-| `context.user_id` | `string` | Authenticated subject/user ID |
-| `context.client_id` | `string` | Authenticated client ID (API key/OIDC client), when present |
-| `context.jwt_claims` | `object` | Raw JWT claims map (for example `roles`) |
+| `input` field        | Type                    | Description                                                 |
+| -------------------- | ----------------------- | ----------------------------------------------------------- |
+| `operation`          | `string`                | Operation being authorized: `write`, `read`, or `delete`    |
+| `namespace`          | `string[]`              | Full namespace segments from the request                    |
+| `key`                | `string`                | Memory key from the request                                 |
+| `value`              | `object`                | Present for `write`; full memory value payload              |
+| `index`              | `object<string,string>` | Present for `write`; caller-provided redacted index payload |
+| `context.user_id`    | `string`                | Authenticated subject/user ID                               |
+| `context.client_id`  | `string`                | Authenticated client ID (API key/OIDC client), when present |
+| `context.jwt_claims` | `object`                | Raw JWT claims map (for example `roles`)                    |
 
 #### `attributes.rego` (`data.memories.attributes.attributes`)
 
-| `input` field | Type | Description |
-| --- | --- | --- |
-| `namespace` | `string[]` | Full namespace segments from the write request |
-| `key` | `string` | Memory key from the write request |
-| `value` | `object` | Memory value JSON body |
-| `index` | `object<string,string>` | Caller-provided redacted index payload |
-| `context.user_id` | `string` | Authenticated subject/user ID |
-| `context.client_id` | `string` | Authenticated client ID (API key/OIDC client), when present |
-| `context.jwt_claims` | `object` | Raw JWT claims map (for example `roles`) |
+| `input` field        | Type                    | Description                                                 |
+| -------------------- | ----------------------- | ----------------------------------------------------------- |
+| `namespace`          | `string[]`              | Full namespace segments from the write request              |
+| `key`                | `string`                | Memory key from the write request                           |
+| `value`              | `object`                | Memory value JSON body                                      |
+| `index`              | `object<string,string>` | Caller-provided redacted index payload                      |
+| `context.user_id`    | `string`                | Authenticated subject/user ID                               |
+| `context.client_id`  | `string`                | Authenticated client ID (API key/OIDC client), when present |
+| `context.jwt_claims` | `object`                | Raw JWT claims map (for example `roles`)                    |
 
 Typical `value` and `index` payloads passed to `attributes.rego`:
 
@@ -361,13 +361,13 @@ Typical `value` and `index` payloads passed to `attributes.rego`:
 
 #### `filter.rego` (`data.memories.filter`)
 
-| `input` field | Type | Description |
-| --- | --- | --- |
-| `namespace_prefix` | `string[]` | Requested namespace prefix for search/list |
-| `filter` | `object` | Caller-supplied attribute filter (may be empty) |
-| `context.user_id` | `string` | Authenticated subject/user ID |
-| `context.client_id` | `string` | Authenticated client ID (API key/OIDC client), when present |
-| `context.jwt_claims` | `object` | Raw JWT claims map (for example `roles`) |
+| `input` field        | Type       | Description                                                 |
+| -------------------- | ---------- | ----------------------------------------------------------- |
+| `namespace_prefix`   | `string[]` | Requested namespace prefix for search/list                  |
+| `filter`             | `object`   | Caller-supplied attribute filter (may be empty)             |
+| `context.user_id`    | `string`   | Authenticated subject/user ID                               |
+| `context.client_id`  | `string`   | Authenticated client ID (API key/OIDC client), when present |
+| `context.jwt_claims` | `object`   | Raw JWT claims map (for example `roles`)                    |
 
 The `filter.rego` result may return:
 
