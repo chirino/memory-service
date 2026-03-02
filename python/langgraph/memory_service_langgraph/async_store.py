@@ -21,6 +21,8 @@ from langgraph.store.base import (
     SearchOp,
 )
 
+from .indexing import IndexBuilder, IndexRedactor, build_index_payload
+
 
 class AsyncMemoryServiceStore(BaseStore):
     """Async LangGraph BaseStore backed by the Memory Service episodic API.
@@ -36,9 +38,13 @@ class AsyncMemoryServiceStore(BaseStore):
         base_url: str | None = None,
         token: str | None = None,
         timeout: float = 10.0,
+        index_builder: IndexBuilder | None = None,
+        index_redactor: IndexRedactor | None = None,
     ) -> None:
         self._base_url = (base_url or os.environ.get("MEMORY_SERVICE_URL", "http://localhost:8082")).rstrip("/")
         self._token = token or os.environ.get("MEMORY_SERVICE_TOKEN", "")
+        if index_builder is not None and index_redactor is not None:
+            raise ValueError("index_builder and index_redactor are mutually exclusive")
         async def _log_request(request: httpx.Request) -> None:
             logger.debug("memory-service request: %s %s", request.method, request.url)
 
@@ -48,6 +54,12 @@ class AsyncMemoryServiceStore(BaseStore):
             timeout=timeout,
             event_hooks={"request": [_log_request]},
         )
+        if index_builder is not None:
+            self._index_builder = index_builder
+        else:
+            self._index_builder = lambda namespace, key, value, index: build_index_payload(
+                namespace, key, value, index, redactor=index_redactor
+            )
 
     # ------------------------------------------------------------------
     # BaseStore interface — the only two abstract methods in langgraph 1.x
@@ -91,10 +103,9 @@ class AsyncMemoryServiceStore(BaseStore):
             "key": key,
             "value": value,
         }
-        if index is False:
-            body["index_disabled"] = True
-        elif isinstance(index, list):
-            body["index_fields"] = index
+        built_index = self._index_builder(namespace, key, value, index)
+        if built_index is not None:
+            body["index"] = built_index
 
         resp = await self._client.put("/v1/memories", json=body)
         resp.raise_for_status()

@@ -20,9 +20,15 @@ type PolicyContext struct {
 	JWTClaims map[string]interface{} `json:"jwt_claims"`
 }
 
+// AuthzDecision is the structured authz policy result.
+type AuthzDecision struct {
+	Allow  bool   `json:"allow"`
+	Reason string `json:"reason,omitempty"`
+}
+
 // PolicyEngine evaluates the three OPA policies for episodic memory:
 //  1. Authz policy — controls read/write/delete access per (namespace, key).
-//  2. Attribute extraction policy — extracts plaintext policy_attributes from value+attributes.
+//  2. Attribute extraction policy — extracts plaintext policy_attributes from request context.
 //  3. Search filter injection policy — narrows namespace_prefix + adds attribute_filter constraints.
 type PolicyEngine struct {
 	mu           sync.RWMutex
@@ -49,12 +55,28 @@ package memories.authz
 import future.keywords.if
 import future.keywords.in
 
-default allow = false
+default decision = {"allow": false, "reason": "access denied"}
 
-# Users may access their own namespace subtree
-allow if {
+# Users may access their own namespace subtree.
+# For writes, also enforce a max index field count.
+decision = {"allow": true} if {
     input.namespace[0] == "user"
     input.namespace[1] == input.context.user_id
+    input.operation != "write"
+}
+
+decision = {"allow": true} if {
+    input.operation == "write"
+    input.namespace[0] == "user"
+    input.namespace[1] == input.context.user_id
+    count(object.keys(input.index)) <= 8
+}
+
+decision = {"allow": false, "reason": "too many index fields (max 8)"} if {
+    input.operation == "write"
+    input.namespace[0] == "user"
+    input.namespace[1] == input.context.user_id
+    count(object.keys(input.index)) > 8
 }
 
 `
@@ -148,7 +170,7 @@ func (e *PolicyEngine) load(ctx context.Context, policyDir string) error {
 
 	var err error
 
-	e.authz, err = prepareQuery(ctx, authzSrc, "data.memories.authz.allow")
+	e.authz, err = prepareQuery(ctx, authzSrc, "data.memories.authz.decision")
 	if err != nil {
 		return fmt.Errorf("episodic: load authz policy: %w", err)
 	}
@@ -200,7 +222,7 @@ func (e *PolicyEngine) ReplaceBundle(ctx context.Context, bundle PolicyBundle) e
 		return fmt.Errorf("authz, attributes, and filter policies are required")
 	}
 
-	authz, err := prepareQuery(ctx, authzSrc, "data.memories.authz.allow")
+	authz, err := prepareQuery(ctx, authzSrc, "data.memories.authz.decision")
 	if err != nil {
 		return fmt.Errorf("episodic: compile authz policy: %w", err)
 	}
@@ -236,8 +258,8 @@ func prepareQuery(ctx context.Context, src, query string) (*rego.PreparedEvalQue
 	return &pq, nil
 }
 
-// IsAllowed evaluates the authz policy and returns true if the operation is allowed.
-func (e *PolicyEngine) IsAllowed(ctx context.Context, operation string, namespace []string, key string, pc PolicyContext) (bool, error) {
+// EvaluateAuthz evaluates the authz policy and returns the decision.
+func (e *PolicyEngine) EvaluateAuthz(ctx context.Context, operation string, namespace []string, key string, value map[string]interface{}, index map[string]string, pc PolicyContext) (AuthzDecision, error) {
 	e.mu.RLock()
 	q := *e.authz
 	e.mu.RUnlock()
@@ -248,29 +270,65 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, operation string, namespac
 		"key":       key,
 		"context":   policyContextToMap(pc),
 	}
+	if operation == "write" {
+		input["value"] = value
+		input["index"] = index
+	}
 	results, err := q.Eval(ctx, rego.EvalInput(input))
 	if err != nil {
-		return false, fmt.Errorf("episodic authz eval: %w", err)
+		return AuthzDecision{}, fmt.Errorf("episodic authz eval: %w", err)
 	}
 	if len(results) == 0 || len(results[0].Expressions) == 0 {
-		return false, nil
+		return AuthzDecision{Allow: false, Reason: "access denied"}, nil
 	}
-	allow, _ := results[0].Expressions[0].Value.(bool)
-	return allow, nil
+
+	// Backward-compatible fallback if a policy still returns a boolean.
+	if allow, ok := results[0].Expressions[0].Value.(bool); ok {
+		if allow {
+			return AuthzDecision{Allow: true}, nil
+		}
+		return AuthzDecision{Allow: false, Reason: "access denied"}, nil
+	}
+
+	raw, _ := results[0].Expressions[0].Value.(map[string]interface{})
+	if raw == nil {
+		return AuthzDecision{Allow: false, Reason: "access denied"}, nil
+	}
+	decision := AuthzDecision{}
+	if allow, ok := raw["allow"].(bool); ok {
+		decision.Allow = allow
+	}
+	if reason, ok := raw["reason"].(string); ok {
+		decision.Reason = reason
+	}
+	if !decision.Allow && strings.TrimSpace(decision.Reason) == "" {
+		decision.Reason = "access denied"
+	}
+	return decision, nil
+}
+
+// IsAllowed evaluates the authz policy and returns true if the operation is allowed.
+func (e *PolicyEngine) IsAllowed(ctx context.Context, operation string, namespace []string, key string, pc PolicyContext) (bool, error) {
+	decision, err := e.EvaluateAuthz(ctx, operation, namespace, key, nil, nil, pc)
+	if err != nil {
+		return false, err
+	}
+	return decision.Allow, nil
 }
 
 // ExtractAttributes evaluates the attribute extraction policy and returns the
 // plaintext policy_attributes to store alongside the memory.
-func (e *PolicyEngine) ExtractAttributes(ctx context.Context, namespace []string, key string, value, attributes map[string]interface{}) (map[string]interface{}, error) {
+func (e *PolicyEngine) ExtractAttributes(ctx context.Context, namespace []string, key string, value map[string]interface{}, index map[string]string, pc PolicyContext) (map[string]interface{}, error) {
 	e.mu.RLock()
 	q := *e.attrExtract
 	e.mu.RUnlock()
 
 	input := map[string]interface{}{
-		"namespace":  namespace,
-		"key":        key,
-		"value":      value,
-		"attributes": attributes,
+		"namespace": namespace,
+		"key":       key,
+		"value":     value,
+		"index":     index,
+		"context":   policyContextToMap(pc),
 	}
 	results, err := q.Eval(ctx, rego.EvalInput(input))
 	if err != nil {

@@ -13,6 +13,8 @@
 * track memory hit counts, as a way to track how important/useful a memory is.
 * get all the python examples working as good as the Java ones.
 * improve ghe memories usecase, add support for it to all the frameworks.
+* fix: In the current contract, forkedAtEntryId is supposed to be required whenever forkedAtConversationId is set. allow it to be unset.
+* add includeDeleted=true admin 
 
 # Performance Related
 

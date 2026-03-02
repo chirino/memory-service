@@ -1021,22 +1021,25 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 	}
 
 	value := req.GetValue().AsMap()
-	var attributes map[string]interface{}
-	if req.GetAttributes() != nil {
-		attributes = req.GetAttributes().AsMap()
+	index := req.GetIndex()
+	if index == nil {
+		index = map[string]string{}
 	}
 
 	pc := memoryPolicyContext(ctx)
 	policyAttrs := map[string]interface{}{}
 	if s.Policy != nil {
-		allowed, err := s.Policy.IsAllowed(ctx, "write", namespace, key, pc)
+		decision, err := s.Policy.EvaluateAuthz(ctx, "write", namespace, key, value, index, pc)
 		if err != nil {
 			return nil, episodicInternalError("policy evaluation error", err)
 		}
-		if !allowed {
+		if !decision.Allow {
+			if decision.Reason != "" {
+				return nil, status.Error(codes.PermissionDenied, decision.Reason)
+			}
 			return nil, status.Error(codes.PermissionDenied, "access denied")
 		}
-		extracted, err := s.Policy.ExtractAttributes(ctx, namespace, key, value, attributes)
+		extracted, err := s.Policy.ExtractAttributes(ctx, namespace, key, value, index, pc)
 		if err != nil {
 			return nil, episodicInternalError("attribute extraction error", err)
 		}
@@ -1047,10 +1050,8 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 		Namespace:        namespace,
 		Key:              key,
 		Value:            value,
-		Attributes:       attributes,
+		Index:            index,
 		TTLSeconds:       int(req.GetTtlSeconds()),
-		IndexFields:      req.GetIndexFields(),
-		IndexDisabled:    req.GetIndexDisabled(),
 		PolicyAttributes: policyAttrs,
 	})
 	if err != nil {
@@ -1082,11 +1083,14 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 	}
 
 	if s.Policy != nil {
-		allowed, err := s.Policy.IsAllowed(ctx, "read", namespace, key, memoryPolicyContext(ctx))
+		decision, err := s.Policy.EvaluateAuthz(ctx, "read", namespace, key, nil, nil, memoryPolicyContext(ctx))
 		if err != nil {
 			return nil, episodicInternalError("policy evaluation error", err)
 		}
-		if !allowed {
+		if !decision.Allow {
+			if decision.Reason != "" {
+				return nil, status.Error(codes.PermissionDenied, decision.Reason)
+			}
 			return nil, status.Error(codes.PermissionDenied, "access denied")
 		}
 	}
@@ -1124,11 +1128,14 @@ func (s *MemoriesServer) DeleteMemory(ctx context.Context, req *pb.DeleteMemoryR
 	}
 
 	if s.Policy != nil {
-		allowed, err := s.Policy.IsAllowed(ctx, "delete", namespace, key, memoryPolicyContext(ctx))
+		decision, err := s.Policy.EvaluateAuthz(ctx, "delete", namespace, key, nil, nil, memoryPolicyContext(ctx))
 		if err != nil {
 			return nil, episodicInternalError("policy evaluation error", err)
 		}
-		if !allowed {
+		if !decision.Allow {
+			if decision.Reason != "" {
+				return nil, status.Error(codes.PermissionDenied, decision.Reason)
+			}
 			return nil, status.Error(codes.PermissionDenied, "access denied")
 		}
 	}

@@ -44,17 +44,12 @@ func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	attributes := map[string]interface{}(nil)
-	if req.Attributes != nil {
-		attributes = *req.Attributes
+	index := map[string]string(nil)
+	if req.Index != nil {
+		index = *req.Index
 	}
-	indexFields := []string(nil)
-	if req.IndexFields != nil {
-		indexFields = *req.IndexFields
-	}
-	indexDisabled := false
-	if req.IndexDisabled != nil {
-		indexDisabled = *req.IndexDisabled
+	if index == nil {
+		index = map[string]string{}
 	}
 	ttlSeconds := 0
 	if req.TtlSeconds != nil {
@@ -78,18 +73,22 @@ func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 
 	// OPA authz check.
 	if policy != nil {
-		allowed, err := policy.IsAllowed(c.Request.Context(), "write", req.Namespace, req.Key, pc)
+		decision, err := policy.EvaluateAuthz(c.Request.Context(), "write", req.Namespace, req.Key, req.Value, index, pc)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "policy evaluation error"})
 			return
 		}
-		if !allowed {
-			c.JSON(http.StatusForbidden, gin.H{"code": "forbidden", "error": "access denied"})
+		if !decision.Allow {
+			resp := gin.H{"error": "access denied"}
+			if decision.Reason != "" {
+				resp["reason"] = decision.Reason
+			}
+			c.JSON(http.StatusForbidden, resp)
 			return
 		}
 
 		// OPA attribute extraction.
-		extracted, err := policy.ExtractAttributes(c.Request.Context(), req.Namespace, req.Key, req.Value, attributes)
+		extracted, err := policy.ExtractAttributes(c.Request.Context(), req.Namespace, req.Key, req.Value, index, pc)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "attribute extraction error"})
 			return
@@ -98,10 +97,8 @@ func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 			Namespace:        req.Namespace,
 			Key:              req.Key,
 			Value:            req.Value,
-			Attributes:       attributes,
+			Index:            index,
 			TTLSeconds:       ttlSeconds,
-			IndexFields:      indexFields,
-			IndexDisabled:    indexDisabled,
 			PolicyAttributes: extracted,
 		})
 		if err != nil {
@@ -114,13 +111,11 @@ func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 
 	// No OPA: store without policy attributes.
 	result, err := store.PutMemory(c.Request.Context(), registryepisodic.PutMemoryRequest{
-		Namespace:     req.Namespace,
-		Key:           req.Key,
-		Value:         req.Value,
-		Attributes:    attributes,
-		TTLSeconds:    ttlSeconds,
-		IndexFields:   indexFields,
-		IndexDisabled: indexDisabled,
+		Namespace:  req.Namespace,
+		Key:        req.Key,
+		Value:      req.Value,
+		Index:      index,
+		TTLSeconds: ttlSeconds,
 	})
 	if err != nil {
 		handleError(c, err)
@@ -148,13 +143,17 @@ func getMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 
 	if policy != nil {
 		pc := policyContext(c)
-		allowed, err := policy.IsAllowed(c.Request.Context(), "read", ns, key, pc)
+		decision, err := policy.EvaluateAuthz(c.Request.Context(), "read", ns, key, nil, nil, pc)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "policy evaluation error"})
 			return
 		}
-		if !allowed {
-			c.JSON(http.StatusForbidden, gin.H{"code": "forbidden", "error": "access denied"})
+		if !decision.Allow {
+			resp := gin.H{"error": "access denied"}
+			if decision.Reason != "" {
+				resp["reason"] = decision.Reason
+			}
+			c.JSON(http.StatusForbidden, resp)
 			return
 		}
 	}
@@ -190,13 +189,17 @@ func deleteMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *
 
 	if policy != nil {
 		pc := policyContext(c)
-		allowed, err := policy.IsAllowed(c.Request.Context(), "delete", ns, key, pc)
+		decision, err := policy.EvaluateAuthz(c.Request.Context(), "delete", ns, key, nil, nil, pc)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "policy evaluation error"})
 			return
 		}
-		if !allowed {
-			c.JSON(http.StatusForbidden, gin.H{"code": "forbidden", "error": "access denied"})
+		if !decision.Allow {
+			resp := gin.H{"error": "access denied"}
+			if decision.Reason != "" {
+				resp["reason"] = decision.Reason
+			}
+			c.JSON(http.StatusForbidden, resp)
 			return
 		}
 	}

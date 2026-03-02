@@ -67,10 +67,8 @@ type memoryRow struct {
 	Namespace        string                 `gorm:"not null;column:namespace"`
 	Key              string                 `gorm:"not null;column:key"`
 	ValueEncrypted   []byte                 `gorm:"column:value_encrypted"` // nullable for tombstones
-	Attributes       []byte                 `gorm:"column:attributes"`
 	PolicyAttributes map[string]interface{} `gorm:"type:jsonb;serializer:json;column:policy_attributes"`
-	IndexFields      []string               `gorm:"type:jsonb;serializer:json;column:index_fields"`
-	IndexDisabled    bool                   `gorm:"column:index_disabled"`
+	IndexedContent   map[string]string      `gorm:"type:jsonb;serializer:json;column:indexed_content"`
 	Kind             int16                  `gorm:"not null;default:0;column:kind"`
 	DeletedReason    *int16                 `gorm:"column:deleted_reason"`
 	CreatedAt        time.Time              `gorm:"not null;column:created_at"`
@@ -107,19 +105,6 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 		return nil, fmt.Errorf("encrypt value: %w", err)
 	}
 
-	// Encrypt the user-supplied attributes (if any).
-	var attrsEnc []byte
-	if len(req.Attributes) > 0 {
-		attrsJSON, err := json.Marshal(req.Attributes)
-		if err != nil {
-			return nil, fmt.Errorf("marshal attributes: %w", err)
-		}
-		attrsEnc, err = e.s.encrypt(attrsJSON)
-		if err != nil {
-			return nil, fmt.Errorf("encrypt attributes: %w", err)
-		}
-	}
-
 	var expiresAt *time.Time
 	if req.TTLSeconds > 0 {
 		t := time.Now().Add(time.Duration(req.TTLSeconds) * time.Second)
@@ -128,6 +113,10 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 
 	newID := uuid.New()
 	now := time.Now()
+	indexedContent := req.Index
+	if indexedContent == nil {
+		indexedContent = map[string]string{}
+	}
 
 	var kind int16
 	err = e.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -155,10 +144,8 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 			Namespace:        nsEncoded,
 			Key:              req.Key,
 			ValueEncrypted:   valueEnc,
-			Attributes:       attrsEnc,
 			PolicyAttributes: req.PolicyAttributes,
-			IndexFields:      req.IndexFields,
-			IndexDisabled:    req.IndexDisabled,
+			IndexedContent:   indexedContent,
 			Kind:             kind,
 			CreatedAt:        now,
 			ExpiresAt:        expiresAt,
@@ -170,16 +157,11 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 		return nil, err
 	}
 
-	var decryptedAttrs map[string]interface{}
-	if len(attrsEnc) > 0 {
-		decryptedAttrs = req.Attributes
-	}
-
 	return &registryepisodic.MemoryWriteResult{
 		ID:         newID,
 		Namespace:  req.Namespace,
 		Key:        req.Key,
-		Attributes: decryptedAttrs,
+		Attributes: req.PolicyAttributes,
 		CreatedAt:  now,
 		ExpiresAt:  expiresAt,
 	}, nil
@@ -322,18 +304,8 @@ func (e *postgresEpisodicStore) FindMemoriesPendingIndexing(ctx context.Context,
 			ID:               row.ID,
 			Namespace:        row.Namespace,
 			PolicyAttributes: row.PolicyAttributes,
-			IndexFields:      row.IndexFields,
-			IndexDisabled:    row.IndexDisabled,
+			IndexedContent:   row.IndexedContent,
 			DeletedAt:        row.DeletedAt,
-		}
-		// Only decrypt for active rows; soft-deleted rows only need vector removal.
-		if row.DeletedAt == nil {
-			plain, err := e.s.decrypt(row.ValueEncrypted)
-			if err != nil {
-				log.Warn("Episodic: failed to decrypt value for indexing", "id", row.ID, "err", err)
-			} else {
-				pm.Value = plain
-			}
 		}
 		out = append(out, pm)
 	}
@@ -487,7 +459,7 @@ func (e *postgresEpisodicStore) HardDeleteEvictableUpdates(ctx context.Context, 
 func (e *postgresEpisodicStore) TombstoneDeletedMemories(ctx context.Context, limit int) (int64, error) {
 	result := e.db.WithContext(ctx).Exec(`
 		UPDATE memories
-		SET value_encrypted = NULL, attributes = NULL
+		SET value_encrypted = NULL
 		WHERE id IN (
 			SELECT id FROM memories
 			WHERE deleted_reason IN (1, 2) AND indexed_at IS NOT NULL AND value_encrypted IS NOT NULL
@@ -585,7 +557,7 @@ func (e *postgresEpisodicStore) ListMemoryEvents(ctx context.Context, req regist
 			SELECT id, namespace, key,
 				CASE kind WHEN 0 THEN 'add' ELSE 'update' END AS event_kind,
 				created_at AS occurred_at,
-				value_encrypted, attributes, expires_at
+				value_encrypted, policy_attributes, expires_at
 			FROM memories WHERE kind IN (`+ph+`)`)
 		args = append(args, writeKinds...)
 	}
@@ -604,7 +576,7 @@ func (e *postgresEpisodicStore) ListMemoryEvents(ctx context.Context, req regist
 			SELECT id, namespace, key,
 				CASE deleted_reason WHEN 1 THEN 'delete' ELSE 'expired' END AS event_kind,
 				deleted_at AS occurred_at,
-				NULL::bytea AS value_encrypted, NULL::bytea AS attributes, expires_at
+				NULL::bytea AS value_encrypted, NULL::jsonb AS policy_attributes, expires_at
 			FROM memories WHERE deleted_reason IN (`+ph+`)`)
 		args = append(args, deleteReasons...)
 	}
@@ -631,7 +603,7 @@ func (e *postgresEpisodicStore) ListMemoryEvents(ctx context.Context, req regist
 	}
 
 	finalSQL := fmt.Sprintf(`
-		SELECT e.id, e.namespace, e.key, e.event_kind, e.occurred_at, e.value_encrypted, e.attributes, e.expires_at
+		SELECT e.id, e.namespace, e.key, e.event_kind, e.occurred_at, e.value_encrypted, e.policy_attributes, e.expires_at
 		FROM (%s) e
 		WHERE %s%s
 		ORDER BY e.occurred_at ASC, e.id ASC
@@ -649,7 +621,7 @@ func (e *postgresEpisodicStore) ListMemoryEvents(ctx context.Context, req regist
 		EventKind      string     `gorm:"column:event_kind"`
 		OccurredAt     time.Time  `gorm:"column:occurred_at"`
 		ValueEncrypted []byte     `gorm:"column:value_encrypted"`
-		Attributes     []byte     `gorm:"column:attributes"`
+		PolicyAttrsRaw []byte     `gorm:"column:policy_attributes"`
 		ExpiresAt      *time.Time `gorm:"column:expires_at"`
 	}
 	var rows []scanRow
@@ -675,11 +647,8 @@ func (e *postgresEpisodicStore) ListMemoryEvents(ctx context.Context, req regist
 					_ = json.Unmarshal(plain, &value)
 				}
 			}
-			if len(row.Attributes) > 0 {
-				plain, err := e.s.decrypt(row.Attributes)
-				if err == nil {
-					_ = json.Unmarshal(plain, &attrs)
-				}
+			if len(row.PolicyAttrsRaw) > 0 {
+				_ = json.Unmarshal(row.PolicyAttrsRaw, &attrs)
 			}
 		}
 
@@ -752,24 +721,12 @@ func (e *postgresEpisodicStore) rowToItem(row memoryRow, namespace []string) (*r
 		}
 	}
 
-	// Decrypt user-supplied attributes (may be nil).
-	var attrs map[string]interface{}
-	if len(row.Attributes) > 0 {
-		attrsPlain, err := e.s.decrypt(row.Attributes)
-		if err != nil {
-			return nil, fmt.Errorf("decrypt attributes: %w", err)
-		}
-		if err := json.Unmarshal(attrsPlain, &attrs); err != nil {
-			return nil, fmt.Errorf("unmarshal attributes: %w", err)
-		}
-	}
-
 	return &registryepisodic.MemoryItem{
 		ID:         row.ID,
 		Namespace:  namespace,
 		Key:        row.Key,
 		Value:      value,
-		Attributes: attrs,
+		Attributes: row.PolicyAttributes,
 		CreatedAt:  row.CreatedAt,
 		ExpiresAt:  row.ExpiresAt,
 	}, nil

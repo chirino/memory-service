@@ -24,19 +24,12 @@ type Memory struct {
 	// NULL for tombstones (deleted/expired rows after eviction).
 	ValueEncrypted []byte `json:"-" gorm:"column:value_encrypted"`
 
-	// Attributes is the AES-256-GCM encrypted user-supplied attributes JSON.
-	// Decrypted on read and returned to clients.
-	Attributes []byte `json:"-" gorm:"column:attributes"`
-
 	// PolicyAttributes contains plaintext OPA-extracted attributes for server-side filtering.
 	// Never returned to clients.
 	PolicyAttributes map[string]interface{} `json:"-" gorm:"type:jsonb;serializer:json;column:policy_attributes"`
 
-	// IndexFields optionally restricts which value fields are embedded.
-	IndexFields []string `json:"-" gorm:"type:jsonb;serializer:json;column:index_fields"`
-
-	// IndexDisabled disables vector indexing for this memory when true.
-	IndexDisabled bool `json:"-" gorm:"column:index_disabled"`
+	// IndexedContent contains caller-provided redacted text keyed by field path.
+	IndexedContent map[string]string `json:"-" gorm:"type:jsonb;serializer:json;column:indexed_content"`
 
 	// Kind records whether this row was a first write (0=add) or a subsequent write (1=update).
 	// Set at write time; never changed.

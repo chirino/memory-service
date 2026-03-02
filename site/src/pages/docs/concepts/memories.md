@@ -12,7 +12,7 @@ A memory in Memory Service is:
 
 - A **key-value item** identified by a namespace tuple and a string key
 - Stored in a **hierarchical namespace** that organizes memories by user, agent, or session
-- **Encrypted at rest** — values are AES-256-GCM encrypted; only metadata and derived attributes are stored in plaintext
+- **Encrypted at rest** — values are AES-256-GCM encrypted; metadata, derived attributes, and caller-provided index text are stored in plaintext
 - Optionally **indexed for semantic search** via vector embeddings
 - Subject to **OPA/Rego access control** enforced at the service level
 - Compatible with the **LangGraph `BaseStore` interface** via a Python client library
@@ -52,7 +52,7 @@ curl -X PUT http://localhost:8080/v1/memories \
     "value": {
       "text": "Alice prefers list comprehensions over map/filter."
     },
-    "attributes": {"topic": "python"},
+    "index": {"text": "Alice prefers list comprehensions over map/filter."},
     "ttl_seconds": 86400
   }'
 ```
@@ -64,7 +64,7 @@ Response:
   "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "namespace": ["user", "alice", "notes"],
   "key": "python_tip",
-  "attributes": { "topic": "python" },
+  "attributes": { "namespace": "user", "sub": "alice" },
   "created_at": "2026-01-01T00:00:00Z",
   "expires_at": "2026-01-02T00:00:00Z"
 }
@@ -93,7 +93,7 @@ Response:
   "value": {
     "text": "Alice prefers list comprehensions over map/filter."
   },
-  "attributes": { "topic": "python" },
+  "attributes": { "namespace": "user", "sub": "alice" },
   "created_at": "2026-01-01T00:00:00Z",
   "expires_at": "2026-01-02T00:00:00Z"
 }
@@ -154,7 +154,7 @@ Response:
       "namespace": ["user", "alice", "notes"],
       "key": "python_tip",
       "value": { "text": "Alice prefers list comprehensions over map/filter." },
-      "attributes": { "topic": "python" },
+      "attributes": { "namespace": "user", "sub": "alice" },
       "score": 0.92,
       "created_at": "2026-01-01T00:00:00Z"
     }
@@ -231,7 +231,7 @@ curl "http://localhost:8080/v1/memories/events?ns=user&ns=alice&limit=50" \
       "kind": "add",
       "occurred_at": "2026-01-01T00:00:00Z",
       "value": { "text": "Alice prefers list comprehensions." },
-      "attributes": { "topic": "python" }
+      "attributes": { "namespace": "user", "sub": "alice" }
     },
     {
       "id": "b2c3d4e5-...",
@@ -240,7 +240,7 @@ curl "http://localhost:8080/v1/memories/events?ns=user&ns=alice&limit=50" \
       "kind": "update",
       "occurred_at": "2026-01-02T00:00:00Z",
       "value": { "text": "Alice prefers list comprehensions over map/filter." },
-      "attributes": { "topic": "python" }
+      "attributes": { "namespace": "user", "sub": "alice" }
     },
     {
       "id": "c3d4e5f6-...",
@@ -274,7 +274,7 @@ The same OPA access control that governs memory reads applies here — callers o
 | `namespace`  | Ordered list of string segments forming the address                      |
 | `key`        | Unique key within the namespace                                          |
 | `value`      | Arbitrary JSON object; encrypted at rest                                 |
-| `attributes` | User-supplied JSON; encrypted at rest; used as filter input              |
+| `attributes` | Policy-derived plaintext attributes used for filtering/search scoping     |
 | `created_at` | Timestamp of this version                                                |
 | `expires_at` | TTL expiry timestamp, or `null` for no expiry                            |
 | `score`      | Cosine similarity score (search results only; `null` for attribute-only) |
@@ -313,13 +313,15 @@ If no directory is set, or if a file is missing, the service falls back to the b
 
 Each policy is evaluated with an `input` object. Available fields differ by policy type.
 
-#### `authz.rego` (`data.memories.authz.allow`)
+#### `authz.rego` (`data.memories.authz.decision`)
 
 | `input` field | Type | Description |
 | --- | --- | --- |
 | `operation` | `string` | Operation being authorized: `write`, `read`, or `delete` |
 | `namespace` | `string[]` | Full namespace segments from the request |
 | `key` | `string` | Memory key from the request |
+| `value` | `object` | Present for `write`; full memory value payload |
+| `index` | `object<string,string>` | Present for `write`; caller-provided redacted index payload |
 | `context.user_id` | `string` | Authenticated subject/user ID |
 | `context.client_id` | `string` | Authenticated client ID (API key/OIDC client), when present |
 | `context.jwt_claims` | `object` | Raw JWT claims map (for example `roles`) |
@@ -331,9 +333,12 @@ Each policy is evaluated with an `input` object. Available fields differ by poli
 | `namespace` | `string[]` | Full namespace segments from the write request |
 | `key` | `string` | Memory key from the write request |
 | `value` | `object` | Memory value JSON body |
-| `attributes` | `object` | User-supplied attributes JSON body |
+| `index` | `object<string,string>` | Caller-provided redacted index payload |
+| `context.user_id` | `string` | Authenticated subject/user ID |
+| `context.client_id` | `string` | Authenticated client ID (API key/OIDC client), when present |
+| `context.jwt_claims` | `object` | Raw JWT claims map (for example `roles`) |
 
-Typical `value` and `attributes` payloads passed to `attributes.rego`:
+Typical `value` and `index` payloads passed to `attributes.rego`:
 
 ```json
 {
@@ -347,9 +352,9 @@ Typical `value` and `attributes` payloads passed to `attributes.rego`:
     },
     "tags": ["style", "python", "preferences"]
   },
-  "attributes": {
-    "lang": "python",
-    "scope": "user-preference"
+  "index": {
+    "text": "Alice prefers list comprehensions over map/filter.",
+    "topic": "python"
   }
 }
 ```
@@ -376,9 +381,9 @@ The default policy bundle shipped in this repository is:
 ```rego
 package memories.authz
 
-default allow = false
+default decision = {"allow": false, "reason": "access denied"}
 
-allow if {
+decision = {"allow": true} if {
   input.namespace[0] == "user"
   input.namespace[1] == input.context.user_id
 }
@@ -413,7 +418,7 @@ attribute_filter := {"namespace": "user", "sub": input.context.user_id} if { not
 
 What this means in practice:
 
-- `authz.rego`: direct `PUT`/`GET`/`DELETE` is allowed only under `["user", <caller_user_id>, ...]`.
+- `authz.rego`: direct `PUT`/`GET`/`DELETE` is allowed only under `["user", <caller_user_id>, ...]`; deny responses can carry a `reason`.
 - `attributes.rego`: each memory gets plaintext policy attributes `namespace` and `sub` for policy-aware filtering.
 - `filter.rego`: non-admin search/list calls are constrained to the caller's own `["user", <caller_user_id>]` subtree; admin callers keep the requested prefix and no forced attribute filter.
 
@@ -423,26 +428,26 @@ See the [Admin APIs](/docs/concepts/admin-apis/) for policy management endpoints
 
 ## Encryption
 
-Memory values and user-supplied attributes are **encrypted at rest** using AES-256-GCM via the service's existing key-management infrastructure. Only the namespace, key, policy-derived attributes, and expiry timestamp are stored in plaintext — these are required for efficient filtering and indexing.
+Memory values are **encrypted at rest** using AES-256-GCM via the service's existing key-management infrastructure. The namespace, key, policy-derived attributes, caller-provided `index` payload (stored as `indexed_content`), and expiry timestamp are stored in plaintext for filtering and indexing.
 
 Vector stores never receive encrypted data. They hold only embeddings and plaintext policy attributes derived by the OPA attribute-extraction policy.
 
 ## Vector Indexing
 
-When a memory is written with embeddable string fields, the background indexer generates embeddings and upserts them to the configured vector store (PGVector or Qdrant). Indexing is **decoupled from the write path**: writes return immediately, and the indexer catches up asynchronously.
+When a memory is written with an `index` payload, the background indexer embeds those field values and upserts them to the configured vector store (PGVector or Qdrant). Indexing is **decoupled from the write path**: writes return immediately, and the indexer catches up asynchronously.
 
-Control which fields are embedded via the `index_fields` parameter on `PUT`:
+Control which fields are embedded by sending a redacted `index` map on `PUT`:
 
 ```json
 {
   "namespace": ["user", "alice", "notes"],
   "key": "tip",
   "value": { "text": "...", "tags": ["python"] },
-  "index_fields": ["text"]
+  "index": { "text": "..." }
 }
 ```
 
-Set `index_fields` to `false` to disable indexing entirely for a memory.
+Set `"index": {}` (or omit `index`) to disable vector indexing for that memory version.
 
 Admin-configurable indexing settings:
 

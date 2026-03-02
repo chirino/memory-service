@@ -383,10 +383,8 @@ message PutMemoryRequest {
   repeated string namespace = 1;
   string key = 2;
   google.protobuf.Struct value = 3;
-  optional google.protobuf.Struct attributes = 4;
-  int32 ttl_seconds = 5;
-  repeated string index_fields = 6;
-  bool index_disabled = 7;
+  int32 ttl_seconds = 4;
+  map<string, string> index = 5;
 }
 
 message MemoryWriteResult {

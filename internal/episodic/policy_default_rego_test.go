@@ -16,20 +16,22 @@ import future.keywords.if
 # --- authz assertions ---
 
 test_allow_owner_namespace if {
-	data.memories.authz.allow with input as {
+	data.memories.authz.decision with input as {
 		"operation": "write",
 		"namespace": ["user", "alice", "prefs"],
 		"key": "theme",
+		"value": {"locale": "en"},
+		"index": {"locale": "en"},
 		"context": {
 			"user_id": "alice",
 			"client_id": "agent-1",
 			"jwt_claims": {"roles": []}
 		}
-	}
+	} == {"allow": true}
 }
 
 test_deny_other_subject if {
-	not data.memories.authz.allow with input as {
+	data.memories.authz.decision with input as {
 		"operation": "read",
 		"namespace": ["user", "bob", "prefs"],
 		"key": "theme",
@@ -38,20 +40,37 @@ test_deny_other_subject if {
 			"client_id": "agent-1",
 			"jwt_claims": {"roles": []}
 		}
-	}
+	} == {"allow": false, "reason": "access denied"}
 }
 
 test_deny_non_user_namespace if {
-	not data.memories.authz.allow with input as {
+	data.memories.authz.decision with input as {
 		"operation": "write",
 		"namespace": ["org", "alice", "prefs"],
 		"key": "theme",
+		"value": {"locale": "en"},
+		"index": {"locale": "en"},
 		"context": {
 			"user_id": "alice",
 			"client_id": "agent-1",
 			"jwt_claims": {"roles": []}
 		}
-	}
+	} == {"allow": false, "reason": "access denied"}
+}
+
+test_deny_owner_when_too_many_index_keys if {
+	data.memories.authz.decision with input as {
+		"operation": "write",
+		"namespace": ["user", "alice", "prefs"],
+		"key": "theme",
+		"value": {"a": "x", "b": "y"},
+		"index": {"a": "x", "b": "y", "c": "z", "d": "w", "e": "v", "f": "u", "g": "t", "h": "s", "i": "r"},
+		"context": {
+			"user_id": "alice",
+			"client_id": "agent-1",
+			"jwt_claims": {"roles": []}
+		}
+	} == {"allow": false, "reason": "too many index fields (max 8)"}
 }
 
 # --- attribute extraction assertions ---
@@ -61,7 +80,12 @@ test_extracts_namespace_and_sub if {
 		"namespace": ["user", "alice", "notes"],
 		"key": "k1",
 		"value": {"text": "hello"},
-		"attributes": {"foo": "bar"}
+		"index": {"text": "hello"},
+		"context": {
+			"user_id": "alice",
+			"client_id": "agent-1",
+			"jwt_claims": {"roles": []}
+		}
 	} == {"namespace": "user", "sub": "alice"}
 }
 
@@ -135,6 +159,7 @@ func TestDefaultPoliciesRegoAssertions(t *testing.T) {
 		"test_allow_owner_namespace",
 		"test_deny_other_subject",
 		"test_deny_non_user_namespace",
+		"test_deny_owner_when_too_many_index_keys",
 		"test_extracts_namespace_and_sub",
 		"test_filter_narrows_prefix_to_subject",
 		"test_filter_keeps_narrower_prefix",
