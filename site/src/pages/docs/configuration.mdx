@@ -418,6 +418,14 @@ MEMORY_SERVICE_EMBEDDING_KIND=openai
 MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY=sk-...`}
 />
 
+## Memories Configuration
+
+Configure namespaced Memories policy loading.
+
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| <Cfg p="--policy-dir" e="MEMORY_SERVICE_POLICY_DIR" /> | path | built-in policies | Directory containing memory OPA/Rego policy files: `authz.rego`, `attributes.rego`, `filter.rego` |
+
 ## API Key Authentication
 
 Memory Service supports API key authentication for trusted agents. Configure API keys by client ID using environment variables:

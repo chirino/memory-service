@@ -1,4 +1,6 @@
 
+**Rego code blocks**: Astro's default Shiki setup in this repo does not include bundled `rego` syntax. Rego fences are highlighted via `site/remark-rego-prism.mjs` (Prism `rego` grammar) wired into `astro.config.mjs`, with token colors scoped in `site/src/styles/global.css` under `pre.language-rego`.
+
 * The examples in the site docs are meant to guide a user through incremntally adding a feature from the memory-service to thier langgraph project.  Some examples build for other examples.  In these cases copy the source of the working previous example and then make modifications to it like a user would make those modifications due to him following the tutorial guide.   Make sure you add the <CurlTest> components to the pages so that you can tun tests to verify that the docs you are showing the user work like you expect them to work.
 
 ## Porting Tutorials to New Frameworks / Languages

@@ -296,12 +296,128 @@ A background goroutine expires memories on a configurable interval (default: 60 
 
 ## Access Control
 
-Memory access is enforced by embedded **OPA/Rego policies** evaluated on every read, write, and search operation. The default built-in policy uses namespace-ownership rules:
+Memory access is enforced by embedded **OPA/Rego policies** evaluated on every memory API call. The service loads policy files from:
 
-- A user may access any namespace whose second segment matches their user ID (e.g. `["user", "alice", ...]`).
-- Users with the `admin` role may access any namespace.
+- `--policy-dir`
+- `MEMORY_SERVICE_POLICY_DIR`
 
-Custom policy directories can be configured for RBAC, ABAC, or shared-namespace patterns. OPA can also inject additional filter constraints into search queries — for example, transparently restricting non-admin searches to the caller's own subtree.
+Expected files in that directory:
+
+- `authz.rego` - read/write/delete authorization
+- `attributes.rego` - plaintext policy attributes extraction
+- `filter.rego` - search/list namespace+filter injection
+
+If no directory is set, or if a file is missing, the service falls back to the built-in default for that file.
+
+### Rego Policy Input Variables
+
+Each policy is evaluated with an `input` object. Available fields differ by policy type.
+
+#### `authz.rego` (`data.memories.authz.allow`)
+
+| `input` field | Type | Description |
+| --- | --- | --- |
+| `operation` | `string` | Operation being authorized: `write`, `read`, or `delete` |
+| `namespace` | `string[]` | Full namespace segments from the request |
+| `key` | `string` | Memory key from the request |
+| `context.user_id` | `string` | Authenticated subject/user ID |
+| `context.client_id` | `string` | Authenticated client ID (API key/OIDC client), when present |
+| `context.jwt_claims` | `object` | Raw JWT claims map (for example `roles`) |
+
+#### `attributes.rego` (`data.memories.attributes.attributes`)
+
+| `input` field | Type | Description |
+| --- | --- | --- |
+| `namespace` | `string[]` | Full namespace segments from the write request |
+| `key` | `string` | Memory key from the write request |
+| `value` | `object` | Memory value JSON body |
+| `attributes` | `object` | User-supplied attributes JSON body |
+
+Typical `value` and `attributes` payloads passed to `attributes.rego`:
+
+```json
+{
+  "value": {
+    "text": "Alice prefers list comprehensions over map/filter.",
+    "topic": "python",
+    "confidence": 0.92,
+    "source": {
+      "type": "chat",
+      "conversationId": "8fa3deec-4a45-42a5-a36d-6076b20a2c8d"
+    },
+    "tags": ["style", "python", "preferences"]
+  },
+  "attributes": {
+    "lang": "python",
+    "scope": "user-preference"
+  }
+}
+```
+
+#### `filter.rego` (`data.memories.filter`)
+
+| `input` field | Type | Description |
+| --- | --- | --- |
+| `namespace_prefix` | `string[]` | Requested namespace prefix for search/list |
+| `filter` | `object` | Caller-supplied attribute filter (may be empty) |
+| `context.user_id` | `string` | Authenticated subject/user ID |
+| `context.client_id` | `string` | Authenticated client ID (API key/OIDC client), when present |
+| `context.jwt_claims` | `object` | Raw JWT claims map (for example `roles`) |
+
+The `filter.rego` result may return:
+
+- `namespace_prefix` (`string[]`) - effective prefix to enforce
+- `attribute_filter` (`object`) - merged into the caller filter before datastore query
+
+### Default Built-In Policy (Repo Default)
+
+The default policy bundle shipped in this repository is:
+
+```rego
+package memories.authz
+
+default allow = false
+
+allow if {
+  input.namespace[0] == "user"
+  input.namespace[1] == input.context.user_id
+}
+```
+
+```rego
+package memories.attributes
+
+default attributes = {}
+
+attributes = {"namespace": input.namespace[0], "sub": input.namespace[1]} if {
+  count(input.namespace) >= 2
+}
+```
+
+```rego
+package memories.filter
+
+is_admin if {
+  "admin" in input.context.jwt_claims.roles
+}
+
+namespace_prefix := input.namespace_prefix if { is_admin }
+namespace_prefix := user_prefix if {
+  not is_admin
+  not starts_with(input.namespace_prefix, user_prefix)
+}
+
+attribute_filter := {} if { is_admin }
+attribute_filter := {"namespace": "user", "sub": input.context.user_id} if { not is_admin }
+```
+
+What this means in practice:
+
+- `authz.rego`: direct `PUT`/`GET`/`DELETE` is allowed only under `["user", <caller_user_id>, ...]`.
+- `attributes.rego`: each memory gets plaintext policy attributes `namespace` and `sub` for policy-aware filtering.
+- `filter.rego`: non-admin search/list calls are constrained to the caller's own `["user", <caller_user_id>]` subtree; admin callers keep the requested prefix and no forced attribute filter.
+
+Important: with the default bundle, `admin` role affects search/list filtering, but does not bypass `authz.rego` for direct read/write/delete. If you want admin bypass there, add it in `authz.rego`.
 
 See the [Admin APIs](/docs/concepts/admin-apis/) for policy management endpoints.
 

@@ -99,6 +99,51 @@
     @apply text-sm;
   }
 
+  /* Rego syntax highlighting (Prism-rendered) */
+  pre.language-rego {
+    background: #202833 !important;
+    border-color: #334155;
+    --tw-prose-code: #79B8FF;
+    --tw-prose-pre-code: #79B8FF;
+    color: #79B8FF !important;
+  }
+  pre.language-rego code {
+    color: #79B8FF !important;
+  }
+  pre.language-rego code span:not([class*="token"]) {
+    color: #79B8FF !important;
+  }
+  pre.language-rego .token.comment {
+    color: #a8b4c8;
+    font-style: italic;
+  }
+  pre.language-rego .token.keyword {
+    color: #d1b3ff;
+    font-weight: 600;
+  }
+  pre.language-rego .token.string {
+    color: #b8f7d4;
+  }
+  pre.language-rego .token.number,
+  pre.language-rego .token.boolean {
+    color: #79B8FF;
+  }
+  pre.language-rego .token.operator {
+    color: #ffb8a8;
+  }
+  pre.language-rego .token.punctuation {
+    color: #d7e3ff;
+  }
+  pre.language-rego .token.function {
+    color: #bacbff;
+  }
+  pre.language-rego .token.variable {
+    color: #c6dcff;
+  }
+  pre.language-rego .token.property {
+    color: #b8f7d4;
+  }
+
   /* Inline code styling */
   :not(pre) > code {
     @apply bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-primary-600 dark:text-primary-400;
