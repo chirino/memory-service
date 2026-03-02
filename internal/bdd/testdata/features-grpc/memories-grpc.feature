@@ -204,6 +204,7 @@ Feature: Episodic Memory gRPC API
     }
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
+    And the gRPC error message should contain "access denied"
 
   Scenario: Admin can query memory index status
     Given I am authenticated as admin user "alice"

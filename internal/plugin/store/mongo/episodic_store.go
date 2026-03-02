@@ -144,6 +144,20 @@ func (m *mongoEpisodicMigrator) Migrate(ctx context.Context) error {
 		return fmt.Errorf("mongo episodic migration: create vector indexes: %w", err)
 	}
 
+	// Schema reconciliation for existing documents.
+	if _, err := db.Collection("memories").UpdateMany(ctx,
+		bson.M{"indexed_content": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"indexed_content": bson.M{}}},
+	); err != nil {
+		return fmt.Errorf("mongo episodic migration: init indexed_content: %w", err)
+	}
+	if _, err := db.Collection("memories").UpdateMany(ctx,
+		bson.M{},
+		bson.M{"$unset": bson.M{"attributes": "", "index_fields": "", "index_disabled": ""}},
+	); err != nil {
+		return fmt.Errorf("mongo episodic migration: remove legacy fields: %w", err)
+	}
+
 	log.Info("MongoDB episodic schema migration complete")
 	return nil
 }
@@ -162,10 +176,8 @@ type memoryDoc struct {
 	Namespace        string                 `bson:"namespace"`
 	Key              string                 `bson:"key"`
 	ValueEncrypted   []byte                 `bson:"value_encrypted,omitempty"`
-	Attributes       []byte                 `bson:"attributes,omitempty"`
 	PolicyAttributes map[string]interface{} `bson:"policy_attributes,omitempty"`
-	IndexFields      []string               `bson:"index_fields,omitempty"`
-	IndexDisabled    bool                   `bson:"index_disabled,omitempty"`
+	IndexedContent   map[string]string      `bson:"indexed_content,omitempty"`
 	Kind             int32                  `bson:"kind"` // 0=add, 1=update
 	CreatedAt        time.Time              `bson:"created_at"`
 	ExpiresAt        *time.Time             `bson:"expires_at,omitempty"`
@@ -227,18 +239,6 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 		return nil, fmt.Errorf("encrypt value: %w", err)
 	}
 
-	var attrsEnc []byte
-	if len(req.Attributes) > 0 {
-		attrsJSON, err := json.Marshal(req.Attributes)
-		if err != nil {
-			return nil, fmt.Errorf("marshal attributes: %w", err)
-		}
-		attrsEnc, err = s.encrypt(attrsJSON)
-		if err != nil {
-			return nil, fmt.Errorf("encrypt attributes: %w", err)
-		}
-	}
-
 	var expiresAt *time.Time
 	if req.TTLSeconds > 0 {
 		t := time.Now().Add(time.Duration(req.TTLSeconds) * time.Second)
@@ -247,6 +247,10 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 
 	now := time.Now()
 	newID := uuid.New()
+	indexedContent := req.Index
+	if indexedContent == nil {
+		indexedContent = map[string]string{}
+	}
 
 	// Soft-delete the current active row for (namespace, key).
 	// Set deleted_reason=0 (superseded by update) and reset indexed_at.
@@ -276,10 +280,8 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 		Namespace:        nsEncoded,
 		Key:              req.Key,
 		ValueEncrypted:   valueEnc,
-		Attributes:       attrsEnc,
 		PolicyAttributes: req.PolicyAttributes,
-		IndexFields:      req.IndexFields,
-		IndexDisabled:    req.IndexDisabled,
+		IndexedContent:   indexedContent,
 		Kind:             kind,
 		CreatedAt:        now,
 		ExpiresAt:        expiresAt,
@@ -289,16 +291,11 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 		return nil, fmt.Errorf("insert memory: %w", err)
 	}
 
-	var decryptedAttrs map[string]interface{}
-	if len(attrsEnc) > 0 {
-		decryptedAttrs = req.Attributes
-	}
-
 	return &registryepisodic.MemoryWriteResult{
 		ID:         newID,
 		Namespace:  req.Namespace,
 		Key:        req.Key,
-		Attributes: decryptedAttrs,
+		Attributes: req.PolicyAttributes,
 		CreatedAt:  now,
 		ExpiresAt:  expiresAt,
 	}, nil
@@ -450,8 +447,7 @@ func (s *mongoEpisodicStore) FindMemoriesPendingIndexing(ctx context.Context, li
 		pm := registryepisodic.PendingMemory{
 			Namespace:        doc.Namespace,
 			PolicyAttributes: doc.PolicyAttributes,
-			IndexFields:      doc.IndexFields,
-			IndexDisabled:    doc.IndexDisabled,
+			IndexedContent:   doc.IndexedContent,
 			DeletedAt:        doc.DeletedAt,
 		}
 		id, err := uuid.Parse(doc.ID)
@@ -461,14 +457,6 @@ func (s *mongoEpisodicStore) FindMemoriesPendingIndexing(ctx context.Context, li
 		}
 		pm.ID = id
 
-		if doc.DeletedAt == nil {
-			plain, err := s.decrypt(doc.ValueEncrypted)
-			if err != nil {
-				log.Warn("Decrypt memory value for indexing", "id", doc.ID, "err", err)
-			} else {
-				pm.Value = plain
-			}
-		}
 		out = append(out, pm)
 	}
 	return out, cursor.Err()
@@ -701,7 +689,7 @@ func (s *mongoEpisodicStore) TombstoneDeletedMemories(ctx context.Context, limit
 	}
 	result, err := s.col.UpdateMany(ctx,
 		bson.M{"_id": bson.M{"$in": ids}},
-		bson.M{"$unset": bson.M{"value_encrypted": "", "attributes": ""}},
+		bson.M{"$unset": bson.M{"value_encrypted": ""}},
 	)
 	if err != nil {
 		return 0, fmt.Errorf("tombstone deleted memories: %w", err)
@@ -811,7 +799,7 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 		kind       string
 		occurredAt time.Time
 		valueEnc   []byte
-		attrsEnc   []byte
+		attrs      map[string]interface{}
 		expiresAt  *time.Time
 	}
 
@@ -896,7 +884,7 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 			allItems = append(allItems, eventItem{
 				id: id, namespace: ns, key: doc.Key, kind: kindStr,
 				occurredAt: doc.CreatedAt, valueEnc: doc.ValueEncrypted,
-				attrsEnc: doc.Attributes, expiresAt: doc.ExpiresAt,
+				attrs: doc.PolicyAttributes, expiresAt: doc.ExpiresAt,
 			})
 		}
 		if err := writeCursor.Err(); err != nil {
@@ -983,12 +971,7 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 					_ = json.Unmarshal(plain, &value)
 				}
 			}
-			if len(item.attrsEnc) > 0 {
-				plain, err := s.decrypt(item.attrsEnc)
-				if err == nil {
-					_ = json.Unmarshal(plain, &attrs)
-				}
-			}
+			attrs = item.attrs
 		}
 		events = append(events, registryepisodic.MemoryEvent{
 			ID:         item.id,
@@ -1040,7 +1023,7 @@ func (s *mongoEpisodicStore) AdminCountPendingIndexing(ctx context.Context) (int
 	return s.col.CountDocuments(ctx, bson.M{"indexed_at": bson.M{"$exists": false}})
 }
 
-// docToItem converts a memoryDoc to a MemoryItem by decrypting value and attributes.
+// docToItem converts a memoryDoc to a MemoryItem by decrypting value.
 func (s *mongoEpisodicStore) docToItem(doc memoryDoc, namespace []string) (*registryepisodic.MemoryItem, error) {
 	// nil ValueEncrypted means the row is a tombstone (data cleared after eviction).
 	var value map[string]interface{}
@@ -1054,17 +1037,6 @@ func (s *mongoEpisodicStore) docToItem(doc memoryDoc, namespace []string) (*regi
 		}
 	}
 
-	var attrs map[string]interface{}
-	if len(doc.Attributes) > 0 {
-		attrsPlain, err := s.decrypt(doc.Attributes)
-		if err != nil {
-			return nil, fmt.Errorf("decrypt attributes: %w", err)
-		}
-		if err := json.Unmarshal(attrsPlain, &attrs); err != nil {
-			return nil, fmt.Errorf("unmarshal attributes: %w", err)
-		}
-	}
-
 	id, err := uuid.Parse(doc.ID)
 	if err != nil {
 		return nil, fmt.Errorf("parse memory id: %w", err)
@@ -1075,7 +1047,7 @@ func (s *mongoEpisodicStore) docToItem(doc memoryDoc, namespace []string) (*regi
 		Namespace:  namespace,
 		Key:        doc.Key,
 		Value:      value,
-		Attributes: attrs,
+		Attributes: doc.PolicyAttributes,
 		CreatedAt:  doc.CreatedAt,
 		ExpiresAt:  doc.ExpiresAt,
 	}, nil

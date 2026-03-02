@@ -117,12 +117,10 @@ export type PutMemoryRequest = {
   value: {
     [key: string]: unknown;
   };
-  attributes?: {
-    [key: string]: unknown;
-  };
   ttl_seconds?: number;
-  index_fields?: Array<string>;
-  index_disabled?: boolean;
+  index?: {
+    [key: string]: string;
+  };
 };
 
 export type MemoryWriteResult = {

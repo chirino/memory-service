@@ -29,10 +29,11 @@ RUN wget -O - https://packages.adoptium.net/artifactory/api/gpg/key/public \
 RUN ARCH=$(dpkg --print-architecture) \
     && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -xz -C /usr/local
 
-ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
-ENV GOPATH="/go"
-RUN mkdir -p /go \
-    && chown -R ${USERNAME}:${USERNAME} /go
+ENV GOPATH="/home/${USERNAME}/go"
+ENV PATH="/usr/local/go/bin:${GOPATH}/bin:${PATH}"
+RUN mkdir -p "${GOPATH}" \
+    && chown -R ${USERNAME}:${USERNAME} "${GOPATH}" \
+    && ln -sfn "${GOPATH}" /go
 
 # Install Node via NodeSource
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
@@ -98,11 +99,11 @@ RUN COMP_DIR="/etc/bash_completion.d" \
     && kustomize completion bash > "$COMP_DIR/kustomize" \
     && npm completion > "$COMP_DIR/npm"
 
-# Install Go dev tools
-RUN go install gotest.tools/gotestsum@latest
-RUN go install github.com/go-delve/delve/cmd/dlv@v1.25.1
-RUN go install github.com/cosmtrek/air@v1.51.0
-RUN chown -R ${USERNAME}:${USERNAME} /go
+# Install Go dev tools without writing root-owned files into runtime GOPATH.
+RUN GOBIN=/usr/local/bin GOPATH=/tmp/go GOCACHE=/tmp/go-cache go install gotest.tools/gotestsum@latest \
+    && GOBIN=/usr/local/bin GOPATH=/tmp/go GOCACHE=/tmp/go-cache go install github.com/go-delve/delve/cmd/dlv@v1.25.1 \
+    && GOBIN=/usr/local/bin GOPATH=/tmp/go GOCACHE=/tmp/go-cache go install github.com/cosmtrek/air@v1.51.0 \
+    && rm -rf /tmp/go /tmp/go-cache
 
 
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf

@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -101,7 +99,7 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 		}
 
 		// Active row: embed and upsert.
-		if m.IndexDisabled || idx.embedder == nil || len(m.Value) == 0 {
+		if idx.embedder == nil || len(m.IndexedContent) == 0 {
 			// No embedder or no value — mark as indexed with no vector.
 			stats.SkippedNoEmbedding++
 			if err := idx.store.SetMemoryIndexedAt(ctx, m.ID, time.Now()); err != nil {
@@ -111,23 +109,16 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 			continue
 		}
 
-		// Parse the decrypted value and select requested index fields.
-		fields, err := extractStringLeafFields(m.Value, m.IndexFields)
-		if err != nil || len(fields) == 0 {
-			_ = idx.store.SetMemoryIndexedAt(ctx, m.ID, time.Now())
-			continue
-		}
-
 		// Batch-embed all non-empty string fields in a single call.
 		type fieldEntry struct{ name, text string }
 		var entries []fieldEntry
-		names := make([]string, 0, len(fields))
-		for name := range fields {
+		names := make([]string, 0, len(m.IndexedContent))
+		for name := range m.IndexedContent {
 			names = append(names, name)
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			text := fields[name]
+			text := m.IndexedContent[name]
 			if text != "" {
 				entries = append(entries, fieldEntry{name, text})
 			}
@@ -174,65 +165,4 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 		}
 	}
 	return stats
-}
-
-// extractStringLeafFields parses a JSON value and returns string fields selected for indexing.
-// When indexFields is empty, all string leaf fields are selected.
-func extractStringLeafFields(valueJSON []byte, indexFields []string) (map[string]string, error) {
-	if len(valueJSON) == 0 {
-		return nil, nil
-	}
-	var obj map[string]interface{}
-	if err := json.Unmarshal(valueJSON, &obj); err != nil {
-		return nil, err
-	}
-
-	if len(indexFields) > 0 {
-		out := make(map[string]string, len(indexFields))
-		for _, name := range indexFields {
-			if text, ok := lookupStringField(obj, name); ok {
-				out[name] = text
-			}
-		}
-		return out, nil
-	}
-
-	out := make(map[string]string)
-	collectStringLeaves(obj, out)
-	return out, nil
-}
-
-func collectStringLeaves(obj map[string]interface{}, out map[string]string) {
-	for k, v := range obj {
-		switch val := v.(type) {
-		case string:
-			out[k] = val
-		case map[string]interface{}:
-			collectStringLeaves(val, out)
-		}
-	}
-}
-
-func lookupStringField(obj map[string]interface{}, path string) (string, bool) {
-	if obj == nil || path == "" {
-		return "", false
-	}
-	current := interface{}(obj)
-	parts := strings.Split(path, ".")
-	for i, part := range parts {
-		m, ok := current.(map[string]interface{})
-		if !ok {
-			return "", false
-		}
-		v, exists := m[part]
-		if !exists {
-			return "", false
-		}
-		if i == len(parts)-1 {
-			s, ok := v.(string)
-			return s, ok
-		}
-		current = v
-	}
-	return "", false
 }

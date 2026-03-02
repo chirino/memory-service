@@ -9,7 +9,7 @@ import CurlTest from '../../../components/CurlTest.astro';
 
 This guide adds the Memory Service episodic store to your LangGraph agent. Unlike conversation checkpointing — which persists the message thread for a single conversation — episodic memories cross conversation boundaries, giving the agent a persistent long-term view of each user.
 
-Memory values are stored encrypted at rest; only metadata, derived attributes, and embedding vectors of the cleartext content are stored in plaintext.
+Memory values are stored encrypted at rest; metadata, derived attributes, and caller-provided index text used for embeddings are stored in plaintext.
 
 > The agent recalls relevant memories before each response and stores new ones afterward —
 > giving users a continuously improving, personalised experience without modifying the graph structure.
@@ -37,6 +37,7 @@ Memories are:
 - **Isolated per user** via namespace: `("user", user_id, "memories")`
 - **Recalled before each response** with `store.asearch()`
 - **Saved after each turn** with `store.aput()`
+- **Index-controlled by the application** via the `index` argument plus optional `index_builder` / `index_redactor` hooks
 - **Available immediately** — no waiting for background indexing
 
 ## The Changes from Checkpoint 03

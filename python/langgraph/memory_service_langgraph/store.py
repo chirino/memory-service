@@ -8,6 +8,8 @@ from typing import Any, Optional
 import httpx
 from langgraph.store.base import BaseStore, Item, SearchItem, NamespacePath
 
+from .indexing import IndexBuilder, IndexRedactor, build_index_payload
+
 
 class MemoryServiceStore(BaseStore):
     """Synchronous LangGraph BaseStore backed by the Memory Service episodic API.
@@ -23,14 +25,24 @@ class MemoryServiceStore(BaseStore):
         base_url: str | None = None,
         token: str | None = None,
         timeout: float = 10.0,
+        index_builder: IndexBuilder | None = None,
+        index_redactor: IndexRedactor | None = None,
     ) -> None:
         self._base_url = (base_url or os.environ.get("MEMORY_SERVICE_URL", "http://localhost:8083")).rstrip("/")
         self._token = token or os.environ.get("MEMORY_SERVICE_TOKEN", "")
+        if index_builder is not None and index_redactor is not None:
+            raise ValueError("index_builder and index_redactor are mutually exclusive")
         self._client = httpx.Client(
             base_url=self._base_url,
             headers={"Authorization": f"Bearer {self._token}"} if self._token else {},
             timeout=timeout,
         )
+        if index_builder is not None:
+            self._index_builder = index_builder
+        else:
+            self._index_builder = lambda namespace, key, value, index: build_index_payload(
+                namespace, key, value, index, redactor=index_redactor
+            )
 
     # ------------------------------------------------------------------
     # BaseStore interface
@@ -49,10 +61,9 @@ class MemoryServiceStore(BaseStore):
             "key": key,
             "value": value,
         }
-        if index is False:
-            body["index_disabled"] = True
-        elif isinstance(index, list):
-            body["index_fields"] = index
+        built_index = self._index_builder(namespace, key, value, index)
+        if built_index is not None:
+            body["index"] = built_index
 
         resp = self._client.put("/v1/memories", json=body)
         resp.raise_for_status()

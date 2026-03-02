@@ -40,6 +40,8 @@ When you discover something meaningful about this project during your work—arc
 
 **API gotchas**:
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).
+- Fork creation is implicit on first append to a new conversation ID using `forkedAtConversationId` + `forkedAtEntryId`; `POST /v1/conversations/{conversationId}/entries/{entryId}/fork` is obsolete.
+- Entry listing uses `forks=all` to return entries from all branches in a fork tree (not `allForks=true`).
 - In gRPC `memory/v1/memory_service.proto`, response recorder fields use snake_case (`conversation_id`).
 - List endpoints may include `"afterCursor": null`; docs-test JSON assertions should tolerate additive pagination fields.
 - Attachment download tokens (`/v1/attachments/download/:token/:filename`) are HMAC-signed with `AttachmentSigningSecret`; keep `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET` non-empty, especially with DB attachment stores where storage keys are guessable. The unauthenticated download route is not registered when this secret is unset.

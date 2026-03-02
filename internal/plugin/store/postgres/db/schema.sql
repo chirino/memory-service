@@ -267,10 +267,8 @@ CREATE TABLE IF NOT EXISTS memories (
     namespace         TEXT        NOT NULL,   -- RS-encoded: "users\x1ealice\x1ememories"
     key               TEXT        NOT NULL,
     value_encrypted   BYTEA,                  -- AES-256-GCM encrypted JSON value; NULL for tombstones
-    attributes        BYTEA,                  -- AES-256-GCM encrypted user-supplied attributes; NULL for tombstones
     policy_attributes JSONB,                  -- plaintext OPA-extracted attributes for filtering
-    index_fields      JSONB,                  -- optional explicit value field names to embed
-    index_disabled    BOOLEAN     NOT NULL DEFAULT FALSE,
+    indexed_content   JSONB       NOT NULL DEFAULT '{}'::JSONB, -- caller-provided redacted index text
     kind              SMALLINT    NOT NULL DEFAULT 0,  -- 0=add, 1=update — set at write time, never changed
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at        TIMESTAMPTZ,            -- NULL = no TTL
@@ -304,3 +302,10 @@ CREATE INDEX IF NOT EXISTS memories_write_events_idx
     ON memories (namespace, created_at, id) WHERE kind IN (0, 1);
 CREATE INDEX IF NOT EXISTS memories_delete_events_idx
     ON memories (namespace, deleted_at, id) WHERE deleted_reason IN (1, 2);
+
+-- Schema reconciliation for existing databases.
+ALTER TABLE memories
+    DROP COLUMN IF EXISTS attributes,
+    DROP COLUMN IF EXISTS index_fields,
+    DROP COLUMN IF EXISTS index_disabled,
+    ADD COLUMN IF NOT EXISTS indexed_content JSONB NOT NULL DEFAULT '{}'::JSONB;

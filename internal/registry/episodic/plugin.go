@@ -20,16 +20,11 @@ type PutMemoryRequest struct {
 	Key string `json:"key"`
 	// Value is the arbitrary JSON value to store (encrypted at rest).
 	Value map[string]interface{} `json:"value"`
-	// Attributes are user-supplied metadata (encrypted at rest).
-	// Passed to the OPA attribute extraction policy.
-	Attributes map[string]interface{} `json:"attributes,omitempty"`
 	// TTLSeconds is the optional time-to-live in seconds. 0 = no expiry.
 	TTLSeconds int `json:"ttl_seconds,omitempty"`
-	// IndexFields lists value field names to embed for semantic search.
-	// nil = all string leaf fields; use []string{} with IndexDisabled=true to skip.
-	IndexFields []string `json:"index_fields,omitempty"`
-	// IndexDisabled disables vector indexing for this memory when true.
-	IndexDisabled bool `json:"index_disabled,omitempty"`
+	// Index is the caller-provided, redacted text payload to embed.
+	// Empty or nil means no vector indexing for this memory version.
+	Index map[string]string `json:"index,omitempty"`
 	// PolicyAttributes are the OPA-extracted plaintext attributes (set by the handler).
 	PolicyAttributes map[string]interface{} `json:"-"`
 }
@@ -93,14 +88,11 @@ type MemoryVectorSearch struct {
 }
 
 // PendingMemory is the internal type returned by FindMemoriesPendingIndexing.
-// Value is already decrypted JSON; the store is responsible for decryption.
 type PendingMemory struct {
 	ID               uuid.UUID
 	Namespace        string // RS-encoded
-	Value            []byte // decrypted JSON (may be nil for soft-deleted rows)
 	PolicyAttributes map[string]interface{}
-	IndexFields      []string
-	IndexDisabled    bool
+	IndexedContent   map[string]string
 	DeletedAt        *time.Time
 }
 

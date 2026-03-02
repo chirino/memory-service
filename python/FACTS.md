@@ -27,3 +27,7 @@
 **FastAPI helper reuse**: Prefer `memory_service_langchain.install_fastapi_authorization_middleware`, `memory_service_scope`, and `memory_service_request` over redefining ContextVars/middleware in checkpoint apps.
 
 **LangGraph threadpool auth gotcha**: `ContextVar` request auth does not reliably flow into LangGraph checkpointer worker threads. `memory_service_scope(...)` now also tracks `conversation_id -> Authorization` for the active scope, and `MemoryServiceCheckpointSaver` falls back to that mapping when the direct getter is empty; this avoids intermittent `{"code":"forbidden","error":"forbidden"}` on checkpoint writes under parallel site tests.
+
+**LangGraph episodic write contract**: `memory_service_langgraph` now sends episodic write indexing via `index` (map of field-path to redacted text) instead of legacy `index_fields` / `index_disabled`.
+
+**LangGraph index controls**: `MemoryServiceStore` and `AsyncMemoryServiceStore` accept user hooks `index_builder` (full payload override) or `index_redactor` (per-field mutate/drop in the default builder).

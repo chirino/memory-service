@@ -2866,10 +2866,8 @@ type PutMemoryRequest struct {
 	Namespace     []string               `protobuf:"bytes,1,rep,name=namespace,proto3" json:"namespace,omitempty"`
 	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
 	Value         *structpb.Struct       `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
-	Attributes    *structpb.Struct       `protobuf:"bytes,4,opt,name=attributes,proto3,oneof" json:"attributes,omitempty"`
-	TtlSeconds    int32                  `protobuf:"varint,5,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
-	IndexFields   []string               `protobuf:"bytes,6,rep,name=index_fields,json=indexFields,proto3" json:"index_fields,omitempty"`
-	IndexDisabled bool                   `protobuf:"varint,7,opt,name=index_disabled,json=indexDisabled,proto3" json:"index_disabled,omitempty"`
+	TtlSeconds    int32                  `protobuf:"varint,4,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	Index         map[string]string      `protobuf:"bytes,5,rep,name=index,proto3" json:"index,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2925,13 +2923,6 @@ func (x *PutMemoryRequest) GetValue() *structpb.Struct {
 	return nil
 }
 
-func (x *PutMemoryRequest) GetAttributes() *structpb.Struct {
-	if x != nil {
-		return x.Attributes
-	}
-	return nil
-}
-
 func (x *PutMemoryRequest) GetTtlSeconds() int32 {
 	if x != nil {
 		return x.TtlSeconds
@@ -2939,18 +2930,11 @@ func (x *PutMemoryRequest) GetTtlSeconds() int32 {
 	return 0
 }
 
-func (x *PutMemoryRequest) GetIndexFields() []string {
+func (x *PutMemoryRequest) GetIndex() map[string]string {
 	if x != nil {
-		return x.IndexFields
+		return x.Index
 	}
 	return nil
-}
-
-func (x *PutMemoryRequest) GetIndexDisabled() bool {
-	if x != nil {
-		return x.IndexDisabled
-	}
-	return false
 }
 
 type MemoryWriteResult struct {
@@ -4745,19 +4729,18 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\a_cursor\"a\n" +
 	"\x0eUnindexedEntry\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12&\n" +
-	"\x05entry\x18\x02 \x01(\v2\x10.memory.v1.EntryR\x05entry\"\xa9\x02\n" +
+	"\x05entry\x18\x02 \x01(\v2\x10.memory.v1.EntryR\x05entry\"\x8a\x02\n" +
 	"\x10PutMemoryRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x03(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12-\n" +
-	"\x05value\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x05value\x12<\n" +
+	"\x05value\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x05value\x12\x1f\n" +
+	"\vttl_seconds\x18\x04 \x01(\x05R\n" +
+	"ttlSeconds\x12<\n" +
+	"\x05index\x18\x05 \x03(\v2&.memory.v1.PutMemoryRequest.IndexEntryR\x05index\x1a8\n" +
 	"\n" +
-	"attributes\x18\x04 \x01(\v2\x17.google.protobuf.StructH\x00R\n" +
-	"attributes\x88\x01\x01\x12\x1f\n" +
-	"\vttl_seconds\x18\x05 \x01(\x05R\n" +
-	"ttlSeconds\x12!\n" +
-	"\findex_fields\x18\x06 \x03(\tR\vindexFields\x12%\n" +
-	"\x0eindex_disabled\x18\a \x01(\bR\rindexDisabledB\r\n" +
-	"\v_attributes\"\xf2\x01\n" +
+	"IndexEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf2\x01\n" +
 	"\x11MemoryWriteResult\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x03(\tR\tnamespace\x12\x10\n" +
@@ -4965,7 +4948,7 @@ func file_memory_v1_memory_service_proto_rawDescGZIP() []byte {
 }
 
 var file_memory_v1_memory_service_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_memory_v1_memory_service_proto_msgTypes = make([]protoimpl.MessageInfo, 70)
+var file_memory_v1_memory_service_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
 var file_memory_v1_memory_service_proto_goTypes = []any{
 	(ConversationListMode)(0),              // 0: memory.v1.ConversationListMode
 	(AccessLevel)(0),                       // 1: memory.v1.AccessLevel
@@ -5042,15 +5025,16 @@ var file_memory_v1_memory_service_proto_goTypes = []any{
 	(*AttachmentInfo)(nil),                 // 72: memory.v1.AttachmentInfo
 	(*DownloadAttachmentRequest)(nil),      // 73: memory.v1.DownloadAttachmentRequest
 	(*DownloadAttachmentResponse)(nil),     // 74: memory.v1.DownloadAttachmentResponse
-	(*structpb.Struct)(nil),                // 75: google.protobuf.Struct
-	(*structpb.Value)(nil),                 // 76: google.protobuf.Value
-	(*emptypb.Empty)(nil),                  // 77: google.protobuf.Empty
+	nil,                                    // 75: memory.v1.PutMemoryRequest.IndexEntry
+	(*structpb.Struct)(nil),                // 76: google.protobuf.Struct
+	(*structpb.Value)(nil),                 // 77: google.protobuf.Value
+	(*emptypb.Empty)(nil),                  // 78: google.protobuf.Empty
 }
 var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	1,  // 0: memory.v1.ConversationSummary.access_level:type_name -> memory.v1.AccessLevel
 	1,  // 1: memory.v1.Conversation.access_level:type_name -> memory.v1.AccessLevel
 	1,  // 2: memory.v1.ConversationMembership.access_level:type_name -> memory.v1.AccessLevel
-	75, // 3: memory.v1.CreateConversationRequest.metadata:type_name -> google.protobuf.Struct
+	76, // 3: memory.v1.CreateConversationRequest.metadata:type_name -> google.protobuf.Struct
 	0,  // 4: memory.v1.ListConversationsRequest.mode:type_name -> memory.v1.ConversationListMode
 	5,  // 5: memory.v1.ListConversationsRequest.page:type_name -> memory.v1.PageRequest
 	7,  // 6: memory.v1.ListConversationsResponse.conversations:type_name -> memory.v1.ConversationSummary
@@ -5059,7 +5043,7 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	10, // 9: memory.v1.ListForksResponse.forks:type_name -> memory.v1.ConversationForkSummary
 	6,  // 10: memory.v1.ListForksResponse.page_info:type_name -> memory.v1.PageInfo
 	2,  // 11: memory.v1.CreateEntryRequest.channel:type_name -> memory.v1.Channel
-	76, // 12: memory.v1.CreateEntryRequest.content:type_name -> google.protobuf.Value
+	77, // 12: memory.v1.CreateEntryRequest.content:type_name -> google.protobuf.Value
 	19, // 13: memory.v1.SyncEntriesRequest.entry:type_name -> memory.v1.CreateEntryRequest
 	25, // 14: memory.v1.SyncEntriesResponse.entry:type_name -> memory.v1.Entry
 	19, // 15: memory.v1.AppendEntryRequest.entry:type_name -> memory.v1.CreateEntryRequest
@@ -5068,7 +5052,7 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	25, // 18: memory.v1.ListEntriesResponse.entries:type_name -> memory.v1.Entry
 	6,  // 19: memory.v1.ListEntriesResponse.page_info:type_name -> memory.v1.PageInfo
 	2,  // 20: memory.v1.Entry.channel:type_name -> memory.v1.Channel
-	76, // 21: memory.v1.Entry.content:type_name -> google.protobuf.Value
+	77, // 21: memory.v1.Entry.content:type_name -> google.protobuf.Value
 	5,  // 22: memory.v1.ListMembershipsRequest.page:type_name -> memory.v1.PageRequest
 	9,  // 23: memory.v1.ListMembershipsResponse.memberships:type_name -> memory.v1.ConversationMembership
 	6,  // 24: memory.v1.ListMembershipsResponse.page_info:type_name -> memory.v1.PageInfo
@@ -5083,18 +5067,18 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	42, // 33: memory.v1.IndexConversationsRequest.entries:type_name -> memory.v1.IndexEntryRequest
 	46, // 34: memory.v1.ListUnindexedEntriesResponse.entries:type_name -> memory.v1.UnindexedEntry
 	25, // 35: memory.v1.UnindexedEntry.entry:type_name -> memory.v1.Entry
-	75, // 36: memory.v1.PutMemoryRequest.value:type_name -> google.protobuf.Struct
-	75, // 37: memory.v1.PutMemoryRequest.attributes:type_name -> google.protobuf.Struct
-	75, // 38: memory.v1.MemoryWriteResult.attributes:type_name -> google.protobuf.Struct
-	75, // 39: memory.v1.MemoryItem.value:type_name -> google.protobuf.Struct
-	75, // 40: memory.v1.MemoryItem.attributes:type_name -> google.protobuf.Struct
-	75, // 41: memory.v1.SearchMemoriesRequest.filter:type_name -> google.protobuf.Struct
+	76, // 36: memory.v1.PutMemoryRequest.value:type_name -> google.protobuf.Struct
+	75, // 37: memory.v1.PutMemoryRequest.index:type_name -> memory.v1.PutMemoryRequest.IndexEntry
+	76, // 38: memory.v1.MemoryWriteResult.attributes:type_name -> google.protobuf.Struct
+	76, // 39: memory.v1.MemoryItem.value:type_name -> google.protobuf.Struct
+	76, // 40: memory.v1.MemoryItem.attributes:type_name -> google.protobuf.Struct
+	76, // 41: memory.v1.SearchMemoriesRequest.filter:type_name -> google.protobuf.Struct
 	51, // 42: memory.v1.SearchMemoriesResponse.items:type_name -> memory.v1.MemoryItem
 	55, // 43: memory.v1.ListMemoryNamespacesResponse.namespaces:type_name -> memory.v1.MemoryNamespace
 	4,  // 44: memory.v1.RecordResponse.status:type_name -> memory.v1.RecordStatus
 	69, // 45: memory.v1.UploadAttachmentRequest.metadata:type_name -> memory.v1.UploadMetadata
 	72, // 46: memory.v1.DownloadAttachmentResponse.metadata:type_name -> memory.v1.AttachmentInfo
-	77, // 47: memory.v1.SystemService.GetHealth:input_type -> google.protobuf.Empty
+	78, // 47: memory.v1.SystemService.GetHealth:input_type -> google.protobuf.Empty
 	12, // 48: memory.v1.ConversationsService.ListConversations:input_type -> memory.v1.ListConversationsRequest
 	11, // 49: memory.v1.ConversationsService.CreateConversation:input_type -> memory.v1.CreateConversationRequest
 	14, // 50: memory.v1.ConversationsService.GetConversation:input_type -> memory.v1.GetConversationRequest
@@ -5121,11 +5105,11 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	50, // 71: memory.v1.MemoriesService.DeleteMemory:input_type -> memory.v1.DeleteMemoryRequest
 	52, // 72: memory.v1.MemoriesService.SearchMemories:input_type -> memory.v1.SearchMemoriesRequest
 	54, // 73: memory.v1.MemoriesService.ListMemoryNamespaces:input_type -> memory.v1.ListMemoryNamespacesRequest
-	77, // 74: memory.v1.MemoriesService.GetMemoryIndexStatus:input_type -> google.protobuf.Empty
+	78, // 74: memory.v1.MemoriesService.GetMemoryIndexStatus:input_type -> google.protobuf.Empty
 	59, // 75: memory.v1.ResponseRecorderService.Record:input_type -> memory.v1.RecordRequest
 	61, // 76: memory.v1.ResponseRecorderService.Replay:input_type -> memory.v1.ReplayRequest
 	63, // 77: memory.v1.ResponseRecorderService.Cancel:input_type -> memory.v1.CancelRecordRequest
-	77, // 78: memory.v1.ResponseRecorderService.IsEnabled:input_type -> google.protobuf.Empty
+	78, // 78: memory.v1.ResponseRecorderService.IsEnabled:input_type -> google.protobuf.Empty
 	66, // 79: memory.v1.ResponseRecorderService.CheckRecordings:input_type -> memory.v1.CheckRecordingsRequest
 	68, // 80: memory.v1.AttachmentsService.UploadAttachment:input_type -> memory.v1.UploadAttachmentRequest
 	71, // 81: memory.v1.AttachmentsService.GetAttachment:input_type -> memory.v1.GetAttachmentRequest
@@ -5135,17 +5119,17 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	8,  // 85: memory.v1.ConversationsService.CreateConversation:output_type -> memory.v1.Conversation
 	8,  // 86: memory.v1.ConversationsService.GetConversation:output_type -> memory.v1.Conversation
 	8,  // 87: memory.v1.ConversationsService.UpdateConversation:output_type -> memory.v1.Conversation
-	77, // 88: memory.v1.ConversationsService.DeleteConversation:output_type -> google.protobuf.Empty
+	78, // 88: memory.v1.ConversationsService.DeleteConversation:output_type -> google.protobuf.Empty
 	18, // 89: memory.v1.ConversationsService.ListForks:output_type -> memory.v1.ListForksResponse
 	27, // 90: memory.v1.ConversationMembershipsService.ListMemberships:output_type -> memory.v1.ListMembershipsResponse
 	9,  // 91: memory.v1.ConversationMembershipsService.ShareConversation:output_type -> memory.v1.ConversationMembership
 	9,  // 92: memory.v1.ConversationMembershipsService.UpdateMembership:output_type -> memory.v1.ConversationMembership
-	77, // 93: memory.v1.ConversationMembershipsService.DeleteMembership:output_type -> google.protobuf.Empty
+	78, // 93: memory.v1.ConversationMembershipsService.DeleteMembership:output_type -> google.protobuf.Empty
 	33, // 94: memory.v1.OwnershipTransfersService.ListOwnershipTransfers:output_type -> memory.v1.ListOwnershipTransfersResponse
 	31, // 95: memory.v1.OwnershipTransfersService.GetOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
 	31, // 96: memory.v1.OwnershipTransfersService.CreateOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
-	77, // 97: memory.v1.OwnershipTransfersService.AcceptOwnershipTransfer:output_type -> google.protobuf.Empty
-	77, // 98: memory.v1.OwnershipTransfersService.DeleteOwnershipTransfer:output_type -> google.protobuf.Empty
+	78, // 97: memory.v1.OwnershipTransfersService.AcceptOwnershipTransfer:output_type -> google.protobuf.Empty
+	78, // 98: memory.v1.OwnershipTransfersService.DeleteOwnershipTransfer:output_type -> google.protobuf.Empty
 	24, // 99: memory.v1.EntriesService.ListEntries:output_type -> memory.v1.ListEntriesResponse
 	25, // 100: memory.v1.EntriesService.AppendEntry:output_type -> memory.v1.Entry
 	21, // 101: memory.v1.EntriesService.SyncEntries:output_type -> memory.v1.SyncEntriesResponse
@@ -5154,7 +5138,7 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	45, // 104: memory.v1.SearchService.ListUnindexedEntries:output_type -> memory.v1.ListUnindexedEntriesResponse
 	48, // 105: memory.v1.MemoriesService.PutMemory:output_type -> memory.v1.MemoryWriteResult
 	51, // 106: memory.v1.MemoriesService.GetMemory:output_type -> memory.v1.MemoryItem
-	77, // 107: memory.v1.MemoriesService.DeleteMemory:output_type -> google.protobuf.Empty
+	78, // 107: memory.v1.MemoriesService.DeleteMemory:output_type -> google.protobuf.Empty
 	53, // 108: memory.v1.MemoriesService.SearchMemories:output_type -> memory.v1.SearchMemoriesResponse
 	56, // 109: memory.v1.MemoriesService.ListMemoryNamespaces:output_type -> memory.v1.ListMemoryNamespacesResponse
 	57, // 110: memory.v1.MemoriesService.GetMemoryIndexStatus:output_type -> memory.v1.MemoryIndexStatusResponse
@@ -5184,7 +5168,6 @@ func file_memory_v1_memory_service_proto_init() {
 	file_memory_v1_memory_service_proto_msgTypes[33].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[39].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[40].OneofWrappers = []any{}
-	file_memory_v1_memory_service_proto_msgTypes[42].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[43].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[46].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[47].OneofWrappers = []any{}
@@ -5202,7 +5185,7 @@ func file_memory_v1_memory_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_memory_v1_memory_service_proto_rawDesc), len(file_memory_v1_memory_service_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   70,
+			NumMessages:   71,
 			NumExtensions: 0,
 			NumServices:   9,
 		},

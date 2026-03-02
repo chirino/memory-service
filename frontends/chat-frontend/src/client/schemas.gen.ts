@@ -261,22 +261,15 @@ export const $PutMemoryRequest = {
       type: "object",
       additionalProperties: true,
     },
-    attributes: {
-      type: "object",
-      additionalProperties: true,
-    },
     ttl_seconds: {
       type: "integer",
       minimum: 0,
     },
-    index_fields: {
-      type: "array",
-      items: {
+    index: {
+      type: "object",
+      additionalProperties: {
         type: "string",
       },
-    },
-    index_disabled: {
-      type: "boolean",
     },
   },
 } as const;
