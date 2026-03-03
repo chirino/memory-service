@@ -98,6 +98,7 @@ Feature: Response Recorder gRPC API
     Then the gRPC response should not have an error
     And the gRPC response field "accepted" should be true
     And I wait for the response stream to complete
+    And the response stream record status should be "RECORD_STATUS_CANCELLED"
 
   Scenario: Record without conversation_id
     When I send gRPC request "ResponseRecorderService/Record" with body:

@@ -59,10 +59,14 @@ This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree
 
 ## Notes for AI Assistants
 
-**ALWAYS compile after changes**:
-- Go: `go build ./...`
-- Java: `./mvnw compile`
-- TypeScript: `npm run lint && npm run build` from `frontends/chat-frontend/`
+**Verify only changed modules (required)**:
+- Go changes (`main.go`, `internal/`, `go.mod`, `go.sum`, etc.): run Go build for affected packages (use `go build ./...` when scope is broad).
+- Java/Quarkus/Spring changes: run Maven compile for affected modules (prefer `-pl` targeted modules; use full `./mvnw compile` only when scope is broad).
+- Frontend changes (`frontends/chat-frontend/`): run `npm run lint && npm run build` from `frontends/chat-frontend/`.
+- Python changes (`python/`): run `python3 -m compileall` on changed files/modules; run `./mvnw -pl python verify` when Python packaging/stubs are impacted.
+- Cross-stack or uncertain impact: run all relevant checks above; full-repo compile is optional unless needed by the change scope.
+
+**Taskfile shell compatibility**: Task commands execute via `sh`; use POSIX redirection (`>/dev/null 2>&1`) instead of shell-specific forms like `&>` or malformed `2&>1`.
 
 **Test output strategy**: When running tests, redirect output to a file and search for errors instead of using `| tail`. This ensures you see all relevant error context:
 ```bash
@@ -71,6 +75,7 @@ task test:go > test.log 2>&1
 ```
 
 **Module-specific knowledge** lives in `FACTS.md` files within each module directory:
+- `./frontends/chat-frontend/FACTS.md`
 - `./quarkus/FACTS.md`
 - `./python/FACTS.md`
 - `./internal/sitebdd/FACTS.md`

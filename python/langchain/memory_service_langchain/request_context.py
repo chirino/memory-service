@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
+import base64
+import json
 import os
 from threading import RLock
+import time
 from typing import Any, Callable, Mapping, overload
 
 import httpx
+from fastapi.responses import JSONResponse
 
 
 _request_authorization: ContextVar[str | None] = ContextVar(
@@ -25,8 +29,104 @@ _request_forked_at_entry_id: ContextVar[str | None] = ContextVar(
     "request_forked_at_entry_id",
     default=None,
 )
+_request_stream_mode: ContextVar[str | None] = ContextVar(
+    "request_stream_mode",
+    default=None,
+)
 _conversation_authorizations: dict[str, list[str]] = {}
 _conversation_authorizations_lock = RLock()
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    return value not in {"0", "false", "no", "off", ""}
+
+
+def _default_issuer() -> str | None:
+    keycloak_url = os.getenv("KEYCLOAK_FRONTEND_URL") or os.getenv("KEYCLOAK_URL")
+    keycloak_realm = os.getenv("KEYCLOAK_REALM")
+    if not keycloak_url or not keycloak_realm:
+        return None
+    return f"{keycloak_url.rstrip('/')}/realms/{keycloak_realm}"
+
+
+class _JwtValidationError(RuntimeError):
+    pass
+
+
+class _JwtValidator:
+    def __init__(self, *, enabled_override: bool | None = None):
+        if enabled_override is None:
+            self._enabled = _env_bool("MEMORY_SERVICE_JWT_VALIDATION_ENABLED", False)
+        else:
+            self._enabled = enabled_override
+        self._issuer = os.getenv("MEMORY_SERVICE_JWT_ISSUER") or _default_issuer()
+        self._audience = os.getenv("MEMORY_SERVICE_JWT_AUDIENCE")
+        self._leeway_seconds = float(os.getenv("MEMORY_SERVICE_JWT_LEEWAY_SECONDS", "0"))
+
+    def _manual_validate(self, encoded_token: str) -> None:
+        parts = encoded_token.split(".")
+        if len(parts) < 2:
+            raise _JwtValidationError("malformed JWT")
+
+        payload_segment = parts[1]
+        padding = "=" * ((4 - (len(payload_segment) % 4)) % 4)
+        try:
+            payload_bytes = base64.urlsafe_b64decode(payload_segment + padding)
+            claims = json.loads(payload_bytes.decode("utf-8"))
+        except Exception as exc:
+            raise _JwtValidationError(f"invalid JWT payload: {exc}") from exc
+
+        if not isinstance(claims, dict):
+            raise _JwtValidationError("invalid JWT payload claims")
+
+        exp = claims.get("exp")
+        if not isinstance(exp, (int, float)):
+            raise _JwtValidationError("Token is missing the \"exp\" claim")
+
+        now = time.time()
+        if now > float(exp) + self._leeway_seconds:
+            raise _JwtValidationError("Signature has expired")
+
+        nbf = claims.get("nbf")
+        if isinstance(nbf, (int, float)) and now + self._leeway_seconds < float(nbf):
+            raise _JwtValidationError("The token is not yet valid (nbf)")
+
+        if self._issuer:
+            iss = claims.get("iss")
+            if not isinstance(iss, str) or iss != self._issuer:
+                raise _JwtValidationError("Invalid issuer")
+
+        if self._audience:
+            aud = claims.get("aud")
+            if isinstance(aud, str):
+                matched = aud == self._audience
+            elif isinstance(aud, list):
+                matched = self._audience in aud
+            else:
+                matched = False
+            if not matched:
+                raise _JwtValidationError("Audience doesn't match")
+
+    def validate(self, authorization_header: str | None) -> None:
+        if not self._enabled:
+            return
+        if authorization_header is None:
+            return
+        if not authorization_header.startswith("Bearer "):
+            raise _JwtValidationError("expected Bearer token")
+
+        encoded_token = authorization_header[len("Bearer ") :].strip()
+        if not encoded_token:
+            raise _JwtValidationError("missing bearer token value")
+
+        try:
+            self._manual_validate(encoded_token)
+        except Exception as exc:
+            raise _JwtValidationError(str(exc)) from exc
 
 
 def get_request_authorization() -> str | None:
@@ -45,6 +145,10 @@ def get_request_forked_at_entry_id() -> str | None:
     return _request_forked_at_entry_id.get()
 
 
+def get_request_stream_mode() -> str | None:
+    return _request_stream_mode.get()
+
+
 def get_conversation_authorization(conversation_id: str) -> str | None:
     with _conversation_authorizations_lock:
         stack = _conversation_authorizations.get(conversation_id)
@@ -53,10 +157,23 @@ def get_conversation_authorization(conversation_id: str) -> str | None:
         return stack[-1]
 
 
-def install_fastapi_authorization_middleware(app: Any, *, header_name: str = "Authorization") -> None:
+def install_fastapi_authorization_middleware(
+    app: Any,
+    *,
+    header_name: str = "Authorization",
+    validate_jwt: bool | None = None,
+) -> None:
+    validator = _JwtValidator(enabled_override=validate_jwt)
+
     @app.middleware("http")
     async def _bind_authorization(request: Any, call_next: Any):
-        token = _request_authorization.set(request.headers.get(header_name))
+        authorization = request.headers.get(header_name)
+        try:
+            validator.validate(authorization)
+        except _JwtValidationError as exc:
+            return JSONResponse({"error": f"invalid JWT: {exc}"}, status_code=401)
+
+        token = _request_authorization.set(authorization)
         try:
             return await call_next(request)
         finally:
@@ -72,6 +189,7 @@ def memory_service_scope(
     conversation_id: str,
     forked_at_conversation_id: str | None,
     forked_at_entry_id: str | None,
+    stream_mode: str | None = None,
 ): ...
 
 
@@ -80,6 +198,7 @@ def memory_service_scope(
     conversation_id: str,
     forked_at_conversation_id: str | None = None,
     forked_at_entry_id: str | None = None,
+    stream_mode: str | None = None,
 ):
     authorization = get_request_authorization()
     conversation_token = _request_conversation_id.set(conversation_id)
@@ -87,6 +206,7 @@ def memory_service_scope(
         forked_at_conversation_id
     )
     forked_entry_token = _request_forked_at_entry_id.set(forked_at_entry_id)
+    stream_mode_token = _request_stream_mode.set(stream_mode)
     pushed_authorization = False
     if authorization:
         with _conversation_authorizations_lock:
@@ -106,6 +226,7 @@ def memory_service_scope(
         _request_forked_at_entry_id.reset(forked_entry_token)
         _request_forked_at_conversation_id.reset(forked_conversation_token)
         _request_conversation_id.reset(conversation_token)
+        _request_stream_mode.reset(stream_mode_token)
 
 
 def memory_service_headers(

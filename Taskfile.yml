@@ -101,28 +101,6 @@ tasks:
     cmds:
       - mvn -T 1C clean test {{.CLI_ARGS}}
 
-  run:example:langgraph:
-    cmds:
-      - |
-        set -e
-        unset VIRTUAL_ENV
-        uv --directory=python/langgraph build
-        export UV_FIND_LINKS=$(pwd)/python/dist
-        cd python/examples/langgraph/doc-checkpoints/02-with-memory-store
-        uv sync --reinstall-package memory-service-langgraph
-        uv run python -m uvicorn app:app --host 0.0.0.0 --port 9090
-
-  run:example:langchain:
-    cmds:
-      - |
-        set -ex
-        unset VIRTUAL_ENV
-        uv --directory=python/langchain build
-        export UV_FIND_LINKS=$(pwd)/python/dist
-        cd python/examples/langchain/doc-checkpoints/02-with-memory
-        uv sync --reinstall-package memory-service-langchain
-        uv run python -m uvicorn app:app --host 0.0.0.0 --port 9090
-
 
   dev:memory-service:
     desc: Run the memory-service app in dev mode.
@@ -158,7 +136,7 @@ tasks:
       MEMORY_SERVICE_OPENAI_API_KEY: '{{.OPENAI_API_KEY | default "none"}}'
     cmds:
       - docker compose up -d 
-      - docker compose stop memory-service 2&>1 > /dev/null || true
+      - docker compose stop memory-service >/dev/null 2>&1 || true
       - air -c air.toml
 
   dev:chat-quarkus:
@@ -168,7 +146,40 @@ tasks:
         if: '{{eq .quick ""}}'
       - cmd: ./mvnw -T 1C install -pl :memory-service-extension-deployment -am -DskipTests
         if: '{{eq .quick ""}}'
+      - docker compose stop chat-quarkus >/dev/null 2>&1 || true
       - ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
+
+  dev:chat-langchain:
+    desc: Run the chat-langchain app in dev mode. Use quick=true to skip frontend install/build and package compilation.
+    cmds:
+      - cmd: cd frontends/chat-frontend && sh ./docker-npm-build.sh
+        if: '{{eq .quick ""}}'
+      - cmd: uv --directory=python/langchain build
+        if: '{{eq .quick ""}}'
+      - cmd: docker compose stop chat-quarkus >/dev/null 2>&1 || true
+      - |
+        set -e
+        unset VIRTUAL_ENV
+        export UV_FIND_LINKS=$(pwd)/python/dist
+        cd python/examples/langchain/chat-langchain
+        uv sync --reinstall-package memory-service-langchain
+        uv run python app.py
+
+  dev:chat-langgraph:
+    desc: Run the chat-langgraph app in dev mode. Use quick=true to skip frontend install/build and package compilation.
+    cmds:
+      - cmd: cd frontends/chat-frontend && sh ./docker-npm-build.sh
+        if: '{{eq .quick ""}}'
+      - cmd: uv --directory=python/langchain build
+        if: '{{eq .quick ""}}'
+      - cmd: docker compose stop chat-quarkus >/dev/null 2>&1 || true
+      - |
+        set -e
+        unset VIRTUAL_ENV
+        export UV_FIND_LINKS=$(pwd)/python/dist
+        cd python/examples/langgraph/chat-langgraph
+        uv sync --reinstall-package memory-service-langchain
+        uv run python app.py
 
   secrets:
     desc: Create memory-service secret from current shell environment variables

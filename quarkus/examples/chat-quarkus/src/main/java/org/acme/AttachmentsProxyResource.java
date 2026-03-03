@@ -14,7 +14,6 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.util.Map;
 import org.jboss.resteasy.reactive.server.multipart.MultipartFormDataInput;
 
 /**
@@ -34,19 +33,6 @@ public class AttachmentsProxyResource {
     public Response upload(
             MultipartFormDataInput input, @QueryParam("expiresIn") String expiresIn) {
         return proxy.uploadAttachment(input, expiresIn);
-    }
-
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response createFromUrl(Map<String, Object> request) {
-        return proxy.createAttachmentFromUrl(request);
-    }
-
-    @GET
-    @Path("/{id}")
-    public Response retrieve(@PathParam("id") String id) {
-        return proxy.retrieveAttachment(id);
     }
 
     @GET

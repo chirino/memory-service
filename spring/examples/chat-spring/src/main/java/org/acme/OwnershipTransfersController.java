@@ -23,18 +23,15 @@ class OwnershipTransfersController {
 
     @GetMapping
     public ResponseEntity<?> listPendingTransfers(
-            @RequestParam(value = "role", required = false) String role) {
-        return proxy.listPendingTransfers(role, null, null);
+            @RequestParam(value = "role", required = false) String role,
+            @RequestParam(value = "afterCursor", required = false) String afterCursor,
+            @RequestParam(value = "limit", required = false) Integer limit) {
+        return proxy.listPendingTransfers(role, afterCursor, limit);
     }
 
     @PostMapping
     public ResponseEntity<?> createOwnershipTransfer(@RequestBody String body) {
         return proxy.createOwnershipTransfer(body);
-    }
-
-    @GetMapping("/{transferId}")
-    public ResponseEntity<?> getTransfer(@PathVariable String transferId) {
-        return proxy.getTransfer(transferId);
     }
 
     @DeleteMapping("/{transferId}")

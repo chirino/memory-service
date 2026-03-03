@@ -11,3 +11,7 @@
 **Episodic indexer pending rows**: `registry/episodic.PendingMemory.Namespace` is a single RS-delimited string (`\x1f`), not `[]string`; tests/mocks must provide encoded namespace values.
 
 **Postgres append auto-create race**: Concurrent `AppendEntries` calls for the same missing conversation ID can race on root conversation/group creation and hit `23505` on `conversation_groups_pkey`. The append path must treat that unique-violation as a concurrent-create win, reload the conversation, and continue instead of returning 500.
+
+**gRPC recorder disconnect cleanup**: In `ResponseRecorderServer.Record`, if the stream fails with gRPC/ctx `CANCELED` or `DEADLINE_EXCEEDED` after a recorder has been created, call `recorder.Complete()` before returning so the locator/cache registry entry for that conversation is removed.
+
+**gRPC cancel semantics**: `ResponseRecorderServer.Record` subscribes to `resumer.CancelStream(conversationID)` once the first chunk sets `conversation_id`; when cancel is requested it completes the recorder (removing locator/cache registry) and returns unary `RecordResponse{status=RECORD_STATUS_CANCELLED}`.

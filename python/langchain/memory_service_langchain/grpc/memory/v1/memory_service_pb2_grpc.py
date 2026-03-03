@@ -1157,6 +1157,294 @@ class SearchService(object):
             _registered_method=True)
 
 
+class MemoriesServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.PutMemory = channel.unary_unary(
+                '/memory.v1.MemoriesService/PutMemory',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.PutMemoryRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.MemoryWriteResult.FromString,
+                _registered_method=True)
+        self.GetMemory = channel.unary_unary(
+                '/memory.v1.MemoriesService/GetMemory',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.GetMemoryRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.MemoryItem.FromString,
+                _registered_method=True)
+        self.DeleteMemory = channel.unary_unary(
+                '/memory.v1.MemoriesService/DeleteMemory',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.DeleteMemoryRequest.SerializeToString,
+                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
+        self.SearchMemories = channel.unary_unary(
+                '/memory.v1.MemoriesService/SearchMemories',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.SearchMemoriesRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.SearchMemoriesResponse.FromString,
+                _registered_method=True)
+        self.ListMemoryNamespaces = channel.unary_unary(
+                '/memory.v1.MemoriesService/ListMemoryNamespaces',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesResponse.FromString,
+                _registered_method=True)
+        self.GetMemoryIndexStatus = channel.unary_unary(
+                '/memory.v1.MemoriesService/GetMemoryIndexStatus',
+                request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.MemoryIndexStatusResponse.FromString,
+                _registered_method=True)
+
+
+class MemoriesServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def PutMemory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetMemory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteMemory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SearchMemories(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListMemoryNamespaces(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetMemoryIndexStatus(self, request, context):
+        """Admin-only: returns count of memories with pending index synchronization.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_MemoriesServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'PutMemory': grpc.unary_unary_rpc_method_handler(
+                    servicer.PutMemory,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.PutMemoryRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.MemoryWriteResult.SerializeToString,
+            ),
+            'GetMemory': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetMemory,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.GetMemoryRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.MemoryItem.SerializeToString,
+            ),
+            'DeleteMemory': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteMemory,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.DeleteMemoryRequest.FromString,
+                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'SearchMemories': grpc.unary_unary_rpc_method_handler(
+                    servicer.SearchMemories,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.SearchMemoriesRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.SearchMemoriesResponse.SerializeToString,
+            ),
+            'ListMemoryNamespaces': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListMemoryNamespaces,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesResponse.SerializeToString,
+            ),
+            'GetMemoryIndexStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetMemoryIndexStatus,
+                    request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.MemoryIndexStatusResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'memory.v1.MemoriesService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('memory.v1.MemoriesService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class MemoriesService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def PutMemory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.MemoriesService/PutMemory',
+            memory_dot_v1_dot_memory__service__pb2.PutMemoryRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.MemoryWriteResult.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetMemory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.MemoriesService/GetMemory',
+            memory_dot_v1_dot_memory__service__pb2.GetMemoryRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.MemoryItem.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteMemory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.MemoriesService/DeleteMemory',
+            memory_dot_v1_dot_memory__service__pb2.DeleteMemoryRequest.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SearchMemories(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.MemoriesService/SearchMemories',
+            memory_dot_v1_dot_memory__service__pb2.SearchMemoriesRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.SearchMemoriesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListMemoryNamespaces(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.MemoriesService/ListMemoryNamespaces',
+            memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetMemoryIndexStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.MemoriesService/GetMemoryIndexStatus',
+            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.MemoryIndexStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
 class ResponseRecorderServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 

@@ -1,6 +1,6 @@
-# chat-python
+# chat-langgraph
 
-Python FastAPI chat app that mirrors the API surface of `quarkus/examples/chat-quarkus` using the Python LangChain integration package.
+Python FastAPI chat app that mirrors the API surface of `quarkus/examples/chat-quarkus` using a LangGraph chat pipeline plus Memory Service integrations.
 
 ## Run
 
@@ -10,7 +10,7 @@ cd frontends/chat-frontend
 npm run build
 
 # run backend + static frontend host
-cd ../../python/examples/chat-python
+cd ../../python/examples/langgraph/chat-langgraph
 uv sync
 uv run python app.py
 ```

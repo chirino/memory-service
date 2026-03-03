@@ -76,6 +76,9 @@ public class AttachmentResolver {
             if (ref.name() != null && !ref.name().isBlank()) {
                 meta.put("name", ref.name());
             }
+            if (ref.href() != null && !ref.href().isBlank()) {
+                meta.put("href", ref.href());
+            }
             metadata.add(meta);
 
             // Download and convert to LangChain4j Content

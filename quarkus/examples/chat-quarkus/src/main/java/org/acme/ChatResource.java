@@ -82,7 +82,13 @@ public class ChatResource {
             return List.of();
         }
         return attachments.stream()
-                .map(a -> new AttachmentRef(a.getAttachmentId(), a.getContentType(), a.getName()))
+                .map(
+                        a ->
+                                new AttachmentRef(
+                                        a.getAttachmentId(),
+                                        a.getContentType(),
+                                        a.getName(),
+                                        a.getHref()))
                 .toList();
     }
 
@@ -134,11 +140,20 @@ public class ChatResource {
 
     public static final class RequestAttachmentRef {
 
+        private String href;
         private String attachmentId;
         private String contentType;
         private String name;
 
         public RequestAttachmentRef() {}
+
+        public String getHref() {
+            return href;
+        }
+
+        public void setHref(String href) {
+            this.href = href;
+        }
 
         public String getAttachmentId() {
             return attachmentId;

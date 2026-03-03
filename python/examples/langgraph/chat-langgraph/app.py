@@ -1,26 +1,28 @@
 from __future__ import annotations
 
-import base64
-import json
+import copy
+import logging
 import os
 from pathlib import Path
-from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
+from langgraph.graph import START, StateGraph
+from langgraph.graph.message import MessagesState
 from pydantic import BaseModel
 from memory_service_langchain import (
     MemoryServiceCheckpointSaver,
     MemoryServiceHistoryMiddleware,
     MemoryServiceProxy,
     MemoryServiceResponseResumer,
-    extract_stream_text,
     install_fastapi_authorization_middleware,
     memory_service_scope,
+    stream_chunks_as_sse,
     to_fastapi_response,
 )
+
+LOG = logging.getLogger("uvicorn.error")
 
 
 class RequestAttachmentRef(BaseModel):
@@ -46,51 +48,6 @@ def parse_optional_int(value: str | None) -> int | None:
         raise HTTPException(400, f"invalid integer value: {value}") from exc
 
 
-def parse_jwt_claims(authorization: str | None) -> dict[str, Any]:
-    if authorization is None or not authorization.startswith("Bearer "):
-        return {}
-
-    token = authorization[len("Bearer ") :].strip()
-    parts = token.split(".")
-    if len(parts) < 2:
-        return {}
-
-    payload = parts[1]
-    padding = "=" * ((4 - (len(payload) % 4)) % 4)
-    try:
-        decoded = base64.urlsafe_b64decode(payload + padding)
-        parsed = json.loads(decoded.decode("utf-8"))
-    except Exception:
-        return {}
-
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def to_sse_chunk(payload: Any) -> str:
-    return f"data: {json.dumps(payload, separators=(',', ':'))}\\n\\n"
-
-
-def history_text_from_entry(entry: dict[str, Any]) -> str:
-    content = entry.get("content")
-    if not isinstance(content, list):
-        return ""
-
-    lines: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        text = block.get("text")
-        if not isinstance(text, str) or not text.strip():
-            continue
-        role = block.get("role")
-        if isinstance(role, str) and role.strip():
-            lines.append(f"{role}: {text.strip()}")
-        else:
-            lines.append(text.strip())
-
-    return "\n".join(lines)
-
-
 def pass_through_indexed_content(text: str, role: str) -> str:
     del role
     return text
@@ -106,6 +63,7 @@ model = ChatOpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-4o"),
     openai_api_base=openai_base_url,
     api_key=os.getenv("OPENAI_API_KEY", "test-openai-key"),
+    streaming=True,
 )
 
 checkpointer = MemoryServiceCheckpointSaver()
@@ -113,20 +71,33 @@ history_middleware = MemoryServiceHistoryMiddleware(
     indexed_content_provider=pass_through_indexed_content,
 )
 
-agent = create_agent(
-    model=model,
-    tools=[],
-    checkpointer=checkpointer,
-    middleware=[history_middleware],
-    system_prompt="You are a helpful assistant.",
-)
+async def call_model(state: MessagesState) -> dict[str, list[Any]]:
+    messages = [{"role": "system", "content": "You are a helpful assistant."}] + list(
+        state["messages"]
+    )
+    response = await model.ainvoke(messages)
+    return {"messages": [response]}
 
-app = FastAPI(title="Python Chat Example")
-install_fastapi_authorization_middleware(app)
+
+builder = StateGraph(MessagesState)
+builder.add_node("call_model", call_model)
+builder.add_edge(START, "call_model")
+graph = builder.compile(checkpointer=checkpointer)
+
+app = FastAPI(title="Python LangGraph Chat Example")
+install_fastapi_authorization_middleware(app, validate_jwt=False)
 proxy = MemoryServiceProxy()
 resumer = MemoryServiceResponseResumer()
+LOG.info("chat response memory-service integration enabled")
 
-_repo_root = Path(__file__).resolve().parents[3]
+def find_repo_root(start: Path) -> Path:
+    for candidate in (start, *start.parents):
+        if (candidate / "Taskfile.yml").is_file():
+            return candidate
+    return start.parent
+
+
+_repo_root = find_repo_root(Path(__file__).resolve())
 _default_frontend_dir = _repo_root / "frontends" / "chat-frontend" / "dist"
 _frontend_dir = Path(
     os.getenv("CHAT_FRONTEND_DIR", str(_default_frontend_dir))
@@ -135,7 +106,10 @@ _frontend_index = _frontend_dir / "index.html"
 
 
 @app.post("/chat/{conversation_id}")
-async def chat(conversation_id: str, body: MessageRequest) -> StreamingResponse:
+async def chat(
+    conversation_id: str,
+    body: MessageRequest,
+) -> StreamingResponse:
     message = body.message.strip()
     if not message:
         raise HTTPException(400, "Message is required")
@@ -146,25 +120,42 @@ async def chat(conversation_id: str, body: MessageRequest) -> StreamingResponse:
             "forkedAtConversationId and forkedAtEntryId must be provided together",
         )
 
+    stream_mode = "events"
+
     async def source():
         with memory_service_scope(
             conversation_id,
             body.forkedAtConversationId,
             body.forkedAtEntryId,
+            stream_mode,
         ):
-            async for event in agent.astream(
-                {"messages": [{"role": "user", "content": message}]},
-                {"configurable": {"thread_id": conversation_id}},
-                stream_mode="messages",
-            ):
-                token = extract_stream_text(event)
-                if token:
-                    yield to_sse_chunk({"token": token})
+            history_middleware.append_user_history(
+                conversation_id,
+                message,
+                forked_at_conversation_id=body.forkedAtConversationId,
+                forked_at_entry_id=body.forkedAtEntryId,
+            )
 
-    return StreamingResponse(
-        resumer.stream_from_source(conversation_id, source()),
-        media_type="text/event-stream",
-    )
+            async def chunk_stream():
+                async for chunk, _metadata in graph.astream(
+                    {"messages": [{"role": "user", "content": message}]},
+                    config={"configurable": {"thread_id": conversation_id}},
+                    stream_mode="messages",
+                ):
+                    yield chunk
+
+            async for event in stream_chunks_as_sse(
+                conversation_id=conversation_id,
+                stream_mode=stream_mode,
+                chunk_stream=chunk_stream(),
+                append_ai_history=history_middleware.append_ai_history,
+                log=LOG,
+                source="graph",
+            ):
+                yield event
+
+    stream = resumer.stream_from_source(conversation_id, source())
+    return StreamingResponse(stream, media_type="text/event-stream")
 
 
 @app.post("/v1/conversations/resume-check")
@@ -175,7 +166,12 @@ async def resume_check(conversation_ids: list[str]) -> JSONResponse:
 @app.get("/v1/conversations/{conversation_id}/resume")
 async def resume_response(conversation_id: str) -> StreamingResponse:
     try:
-        stream = resumer.replay(conversation_id)
+        stream = resumer.replay_sse(
+            conversation_id,
+            stream_mode="events",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, "invalid conversation id") from exc
     except KeyError as exc:
         raise HTTPException(404, "no in-progress response") from exc
     return StreamingResponse(stream, media_type="text/event-stream")
@@ -183,8 +179,15 @@ async def resume_response(conversation_id: str) -> StreamingResponse:
 
 @app.post("/v1/conversations/{conversation_id}/cancel")
 async def cancel_response(conversation_id: str):
+    LOG.info("chat cancel request conversation_id=%s", conversation_id)
     resumer.cancel(conversation_id)
-    return Response(status_code=200)
+    response = await proxy.cancel_response(conversation_id)
+    LOG.info(
+        "chat cancel proxied conversation_id=%s status=%s",
+        conversation_id,
+        response.status_code,
+    )
+    return to_fastapi_response(response)
 
 
 @app.get("/v1/conversations")
@@ -276,58 +279,6 @@ async def search_conversations(request: Request):
     return to_fastapi_response(response)
 
 
-@app.post("/v1/conversations/{conversation_id}/index")
-async def index_conversation(conversation_id: str):
-    entries: list[dict[str, Any]] = []
-    after_cursor: str | None = None
-
-    while True:
-        list_response = await proxy.list_conversation_entries(
-            conversation_id,
-            after_cursor=after_cursor,
-            limit=200,
-            channel="history",
-            forks="all",
-        )
-        if list_response.status_code >= 400:
-            return to_fastapi_response(list_response)
-
-        body = list_response.json()
-        page = body.get("data")
-        if isinstance(page, list):
-            entries.extend(item for item in page if isinstance(item, dict))
-
-        next_cursor = body.get("afterCursor")
-        if not isinstance(next_cursor, str) or not next_cursor:
-            break
-        after_cursor = next_cursor
-
-    if not entries:
-        return Response(status_code=204)
-
-    transcript_parts = [history_text_from_entry(entry) for entry in entries]
-    transcript = "\n---\n".join(part for part in transcript_parts if part).strip()
-    if not transcript:
-        return Response(status_code=204)
-
-    last_entry_id = entries[-1].get("id")
-    if not isinstance(last_entry_id, str) or not last_entry_id:
-        return Response(status_code=204)
-
-    index_response = await proxy.index_conversations(
-        [
-            {
-                "conversationId": conversation_id,
-                "entryId": last_entry_id,
-                "indexedContent": transcript,
-            }
-        ]
-    )
-    if index_response.status_code in (200, 201):
-        return Response(status_code=201)
-    return to_fastapi_response(index_response)
-
-
 @app.get("/v1/ownership-transfers")
 async def list_ownership_transfers(request: Request):
     response = await proxy.list_ownership_transfers(
@@ -347,12 +298,6 @@ async def create_ownership_transfer(request: Request):
     return to_fastapi_response(response)
 
 
-@app.get("/v1/ownership-transfers/{transfer_id}")
-async def get_ownership_transfer(transfer_id: str):
-    response = await proxy.get_ownership_transfer(transfer_id)
-    return to_fastapi_response(response)
-
-
 @app.delete("/v1/ownership-transfers/{transfer_id}")
 async def delete_ownership_transfer(transfer_id: str):
     response = await proxy.delete_ownership_transfer(transfer_id)
@@ -367,33 +312,16 @@ async def accept_ownership_transfer(transfer_id: str):
 
 @app.post("/v1/attachments")
 async def create_attachment(
-    request: Request,
-    file: UploadFile | None = File(default=None),
+    file: UploadFile = File(...),
     expiresIn: str | None = Query(default=None),
 ):
-    content_type = request.headers.get("content-type", "")
-    if "multipart/form-data" in content_type:
-        if file is None:
-            raise HTTPException(400, "file is required")
-        file_bytes = await file.read()
-        response = await proxy.upload_attachment(
-            file_name=file.filename or "upload",
-            file_bytes=file_bytes,
-            content_type=file.content_type or "application/octet-stream",
-            expires_in=expiresIn,
-        )
-        return to_fastapi_response(response)
-
-    payload = await request.json()
-    if not isinstance(payload, dict):
-        raise HTTPException(400, "Invalid request body")
-    response = await proxy.create_attachment_from_url(payload)
-    return to_fastapi_response(response)
-
-
-@app.get("/v1/attachments/{attachment_id}")
-async def get_attachment(attachment_id: str):
-    response = await proxy.get_attachment(attachment_id)
+    file_bytes = await file.read()
+    response = await proxy.upload_attachment(
+        file_name=file.filename or "upload",
+        file_bytes=file_bytes,
+        content_type=file.content_type or "application/octet-stream",
+        expires_in=expiresIn,
+    )
     return to_fastapi_response(response)
 
 
@@ -413,28 +341,6 @@ async def delete_attachment(attachment_id: str):
 async def download_attachment_by_token(token: str, filename: str):
     response = await proxy.download_attachment_by_token(token, filename)
     return to_fastapi_response(response)
-
-
-@app.get("/v1/me")
-async def get_current_user(request: Request) -> dict[str, str]:
-    claims = parse_jwt_claims(request.headers.get("Authorization"))
-
-    user_id = claims.get("preferred_username")
-    if not isinstance(user_id, str) or not user_id:
-        fallback = claims.get("sub")
-        user_id = fallback if isinstance(fallback, str) and fallback else "anonymous"
-
-    result = {"userId": user_id}
-
-    name = claims.get("name")
-    if isinstance(name, str) and name:
-        result["name"] = name
-
-    email = claims.get("email")
-    if isinstance(email, str) and email:
-        result["email"] = email
-
-    return result
 
 
 @app.get("/config.json")
@@ -484,6 +390,24 @@ async def serve_frontend_path(full_path: str) -> FileResponse:
 if __name__ == "__main__":
     import uvicorn
 
+    log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
+    log_config["formatters"]["default"]["fmt"] = (
+        "%(asctime)s.%(msecs)03d %(levelprefix)s %(message)s"
+    )
+    log_config["formatters"]["default"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    log_config["formatters"]["access"]["fmt"] = (
+        "%(asctime)s.%(msecs)03d %(levelprefix)s %(client_addr)s - "
+        '"%(request_line)s" %(status_code)s'
+    )
+    log_config["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+
     host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8080"))
-    uvicorn.run("app:app", host=host, port=port)
+    port = int(os.getenv("PORT", "3000"))
+    log_level = os.getenv("LOG_LEVEL", "info").lower()
+    uvicorn.run(
+        "app:app",
+        host=host,
+        port=port,
+        log_level=log_level,
+        log_config=log_config,
+    )

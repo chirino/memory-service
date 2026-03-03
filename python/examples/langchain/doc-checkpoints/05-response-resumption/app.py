@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from memory_service_langchain import (
@@ -11,11 +13,72 @@ from memory_service_langchain import (
     MemoryServiceHistoryMiddleware,
     MemoryServiceProxy,
     MemoryServiceResponseResumer,
-    extract_stream_text,
     install_fastapi_authorization_middleware,
     memory_service_scope,
     to_fastapi_response,
 )
+
+
+def parse_optional_int(value: str | None) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise HTTPException(400, f"invalid integer value: {value}") from exc
+
+
+def to_sse_chunk(payload: Any) -> str:
+    return f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+
+
+def extract_text_chunks(message_chunk: Any) -> list[str]:
+    tokens: list[str] = []
+    blocks = getattr(message_chunk, "content_blocks", None)
+    if isinstance(blocks, list):
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            for key in ("text", "content", "value"):
+                value = block.get(key)
+                if isinstance(value, str) and value:
+                    tokens.append(value)
+                    break
+    if tokens:
+        return tokens
+
+    content = getattr(message_chunk, "content", None)
+    if isinstance(content, str) and content:
+        return [content]
+
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, str) and item:
+                tokens.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            for key in ("text", "content", "value"):
+                value = item.get(key)
+                if isinstance(value, str) and value:
+                    tokens.append(value)
+                    break
+            delta = item.get("delta")
+            if isinstance(delta, dict):
+                for key in ("text", "content", "value"):
+                    value = delta.get(key)
+                    if isinstance(value, str) and value:
+                        tokens.append(value)
+                        break
+    return tokens
+
+
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
 
 openai_base_url = os.getenv("OPENAI_BASE_URL")
 if openai_base_url and not openai_base_url.rstrip("/").endswith("/v1"):
@@ -27,6 +90,7 @@ model = ChatOpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-4o"),
     openai_api_base=openai_base_url,
     api_key=os.getenv("OPENAI_API_KEY", "not-needed-for-tests"),
+    streaming=True,
 )
 
 checkpointer = MemoryServiceCheckpointSaver()
@@ -45,27 +109,25 @@ install_fastapi_authorization_middleware(app)
 proxy = MemoryServiceProxy()
 resumer = MemoryServiceResponseResumer()
 
+
 @app.post("/chat/{conversation_id}")
 async def chat(conversation_id: str, request: Request) -> StreamingResponse:
     user_message = (await request.body()).decode("utf-8").strip()
     if not user_message:
         raise HTTPException(400, "message is required")
 
-    async def live_token_source():
+    async def source():
         with memory_service_scope(conversation_id):
-            async for event in agent.astream(
+            async for chunk, _metadata in agent.astream(
                 {"messages": [{"role": "user", "content": user_message}]},
                 {"configurable": {"thread_id": conversation_id}},
                 stream_mode="messages",
             ):
-                token = extract_stream_text(event)
-                if token:
-                    yield token
+                for token in extract_text_chunks(chunk):
+                    yield to_sse_chunk({"eventType": "PartialResponse", "chunk": token})
 
-    return StreamingResponse(
-        resumer.stream_from_source(conversation_id, live_token_source()),
-        media_type="text/plain",
-    )
+    stream = resumer.stream_from_source(conversation_id, source())
+    return StreamingResponse(stream, media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @app.get("/v1/conversations/{conversation_id}")
@@ -79,8 +141,9 @@ async def get_entries(conversation_id: str, request: Request):
     response = await proxy.list_conversation_entries(
         conversation_id,
         after_cursor=request.query_params.get("afterCursor"),
-        limit=int(limit) if (limit := request.query_params.get("limit")) is not None else None,
+        limit=parse_optional_int(request.query_params.get("limit")),
         channel="history",
+        forks="all",
     )
     return to_fastapi_response(response)
 
@@ -90,32 +153,36 @@ async def list_conversations(request: Request):
     response = await proxy.list_conversations(
         mode=request.query_params.get("mode"),
         after_cursor=request.query_params.get("afterCursor"),
-        limit=int(limit) if (limit := request.query_params.get("limit")) is not None else None,
+        limit=parse_optional_int(request.query_params.get("limit")),
         query=request.query_params.get("query"),
     )
     return to_fastapi_response(response)
 
 
-@app.post("/v1/conversations/resume-check")
-async def resume_check(request: Request):
-    body = await request.json()
-    if not isinstance(body, list):
-        raise HTTPException(400, "conversation ids list is required")
+@app.get("/v1/conversations/{conversation_id}/forks")
+async def list_forks(conversation_id: str):
+    response = await proxy.list_conversation_forks(conversation_id)
+    return to_fastapi_response(response)
 
-    conversation_ids = [conversation_id for conversation_id in body if isinstance(conversation_id, str)]
+
+@app.post("/v1/conversations/resume-check")
+async def resume_check(conversation_ids: list[str]) -> JSONResponse:
     return JSONResponse(resumer.check(conversation_ids), status_code=200)
 
 
 @app.get("/v1/conversations/{conversation_id}/resume")
 async def resume_response(conversation_id: str):
     try:
-        stream = resumer.replay(conversation_id)
-    except KeyError:
-        raise HTTPException(404, "no in-progress response")
-    return StreamingResponse(stream, media_type="text/plain")
+        stream = resumer.replay_sse(conversation_id, stream_mode="events")
+    except ValueError as exc:
+        raise HTTPException(400, "invalid conversation id") from exc
+    except KeyError as exc:
+        raise HTTPException(404, "no in-progress response") from exc
+    return StreamingResponse(stream, media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @app.post("/v1/conversations/{conversation_id}/cancel")
 async def cancel_response(conversation_id: str):
     resumer.cancel(conversation_id)
-    return PlainTextResponse("", status_code=200)
+    response = await proxy.cancel_response(conversation_id)
+    return to_fastapi_response(response)

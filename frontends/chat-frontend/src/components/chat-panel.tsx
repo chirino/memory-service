@@ -24,6 +24,7 @@ import { ShareButton } from "@/components/sharing";
 import { UserAvatar } from "@/components/user-avatar";
 import { getAccessToken, type AuthUser } from "@/lib/auth";
 import { createForkView, type EntryAndForkInfo, type ForkOption } from "@/lib/conversation";
+import { normalizeChatEvents } from "@/lib/langchain-events";
 
 type ListUserEntriesResponse = {
   data?: Entry[];
@@ -364,11 +365,11 @@ function entryContent(entry: Entry): EntryContent {
   const contentBlock = blocks.find((b) => {
     const block = b as { [key: string]: unknown } | undefined;
     return block && (typeof block.text === "string" || Array.isArray(block.events) || Array.isArray(block.attachments));
-  }) as { text?: string; events?: ChatEvent[]; attachments?: ChatAttachment[] } | undefined;
+  }) as { text?: string; events?: unknown[]; attachments?: ChatAttachment[] } | undefined;
 
   return {
     text: contentBlock?.text ?? "",
-    events: contentBlock?.events,
+    events: normalizeChatEvents(contentBlock?.events),
     attachments: contentBlock?.attachments,
   };
 }

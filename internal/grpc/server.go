@@ -1709,7 +1709,7 @@ type ResponseRecorderServer struct {
 	Enabled bool
 }
 
-func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_RecordServer) error {
+func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_RecordServer) (retErr error) {
 	if !s.Enabled {
 		return stream.SendAndClose(&pb.RecordResponse{
 			Status:       pb.RecordStatus_RECORD_STATUS_ERROR,
@@ -1719,61 +1719,129 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 	var convID string
 	var convUUID uuid.UUID
 	var recorder *internalresumer.Recorder
+	var cancelStream <-chan struct{}
+	defer func() {
+		if retErr == nil || recorder == nil || convID == "" {
+			return
+		}
+		if !isClientDisconnectError(retErr, stream.Context()) {
+			return
+		}
+		if err := recorder.Complete(); err != nil {
+			log.Warn("failed to clean up response recorder after client disconnect", "conversation_id", convID, "error", err)
+		}
+	}()
+
+	type recvResult struct {
+		req *pb.RecordRequest
+		err error
+	}
+	done := make(chan struct{})
+	defer close(done)
+	recvCh := make(chan recvResult, 1)
+	go func() {
+		for {
+			req, err := stream.Recv()
+			select {
+			case recvCh <- recvResult{req: req, err: err}:
+			case <-done:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 
 	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
+		select {
+		case <-cancelStream:
 			if recorder != nil {
 				if err := recorder.Complete(); err != nil {
 					return status.Error(codes.Internal, err.Error())
 				}
 			}
 			return stream.SendAndClose(&pb.RecordResponse{
-				Status: pb.RecordStatus_RECORD_STATUS_SUCCESS,
+				Status: pb.RecordStatus_RECORD_STATUS_CANCELLED,
 			})
-		}
-		if err != nil {
-			return err
-		}
-
-		if convID == "" && len(req.GetConversationId()) > 0 {
-			id, err := bytesToUUID(req.GetConversationId())
-			if err != nil {
-				return status.Error(codes.InvalidArgument, "invalid conversation_id")
+		case result := <-recvCh:
+			req, err := result.req, result.err
+			if err == io.EOF {
+				if recorder != nil {
+					if err := recorder.Complete(); err != nil {
+						return status.Error(codes.Internal, err.Error())
+					}
+				}
+				return stream.SendAndClose(&pb.RecordResponse{
+					Status: pb.RecordStatus_RECORD_STATUS_SUCCESS,
+				})
 			}
-			if err := s.requireConversationAccess(stream.Context(), id, model.AccessLevelWriter); err != nil {
+			if err != nil {
 				return err
 			}
-			convUUID = id
-			convID = id.String()
-			advertised := s.resolveAdvertisedAddress(stream.Context())
-			recorder, err = s.Resumer.RecorderWithAddress(stream.Context(), convID, advertised)
-			if err != nil {
-				return status.Error(codes.Internal, err.Error())
-			}
-		}
-		if convID == "" {
-			return status.Error(codes.InvalidArgument, "conversation_id is required in first record chunk")
-		}
 
-		if recorder != nil && req.GetContent() != "" {
-			if err := recorder.Record(req.GetContent()); err != nil {
-				return status.Error(codes.Internal, err.Error())
+			if convID == "" && len(req.GetConversationId()) > 0 {
+				id, err := bytesToUUID(req.GetConversationId())
+				if err != nil {
+					return status.Error(codes.InvalidArgument, "invalid conversation_id")
+				}
+				if err := s.requireConversationAccess(stream.Context(), id, model.AccessLevelWriter); err != nil {
+					return err
+				}
+				convUUID = id
+				convID = id.String()
+				advertised := s.resolveAdvertisedAddress(stream.Context())
+				recorder, err = s.Resumer.RecorderWithAddress(stream.Context(), convID, advertised)
+				if err != nil {
+					return status.Error(codes.Internal, err.Error())
+				}
+				cancelStream, err = s.Resumer.CancelStream(stream.Context(), convID)
+				if err != nil {
+					return status.Error(codes.Internal, err.Error())
+				}
 			}
-		}
+			if convID == "" {
+				return status.Error(codes.InvalidArgument, "conversation_id is required in first record chunk")
+			}
 
-		if req.GetComplete() && recorder != nil {
-			if err := s.requireConversationAccess(stream.Context(), convUUID, model.AccessLevelWriter); err != nil {
-				return err
+			if recorder != nil && req.GetContent() != "" {
+				if err := recorder.Record(req.GetContent()); err != nil {
+					return status.Error(codes.Internal, err.Error())
+				}
 			}
-			if err := recorder.Complete(); err != nil {
-				return status.Error(codes.Internal, err.Error())
+
+			if req.GetComplete() && recorder != nil {
+				if err := s.requireConversationAccess(stream.Context(), convUUID, model.AccessLevelWriter); err != nil {
+					return err
+				}
+				if err := recorder.Complete(); err != nil {
+					return status.Error(codes.Internal, err.Error())
+				}
+				return stream.SendAndClose(&pb.RecordResponse{
+					Status: pb.RecordStatus_RECORD_STATUS_SUCCESS,
+				})
 			}
-			return stream.SendAndClose(&pb.RecordResponse{
-				Status: pb.RecordStatus_RECORD_STATUS_SUCCESS,
-			})
 		}
 	}
+}
+
+func isClientDisconnectError(err error, ctx context.Context) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if ctx != nil {
+		if ctxErr := ctx.Err(); errors.Is(ctxErr, context.Canceled) || errors.Is(ctxErr, context.DeadlineExceeded) {
+			return true
+		}
+	}
+	grpcStatus, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	return grpcStatus.Code() == codes.Canceled || grpcStatus.Code() == codes.DeadlineExceeded
 }
 
 func (s *ResponseRecorderServer) Replay(req *pb.ReplayRequest, stream pb.ResponseRecorderService_ReplayServer) error {

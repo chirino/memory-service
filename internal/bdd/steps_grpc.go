@@ -63,6 +63,7 @@ func init() {
 		ctx.Step(`^I start streaming tokens "([^"]*)" to the conversation with (\d+)ms delay and keep the stream open until canceled$`, g.iStartStreamingTokensWithDelayUntilCanceled)
 		ctx.Step(`^I wait for the response stream to complete$`, g.iWaitForTheResponseStreamToComplete)
 		ctx.Step(`^I wait for the response stream to send at least (\d+) tokens$`, g.iWaitForTheResponseStreamToSendAtLeastTokens)
+		ctx.Step(`^the response stream record status should be "([^"]*)"$`, g.theResponseStreamRecordStatusShouldBe)
 		ctx.Step(`^I replay response tokens from the beginning in a second session and collect tokens "([^"]*)"$`, g.iReplayResponseTokensFromTheBeginning)
 		ctx.Step(`^the replay should start before the stream completes$`, g.theReplayShouldStartBeforeTheStreamCompletes)
 	})
@@ -80,6 +81,8 @@ type grpcSteps struct {
 	tokensSent   atomic.Int64   // count of tokens sent in background stream
 	replayStart  time.Time      // when replay started
 	streamEnd    time.Time      // when background stream ended
+	streamResp   *pb.RecordResponse
+	streamErr    error
 }
 
 func (g *grpcSteps) conn() (*grpc.ClientConn, error) {
@@ -1087,6 +1090,8 @@ func (g *grpcSteps) startBackgroundStream(tokensStr string, delayMs, keepOpenMs 
 	g.streamDone = make(chan struct{})
 	g.streamCancel = make(chan struct{})
 	g.tokensSent.Store(0)
+	g.streamResp = nil
+	g.streamErr = nil
 
 	cancelCh := g.streamCancel
 	tokens := strings.Fields(tokensStr)
@@ -1122,7 +1127,11 @@ func (g *grpcSteps) startBackgroundStream(tokensStr string, delayMs, keepOpenMs 
 		}
 
 		_ = stream.Send(&pb.RecordRequest{Complete: true})
-		_, _ = stream.CloseAndRecv()
+		resp, err := stream.CloseAndRecv()
+		g.streamErr = err
+		if err == nil {
+			g.streamResp = resp
+		}
 		g.streamEnd = time.Now()
 	}()
 
@@ -1155,6 +1164,20 @@ func (g *grpcSteps) iWaitForTheResponseStreamToSendAtLeastTokens(count int) erro
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+}
+
+func (g *grpcSteps) theResponseStreamRecordStatusShouldBe(expected string) error {
+	if g.streamErr != nil {
+		return fmt.Errorf("expected stream record status %q, but stream returned error: %v", expected, g.streamErr)
+	}
+	if g.streamResp == nil {
+		return fmt.Errorf("expected stream record status %q, but stream had no response", expected)
+	}
+	actual := g.streamResp.GetStatus().String()
+	if actual != expected {
+		return fmt.Errorf("expected stream record status %q, got %q", expected, actual)
+	}
+	return nil
 }
 
 func (g *grpcSteps) iReplayResponseTokensFromTheBeginning(expectedTokens string) error {
