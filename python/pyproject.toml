@@ -2,5 +2,6 @@
 members = [
   "langgraph",
   "langchain",
-  "examples/langchain/chat-python",
+  "examples/langchain/chat-langchain",
+  "examples/langgraph/chat-langgraph",
 ]

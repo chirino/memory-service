@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any, Callable
-from urllib.parse import urlparse
 
 import httpx
 from langchain.agents.middleware import AgentMiddleware
-from langchain.agents.middleware.types import ModelRequest, ModelResponse
-from langchain_core.callbacks import BaseCallbackHandler
+from langchain.agents.middleware.types import ModelRequest
 
 from .request_context import (
     get_request_authorization,
@@ -17,40 +14,13 @@ from .request_context import (
     get_request_forked_at_conversation_id,
     get_request_forked_at_entry_id,
 )
-from .response_recorder import BaseResponseRecorder, create_grpc_response_recorder
 
 
 LOG = logging.getLogger(__name__)
 
 
-class _RecorderCallback(BaseCallbackHandler):
-    run_inline = True
-
-    def __init__(self, recorder: BaseResponseRecorder, *, record_mode: str):
-        self.recorder = recorder
-        self.record_mode = record_mode
-        self.recorded_chunks = False
-        self.token_buffer: list[str] = []
-
-    def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
-        del kwargs
-        if not token:
-            return
-        self.recorded_chunks = True
-        self.token_buffer.append(token)
-        if self.record_mode == "events":
-            self.recorder.record(json.dumps({"eventType": "PartialResponseEvent", "chunk": token}) + "\n")
-        else:
-            self.recorder.record(token)
-
-    def buffered_text(self) -> str:
-        if not self.token_buffer:
-            return ""
-        return "".join(self.token_buffer)
-
-
 class MemoryServiceHistoryMiddleware(AgentMiddleware):
-    """Records USER/AI history and response chunks, similar to the Quarkus interceptor."""
+    """Records USER/AI history entries. Response recording is handled by the resumer stream path."""
 
     def __init__(
         self,
@@ -62,10 +32,6 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
         forked_at_conversation_id_getter: Callable[[], str | None] | None = None,
         forked_at_entry_id_getter: Callable[[], str | None] | None = None,
         indexed_content_provider: Callable[[str, str], str | None] | None = None,
-        grpc_target: str | None = None,
-        grpc_timeout_seconds: float | None = None,
-        grpc_record_mode: str | None = None,
-        enable_grpc_recording: bool | None = None,
     ):
         super().__init__()
         self.base_url = (base_url or os.getenv("MEMORY_SERVICE_URL", "http://localhost:8082")).rstrip("/")
@@ -77,22 +43,6 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
         )
         self.forked_at_entry_id_getter = forked_at_entry_id_getter or get_request_forked_at_entry_id
         self.indexed_content_provider = indexed_content_provider
-        parsed = urlparse(self.base_url)
-        grpc_host = parsed.hostname or "localhost"
-        grpc_port = os.getenv("MEMORY_SERVICE_GRPC_PORT", "9000")
-        self.grpc_target = grpc_target or os.getenv("MEMORY_SERVICE_GRPC_TARGET", f"{grpc_host}:{grpc_port}")
-        self.grpc_timeout_seconds = grpc_timeout_seconds or float(os.getenv("MEMORY_SERVICE_GRPC_TIMEOUT_SECONDS", "30"))
-        self.grpc_record_mode = (grpc_record_mode or os.getenv("MEMORY_SERVICE_GRPC_RECORD_MODE", "tokens")).lower()
-        if self.grpc_record_mode not in {"tokens", "events"}:
-            self.grpc_record_mode = "tokens"
-        if enable_grpc_recording is None:
-            explicit = os.getenv("MEMORY_SERVICE_GRPC_RECORDING_ENABLED")
-            if explicit is None:
-                self.enable_grpc_recording = bool(os.getenv("MEMORY_SERVICE_GRPC_TARGET"))
-            else:
-                self.enable_grpc_recording = explicit.lower() not in {"0", "false", "no"}
-        else:
-            self.enable_grpc_recording = enable_grpc_recording
 
     def _authorization(self) -> str | None:
         if not self.authorization_getter:
@@ -187,13 +137,23 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
         role: str,
         text: str,
         *,
+        content_type: str = "history",
+        events: list[dict[str, Any]] | None = None,
         forked_at_conversation_id: str | None = None,
         forked_at_entry_id: str | None = None,
     ) -> None:
+        block: dict[str, Any] = {"role": role}
+        if text:
+            block["text"] = text
+        if events:
+            block["events"] = events
+        if len(block) == 1:
+            return
+
         payload = {
             "channel": "history",
-            "contentType": "history",
-            "content": [{"role": role, "text": text}],
+            "contentType": content_type,
+            "content": [block],
         }
         indexed_content = self._indexed_content(text, role)
         if indexed_content is not None:
@@ -246,47 +206,42 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
             return None
         return self.conversation_id_getter()
 
-    def _with_callback(self, request: ModelRequest, callback: BaseCallbackHandler) -> ModelRequest:
-        model_settings = dict(request.model_settings)
-        existing = model_settings.pop("callbacks", None)
-        callbacks: list[Any] = []
-        if existing is None:
-            callbacks = [callback]
-        elif isinstance(existing, list):
-            callbacks = [*existing, callback]
-        elif isinstance(existing, tuple):
-            callbacks = [*existing, callback]
-        else:
-            callbacks = [existing, callback]
-
-        configured_model = request.model.with_config({"callbacks": callbacks})
-        return request.override(model=configured_model, model_settings=model_settings)
-
-    def _create_recorder(self, conversation_id: str) -> BaseResponseRecorder:
-        if not self.enable_grpc_recording:
-            from .response_recorder import NoopResponseRecorder
-
-            return NoopResponseRecorder()
-        return create_grpc_response_recorder(
-            target=self.grpc_target,
-            conversation_id=conversation_id,
-            authorization=self._authorization(),
-            api_key=self.api_key,
-            timeout_seconds=self.grpc_timeout_seconds,
+    def append_user_history(
+        self,
+        conversation_id: str,
+        text: str,
+        *,
+        forked_at_conversation_id: str | None = None,
+        forked_at_entry_id: str | None = None,
+    ) -> None:
+        self._append_history(
+            conversation_id,
+            "USER",
+            text,
+            forked_at_conversation_id=forked_at_conversation_id,
+            forked_at_entry_id=forked_at_entry_id,
         )
 
-    def _record_final_ai(self, callback: _RecorderCallback, ai_text: str) -> None:
-        if callback.recorded_chunks or not ai_text:
-            return
-        if self.grpc_record_mode == "events":
-            callback.recorder.record(json.dumps({"eventType": "ChatCompletedEvent", "text": ai_text}) + "\n")
-        else:
-            callback.recorder.record(ai_text)
+    def append_ai_history(
+        self,
+        conversation_id: str,
+        text: str,
+        *,
+        content_type: str = "history",
+        events: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self._append_history(
+            conversation_id,
+            "AI",
+            text,
+            content_type=content_type,
+            events=events,
+        )
 
     def wrap_model_call(
         self,
-        request: "ModelRequest | str",
-        handler: "Callable",
+        request: ModelRequest | str,
+        handler: Callable,
     ) -> Any:
         # LangGraph pattern: wrap_model_call(user_text: str, lambda: model.invoke(messages))
         if isinstance(request, str):
@@ -308,7 +263,7 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
                 self._append_history(conversation_id, "AI", ai_text)
             return response
 
-        # Original LangChain agent pattern: wrap_model_call(ModelRequest, handler)
+        # LangChain agent pattern: wrap_model_call(ModelRequest, handler)
         conversation_id = self._conversation_id()
         if not conversation_id:
             return handler(request)
@@ -325,30 +280,21 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
                     forked_at_entry_id=self._forked_at_entry_id(),
                 )
 
-        recorder = self._create_recorder(conversation_id)
-        callback = _RecorderCallback(recorder, record_mode=self.grpc_record_mode)
-        wrapped_request = self._with_callback(request, callback)
-
-        try:
-            response = handler(wrapped_request)
-        except Exception:
-            partial_text = callback.buffered_text()
-            if partial_text:
-                self._append_history(conversation_id, "AI", partial_text)
-            recorder.complete()
-            raise
-
-        ai_text = self._last_message_of_type(response.result, {"ai", "assistant"}) or callback.buffered_text()
+        response = handler(request)
+        ai_text: str | None = None
+        result = getattr(response, "result", None)
+        if isinstance(result, list):
+            ai_text = self._last_message_of_type(result, {"ai", "assistant"})
+        if not ai_text:
+            ai_text = self._extract_text(response)
         if ai_text:
-            self._record_final_ai(callback, ai_text)
             self._append_history(conversation_id, "AI", ai_text)
-        recorder.complete()
         return response
 
     async def awrap_model_call(
         self,
-        request: "ModelRequest | str",
-        handler: "Callable",
+        request: ModelRequest | str,
+        handler: Callable,
     ) -> Any:
         # LangGraph pattern: awrap_model_call(user_text: str, lambda: model.ainvoke(messages))
         if isinstance(request, str):
@@ -370,7 +316,7 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
                 self._append_history(conversation_id, "AI", ai_text)
             return response
 
-        # Original LangChain agent pattern: awrap_model_call(ModelRequest, async handler)
+        # LangChain agent pattern: awrap_model_call(ModelRequest, async handler)
         conversation_id = self._conversation_id()
         if not conversation_id:
             return await handler(request)
@@ -387,22 +333,13 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
                     forked_at_entry_id=self._forked_at_entry_id(),
                 )
 
-        recorder = self._create_recorder(conversation_id)
-        callback = _RecorderCallback(recorder, record_mode=self.grpc_record_mode)
-        wrapped_request = self._with_callback(request, callback)
-
-        try:
-            response = await handler(wrapped_request)
-        except Exception:
-            partial_text = callback.buffered_text()
-            if partial_text:
-                self._append_history(conversation_id, "AI", partial_text)
-            recorder.complete()
-            raise
-
-        ai_text = self._last_message_of_type(response.result, {"ai", "assistant"}) or callback.buffered_text()
+        response = await handler(request)
+        ai_text: str | None = None
+        result = getattr(response, "result", None)
+        if isinstance(result, list):
+            ai_text = self._last_message_of_type(result, {"ai", "assistant"})
+        if not ai_text:
+            ai_text = self._extract_text(response)
         if ai_text:
-            self._record_final_ai(callback, ai_text)
             self._append_history(conversation_id, "AI", ai_text)
-        recorder.complete()
         return response

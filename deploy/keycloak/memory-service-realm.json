@@ -66,8 +66,10 @@
       "redirectUris": [
         "http://localhost:8080/*",
         "http://127.0.0.1:8080/*",
+        "http://0.0.0.0:8080/*",
         "http://localhost:9090/*",
-        "http://127.0.0.1:9090/*"
+        "http://127.0.0.1:9090/*",
+        "http://0.0.0.0:9090/*"
       ],
       "webOrigins": ["*"],
       "standardFlowEnabled": true,
@@ -94,22 +96,30 @@
       "redirectUris": [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://0.0.0.0:3000",
         "http://localhost:8080/*",
         "http://127.0.0.1:8080/*",
+        "http://0.0.0.0:8080/*",
         "http://localhost:9090/*",
         "http://127.0.0.1:9090/*",
+        "http://0.0.0.0:9090/*",
         "http://localhost:5173/*",
-        "http://127.0.0.1:5173/*"
+        "http://127.0.0.1:5173/*",
+        "http://0.0.0.0:5173/*"
       ],
       "webOrigins": [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://0.0.0.0:3000",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
+        "http://0.0.0.0:8080",
         "http://localhost:9090",
         "http://127.0.0.1:9090",
+        "http://0.0.0.0:9090",
         "http://localhost:5173",
-        "http://127.0.0.1:5173"
+        "http://127.0.0.1:5173",
+        "http://0.0.0.0:5173"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,

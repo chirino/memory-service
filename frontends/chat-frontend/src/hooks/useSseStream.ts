@@ -1,12 +1,7 @@
 import { useCallback, useMemo, useRef } from "react";
-import type { StreamClient, StreamEvent, StreamStartParams } from "./useStreamTypes";
+import type { StreamClient, StreamStartParams } from "./useStreamTypes";
 import { getAccessToken } from "@/lib/auth";
-
-function isStreamEvent(obj: unknown): obj is StreamEvent {
-  return (
-    typeof obj === "object" && obj !== null && "eventType" in obj && typeof (obj as StreamEvent).eventType === "string"
-  );
-}
+import { normalizeChatEvents } from "@/lib/langchain-events";
 
 function normalizeEventChunk(chunk: string): string {
   return chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -127,20 +122,18 @@ export function useSseStream(): StreamClient {
               }
               try {
                 const parsed = JSON.parse(payload);
-                // Handle rich event stream format
-                if (isStreamEvent(parsed)) {
-                  receivedAnyChunks = true;
-                  chunkCount += 1;
-                  // Notify event listener if provided
-                  params.onEvent?.(parsed);
-                  // Extract text from text-producing events for onChunk
-                  if (parsed.eventType === "PartialResponse" && parsed.chunk) {
-                    params.onChunk(parsed.chunk);
-                  } else if (parsed.eventType === "PartialThinking" && parsed.chunk) {
-                    // Optionally include thinking in content (or skip)
-                    // For now, we don't add thinking to the main content
-                  } else if (parsed.eventType === "IntermediateResponse" && parsed.chunk) {
-                    params.onChunk(parsed.chunk);
+                const normalizedEvents = normalizeChatEvents(parsed);
+                if (normalizedEvents.length > 0) {
+                  for (const event of normalizedEvents) {
+                    receivedAnyChunks = true;
+                    chunkCount += 1;
+                    params.onEvent?.(event);
+                    if (
+                      (event.eventType === "PartialResponse" || event.eventType === "IntermediateResponse") &&
+                      event.chunk
+                    ) {
+                      params.onChunk(event.chunk);
+                    }
                   }
                   return;
                 }

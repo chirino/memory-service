@@ -7,4 +7,9 @@ package io.github.chirino.memory.history.runtime;
  * @param contentType the MIME type hint (e.g. "image/png", "audio/mp3"), may be null
  * @param name the original filename, may be null
  */
-public record AttachmentRef(String id, String contentType, String name) {}
+public record AttachmentRef(String id, String contentType, String name, String href) {
+
+    public AttachmentRef(String id, String contentType, String name) {
+        this(id, contentType, name, null);
+    }
+}

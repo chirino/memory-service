@@ -519,7 +519,7 @@ function ConversationsUIEmptyState({
       iconColor: "text-ink/60",
     },
     {
-      text: "Help me pick random things.  first one: a book",
+      text: "Help me pick random things.  first one: a book title",
       icon: Shuffle,
       iconBg: "bg-sage/20",
       iconColor: "text-sage",

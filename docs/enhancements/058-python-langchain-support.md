@@ -102,7 +102,7 @@ uv sync
 ./mvnw -pl python verify
 
 # integration (dockerized dependencies)
-docker compose -f python/examples/chat-langchain/docker-compose.yml up -d
+docker compose -f python/examples/langchain/chat-langchain/docker-compose.yml up -d
 ./mvnw -pl python verify
 ```
 
@@ -128,7 +128,7 @@ python/
 ├── pom.xml                             # Dockerized Python build/stub/package verify hooks
 └── examples/
     ├── doc-checkpoints/                # Implemented tutorial checkpoints used by site-tests
-    └── chat-python/                    # Full Python chat example mirroring chat-quarkus APIs
+    └── chat-langchain/                    # Full Python chat example mirroring chat-quarkus APIs
 ```
 
 ### REST Client Generation
@@ -467,7 +467,7 @@ Python tutorial checkpoints must be executable through the same docs-testing pip
 | `python/langchain/memory_service_langchain/response_recorder.py` | **New**: gRPC recorder implementation |
 | `python/langchain/memory_service_langchain/response_resumer.py` | **New**: Response resumption helper used by checkpoint 05 |
 | `python/langchain/memory_service_langchain/grpc/` | **New**: Generated gRPC stubs |
-| `python/examples/chat-python/` | **New**: Full Python chat example mirroring `chat-quarkus` API surface |
+| `python/examples/langchain/chat-langchain/` | **New**: Full Python chat example mirroring `chat-quarkus` API surface |
 | `python/examples/doc-checkpoints/01-basic-agent/` | **New**: Tutorial checkpoint 1 |
 | `python/examples/doc-checkpoints/02-with-memory/` | **New**: Tutorial checkpoint 2 |
 | `python/examples/doc-checkpoints/03-with-history/` | **New**: Tutorial checkpoint 3 |
@@ -628,6 +628,8 @@ This enhancement should be filed as a separate issue and treated as the graduati
 
 - Completed: Phases 0-7 (Python checkpoints `01`-`07`, Python docs pages, fixtures, and `site-tests` Python tagging/filtering support).
 - Pending: Phases 8-9 (`MemoryServiceStore` experimental adapter and native `/v1/store` API).
+- 2026-03-02 refinement: `memory_service_langchain.MemoryServiceResponseResumer` now includes gRPC-backed `CheckRecordings`/`Replay`/`Cancel` handling (with recorder redirect support) plus SSE replay formatting for the `chat-langchain` app.
+- 2026-03-02 refinement: LangChain gRPC client defaults now derive from `MEMORY_SERVICE_URL` (`host:port`) instead of assuming `:9000`, matching memory-service single-port HTTP+gRPC behavior.
 
 Each phase must ship three things together:
 

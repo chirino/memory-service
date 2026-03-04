@@ -12,6 +12,10 @@ go build -tags=site_tests ./internal/sitebdd/
 # Run all site-docs scenarios
 go test -tags=site_tests ./internal/sitebdd/ -v -count=1
 
+# Run targeted scenarios via task (preferred for reruns)
+GODOG_TAGS='@python-langchain and @checkpoint_python_examples_langchain_doc_checkpoints_05_response_resumption' \
+  task test:site -- -count=1
+
 # Run only quarkus scenarios
 go test -tags=site_tests ./internal/sitebdd/ -v -count=1 -godog.tags=@quarkus
 

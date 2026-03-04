@@ -28,8 +28,11 @@ public class OwnershipTransfersResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response listPendingTransfers(@QueryParam("role") String role) {
-        return proxy.listPendingTransfers(role, null, null);
+    public Response listPendingTransfers(
+            @QueryParam("role") String role,
+            @QueryParam("afterCursor") String afterCursor,
+            @QueryParam("limit") Integer limit) {
+        return proxy.listPendingTransfers(role, afterCursor, limit);
     }
 
     @POST
@@ -37,13 +40,6 @@ public class OwnershipTransfersResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response createOwnershipTransfer(String body) {
         return proxy.createOwnershipTransfer(body);
-    }
-
-    @GET
-    @Path("/{transferId}")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response getTransfer(@PathParam("transferId") String transferId) {
-        return proxy.getTransfer(transferId);
     }
 
     @DELETE
