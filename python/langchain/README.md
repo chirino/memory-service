@@ -5,7 +5,7 @@ LangChain-focused integration package for Memory Service.
 Provides:
 - `MemoryServiceCheckpointSaver` (LangGraph/LangChain checkpointer integration)
 - `MemoryServiceHistoryMiddleware` (history capture middleware)
-- `MemoryServiceResponseResumer` (checkpoint helper for resume-check/resume/cancel endpoints)
+- `MemoryServiceResponseRecordingManager` (checkpoint helper for resume-check/resume/cancel endpoints)
 - `install_fastapi_authorization_middleware` (binds bearer token from incoming HTTP requests)
 - `memory_service_scope` (binds conversation/fork context for middleware/checkpointer access)
 - `memory_service_request` (authenticated async helper for proxying Memory Service REST calls)

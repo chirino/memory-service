@@ -36,9 +36,9 @@ import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
-public class GrpcResponseResumer implements ResponseResumer {
+public class GrpcResponseRecordingManager implements ResponseRecordingManager {
 
-    private static final Logger LOG = LoggerFactory.getLogger(GrpcResponseResumer.class);
+    private static final Logger LOG = LoggerFactory.getLogger(GrpcResponseRecordingManager.class);
     private static final Metadata.Key<String> AUTHORIZATION_HEADER =
             Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> API_KEY_HEADER =
@@ -50,7 +50,7 @@ public class GrpcResponseResumer implements ResponseResumer {
     private final OAuth2AuthorizedClientService authorizedClientService;
     private final ObjectMapper objectMapper;
 
-    public GrpcResponseResumer(
+    public GrpcResponseRecordingManager(
             MemoryServiceGrpcClients.MemoryServiceStubs stubs,
             ManagedChannel channel,
             MemoryServiceClientProperties clientProperties,
@@ -64,12 +64,12 @@ public class GrpcResponseResumer implements ResponseResumer {
     }
 
     @Override
-    public ResponseRecorder recorder(String conversationId) {
+    public RecordingSession recorder(String conversationId) {
         return recorder(conversationId, null);
     }
 
     @Override
-    public ResponseRecorder recorder(String conversationId, @Nullable String bearerToken) {
+    public RecordingSession recorder(String conversationId, @Nullable String bearerToken) {
         return new GrpcResponseRecorder(stub(bearerToken), conversationId);
     }
 
@@ -144,7 +144,9 @@ public class GrpcResponseResumer implements ResponseResumer {
         }
         try {
             List<ByteString> byteStringIds =
-                    conversationIds.stream().map(GrpcResponseResumer::toByteString).toList();
+                    conversationIds.stream()
+                            .map(GrpcResponseRecordingManager::toByteString)
+                            .toList();
             CheckRecordingsRequest request =
                     CheckRecordingsRequest.newBuilder()
                             .addAllConversationIds(byteStringIds)
@@ -261,7 +263,7 @@ public class GrpcResponseResumer implements ResponseResumer {
         return new UUID(mostSig, leastSig).toString();
     }
 
-    private final class GrpcResponseRecorder implements ResponseRecorder {
+    private final class GrpcResponseRecorder implements RecordingSession {
 
         private final ResponseRecorderServiceGrpc.ResponseRecorderServiceStub service;
         private final String conversationId;

@@ -15,7 +15,7 @@ from memory_service_langchain import (
     MemoryServiceCheckpointSaver,
     MemoryServiceHistoryMiddleware,
     MemoryServiceProxy,
-    MemoryServiceResponseResumer,
+    MemoryServiceResponseRecordingManager,
     install_fastapi_authorization_middleware,
     memory_service_scope,
     stream_chunks_as_sse,
@@ -87,7 +87,7 @@ graph = builder.compile(checkpointer=checkpointer)
 app = FastAPI(title="Python LangGraph Chat Example")
 install_fastapi_authorization_middleware(app, validate_jwt=False)
 proxy = MemoryServiceProxy()
-resumer = MemoryServiceResponseResumer()
+recording_manager = MemoryServiceResponseRecordingManager()
 LOG.info("chat response memory-service integration enabled")
 
 def find_repo_root(start: Path) -> Path:
@@ -154,19 +154,19 @@ async def chat(
             ):
                 yield event
 
-    stream = resumer.stream_from_source(conversation_id, source())
+    stream = recording_manager.stream_from_source(conversation_id, source())
     return StreamingResponse(stream, media_type="text/event-stream")
 
 
 @app.post("/v1/conversations/resume-check")
 async def resume_check(conversation_ids: list[str]) -> JSONResponse:
-    return JSONResponse(resumer.check(conversation_ids), status_code=200)
+    return JSONResponse(recording_manager.check(conversation_ids), status_code=200)
 
 
 @app.get("/v1/conversations/{conversation_id}/resume")
 async def resume_response(conversation_id: str) -> StreamingResponse:
     try:
-        stream = resumer.replay_sse(
+        stream = recording_manager.replay_sse(
             conversation_id,
             stream_mode="events",
         )
@@ -180,7 +180,7 @@ async def resume_response(conversation_id: str) -> StreamingResponse:
 @app.post("/v1/conversations/{conversation_id}/cancel")
 async def cancel_response(conversation_id: str):
     LOG.info("chat cancel request conversation_id=%s", conversation_id)
-    resumer.cancel(conversation_id)
+    recording_manager.cancel(conversation_id)
     response = await proxy.cancel_response(conversation_id)
     LOG.info(
         "chat cancel proxied conversation_id=%s status=%s",

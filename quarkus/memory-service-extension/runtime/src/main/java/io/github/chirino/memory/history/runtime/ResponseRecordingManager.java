@@ -3,11 +3,11 @@ package io.github.chirino.memory.history.runtime;
 import io.smallrye.mutiny.Multi;
 import java.util.List;
 
-public interface ResponseResumer {
+public interface ResponseRecordingManager {
 
-    ResponseRecorder recorder(String conversationId);
+    RecordingSession recorder(String conversationId);
 
-    default ResponseRecorder recorder(String conversationId, String bearerToken) {
+    default RecordingSession recorder(String conversationId, String bearerToken) {
         return recorder(conversationId);
     }
 
@@ -50,11 +50,11 @@ public interface ResponseResumer {
      */
     void requestCancel(String conversationId, String bearerToken);
 
-    static ResponseResumer noop() {
-        return NoopResponseResumer.INSTANCE;
+    static ResponseRecordingManager noop() {
+        return NoopResponseRecordingManager.INSTANCE;
     }
 
-    interface ResponseRecorder {
+    interface RecordingSession {
         void record(String token);
 
         /**

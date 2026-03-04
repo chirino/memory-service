@@ -4,18 +4,18 @@ import java.util.List;
 import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
-final class NoopResponseResumer implements ResponseResumer {
+final class NoopResponseRecordingManager implements ResponseRecordingManager {
 
-    static final NoopResponseResumer INSTANCE = new NoopResponseResumer();
-    private static final ResponseRecorder RECORDER = new NoopResponseRecorder();
+    static final NoopResponseRecordingManager INSTANCE = new NoopResponseRecordingManager();
+    private static final RecordingSession RECORDER = new NoopResponseRecorder();
 
     @Override
-    public ResponseRecorder recorder(String conversationId) {
+    public RecordingSession recorder(String conversationId) {
         return RECORDER;
     }
 
     @Override
-    public ResponseRecorder recorder(String conversationId, @Nullable String bearerToken) {
+    public RecordingSession recorder(String conversationId, @Nullable String bearerToken) {
         return RECORDER;
     }
 
@@ -37,7 +37,7 @@ final class NoopResponseResumer implements ResponseResumer {
     @Override
     public void requestCancel(String conversationId, @Nullable String bearerToken) {}
 
-    private static final class NoopResponseRecorder implements ResponseRecorder {
+    private static final class NoopResponseRecorder implements RecordingSession {
         @Override
         public void record(String token) {}
     }

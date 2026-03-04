@@ -52,7 +52,7 @@ class _ResumeState:
     producer_task: asyncio.Task[None] | None = None
 
 
-class MemoryServiceResponseResumer:
+class MemoryServiceResponseRecordingManager:
     """Response resumption helper with gRPC-backed replay/check/cancel."""
 
     def __init__(
@@ -101,7 +101,7 @@ class MemoryServiceResponseResumer:
         )
 
         LOG.info(
-            "response resumer gRPC enabled target=%s timeout=%ss replay_timeout=%s",
+            "response recording manager gRPC enabled target=%s timeout=%ss replay_timeout=%s",
             self._grpc_target,
             self._grpc_timeout_seconds,
             self._grpc_replay_timeout_seconds,

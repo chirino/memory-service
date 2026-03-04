@@ -2,7 +2,7 @@ package org.acme;
 
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 
-import io.github.chirino.memory.history.runtime.ResponseResumer;
+import io.github.chirino.memory.history.runtime.ResponseRecordingManager;
 import io.github.chirino.memory.runtime.MemoryServiceProxy;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
@@ -23,7 +23,7 @@ import java.util.List;
 @ApplicationScoped
 public class ResumeResource {
 
-    @Inject ResponseResumer resumer;
+    @Inject ResponseRecordingManager recordingManager;
     @Inject SecurityIdentity securityIdentity;
     @Inject MemoryServiceProxy proxy;
 
@@ -32,7 +32,7 @@ public class ResumeResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/resume-check")
     public List<String> check(List<String> conversationIds) {
-        return resumer.check(conversationIds, bearerToken(securityIdentity));
+        return recordingManager.check(conversationIds, bearerToken(securityIdentity));
     }
 
     @GET
@@ -41,7 +41,7 @@ public class ResumeResource {
     @Produces(MediaType.SERVER_SENT_EVENTS)
     public Multi<String> resume(@PathParam("conversationId") String conversationId) {
         String bearerToken = bearerToken(securityIdentity);
-        return resumer.replay(conversationId, bearerToken);
+        return recordingManager.replay(conversationId, bearerToken);
     }
 
     @POST

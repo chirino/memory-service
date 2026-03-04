@@ -13,7 +13,7 @@ from memory_service_langchain import (
     MemoryServiceCheckpointSaver,
     MemoryServiceHistoryMiddleware,
     MemoryServiceProxy,
-    MemoryServiceResponseResumer,
+    MemoryServiceResponseRecordingManager,
     install_fastapi_authorization_middleware,
     memory_service_scope,
     to_fastapi_response,
@@ -114,7 +114,7 @@ graph = builder.compile(checkpointer=checkpointer)
 app = FastAPI(title="LangGraph Chatbot with Response Resumption")
 install_fastapi_authorization_middleware(app)
 proxy = MemoryServiceProxy()
-resumer = MemoryServiceResponseResumer()
+recording_manager = MemoryServiceResponseRecordingManager()
 
 
 @app.post("/chat/{conversation_id}")
@@ -163,7 +163,7 @@ async def chat(conversation_id: str, request: Request) -> StreamingResponse:
             {"eventType": "ChatCompleted", "text": "".join(response_text_parts)}
         )
 
-    stream = resumer.stream_from_source(conversation_id, source())
+    stream = recording_manager.stream_from_source(conversation_id, source())
     return StreamingResponse(stream, media_type="text/event-stream", headers=SSE_HEADERS)
 
 
@@ -204,13 +204,13 @@ async def list_forks(conversation_id: str):
 
 @app.post("/v1/conversations/resume-check")
 async def resume_check(conversation_ids: list[str]) -> JSONResponse:
-    return JSONResponse(resumer.check(conversation_ids), status_code=200)
+    return JSONResponse(recording_manager.check(conversation_ids), status_code=200)
 
 
 @app.get("/v1/conversations/{conversation_id}/resume")
 async def resume_response(conversation_id: str):
     try:
-        stream = resumer.replay_sse(conversation_id, stream_mode="events")
+        stream = recording_manager.replay_sse(conversation_id, stream_mode="events")
     except ValueError as exc:
         raise HTTPException(400, "invalid conversation id") from exc
     except KeyError as exc:
@@ -220,6 +220,6 @@ async def resume_response(conversation_id: str):
 
 @app.post("/v1/conversations/{conversation_id}/cancel")
 async def cancel_response(conversation_id: str):
-    resumer.cancel(conversation_id)
+    recording_manager.cancel(conversation_id)
     response = await proxy.cancel_response(conversation_id)
     return to_fastapi_response(response)

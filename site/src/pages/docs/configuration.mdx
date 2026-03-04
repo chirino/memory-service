@@ -82,7 +82,7 @@ PostgreSQL is the recommended database backend for Memory Service.
 
 ## Cache Configuration
 
-Memory Service uses a unified cache configuration for all cache-dependent features, including the response resumer and memory entries cache. Configure the cache backend once, and all features will use it automatically.
+Memory Service uses a unified cache configuration for all cache-dependent features, including the response recording manager and memory entries cache. Configure the cache backend once, and all features will use it automatically.
 
 | Flag | Values | Default | Description |
 |------|--------|---------|-------------|
@@ -110,19 +110,19 @@ The Response Resumer enables clients to reconnect to in-progress streaming respo
 
 ### Cache: Redis Configuration
 
-Redis provides a fast, distributed cache with full support for the memory entries cache and response resumer.
+Redis provides a fast, distributed cache with full support for the memory entries cache and response recording manager.
 
 | Flag | Values | Default | Description |
 |------|--------|---------|-------------|
 | <Cfg p="--redis-hosts" e="MEMORY_SERVICE_REDIS_HOSTS" /> | Redis URL | `redis://localhost:6379` | Redis connection URL |
 | `MEMORY_SERVICE_CACHE_REDIS_CLIENT` | client name | default | Optional: specify a named Redis client |
 
-<ConfigBlock property={`# Enable Redis cache (response resumer will automatically use it)
+<ConfigBlock property={`# Enable Redis cache (response recording manager will automatically use it)
 --cache-kind=redis
 
 # Redis connection
 --redis-hosts=redis://localhost:6379`}
-  env={`# Enable Redis cache (response resumer will automatically use it)
+  env={`# Enable Redis cache (response recording manager will automatically use it)
 MEMORY_SERVICE_CACHE_KIND=redis
 
 # Redis connection
@@ -142,14 +142,14 @@ Infinispan provides a distributed cache with configurable cache names for memory
 | `MEMORY_SERVICE_CACHE_INFINISPAN_MEMORY_ENTRIES_CACHE_NAME` | string | `memory-entries` | Infinispan cache name for memory entries |
 | `MEMORY_SERVICE_CACHE_INFINISPAN_RESPONSE_RECORDINGS_CACHE_NAME` | string | `response-recordings` | Infinispan cache name for response recordings |
 
-<ConfigBlock property={`# Enable Infinispan cache (response resumer will automatically use it)
+<ConfigBlock property={`# Enable Infinispan cache (response recording manager will automatically use it)
 --cache-kind=infinispan
 
 # Infinispan connection
 --infinispan-host=localhost:11222
 --infinispan-username=admin
 --infinispan-password=password`}
-  env={`# Enable Infinispan cache (response resumer will automatically use it)
+  env={`# Enable Infinispan cache (response recording manager will automatically use it)
 MEMORY_SERVICE_CACHE_KIND=infinispan
 
 # Infinispan connection
@@ -618,7 +618,7 @@ services:
       # PostgreSQL connection (standard URL format)
       MEMORY_SERVICE_DB_URL: postgresql://postgres:postgres@postgres:5432/memoryservice
 
-      # Cache with Redis (response resumer automatically enabled)
+      # Cache with Redis (response recording manager automatically enabled)
       MEMORY_SERVICE_CACHE_KIND: redis
       MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
 

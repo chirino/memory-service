@@ -16,12 +16,12 @@ import org.springframework.lang.Nullable;
 public class ConversationHistoryStreamAdvisorBuilder {
 
     private final ConversationStore conversationStore;
-    private final ResponseResumer responseResumer;
+    private final ResponseRecordingManager recordingManager;
 
     public ConversationHistoryStreamAdvisorBuilder(
-            ConversationStore conversationStore, ResponseResumer responseResumer) {
+            ConversationStore conversationStore, ResponseRecordingManager recordingManager) {
         this.conversationStore = conversationStore;
-        this.responseResumer = responseResumer;
+        this.recordingManager = recordingManager;
     }
 
     /**
@@ -33,7 +33,7 @@ public class ConversationHistoryStreamAdvisorBuilder {
      */
     public ConversationHistoryStreamAdvisor build(@Nullable String bearerToken) {
         return new ConversationHistoryStreamAdvisor(
-                conversationStore, responseResumer, bearerToken);
+                conversationStore, recordingManager, bearerToken);
     }
 
     /**
@@ -49,6 +49,6 @@ public class ConversationHistoryStreamAdvisorBuilder {
     public ConversationHistoryStreamAdvisor build(
             @Nullable String bearerToken, List<Map<String, Object>> toolAttachments) {
         return new ConversationHistoryStreamAdvisor(
-                conversationStore, responseResumer, bearerToken, toolAttachments);
+                conversationStore, recordingManager, bearerToken, toolAttachments);
     }
 }

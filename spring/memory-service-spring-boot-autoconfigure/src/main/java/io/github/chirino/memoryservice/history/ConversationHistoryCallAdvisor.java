@@ -1,6 +1,6 @@
 package io.github.chirino.memoryservice.history;
 
-import io.github.chirino.memoryservice.history.ResponseResumer.ResponseRecorder;
+import io.github.chirino.memoryservice.history.ResponseRecordingManager.RecordingSession;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,15 +28,15 @@ public class ConversationHistoryCallAdvisor implements CallAdvisor {
     private static final Logger LOG = LoggerFactory.getLogger(ConversationHistoryCallAdvisor.class);
 
     private final ConversationStore conversationStore;
-    private final ResponseResumer responseResumer;
+    private final ResponseRecordingManager recordingManager;
     private final OAuth2AuthorizedClientService authorizedClientService;
 
     public ConversationHistoryCallAdvisor(
             ConversationStore conversationStore,
-            ResponseResumer responseResumer,
+            ResponseRecordingManager recordingManager,
             @Nullable OAuth2AuthorizedClientService authorizedClientService) {
         this.conversationStore = conversationStore;
-        this.responseResumer = responseResumer;
+        this.recordingManager = recordingManager;
         this.authorizedClientService = authorizedClientService;
     }
 
@@ -65,7 +65,7 @@ public class ConversationHistoryCallAdvisor implements CallAdvisor {
                 bearerToken,
                 forkConvId,
                 forkEntryId);
-        ResponseRecorder recorder = responseResumer.recorder(conversationId, bearerToken);
+        RecordingSession recorder = recordingManager.recorder(conversationId, bearerToken);
         ChatClientResponse response = chain.nextCall(request);
         try {
             recordCallResponse(conversationId, bearerToken, recorder, response);
@@ -88,7 +88,7 @@ public class ConversationHistoryCallAdvisor implements CallAdvisor {
     private void recordCallResponse(
             String conversationId,
             @Nullable String bearerToken,
-            ResponseRecorder recorder,
+            RecordingSession recorder,
             ChatClientResponse response) {
         String chunk = extractChunk(response);
         if (!StringUtils.hasText(chunk)) {

@@ -32,11 +32,10 @@ tasks:
 
   generate:
     desc: "generate and format source files"
-    deps:
-      - generate:go
-      - generate:site
-      - generate:spotless
     cmds:
+      - task: generate:go
+      - task: generate:site
+      - task: generate:spotless
       - task: generate:chat-frontend
 
   generate:go:

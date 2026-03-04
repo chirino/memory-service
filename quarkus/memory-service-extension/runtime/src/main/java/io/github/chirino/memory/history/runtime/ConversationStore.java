@@ -33,7 +33,7 @@ public class ConversationStore {
 
     @Inject SecurityIdentity securityIdentity;
     @Inject SecurityIdentityAssociation identityAssociation;
-    @Inject ResponseResumer resumer;
+    @Inject ResponseRecordingManager resumer;
     @Inject Instance<IndexedContentProvider> indexedContentProviderInstance;
     @Inject ObjectMapper objectMapper;
     @Inject Instance<ToolAttachmentExtractor> toolAttachmentExtractorInstance;

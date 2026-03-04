@@ -17,14 +17,14 @@ public final class ConversationStreamAdapter {
             String conversationId,
             Multi<String> upstream,
             ConversationStore store,
-            ResponseResumer resumer,
+            ResponseRecordingManager resumer,
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
             String bearerToken) {
 
-        ResponseResumer.ResponseRecorder recorder =
+        ResponseRecordingManager.RecordingSession recorder =
                 resumer == null
-                        ? ResponseResumer.noop().recorder(conversationId, bearerToken)
+                        ? ResponseRecordingManager.noop().recorder(conversationId, bearerToken)
                         : resumer.recorder(conversationId, bearerToken);
         StringBuilder buffer = new StringBuilder();
         Multi<ResponseCancelSignal> cancelStream =
@@ -52,7 +52,7 @@ public final class ConversationStreamAdapter {
             Multi<String> upstream,
             Multi<ResponseCancelSignal> cancelStream,
             ConversationStore store,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             StringBuilder buffer,
             MultiEmitter<? super String> emitter,
             SecurityIdentity identity,
@@ -169,7 +169,7 @@ public final class ConversationStreamAdapter {
     private static void handleToken(
             String conversationId,
             ConversationStore store,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             StringBuilder buffer,
             MultiEmitter<? super String> emitter,
             String token) {
@@ -193,7 +193,7 @@ public final class ConversationStreamAdapter {
             String conversationId,
             ConversationStore store,
             StringBuilder buffer,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             MultiEmitter<? super String> emitter,
             Throwable failure,
             String bearerToken) {
@@ -216,7 +216,7 @@ public final class ConversationStreamAdapter {
             String conversationId,
             ConversationStore store,
             StringBuilder buffer,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             MultiEmitter<? super String> emitter,
             String bearerToken) {
         try {
@@ -236,7 +236,7 @@ public final class ConversationStreamAdapter {
             String conversationId,
             ConversationStore store,
             StringBuilder buffer,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             String bearerToken) {
         try {
             store.appendAgentMessage(conversationId, buffer.toString(), bearerToken);

@@ -22,13 +22,13 @@ from .request_context import (
     memory_service_scope,
     memory_service_request,
 )
-from .response_resumer import MemoryServiceResponseResumer
+from .response_recording_manager import MemoryServiceResponseRecordingManager
 
 __all__ = [
     "MemoryServiceCheckpointSaver",
     "MemoryServiceHistoryMiddleware",
     "MemoryServiceProxy",
-    "MemoryServiceResponseResumer",
+    "MemoryServiceResponseRecordingManager",
     "chunk_to_json_log",
     "extract_assistant_text",
     "extract_stream_tokens",

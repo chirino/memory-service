@@ -1,7 +1,7 @@
 package org.acme;
 
 import io.github.chirino.memoryservice.client.MemoryServiceProxy;
-import io.github.chirino.memoryservice.history.ResponseResumer;
+import io.github.chirino.memoryservice.history.ResponseRecordingManager;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.io.IOException;
 import java.util.List;
@@ -25,15 +25,15 @@ import reactor.core.Disposable;
 @RequestMapping("/v1/conversations")
 class ResumeController {
 
-    private final ResponseResumer responseResumer;
+    private final ResponseRecordingManager recordingManager;
     private final MemoryServiceProxy proxy;
     private final OAuth2AuthorizedClientService authorizedClientService;
 
     ResumeController(
-            ResponseResumer responseResumer,
+            ResponseRecordingManager recordingManager,
             MemoryServiceProxy proxy,
             ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider) {
-        this.responseResumer = responseResumer;
+        this.recordingManager = recordingManager;
         this.proxy = proxy;
         this.authorizedClientService = authorizedClientServiceProvider.getIfAvailable();
     }
@@ -43,7 +43,7 @@ class ResumeController {
         if (conversationIds == null || conversationIds.isEmpty()) {
             return List.of();
         }
-        return responseResumer.check(
+        return recordingManager.check(
                 conversationIds, SecurityHelper.bearerToken(authorizedClientService));
     }
 
@@ -57,7 +57,7 @@ class ResumeController {
         SseEmitter emitter = new SseEmitter(0L);
         String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
         Disposable subscription =
-                responseResumer
+                recordingManager
                         .replay(conversationId, bearerToken)
                         .subscribe(
                                 chunk ->

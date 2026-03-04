@@ -34,8 +34,8 @@ When you run your Quarkus application in dev mode (`./mvnw quarkus:dev`), the ex
 The memory-service container automatically connects to:
 - **PostgreSQL** dev service (if available) - for the main datastore
 - **Keycloak** dev service (if available) - for OIDC authentication
-- **Redis** dev service (if available and response-resumer is set to "redis") - for caching
-- **Infinispan** dev service (if available and response-resumer is set to "infinispan") - for caching
+- **Redis** dev service (if available and `memory-service.cache.type=redis`) - for caching
+- **Infinispan** dev service (if available and `memory-service.cache.type=infinispan`) - for caching
 
 ## Configuration Properties
 
@@ -67,13 +67,13 @@ memory-service.client.api-key=my-custom-api-key
 
 **Type:** `String`  
 **Default:** `"none"`  
-**Description:** Configures the cache backend. Valid values are `"redis"` or `"infinispan"`. When set, the memory-service container will be configured to use the corresponding dev service (Redis or Infinispan) for caching. The response resumer automatically uses the configured cache backend.
+**Description:** Configures the cache backend. Valid values are `"redis"` or `"infinispan"`. When set, the memory-service container will be configured to use the corresponding dev service (Redis or Infinispan) for caching. The response recording manager automatically uses the configured cache backend.
 
 ```properties
-# Use Redis for caching (response resumer will automatically use it)
+# Use Redis for caching (response recording manager will automatically use it)
 memory-service.cache.type=redis
 
-# Use Infinispan for caching (response resumer will automatically use it)
+# Use Infinispan for caching (response recording manager will automatically use it)
 memory-service.cache.type=infinispan
 ```
 
@@ -121,7 +121,7 @@ The memory-service container requires Keycloak for authentication. Add this depe
 
 ### Optional: Cache Dev Services
 
-If you're using response resumption with Redis or Infinispan, add the corresponding dev service dependency:
+If you're using response recording and resumption with Redis or Infinispan, add the corresponding dev service dependency:
 
 **Redis (for `memory-service.cache.type=redis`):**
 
@@ -161,7 +161,7 @@ Here's a complete `pom.xml` example showing all the dependencies needed for Dev 
     <artifactId>quarkus-oidc</artifactId>
   </dependency>
 
-  <!-- Redis Dev Service (optional, for response resumption) -->
+  <!-- Redis Dev Service (optional, for response recording and resumption) -->
   <dependency>
     <groupId>io.quarkus</groupId>
     <artifactId>quarkus-redis-client</artifactId>
@@ -170,7 +170,7 @@ Here's a complete `pom.xml` example showing all the dependencies needed for Dev 
 
 And the corresponding `application.properties`:
 
-<Code lang="properties" code={`# Enable Redis-based cache (response resumer will automatically use it)
+<Code lang="properties" code={`# Enable Redis-based cache (response recording manager will automatically use it)
 memory-service.cache.type=redis
 
 # OIDC configuration
@@ -181,6 +181,6 @@ quarkus.oidc.credentials.secret=change-me`} />
 ## Next Steps
 
 - [Getting Started](/docs/quarkus/getting-started/) - Learn how to integrate Memory Service with your agent
-- [Response Resumption](/docs/quarkus/response-resumption/) - Streaming responses with resume and cancel support
+- [Response Recording and Resumption](/docs/quarkus/response-resumption/) - Streaming responses with resume and cancel support
 - [Configuration](/docs/configuration/) - All configuration options 
 */}
