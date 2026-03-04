@@ -27,6 +27,19 @@ Feature: Data Eviction
     Then the SQL result should match:
       | count |
       | 0     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "conversations",
+        "operation": "count",
+        "filter": {
+          "_id": "${oldGroupId}"
+        }
+      }
+      """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
     # Verify recent conversation still exists
     When I execute SQL query:
       """
@@ -35,12 +48,38 @@ Feature: Data Eviction
     Then the SQL result should match:
       | count |
       | 1     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "conversation_groups",
+        "operation": "count",
+        "filter": {
+          "_id": "${recentGroupId}"
+        }
+      }
+      """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
     # Verify vector store cleanup task was created
     When I execute SQL query:
       """
       SELECT COUNT(*) as count FROM tasks WHERE task_type = 'vector_store_delete'
       """
     Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "tasks",
+        "operation": "count",
+        "filter": {
+          "task_type": "vector_store_delete"
+        }
+      }
+      """
+    Then the MongoDB result should match:
       | count |
       | 1     |
 
@@ -92,6 +131,21 @@ Feature: Data Eviction
       SELECT COUNT(*) as count FROM conversations WHERE deleted_at IS NOT NULL
       """
     Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "conversations",
+        "operation": "count",
+        "filter": {
+          "deleted_at": {
+            "$ne": null
+          }
+        }
+      }
+      """
+    Then the MongoDB result should match:
       | count |
       | 0     |
 
@@ -147,6 +201,19 @@ Feature: Data Eviction
     Then the SQL result should match:
       | count |
       | 0     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "entries",
+        "operation": "count",
+        "filter": {
+          "conversation_group_id": "${groupId}"
+        }
+      }
+      """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
 
   # Note: Membership eviction tests removed - memberships are now hard-deleted immediately
   # (see enhancement 028-membership-hard-delete.md)
@@ -173,12 +240,38 @@ Feature: Data Eviction
     Then the SQL result should match:
       | count |
       | 0     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "conversation_groups",
+        "operation": "count",
+        "filter": {
+          "_id": "${groupAId}"
+        }
+      }
+      """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
     # Group B should still exist
     When I execute SQL query:
       """
       SELECT COUNT(*) as count FROM conversations WHERE id = '${groupBId}'
       """
     Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "conversation_groups",
+        "operation": "count",
+        "filter": {
+          "_id": "${groupBId}"
+        }
+      }
+      """
+    Then the MongoDB result should match:
       | count |
       | 1     |
 
@@ -210,6 +303,21 @@ Feature: Data Eviction
     Then the SQL result should match:
       | count |
       | 0     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "conversations",
+        "operation": "count",
+        "filter": {
+          "deleted_at": {
+            "$ne": null
+          }
+        }
+      }
+      """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
 
   Scenario: Cascade deletes memberships and ownership transfers
     Given I have a conversation with title "Full Cascade"
@@ -233,12 +341,38 @@ Feature: Data Eviction
     Then the SQL result should match:
       | count |
       | 0     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "conversation_memberships",
+        "operation": "count",
+        "filter": {
+          "conversation_group_id": "${groupId}"
+        }
+      }
+      """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
     # Ownership transfers should be cascade deleted
     When I execute SQL query:
       """
       SELECT COUNT(*) as count FROM conversation_ownership_transfers WHERE conversation_group_id = '${groupId}'
       """
     Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "conversation_ownership_transfers",
+        "operation": "count",
+        "filter": {
+          "conversation_group_id": "${groupId}"
+        }
+      }
+      """
+    Then the MongoDB result should match:
       | count |
       | 0     |
 
@@ -261,4 +395,26 @@ Feature: Data Eviction
     Then the SQL result should match:
       | group_id     |
       | ${groupId}   |
-
+    When I execute MongoDB query:
+      """
+      {
+        "collection": "tasks",
+        "operation": "aggregate",
+        "pipeline": [
+          {
+            "$match": {
+              "task_type": "vector_store_delete"
+            }
+          },
+          {
+            "$project": {
+              "_id": 0,
+              "group_id": "$task_body.conversationGroupId"
+            }
+          }
+        ]
+      }
+      """
+    Then the MongoDB result should match:
+      | group_id   |
+      | ${groupId} |
