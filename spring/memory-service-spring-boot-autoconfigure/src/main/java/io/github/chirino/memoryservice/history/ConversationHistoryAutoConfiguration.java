@@ -52,19 +52,19 @@ public class ConversationHistoryAutoConfiguration {
 
     @Bean
     public ConversationHistoryStreamAdvisorBuilder conversationHistoryStreamAdvisorBuilder(
-            ConversationStore conversationStore, ResponseResumer responseResumer) {
-        return new ConversationHistoryStreamAdvisorBuilder(conversationStore, responseResumer);
+            ConversationStore conversationStore, ResponseRecordingManager recordingManager) {
+        return new ConversationHistoryStreamAdvisorBuilder(conversationStore, recordingManager);
     }
 
     @Bean
     @ConditionalOnBean({MemoryServiceGrpcClients.MemoryServiceStubs.class, ManagedChannel.class})
-    public ResponseResumer grpcResponseResumer(
+    public ResponseRecordingManager grpcResponseRecordingManager(
             MemoryServiceClientProperties clientProperties,
             MemoryServiceGrpcClients.MemoryServiceStubs stubs,
             ManagedChannel channel,
             ObjectProvider<OAuth2AuthorizedClientService> authorizedClientServiceProvider,
             ObjectMapper objectMapper) {
-        return new GrpcResponseResumer(
+        return new GrpcResponseRecordingManager(
                 stubs,
                 channel,
                 clientProperties,
@@ -73,9 +73,9 @@ public class ConversationHistoryAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnMissingBean(ResponseResumer.class)
-    public ResponseResumer noopResponseResumer() {
-        return ResponseResumer.noop();
+    @ConditionalOnMissingBean(ResponseRecordingManager.class)
+    public ResponseRecordingManager noopResponseRecordingManager() {
+        return ResponseRecordingManager.noop();
     }
 
     @Bean

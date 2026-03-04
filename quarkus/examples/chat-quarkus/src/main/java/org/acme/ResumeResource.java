@@ -2,7 +2,7 @@ package org.acme;
 
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 
-import io.github.chirino.memory.history.runtime.ResponseResumer;
+import io.github.chirino.memory.history.runtime.ResponseRecordingManager;
 import io.github.chirino.memory.runtime.MemoryServiceProxy;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -25,7 +25,7 @@ import java.util.List;
 @ApplicationScoped
 public class ResumeResource {
 
-    @Inject ResponseResumer resumer;
+    @Inject ResponseRecordingManager recordingManager;
     @Inject SecurityIdentity securityIdentity;
     @Inject MemoryServiceProxy proxy;
 
@@ -34,7 +34,7 @@ public class ResumeResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/resume-check")
     public List<String> check(List<String> conversationIds) {
-        return resumer.check(conversationIds, bearerToken(securityIdentity));
+        return recordingManager.check(conversationIds, bearerToken(securityIdentity));
     }
 
     /**
@@ -54,7 +54,8 @@ public class ResumeResource {
 
         String bearerToken = bearerToken(securityIdentity);
         // Return raw JSON lines (efficient - no decode/re-encode)
-        return resumer.replayEvents(conversationId, bearerToken, String.class)
+        return recordingManager
+                .replayEvents(conversationId, bearerToken, String.class)
                 .onFailure()
                 .invoke(
                         failure ->

@@ -1,6 +1,6 @@
 package io.github.chirino.memoryservice.history;
 
-import io.github.chirino.memoryservice.history.ResponseResumer.ResponseRecorder;
+import io.github.chirino.memoryservice.history.ResponseRecordingManager.RecordingSession;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -46,7 +46,7 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
             LoggerFactory.getLogger(ConversationHistoryStreamAdvisor.class);
 
     private final ConversationStore conversationStore;
-    private final ResponseResumer responseResumer;
+    private final ResponseRecordingManager recordingManager;
     private final String bearerToken;
 
     /**
@@ -57,18 +57,18 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
 
     public ConversationHistoryStreamAdvisor(
             ConversationStore conversationStore,
-            ResponseResumer responseResumer,
+            ResponseRecordingManager recordingManager,
             @Nullable String bearerToken) {
-        this(conversationStore, responseResumer, bearerToken, Collections.emptyList());
+        this(conversationStore, recordingManager, bearerToken, Collections.emptyList());
     }
 
     public ConversationHistoryStreamAdvisor(
             ConversationStore conversationStore,
-            ResponseResumer responseResumer,
+            ResponseRecordingManager recordingManager,
             @Nullable String bearerToken,
             List<Map<String, Object>> toolAttachments) {
         this.conversationStore = conversationStore;
-        this.responseResumer = responseResumer;
+        this.recordingManager = recordingManager;
         this.bearerToken = bearerToken;
         this.toolAttachments = toolAttachments;
     }
@@ -89,7 +89,7 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
                 bearerToken,
                 forkConvId,
                 forkEntryId);
-        ResponseRecorder recorder = responseResumer.recorder(conversationId, bearerToken);
+        RecordingSession recorder = recordingManager.recorder(conversationId, bearerToken);
         ChatClientResponse response = chain.nextCall(request);
         try {
             recordCallResponse(conversationId, recorder, response);
@@ -100,7 +100,7 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
     }
 
     private void recordCallResponse(
-            String conversationId, ResponseRecorder recorder, ChatClientResponse response) {
+            String conversationId, RecordingSession recorder, ChatClientResponse response) {
         String content = extractChunk(response);
         if (!StringUtils.hasText(content)) {
             return;
@@ -147,8 +147,8 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
                         })
                 .flatMapMany(
                         req -> {
-                            ResponseRecorder recorder =
-                                    responseResumer.recorder(conversationId, bearerToken);
+                            RecordingSession recorder =
+                                    recordingManager.recorder(conversationId, bearerToken);
                             Flux<ChatClientResponse> upstream = chain.nextStream(req);
                             return wrapStream(upstream, conversationId, bearerToken, recorder);
                         });
@@ -170,7 +170,7 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
             Flux<ChatClientResponse> upstream,
             String conversationId,
             @Nullable String bearerToken,
-            ResponseRecorder recorder) {
+            RecordingSession recorder) {
         return Flux.create(
                 (FluxSink<ChatClientResponse> sink) -> {
                     AtomicBoolean canceled = new AtomicBoolean(false);
@@ -280,7 +280,7 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
     private void recordChunk(
             String conversationId,
             StringBuilder buffer,
-            ResponseRecorder recorder,
+            RecordingSession recorder,
             ChatClientResponse response) {
         String chunk = extractChunk(response);
         if (!StringUtils.hasText(chunk)) {
@@ -298,7 +298,7 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
     private void finalizeConversation(
             String conversationId,
             StringBuilder buffer,
-            ResponseRecorder recorder,
+            RecordingSession recorder,
             @Nullable String bearerToken,
             FluxSink<ChatClientResponse> sink,
             AtomicBoolean finalized) {

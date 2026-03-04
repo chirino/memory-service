@@ -1,4 +1,6 @@
 
+**Response recording docs naming**: Keep doc slugs/routes as `/response-resumption/` for compatibility, but use "Response Recording and Resumption" in page titles, sidebar labels, and cross-links.
+
 **Python LangChain response-resumption scope**: `site/src/pages/docs/python-langchain/response-resumption.mdx` checkpoint `05` now demonstrates Memory Service gRPC-backed response recording/replay/cancel behavior and points to `python/examples/langchain/chat-langchain` for the full app implementation.
 
 **Rego code blocks**: Astro's default Shiki setup in this repo does not include bundled `rego` syntax. Rego fences are highlighted via `site/remark-rego-prism.mjs` (Prism `rego` grammar) wired into `astro.config.mjs`, with token colors scoped in `site/src/styles/global.css` under `pre.language-rego`.

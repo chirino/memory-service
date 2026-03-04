@@ -1,10 +1,10 @@
 ---
 layout: ../../../layouts/DocsLayout.astro
-title: Response Resumption
-description: How streaming responses, resumption, and cancellation work in Memory Service.
+title: Response Recording and Resumption
+description: How streaming response recording, replay/resumption, and cancellation work in Memory Service.
 ---
 
-Response resumption lets users reconnect after a disconnect and pick up a streaming response where it left off. The Memory Service acts as a buffer between the agent producing tokens and clients consuming them, so a page reload or network blip doesn't lose the response.
+Response recording and resumption let users reconnect after a disconnect and pick up a streaming response where it left off. The Memory Service acts as a buffer between the agent producing tokens and clients consuming them, so a page reload or network blip doesn't lose the response.
 
 ## How It Works
 
@@ -167,7 +167,7 @@ This is useful for frontends that need to show a "response in progress" indicato
 
 ### IsEnabled
 
-Unary RPC to check whether the response recorder is available.
+Unary RPC to check whether response recording and resumption are available.
 
 ```protobuf
 rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
@@ -175,13 +175,13 @@ rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
 
 **Response:**
 
-| Field     | Type   | Description                                 |
-| --------- | ------ | ------------------------------------------- |
-| `enabled` | `bool` | `true` if response resumption is available. |
+| Field     | Type   | Description                                               |
+| --------- | ------ | --------------------------------------------------------- |
+| `enabled` | `bool` | `true` if response recording and resumption is available. |
 
 ## Agent Integration Flow
 
-A typical agent app integrates response resumption as follows:
+A typical agent app integrates response recording and resumption as follows:
 
 1. **Start streaming** — When the agent receives a chat request, it calls the LLM with streaming enabled and opens a `Record` gRPC stream to the Memory Service.
 
@@ -204,6 +204,6 @@ A typical agent app integrates response resumption as follows:
 
 ## Next Steps
 
-- See the [Quarkus Response Resumption](/docs/quarkus/response-resumption/) guide for a framework-specific implementation walkthrough.
+- See the [Quarkus Response Recording and Resumption](/docs/quarkus/response-resumption/) guide for a framework-specific implementation walkthrough.
 - Learn about [Conversation Forking](/docs/concepts/forking/) to understand branching conversations.
 - Learn about [Entries](/docs/concepts/entries/) to understand how messages are stored.

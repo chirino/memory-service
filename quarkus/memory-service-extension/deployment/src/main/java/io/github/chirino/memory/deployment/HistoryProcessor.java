@@ -12,8 +12,8 @@ public class HistoryProcessor {
                 .addBeanClasses(
                         "io.github.chirino.memory.history.runtime.ConversationStore",
                         "io.github.chirino.memory.history.runtime.ConversationInterceptor",
-                        "io.github.chirino.memory.history.runtime.NoopResponseResumer",
-                        "io.github.chirino.memory.history.runtime.GrpcResponseResumer",
+                        "io.github.chirino.memory.history.runtime.NoopResponseRecordingManager",
+                        "io.github.chirino.memory.history.runtime.GrpcResponseRecordingManager",
                         "io.github.chirino.memory.history.runtime.AttachmentResolver",
                         "io.github.chirino.memory.history.runtime.DefaultToolAttachmentExtractor")
                 .build();

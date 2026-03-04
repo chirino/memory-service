@@ -4,11 +4,11 @@ import java.util.List;
 import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
-public interface ResponseResumer {
+public interface ResponseRecordingManager {
 
-    ResponseRecorder recorder(String conversationId);
+    RecordingSession recorder(String conversationId);
 
-    ResponseRecorder recorder(String conversationId, @Nullable String bearerToken);
+    RecordingSession recorder(String conversationId, @Nullable String bearerToken);
 
     Flux<String> replay(String conversationId, @Nullable String bearerToken);
 
@@ -36,11 +36,11 @@ public interface ResponseResumer {
 
     void requestCancel(String conversationId, @Nullable String bearerToken);
 
-    static ResponseResumer noop() {
-        return NoopResponseResumer.INSTANCE;
+    static ResponseRecordingManager noop() {
+        return NoopResponseRecordingManager.INSTANCE;
     }
 
-    interface ResponseRecorder {
+    interface RecordingSession {
         void record(String token);
 
         default void complete() {}

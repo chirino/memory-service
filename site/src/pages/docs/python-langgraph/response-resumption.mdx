@@ -1,15 +1,15 @@
 ---
 layout: ../../../layouts/DocsLayout.astro
-title: LangGraph Response Resumption
+title: LangGraph Response Recording and Resumption
 description: Streaming responses with resume-check, resume, and cancel endpoints.
 ---
 import CodeFromFile from '../../../components/CodeFromFile.astro';
 import TestScenario from '../../../components/TestScenario.astro';
 import CurlTest from '../../../components/CurlTest.astro';
 
-This guide covers streaming responses, response resumption, and cancellation so users can reconnect after a disconnect and continue where they left off.
+This guide covers streaming responses with recording, resumption, and cancellation so users can reconnect after a disconnect and continue where they left off.
 
-For the protocol and behavior model, see [Response Resumption Concepts](/docs/concepts/response-resumption/).
+For the protocol and behavior model, see [Response Recording and Resumption Concepts](/docs/concepts/response-resumption/).
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ Also complete **Step 2** in [LangGraph Dev Setup](/docs/python-langgraph/dev-set
 
 ## Streaming Responses
 
-Checkpoint `05` updates `/chat/{conversation_id}` to stream the response back to the client using `StreamingResponse` with `MemoryServiceResponseResumer`.
+Checkpoint `05` updates `/chat/{conversation_id}` to stream the response back to the client using `StreamingResponse` with `MemoryServiceResponseRecordingManager`.
 
 ### New Imports in Checkpoint 05
 
@@ -33,13 +33,13 @@ Checkpoint `05` updates `/chat/{conversation_id}` to stream the response back to
   lines="5-19"
 />
 
-**What changed**: `JSONResponse` and `StreamingResponse` are added from `fastapi.responses`, and `MemoryServiceResponseResumer` and `extract_assistant_text` are imported from `memory_service_langchain`.
+**What changed**: `JSONResponse` and `StreamingResponse` are added from `fastapi.responses`, and `MemoryServiceResponseRecordingManager` and `extract_assistant_text` are imported from `memory_service_langchain`.
 
-**Why**: `StreamingResponse` is needed to return text incrementally rather than buffering the full reply. `MemoryServiceResponseResumer` tracks the in-progress stream so it can be replayed or canceled from a separate request. `extract_assistant_text` pulls the final assistant text out of the completed `graph.ainvoke()` result dict.
+**Why**: `StreamingResponse` is needed to return text incrementally rather than buffering the full reply. `MemoryServiceResponseRecordingManager` tracks the in-progress stream so it can be replayed or canceled from a separate request. `extract_assistant_text` pulls the final assistant text out of the completed `graph.ainvoke()` result dict.
 
 ### What Changes in `chat(...)`
 
-Checkpoint `05` wraps the chat handler's response in a `StreamingResponse` backed by `MemoryServiceResponseResumer`:
+Checkpoint `05` wraps the chat handler's response in a `StreamingResponse` backed by `MemoryServiceResponseRecordingManager`:
 
 <CodeFromFile
   file="python/examples/langgraph/doc-checkpoints/05-response-resumption/app.py"
@@ -47,9 +47,9 @@ Checkpoint `05` wraps the chat handler's response in a `StreamingResponse` backe
   lines="54-74"
 />
 
-**What changed**: The graph is invoked with `graph.ainvoke()` inside a `memory_service_scope` block (same as checkpoints 03/04). After the graph completes, `extract_assistant_text(result)` pulls out the assistant's reply text. `resumer.stream(conversation_id, ai_text)` registers the text as a resumable stream and yields its tokens, and the endpoint returns a `StreamingResponse` over that stream.
+**What changed**: The graph is invoked with `graph.ainvoke()` inside a `memory_service_scope` block (same as checkpoints 03/04). After the graph completes, `extract_assistant_text(result)` pulls out the assistant's reply text. `recording_manager.stream(conversation_id, ai_text)` registers the text as a resumable stream and yields its tokens, and the endpoint returns a `StreamingResponse` over that stream.
 
-**Why**: FastAPI middleware resets authentication context variables in its `finally` block before the `StreamingResponse` body is iterated by the server. If the graph ran inside the streaming generator instead, those variables would be `None` when the checkpoint saver and history middleware make calls to the memory service. Running `graph.ainvoke()` synchronously within the request context — before the middleware's `finally` block runs — ensures authentication is available throughout the graph execution. `resumer.stream()` then provides the streaming and resumption capability without requiring auth at stream time.
+**Why**: FastAPI middleware resets authentication context variables in its `finally` block before the `StreamingResponse` body is iterated by the server. If the graph ran inside the streaming generator instead, those variables would be `None` when the checkpoint saver and history middleware make calls to the memory service. Running `graph.ainvoke()` synchronously within the request context — before the middleware's `finally` block runs — ensures authentication is available throughout the graph execution. `recording_manager.stream()` then provides the streaming and resumption capability without requiring auth at stream time.
 
 <TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/05-response-resumption">
 
@@ -86,9 +86,9 @@ curl -NsSfX POST http://localhost:9090/chat/12b08143-3edb-4a86-a34e-e91aacc7fc02
 
 </TestScenario>
 
-## Response Resumption APIs
+## Response Recording and Resumption APIs
 
-Checkpoint `05` also exposes three endpoints backed by `MemoryServiceResponseResumer`:
+Checkpoint `05` also exposes three endpoints backed by `MemoryServiceResponseRecordingManager`:
 
 <CodeFromFile
   file="python/examples/langgraph/doc-checkpoints/05-response-resumption/app.py"
@@ -96,7 +96,7 @@ Checkpoint `05` also exposes three endpoints backed by `MemoryServiceResponseRes
   lines="105-127"
 />
 
-**What changed**: Three new endpoints are added: `POST /v1/conversations/resume-check`, `GET /v1/conversations/{conversation_id}/resume`, and `POST /v1/conversations/{conversation_id}/cancel`, all backed by the `resumer` instance.
+**What changed**: Three new endpoints are added: `POST /v1/conversations/resume-check`, `GET /v1/conversations/{conversation_id}/resume`, and `POST /v1/conversations/{conversation_id}/cancel`, all backed by the `recording_manager` instance.
 
 **Why**: `resume-check` accepts a list of conversation IDs and returns which ones have an active in-progress stream — useful for a frontend polling on load to decide whether to show a "Reconnect" button. `resume` replays the buffered tokens from a prior stream so a disconnected client can catch up without the agent re-invoking the model. `cancel` signals the generator to stop and clears the buffer, freeing resources when the user navigates away.
 

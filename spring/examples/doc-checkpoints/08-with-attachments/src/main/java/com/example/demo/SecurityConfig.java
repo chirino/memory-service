@@ -13,7 +13,8 @@ class SecurityConfig {
         http.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(
                         auth ->
-                                auth
+                                auth.requestMatchers("/ready")
+                                        .permitAll()
                                         // Signed download URLs are unauthenticated
                                         // (token in URL provides authorization)
                                         .requestMatchers("/v1/attachments/download/**")

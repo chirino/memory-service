@@ -34,6 +34,11 @@ graph = builder.compile()
 app = FastAPI(title="LangGraph Chatbot")
 
 
+@app.get("/ready")
+async def ready() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.post("/chat")
 async def chat(request: Request) -> PlainTextResponse:
     user_message = (await request.body()).decode("utf-8").strip()

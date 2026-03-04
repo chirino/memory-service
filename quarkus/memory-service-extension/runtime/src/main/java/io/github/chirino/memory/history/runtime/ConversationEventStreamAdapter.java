@@ -29,7 +29,7 @@ import org.jboss.logging.Logger;
  * Wraps a Multi&lt;ChatEvent&gt; stream to:
  *
  * <ol>
- *   <li>Record each event as JSON to the ResponseResumer for resumption
+ *   <li>Record each event as JSON to the ResponseRecordingManager for resumption
  *   <li>Coalesce adjacent PartialResponse events for efficient history storage
  *   <li>Store the coalesced events in the conversation history on completion
  * </ol>
@@ -46,7 +46,7 @@ public final class ConversationEventStreamAdapter {
      * @param conversationId the conversation ID
      * @param upstream the upstream ChatEvent stream from the AI service
      * @param store the conversation store for persisting history
-     * @param resumer the response resumer for streaming replay
+     * @param resumer the response recording manager for streaming replay
      * @param objectMapper Jackson ObjectMapper for JSON serialization
      * @param identity the security identity
      * @param identityAssociation the security identity association
@@ -57,7 +57,7 @@ public final class ConversationEventStreamAdapter {
             String conversationId,
             Multi<ChatEvent> upstream,
             ConversationStore store,
-            ResponseResumer resumer,
+            ResponseRecordingManager resumer,
             ObjectMapper objectMapper,
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
@@ -82,16 +82,16 @@ public final class ConversationEventStreamAdapter {
             String conversationId,
             Multi<ChatEvent> upstream,
             ConversationStore store,
-            ResponseResumer resumer,
+            ResponseRecordingManager resumer,
             ObjectMapper objectMapper,
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
             String bearerToken,
             ToolAttachmentExtractor toolAttachmentExtractor) {
 
-        ResponseResumer.ResponseRecorder recorder =
+        ResponseRecordingManager.RecordingSession recorder =
                 resumer == null
-                        ? ResponseResumer.noop().recorder(conversationId, bearerToken)
+                        ? ResponseRecordingManager.noop().recorder(conversationId, bearerToken)
                         : resumer.recorder(conversationId, bearerToken);
 
         EventCoalescer coalescer = new EventCoalescer(objectMapper);
@@ -125,7 +125,7 @@ public final class ConversationEventStreamAdapter {
             Multi<ChatEvent> upstream,
             Multi<ResponseCancelSignal> cancelStream,
             ConversationStore store,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             EventCoalescer coalescer,
             ObjectMapper objectMapper,
             MultiEmitter<? super ChatEvent> emitter,
@@ -245,7 +245,7 @@ public final class ConversationEventStreamAdapter {
     private static void handleEvent(
             String conversationId,
             ConversationStore store,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             EventCoalescer coalescer,
             ObjectMapper objectMapper,
             MultiEmitter<? super ChatEvent> emitter,
@@ -449,7 +449,7 @@ public final class ConversationEventStreamAdapter {
             String conversationId,
             ConversationStore store,
             EventCoalescer coalescer,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             MultiEmitter<? super ChatEvent> emitter,
             String bearerToken,
             List<Map<String, Object>> collectedAttachments) {
@@ -471,7 +471,7 @@ public final class ConversationEventStreamAdapter {
             String conversationId,
             ConversationStore store,
             EventCoalescer coalescer,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             MultiEmitter<? super ChatEvent> emitter,
             Throwable failure,
             String bearerToken,
@@ -498,7 +498,7 @@ public final class ConversationEventStreamAdapter {
             String conversationId,
             ConversationStore store,
             EventCoalescer coalescer,
-            ResponseResumer.ResponseRecorder recorder,
+            ResponseRecordingManager.RecordingSession recorder,
             String bearerToken,
             List<Map<String, Object>> collectedAttachments) {
 

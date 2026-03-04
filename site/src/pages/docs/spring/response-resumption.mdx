@@ -1,13 +1,13 @@
 ---
 layout: ../../../layouts/DocsLayout.astro
-title: Response Resumption
-description: Streaming responses, response resumption, and cancellation.
+title: Response Recording and Resumption
+description: Streaming responses with recording, resumption, and cancellation.
 ---
 import CodeFromFile from '../../../components/CodeFromFile.astro';
 import TestScenario from '../../../components/TestScenario.astro';
 import CurlTest from '../../../components/CurlTest.astro';
 
-This guide covers streaming responses, response resumption, and cancellation — so users can reconnect after a disconnect and pick up where they left off. For a conceptual overview of how response resumption works, including the gRPC service contract and multi-instance redirect behavior, see [Response Resumption Concepts](/docs/concepts/response-resumption/).
+This guide covers streaming responses with recording, resumption, and cancellation so users can reconnect after a disconnect and pick up where they left off. For a conceptual overview of how response recording and resumption works, including the gRPC service contract and multi-instance redirect behavior, see [Response Recording and Resumption Concepts](/docs/concepts/response-resumption/).
 
 ## Prerequisites
 
@@ -57,16 +57,16 @@ You should see the response streaming to your command line.
 Now browse to the demo agent app at [http://localhost:8080/?conversationId=8337ca02-62de-43e1-b69b-c663cb50acc4](http://localhost:8080/?conversationId=8337ca02-62de-43e1-b69b-c663cb50acc4)
 and you should see the response streaming to the browser.
 
-## Response Resumption
+## Response Recording and Resumption
 
 <CodeFromFile
   file="spring/examples/doc-checkpoints/05-response-resumption/src/main/java/com/example/demo/ResumeController.java"
   lang="java"
 />
 
-**What changed**: A new `ResumeController` is introduced at `/v1/conversations` with three endpoints: `POST /resume-check` (batch check for in-progress responses), `GET /{conversationId}/resume` (SSE stream that replays the buffered response), and `POST /{conversationId}/cancel` (stops an in-progress response). It depends on the auto-configured `ResponseResumer` and `MemoryServiceProxy` beans.
+**What changed**: A new `ResumeController` is introduced at `/v1/conversations` with three endpoints: `POST /resume-check` (batch check for in-progress responses), `GET /{conversationId}/resume` (SSE stream that replays the buffered response), and `POST /{conversationId}/cancel` (stops an in-progress response). It depends on the auto-configured `ResponseRecordingManager` and `MemoryServiceProxy` beans.
 
-**Why**: When a user's browser disconnects mid-stream (page reload, network drop), the LLM response continues generating on the server but is lost to the client. `ResponseResumer` buffers the in-flight tokens in the Memory Service so a reconnecting client can call `/resume` and receive the complete response from the beginning, giving a seamless experience. The cancel endpoint lets users or the frontend interrupt a long-running generation without leaving the server in an orphaned state.
+**Why**: When a user's browser disconnects mid-stream (page reload, network drop), the LLM response continues generating on the server but is lost to the client. `ResponseRecordingManager` buffers the in-flight tokens in the Memory Service so a reconnecting client can call `/resume` and receive the complete response from the beginning, giving a seamless experience. The cancel endpoint lets users or the frontend interrupt a long-running generation without leaving the server in an orphaned state.
 
 Test it with curl:
 

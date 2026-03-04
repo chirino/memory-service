@@ -37,9 +37,9 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
-public class GrpcResponseResumer implements ResponseResumer {
+public class GrpcResponseRecordingManager implements ResponseRecordingManager {
 
-    private static final Logger LOG = Logger.getLogger(GrpcResponseResumer.class);
+    private static final Logger LOG = Logger.getLogger(GrpcResponseRecordingManager.class);
     private static final Metadata.Key<String> AUTHORIZATION_HEADER =
             Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> API_KEY_HEADER =
@@ -78,7 +78,7 @@ public class GrpcResponseResumer implements ResponseResumer {
 
     private final String grpcTarget;
 
-    public GrpcResponseResumer() {
+    public GrpcResponseRecordingManager() {
         var config = ConfigProvider.getConfig();
         this.configuredApiKey =
                 config.getOptionalValue("memory-service.client.api-key", String.class).orElse(null);
@@ -92,12 +92,12 @@ public class GrpcResponseResumer implements ResponseResumer {
     }
 
     @Override
-    public ResponseRecorder recorder(String conversationId) {
+    public RecordingSession recorder(String conversationId) {
         return new GrpcResponseRecorder(stub(), conversationId);
     }
 
     @Override
-    public ResponseRecorder recorder(String conversationId, String bearerToken) {
+    public RecordingSession recorder(String conversationId, String bearerToken) {
         return new GrpcResponseRecorder(stub(bearerToken), conversationId);
     }
 
@@ -183,14 +183,14 @@ public class GrpcResponseResumer implements ResponseResumer {
         try {
             List<ByteString> byteIds =
                     conversationIds.stream()
-                            .map(GrpcResponseResumer::toByteString)
+                            .map(GrpcResponseRecordingManager::toByteString)
                             .collect(Collectors.toList());
             CheckRecordingsRequest request =
                     CheckRecordingsRequest.newBuilder().addAllConversationIds(byteIds).build();
             CheckRecordingsResponse response =
                     stub(bearerToken).checkRecordings(request).await().indefinitely();
             return response.getConversationIdsList().stream()
-                    .map(GrpcResponseResumer::fromByteString)
+                    .map(GrpcResponseRecordingManager::fromByteString)
                     .collect(Collectors.toList());
         } catch (Exception e) {
             return handleCheckRecordingsFailure(e);
@@ -407,7 +407,7 @@ public class GrpcResponseResumer implements ResponseResumer {
         return null;
     }
 
-    private static final class GrpcResponseRecorder implements ResponseRecorder {
+    private static final class GrpcResponseRecorder implements RecordingSession {
         private final MutinyResponseRecorderServiceGrpc.MutinyResponseRecorderServiceStub
                 recorderService;
         private final ByteString conversationIdBytes;

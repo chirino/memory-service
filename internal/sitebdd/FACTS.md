@@ -140,6 +140,10 @@ A mutex-guarded checkpoint path registry also enforces that one checkpoint
 directory can only be owned by one active scenario at a time; concurrent reuse
 fails with a checkpoint isolation conflict.
 
+Checkpoint startup now waits for `GET /ready` to return 2xx before any scenario
+steps execute. This replaced the old fixed post-start sleep and makes startup
+gating explicit at the application HTTP layer.
+
 `task test:site` now hard-fails with an explicit message if gotest output contains
 `(unknown)`, so abrupt test-process termination patterns are surfaced immediately.
 
@@ -159,3 +163,8 @@ build not run first.
 
 **Recording fails**: Ensure `OPENAI_API_KEY` is set in the environment. The mock
 proxies to `https://api.openai.com` (or `OPENAI_API_BASE` if set).
+
+**`missing fixture during playback`**: Usually means the checkpoint executed more
+OpenAI chat-completion calls than the fixture set contains for that scenario.
+Inspect checkpoint logs for the first upstream failure and request sequence before
+assuming fixture files are wrong.

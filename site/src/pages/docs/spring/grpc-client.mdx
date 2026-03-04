@@ -12,13 +12,13 @@ export const mavenDep = `<dependency>
   <version>${PROJECT_VERSION}</version>
 </dependency>`;
 
-The Spring Boot starter provides a gRPC client for high-performance communication with Memory Service. gRPC is particularly useful for streaming scenarios and response resumption.
+The Spring Boot starter provides a gRPC client for high-performance communication with Memory Service. gRPC is particularly useful for streaming scenarios with response recording and resumption.
 
 ## When to Use gRPC
 
 Choose gRPC over REST when you need:
 
-- **Response Resumption** - Required for resuming interrupted streaming responses
+- **Response Recording and Resumption** - Required for resuming interrupted streaming responses
 - **High throughput** - Binary protocol is more efficient than JSON
 - **Real-time streaming** - Server-side streaming for message updates
 - **Strong typing** - Generated stubs catch errors at compile time
@@ -75,7 +75,7 @@ The `MemoryServiceStubs` provides access to all service stubs:
 - `membershipsService()` - Conversation membership operations (blocking)
 - `messagesService()` - Message operations (blocking)
 - `searchService()` - Search operations (blocking)
-- `responseResumerService()` - Response resumption (async, streaming)
+- `responseRecorderService()` - Response recording and resumption (async, streaming)
 
 ## Example Operations
 
@@ -190,9 +190,9 @@ messages.streamMessages(request, new StreamObserver<Message>() {
 });
 ```
 
-## Response Resumption
+## Response Recording and Resumption
 
-The `responseRecorderService()` provides async streaming for response recording and resumption. This is used internally by the `ResponseResumer` bean, but you can also use it directly:
+The `responseRecorderService()` provides async streaming for response recording and resumption. This is used internally by the `ResponseRecordingManager` bean, but you can also use it directly:
 
 ```java
 import io.github.chirino.memory.grpc.v1.ResponseRecorderServiceGrpc;
@@ -298,4 +298,4 @@ memory-service.grpc.headers.X-Custom-Header=value
 
 - [REST Client](/docs/spring/rest-client/) - For simpler use cases
 - [Conversation Forking](/docs/spring/conversation-forking/) - Branch conversations to explore alternative paths
-- [Response Resumption](/docs/spring/response-resumption/) - Streaming responses with resume and cancel support
+- [Response Recording and Resumption](/docs/spring/response-resumption/) - Streaming responses with resume and cancel support

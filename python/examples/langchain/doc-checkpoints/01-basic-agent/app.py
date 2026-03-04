@@ -52,6 +52,11 @@ agent = create_agent(
 app = FastAPI(title="Python LangChain Quickstart Agent")
 
 
+@app.get("/ready")
+async def ready() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.post("/chat")
 async def chat(request: Request) -> PlainTextResponse:
     user_message = (await request.body()).decode("utf-8").strip()

@@ -6,21 +6,21 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.util.List;
 
 /**
- * Fallback {@link ResponseResumer} used when no other implementation is available.
+ * Fallback {@link ResponseRecordingManager} used when no other implementation is available.
  */
 @ApplicationScoped
 @DefaultBean
-public class NoopResponseResumer implements ResponseResumer {
+public class NoopResponseRecordingManager implements ResponseRecordingManager {
 
-    static final NoopResponseResumer INSTANCE = new NoopResponseResumer();
+    static final NoopResponseRecordingManager INSTANCE = new NoopResponseRecordingManager();
 
     @Override
-    public ResponseRecorder recorder(String conversationId) {
+    public RecordingSession recorder(String conversationId) {
         return token -> {};
     }
 
     @Override
-    public ResponseRecorder recorder(String conversationId, String bearerToken) {
+    public RecordingSession recorder(String conversationId, String bearerToken) {
         return token -> {};
     }
 

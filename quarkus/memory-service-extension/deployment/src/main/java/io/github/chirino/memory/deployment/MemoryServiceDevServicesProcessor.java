@@ -157,8 +157,8 @@ public class MemoryServiceDevServicesProcessor {
             LOG.debug("Using configured memory-service.client.api-key for Dev Services.");
         }
 
-        // Read response resumer configuration if set
-        final String responseResumerConfig = getResponseResumerConfig();
+        // Read response recording manager configuration if set
+        final String responseRecordingManagerConfig = getResponseRecordingManagerConfig();
 
         // Read optional fixed port configuration
         final Integer fixedPort = getFixedPortConfig();
@@ -229,15 +229,15 @@ public class MemoryServiceDevServicesProcessor {
                                         }
 
                                         // Pass cache configuration if set
-                                        if (responseResumerConfig != null
-                                                && !responseResumerConfig.isBlank()) {
+                                        if (responseRecordingManagerConfig != null
+                                                && !responseRecordingManagerConfig.isBlank()) {
                                             container.withEnv(
                                                     "MEMORY_SERVICE_CACHE_KIND",
-                                                    responseResumerConfig);
+                                                    responseRecordingManagerConfig);
                                             LOG.debugf(
                                                     "Configuring memory-service container with"
                                                             + " cache kind: %s",
-                                                    responseResumerConfig);
+                                                    responseRecordingManagerConfig);
                                         }
 
                                         // Wait for the Go service's /ready endpoint to return 200
@@ -395,7 +395,8 @@ public class MemoryServiceDevServicesProcessor {
 
                                         // Configure Redis hosts for the memory-service container
                                         // only if cache.kind is set to "redis".
-                                        if ("redis".equalsIgnoreCase(responseResumerConfig)) {
+                                        if ("redis"
+                                                .equalsIgnoreCase(responseRecordingManagerConfig)) {
                                             String redisHosts = null;
                                             try {
                                                 redisHosts =
@@ -436,7 +437,8 @@ public class MemoryServiceDevServicesProcessor {
                                         // Configure Infinispan server list for the
                                         // memory-service container only if cache.kind is
                                         // set to "infinispan".
-                                        if ("infinispan".equalsIgnoreCase(responseResumerConfig)) {
+                                        if ("infinispan"
+                                                .equalsIgnoreCase(responseRecordingManagerConfig)) {
                                             String serverList = null;
                                             try {
                                                 serverList =
@@ -501,7 +503,7 @@ public class MemoryServiceDevServicesProcessor {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    private String getResponseResumerConfig() {
+    private String getResponseRecordingManagerConfig() {
         try {
             return ConfigProvider.getConfig()
                     .getOptionalValue("memory-service.cache.kind", String.class)

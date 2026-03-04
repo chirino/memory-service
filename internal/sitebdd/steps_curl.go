@@ -89,35 +89,14 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 			return fmt.Errorf("build request %d: %w", i+1, err)
 		}
 
-		// Retry on transient errors (startup transients)
-		var respBody string
-		var statusCode int
-		for attempt := 1; attempt <= 5; attempt++ {
-			resp, err := client.Do(req.Clone(context.Background()))
-			if err != nil {
-				if attempt == 5 {
-					return fmt.Errorf("execute curl %d: %w", i+1, err)
-				}
-				fmt.Printf("    [curl] attempt %d error: %v, retrying in 3s\n", attempt, err)
-				time.Sleep(3 * time.Second)
-				continue
-			}
-
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			respBody = string(bodyBytes)
-			statusCode = resp.StatusCode
-
-			if statusCode != 404 && statusCode != 500 && statusCode != 503 {
-				break
-			}
-			if attempt < 5 {
-				fmt.Printf("    [curl] got %d (attempt %d/5), retrying in 3s\n", statusCode, attempt)
-				time.Sleep(3 * time.Second)
-				// Rebuild request (body already consumed)
-				req, _ = cr.toHTTPRequest()
-			}
+		resp, err := client.Do(req.Clone(context.Background()))
+		if err != nil {
+			return fmt.Errorf("execute curl %d: %w", i+1, err)
 		}
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		respBody := string(bodyBytes)
+		statusCode := resp.StatusCode
 
 		fmt.Printf("    [curl] status=%d body-len=%d\n", statusCode, len(respBody))
 		s.LastStatusCode = statusCode
