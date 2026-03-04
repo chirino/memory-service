@@ -83,6 +83,9 @@ type TestDB interface {
 	ResolveGroupID(ctx context.Context, conversationID string) (string, error)
 	// ExecSQL runs a raw SQL query and returns rows as maps. Non-SQL backends return (nil, nil) to skip assertions.
 	ExecSQL(ctx context.Context, query string) ([]map[string]interface{}, error)
+	// ExecMongoQuery runs a MongoDB query spec (JSON payload) and returns rows as maps.
+	// Non-Mongo backends return (nil, nil) to skip assertions.
+	ExecMongoQuery(ctx context.Context, query string) ([]map[string]interface{}, error)
 	// SoftDeleteConversation sets deleted_at on the conversation and its group to `days` ago.
 	SoftDeleteConversation(ctx context.Context, conversationID string, days int) error
 	// Task queue operations for task-queue BDD feature.

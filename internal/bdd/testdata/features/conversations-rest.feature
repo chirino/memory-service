@@ -142,6 +142,22 @@ Feature: Conversations REST API
     """
     Then the SQL result should have 1 row
     And the SQL result column "deleted_at" should be non-null
+    When I execute MongoDB query:
+    """
+    {
+      "collection": "conversations",
+      "operation": "find",
+      "filter": {
+        "_id": "${conversationId}"
+      },
+      "projection": {
+        "_id": 1,
+        "deleted_at": 1
+      }
+    }
+    """
+    Then the MongoDB result should have 1 row
+    And the MongoDB result column "deleted_at" should be non-null
 
   Scenario: Deleted conversation excluded from list
     Given I have a conversation with title "Active Conversation"
@@ -158,6 +174,21 @@ Feature: Conversations REST API
     SELECT id, title, deleted_at FROM conversations ORDER BY created_at
     """
     Then the SQL result should have 2 rows
+    When I execute MongoDB query:
+    """
+    {
+      "collection": "conversations",
+      "operation": "find",
+      "projection": {
+        "_id": 1,
+        "deleted_at": 1
+      },
+      "sort": {
+        "created_at": 1
+      }
+    }
+    """
+    Then the MongoDB result should have 2 rows
 
   Scenario: Soft delete cascades to conversation group, hard deletes memberships
     Given I have a conversation with title "Test Conversation"
@@ -171,6 +202,22 @@ Feature: Conversations REST API
     """
     Then the SQL result should have 1 row
     And the SQL result column "deleted_at" should be non-null
+    When I execute MongoDB query:
+    """
+    {
+      "collection": "conversation_groups",
+      "operation": "find",
+      "filter": {
+        "_id": "${groupId}"
+      },
+      "projection": {
+        "_id": 1,
+        "deleted_at": 1
+      }
+    }
+    """
+    Then the MongoDB result should have 1 row
+    And the MongoDB result column "deleted_at" should be non-null
     # Verify membership is hard deleted (not soft deleted)
     When I execute SQL query:
     """
@@ -179,12 +226,38 @@ Feature: Conversations REST API
     Then the SQL result should match:
       | count |
       | 0     |
+    When I execute MongoDB query:
+    """
+    {
+      "collection": "conversation_memberships",
+      "operation": "count",
+      "filter": {
+        "conversation_group_id": "${groupId}"
+      }
+    }
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
     # Verify entries were cascade deleted (foreign key ON DELETE CASCADE)
     When I execute SQL query:
     """
     SELECT COUNT(*) as count FROM entries WHERE conversation_group_id = '${groupId}'
     """
     Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {
+      "collection": "entries",
+      "operation": "count",
+      "filter": {
+        "conversation_group_id": "${groupId}"
+      }
+    }
+    """
+    Then the MongoDB result should match:
       | count |
       | 0     |
 

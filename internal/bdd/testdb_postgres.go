@@ -102,6 +102,11 @@ func (p *PostgresTestDB) ExecSQL(ctx context.Context, query string) ([]map[strin
 	return result, nil
 }
 
+func (p *PostgresTestDB) ExecMongoQuery(_ context.Context, _ string) ([]map[string]interface{}, error) {
+	// Non-Mongo backend: skip MongoDB verification steps.
+	return nil, nil
+}
+
 func (p *PostgresTestDB) SoftDeleteConversation(ctx context.Context, conversationID string, days int) error {
 	conn, err := p.conn(ctx)
 	if err != nil {

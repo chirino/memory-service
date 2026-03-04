@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
@@ -73,6 +74,203 @@ func (m *MongoTestDB) ExecSQL(_ context.Context, _ string) ([]map[string]interfa
 	// Java parity: SQL verification queries are skipped for MongoDB backend.
 	// Return nil (not empty slice) to signal "skip" to assertion steps.
 	return nil, nil
+}
+
+type mongoQuerySpec struct {
+	Collection string                   `json:"collection"`
+	Operation  string                   `json:"operation"`
+	Filter     map[string]interface{}   `json:"filter"`
+	Projection map[string]interface{}   `json:"projection"`
+	Sort       map[string]interface{}   `json:"sort"`
+	Limit      *int64                   `json:"limit"`
+	Pipeline   []map[string]interface{} `json:"pipeline"`
+}
+
+func (m *MongoTestDB) ExecMongoQuery(ctx context.Context, query string) ([]map[string]interface{}, error) {
+	client, db, err := m.db(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Disconnect(ctx)
+
+	spec, err := parseMongoQuerySpec(query)
+	if err != nil {
+		return nil, err
+	}
+
+	collection := db.Collection(spec.Collection)
+	filter := bson.M{}
+	if spec.Filter != nil {
+		filter = bson.M(spec.Filter)
+	}
+
+	switch spec.Operation {
+	case "find":
+		opts := options.Find()
+		if spec.Projection != nil {
+			opts.SetProjection(bson.M(spec.Projection))
+		}
+		if spec.Sort != nil {
+			opts.SetSort(bson.M(spec.Sort))
+		}
+		if spec.Limit != nil {
+			opts.SetLimit(*spec.Limit)
+		}
+		cur, err := collection.Find(ctx, filter, opts)
+		if err != nil {
+			return nil, fmt.Errorf("mongo find failed: %w", err)
+		}
+		defer cur.Close(ctx)
+		return mongoCursorToRows(ctx, cur)
+	case "count":
+		count, err := collection.CountDocuments(ctx, filter)
+		if err != nil {
+			return nil, fmt.Errorf("mongo count failed: %w", err)
+		}
+		return []map[string]interface{}{{"count": count}}, nil
+	case "aggregate":
+		if len(spec.Pipeline) == 0 {
+			return nil, fmt.Errorf("mongo query 'aggregate' requires non-empty pipeline")
+		}
+		pipeline := make([]bson.M, 0, len(spec.Pipeline))
+		for _, stage := range spec.Pipeline {
+			pipeline = append(pipeline, bson.M(stage))
+		}
+		cur, err := collection.Aggregate(ctx, pipeline)
+		if err != nil {
+			return nil, fmt.Errorf("mongo aggregate failed: %w", err)
+		}
+		defer cur.Close(ctx)
+		return mongoCursorToRows(ctx, cur)
+	default:
+		return nil, fmt.Errorf("unsupported mongo operation %q (supported: find, count, aggregate)", spec.Operation)
+	}
+}
+
+func parseMongoQuerySpec(query string) (*mongoQuerySpec, error) {
+	decoder := json.NewDecoder(strings.NewReader(query))
+	decoder.UseNumber()
+
+	var spec mongoQuerySpec
+	if err := decoder.Decode(&spec); err != nil {
+		return nil, fmt.Errorf("invalid MongoDB query JSON: %w", err)
+	}
+
+	spec.Collection = strings.TrimSpace(spec.Collection)
+	if spec.Collection == "" {
+		return nil, fmt.Errorf("mongo query requires non-empty 'collection'")
+	}
+
+	spec.Operation = strings.ToLower(strings.TrimSpace(spec.Operation))
+	if spec.Operation == "" {
+		spec.Operation = "find"
+	}
+
+	if spec.Filter != nil {
+		spec.Filter = normalizeJSONObject(spec.Filter)
+	}
+	if spec.Projection != nil {
+		spec.Projection = normalizeJSONObject(spec.Projection)
+	}
+	if spec.Sort != nil {
+		spec.Sort = normalizeJSONObject(spec.Sort)
+	}
+	if spec.Pipeline != nil {
+		for i, stage := range spec.Pipeline {
+			spec.Pipeline[i] = normalizeJSONObject(stage)
+		}
+	}
+
+	return &spec, nil
+}
+
+func normalizeJSONObject(in map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(in))
+	for key, value := range in {
+		out[key] = normalizeJSONValue(value)
+	}
+	return out
+}
+
+func normalizeJSONValue(v interface{}) interface{} {
+	switch typed := v.(type) {
+	case json.Number:
+		if i, err := typed.Int64(); err == nil {
+			return i
+		}
+		if f, err := typed.Float64(); err == nil {
+			return f
+		}
+		return typed.String()
+	case map[string]interface{}:
+		return normalizeJSONObject(typed)
+	case []interface{}:
+		out := make([]interface{}, len(typed))
+		for i := range typed {
+			out[i] = normalizeJSONValue(typed[i])
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func mongoCursorToRows(ctx context.Context, cur *mongo.Cursor) ([]map[string]interface{}, error) {
+	var docs []bson.M
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("mongo decode failed: %w", err)
+	}
+
+	rows := make([]map[string]interface{}, 0, len(docs))
+	for _, doc := range docs {
+		rows = append(rows, normalizeMongoDocument(doc))
+	}
+	return rows, nil
+}
+
+func normalizeMongoDocument(doc map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(doc))
+	for key, value := range doc {
+		out[key] = normalizeMongoValue(value)
+	}
+	return out
+}
+
+func normalizeMongoValue(v interface{}) interface{} {
+	switch typed := v.(type) {
+	case time.Time:
+		return typed.Format(time.RFC3339Nano)
+	case bson.DateTime:
+		return typed.Time().Format(time.RFC3339Nano)
+	case bson.ObjectID:
+		return typed.Hex()
+	case bson.Decimal128:
+		return typed.String()
+	case bson.M:
+		return normalizeMongoDocument(map[string]interface{}(typed))
+	case map[string]interface{}:
+		return normalizeMongoDocument(typed)
+	case bson.D:
+		out := make(map[string]interface{}, len(typed))
+		for _, item := range typed {
+			out[item.Key] = normalizeMongoValue(item.Value)
+		}
+		return out
+	case bson.A:
+		out := make([]interface{}, len(typed))
+		for i := range typed {
+			out[i] = normalizeMongoValue(typed[i])
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(typed))
+		for i := range typed {
+			out[i] = normalizeMongoValue(typed[i])
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 func (m *MongoTestDB) SoftDeleteConversation(ctx context.Context, conversationID string, days int) error {

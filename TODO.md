@@ -5,7 +5,6 @@
 * bug: delete a fork, restore: it does not show up restored.
 * support getting getting the clientID from the bearer token.
 * Add tsx/js support vercel AI api.
-* Go BDD: add `I execute MongoDB query:` style steps with MongoDB-specific assertions equivalent to the SQL verification steps (currently skipped on MongoDB backend, matching Java parity).
 * Go: Avoid using file buffer for the encryption store.
 * can we use generated server stubs for REST handlers?
 * topK in vector search
