@@ -1270,6 +1270,8 @@ const (
 	MemoriesService_SearchMemories_FullMethodName       = "/memory.v1.MemoriesService/SearchMemories"
 	MemoriesService_ListMemoryNamespaces_FullMethodName = "/memory.v1.MemoriesService/ListMemoryNamespaces"
 	MemoriesService_GetMemoryIndexStatus_FullMethodName = "/memory.v1.MemoriesService/GetMemoryIndexStatus"
+	MemoriesService_GetMemoryUsage_FullMethodName       = "/memory.v1.MemoriesService/GetMemoryUsage"
+	MemoriesService_ListTopMemoryUsage_FullMethodName   = "/memory.v1.MemoriesService/ListTopMemoryUsage"
 )
 
 // MemoriesServiceClient is the client API for MemoriesService service.
@@ -1283,6 +1285,10 @@ type MemoriesServiceClient interface {
 	ListMemoryNamespaces(ctx context.Context, in *ListMemoryNamespacesRequest, opts ...grpc.CallOption) (*ListMemoryNamespacesResponse, error)
 	// Admin-only: returns count of memories with pending index synchronization.
 	GetMemoryIndexStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MemoryIndexStatusResponse, error)
+	// Admin-only: returns usage stats for one memory key.
+	GetMemoryUsage(ctx context.Context, in *GetMemoryUsageRequest, opts ...grpc.CallOption) (*MemoryUsage, error)
+	// Admin-only: returns ranked memory usage rows.
+	ListTopMemoryUsage(ctx context.Context, in *ListTopMemoryUsageRequest, opts ...grpc.CallOption) (*ListTopMemoryUsageResponse, error)
 }
 
 type memoriesServiceClient struct {
@@ -1353,6 +1359,26 @@ func (c *memoriesServiceClient) GetMemoryIndexStatus(ctx context.Context, in *em
 	return out, nil
 }
 
+func (c *memoriesServiceClient) GetMemoryUsage(ctx context.Context, in *GetMemoryUsageRequest, opts ...grpc.CallOption) (*MemoryUsage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MemoryUsage)
+	err := c.cc.Invoke(ctx, MemoriesService_GetMemoryUsage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *memoriesServiceClient) ListTopMemoryUsage(ctx context.Context, in *ListTopMemoryUsageRequest, opts ...grpc.CallOption) (*ListTopMemoryUsageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTopMemoryUsageResponse)
+	err := c.cc.Invoke(ctx, MemoriesService_ListTopMemoryUsage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MemoriesServiceServer is the server API for MemoriesService service.
 // All implementations must embed UnimplementedMemoriesServiceServer
 // for forward compatibility.
@@ -1364,6 +1390,10 @@ type MemoriesServiceServer interface {
 	ListMemoryNamespaces(context.Context, *ListMemoryNamespacesRequest) (*ListMemoryNamespacesResponse, error)
 	// Admin-only: returns count of memories with pending index synchronization.
 	GetMemoryIndexStatus(context.Context, *emptypb.Empty) (*MemoryIndexStatusResponse, error)
+	// Admin-only: returns usage stats for one memory key.
+	GetMemoryUsage(context.Context, *GetMemoryUsageRequest) (*MemoryUsage, error)
+	// Admin-only: returns ranked memory usage rows.
+	ListTopMemoryUsage(context.Context, *ListTopMemoryUsageRequest) (*ListTopMemoryUsageResponse, error)
 	mustEmbedUnimplementedMemoriesServiceServer()
 }
 
@@ -1391,6 +1421,12 @@ func (UnimplementedMemoriesServiceServer) ListMemoryNamespaces(context.Context, 
 }
 func (UnimplementedMemoriesServiceServer) GetMemoryIndexStatus(context.Context, *emptypb.Empty) (*MemoryIndexStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMemoryIndexStatus not implemented")
+}
+func (UnimplementedMemoriesServiceServer) GetMemoryUsage(context.Context, *GetMemoryUsageRequest) (*MemoryUsage, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMemoryUsage not implemented")
+}
+func (UnimplementedMemoriesServiceServer) ListTopMemoryUsage(context.Context, *ListTopMemoryUsageRequest) (*ListTopMemoryUsageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTopMemoryUsage not implemented")
 }
 func (UnimplementedMemoriesServiceServer) mustEmbedUnimplementedMemoriesServiceServer() {}
 func (UnimplementedMemoriesServiceServer) testEmbeddedByValue()                         {}
@@ -1521,6 +1557,42 @@ func _MemoriesService_GetMemoryIndexStatus_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MemoriesService_GetMemoryUsage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMemoryUsageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoriesServiceServer).GetMemoryUsage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoriesService_GetMemoryUsage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoriesServiceServer).GetMemoryUsage(ctx, req.(*GetMemoryUsageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MemoriesService_ListTopMemoryUsage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTopMemoryUsageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoriesServiceServer).ListTopMemoryUsage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoriesService_ListTopMemoryUsage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoriesServiceServer).ListTopMemoryUsage(ctx, req.(*ListTopMemoryUsageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MemoriesService_ServiceDesc is the grpc.ServiceDesc for MemoriesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1551,6 +1623,14 @@ var MemoriesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMemoryIndexStatus",
 			Handler:    _MemoriesService_GetMemoryIndexStatus_Handler,
+		},
+		{
+			MethodName: "GetMemoryUsage",
+			Handler:    _MemoriesService_GetMemoryUsage_Handler,
+		},
+		{
+			MethodName: "ListTopMemoryUsage",
+			Handler:    _MemoriesService_ListTopMemoryUsage_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

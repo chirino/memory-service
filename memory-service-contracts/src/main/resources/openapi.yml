@@ -1018,6 +1018,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: include_usage
+          in: query
+          required: false
+          description: Include usage counters for the requested memory.
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Memory found.
@@ -1731,6 +1738,18 @@ components:
           type: string
           format: date-time
           nullable: true
+        usage:
+          $ref: '#/components/schemas/MemoryUsage'
+
+    MemoryUsage:
+      type: object
+      properties:
+        fetchCount:
+          type: integer
+          format: int64
+        lastFetchedAt:
+          type: string
+          format: date-time
 
     SearchMemoriesRequest:
       type: object
@@ -1753,6 +1772,9 @@ components:
         offset:
           type: integer
           minimum: 0
+        include_usage:
+          type: boolean
+          default: false
 
     SearchMemoriesResponse:
       type: object

@@ -147,6 +147,12 @@ export type MemoryItem = {
   score?: number | null;
   createdAt?: string;
   expiresAt?: string | null;
+  usage?: MemoryUsage;
+};
+
+export type MemoryUsage = {
+  fetchCount?: number;
+  lastFetchedAt?: string;
 };
 
 export type SearchMemoriesRequest = {
@@ -157,6 +163,7 @@ export type SearchMemoriesRequest = {
   };
   limit?: number;
   offset?: number;
+  include_usage?: boolean;
 };
 
 export type SearchMemoriesResponse = {
@@ -1147,6 +1154,10 @@ export type $OpenApiTs = {
     };
     get: {
       req: {
+        /**
+         * Include usage counters for the requested memory.
+         */
+        includeUsage?: boolean;
         key: string;
         /**
          * Namespace segments. Repeat once per segment.

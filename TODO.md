@@ -9,7 +9,7 @@
 * can we use generated server stubs for REST handlers?
 * topK in vector search
 * a way to support batch processing of old conversations / memories to create/update/reinforce memories
-* track memory hit counts, as a way to track how important/useful a memory is.
+* track memory load counts, as a way to track how important/useful a memory is (see [072-memory-load-counts.md](docs/enhancements/072-memory-load-counts.md)).
 * get all the python examples working as good as the Java ones.
 * improve ghe memories usecase, add support for it to all the frameworks.
 * fix: In the current contract, forkedAtEntryId is supposed to be required whenever forkedAtConversationId is set. allow it to be unset.

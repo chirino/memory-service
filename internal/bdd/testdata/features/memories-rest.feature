@@ -107,6 +107,74 @@ Feature: Episodic Memory REST API
     Then the response status should be 200
     And the response body "items" should have at least 2 items
 
+  Scenario: Get memory with include_usage returns usage counters
+    Given I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "usage"],
+      "key": "k1",
+      "value": { "text": "tracked" }
+    }
+    """
+    When I call GET "/v1/memories?ns=user&ns=alice&ns=usage&key=k1&include_usage=true"
+    Then the response status should be 200
+    And the response body field "usage.fetchCount" should be "1"
+    And the response body field "usage.lastFetchedAt" should not be null
+
+  Scenario: Search include_usage does not increment fetch counters
+    Given I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "usage"],
+      "key": "k2",
+      "value": { "text": "search-test" }
+    }
+    """
+    And I call GET "/v1/memories?ns=user&ns=alice&ns=usage&key=k2&include_usage=true"
+    And the response status should be 200
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "usage"],
+      "include_usage": true,
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body field "items.0.usage.fetchCount" should be "1"
+    When I am authenticated as admin user "alice"
+    And I call GET "/admin/v1/memories/usage?ns=user&ns=alice&ns=usage&key=k2"
+    Then the response status should be 200
+    And the response body field "fetchCount" should be "1"
+
+  Scenario: Admin usage top endpoint ranks by fetch_count
+    Given I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "usage-top"],
+      "key": "k-top",
+      "value": { "text": "top" }
+    }
+    """
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "usage-top"],
+      "key": "k-low",
+      "value": { "text": "low" }
+    }
+    """
+    And I call GET "/v1/memories?ns=user&ns=alice&ns=usage-top&key=k-top"
+    And the response status should be 200
+    And I call GET "/v1/memories?ns=user&ns=alice&ns=usage-top&key=k-top"
+    And the response status should be 200
+    And I call GET "/v1/memories?ns=user&ns=alice&ns=usage-top&key=k-low"
+    And the response status should be 200
+    When I am authenticated as admin user "alice"
+    And I call GET "/admin/v1/memories/usage/top?prefix=user&prefix=alice&prefix=usage-top&sort=fetch_count&limit=1"
+    Then the response status should be 200
+    And the response body field "items.0.key" should be "k-top"
+
   Scenario: List namespaces under a prefix
     Given I call PUT "/v1/memories" with body:
     """

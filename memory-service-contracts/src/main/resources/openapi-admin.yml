@@ -129,6 +129,84 @@ paths:
       security:
         - BearerAuth: []
 
+  /admin/v1/memories/usage:
+    get:
+      tags: [Admin]
+      summary: Get episodic memory usage for a single key
+      operationId: adminGetMemoryUsage
+      parameters:
+        - name: ns
+          in: query
+          required: true
+          description: Namespace segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Usage counters for the specified memory key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryUsageResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /admin/v1/memories/usage/top:
+    get:
+      tags: [Admin]
+      summary: List top episodic memory usage rows under a namespace prefix
+      operationId: adminListTopMemoryUsage
+      parameters:
+        - name: prefix
+          in: query
+          required: false
+          description: Namespace prefix segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [fetch_count, last_fetched_at]
+            default: fetch_count
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Ranked usage rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTopMemoryUsageResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
   /v1/admin/conversations:
     get:
       tags: [Admin]
@@ -1269,6 +1347,36 @@ components:
           type: boolean
         stats:
           $ref: '#/components/schemas/MemoryIndexRunStats'
+
+    MemoryUsageResponse:
+      type: object
+      properties:
+        fetchCount:
+          type: integer
+          format: int64
+        lastFetchedAt:
+          type: string
+          format: date-time
+
+    TopMemoryUsageItem:
+      type: object
+      properties:
+        namespace:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+        usage:
+          $ref: '#/components/schemas/MemoryUsageResponse'
+
+    ListTopMemoryUsageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopMemoryUsageItem'
 
     AccessLevel:
       type: string
