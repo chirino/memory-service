@@ -777,7 +777,7 @@ after creation. Returns 400 Bad Request if specified for non-history channels.`,
       type: "string",
       format: "uuid",
       description:
-        "Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Required when forkedAtConversationId is set.",
+        "Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.",
     },
   },
   example: {

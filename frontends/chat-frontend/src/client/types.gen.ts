@@ -416,7 +416,7 @@ export type CreateEntryRequest = {
    */
   forkedAtConversationId?: string;
   /**
-   * Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Required when forkedAtConversationId is set.
+   * Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.
    */
   forkedAtEntryId?: string;
 };

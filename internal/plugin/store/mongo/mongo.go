@@ -2774,6 +2774,19 @@ func (s *MongoStore) buildAncestryStack(ctx context.Context, target convDoc) ([]
 	return stack, nil
 }
 
+func advanceForkAncestorForNilStopDocs(ancestry []forkAncestorDoc, ancestorIndex *int, current *forkAncestorDoc, isTarget *bool) bool {
+	// Nil stop points mean "exclude all inherited entries from this ancestor".
+	for !*isTarget && current.StopAtEntryID == nil {
+		*ancestorIndex = *ancestorIndex + 1
+		if *ancestorIndex >= len(ancestry) {
+			return false
+		}
+		*current = ancestry[*ancestorIndex]
+		*isTarget = *ancestorIndex == len(ancestry)-1
+	}
+	return true
+}
+
 func filterEntriesByAncestryDocs(allEntries []entryDoc, ancestry []forkAncestorDoc) []entryDoc {
 	if len(ancestry) == 0 {
 		return allEntries
@@ -2783,6 +2796,9 @@ func filterEntriesByAncestryDocs(allEntries []entryDoc, ancestry []forkAncestorD
 	ancestorIndex := 0
 	current := ancestry[ancestorIndex]
 	isTarget := ancestorIndex == len(ancestry)-1
+	if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
+		return result
+	}
 
 	for _, entry := range allEntries {
 		if entry.ConversationID != current.ConversationID {
@@ -2794,6 +2810,9 @@ func filterEntriesByAncestryDocs(allEntries []entryDoc, ancestry []forkAncestorD
 			if ancestorIndex < len(ancestry) {
 				current = ancestry[ancestorIndex]
 				isTarget = ancestorIndex == len(ancestry)-1
+				if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
+					break
+				}
 			}
 		}
 	}
@@ -2892,6 +2911,9 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 	ancestorIndex := 0
 	current := ancestry[ancestorIndex]
 	isTarget := ancestorIndex == len(ancestry)-1
+	if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
+		return result
+	}
 
 	for _, entry := range allEntries {
 		if entry.ConversationID != current.ConversationID {
@@ -2929,6 +2951,9 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 			if ancestorIndex < len(ancestry) {
 				current = ancestry[ancestorIndex]
 				isTarget = ancestorIndex == len(ancestry)-1
+				if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
+					break
+				}
 			}
 		}
 	}
