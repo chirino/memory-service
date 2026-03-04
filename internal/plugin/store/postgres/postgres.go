@@ -111,6 +111,37 @@ type PostgresStore struct {
 	entriesCache registrycache.MemoryEntriesCache
 }
 
+func pgUniqueViolation(err error) (*pgconn.PgError, bool) {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return pgErr, true
+	}
+	return nil, false
+}
+
+func logDuplicateKey(op string, err error, kv ...interface{}) {
+	pgErr, ok := pgUniqueViolation(err)
+	if !ok {
+		return
+	}
+	fields := []interface{}{
+		"operation", op,
+		"pgCode", pgErr.Code,
+		"constraint", pgErr.ConstraintName,
+		"table", pgErr.TableName,
+		"detail", pgErr.Detail,
+	}
+	fields = append(fields, kv...)
+	log.Warn("Postgres duplicate key", fields...)
+}
+
+func uuidPtrString(id *uuid.UUID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
+}
+
 func (s *PostgresStore) encrypt(plaintext []byte) ([]byte, error) {
 	if s.enc == nil || plaintext == nil {
 		return plaintext, nil
@@ -200,6 +231,13 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		actualGroupID = convID
 		group := model.ConversationGroup{ID: actualGroupID, CreatedAt: now}
 		if err := s.db.WithContext(ctx).Create(&group).Error; err != nil {
+			logDuplicateKey("createConversationWithID:createGroup", err,
+				"userID", userID,
+				"conversationID", convID.String(),
+				"conversationGroupID", actualGroupID.String(),
+				"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
+				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
+			)
 			return nil, fmt.Errorf("failed to create conversation group: %w", err)
 		}
 		_ = groupID // unused for root conversations when convID is specified
@@ -222,6 +260,13 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	}
 
 	if err := s.db.WithContext(ctx).Create(&conv).Error; err != nil {
+		logDuplicateKey("createConversationWithID:createConversation", err,
+			"userID", userID,
+			"conversationID", convID.String(),
+			"conversationGroupID", actualGroupID.String(),
+			"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
+			"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
+		)
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
 	}
 
@@ -234,6 +279,11 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 			CreatedAt:           now,
 		}
 		if err := s.db.WithContext(ctx).Create(&membership).Error; err != nil {
+			logDuplicateKey("createConversationWithID:createMembership", err,
+				"userID", userID,
+				"conversationID", convID.String(),
+				"conversationGroupID", actualGroupID.String(),
+			)
 			return nil, fmt.Errorf("failed to create membership: %w", err)
 		}
 	}
@@ -917,10 +967,19 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 		if err != nil {
 			// Concurrent writers can race to auto-create the same root conversation.
 			// If another request won the insert, load the conversation and continue.
-			var pgErr *pgconn.PgError
-			if !(errors.As(err, &pgErr) && pgErr.Code == "23505") {
+			pgErr, ok := pgUniqueViolation(err)
+			if !ok {
 				return nil, err
 			}
+			log.Warn("append auto-create race detected",
+				"userID", userID,
+				"conversationID", conversationID.String(),
+				"constraint", pgErr.ConstraintName,
+				"table", pgErr.TableName,
+				"detail", pgErr.Detail,
+				"forkedAtConversationID", uuidPtrString(forkedAtConvID),
+				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
+			)
 			loaded := false
 			for attempt := 0; attempt < 10; attempt++ {
 				convResult = s.db.WithContext(ctx).
@@ -1185,6 +1244,11 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 		CreatedAt: now,
 	}
 	if err := s.db.WithContext(ctx).Create(&group).Error; err != nil {
+		logDuplicateKey("autoCreateConversation:createGroup", err,
+			"userID", userID,
+			"conversationID", conversationID.String(),
+			"conversationGroupID", groupID.String(),
+		)
 		return model.Conversation{}, fmt.Errorf("failed to create conversation group: %w", err)
 	}
 
@@ -1198,8 +1262,12 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 	if err := s.db.WithContext(ctx).Create(&conv).Error; err != nil {
 		// Clean up the orphaned group before handling the error.
 		_ = s.db.WithContext(ctx).Delete(&group).Error
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		logDuplicateKey("autoCreateConversation:createConversation", err,
+			"userID", userID,
+			"conversationID", conversationID.String(),
+			"conversationGroupID", groupID.String(),
+		)
+		if _, ok := pgUniqueViolation(err); ok {
 			// A concurrent request already created this conversation; fetch and return it.
 			var existing model.Conversation
 			if findErr := s.db.WithContext(ctx).Limit(1).Find(&existing, "id = ?", conversationID).Error; findErr != nil {

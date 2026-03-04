@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -319,11 +320,16 @@ func (s *SiteScenario) startCheckpoint() error {
 		return fmt.Errorf("checkpoint did not start on port %d: %w", s.CheckpointPort, err)
 	}
 
-	// Extra grace period for application context initialization
-	if streamOutput {
-		fmt.Printf("[checkpoint:%d] Port open, waiting 10s for context initialization...\n", s.CheckpointPort)
+	// Wait for application readiness endpoint.
+	readyURL := fmt.Sprintf("http://localhost:%d/ready", s.CheckpointPort)
+	if err := waitForHTTPReady(readyURL, 90*time.Second); err != nil {
+		_ = s.killCheckpoint()
+		_ = s.replayAndCleanupCheckpointLog(true)
+		return fmt.Errorf("checkpoint failed readiness probe %s: %w", readyURL, err)
 	}
-	time.Sleep(10 * time.Second)
+	if streamOutput {
+		fmt.Printf("[checkpoint:%d] Ready: %s\n", s.CheckpointPort, readyURL)
+	}
 	return nil
 }
 
@@ -500,6 +506,25 @@ func waitForPort(port int, timeout time.Duration) error {
 		time.Sleep(time.Second)
 	}
 	return fmt.Errorf("port %d not reachable after %s", port, timeout)
+}
+
+func waitForHTTPReady(url string, timeout time.Duration) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return nil
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return fmt.Errorf("readiness endpoint %s not ready after %s", url, timeout)
 }
 
 func portInUse(port int) bool {

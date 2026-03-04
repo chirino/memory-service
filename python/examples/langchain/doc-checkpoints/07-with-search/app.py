@@ -68,6 +68,11 @@ agent = create_agent(
 )
 
 app = FastAPI(title="Python LangChain Agent With Search")
+
+
+@app.get("/ready")
+async def ready() -> dict[str, str]:
+    return {"status": "ok"}
 install_fastapi_authorization_middleware(app)
 proxy = MemoryServiceProxy()
 

@@ -85,6 +85,11 @@ builder.add_edge(START, "call_model")
 graph = builder.compile(checkpointer=checkpointer)
 
 app = FastAPI(title="Python LangGraph Chat Example")
+
+
+@app.get("/ready")
+async def ready() -> dict[str, str]:
+    return {"status": "ok"}
 install_fastapi_authorization_middleware(app, validate_jwt=False)
 proxy = MemoryServiceProxy()
 recording_manager = MemoryServiceResponseRecordingManager()

@@ -79,6 +79,11 @@ agent = create_agent(
 )
 
 app = FastAPI(title="Python Chat Example")
+
+
+@app.get("/ready")
+async def ready() -> dict[str, str]:
+    return {"status": "ok"}
 install_fastapi_authorization_middleware(app, validate_jwt=False)
 proxy = MemoryServiceProxy()
 recording_manager = MemoryServiceResponseRecordingManager()
