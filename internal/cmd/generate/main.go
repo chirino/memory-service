@@ -1,5 +1,5 @@
 // Package main orchestrates all code generation for the memory service.
-// Run via: go generate ./...
+// Run via: go generate .
 // This generates:
 //   - OpenAPI types + server interfaces (oapi-codegen) for Agent and Admin APIs
 //   - gRPC stubs (protoc) for memory_service.proto
@@ -36,11 +36,11 @@ func main() {
 
 	// Align struct tags in generated Go code
 	fmt.Println("Aligning struct tags...")
-	run("go", "run", "github.com/4meepo/tagalign/cmd/tagalign", "-fix", "-sort", "-order", "json,gorm,enum,example", "./internal/...")
+	run("go", "run", "github.com/4meepo/tagalign/cmd/tagalign", "-fix", "-sort", "-order", "json,gorm,enum,example", ".", "./internal/...")
 
 	// Format all generated Go code
 	fmt.Println("Formatting generated Go code...")
-	run("gofmt", "-w", filepath.Join(root))
+	run("go", "fmt", ".", "./internal/...")
 
 	fmt.Println("Code generation complete.")
 }
