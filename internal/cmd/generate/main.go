@@ -47,7 +47,7 @@ func main() {
 
 func installTools(root string) {
 	fmt.Println("Ensuring codegen tools are installed...")
-	binDir := filepath.Join(root, "bin")
+	binDir := toolBinDir(root)
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create bin dir: %v\n", err)
 		os.Exit(1)
@@ -59,7 +59,7 @@ func installTools(root string) {
 }
 
 func installProtoc(root string) {
-	binDir := filepath.Join(root, "bin")
+	binDir := toolBinDir(root)
 	protocBin := filepath.Join(binDir, "protoc")
 
 	// Check if the correct version is already installed
@@ -231,7 +231,7 @@ func generateEncryptionHeader(root string) {
 	os.MkdirAll(pbOut, 0o755)
 
 	protoInclude := filepath.Join(root, "memory-service-contracts", "src", "main", "resources")
-	binDir := filepath.Join(root, "bin")
+	binDir := toolBinDir(root)
 	protocBin := filepath.Join(binDir, "protoc")
 	wellKnownIncludes := filepath.Join(binDir, "include")
 
@@ -251,7 +251,7 @@ func generateGRPC(root string) {
 	os.MkdirAll(pbOut, 0o755)
 
 	protoInclude := filepath.Join(root, "memory-service-contracts", "src", "main", "resources")
-	binDir := filepath.Join(root, "bin")
+	binDir := toolBinDir(root)
 	protocBin := filepath.Join(binDir, "protoc")
 	wellKnownIncludes := filepath.Join(binDir, "include")
 
@@ -275,6 +275,10 @@ func run(name string, args ...string) {
 		fmt.Fprintf(os.Stderr, "command failed: %s %v: %v\n", name, args, err)
 		os.Exit(1)
 	}
+}
+
+func toolBinDir(root string) string {
+	return filepath.Join(root, "bin", runtime.GOOS+"-"+runtime.GOARCH)
 }
 
 func findProjectRoot() string {
