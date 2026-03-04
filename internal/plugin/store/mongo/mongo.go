@@ -1716,7 +1716,41 @@ func (s *MongoStore) FetchSearchResultDetails(ctx context.Context, userID string
 	return results, nil
 }
 
-func (s *MongoStore) SearchEntries(ctx context.Context, userID string, query string, limit int, includeEntry bool) (*registrystore.SearchResults, error) {
+func paginateMongoSearchResultsByEntryCursor(results []registrystore.SearchResult, afterCursor *string, limit int) ([]registrystore.SearchResult, *string, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	start := 0
+	if afterCursor != nil {
+		cursorID, err := uuid.Parse(strings.TrimSpace(*afterCursor))
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid afterCursor: %w", err)
+		}
+		start = len(results)
+		for i := range results {
+			if results[i].EntryID == cursorID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if start >= len(results) {
+		return []registrystore.SearchResult{}, nil, nil
+	}
+	end := start + limit
+	if end > len(results) {
+		end = len(results)
+	}
+	page := results[start:end]
+	var next *string
+	if end < len(results) && len(page) > 0 {
+		v := page[len(page)-1].EntryID.String()
+		next = &v
+	}
+	return page, next, nil
+}
+
+func (s *MongoStore) SearchEntries(ctx context.Context, userID string, query string, afterCursor *string, limit int, includeEntry bool, groupByConversation bool) (*registrystore.SearchResults, error) {
 	cur, err := s.memberships().Find(ctx, bson.M{"user_id": userID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to find memberships: %w", err)
@@ -1738,12 +1772,13 @@ func (s *MongoStore) SearchEntries(ctx context.Context, userID string, query str
 		"$text":                 bson.M{"$search": query},
 		"conversation_group_id": bson.M{"$in": groupIDs},
 	}
-	// Fetch limit+1 to detect whether more results exist (for afterCursor).
-	// Project and sort by text relevance score.
+	// Project and sort by text relevance score with deterministic tie-break.
 	opts := options.Find().
 		SetProjection(bson.M{"score": bson.M{"$meta": "textScore"}}).
-		SetSort(bson.D{{Key: "score", Value: bson.M{"$meta": "textScore"}}}).
-		SetLimit(int64(limit + 1))
+		SetSort(bson.D{
+			{Key: "score", Value: bson.M{"$meta": "textScore"}},
+			{Key: "_id", Value: 1},
+		})
 	searchCur, err := s.entries().Find(ctx, filter, opts)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
@@ -1753,39 +1788,42 @@ func (s *MongoStore) SearchEntries(ctx context.Context, userID string, query str
 		return nil, fmt.Errorf("failed to decode search results: %w", err)
 	}
 
-	hasMore := len(docs) > limit
-	if hasMore {
-		docs = docs[:limit]
-	}
-
-	results := make([]registrystore.SearchResult, len(docs))
-	for i, d := range docs {
-		results[i] = registrystore.SearchResult{
+	results := make([]registrystore.SearchResult, 0, len(docs))
+	seenConversation := map[uuid.UUID]struct{}{}
+	for _, d := range docs {
+		conversationID := strToUUID(d.ConversationID)
+		if groupByConversation {
+			if _, exists := seenConversation[conversationID]; exists {
+				continue
+			}
+			seenConversation[conversationID] = struct{}{}
+		}
+		item := registrystore.SearchResult{
 			EntryID:        strToUUID(d.ID),
-			ConversationID: strToUUID(d.ConversationID),
+			ConversationID: conversationID,
 			Score:          d.TextScore,
 			Kind:           "mongo",
 		}
-		results[i].ConversationTitle = s.lookupConversationTitle(ctx, d.ConversationID)
+		item.ConversationTitle = s.lookupConversationTitle(ctx, d.ConversationID)
 		if d.IndexedContent != nil && *d.IndexedContent != "" {
 			h := extractHighlight(*d.IndexedContent)
-			results[i].Highlights = &h
+			item.Highlights = &h
 		}
 		if includeEntry {
 			e := s.entryDocToModel(d.asEntryDoc())
 			if decrypted, err := s.decrypt(d.Content); err == nil {
 				e.Content = decrypted
 			}
-			results[i].Entry = &e
+			item.Entry = &e
 		}
+		results = append(results, item)
 	}
 
-	var cursor *string
-	if hasMore && len(results) > 0 {
-		c := results[len(results)-1].EntryID.String()
-		cursor = &c
+	page, cursor, err := paginateMongoSearchResultsByEntryCursor(results, afterCursor, limit)
+	if err != nil {
+		return nil, err
 	}
-	return &registrystore.SearchResults{Data: results, AfterCursor: cursor}, nil
+	return &registrystore.SearchResults{Data: page, AfterCursor: cursor}, nil
 }
 
 // --- Admin ---
@@ -2167,9 +2205,17 @@ func (s *MongoStore) AdminSearchEntries(ctx context.Context, query registrystore
 	filter := bson.M{
 		"$text": bson.M{"$search": query.Query},
 	}
-	if query.UserID != nil {
-		// Need to join with conversations to filter by owner — use two-step approach
-		cur, err := s.conversations().Find(ctx, bson.M{"owner_user_id": *query.UserID})
+	needsConversationLookup := query.UserID != nil || !query.IncludeDeleted
+	if needsConversationLookup {
+		convFilter := bson.M{}
+		if query.UserID != nil {
+			convFilter["owner_user_id"] = *query.UserID
+		}
+		if !query.IncludeDeleted {
+			convFilter["deleted_at"] = bson.M{"$exists": false}
+		}
+
+		cur, err := s.conversations().Find(ctx, convFilter)
 		if err != nil {
 			return nil, fmt.Errorf("admin search failed: %w", err)
 		}
@@ -2181,13 +2227,18 @@ func (s *MongoStore) AdminSearchEntries(ctx context.Context, query registrystore
 		for i, c := range convDocs {
 			convIDs[i] = c.ID
 		}
+		if len(convIDs) == 0 {
+			return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
+		}
 		filter["conversation_id"] = bson.M{"$in": convIDs}
 	}
 
 	opts := options.Find().
 		SetProjection(bson.M{"score": bson.M{"$meta": "textScore"}}).
-		SetSort(bson.D{{Key: "score", Value: bson.M{"$meta": "textScore"}}}).
-		SetLimit(int64(query.Limit))
+		SetSort(bson.D{
+			{Key: "score", Value: bson.M{"$meta": "textScore"}},
+			{Key: "_id", Value: 1},
+		})
 	cur, err := s.entries().Find(ctx, filter, opts)
 	if err != nil {
 		return nil, fmt.Errorf("admin search failed: %w", err)
@@ -2218,7 +2269,11 @@ func (s *MongoStore) AdminSearchEntries(ctx context.Context, query registrystore
 			results[i].Entry = &e
 		}
 	}
-	return &registrystore.SearchResults{Data: results}, nil
+	page, cursor, err := paginateMongoSearchResultsByEntryCursor(results, query.AfterCursor, query.Limit)
+	if err != nil {
+		return nil, err
+	}
+	return &registrystore.SearchResults{Data: page, AfterCursor: cursor}, nil
 }
 
 func (s *MongoStore) AdminListAttachments(ctx context.Context, query registrystore.AdminAttachmentQuery) ([]registrystore.AdminAttachment, *string, error) {

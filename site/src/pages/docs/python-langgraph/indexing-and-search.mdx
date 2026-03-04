@@ -59,7 +59,7 @@ Expose `POST /v1/conversations/search` so frontend apps can query across convers
   lines="88-90"
 />
 
-**Why**: Frontend apps need a single endpoint to run both full-text and semantic search across all conversations the user has access to. Proxying through the agent app means the user's bearer token is forwarded to Memory Service so only conversations the user can read are returned in results.
+**Why**: Frontend apps need a single endpoint to run full-text and semantic search across all conversations the user has access to. `searchType` can be `auto`, a concrete type (`semantic` or `fulltext`), or an array of concrete types such as `["semantic","fulltext"]`. Proxying through the agent app means the user's bearer token is forwarded to Memory Service so only conversations the user can read are returned in results.
 
 <TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/07-with-search">
 

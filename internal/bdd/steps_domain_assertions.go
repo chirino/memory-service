@@ -29,6 +29,7 @@ func init() {
 		ctx.Step(`^the response body field "([^"]*)" should not be null$`, d.theResponseBodyFieldShouldNotBeNull)
 		ctx.Step(`^the response body field "([^"]*)" should contain "([^"]*)"$`, d.theResponseBodyFieldShouldContain)
 		ctx.Step(`^the response body "([^"]*)" should have at least (\d+) items?$`, d.theResponseBodyFieldShouldHaveAtLeastItems)
+		ctx.Step(`^the response body "([^"]*)" should have at most (\d+) items?$`, d.theResponseBodyFieldShouldHaveAtMostItems)
 
 		// Collection size assertions
 		ctx.Step(`^the response should contain at least (\d+) conversations?$`, d.theResponseShouldContainAtLeastItems)
@@ -40,6 +41,7 @@ func init() {
 		ctx.Step(`^the response should contain (\d+) membership$`, d.theResponseShouldContainItems)
 		ctx.Step(`^the response should contain an empty list of entries$`, d.theResponseShouldContainEmptyList)
 		ctx.Step(`^the search response should contain at least (\d+) results?$`, d.theResponseShouldContainAtLeastItems)
+		ctx.Step(`^the search response should contain at most (\d+) results?$`, d.theResponseShouldContainAtMostItems)
 		ctx.Step(`^the search response should contain (\d+) results?$`, d.theResponseShouldContainItems)
 
 		// Entry content assertions
@@ -206,8 +208,29 @@ func (d *domainAssertionSteps) theResponseBodyFieldShouldHaveAtLeastItems(path s
 	return nil
 }
 
+func (d *domainAssertionSteps) theResponseBodyFieldShouldHaveAtMostItems(path string, maxCount int) error {
+	session := d.s.Session()
+	respJSON, err := session.RespJSON()
+	if err != nil {
+		return err
+	}
+	value := jsonPathGet(respJSON, path)
+	arr, ok := value.([]interface{})
+	if !ok {
+		return fmt.Errorf("field '%s' is not an array. Response: %s", path, string(session.RespBytes))
+	}
+	if len(arr) > maxCount {
+		return fmt.Errorf("field '%s' has %d items, expected at most %d. Response: %s", path, len(arr), maxCount, string(session.RespBytes))
+	}
+	return nil
+}
+
 func (d *domainAssertionSteps) theResponseShouldContainAtLeastItems(minCount int) error {
 	return d.theResponseBodyFieldShouldHaveAtLeastItems("data", minCount)
+}
+
+func (d *domainAssertionSteps) theResponseShouldContainAtMostItems(maxCount int) error {
+	return d.theResponseBodyFieldShouldHaveAtMostItems("data", maxCount)
 }
 
 func (d *domainAssertionSteps) theResponseShouldContainItems(count int) error {

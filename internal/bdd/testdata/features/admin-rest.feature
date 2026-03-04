@@ -162,6 +162,51 @@ Feature: Admin REST API
     Then the response status should be 200
     And all search results should have conversation owned by "bob"
 
+  Scenario: Admin search can include deleted conversations when requested
+    Given the conversation owned by "bob" has an entry "Deleted-only search marker"
+    And the conversation owned by "bob" is deleted
+    When I call POST "/v1/admin/conversations/search" with body:
+    """
+    {
+      "query": "Deleted-only search marker",
+      "includeDeleted": false
+    }
+    """
+    Then the response status should be 200
+    And the response should contain 0 items
+    When I call POST "/v1/admin/conversations/search" with body:
+    """
+    {
+      "query": "Deleted-only search marker",
+      "includeDeleted": true
+    }
+    """
+    Then the response status should be 200
+    And the response should contain at least 1 items
+
+  Scenario: Admin search supports afterCursor pagination
+    Given the conversation owned by "bob" has an entry "Admin cursor marker one"
+    Given the conversation owned by "alice" has an entry "Admin cursor marker two"
+    When I call POST "/v1/admin/conversations/search" with body:
+    """
+    {
+      "query": "Admin cursor marker",
+      "limit": 1
+    }
+    """
+    Then the response status should be 200
+    And the response should have an afterCursor
+    And set "adminSearchCursor" to the json response field "afterCursor"
+    When I call POST "/v1/admin/conversations/search" with body:
+    """
+    {
+      "query": "Admin cursor marker",
+      "limit": 1,
+      "afterCursor": "${adminSearchCursor}"
+    }
+    """
+    Then the response status should be 200
+
   Scenario: Admin conversation response does not contain conversationGroupId
     When I call GET "/v1/admin/conversations/${bobConversationId}"
     Then the response status should be 200

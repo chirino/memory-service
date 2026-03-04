@@ -13,6 +13,7 @@ import (
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,6 +42,10 @@ func setupTestStore(t *testing.T) (registrystore.MemoryStore, context.Context) {
 	require.NoError(t, err)
 
 	return store, ctx
+}
+
+func strPtr(v string) *string {
+	return &v
 }
 
 func TestCreateAndGetConversation(t *testing.T) {
@@ -239,4 +244,139 @@ func TestAdminGetEntriesForkModes(t *testing.T) {
 	assert.Equal(t, rootEntry1[0].ID, allForks.Data[0].ID)
 	assert.Equal(t, rootEntry2[0].ID, allForks.Data[1].ID)
 	assert.Equal(t, forkEntries[0].ID, allForks.Data[2].ID)
+}
+
+func TestSearchEntriesGroupByConversation(t *testing.T) {
+	store, ctx := setupTestStore(t)
+
+	convA, err := store.CreateConversation(ctx, "search-user", "Search A", nil, nil, nil)
+	require.NoError(t, err)
+	convB, err := store.CreateConversation(ctx, "search-user", "Search B", nil, nil, nil)
+	require.NoError(t, err)
+
+	_, err = store.AppendEntries(ctx, "search-user", convA.ID, []registrystore.CreateEntryRequest{
+		{
+			Content:        json.RawMessage(`"a-1"`),
+			ContentType:    "text/plain",
+			Channel:        "history",
+			IndexedContent: strPtr("design memory service notes"),
+		},
+		{
+			Content:        json.RawMessage(`"a-2"`),
+			ContentType:    "text/plain",
+			Channel:        "history",
+			IndexedContent: strPtr("design document for service"),
+		},
+	}, nil, nil)
+	require.NoError(t, err)
+
+	_, err = store.AppendEntries(ctx, "search-user", convB.ID, []registrystore.CreateEntryRequest{
+		{
+			Content:        json.RawMessage(`"b-1"`),
+			ContentType:    "text/plain",
+			Channel:        "history",
+			IndexedContent: strPtr("design review meeting"),
+		},
+	}, nil, nil)
+	require.NoError(t, err)
+
+	allResults, err := store.SearchEntries(ctx, "search-user", "design", nil, 20, false, false)
+	require.NoError(t, err)
+	require.Len(t, allResults.Data, 3)
+
+	grouped, err := store.SearchEntries(ctx, "search-user", "design", nil, 20, false, true)
+	require.NoError(t, err)
+	require.Len(t, grouped.Data, 2)
+
+	seen := map[uuid.UUID]struct{}{}
+	for _, r := range grouped.Data {
+		seen[r.ConversationID] = struct{}{}
+	}
+	require.Len(t, seen, 2)
+}
+
+func TestAdminSearchEntriesIncludeDeletedAndAfterCursor(t *testing.T) {
+	store, ctx := setupTestStore(t)
+
+	activeConv, err := store.CreateConversation(ctx, "admin-search-user", "Active", nil, nil, nil)
+	require.NoError(t, err)
+	deletedConv, err := store.CreateConversation(ctx, "admin-search-user", "Deleted", nil, nil, nil)
+	require.NoError(t, err)
+
+	_, err = store.AppendEntries(ctx, "admin-search-user", activeConv.ID, []registrystore.CreateEntryRequest{
+		{
+			Content:        json.RawMessage(`"active-1"`),
+			ContentType:    "text/plain",
+			Channel:        "history",
+			IndexedContent: strPtr("admin-search-token one"),
+		},
+		{
+			Content:        json.RawMessage(`"active-2"`),
+			ContentType:    "text/plain",
+			Channel:        "history",
+			IndexedContent: strPtr("admin-search-token two"),
+		},
+	}, nil, nil)
+	require.NoError(t, err)
+
+	_, err = store.AppendEntries(ctx, "admin-search-user", deletedConv.ID, []registrystore.CreateEntryRequest{
+		{
+			Content:        json.RawMessage(`"deleted-1"`),
+			ContentType:    "text/plain",
+			Channel:        "history",
+			IndexedContent: strPtr("admin-search-token deleted"),
+		},
+	}, nil, nil)
+	require.NoError(t, err)
+
+	err = store.AdminDeleteConversation(ctx, deletedConv.ID)
+	require.NoError(t, err)
+
+	withoutDeleted, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
+		Query:          "admin-search-token",
+		Limit:          20,
+		IncludeEntry:   false,
+		IncludeDeleted: false,
+	})
+	require.NoError(t, err)
+	for _, r := range withoutDeleted.Data {
+		require.NotEqual(t, deletedConv.ID, r.ConversationID)
+	}
+
+	withDeleted, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
+		Query:          "admin-search-token",
+		Limit:          20,
+		IncludeEntry:   false,
+		IncludeDeleted: true,
+	})
+	require.NoError(t, err)
+	foundDeleted := false
+	for _, r := range withDeleted.Data {
+		if r.ConversationID == deletedConv.ID {
+			foundDeleted = true
+			break
+		}
+	}
+	require.True(t, foundDeleted, "expected deleted conversation in includeDeleted search results")
+
+	firstPage, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
+		Query:          "admin-search-token",
+		Limit:          1,
+		IncludeEntry:   false,
+		IncludeDeleted: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, firstPage.Data, 1)
+	require.NotNil(t, firstPage.AfterCursor)
+
+	secondPage, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
+		Query:          "admin-search-token",
+		Limit:          1,
+		IncludeEntry:   false,
+		IncludeDeleted: true,
+		AfterCursor:    firstPage.AfterCursor,
+	})
+	require.NoError(t, err)
+	require.Len(t, secondPage.Data, 1)
+	require.NotEqual(t, firstPage.Data[0].EntryID, secondPage.Data[0].EntryID)
 }

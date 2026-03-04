@@ -888,8 +888,12 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 	if req.IncludeEntry != nil {
 		includeEntry = *req.IncludeEntry
 	}
+	var afterCursor *string
+	if v := strings.TrimSpace(req.GetAfter()); v != "" {
+		afterCursor = &v
+	}
 
-	results, err := s.Store.SearchEntries(ctx, userID, req.GetQuery(), limit, includeEntry)
+	results, err := s.Store.SearchEntries(ctx, userID, req.GetQuery(), afterCursor, limit, includeEntry, false)
 	if err != nil {
 		return nil, mapError(err)
 	}
