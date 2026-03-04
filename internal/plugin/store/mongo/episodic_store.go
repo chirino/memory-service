@@ -45,6 +45,7 @@ func init() {
 			}
 			s := &mongoEpisodicStore{
 				col:     client.Database("memory_service").Collection("memories"),
+				usage:   client.Database("memory_service").Collection("memory_usage_stats"),
 				vectors: client.Database("memory_service").Collection("memory_vectors"),
 			}
 			if strings.EqualFold(strings.TrimSpace(cfg.VectorType), "qdrant") {
@@ -88,6 +89,7 @@ func (m *mongoEpisodicMigrator) Migrate(ctx context.Context) error {
 
 	db := client.Database("memory_service")
 	db.CreateCollection(ctx, "memories") // idempotent: fails silently if exists
+	db.CreateCollection(ctx, "memory_usage_stats")
 	db.CreateCollection(ctx, "memory_vectors")
 
 	indexes := []mongo.IndexModel{
@@ -125,6 +127,20 @@ func (m *mongoEpisodicMigrator) Migrate(ctx context.Context) error {
 	}
 	if _, err := db.Collection("memories").Indexes().CreateMany(ctx, indexes); err != nil {
 		return fmt.Errorf("mongo episodic migration: create indexes: %w", err)
+	}
+	usageIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "namespace", Value: 1},
+				{Key: "key", Value: 1},
+			},
+			Options: options.Index().SetUnique(true),
+		},
+		{Keys: bson.D{{Key: "fetch_count", Value: -1}}},
+		{Keys: bson.D{{Key: "last_fetched_at", Value: -1}}},
+	}
+	if _, err := db.Collection("memory_usage_stats").Indexes().CreateMany(ctx, usageIndexes); err != nil {
+		return fmt.Errorf("mongo episodic migration: create usage indexes: %w", err)
 	}
 	vectorIndexes := []mongo.IndexModel{
 		{
@@ -165,6 +181,7 @@ func (m *mongoEpisodicMigrator) Migrate(ctx context.Context) error {
 // mongoEpisodicStore implements registryepisodic.EpisodicStore using MongoDB.
 type mongoEpisodicStore struct {
 	col     *mongo.Collection
+	usage   *mongo.Collection
 	vectors *mongo.Collection
 	enc     *dataencryption.Service
 	qdrant  *episodicqdrant.Client
@@ -193,6 +210,13 @@ type memoryVectorDoc struct {
 	Namespace        string                 `bson:"namespace"`
 	PolicyAttributes map[string]interface{} `bson:"policy_attributes,omitempty"`
 	Embedding        []float32              `bson:"embedding"`
+}
+
+type memoryUsageDoc struct {
+	Namespace     string    `bson:"namespace"`
+	Key           string    `bson:"key"`
+	FetchCount    int64     `bson:"fetch_count"`
+	LastFetchedAt time.Time `bson:"last_fetched_at"`
 }
 
 func (s *mongoEpisodicStore) encrypt(plaintext []byte) ([]byte, error) {
@@ -321,6 +345,130 @@ func (s *mongoEpisodicStore) GetMemory(ctx context.Context, namespace []string, 
 		return nil, fmt.Errorf("get memory: %w", err)
 	}
 	return s.docToItem(doc, namespace)
+}
+
+func (s *mongoEpisodicStore) IncrementMemoryLoads(ctx context.Context, keys []registryepisodic.MemoryKey, fetchedAt time.Time) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	type usageKey struct {
+		namespace string
+		key       string
+	}
+
+	unique := make(map[string]usageKey, len(keys))
+	for _, item := range keys {
+		if item.Key == "" {
+			continue
+		}
+		nsEncoded, err := encodeNS(item.Namespace)
+		if err != nil {
+			return err
+		}
+		dedupeKey := nsEncoded + "\x00" + item.Key
+		if _, ok := unique[dedupeKey]; ok {
+			continue
+		}
+		unique[dedupeKey] = usageKey{namespace: nsEncoded, key: item.Key}
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+
+	models := make([]mongo.WriteModel, 0, len(unique))
+	for _, item := range unique {
+		model := mongo.NewUpdateOneModel().
+			SetFilter(bson.M{"namespace": item.namespace, "key": item.key}).
+			SetUpdate(bson.M{
+				"$inc": bson.M{"fetch_count": int64(1)},
+				"$max": bson.M{"last_fetched_at": fetchedAt},
+				"$setOnInsert": bson.M{
+					"namespace": item.namespace,
+					"key":       item.key,
+				},
+			}).
+			SetUpsert(true)
+		models = append(models, model)
+	}
+
+	_, err := s.usage.BulkWrite(ctx, models)
+	if err != nil {
+		return fmt.Errorf("increment memory loads: %w", err)
+	}
+	return nil
+}
+
+func (s *mongoEpisodicStore) GetMemoryUsage(ctx context.Context, namespace []string, key string) (*registryepisodic.MemoryUsage, error) {
+	nsEncoded, err := encodeNS(namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	var doc memoryUsageDoc
+	if err := s.usage.FindOne(ctx, bson.M{"namespace": nsEncoded, "key": key}).Decode(&doc); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get memory usage: %w", err)
+	}
+	return &registryepisodic.MemoryUsage{
+		FetchCount:    doc.FetchCount,
+		LastFetchedAt: doc.LastFetchedAt,
+	}, nil
+}
+
+func (s *mongoEpisodicStore) ListTopMemoryUsage(ctx context.Context, req registryepisodic.ListTopMemoryUsageRequest) ([]registryepisodic.TopMemoryUsageItem, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	filter := bson.M{}
+	if len(req.Prefix) > 0 {
+		nsEncoded, err := encodeNS(req.Prefix)
+		if err != nil {
+			return nil, err
+		}
+		filter = nsPrefixFilter(nsEncoded)
+	}
+
+	sort := bson.D{{Key: "fetch_count", Value: -1}, {Key: "last_fetched_at", Value: -1}}
+	if req.Sort == registryepisodic.MemoryUsageSortLastFetchedAt {
+		sort = bson.D{{Key: "last_fetched_at", Value: -1}, {Key: "fetch_count", Value: -1}}
+	}
+	opts := options.Find().SetSort(sort).SetLimit(int64(limit))
+
+	cursor, err := s.usage.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("list top memory usage: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	out := make([]registryepisodic.TopMemoryUsageItem, 0, limit)
+	for cursor.Next(ctx) {
+		var doc memoryUsageDoc
+		if err := cursor.Decode(&doc); err != nil {
+			log.Warn("decode memory usage", "err", err)
+			continue
+		}
+		ns, err := episodic.DecodeNamespace(doc.Namespace)
+		if err != nil {
+			continue
+		}
+		out = append(out, registryepisodic.TopMemoryUsageItem{
+			Namespace: ns,
+			Key:       doc.Key,
+			Usage: registryepisodic.MemoryUsage{
+				FetchCount:    doc.FetchCount,
+				LastFetchedAt: doc.LastFetchedAt,
+			},
+		})
+	}
+	return out, cursor.Err()
 }
 
 // DeleteMemory soft-deletes the active memory for the given (namespace, key).

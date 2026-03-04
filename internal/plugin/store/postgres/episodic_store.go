@@ -79,6 +79,15 @@ type memoryRow struct {
 
 func (memoryRow) TableName() string { return "memories" }
 
+type memoryUsageRow struct {
+	Namespace     string    `gorm:"primaryKey;column:namespace"`
+	Key           string    `gorm:"primaryKey;column:key"`
+	FetchCount    int64     `gorm:"column:fetch_count"`
+	LastFetchedAt time.Time `gorm:"column:last_fetched_at"`
+}
+
+func (memoryUsageRow) TableName() string { return "memory_usage_stats" }
+
 func (e *postgresEpisodicStore) encodeNS(ns []string) (string, error) {
 	// Pass 0 as maxDepth to skip depth check (checked in handler).
 	return episodic.EncodeNamespace(ns, 0)
@@ -185,6 +194,124 @@ func (e *postgresEpisodicStore) GetMemory(ctx context.Context, namespace []strin
 		return nil, nil
 	}
 	return e.rowToItem(row, namespace)
+}
+
+func (e *postgresEpisodicStore) IncrementMemoryLoads(ctx context.Context, keys []registryepisodic.MemoryKey, fetchedAt time.Time) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	type usageKey struct {
+		namespace string
+		key       string
+	}
+
+	unique := make(map[string]usageKey, len(keys))
+	for _, item := range keys {
+		if item.Key == "" {
+			continue
+		}
+		nsEncoded, err := e.encodeNS(item.Namespace)
+		if err != nil {
+			return err
+		}
+		k := nsEncoded + "\x00" + item.Key
+		if _, ok := unique[k]; ok {
+			continue
+		}
+		unique[k] = usageKey{namespace: nsEncoded, key: item.Key}
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+
+	values := make([]string, 0, len(unique))
+	args := make([]interface{}, 0, len(unique)*3)
+	for _, item := range unique {
+		values = append(values, "(?, ?, 1, ?)")
+		args = append(args, item.namespace, item.key, fetchedAt)
+	}
+
+	query := `
+		INSERT INTO memory_usage_stats (namespace, key, fetch_count, last_fetched_at)
+		VALUES ` + strings.Join(values, ",") + `
+		ON CONFLICT (namespace, key) DO UPDATE
+		SET fetch_count = memory_usage_stats.fetch_count + EXCLUDED.fetch_count,
+			last_fetched_at = GREATEST(memory_usage_stats.last_fetched_at, EXCLUDED.last_fetched_at)`
+
+	return e.db.WithContext(ctx).Exec(query, args...).Error
+}
+
+func (e *postgresEpisodicStore) GetMemoryUsage(ctx context.Context, namespace []string, key string) (*registryepisodic.MemoryUsage, error) {
+	nsEncoded, err := e.encodeNS(namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	var row memoryUsageRow
+	result := e.db.WithContext(ctx).
+		Where("namespace = ? AND key = ?", nsEncoded, key).
+		Limit(1).
+		Find(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("get memory usage: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &registryepisodic.MemoryUsage{
+		FetchCount:    row.FetchCount,
+		LastFetchedAt: row.LastFetchedAt,
+	}, nil
+}
+
+func (e *postgresEpisodicStore) ListTopMemoryUsage(ctx context.Context, req registryepisodic.ListTopMemoryUsageRequest) ([]registryepisodic.TopMemoryUsageItem, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	q := e.db.WithContext(ctx).Table("memory_usage_stats")
+	if len(req.Prefix) > 0 {
+		nsEncoded, err := e.encodeNS(req.Prefix)
+		if err != nil {
+			return nil, err
+		}
+		q = q.Where("namespace = ? OR namespace LIKE ?", nsEncoded, episodic.NamespacePrefixPattern(nsEncoded))
+	}
+
+	switch req.Sort {
+	case registryepisodic.MemoryUsageSortLastFetchedAt:
+		q = q.Order("last_fetched_at DESC, fetch_count DESC")
+	default:
+		q = q.Order("fetch_count DESC, last_fetched_at DESC")
+	}
+	q = q.Limit(limit)
+
+	var rows []memoryUsageRow
+	if err := q.Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list top memory usage: %w", err)
+	}
+
+	out := make([]registryepisodic.TopMemoryUsageItem, 0, len(rows))
+	for _, row := range rows {
+		ns, err := e.decodeNS(row.Namespace)
+		if err != nil {
+			continue
+		}
+		out = append(out, registryepisodic.TopMemoryUsageItem{
+			Namespace: ns,
+			Key:       row.Key,
+			Usage: registryepisodic.MemoryUsage{
+				FetchCount:    row.FetchCount,
+				LastFetchedAt: row.LastFetchedAt,
+			},
+		})
+	}
+	return out, nil
 }
 
 // DeleteMemory soft-deletes the active memory for (namespace, key).

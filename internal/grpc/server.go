@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // --- UUID conversion helpers ---
@@ -1102,6 +1103,24 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 	if item == nil {
 		return nil, status.Error(codes.NotFound, "memory not found")
 	}
+
+	fetchedAt := time.Now().UTC()
+	if err := s.Store.IncrementMemoryLoads(ctx, []registryepisodic.MemoryKey{{
+		Namespace: namespace,
+		Key:       key,
+	}}, fetchedAt); err != nil {
+		log.Warn("failed to increment memory usage counters", "namespace", namespace, "key", key, "err", err)
+	}
+
+	if req.GetIncludeUsage() {
+		usage, err := s.Store.GetMemoryUsage(ctx, namespace, key)
+		if err != nil {
+			log.Warn("failed to load memory usage counters", "namespace", namespace, "key", key, "err", err)
+		} else {
+			item.Usage = usage
+		}
+	}
+
 	resp, err := memoryItemToProto(*item)
 	if err != nil {
 		return nil, episodicInternalError("failed to encode memory response", err)
@@ -1187,6 +1206,9 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 		if err != nil {
 			return nil, episodicInternalError("semantic search error", err)
 		}
+		if req.GetIncludeUsage() {
+			enrichMemoryItemsWithUsage(ctx, s.Store, items)
+		}
 		if len(items) > 0 {
 			return memoryItemsToSearchResponse(items)
 		}
@@ -1195,6 +1217,9 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	items, err := s.Store.SearchMemories(ctx, effectivePrefix, filter, limit, offset)
 	if err != nil {
 		return nil, episodicInternalError("failed to search memories", err)
+	}
+	if req.GetIncludeUsage() {
+		enrichMemoryItemsWithUsage(ctx, s.Store, items)
 	}
 	return memoryItemsToSearchResponse(items)
 }
@@ -1268,6 +1293,96 @@ func (s *MemoriesServer) GetMemoryIndexStatus(ctx context.Context, _ *emptypb.Em
 		return nil, episodicInternalError("failed to read memory index status", err)
 	}
 	return &pb.MemoryIndexStatusResponse{Pending: count}, nil
+}
+
+func (s *MemoriesServer) GetMemoryUsage(ctx context.Context, req *pb.GetMemoryUsageRequest) (*pb.MemoryUsage, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	id := security.IdentityFromContext(ctx)
+	if id == nil || !id.Roles[security.RoleAdmin] {
+		return nil, status.Error(codes.PermissionDenied, "admin role required")
+	}
+
+	namespace := req.GetNamespace()
+	if err := validateMemoryNamespace(namespace, s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	key := req.GetKey()
+	if key == "" {
+		return nil, status.Error(codes.InvalidArgument, "key is required")
+	}
+
+	usage, err := s.Store.GetMemoryUsage(ctx, namespace, key)
+	if err != nil {
+		return nil, episodicInternalError("failed to read memory usage", err)
+	}
+	if usage == nil {
+		return nil, status.Error(codes.NotFound, "memory usage not found")
+	}
+	return memoryUsageToProto(*usage), nil
+}
+
+func (s *MemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.ListTopMemoryUsageRequest) (*pb.ListTopMemoryUsageResponse, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	id := security.IdentityFromContext(ctx)
+	if id == nil || !id.Roles[security.RoleAdmin] {
+		return nil, status.Error(codes.PermissionDenied, "admin role required")
+	}
+
+	prefix := req.GetPrefix()
+	if len(prefix) > 0 {
+		if err := validateMemoryNamespace(prefix, s.maxDepth()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+
+	sortBy := registryepisodic.MemoryUsageSortFetchCount
+	switch req.GetSort() {
+	case pb.MemoryUsageSort_LAST_FETCHED_AT:
+		sortBy = registryepisodic.MemoryUsageSortLastFetchedAt
+	case pb.MemoryUsageSort_MEMORY_USAGE_SORT_UNSPECIFIED, pb.MemoryUsageSort_FETCH_COUNT:
+		sortBy = registryepisodic.MemoryUsageSortFetchCount
+	default:
+		return nil, status.Error(codes.InvalidArgument, "invalid sort")
+	}
+
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	items, err := s.Store.ListTopMemoryUsage(ctx, registryepisodic.ListTopMemoryUsageRequest{
+		Prefix: prefix,
+		Sort:   sortBy,
+		Limit:  limit,
+	})
+	if err != nil {
+		return nil, episodicInternalError("failed to list memory usage", err)
+	}
+
+	resp := &pb.ListTopMemoryUsageResponse{}
+	for _, item := range items {
+		resp.Items = append(resp.Items, &pb.TopMemoryUsageItem{
+			Namespace: append([]string(nil), item.Namespace...),
+			Key:       item.Key,
+			Usage:     memoryUsageToProto(item.Usage),
+		})
+	}
+	return resp, nil
 }
 
 func (s *MemoriesServer) maxDepth() int {
@@ -1360,7 +1475,17 @@ func memoryItemToProto(item registryepisodic.MemoryItem) (*pb.MemoryItem, error)
 		expiresAt := item.ExpiresAt.UTC().Format(time.RFC3339)
 		resp.ExpiresAt = &expiresAt
 	}
+	if item.Usage != nil {
+		resp.Usage = memoryUsageToProto(*item.Usage)
+	}
 	return resp, nil
+}
+
+func memoryUsageToProto(usage registryepisodic.MemoryUsage) *pb.MemoryUsage {
+	return &pb.MemoryUsage{
+		FetchCount:    usage.FetchCount,
+		LastFetchedAt: timestamppb.New(usage.LastFetchedAt.UTC()),
+	}
 }
 
 func memoryItemsToSearchResponse(items []registryepisodic.MemoryItem) (*pb.SearchMemoriesResponse, error) {
@@ -1373,6 +1498,17 @@ func memoryItemsToSearchResponse(items []registryepisodic.MemoryItem) (*pb.Searc
 		resp.Items = append(resp.Items, pItem)
 	}
 	return resp, nil
+}
+
+func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.EpisodicStore, items []registryepisodic.MemoryItem) {
+	for i := range items {
+		usage, err := store.GetMemoryUsage(ctx, items[i].Namespace, items[i].Key)
+		if err != nil {
+			log.Warn("failed to load memory usage counters", "namespace", items[i].Namespace, "key", items[i].Key, "err", err)
+			continue
+		}
+		items[i].Usage = usage
+	}
 }
 
 func semanticSearchMemories(ctx context.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter map[string]interface{}, query string, limit int) ([]registryepisodic.MemoryItem, error) {

@@ -151,6 +151,140 @@ Feature: Episodic Memory gRPC API
     Then the gRPC response should not have an error
     And the gRPC response field "items" should have size 2
 
+  Scenario: GetMemory include_usage returns usage counters
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-grpc-get"
+    key: "gk1"
+    value {
+      fields {
+        key: "text"
+        value { string_value: "tracked" }
+      }
+    }
+    """
+    When I send gRPC request "MemoriesService/GetMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-grpc-get"
+    key: "gk1"
+    include_usage: true
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "usage.fetchCount" should be "1"
+    And the gRPC response field "usage.lastFetchedAt" should not be null
+
+  Scenario: SearchMemories include_usage does not increment fetch counters
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-grpc-search"
+    key: "gk2"
+    value {
+      fields {
+        key: "text"
+        value { string_value: "search-test" }
+      }
+    }
+    """
+    And I send gRPC request "MemoriesService/GetMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-grpc-search"
+    key: "gk2"
+    include_usage: true
+    """
+    And the gRPC response should not have an error
+    When I send gRPC request "MemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "usage-grpc-search"
+    include_usage: true
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 1
+    And the gRPC response field "items[0].usage.fetchCount" should be "1"
+    When I am authenticated as admin user "alice"
+    And I send gRPC request "MemoriesService/GetMemoryUsage" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-grpc-search"
+    key: "gk2"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "fetchCount" should be "1"
+
+  Scenario: ListTopMemoryUsage ranks by fetch_count
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-top"
+    key: "k-top"
+    value {
+      fields {
+        key: "text"
+        value { string_value: "top" }
+      }
+    }
+    """
+    And I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-top"
+    key: "k-low"
+    value {
+      fields {
+        key: "text"
+        value { string_value: "low" }
+      }
+    }
+    """
+    And I send gRPC request "MemoriesService/GetMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-top"
+    key: "k-top"
+    """
+    And the gRPC response should not have an error
+    And I send gRPC request "MemoriesService/GetMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-top"
+    key: "k-top"
+    """
+    And the gRPC response should not have an error
+    And I send gRPC request "MemoriesService/GetMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "usage-top"
+    key: "k-low"
+    """
+    And the gRPC response should not have an error
+    When I am authenticated as admin user "alice"
+    And I send gRPC request "MemoriesService/ListTopMemoryUsage" with body:
+    """
+    prefix: "user"
+    prefix: "alice"
+    prefix: "usage-top"
+    sort: FETCH_COUNT
+    limit: 1
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items[0].key" should be "k-top"
+
   Scenario: List namespaces under prefix
     Given I send gRPC request "MemoriesService/PutMemory" with body:
     """

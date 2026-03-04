@@ -480,6 +480,16 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.GetMemoryIndexStatus(ctx, req.(*emptypb.Empty))
 				})
+		case "GetMemoryUsage":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.GetMemoryUsageRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.GetMemoryUsage(ctx, req.(*pb.GetMemoryUsageRequest))
+				})
+		case "ListTopMemoryUsage":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.ListTopMemoryUsageRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListTopMemoryUsage(ctx, req.(*pb.ListTopMemoryUsageRequest))
+				})
 		}
 
 	case "ResponseRecorderService":

@@ -773,6 +773,7 @@ export class MemoriesService {
    * @param data The data for the request.
    * @param data.ns Namespace segments. Repeat once per segment.
    * @param data.key
+   * @param data.includeUsage Include usage counters for the requested memory.
    * @returns MemoryItem Memory found.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -786,6 +787,7 @@ export class MemoriesService {
       query: {
         ns: data.ns,
         key: data.key,
+        include_usage: data.includeUsage,
       },
       errors: {
         404: "Resource not found",

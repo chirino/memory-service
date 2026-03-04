@@ -309,3 +309,20 @@ ALTER TABLE memories
     DROP COLUMN IF EXISTS index_fields,
     DROP COLUMN IF EXISTS index_disabled,
     ADD COLUMN IF NOT EXISTS indexed_content JSONB NOT NULL DEFAULT '{}'::JSONB;
+
+------------------------------------------------------------
+-- Episodic Memory Usage Stats
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS memory_usage_stats (
+    namespace       TEXT        NOT NULL,   -- RS-encoded namespace
+    key             TEXT        NOT NULL,
+    fetch_count     BIGINT      NOT NULL DEFAULT 0,
+    last_fetched_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (namespace, key)
+);
+
+CREATE INDEX IF NOT EXISTS memory_usage_stats_last_fetched_idx
+    ON memory_usage_stats (last_fetched_at DESC);
+CREATE INDEX IF NOT EXISTS memory_usage_stats_fetch_count_idx
+    ON memory_usage_stats (fetch_count DESC);

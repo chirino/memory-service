@@ -8,7 +8,7 @@
 
 **Default episodic OPA policy**: Built-in authz is deny-by-default and only allows `["user", <subject>, ...]` namespaces. Built-in attribute extraction persists plaintext `{"namespace":"user","sub":<subject>}` in `policy_attributes`, and built-in search filter injection enforces both keys for non-admin callers.
 
-**Episodic indexer pending rows**: `registry/episodic.PendingMemory.Namespace` is a single RS-delimited string (`\x1f`), not `[]string`; tests/mocks must provide encoded namespace values.
+**Episodic indexer pending rows**: `registry/episodic.PendingMemory.Namespace` is a single RS-delimited string (`\x1e`), not `[]string`; tests/mocks must provide encoded namespace values.
 
 **Postgres append auto-create race**: Concurrent `AppendEntries` calls for the same missing conversation ID can race on root conversation/group creation and hit `23505` on `conversation_groups_pkey`. The append path must treat that unique-violation as a concurrent-create win, reload the conversation, and continue instead of returning 500.
 **Postgres duplicate-key diagnostics**: When conversation/group auto-create paths hit `23505`, the store now emits structured warning logs with `constraint`, `table`, and Postgres `detail` plus `userID`, `conversationID`, and `conversationGroupID` so CI flakes can be mapped back to scenario-specific IDs.

@@ -344,6 +344,23 @@ export const $MemoryItem = {
       format: "date-time",
       nullable: true,
     },
+    usage: {
+      $ref: "#/components/schemas/MemoryUsage",
+    },
+  },
+} as const;
+
+export const $MemoryUsage = {
+  type: "object",
+  properties: {
+    fetchCount: {
+      type: "integer",
+      format: "int64",
+    },
+    lastFetchedAt: {
+      type: "string",
+      format: "date-time",
+    },
   },
 } as const;
 
@@ -372,6 +389,10 @@ export const $SearchMemoriesRequest = {
     offset: {
       type: "integer",
       minimum: 0,
+    },
+    include_usage: {
+      type: "boolean",
+      default: false,
     },
   },
 } as const;

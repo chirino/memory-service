@@ -37,8 +37,43 @@ type MemoryItem struct {
 	Value      map[string]interface{} `json:"value,omitempty"`
 	Attributes map[string]interface{} `json:"attributes,omitempty"`
 	Score      *float64               `json:"score,omitempty"` // nil for non-vector results
+	Usage      *MemoryUsage           `json:"usage,omitempty"`
 	CreatedAt  time.Time              `json:"createdAt"`
 	ExpiresAt  *time.Time             `json:"expiresAt"`
+}
+
+// MemoryUsage stores usage counters for one (namespace, key) pair.
+type MemoryUsage struct {
+	FetchCount    int64     `json:"fetchCount"`
+	LastFetchedAt time.Time `json:"lastFetchedAt"`
+}
+
+// MemoryKey identifies a memory by decoded namespace + key.
+type MemoryKey struct {
+	Namespace []string `json:"namespace"`
+	Key       string   `json:"key"`
+}
+
+// MemoryUsageSort controls sorting for top usage queries.
+type MemoryUsageSort string
+
+const (
+	MemoryUsageSortFetchCount    MemoryUsageSort = "fetch_count"
+	MemoryUsageSortLastFetchedAt MemoryUsageSort = "last_fetched_at"
+)
+
+// TopMemoryUsageItem is one ranked usage row.
+type TopMemoryUsageItem struct {
+	Namespace []string    `json:"namespace"`
+	Key       string      `json:"key"`
+	Usage     MemoryUsage `json:"usage"`
+}
+
+// ListTopMemoryUsageRequest is the input for top usage queries.
+type ListTopMemoryUsageRequest struct {
+	Prefix []string
+	Sort   MemoryUsageSort
+	Limit  int
 }
 
 // MemoryWriteResult is returned by PutMemory (value omitted for security).
@@ -152,6 +187,16 @@ type EpisodicStore interface {
 	// GetMemory retrieves the active (non-deleted) memory for the given (namespace, key).
 	// Returns nil, nil if no active row exists.
 	GetMemory(ctx context.Context, namespace []string, key string) (*MemoryItem, error)
+
+	// IncrementMemoryLoads increments direct-fetch usage counters for one or more memory keys.
+	IncrementMemoryLoads(ctx context.Context, keys []MemoryKey, fetchedAt time.Time) error
+
+	// GetMemoryUsage retrieves usage counters for one memory key.
+	// Returns nil, nil if no usage stats exist.
+	GetMemoryUsage(ctx context.Context, namespace []string, key string) (*MemoryUsage, error)
+
+	// ListTopMemoryUsage returns ranked usage rows under an optional namespace prefix.
+	ListTopMemoryUsage(ctx context.Context, req ListTopMemoryUsageRequest) ([]TopMemoryUsageItem, error)
 
 	// DeleteMemory soft-deletes the active memory for the given (namespace, key).
 	// Returns nil if no active row exists (idempotent).

@@ -1,12 +1,14 @@
 package memories
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -131,6 +133,7 @@ func getMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 	}
 	ns := params.Ns
 	key := params.Key
+	includeUsage := queryBool(c, "include_usage", false)
 
 	if err := validateNamespace(ns, cfg.EpisodicMaxDepth); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -167,6 +170,23 @@ func getMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "memory not found"})
 		return
 	}
+
+	fetchedAt := time.Now().UTC()
+	if err := store.IncrementMemoryLoads(c.Request.Context(), []registryepisodic.MemoryKey{{
+		Namespace: ns,
+		Key:       key,
+	}}, fetchedAt); err != nil {
+		log.Warn("failed to increment memory usage counters", "namespace", ns, "key", key, "err", err)
+	}
+	if includeUsage {
+		usage, err := store.GetMemoryUsage(c.Request.Context(), ns, key)
+		if err != nil {
+			log.Warn("failed to load memory usage counters", "namespace", ns, "key", key, "err", err)
+		} else {
+			item.Usage = usage
+		}
+	}
+
 	c.JSON(http.StatusOK, toAPIMemoryItem(*item))
 }
 
@@ -229,6 +249,7 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 	if req.Offset != nil {
 		offset = *req.Offset
 	}
+	includeUsage := req.IncludeUsage != nil && *req.IncludeUsage
 	if err := validateNamespace(req.NamespacePrefix, cfg.EpisodicMaxDepth); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -262,6 +283,9 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 			handleError(c, err)
 			return
 		}
+		if includeUsage {
+			enrichMemoryItemsWithUsage(c.Request.Context(), store, items)
+		}
 		if len(items) > 0 {
 			respItems := toAPIMemoryItems(items)
 			c.JSON(http.StatusOK, generatedapi.SearchMemoriesResponse{Items: &respItems})
@@ -273,6 +297,9 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 	if err != nil {
 		handleError(c, err)
 		return
+	}
+	if includeUsage {
+		enrichMemoryItemsWithUsage(c.Request.Context(), store, items)
 	}
 
 	respItems := toAPIMemoryItems(items)
@@ -524,6 +551,73 @@ func MountAdminRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, polic
 			"stats":     stats,
 		})
 	})
+
+	g.GET("/memories/usage", func(c *gin.Context) {
+		ns := c.QueryArray("ns")
+		key := c.Query("key")
+		if err := validateNamespace(ns, cfg.EpisodicMaxDepth); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if key == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "key is required"})
+			return
+		}
+		usage, err := store.GetMemoryUsage(c.Request.Context(), ns, key)
+		if err != nil {
+			handleError(c, err)
+			return
+		}
+		if usage == nil {
+			c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "memory usage not found"})
+			return
+		}
+		c.JSON(http.StatusOK, toAPIMemoryUsage(*usage))
+	})
+
+	g.GET("/memories/usage/top", func(c *gin.Context) {
+		prefix := c.QueryArray("prefix")
+		if len(prefix) > 0 {
+			if err := validateNamespace(prefix, cfg.EpisodicMaxDepth); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		sortBy := registryepisodic.MemoryUsageSort(strings.ToLower(strings.TrimSpace(c.DefaultQuery("sort", string(registryepisodic.MemoryUsageSortFetchCount)))))
+		switch sortBy {
+		case registryepisodic.MemoryUsageSortFetchCount, registryepisodic.MemoryUsageSortLastFetchedAt:
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sort must be one of: fetch_count, last_fetched_at"})
+			return
+		}
+
+		limit := queryInt(c, "limit", 100)
+		if limit <= 0 || limit > 1000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 1000"})
+			return
+		}
+
+		items, err := store.ListTopMemoryUsage(c.Request.Context(), registryepisodic.ListTopMemoryUsageRequest{
+			Prefix: prefix,
+			Sort:   sortBy,
+			Limit:  limit,
+		})
+		if err != nil {
+			handleError(c, err)
+			return
+		}
+
+		respItems := make([]gin.H, 0, len(items))
+		for _, item := range items {
+			respItems = append(respItems, gin.H{
+				"namespace": item.Namespace,
+				"key":       item.Key,
+				"usage":     toAPIMemoryUsage(item.Usage),
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"items": respItems})
+	})
 }
 
 // --- Helpers ---
@@ -599,6 +693,7 @@ func toAPIMemoryItem(item registryepisodic.MemoryItem) generatedapi.MemoryItem {
 		Key:        &key,
 		Value:      mapRef(item.Value),
 		Attributes: mapRef(item.Attributes),
+		Usage:      toAPIMemoryUsageRef(item.Usage),
 		Score:      item.Score,
 		CreatedAt:  &createdAt,
 		ExpiresAt:  expiresAt,
@@ -622,6 +717,34 @@ func mapRef(in map[string]interface{}) *map[string]interface{} {
 		out[k] = v
 	}
 	return &out
+}
+
+func toAPIMemoryUsage(usage registryepisodic.MemoryUsage) generatedapi.MemoryUsage {
+	fetchCount := usage.FetchCount
+	lastFetchedAt := usage.LastFetchedAt.UTC()
+	return generatedapi.MemoryUsage{
+		FetchCount:    &fetchCount,
+		LastFetchedAt: &lastFetchedAt,
+	}
+}
+
+func toAPIMemoryUsageRef(usage *registryepisodic.MemoryUsage) *generatedapi.MemoryUsage {
+	if usage == nil {
+		return nil
+	}
+	v := toAPIMemoryUsage(*usage)
+	return &v
+}
+
+func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.EpisodicStore, items []registryepisodic.MemoryItem) {
+	for i := range items {
+		usage, err := store.GetMemoryUsage(ctx, items[i].Namespace, items[i].Key)
+		if err != nil {
+			log.Warn("failed to load memory usage counters", "namespace", items[i].Namespace, "key", items[i].Key, "err", err)
+			continue
+		}
+		items[i].Usage = usage
+	}
 }
 
 func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter map[string]interface{}, query string, limit int) ([]registryepisodic.MemoryItem, error) {
@@ -699,6 +822,20 @@ func queryInt(c *gin.Context, key string, def int) int {
 		return def
 	}
 	return i
+}
+
+func queryBool(c *gin.Context, key string, def bool) bool {
+	v := strings.TrimSpace(c.Query(key))
+	if v == "" {
+		return def
+	}
+	if strings.EqualFold(v, "1") || strings.EqualFold(v, "true") {
+		return true
+	}
+	if strings.EqualFold(v, "0") || strings.EqualFold(v, "false") {
+		return false
+	}
+	return def
 }
 
 func persistPolicyBundle(dir string, bundle episodic.PolicyBundle) error {

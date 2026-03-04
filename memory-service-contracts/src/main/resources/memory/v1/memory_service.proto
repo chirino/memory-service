@@ -3,6 +3,7 @@ package memory.v1;
 
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
 
 option java_multiple_files = true;
 option java_package = "io.github.chirino.memory.grpc.v1";
@@ -402,6 +403,7 @@ message MemoryWriteResult {
 message GetMemoryRequest {
   repeated string namespace = 1;
   string key = 2;
+  bool include_usage = 3;
 }
 
 message DeleteMemoryRequest {
@@ -419,6 +421,7 @@ message MemoryItem {
   optional double score = 6;
   string created_at = 7;
   optional string expires_at = 8;
+  optional MemoryUsage usage = 9;
 }
 
 message SearchMemoriesRequest {
@@ -427,6 +430,7 @@ message SearchMemoriesRequest {
   optional google.protobuf.Struct filter = 3;
   int32 limit = 4;
   int32 offset = 5;
+  bool include_usage = 6;
 }
 
 message SearchMemoriesResponse {
@@ -449,6 +453,38 @@ message ListMemoryNamespacesResponse {
 
 message MemoryIndexStatusResponse {
   int64 pending = 1;
+}
+
+message MemoryUsage {
+  int64 fetch_count = 1;
+  google.protobuf.Timestamp last_fetched_at = 2;
+}
+
+message GetMemoryUsageRequest {
+  repeated string namespace = 1;
+  string key = 2;
+}
+
+enum MemoryUsageSort {
+  MEMORY_USAGE_SORT_UNSPECIFIED = 0;
+  FETCH_COUNT = 1;
+  LAST_FETCHED_AT = 2;
+}
+
+message ListTopMemoryUsageRequest {
+  repeated string prefix = 1;
+  MemoryUsageSort sort = 2;
+  int32 limit = 3;
+}
+
+message TopMemoryUsageItem {
+  repeated string namespace = 1;
+  string key = 2;
+  MemoryUsage usage = 3;
+}
+
+message ListTopMemoryUsageResponse {
+  repeated TopMemoryUsageItem items = 1;
 }
 
 message HealthResponse {
@@ -514,6 +550,10 @@ service MemoriesService {
   rpc ListMemoryNamespaces(ListMemoryNamespacesRequest) returns (ListMemoryNamespacesResponse);
   // Admin-only: returns count of memories with pending index synchronization.
   rpc GetMemoryIndexStatus(google.protobuf.Empty) returns (MemoryIndexStatusResponse);
+  // Admin-only: returns usage stats for one memory key.
+  rpc GetMemoryUsage(GetMemoryUsageRequest) returns (MemoryUsage);
+  // Admin-only: returns ranked memory usage rows.
+  rpc ListTopMemoryUsage(ListTopMemoryUsageRequest) returns (ListTopMemoryUsageResponse);
 }
 
 service ResponseRecorderService {
