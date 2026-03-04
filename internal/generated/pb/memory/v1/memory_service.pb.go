@@ -1171,7 +1171,9 @@ type CreateEntryRequest struct {
 	// Optional text to index for search (history channel only)
 	IndexedContent *string `protobuf:"bytes,6,opt,name=indexed_content,json=indexedContent,proto3,oneof" json:"indexed_content,omitempty"`
 	// Fork metadata: if the target conversation doesn't exist yet, auto-create
-	// it as a fork of forked_at_conversation_id at forked_at_entry_id.
+	// it as a fork of forked_at_conversation_id. Optionally provide
+	// forked_at_entry_id to fork at a specific point. When unset, all source
+	// entries are excluded and the new entry become the first entry in the fork.
 	ForkedAtConversationId []byte `protobuf:"bytes,7,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3,oneof" json:"forked_at_conversation_id,omitempty"` // UUID as 16-byte big-endian
 	ForkedAtEntryId        []byte `protobuf:"bytes,8,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3,oneof" json:"forked_at_entry_id,omitempty"`                      // UUID as 16-byte big-endian
 	unknownFields          protoimpl.UnknownFields

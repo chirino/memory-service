@@ -2131,6 +2131,19 @@ func (s *PostgresStore) buildAncestryStack(ctx context.Context, target model.Con
 	return stack, nil
 }
 
+func advanceForkAncestorForNilStop(ancestry []forkAncestor, ancestorIndex *int, current *forkAncestor, isTarget *bool) bool {
+	// Nil stop points mean "exclude all inherited entries from this ancestor".
+	for !*isTarget && current.StopAtEntryID == nil {
+		*ancestorIndex = *ancestorIndex + 1
+		if *ancestorIndex >= len(ancestry) {
+			return false
+		}
+		*current = ancestry[*ancestorIndex]
+		*isTarget = *ancestorIndex == len(ancestry)-1
+	}
+	return true
+}
+
 func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) []model.Entry {
 	if len(ancestry) == 0 {
 		return allEntries
@@ -2140,6 +2153,9 @@ func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) 
 	ancestorIndex := 0
 	current := ancestry[ancestorIndex]
 	isTarget := ancestorIndex == len(ancestry)-1
+	if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
+		return result
+	}
 
 	for _, entry := range allEntries {
 		if entry.ConversationID != current.ConversationID {
@@ -2152,6 +2168,9 @@ func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) 
 			if ancestorIndex < len(ancestry) {
 				current = ancestry[ancestorIndex]
 				isTarget = ancestorIndex == len(ancestry)-1
+				if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
+					break
+				}
 			}
 		}
 	}
@@ -2250,6 +2269,9 @@ func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAnces
 	ancestorIndex := 0
 	current := ancestry[ancestorIndex]
 	isTarget := ancestorIndex == len(ancestry)-1
+	if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
+		return result
+	}
 
 	for _, entry := range allEntries {
 		if entry.ConversationID != current.ConversationID {
@@ -2287,6 +2309,9 @@ func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAnces
 			if ancestorIndex < len(ancestry) {
 				current = ancestry[ancestorIndex]
 				isTarget = ancestorIndex == len(ancestry)-1
+				if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
+					break
+				}
 			}
 		}
 	}

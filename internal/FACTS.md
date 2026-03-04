@@ -15,3 +15,4 @@
 **gRPC recorder disconnect cleanup**: In `ResponseRecorderServer.Record`, if the stream fails with gRPC/ctx `CANCELED` or `DEADLINE_EXCEEDED` after a recorder has been created, call `recorder.Complete()` before returning so the locator/cache registry entry for that conversation is removed.
 
 **gRPC cancel semantics**: `ResponseRecorderServer.Record` subscribes to `resumer.CancelStream(conversationID)` once the first chunk sets `conversation_id`; when cancel is requested it completes the recorder (removing locator/cache registry) and returns unary `RecordResponse{status=RECORD_STATUS_CANCELLED}`.
+**Fork ancestry nil stop-point semantics**: In entry ancestry filtering (Postgres and Mongo), a nil `forkedAtEntryId` means "exclude all inherited entries from that ancestor and jump directly to the child conversation". This makes the first newly appended message the first visible entry in the fork.

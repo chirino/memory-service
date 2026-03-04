@@ -1,6 +1,6 @@
 {
   "name": "Memory Service Dev",
-  "image": "ghcr.io/chirino/memory-service-dev:latest",
+  "image": "ghcr.io/chirino/memory-service-dev@sha256:f569f1145cffdafc4caa634ea8f5dc816c9a293975c325f4f4a76e8c52f41c2d",
   // "build": {
   //   "dockerfile": "Dockerfile"
   // },

@@ -56,6 +56,30 @@ Feature: Conversation Forking REST API
     And the response body should contain "forkedAtEntryId"
     And the response body should contain "${conversationId}"
 
+  Scenario: Fork on append without forkedAtEntryId shows null fork point in list forks
+    # Use a deterministic UUID for stable assertions.
+    And set "forkWithoutEntryConversationId" to "00000000-0000-4000-8000-000000000001"
+    When I call POST "/v1/conversations/${forkWithoutEntryConversationId}/entries" with body:
+    """
+    {
+      "forkedAtConversationId": "${conversationId}",
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Fork message without explicit fork point"}]
+    }
+    """
+    Then the response status should be 201
+    When I list forks for the conversation
+    Then the response status should be 200
+    And the response should contain at least 2 conversations
+    And the response body field "data[1].conversationId" should be "${forkWithoutEntryConversationId}"
+    And the response body field "data[1].forkedAtConversationId" should be "${conversationId}"
+    And the response body field "data[1].forkedAtEntryId" should be null
+    When I call GET "/v1/conversations/${forkWithoutEntryConversationId}/entries"
+    Then the response status should be 200
+    And the response should contain 1 entry
+    And entry at index 0 should have content "Fork message without explicit fork point"
+
   Scenario: Fork non-existent conversation
     When I fork conversation "00000000-0000-0000-0000-000000000000" at entry "00000000-0000-0000-0000-000000000001" with request:
     """

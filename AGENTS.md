@@ -76,6 +76,7 @@ task test:go > test.log 2>&1
 
 **Module-specific knowledge** lives in `FACTS.md` files within each module directory:
 - `./frontends/chat-frontend/FACTS.md`
+- `./memory-service-contracts/FACTS.md`
 - `./quarkus/FACTS.md`
 - `./python/FACTS.md`
 - `./internal/sitebdd/FACTS.md`
