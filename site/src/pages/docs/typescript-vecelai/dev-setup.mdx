@@ -1,0 +1,48 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: TypeScript Dev Setup
+description: Setup for TypeScript + Express + Vercel AI SDK checkpoints.
+---
+
+Use this setup once before running the TypeScript tutorial checkpoints.
+
+## Prerequisites
+
+- Node.js 22+
+- npm 10+
+- Docker (for Memory Service dependencies)
+- `curl` and `jq`
+
+## 1. Build the Local Package
+
+Before `@chirino/memory-service-vercelai` is published, checkpoints use a local `file:` dependency.
+
+```bash
+cd typescript/vercelai
+npm install
+npm run build
+```
+
+## 2. Install and Run a Checkpoint
+
+```bash
+cd typescript/examples/vecelai/doc-checkpoints/01-basic-chat
+npm install
+npm run dev
+```
+
+## 3. Start Memory Service Dependencies
+
+From repository root:
+
+```bash
+task dev:deps
+```
+
+This starts Keycloak, Postgres, and other services used by tutorial curl scenarios.
+
+## 4. Package Publish Transition
+
+Checkpoint imports already use the final package name: `@chirino/memory-service-vercelai`.
+
+After publish, replace the dependency source in each example from local `file:` to the published npm version. No import path changes are needed.

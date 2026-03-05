@@ -24,16 +24,15 @@ Make sure you've completed the previous guides:
 
 ### How Forking Works
 
-Forks are created implicitly when the first entry is appended to a new conversation with fork metadata. In this checkpoint, the `ChatController` remains the same as the previous step, and fork metadata is passed when creating entries through the Memory Service API:
+Forks are created implicitly when the first entry is appended to a new conversation with fork metadata. In this checkpoint, the `ChatController` accepts optional fork query params and forwards them to the history advisor:
 
 <CodeFromFile
   file="spring/examples/doc-checkpoints/04-conversation-forking/src/main/java/com/example/demo/ChatController.java"
   lang="java"
-  before={2}
-  after={1}
->public String chat(@PathVariable String conversationId, @RequestBody String message)</CodeFromFile>
+  lines="33-74"
+/>
 
-**Why**: Keeping fork metadata out of the controller keeps the chat endpoint simple and generic. The forking relationship is stored by the Memory Service when the first history entry is written with the fork fields populated, so the same `ChatController` can serve both root conversations and forks without branching logic.
+**Why**: Passing `forkedAtConversationId` and `forkedAtEntryId` through advisor context lets the same chat endpoint create either a root conversation or a fork, while still recording fork metadata on the first USER turn.
 
 ### Listing Forks
 
@@ -120,39 +119,25 @@ Example response from the entries API:
 }
 ```
 
-Create a forked entry (this uses the Memory Service API directly so fork metadata can be passed in the request body).
-Use a different conversation ID in the path (`6dcb8f3f-bd21-459f-9127-96e5a94d276c` below) than the root conversation ID:
+Create the forked conversation by calling chat with fork metadata:
 
 <CurlTest steps={`
-Then the response status should be 201
+Then the response status should be 200
 `}>
 
 ```bash
-curl -sSfX POST http://localhost:8082/v1/conversations/6dcb8f3f-bd21-459f-9127-96e5a94d276c/entries \
+curl -NsSfX POST "http://localhost:9090/chat/6dcb8f3f-bd21-459f-9127-96e5a94d276c?forkedAtConversationId=a8391789-592d-4273-90df-7349b08b5d3d&forkedAtEntryId=${FORK_ENTRY_ID}" \
+  -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
-  -H "X-API-Key: agent-api-key-1" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channel": "history",
-    "contentType": "history",
-    "content": [{"role": "USER", "text": "Continue from this fork."}],
-    "forkedAtConversationId": "a8391789-592d-4273-90df-7349b08b5d3d",
-    "forkedAtEntryId": "${FORK_ENTRY_ID}"
-  }' | jq
+  -d "Continue from this fork."
 ```
 
 </CurlTest>
 
 Example response:
 
-```json
-{
-  "id": "a0ce0657-87ce-45f6-a8c7-39beeb35fbe0",
-  "conversationId": "6dcb8f3f-bd21-459f-9127-96e5a94d276c",
-  "channel": "history",
-  "contentType": "history",
-  "content": [{"role": "USER", "text": "Continue from this fork."}]
-}
+```text
+Sure, I can help with that.
 ```
 
 List forks for the source conversation through the Spring proxy endpoint:

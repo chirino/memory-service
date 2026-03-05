@@ -1,0 +1,153 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: TypeScript Conversation Forking
+description: Branch conversations by writing fork metadata on first append.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide adds conversation forking metadata to the chat path.
+
+> **New to forking concepts?**
+> Read [Forking](/docs/concepts/forking/) first.
+
+## Prerequisites
+
+**Starting checkpoint**: [typescript/examples/vecelai/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/03-with-history)
+
+## Add Fork Parameters to Chat
+
+Checkpoint `04` adds fork query parsing:
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
+  lang="typescript"
+  lines="50-53"
+/>
+
+**What changed**: The endpoint accepts optional `forkedAtConversationId` and `forkedAtEntryId` query parameters.
+
+**Why**: These values identify the source conversation and exact branch point when creating a fork.
+
+## Pass Fork Metadata to the USER History Append
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
+  lang="typescript"
+  lines="57-65"
+/>
+
+**What changed**: Fork metadata is forwarded only to the first USER `appendHistoryEntry(...)` call.
+
+**Why**: The first append into a new conversation ID is how Memory Service materializes a fork.
+
+## Proxy the Fork Listing Endpoint
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
+  lang="typescript"
+  lines="4-9"
+/>
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
+  lang="typescript"
+  lines="23-29"
+/>
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
+  lang="typescript"
+  lines="103-110"
+/>
+
+**What changed**: Checkpoint `04` adds `withProxy` import, keeps `asNumber(...)` for paging params, and exposes `GET /v1/conversations/:conversationId/forks` with pagination passthrough.
+
+**Why**: Frontend clients can discover and render branch structure through the app's API instead of calling Memory Service directly.
+
+## Try It With Curl
+
+<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking">
+
+Define a helper to get a bearer token for `bob`:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Create the source conversation turn:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Hello from the root conversation."
+```
+
+</CurlTest>
+
+Read the branch point entry id from Memory Service:
+
+<CurlTest steps={`
+Then the response status should be 200
+And set "FORK_ENTRY_ID" to the json response field "data[0].id"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:8082/v1/conversations/c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111/entries?channel=history \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "X-API-Key: agent-api-key-1" | jq
+```
+
+</CurlTest>
+
+Create the forked conversation by calling chat with fork metadata:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -NsSfX POST "http://localhost:9090/chat/e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222?forkedAtConversationId=c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111&forkedAtEntryId=${FORK_ENTRY_ID}" \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Continue from this fork."
+```
+
+</CurlTest>
+
+List forks through the proxied endpoint:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111"
+And the response should contain "e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222"
+`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111/forks \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Next Steps
+
+- [Response Recording and Resumption](/docs/typescript-vecelai/response-resumption/) - Streaming with resume and cancel endpoints
+- [Sharing](/docs/typescript-vecelai/sharing/) - Membership and ownership transfer APIs

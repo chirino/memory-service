@@ -1,0 +1,123 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: TypeScript Indexing and Search
+description: Add indexed history content and conversation search endpoint.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide adds indexed history text and a proxied search endpoint.
+
+> **New to indexing and search concepts?**
+> Read [Indexing & Search](/docs/concepts/indexing-and-search/) first.
+
+## Prerequisites
+
+**Starting checkpoint**: [typescript/examples/vecelai/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/03-with-history)
+
+## Import Search Proxy Helpers
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
+  lang="typescript"
+  lines="4-9"
+/>
+
+**What changed**: Checkpoint `07` adds `withProxy` import used by the search endpoint.
+
+**Why**: The app can forward search requests to Memory Service while preserving user-scoped auth behavior.
+
+## Add Indexed Content to History Appends
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
+  lang="typescript"
+  lines="24-26"
+/>
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
+  lang="typescript"
+  lines="42-48"
+/>
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
+  lang="typescript"
+  lines="84-90"
+/>
+
+**What changed**: The app defines `indexedContent(...)` and passes it on each `appendHistoryEntry(...)` call.
+
+**Why**: `indexedContent` is the searchable projection of each encrypted history message.
+
+> **Security warning**
+> `indexedContent` is stored as searchable index data and is not encrypted like message content. Redact or minimize sensitive values before writing it.
+
+## Expose Search Endpoint
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
+  lang="typescript"
+  lines="95-97"
+/>
+
+**What changed**: The app adds `POST /v1/conversations/search` and relays request body to Memory Service.
+
+**Why**: Frontend clients can run semantic/fulltext search through the same agent app origin.
+
+<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/07-with-search">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Create searchable history:
+
+<CurlTest steps={`
+Then the response status should be 200
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/f1a4d9c2-5b6e-4a7d-8c21-9b3e5d6f7555 \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Give me a random number between 1 and 100."
+```
+
+</CurlTest>
+
+Search conversations:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "data"
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/search \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "random number", "searchType": "auto"}' | jq
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Next Steps
+
+- [Conversation Forking](/docs/typescript-vecelai/conversation-forking/) - Branch conversations at a chosen prior entry
+- [Response Recording and Resumption](/docs/typescript-vecelai/response-resumption/) - Streaming replay/cancel support

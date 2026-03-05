@@ -1,0 +1,133 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: TypeScript Response Recording and Resumption
+description: Stream AI responses and support resume-check/resume/cancel endpoints.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide adds token streaming and local response recording to support reconnect and cancellation.
+
+For the behavior model, see [Response Recording and Resumption Concepts](/docs/concepts/response-resumption/).
+
+## Prerequisites
+
+**Starting checkpoint**: [typescript/examples/vecelai/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/03-with-history)
+
+Install the gRPC response-recording dependencies in checkpoint `05`:
+
+```bash
+cd typescript/examples/vecelai/doc-checkpoints/05-response-resumption
+npm install @grpc/grpc-js @grpc/proto-loader
+```
+
+## Add Streaming + Recording
+
+Checkpoint `05` introduces `streamText(...)` and gRPC-backed response recording helpers:
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
+  lang="typescript"
+  lines="1-2"
+/>
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
+  lang="typescript"
+  lines="6-11"
+/>
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
+  lang="typescript"
+  lines="52-82"
+/>
+
+**What changed**: The handler switches from single-response generation to streamed chunks and records each emitted chunk with `responseRecorder.record(...)`.
+
+**Why**: Recording the in-progress chunks lets reconnecting clients replay exactly what was produced so far.
+
+## Persist Final Turn After Stream Completion
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
+  lang="typescript"
+  lines="52-85"
+/>
+
+**What changed**: `withMemoryService(...)` wraps the stream call so USER/AI turns are persisted when the callback completes.
+
+**Why**: Streaming transport stays transient, while conversation state remains durable in Memory Service.
+
+> **Security note**
+> Any `indexedContent` you attach to history entries is stored as non-encrypted search index data. Redact or minimize sensitive content.
+
+## Add Resume APIs
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
+  lang="typescript"
+  lines="88-115"
+/>
+
+**What changed**: The app adds `/resume-check`, `/:conversationId/resume`, and `/:conversationId/cancel` endpoints backed by `ResponseRecordingManager`.
+
+**Why**: These endpoints expose reconnect and cancellation behavior without changing the main chat contract.
+
+<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/05-response-resumption">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Start a streaming response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "data:"
+And the response should contain "PartialResponse"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Write a short story about a cat."
+```
+
+</CurlTest>
+
+Check whether a conversation has an in-progress response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "["
+`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '["a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333"]'
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Next Steps
+
+- [Sharing](/docs/typescript-vecelai/sharing/) - Membership and ownership transfer APIs
+- [Indexing and Search](/docs/typescript-vecelai/indexing-and-search/) - Indexed content and search endpoint

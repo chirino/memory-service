@@ -34,9 +34,9 @@ Keep the chat endpoint the same shape as Quarkus and Spring (`text/plain` input)
   lines="49-72"
 />
 
-**What changed**: The chat endpoint reads two optional query parameters — `forkedAtConversationId` and `forkedAtEntryId` — and passes them into `memory_service_scope(conversation_id, forked_at_conversation_id, forked_at_entry_id)`. A validation guard rejects requests that supply only one of the two params.
+**What changed**: The chat endpoint reads two optional query parameters — `forkedAtConversationId` and `forkedAtEntryId` — and passes them into `memory_service_scope(conversation_id, forked_at_conversation_id, forked_at_entry_id)`.
 
-**Why**: When both fork parameters are present, the history middleware attaches them as fork metadata to the first entry it writes for this conversation. This tells the Memory Service that the new conversation branches off at a specific entry in another conversation, allowing the service to reconstruct the full lineage. Both parameters must be provided together because neither is meaningful without the other — a fork needs a source conversation ID and a specific branch point.
+**Why**: When fork parameters are present, the history middleware attaches them as fork metadata to the first entry it writes for this conversation. This tells the Memory Service that the new conversation branches off at a specific entry in another conversation, allowing the service to reconstruct the full lineage.
 
 ### Listing Forks
 
@@ -128,38 +128,25 @@ Example response from the entries API:
 }
 ```
 
-Create a fork by appending the first turn to a different conversation ID through the Memory Service API with fork metadata:
+Create the forked conversation by calling chat with fork metadata:
 
 <CurlTest steps={`
-Then the response status should be 201
+Then the response status should be 200
 `}>
 
 ```bash
-curl -sSfX POST http://localhost:8082/v1/conversations/bb745717-236b-4c81-bc0a-766d10622e19/entries \
+curl -NsSfX POST "http://localhost:9090/chat/bb745717-236b-4c81-bc0a-766d10622e19?forkedAtConversationId=16de0661-0dcf-4df2-9964-7f23c4de5fc6&forkedAtEntryId=${FORK_ENTRY_ID}" \
+  -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
-  -H "X-API-Key: agent-api-key-1" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channel": "history",
-    "contentType": "history",
-    "content": [{"role": "USER", "text": "Continue from this fork."}],
-    "forkedAtConversationId": "16de0661-0dcf-4df2-9964-7f23c4de5fc6",
-    "forkedAtEntryId": "${FORK_ENTRY_ID}"
-  }' | jq
+  -d "Continue from this fork."
 ```
 
 </CurlTest>
 
 Example response:
 
-```json
-{
-  "id": "b3a9d6dd-b499-44cc-8852-1d2dbab6f03c",
-  "conversationId": "bb745717-236b-4c81-bc0a-766d10622e19",
-  "channel": "history",
-  "contentType": "history",
-  "content": [{"role": "USER", "text": "Continue from this fork."}]
-}
+```text
+Sure, I can help with that.
 ```
 
 List forks for the source conversation through the Python proxy endpoint:

@@ -41,6 +41,9 @@ The simplest provider is pass-through:
 
 **Why**: Passing `indexed_content_provider` to `MemoryServiceHistoryMiddleware` activates indexing: the function is called for every message before the history entry is written, and its return value becomes `indexedContent`. A pass-through provider indexes everything as-is. You can swap it for a redaction function to strip sensitive data from the search index while keeping the full encrypted message in storage.
 
+> **Security warning**
+> `indexedContent` is not encrypted. Redact or minimize sensitive values before returning indexed text.
+
 For production, replace pass-through with redaction logic. Example:
 
 ```python

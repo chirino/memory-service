@@ -1,0 +1,89 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: TypeScript Conversation History
+description: Record conversation history entries alongside memory channel state.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide continues from [TypeScript Getting Started](/docs/typescript-vecelai/getting-started/) and adds `history` channel recording.
+
+## Prerequisites
+
+**Starting checkpoint**: [typescript/examples/vecelai/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/02-with-memory)
+
+Make sure you've completed the [TypeScript Getting Started](/docs/typescript-vecelai/getting-started/) guide first.
+
+## Add History Recording
+
+Checkpoint `03` adds only the history recording delta:
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/03-with-history/src/app.ts"
+  lang="typescript"
+  lines="4-8"
+/>
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/03-with-history/src/app.ts"
+  lang="typescript"
+  lines="34-47"
+/>
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/03-with-history/src/app.ts"
+  lang="typescript"
+  lines="68-84"
+/>
+
+**What changed**: The app imports `appendHistoryEntry(...)`, records the USER turn before model generation, and records the AI turn after generation.
+
+**Why**: `memory` keeps model context; `history` keeps human-readable conversation turns for downstream UX and search features.
+
+<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/03-with-history">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Send a chat turn:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should match pattern "\\d+"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/52b0f67a-6d8a-4d35-a2e5-8abf0e7f1c22 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Give me a random number between 1 and 100."
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Completed Checkpoint
+
+**Completed code**: [typescript/examples/vecelai/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/03-with-history)
+
+## Next Steps
+
+Continue to:
+- [Conversation Forking](/docs/typescript-vecelai/conversation-forking/) - Branch a conversation from a specific prior entry
+- [Response Recording and Resumption](/docs/typescript-vecelai/response-resumption/) - Stream responses and support resume/cancel
+- [Sharing](/docs/typescript-vecelai/sharing/) - Add conversation membership and ownership transfer APIs
+- [Indexing and Search](/docs/typescript-vecelai/indexing-and-search/) - Add `indexedContent` and search endpoint support
