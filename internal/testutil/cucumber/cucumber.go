@@ -52,7 +52,9 @@ func DefaultOptions() godog.Options {
 	}
 }
 
-// ApplyReportOptions configures junit XML output when GODOG_REPORT_DIR is set.
+// ApplyReportOptions configures report output when GODOG_REPORT_DIR is set.
+// GODOG_REPORT_FORMAT selects the report format (default: junit). When set to
+// "cucumber", reports are written as JSON.
 // Pass t.Name() as testName; slashes are replaced with dashes to form the filename.
 // Returns a cleanup function that must be called (or deferred) after the test runs.
 func ApplyReportOptions(opts *godog.Options, testName string) func() {
@@ -64,13 +66,21 @@ func ApplyReportOptions(opts *godog.Options, testName string) func() {
 		return func() {}
 	}
 	safeName := strings.ReplaceAll(testName, "/", "-")
-	path := filepath.Join(reportDir, safeName+".xml")
+	reportFormat := strings.TrimSpace(os.Getenv("GODOG_REPORT_FORMAT"))
+	if reportFormat == "" {
+		reportFormat = "junit"
+	}
+	ext := ".xml"
+	if reportFormat == "cucumber" {
+		ext = ".json"
+	}
+	path := filepath.Join(reportDir, safeName+ext)
 	f, err := os.Create(path)
 	if err != nil {
 		return func() {}
 	}
 	opts.Output = f
-	opts.Format = "junit"
+	opts.Format = reportFormat
 	return func() { _ = f.Close() }
 }
 
