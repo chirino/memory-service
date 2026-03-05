@@ -59,6 +59,31 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 	}
 }
 
+// HandleUpload exposes attachment upload/create for wrapper-native adapters.
+func HandleUpload(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
+	upload(c, store, attachStore, cfg)
+}
+
+// HandleGetAttachment exposes attachment retrieval for wrapper-native adapters.
+func HandleGetAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
+	getAttachment(c, store, attachStore, cfg)
+}
+
+// HandleDeleteAttachment exposes attachment delete for wrapper-native adapters.
+func HandleDeleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore) {
+	deleteAttachment(c, store, attachStore)
+}
+
+// HandleDownloadURL exposes attachment signed URL issuance for wrapper-native adapters.
+func HandleDownloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, signingKey []byte) {
+	downloadURL(c, store, attachStore, cfg, signingKey)
+}
+
+// HandleDownloadByToken exposes token download for wrapper-native adapters.
+func HandleDownloadByToken(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte) {
+	downloadByToken(c, store, attachStore, signingKeys)
+}
+
 func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
 	userID := security.GetUserID(c)
 
@@ -150,7 +175,7 @@ func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registr
 
 func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
 	userID := security.GetUserID(c)
-	attachID, err := uuid.Parse(c.Param("attachmentId"))
+	attachID, err := parseAttachmentIDParam(c)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "attachment not found"})
 		return
@@ -191,7 +216,7 @@ func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore 
 
 func deleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore) {
 	userID := security.GetUserID(c)
-	attachID, err := uuid.Parse(c.Param("attachmentId"))
+	attachID, err := parseAttachmentIDParam(c)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "attachment not found"})
 		return
@@ -219,7 +244,7 @@ func deleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachSto
 
 func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, signingKey []byte) {
 	userID := security.GetUserID(c)
-	attachID, err := uuid.Parse(c.Param("attachmentId"))
+	attachID, err := parseAttachmentIDParam(c)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "attachment not found"})
 		return
@@ -318,6 +343,14 @@ func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore
 	}
 	c.Status(http.StatusOK)
 	_, _ = io.Copy(c.Writer, reader)
+}
+
+func parseAttachmentIDParam(c *gin.Context) (uuid.UUID, error) {
+	// Wrapper routes use :id while legacy routes use :attachmentId.
+	if raw := strings.TrimSpace(c.Param("attachmentId")); raw != "" {
+		return uuid.Parse(raw)
+	}
+	return uuid.Parse(c.Param("id"))
 }
 
 func toUploadResponse(attachment *model.Attachment) gin.H {

@@ -11,15 +11,8 @@ import (
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	grpcserver "github.com/chirino/memory-service/internal/grpc"
 	"github.com/chirino/memory-service/internal/plugin/attach/encrypt"
-	"github.com/chirino/memory-service/internal/plugin/route/admin"
-	"github.com/chirino/memory-service/internal/plugin/route/attachments"
-	"github.com/chirino/memory-service/internal/plugin/route/conversations"
-	"github.com/chirino/memory-service/internal/plugin/route/entries"
-	"github.com/chirino/memory-service/internal/plugin/route/memberships"
 	routememories "github.com/chirino/memory-service/internal/plugin/route/memories"
-	"github.com/chirino/memory-service/internal/plugin/route/search"
 	routesystem "github.com/chirino/memory-service/internal/plugin/route/system"
-	"github.com/chirino/memory-service/internal/plugin/route/transfers"
 	storemetrics "github.com/chirino/memory-service/internal/plugin/store/metrics"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
@@ -200,21 +193,6 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	resolver := security.NewTokenResolver(cfg)
 	auth := security.AuthMiddleware(resolver)
 
-	// Mount Agent API routes
-	conversations.MountRoutes(router, store, cfg, auth, resumer, resumerEnabled)
-	entries.MountRoutes(router, store, auth)
-	memberships.MountRoutes(router, store, auth)
-	transfers.MountRoutes(router, store, auth)
-	search.MountRoutes(router, store, cfg, auth, embedder, vectorStore)
-	attachSigningKeys, signingKeysErr := encSvc.AttachmentSigningKeys(ctx)
-	if signingKeysErr != nil {
-		log.Warn("Attachment signing keys unavailable; signed download URLs disabled", "err", signingKeysErr)
-	}
-	attachments.MountRoutes(router, store, attachStore, cfg, auth, attachSigningKeys)
-
-	// Mount Admin API routes
-	admin.MountRoutes(router, store, attachStore, cfg, auth)
-
 	// Initialize and mount episodic memory store + routes.
 	episodicStore, episodicPolicy, err := initEpisodic(ctx, cfg)
 	if err != nil {
@@ -222,8 +200,16 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 	episodicTTL := service.NewEpisodicTTLService(episodicStore, cfg.EpisodicTTLInterval, cfg.EpisodicEvictionBatchSize, cfg.EpisodicTombstoneRetention)
 	episodicIdx := service.NewEpisodicIndexer(episodicStore, embedder, cfg.EpisodicIndexingInterval, cfg.EpisodicIndexingBatchSize)
-	routememories.MountRoutes(router, episodicStore, episodicPolicy, cfg, auth, embedder)
-	routememories.MountAdminRoutes(router, episodicStore, episodicPolicy, cfg, episodicIdx, auth, security.RequireAdminRole())
+
+	attachSigningKeys, signingKeysErr := encSvc.AttachmentSigningKeys(ctx)
+	if signingKeysErr != nil {
+		log.Warn("Attachment signing keys unavailable; signed download URLs disabled", "err", signingKeysErr)
+	}
+
+	memoriesAdapter := routememories.NewAPIServerAdapter(episodicStore, episodicPolicy, cfg, embedder)
+
+	// Register generated wrappers on the public router.
+	registerAPIRoutes(router, auth, cfg, store, attachStore, attachSigningKeys, embedder, vectorStore, resumer, resumerEnabled, episodicStore, episodicPolicy, episodicIdx, memoriesAdapter)
 
 	// Start background services
 	indexer := service.NewBackgroundIndexer(store, embedder, vectorStore, cfg.VectorIndexerBatchSize)

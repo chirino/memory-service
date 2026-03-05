@@ -34,6 +34,21 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.Handle
 	})
 }
 
+// HandleListEntries exposes list entries handling for wrapper-native adapters.
+func HandleListEntries(c *gin.Context, store registrystore.MemoryStore) {
+	listEntries(c, store)
+}
+
+// HandleAppendEntry exposes append entries handling for wrapper-native adapters.
+func HandleAppendEntry(c *gin.Context, store registrystore.MemoryStore) {
+	appendEntry(c, store)
+}
+
+// HandleSyncMemory exposes sync-memory handling for wrapper-native adapters.
+func HandleSyncMemory(c *gin.Context, store registrystore.MemoryStore) {
+	syncMemory(c, store)
+}
+
 func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
 	convID, err := uuid.Parse(c.Param("conversationId"))

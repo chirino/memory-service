@@ -32,6 +32,31 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.Handle
 	})
 }
 
+// HandleListTransfers exposes the transfer list handler for wrapper-native adapters.
+func HandleListTransfers(c *gin.Context, store registrystore.MemoryStore) {
+	listTransfers(c, store)
+}
+
+// HandleCreateTransfer exposes the transfer create handler for wrapper-native adapters.
+func HandleCreateTransfer(c *gin.Context, store registrystore.MemoryStore) {
+	createTransfer(c, store)
+}
+
+// HandleGetTransfer exposes the transfer fetch handler for wrapper-native adapters.
+func HandleGetTransfer(c *gin.Context, store registrystore.MemoryStore) {
+	getTransfer(c, store)
+}
+
+// HandleDeleteTransfer exposes the transfer delete/reject handler for wrapper-native adapters.
+func HandleDeleteTransfer(c *gin.Context, store registrystore.MemoryStore) {
+	deleteTransfer(c, store)
+}
+
+// HandleAcceptTransfer exposes the transfer accept handler for wrapper-native adapters.
+func HandleAcceptTransfer(c *gin.Context, store registrystore.MemoryStore) {
+	acceptTransfer(c, store)
+}
+
 func listTransfers(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
 	role := c.DefaultQuery("role", "")

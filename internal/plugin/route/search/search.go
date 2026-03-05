@@ -49,6 +49,21 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, cfg *config.Con
 	})
 }
 
+// HandleSearchConversations exposes conversation search for wrapper-native adapters.
+func HandleSearchConversations(c *gin.Context, store registrystore.MemoryStore, cfg *config.Config, embedder registryembed.Embedder, vectorStore registryvector.VectorStore) {
+	searchConversations(c, store, cfg, embedder, vectorStore)
+}
+
+// HandleIndexConversations exposes conversation indexing for wrapper-native adapters.
+func HandleIndexConversations(c *gin.Context, store registrystore.MemoryStore) {
+	indexConversations(c, store)
+}
+
+// HandleListUnindexed exposes unindexed list for wrapper-native adapters.
+func HandleListUnindexed(c *gin.Context, store registrystore.MemoryStore) {
+	listUnindexed(c, store)
+}
+
 func searchConversations(c *gin.Context, store registrystore.MemoryStore, cfg *config.Config, embedder registryembed.Embedder, vectorStore registryvector.VectorStore) {
 	userID := security.GetUserID(c)
 

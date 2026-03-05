@@ -88,6 +88,191 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 	g.GET("/stats/store-throughput", stats.multiSeriesHandler(storeThroughputQuery, "store_throughput", "operations/sec", "operation"))
 }
 
+func runMiddlewares(c *gin.Context, middlewares ...gin.HandlerFunc) bool {
+	for _, middleware := range middlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return false
+		}
+	}
+	return true
+}
+
+// HandleAdminListConversations exposes admin list conversations for wrapper-native adapters.
+func HandleAdminListConversations(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminListConversations(c, store)
+}
+
+// HandleAdminGetConversation exposes admin get conversation for wrapper-native adapters.
+func HandleAdminGetConversation(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminGetConversation(c, store)
+}
+
+// HandleAdminDeleteConversation exposes admin delete conversation for wrapper-native adapters.
+func HandleAdminDeleteConversation(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole(), security.RequireAdminRole()) {
+		return
+	}
+	adminDeleteConversation(c, store)
+}
+
+// HandleAdminRestoreConversation exposes admin restore conversation for wrapper-native adapters.
+func HandleAdminRestoreConversation(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole(), security.RequireAdminRole()) {
+		return
+	}
+	adminRestoreConversation(c, store)
+}
+
+// HandleAdminGetEntries exposes admin get entries for wrapper-native adapters.
+func HandleAdminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminGetEntries(c, store)
+}
+
+// HandleAdminGetMemberships exposes admin get memberships for wrapper-native adapters.
+func HandleAdminGetMemberships(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminGetMemberships(c, store)
+}
+
+// HandleAdminListForks exposes admin list forks for wrapper-native adapters.
+func HandleAdminListForks(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminListForks(c, store)
+}
+
+// HandleAdminSearchConversations exposes admin search for wrapper-native adapters.
+func HandleAdminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminSearchConversations(c, store)
+}
+
+// HandleAdminListAttachments exposes admin list attachments for wrapper-native adapters.
+func HandleAdminListAttachments(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminListAttachments(c, store)
+}
+
+// HandleAdminGetAttachment exposes admin get attachment for wrapper-native adapters.
+func HandleAdminGetAttachment(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminGetAttachment(c, store)
+}
+
+// HandleAdminDeleteAttachment exposes admin delete attachment for wrapper-native adapters.
+func HandleAdminDeleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole(), security.RequireAdminRole()) {
+		return
+	}
+	adminDeleteAttachment(c, store, attachStore)
+}
+
+// HandleAdminGetAttachmentContent exposes admin attachment content for wrapper-native adapters.
+func HandleAdminGetAttachmentContent(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminGetAttachmentContent(c, store, attachStore, cfg)
+}
+
+// HandleAdminGetAttachmentDownloadURL exposes admin attachment download-url for wrapper-native adapters.
+func HandleAdminGetAttachmentDownloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminGetAttachmentDownloadURL(c, store, attachStore, cfg)
+}
+
+// HandleAdminEvict exposes admin eviction for wrapper-native adapters.
+func HandleAdminEvict(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole(), security.RequireAdminRole()) {
+		return
+	}
+	adminEvict(c, store)
+}
+
+// HandleAdminStatsRequestRate exposes admin request-rate stats for wrapper-native adapters.
+func HandleAdminStatsRequestRate(c *gin.Context, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	stats := newPrometheusStatsHandler(cfg)
+	stats.rangeHandler(requestRateQuery, "request_rate", "requests/sec")(c)
+}
+
+// HandleAdminStatsErrorRate exposes admin error-rate stats for wrapper-native adapters.
+func HandleAdminStatsErrorRate(c *gin.Context, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	stats := newPrometheusStatsHandler(cfg)
+	stats.rangeHandler(errorRateQuery, "error_rate", "percent")(c)
+}
+
+// HandleAdminStatsLatencyP95 exposes admin latency-p95 stats for wrapper-native adapters.
+func HandleAdminStatsLatencyP95(c *gin.Context, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	stats := newPrometheusStatsHandler(cfg)
+	stats.rangeHandler(latencyP95Query, "latency_p95", "seconds")(c)
+}
+
+// HandleAdminStatsCacheHitRate exposes admin cache-hit-rate stats for wrapper-native adapters.
+func HandleAdminStatsCacheHitRate(c *gin.Context, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	stats := newPrometheusStatsHandler(cfg)
+	stats.rangeHandler(cacheHitRateQuery, "cache_hit_rate", "percent")(c)
+}
+
+// HandleAdminStatsDbPoolUtilization exposes admin db-pool-utilization stats for wrapper-native adapters.
+func HandleAdminStatsDbPoolUtilization(c *gin.Context, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	stats := newPrometheusStatsHandler(cfg)
+	stats.rangeHandler(dbPoolUtilizationQuery, "db_pool_utilization", "percent")(c)
+}
+
+// HandleAdminStatsStoreLatencyP95 exposes admin store-latency-p95 stats for wrapper-native adapters.
+func HandleAdminStatsStoreLatencyP95(c *gin.Context, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	stats := newPrometheusStatsHandler(cfg)
+	stats.multiSeriesHandler(storeLatencyP95Query, "store_latency_p95", "seconds", "operation")(c)
+}
+
+// HandleAdminStatsStoreThroughput exposes admin store-throughput stats for wrapper-native adapters.
+func HandleAdminStatsStoreThroughput(c *gin.Context, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	stats := newPrometheusStatsHandler(cfg)
+	stats.multiSeriesHandler(storeThroughputQuery, "store_throughput", "operations/sec", "operation")(c)
+}
+
 func adminListConversations(c *gin.Context, store registrystore.MemoryStore) {
 	query := registrystore.AdminConversationQuery{
 		Mode:           model.ConversationListMode(c.DefaultQuery("mode", "latest-fork")),
