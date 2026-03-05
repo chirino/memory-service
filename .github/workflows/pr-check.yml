@@ -24,6 +24,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -89,6 +93,7 @@ jobs:
         run: |
           mkdir -p reports
           export GODOG_REPORT_DIR=./reports
+          export GODOG_REPORT_FORMAT=cucumber
           go run github.com/go-task/task/v3/cmd/task test:go
 
       - name: Install uv
@@ -102,18 +107,47 @@ jobs:
         run: |
           mkdir -p reports
           export GODOG_REPORT_DIR=./reports
+          export GODOG_REPORT_FORMAT=cucumber
           go run github.com/go-task/task/v3/cmd/task test:site
 
       - name: Run Java Tests
         if: contains('test-java', matrix.job)
         run: mvn -T 1C clean test
 
+      - name: Add JUnit summary to job
+        if: always() && contains('test-java', matrix.job)
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: '**/target/surefire-reports/TEST-*.xml'
+          check_name: JUnit report (${{ matrix.job }})
+          detailed_summary: true
+          fail_on_parse_error: true
+
       - name: Upload test reports
         if: always() && contains('test-go test-site', matrix.job)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.job }}
-          path: reports
+          path: '**/reports'
+
+      - name: Create Cucumber report files
+        if: always() && contains('test-go test-site', matrix.job)
+        run: |
+          go run ./internal/cmd/create-cucumber-reports \
+            --input-dir . \
+            --output-dir .artifacts \
+            --output-stem cucumber-report \
+            --max-items 50
+
+      - name: Add Cucumber summary to job
+        if: always() && contains('test-go test-site', matrix.job)
+        uses: deblockt/cucumber-report-annotations-action@v1.20
+        with:
+          access-token: ${{ secrets.GITHUB_TOKEN }}
+          path: .artifacts/cucumber-report-*.json
+          name: Cucumber report (${{ matrix.job }})
+          show-global-summary-report: true
+          ignore-no-report-found: true
 
       - name: Set up Docker Buildx
         if: startsWith(matrix.job, 'image-')

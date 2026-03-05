@@ -128,13 +128,21 @@ func TestSiteDocs(t *testing.T) {
 
 	opts.TestingT = t
 
-	// Apply JUnit XML reporting if GODOG_REPORT_DIR is set
+	// Apply reporting if GODOG_REPORT_DIR is set.
 	if reportDir := os.Getenv("GODOG_REPORT_DIR"); reportDir != "" {
 		_ = os.MkdirAll(reportDir, 0o755)
-		xmlPath := filepath.Join(reportDir, "site-docs.xml")
-		if f, fErr := os.Create(xmlPath); fErr == nil {
+		reportFormat := strings.TrimSpace(os.Getenv("GODOG_REPORT_FORMAT"))
+		if reportFormat == "" {
+			reportFormat = "junit"
+		}
+		reportExt := ".xml"
+		if reportFormat == "cucumber" {
+			reportExt = ".json"
+		}
+		reportPath := filepath.Join(reportDir, "site-docs"+reportExt)
+		if f, fErr := os.Create(reportPath); fErr == nil {
 			opts.Output = f
-			opts.Format = "junit"
+			opts.Format = reportFormat
 			t.Cleanup(func() { _ = f.Close() })
 		}
 	}
