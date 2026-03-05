@@ -31,7 +31,6 @@ func MountRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, policy *ep
 	}
 	clientID := security.ClientIDMiddleware()
 	g := r.Group("/v1", auth, clientID)
-
 	g.PUT("/memories", func(c *gin.Context) { putMemory(c, store, policy, cfg) })
 	g.GET("/memories", func(c *gin.Context) { getMemory(c, store, policy, cfg) })
 	g.DELETE("/memories", func(c *gin.Context) { deleteMemory(c, store, policy, cfg) })
@@ -131,6 +130,10 @@ func getMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 		Ns:  c.QueryArray("ns"),
 		Key: c.Query("key"),
 	}
+	getMemoryWithParams(c, store, policy, cfg, params)
+}
+
+func getMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.GetMemoryParams) {
 	ns := params.Ns
 	key := params.Key
 	includeUsage := queryBool(c, "include_usage", false)
@@ -195,6 +198,10 @@ func deleteMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *
 		Ns:  c.QueryArray("ns"),
 		Key: c.Query("key"),
 	}
+	deleteMemoryWithParams(c, store, policy, cfg, params)
+}
+
+func deleteMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.DeleteMemoryParams) {
 	ns := params.Ns
 	key := params.Key
 
@@ -318,7 +325,10 @@ func listNamespaces(c *gin.Context, store registryepisodic.EpisodicStore, policy
 		maxDepth := queryInt(c, "max_depth", 0)
 		params.MaxDepth = &maxDepth
 	}
+	listNamespacesWithParams(c, store, policy, cfg, params)
+}
 
+func listNamespacesWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.ListMemoryNamespacesParams) {
 	prefix := []string{}
 	if params.Prefix != nil {
 		prefix = *params.Prefix
@@ -379,13 +389,48 @@ func listNamespaces(c *gin.Context, store registryepisodic.EpisodicStore, policy
 }
 
 func listMemoryEvents(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
-	var nsPrefix []string
+	after, err := queryTime(c, "after")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'after' timestamp; use RFC 3339 format"})
+		return
+	}
+	before, err := queryTime(c, "before")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'before' timestamp; use RFC 3339 format"})
+		return
+	}
+	params := generatedapi.ListMemoryEventsParams{
+		After:       after,
+		Before:      before,
+		AfterCursor: queryPtr(c, "after_cursor"),
+	}
 	if ns := c.QueryArray("ns"); len(ns) > 0 {
-		if err := validateNamespace(ns, cfg.EpisodicMaxDepth); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+		params.Ns = &ns
+	}
+	if kindsRaw := c.QueryArray("kinds"); len(kindsRaw) > 0 {
+		kinds := make([]generatedapi.ListMemoryEventsParamsKinds, 0, len(kindsRaw))
+		for _, k := range kindsRaw {
+			kinds = append(kinds, generatedapi.ListMemoryEventsParamsKinds(k))
 		}
-		nsPrefix = ns
+		params.Kinds = &kinds
+	}
+	if limitRaw := c.Query("limit"); limitRaw != "" {
+		limit := queryInt(c, "limit", 50)
+		params.Limit = &limit
+	}
+	listMemoryEventsWithParams(c, store, policy, cfg, params)
+}
+
+func listMemoryEventsWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.ListMemoryEventsParams) {
+	var nsPrefix []string
+	if params.Ns != nil {
+		nsPrefix = *params.Ns
+		if len(nsPrefix) > 0 {
+			if err := validateNamespace(nsPrefix, cfg.EpisodicMaxDepth); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
 	}
 
 	// OPA filter injection (narrows namespace prefix based on caller identity).
@@ -399,33 +444,32 @@ func listMemoryEvents(c *gin.Context, store registryepisodic.EpisodicStore, poli
 		}
 	}
 
-	var kinds []string
-	for _, k := range c.QueryArray("kinds") {
-		kinds = append(kinds, k)
+	kinds := []string{}
+	if params.Kinds != nil {
+		for _, kind := range *params.Kinds {
+			kinds = append(kinds, string(kind))
+		}
 	}
 
+	limit := 50
+	if params.Limit != nil {
+		limit = *params.Limit
+	}
 	req := registryepisodic.ListEventsRequest{
 		NamespacePrefix: nsPrefix,
 		Kinds:           kinds,
-		Limit:           queryInt(c, "limit", 50),
-		AfterCursor:     c.Query("after_cursor"),
+		Limit:           limit,
 	}
-
-	if afterStr := c.Query("after"); afterStr != "" {
-		t, err := time.Parse(time.RFC3339, afterStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'after' timestamp; use RFC 3339 format"})
-			return
-		}
-		req.After = &t
+	if params.AfterCursor != nil {
+		req.AfterCursor = *params.AfterCursor
 	}
-	if beforeStr := c.Query("before"); beforeStr != "" {
-		t, err := time.Parse(time.RFC3339, beforeStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'before' timestamp; use RFC 3339 format"})
-			return
-		}
-		req.Before = &t
+	if params.After != nil {
+		after := params.After.UTC()
+		req.After = &after
+	}
+	if params.Before != nil {
+		before := params.Before.UTC()
+		req.Before = &before
 	}
 
 	page, err := store.ListMemoryEvents(c.Request.Context(), req)
@@ -483,141 +527,202 @@ func MountAdminRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, polic
 	g := r.Group("/admin/v1", auth, requireAdmin)
 
 	g.GET("/memories/policies", func(c *gin.Context) {
-		if policy == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "episodic policy engine is not configured"})
-			return
-		}
-		c.JSON(http.StatusOK, policy.Bundle())
+		HandleAdminGetMemoryPolicies(c, policy)
 	})
 
 	g.PUT("/memories/policies", func(c *gin.Context) {
-		if policy == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "episodic policy engine is not configured"})
-			return
-		}
-		var bundle episodic.PolicyBundle
-		if err := c.ShouldBindJSON(&bundle); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if err := policy.ReplaceBundle(c.Request.Context(), bundle); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if cfg != nil && cfg.EpisodicPolicyDir != "" {
-			if err := persistPolicyBundle(cfg.EpisodicPolicyDir, bundle); err != nil {
-				handleError(c, err)
-				return
-			}
-		}
-		c.Status(http.StatusNoContent)
+		HandleAdminPutMemoryPolicies(c, policy, cfg)
 	})
 
 	g.DELETE("/memories/:id", func(c *gin.Context) {
-		rawID := c.Param("id")
-		memID, err := uuid.Parse(rawID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid memory ID"})
-			return
-		}
-		if err := store.AdminForceDeleteMemory(c.Request.Context(), memID); err != nil {
-			handleError(c, err)
-			return
-		}
-		c.Status(http.StatusNoContent)
+		HandleAdminDeleteMemory(c, store)
 	})
 
 	g.GET("/memories/index/status", func(c *gin.Context) {
-		count, err := store.AdminCountPendingIndexing(c.Request.Context())
-		if err != nil {
-			handleError(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"pending": count})
+		HandleAdminGetMemoryIndexStatus(c, store)
 	})
 
 	g.POST("/memories/index/trigger", func(c *gin.Context) {
-		if indexer == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "episodic indexer is not configured"})
-			return
-		}
-		stats, err := indexer.Trigger(c.Request.Context())
-		if err != nil {
-			handleError(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"triggered": true,
-			"stats":     stats,
-		})
+		HandleAdminTriggerMemoryIndex(c, indexer)
 	})
 
 	g.GET("/memories/usage", func(c *gin.Context) {
-		ns := c.QueryArray("ns")
-		key := c.Query("key")
-		if err := validateNamespace(ns, cfg.EpisodicMaxDepth); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if key == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "key is required"})
-			return
-		}
-		usage, err := store.GetMemoryUsage(c.Request.Context(), ns, key)
-		if err != nil {
-			handleError(c, err)
-			return
-		}
-		if usage == nil {
-			c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "memory usage not found"})
-			return
-		}
-		c.JSON(http.StatusOK, toAPIMemoryUsage(*usage))
+		HandleAdminGetMemoryUsage(c, store, cfg)
 	})
 
 	g.GET("/memories/usage/top", func(c *gin.Context) {
-		prefix := c.QueryArray("prefix")
-		if len(prefix) > 0 {
-			if err := validateNamespace(prefix, cfg.EpisodicMaxDepth); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-		}
+		HandleAdminListTopMemoryUsage(c, store, cfg)
+	})
+}
 
-		sortBy := registryepisodic.MemoryUsageSort(strings.ToLower(strings.TrimSpace(c.DefaultQuery("sort", string(registryepisodic.MemoryUsageSortFetchCount)))))
-		switch sortBy {
-		case registryepisodic.MemoryUsageSortFetchCount, registryepisodic.MemoryUsageSortLastFetchedAt:
-		default:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "sort must be one of: fetch_count, last_fetched_at"})
-			return
-		}
+func ensureAdmin(c *gin.Context) bool {
+	security.RequireAdminRole()(c)
+	return !c.IsAborted()
+}
 
-		limit := queryInt(c, "limit", 100)
-		if limit <= 0 || limit > 1000 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 1000"})
-			return
-		}
+// HandleAdminGetMemoryPolicies exposes memory policy retrieval for wrapper-native adapters.
+func HandleAdminGetMemoryPolicies(c *gin.Context, policy *episodic.PolicyEngine) {
+	if !ensureAdmin(c) {
+		return
+	}
+	if policy == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "episodic policy engine is not configured"})
+		return
+	}
+	c.JSON(http.StatusOK, policy.Bundle())
+}
 
-		items, err := store.ListTopMemoryUsage(c.Request.Context(), registryepisodic.ListTopMemoryUsageRequest{
-			Prefix: prefix,
-			Sort:   sortBy,
-			Limit:  limit,
-		})
-		if err != nil {
+// HandleAdminPutMemoryPolicies exposes memory policy updates for wrapper-native adapters.
+func HandleAdminPutMemoryPolicies(c *gin.Context, policy *episodic.PolicyEngine, cfg *config.Config) {
+	if !ensureAdmin(c) {
+		return
+	}
+	if policy == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "episodic policy engine is not configured"})
+		return
+	}
+	var bundle episodic.PolicyBundle
+	if err := c.ShouldBindJSON(&bundle); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := policy.ReplaceBundle(c.Request.Context(), bundle); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if cfg != nil && cfg.EpisodicPolicyDir != "" {
+		if err := persistPolicyBundle(cfg.EpisodicPolicyDir, bundle); err != nil {
 			handleError(c, err)
 			return
 		}
+	}
+	c.Status(http.StatusNoContent)
+}
 
-		respItems := make([]gin.H, 0, len(items))
-		for _, item := range items {
-			respItems = append(respItems, gin.H{
-				"namespace": item.Namespace,
-				"key":       item.Key,
-				"usage":     toAPIMemoryUsage(item.Usage),
-			})
-		}
-		c.JSON(http.StatusOK, gin.H{"items": respItems})
+// HandleAdminDeleteMemory exposes forced memory deletes for wrapper-native adapters.
+func HandleAdminDeleteMemory(c *gin.Context, store registryepisodic.EpisodicStore) {
+	if !ensureAdmin(c) {
+		return
+	}
+	rawID := c.Param("id")
+	memID, err := uuid.Parse(rawID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid memory ID"})
+		return
+	}
+	if err := store.AdminForceDeleteMemory(c.Request.Context(), memID); err != nil {
+		handleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// HandleAdminGetMemoryIndexStatus exposes pending-index count for wrapper-native adapters.
+func HandleAdminGetMemoryIndexStatus(c *gin.Context, store registryepisodic.EpisodicStore) {
+	if !ensureAdmin(c) {
+		return
+	}
+	count, err := store.AdminCountPendingIndexing(c.Request.Context())
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"pending": count})
+}
+
+// HandleAdminTriggerMemoryIndex exposes index trigger for wrapper-native adapters.
+func HandleAdminTriggerMemoryIndex(c *gin.Context, indexer *service.EpisodicIndexer) {
+	if !ensureAdmin(c) {
+		return
+	}
+	if indexer == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "episodic indexer is not configured"})
+		return
+	}
+	stats, err := indexer.Trigger(c.Request.Context())
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"triggered": true,
+		"stats":     stats,
 	})
+}
+
+// HandleAdminGetMemoryUsage exposes memory usage fetch for wrapper-native adapters.
+func HandleAdminGetMemoryUsage(c *gin.Context, store registryepisodic.EpisodicStore, cfg *config.Config) {
+	if !ensureAdmin(c) {
+		return
+	}
+	ns := c.QueryArray("ns")
+	key := c.Query("key")
+	if err := validateNamespace(ns, cfg.EpisodicMaxDepth); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if key == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key is required"})
+		return
+	}
+	usage, err := store.GetMemoryUsage(c.Request.Context(), ns, key)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	if usage == nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "memory usage not found"})
+		return
+	}
+	c.JSON(http.StatusOK, toAPIMemoryUsage(*usage))
+}
+
+// HandleAdminListTopMemoryUsage exposes top usage listing for wrapper-native adapters.
+func HandleAdminListTopMemoryUsage(c *gin.Context, store registryepisodic.EpisodicStore, cfg *config.Config) {
+	if !ensureAdmin(c) {
+		return
+	}
+	prefix := c.QueryArray("prefix")
+	if len(prefix) > 0 {
+		if err := validateNamespace(prefix, cfg.EpisodicMaxDepth); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	sortBy := registryepisodic.MemoryUsageSort(strings.ToLower(strings.TrimSpace(c.DefaultQuery("sort", string(registryepisodic.MemoryUsageSortFetchCount)))))
+	switch sortBy {
+	case registryepisodic.MemoryUsageSortFetchCount, registryepisodic.MemoryUsageSortLastFetchedAt:
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sort must be one of: fetch_count, last_fetched_at"})
+		return
+	}
+
+	limit := queryInt(c, "limit", 100)
+	if limit <= 0 || limit > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 1000"})
+		return
+	}
+
+	items, err := store.ListTopMemoryUsage(c.Request.Context(), registryepisodic.ListTopMemoryUsageRequest{
+		Prefix: prefix,
+		Sort:   sortBy,
+		Limit:  limit,
+	})
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	respItems := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		respItems = append(respItems, gin.H{
+			"namespace": item.Namespace,
+			"key":       item.Key,
+			"usage":     toAPIMemoryUsage(item.Usage),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": respItems})
 }
 
 // --- Helpers ---
@@ -836,6 +941,25 @@ func queryBool(c *gin.Context, key string, def bool) bool {
 		return false
 	}
 	return def
+}
+
+func queryPtr(c *gin.Context, key string) *string {
+	if v := c.Query(key); v != "" {
+		return &v
+	}
+	return nil
+}
+
+func queryTime(c *gin.Context, key string) (*time.Time, error) {
+	raw := strings.TrimSpace(c.Query(key))
+	if raw == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 
 func persistPolicyBundle(dir string, bundle episodic.PolicyBundle) error {

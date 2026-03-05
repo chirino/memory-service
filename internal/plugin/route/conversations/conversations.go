@@ -56,6 +56,41 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, cfg *config.Con
 	})
 }
 
+// HandleListConversations exposes list conversation handling for wrapper-native adapters.
+func HandleListConversations(c *gin.Context, store registrystore.MemoryStore) {
+	listConversations(c, store)
+}
+
+// HandleCreateConversation exposes create conversation handling for wrapper-native adapters.
+func HandleCreateConversation(c *gin.Context, store registrystore.MemoryStore) {
+	createConversation(c, store)
+}
+
+// HandleGetConversation exposes get conversation handling for wrapper-native adapters.
+func HandleGetConversation(c *gin.Context, store registrystore.MemoryStore) {
+	getConversation(c, store)
+}
+
+// HandleUpdateConversation exposes update conversation handling for wrapper-native adapters.
+func HandleUpdateConversation(c *gin.Context, store registrystore.MemoryStore) {
+	updateConversation(c, store)
+}
+
+// HandleDeleteConversation exposes delete conversation handling for wrapper-native adapters.
+func HandleDeleteConversation(c *gin.Context, store registrystore.MemoryStore) {
+	deleteConversation(c, store)
+}
+
+// HandleListForks exposes list forks handling for wrapper-native adapters.
+func HandleListForks(c *gin.Context, store registrystore.MemoryStore) {
+	listForks(c, store)
+}
+
+// HandleCancelResponse exposes cancel response handling for wrapper-native adapters.
+func HandleCancelResponse(c *gin.Context, store registrystore.MemoryStore, resumer *internalresumer.Store, resumerEnabled bool) {
+	cancelResponse(c, store, resumer, resumerEnabled)
+}
+
 func listConversations(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
 	mode := model.ConversationListMode(c.DefaultQuery("mode", "latest-fork"))

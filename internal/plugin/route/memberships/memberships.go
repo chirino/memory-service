@@ -47,6 +47,26 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.Handle
 	})
 }
 
+// HandleListMemberships exposes the list memberships handler for wrapper-native adapters.
+func HandleListMemberships(c *gin.Context, store registrystore.MemoryStore) {
+	listMemberships(c, store)
+}
+
+// HandleShareConversation exposes the share conversation handler for wrapper-native adapters.
+func HandleShareConversation(c *gin.Context, store registrystore.MemoryStore) {
+	shareConversation(c, store)
+}
+
+// HandleUpdateMembership exposes the membership update handler for wrapper-native adapters.
+func HandleUpdateMembership(c *gin.Context, store registrystore.MemoryStore) {
+	updateMembership(c, store)
+}
+
+// HandleDeleteMembership exposes the membership delete handler for wrapper-native adapters.
+func HandleDeleteMembership(c *gin.Context, store registrystore.MemoryStore) {
+	deleteMembership(c, store)
+}
+
 func listMemberships(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
 	convID, err := uuid.Parse(c.Param("conversationId"))
