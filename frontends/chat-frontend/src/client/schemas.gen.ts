@@ -980,6 +980,21 @@ export const $UnindexedEntry = {
   },
 } as const;
 
+export const $SearchConversationsSearchTypeSingle = {
+  type: "string",
+  enum: ["auto", "semantic", "fulltext"],
+} as const;
+
+export const $SearchConversationsSearchTypeList = {
+  type: "array",
+  minItems: 1,
+  uniqueItems: true,
+  items: {
+    type: "string",
+    enum: ["semantic", "fulltext"],
+  },
+} as const;
+
 export const $SearchConversationsRequest = {
   type: "object",
   required: ["query"],
@@ -991,13 +1006,23 @@ export const $SearchConversationsRequest = {
       description: "Natural language query.",
     },
     searchType: {
-      type: "string",
-      enum: ["auto", "semantic", "fulltext"],
-      default: "auto",
-      description: `The search method to use:
+      oneOf: [
+        {
+          $ref: "#/components/schemas/SearchConversationsSearchTypeSingle",
+        },
+        {
+          $ref: "#/components/schemas/SearchConversationsSearchTypeList",
+        },
+      ],
+      description: `The search method(s) to use:
 - \`auto\` (default): Try semantic (vector) search first, fall back to full-text if no results or unavailable
 - \`semantic\`: Use only vector/embedding-based semantic search
 - \`fulltext\`: Use only PostgreSQL full-text search with GIN index
+
+\`searchType\` may be provided as either a single string or an array of concrete types.
+When an array is provided (for example \`["semantic","fulltext"]\`), each type executes
+independently and \`limit\` is applied per type. The combined response may therefore contain
+up to \`limit * number_of_requested_types\` entries.
 
 If the requested search type is not available on the server, a 501 (Not Implemented)
 error is returned with details about which search types are available.
@@ -1006,7 +1031,7 @@ error is returned with details about which search types are available.
     afterCursor: {
       type: "string",
       nullable: true,
-      maxLength: 100,
+      maxLength: 4000,
       description: "Cursor for pagination; returns items after this result.",
     },
     limit: {

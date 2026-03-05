@@ -153,9 +153,9 @@ func (m *metricsStore) FetchSearchResultDetails(ctx context.Context, userID stri
 	return m.inner.FetchSearchResultDetails(ctx, userID, entryIDs, includeEntry)
 }
 
-func (m *metricsStore) SearchEntries(ctx context.Context, userID string, query string, limit int, includeEntry bool) (*store.SearchResults, error) {
+func (m *metricsStore) SearchEntries(ctx context.Context, userID string, query string, afterCursor *string, limit int, includeEntry bool, groupByConversation bool) (*store.SearchResults, error) {
 	defer observe("search_entries", time.Now())
-	return m.inner.SearchEntries(ctx, userID, query, limit, includeEntry)
+	return m.inner.SearchEntries(ctx, userID, query, afterCursor, limit, includeEntry, groupByConversation)
 }
 
 func (m *metricsStore) AdminListConversations(ctx context.Context, query store.AdminConversationQuery) ([]store.ConversationSummary, *string, error) {

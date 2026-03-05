@@ -484,22 +484,31 @@ export type UnindexedEntry = {
   entry?: Entry;
 };
 
+export type SearchConversationsSearchTypeSingle = "auto" | "semantic" | "fulltext";
+
+export type SearchConversationsSearchTypeList = Array<"semantic" | "fulltext">;
+
 export type SearchConversationsRequest = {
   /**
    * Natural language query.
    */
   query: string;
   /**
-   * The search method to use:
+   * The search method(s) to use:
    * - `auto` (default): Try semantic (vector) search first, fall back to full-text if no results or unavailable
    * - `semantic`: Use only vector/embedding-based semantic search
    * - `fulltext`: Use only PostgreSQL full-text search with GIN index
+   *
+   * `searchType` may be provided as either a single string or an array of concrete types.
+   * When an array is provided (for example `["semantic","fulltext"]`), each type executes
+   * independently and `limit` is applied per type. The combined response may therefore contain
+   * up to `limit * number_of_requested_types` entries.
    *
    * If the requested search type is not available on the server, a 501 (Not Implemented)
    * error is returned with details about which search types are available.
    *
    */
-  searchType?: "auto" | "semantic" | "fulltext";
+  searchType?: SearchConversationsSearchTypeSingle | SearchConversationsSearchTypeList;
   /**
    * Cursor for pagination; returns items after this result.
    */

@@ -78,10 +78,12 @@ To let the frontend search across conversations, add a search endpoint to your `
 
 This endpoint accepts a JSON request body with the following fields:
 - **`query`** (required) — The search query text
-- **`searchType`** — `"auto"` (default), `"semantic"`, or `"fulltext"`
-- **`limit`** — Maximum number of results (default 20)
+- **`searchType`** — Either a single type (`"auto"`, `"semantic"`, `"fulltext"`) or an array of concrete types (`["semantic","fulltext"]`)
+- **`limit`** — Maximum number of results per requested search type (default 20)
 - **`groupByConversation`** — Group results by conversation (default true)
 - **`includeEntry`** — Include the full entry in results (default true)
+
+If you request an unavailable concrete type (for example `"semantic"` with no vector backend configured), Memory Service returns `501 search_type_unavailable`.
 
 <TestScenario checkpoint="spring/examples/doc-checkpoints/07-with-search">
 
@@ -137,7 +139,7 @@ Example response:
       }
     }
   ],
-  "nextCursor": null
+  "afterCursor": null
 }
 ```
 

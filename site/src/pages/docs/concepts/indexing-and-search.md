@@ -11,7 +11,7 @@ The Memory Service provides a search system that lets users find relevant messag
 Search in the Memory Service is built around two ideas:
 
 - **Indexed content** — A separate, searchable field on each entry
-- **Search types** — Full-text search for keyword matching, semantic search for meaning-based retrieval, or automatic selection
+- **Search types** — Full-text search for keyword matching, semantic search for meaning-based retrieval, automatic selection, or explicit multi-type execution
 
 Message content is stored encrypted at rest, so it can't be searched directly. The `indexedContent` field on each entry provides a searchable version of the message text. Client libraries populate this field when recording entries, giving your application a chance to redact sensitive information before it enters the search index in cleartext.
 
@@ -49,6 +49,13 @@ The Memory Service supports three search modes:
 | **`semantic`** | Vector similarity using embeddings         | Conceptual queries, finding related discussions |
 | **`auto`**     | Automatically selects the best search type | General use (default)                           |
 
+`searchType` can be passed as either:
+
+- A single value (`"auto"`, `"semantic"`, or `"fulltext"`)
+- An array of concrete types (`["semantic", "fulltext"]`)
+
+When multiple concrete types are requested, each backend runs independently and `limit` applies per type. For example, `limit: 10` with `["semantic","fulltext"]` can return up to 20 results.
+
 ### Full-Text Search
 
 Full-text search finds entries containing specific keywords or phrases. It uses standard text search indexing and returns results ranked by relevance. Match highlights show which parts of the text matched, using `==highlight==` markers.
@@ -74,8 +81,8 @@ curl -X POST http://localhost:8080/v1/conversations/search \
   -H "Authorization: Bearer <token>" \
   -d '{
     "query": "How do I configure authentication?",
-    "searchType": "auto",
-    "limit": 20,
+    "searchType": ["semantic", "fulltext"],
+    "limit": 10,
     "groupByConversation": true,
     "includeEntry": true
   }'
@@ -83,13 +90,15 @@ curl -X POST http://localhost:8080/v1/conversations/search \
 
 ### Search Options
 
-| Option                | Type    | Default      | Description                             |
-| --------------------- | ------- | ------------ | --------------------------------------- |
-| `query`               | string  | _(required)_ | The search query text                   |
-| `searchType`          | string  | `"auto"`     | `"auto"`, `"semantic"`, or `"fulltext"` |
-| `limit`               | integer | `20`         | Maximum number of results to return     |
-| `groupByConversation` | boolean | `true`       | Group results by conversation           |
-| `includeEntry`        | boolean | `true`       | Include the full entry in each result   |
+| Option                | Type               | Default      | Description                                                                      |
+| --------------------- | ------------------ | ------------ | -------------------------------------------------------------------------------- |
+| `query`               | string             | _(required)_ | The search query text                                                            |
+| `searchType`          | string or string[] | `"auto"`     | `"auto"`, `"semantic"`, `"fulltext"`, or an array like `["semantic","fulltext"]` |
+| `limit`               | integer            | `20`         | Maximum number of results per requested search type                              |
+| `groupByConversation` | boolean            | `true`       | Group results by conversation                                                    |
+| `includeEntry`        | boolean            | `true`       | Include the full entry in each result                                            |
+
+If you request a concrete type that is unavailable on the server (for example semantic search without a configured vector backend), the API returns `501 search_type_unavailable` with available type details.
 
 ### Search Response
 
@@ -113,20 +122,21 @@ curl -X POST http://localhost:8080/v1/conversations/search \
       }
     }
   ],
-  "nextCursor": null
+  "afterCursor": null
 }
 ```
 
 ### Result Fields
 
-| Field               | Description                                      |
-| ------------------- | ------------------------------------------------ |
-| `conversationId`    | ID of the conversation containing the match      |
-| `conversationTitle` | Title of the conversation (for display)          |
-| `entryId`           | ID of the matching entry (for deep-linking)      |
-| `score`             | Relevance score                                  |
-| `highlights`        | Matched text with `==highlight==` markers        |
-| `entry`             | Full entry content (when `includeEntry` is true) |
+| Field               | Description                                                          |
+| ------------------- | -------------------------------------------------------------------- |
+| `conversationId`    | ID of the conversation containing the match                          |
+| `conversationTitle` | Title of the conversation (for display)                              |
+| `entryId`           | ID of the matching entry (for deep-linking)                          |
+| `score`             | Relevance score                                                      |
+| `kind`              | Search backend that produced the result (`postgres`, `qdrant`, etc.) |
+| `highlights`        | Matched text with `==highlight==` markers                            |
+| `entry`             | Full entry content (when `includeEntry` is true)                     |
 
 ## Use Cases
 

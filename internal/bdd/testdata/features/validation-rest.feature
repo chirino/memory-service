@@ -65,6 +65,39 @@ Feature: API Field Validation
     Then the response status should be 400
     And the response should contain error code "validation_error"
 
+  Scenario: Search with limit above maximum
+    When I call POST "/v1/conversations/search" with body:
+    """
+    {
+      "query": "test",
+      "limit": 201
+    }
+    """
+    Then the response status should be 400
+    And the response should contain error code "validation_error"
+
+  Scenario: Search with invalid searchType value
+    When I call POST "/v1/conversations/search" with body:
+    """
+    {
+      "query": "test",
+      "searchType": "banana"
+    }
+    """
+    Then the response status should be 400
+    And the response should contain error code "validation_error"
+
+  Scenario: Search with auto mixed into searchType array
+    When I call POST "/v1/conversations/search" with body:
+    """
+    {
+      "query": "test",
+      "searchType": ["auto", "fulltext"]
+    }
+    """
+    Then the response status should be 400
+    And the response should contain error code "validation_error"
+
   Scenario: Share with empty userId
     When I call POST "/v1/conversations/${conversationId}/memberships" with body:
     """

@@ -248,10 +248,12 @@ func adminListForks(c *gin.Context, store registrystore.MemoryStore) {
 
 func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
 	var req struct {
-		Query        string  `json:"query"        binding:"required"`
-		Limit        int     `json:"limit"`
-		UserID       *string `json:"userId"`
-		IncludeEntry *bool   `json:"includeEntry"`
+		Query          string  `json:"query"          binding:"required"`
+		Limit          int     `json:"limit"`
+		AfterCursor    *string `json:"afterCursor"`
+		UserID         *string `json:"userId"`
+		IncludeDeleted *bool   `json:"includeDeleted"`
+		IncludeEntry   *bool   `json:"includeEntry"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -260,22 +262,32 @@ func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
 	if req.Limit <= 0 {
 		req.Limit = 20
 	}
+	if req.Limit > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": "limit must be less than or equal to 1000"})
+		return
+	}
+	includeDeleted := false
+	if req.IncludeDeleted != nil {
+		includeDeleted = *req.IncludeDeleted
+	}
 	includeEntry := true
 	if req.IncludeEntry != nil {
 		includeEntry = *req.IncludeEntry
 	}
 
 	results, err := store.AdminSearchEntries(c.Request.Context(), registrystore.AdminSearchQuery{
-		Query:        req.Query,
-		UserID:       req.UserID,
-		Limit:        req.Limit,
-		IncludeEntry: includeEntry,
+		Query:          req.Query,
+		UserID:         req.UserID,
+		Limit:          req.Limit,
+		IncludeEntry:   includeEntry,
+		IncludeDeleted: includeDeleted,
+		AfterCursor:    req.AfterCursor,
 	})
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": results.Data})
+	c.JSON(http.StatusOK, gin.H{"data": results.Data, "afterCursor": results.AfterCursor})
 }
 
 func adminListAttachments(c *gin.Context, store registrystore.MemoryStore) {

@@ -59,7 +59,7 @@ Expose `POST /v1/conversations/search` so frontend apps can query across convers
   lines="127-130"
 />
 
-**Why**: The search query, search type (`auto`, `semantic`, `keyword`), and pagination options all live in the JSON request body, so the endpoint requires no query-parameter parsing — it just reads the body and passes it through. The Memory Service returns scored results with highlights, which the proxy relays back to the caller. Exposing the endpoint from the agent app rather than pointing the frontend directly at the Memory Service keeps all traffic behind a single origin and ensures the user's Bearer token is validated in one place.
+**Why**: The search query, search type (`auto`, `semantic`, `fulltext`, or a concrete type array like `["semantic","fulltext"]`), and pagination options all live in the JSON request body, so the endpoint requires no query-parameter parsing — it just reads the body and passes it through. The Memory Service returns scored results with highlights, which the proxy relays back to the caller. Exposing the endpoint from the agent app rather than pointing the frontend directly at the Memory Service keeps all traffic behind a single origin and ensures the user's Bearer token is validated in one place.
 
 <TestScenario checkpoint="python/examples/langchain/doc-checkpoints/07-with-search">
 

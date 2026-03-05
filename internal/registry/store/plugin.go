@@ -119,10 +119,12 @@ type AdminMessageQuery struct {
 
 // AdminSearchQuery holds parameters for admin search.
 type AdminSearchQuery struct {
-	Query        string
-	UserID       *string
-	Limit        int
-	IncludeEntry bool
+	Query          string
+	UserID         *string
+	Limit          int
+	IncludeEntry   bool
+	IncludeDeleted bool
+	AfterCursor    *string
 }
 
 // AdminAttachmentQuery holds parameters for admin attachment listing.
@@ -205,7 +207,7 @@ type MemoryStore interface {
 	// Search
 	ListConversationGroupIDs(ctx context.Context, userID string) ([]uuid.UUID, error)
 	FetchSearchResultDetails(ctx context.Context, userID string, entryIDs []uuid.UUID, includeEntry bool) ([]SearchResult, error)
-	SearchEntries(ctx context.Context, userID string, query string, limit int, includeEntry bool) (*SearchResults, error)
+	SearchEntries(ctx context.Context, userID string, query string, afterCursor *string, limit int, includeEntry bool, groupByConversation bool) (*SearchResults, error)
 
 	// Admin
 	AdminListConversations(ctx context.Context, query AdminConversationQuery) ([]ConversationSummary, *string, error)

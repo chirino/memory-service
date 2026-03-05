@@ -1,5 +1,6 @@
 
 **Response recording docs naming**: Keep doc slugs/routes as `/response-resumption/` for compatibility, but use "Response Recording and Resumption" in page titles, sidebar labels, and cross-links.
+**Search docs contract**: `POST /v1/conversations/search` uses `searchType` values `auto`, `semantic`, `fulltext` (not `keyword`) and also accepts an array of concrete types (for example `["semantic","fulltext"]`), with `limit` applied per requested type.
 
 **Python LangChain response-resumption scope**: `site/src/pages/docs/python-langchain/response-resumption.mdx` checkpoint `05` now demonstrates Memory Service gRPC-backed response recording/replay/cancel behavior and points to `python/examples/langchain/chat-langchain` for the full app implementation.
 

@@ -1455,12 +1455,46 @@ func escapeTsQueryWord(word string) string {
 	return b.String()
 }
 
-func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query string, limit int, includeEntry bool) (*registrystore.SearchResults, error) {
+func paginateSearchResultsByEntryCursor(results []registrystore.SearchResult, afterCursor *string, limit int) ([]registrystore.SearchResult, *string, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	start := 0
+	if afterCursor != nil {
+		cursorID, err := uuid.Parse(strings.TrimSpace(*afterCursor))
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid afterCursor: %w", err)
+		}
+		start = len(results)
+		for i := range results {
+			if results[i].EntryID == cursorID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if start >= len(results) {
+		return []registrystore.SearchResult{}, nil, nil
+	}
+	end := start + limit
+	if end > len(results) {
+		end = len(results)
+	}
+	page := results[start:end]
+	var next *string
+	if end < len(results) && len(page) > 0 {
+		v := page[len(page)-1].EntryID.String()
+		next = &v
+	}
+	return page, next, nil
+}
+
+func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query string, afterCursor *string, limit int, includeEntry bool, groupByConversation bool) (*registrystore.SearchResults, error) {
 	prefixQuery := toPrefixTsQuery(query)
 	if prefixQuery == "" {
 		return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
 	}
-	// Full-text search using tsvector with prefix matching. Request limit+1 for pagination.
+	// Full-text search using tsvector with prefix matching.
 	sql := `
 		SELECT e.id as entry_id, e.conversation_id, e.conversation_group_id, c.title as conversation_title,
 		       ts_rank(e.indexed_content_tsv, to_tsquery('english', ?)) as score,
@@ -1470,8 +1504,7 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 		JOIN conversations c ON c.id = e.conversation_id AND c.conversation_group_id = e.conversation_group_id AND c.deleted_at IS NULL
 		JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?
 		WHERE e.indexed_content_tsv @@ to_tsquery('english', ?)
-		ORDER BY score DESC
-		LIMIT ?
+		ORDER BY score DESC, e.id ASC
 	`
 	type searchRow struct {
 		EntryID             uuid.UUID `gorm:"column:entry_id"`
@@ -1482,19 +1515,21 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 		Highlight           string    `gorm:"column:highlight"`
 	}
 	var rows []searchRow
-	if err := s.db.WithContext(ctx).Raw(sql, prefixQuery, prefixQuery, userID, prefixQuery, limit+1).Scan(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Raw(sql, prefixQuery, prefixQuery, userID, prefixQuery).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("full-text search failed: %w", err)
 	}
 
-	hasMore := len(rows) > limit
-	if hasMore {
-		rows = rows[:limit]
-	}
-
-	results := make([]registrystore.SearchResult, len(rows))
-	for i, r := range rows {
+	results := make([]registrystore.SearchResult, 0, len(rows))
+	seenConversation := map[uuid.UUID]struct{}{}
+	for _, r := range rows {
+		if groupByConversation {
+			if _, exists := seenConversation[r.ConversationID]; exists {
+				continue
+			}
+			seenConversation[r.ConversationID] = struct{}{}
+		}
 		highlight := r.Highlight
-		results[i] = registrystore.SearchResult{
+		item := registrystore.SearchResult{
 			EntryID:        r.EntryID,
 			ConversationID: r.ConversationID,
 			Score:          r.Score,
@@ -1503,7 +1538,7 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 		}
 		if len(r.ConversationTitle) > 0 {
 			title := s.decryptString(r.ConversationTitle)
-			results[i].ConversationTitle = &title
+			item.ConversationTitle = &title
 		}
 		if includeEntry {
 			var entry model.Entry
@@ -1515,17 +1550,17 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 				if decrypted, err := s.decrypt(entry.Content); err == nil {
 					entry.Content = decrypted
 				}
-				results[i].Entry = &entry
+				item.Entry = &entry
 			}
 		}
+		results = append(results, item)
 	}
 
-	var cursor *string
-	if hasMore && len(results) > 0 {
-		c := results[len(results)-1].EntryID.String()
-		cursor = &c
+	page, cursor, err := paginateSearchResultsByEntryCursor(results, afterCursor, limit)
+	if err != nil {
+		return nil, err
 	}
-	return &registrystore.SearchResults{Data: results, AfterCursor: cursor}, nil
+	return &registrystore.SearchResults{Data: page, AfterCursor: cursor}, nil
 }
 
 // --- Admin ---
@@ -1792,13 +1827,15 @@ func (s *PostgresStore) AdminSearchEntries(ctx context.Context, query registryst
 		WHERE e.indexed_content_tsv @@ to_tsquery('english', ?)
 	`
 	args := []interface{}{prefixQuery, prefixQuery, prefixQuery}
+	if !query.IncludeDeleted {
+		sql += " AND c.deleted_at IS NULL"
+	}
 
 	if query.UserID != nil {
 		sql += " AND c.owner_user_id = ?"
 		args = append(args, *query.UserID)
 	}
-	sql += " ORDER BY score DESC LIMIT ?"
-	args = append(args, query.Limit)
+	sql += " ORDER BY score DESC, e.id ASC"
 
 	type searchRow struct {
 		EntryID             uuid.UUID `gorm:"column:entry_id"`
@@ -1841,7 +1878,11 @@ func (s *PostgresStore) AdminSearchEntries(ctx context.Context, query registryst
 			}
 		}
 	}
-	return &registrystore.SearchResults{Data: results}, nil
+	page, cursor, err := paginateSearchResultsByEntryCursor(results, query.AfterCursor, query.Limit)
+	if err != nil {
+		return nil, err
+	}
+	return &registrystore.SearchResults{Data: page, AfterCursor: cursor}, nil
 }
 
 func (s *PostgresStore) AdminListAttachments(ctx context.Context, query registrystore.AdminAttachmentQuery) ([]registrystore.AdminAttachment, *string, error) {
