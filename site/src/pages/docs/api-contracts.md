@@ -10,7 +10,7 @@ Memory Service provides both REST and gRPC APIs. The contract specifications are
 
 The REST API is defined using OpenAPI 3.0 specification.
 
-- **OpenAPI Spec**: [openapi.yaml](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/chirino/memory-service/refs/heads/main/memory-service-contracts/src/main/resources/openapi.yml)
+- **OpenAPI Spec**: [openapi.yaml](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/chirino/memory-service/refs/heads/main/contracts/openapi/openapi.yml)
 - **Format**: OpenAPI 3.0 / YAML
 - **Base Path**: `/api/v1`
 
@@ -24,7 +24,7 @@ You can use the OpenAPI specification to:
 
 The gRPC API is defined using Protocol Buffers v3.
 
-- **Proto File**: [memory-service.proto](https://github.com/chirino/memory-service/blob/main/memory-service-contracts/src/main/resources/memory/v1/memory_service.proto)
+- **Proto File**: [memory-service.proto](https://github.com/chirino/memory-service/blob/main/contracts/protobuf/memory/v1/memory_service.proto)
 - **Format**: Protocol Buffers 3
 - **Package**: `memoryservice.v1`
 

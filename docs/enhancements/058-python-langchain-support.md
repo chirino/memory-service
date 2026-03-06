@@ -30,7 +30,7 @@ Implemented in repo now:
 3. Memory-service integration code lives in a single installable package path:
    - `python/langchain` (`memory-service-langchain`, primary integration used by checkpoints and examples)
 4. Checkpoints `02`-`07` consume `memory-service-langchain` via local pip-style dependency sources (`tool.uv.sources`) so imports match published-package usage.
-5. `python/pom.xml` now runs Python packaging/stub generation in Docker so CI/developers can use Maven + Docker without requiring host Python tooling for package build/verification.
+5. `Taskfile.yml` now runs Python packaging/stub generation in Docker so CI/developers can use Docker without requiring host Python tooling for package build/verification.
 
 Terminology mapping used in older sections of this document:
 
@@ -169,53 +169,14 @@ The generated stubs expose `ResponseRecorderServiceStub` with:
 - `Replay(ReplayRequest) -> iter[ReplayResponse]` — server streaming; replay recorded tokens
 - `CheckRecordings(CheckRecordingsRequest) -> CheckRecordingsResponse` — check in-progress conversations
 
-### Maven Integration
+### Taskfile Integration
 
-Use `python/pom.xml` to run Python build tasks in Docker (via `ghcr.io/astral-sh/uv:python3.11-bookworm`):
+Use `Taskfile.yml` to run Python build tasks in Docker (via `ghcr.io/astral-sh/uv:python3.11-bookworm`):
 
-```xml
-<plugin>
-    <groupId>org.codehaus.mojo</groupId>
-    <artifactId>exec-maven-plugin</artifactId>
-    <executions>
-        <execution>
-            <id>generate-python-grpc-stubs</id>
-            <phase>generate-sources</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-                <executable>bash</executable>
-                <arguments>
-                    <argument>-lc</argument>
-                    <argument>docker run --rm -v "${python.repo.root}:/workspace" -w /workspace/python ${python.docker.image} ./scripts/generate-grpc-stubs.sh</argument>
-                </arguments>
-            </configuration>
-        </execution>
-        <execution>
-            <id>build-langchain-wheel</id>
-            <phase>package</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-                <executable>bash</executable>
-                <arguments>
-                    <argument>-lc</argument>
-                    <argument>docker run --rm -v "${python.repo.root}:/workspace" -w /workspace/python/langchain ${python.docker.image} uv build</argument>
-                </arguments>
-            </configuration>
-        </execution>
-        <execution>
-            <id>verify-python-package-install</id>
-            <phase>verify</phase>
-            <goals><goal>exec</goal></goals>
-            <configuration>
-                <executable>bash</executable>
-                <arguments>
-                    <argument>-lc</argument>
-                    <argument>docker run --rm -v "${python.repo.root}:/workspace" -w /workspace/python ${python.docker.image} bash -lc "uv venv /tmp/memory-service-python &amp;&amp; uv pip install --python /tmp/memory-service-python/bin/python ./langchain &amp;&amp; /tmp/memory-service-python/bin/python -c 'import memory_service_langchain'"</argument>
-                </arguments>
-            </configuration>
-        </execution>
-    </executions>
-</plugin>
+```bash
+task generate:python         # regenerate Python gRPC stubs
+task build:python:langchain  # build the LangChain wheel
+task verify:python           # regenerate stubs, build wheel, verify install
 ```
 
 ### Low-level REST Client
@@ -456,7 +417,7 @@ Python tutorial checkpoints must be executable through the same docs-testing pip
 
 | File | Purpose |
 |------|---------|
-| `python/pom.xml` | **New**: Dockerized Maven build hooks for Python stubs/packages |
+| `Taskfile.yml` | Dockerized Python build hooks for stubs/packages |
 | `python/scripts/generate-grpc-stubs.sh` | **New**: Proto-to-Python gRPC generation script |
 | `python/langchain/pyproject.toml` | **New**: Primary Python integration package metadata |
 | `python/langchain/memory_service_langchain/__init__.py` | **New**: Public package exports |

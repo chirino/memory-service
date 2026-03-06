@@ -15,7 +15,7 @@
 
   <properties>
     <contracts.dir>${project.build.directory}/generated-resources/contracts</contracts.dir>
-    <contracts.source.dir>${maven.multiModuleProjectDirectory}/../memory-service-contracts/src/main/resources</contracts.source.dir>
+    <contracts.source.dir>${maven.multiModuleProjectDirectory}/../contracts</contracts.source.dir>
     <generated.sources.dir>${project.build.directory}/generated-sources/openapi</generated.sources.dir>
     <openapi.package.base>io.github.chirino.memoryservice.client</openapi.package.base>
   </properties>
@@ -82,9 +82,9 @@
               <exportAntProperties>true</exportAntProperties>
               <target>
                 <mkdir dir="${contracts.dir}"/>
-                <available file="${contracts.source.dir}/openapi.yml" property="contracts.local.available"/>
+                <available file="${contracts.source.dir}/openapi/openapi.yml" property="contracts.local.available"/>
                 <copy failonerror="false" preservelastmodified="true" todir="${contracts.dir}">
-                  <fileset dir="${contracts.source.dir}" erroronmissingdir="false">
+                  <fileset dir="${contracts.source.dir}/openapi" erroronmissingdir="false">
                     <include name="openapi.yml"/>
                   </fileset>
                 </copy>

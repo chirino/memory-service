@@ -1196,6 +1196,16 @@ class MemoriesServiceStub(object):
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.MemoryIndexStatusResponse.FromString,
                 _registered_method=True)
+        self.GetMemoryUsage = channel.unary_unary(
+                '/memory.v1.MemoriesService/GetMemoryUsage',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.GetMemoryUsageRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.MemoryUsage.FromString,
+                _registered_method=True)
+        self.ListTopMemoryUsage = channel.unary_unary(
+                '/memory.v1.MemoriesService/ListTopMemoryUsage',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.ListTopMemoryUsageRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.ListTopMemoryUsageResponse.FromString,
+                _registered_method=True)
 
 
 class MemoriesServiceServicer(object):
@@ -1238,6 +1248,20 @@ class MemoriesServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetMemoryUsage(self, request, context):
+        """Admin-only: returns usage stats for one memory key.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListTopMemoryUsage(self, request, context):
+        """Admin-only: returns ranked memory usage rows.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_MemoriesServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -1270,6 +1294,16 @@ def add_MemoriesServiceServicer_to_server(servicer, server):
                     servicer.GetMemoryIndexStatus,
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.MemoryIndexStatusResponse.SerializeToString,
+            ),
+            'GetMemoryUsage': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetMemoryUsage,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.GetMemoryUsageRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.MemoryUsage.SerializeToString,
+            ),
+            'ListTopMemoryUsage': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListTopMemoryUsage,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.ListTopMemoryUsageRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.ListTopMemoryUsageResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1434,6 +1468,60 @@ class MemoriesService(object):
             '/memory.v1.MemoriesService/GetMemoryIndexStatus',
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.MemoryIndexStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetMemoryUsage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.MemoriesService/GetMemoryUsage',
+            memory_dot_v1_dot_memory__service__pb2.GetMemoryUsageRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.MemoryUsage.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListTopMemoryUsage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.MemoriesService/ListTopMemoryUsage',
+            memory_dot_v1_dot_memory__service__pb2.ListTopMemoryUsageRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.ListTopMemoryUsageResponse.FromString,
             options,
             channel_credentials,
             insecure,

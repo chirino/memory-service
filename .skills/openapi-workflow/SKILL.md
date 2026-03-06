@@ -5,7 +5,7 @@ description: Use when making changes to the OpenAPI contract. Workflow for updat
 
 # OpenAPI Change Workflow
 
-1. **Edit the spec**: `memory-service-contracts/src/main/resources/openapi.yml`
+1. **Edit the spec**: `contracts/openapi/openapi.yml`
 
 2. **Regenerate Java client**:
    ```bash

@@ -9,6 +9,8 @@ vars:
   KIND_CLUSTER_NAME: memory-service
   ENVOY_GATEWAY_VERSION: v1.7.0
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
+  PYTHON_DOCKER_IMAGE: ghcr.io/astral-sh/uv:python3.11-bookworm
+  GRPC_TOOLS_VERSION: "1.74.0"
   
 
 tasks:
@@ -32,12 +34,23 @@ tasks:
 
   generate:
     desc: "generate and format source files"
+    deps: # these seem safe to run concurrently.
+      - generate:typescript:vercelai
+      - generate:typescript:chat-vecelai-ts
+      - generate:typescript:doc-checkpoints:01-basic-chat
+      - generate:typescript:doc-checkpoints:02-with-memory
+      - generate:typescript:doc-checkpoints:03-with-history
+      - generate:typescript:doc-checkpoints:04-conversation-forking
+      - generate:typescript:doc-checkpoints:05a-streaming
+      - generate:typescript:doc-checkpoints:05b-response-resumption
+      - generate:typescript:doc-checkpoints:06-sharing
+      - generate:typescript:doc-checkpoints:07-with-search
+      - generate:python
+      - generate:site
+      - generate:spotless
+      - generate:chat-frontend
     cmds:
-      - task: generate:go
-      - task: generate:site
-      - task: generate:spotless
-      - task: generate:chat-frontend
-      - task: generate:typescript
+      - task: generate:go # seems to break if you run concurrenlty
 
   generate:go:
     internal: true
@@ -51,6 +64,21 @@ tasks:
       - npm ci
       - npm run generate
 
+  generate:python:
+    internal: true
+    cmds:
+      - docker run --rm -e GRPC_TOOLS_VERSION={{.GRPC_TOOLS_VERSION}} -v "{{.TASKFILE_DIR}}:/workspace" -w /workspace/python {{.PYTHON_DOCKER_IMAGE}} ./scripts/generate-grpc-stubs.sh
+
+  build:python:langchain:
+    cmds:
+      - docker run --rm -v "{{.TASKFILE_DIR}}:/workspace" -w /workspace/python/langchain {{.PYTHON_DOCKER_IMAGE}} uv build
+
+  verify:python:
+    cmds:
+      - task: generate:python
+      - task: build:python:langchain
+      - docker run --rm -v "{{.TASKFILE_DIR}}:/workspace" -w /workspace/python {{.PYTHON_DOCKER_IMAGE}} sh -lc 'uv venv /tmp/memory-service-python && uv pip install --python /tmp/memory-service-python/bin/python ./langchain && /tmp/memory-service-python/bin/python -c "import memory_service_langchain"'
+
   generate:site:
     internal: true
     dir: site
@@ -58,24 +86,65 @@ tasks:
       - npm ci
       - npm run prettier
 
-  generate:typescript:
-    internal: true
+  generate:typescript:vercelai:
+    dir: typescript/vercelai
     cmds:
-      - |
-        set -e
-        for d in \
-          typescript/vercelai \
-          typescript/examples/vecelai/chat-vecelai-ts \
-          typescript/examples/vecelai/doc-checkpoints/01-basic-chat \
-          typescript/examples/vecelai/doc-checkpoints/02-with-memory \
-          typescript/examples/vecelai/doc-checkpoints/03-with-history \
-          typescript/examples/vecelai/doc-checkpoints/04-conversation-forking \
-          typescript/examples/vecelai/doc-checkpoints/05a-streaming \
-          typescript/examples/vecelai/doc-checkpoints/05b-response-resumption \
-          typescript/examples/vecelai/doc-checkpoints/06-sharing \
-          typescript/examples/vecelai/doc-checkpoints/07-with-search; do
-          (cd "$d" && npm ci && npm run prettier)
-        done
+      - npm ci
+      - npm run prettier
+
+  generate:typescript:chat-vecelai-ts:
+    dir: typescript/examples/vecelai/chat-vecelai-ts
+    cmds:
+      - npm ci
+      - npm run prettier
+
+  generate:typescript:doc-checkpoints:01-basic-chat:
+    dir: typescript/examples/vecelai/doc-checkpoints/01-basic-chat
+    cmds:
+      - npm ci
+      - npm run prettier
+
+  generate:typescript:doc-checkpoints:02-with-memory:
+    dir: typescript/examples/vecelai/doc-checkpoints/02-with-memory
+    cmds:
+      - npm ci
+      - npm run prettier
+
+  generate:typescript:doc-checkpoints:03-with-history:
+    dir: typescript/examples/vecelai/doc-checkpoints/03-with-history
+    cmds:
+      - npm ci
+      - npm run prettier
+
+  generate:typescript:doc-checkpoints:04-conversation-forking:
+    dir: typescript/examples/vecelai/doc-checkpoints/04-conversation-forking
+    cmds:
+      - npm ci
+      - npm run prettier
+
+  generate:typescript:doc-checkpoints:05a-streaming:
+    dir: typescript/examples/vecelai/doc-checkpoints/05a-streaming
+    cmds:
+      - npm ci
+      - npm run prettier
+
+  generate:typescript:doc-checkpoints:05b-response-resumption:
+    dir: typescript/examples/vecelai/doc-checkpoints/05b-response-resumption
+    cmds:
+      - npm ci
+      - npm run prettier
+
+  generate:typescript:doc-checkpoints:06-sharing:
+    dir: typescript/examples/vecelai/doc-checkpoints/06-sharing
+    cmds:
+      - npm ci
+      - npm run prettier
+
+  generate:typescript:doc-checkpoints:07-with-search:
+    dir: typescript/examples/vecelai/doc-checkpoints/07-with-search
+    cmds:
+      - npm ci
+      - npm run prettier
 
   generate:spotless:
     internal: true
@@ -171,7 +240,7 @@ tasks:
     cmds:
       - docker compose up -d 
       - docker compose stop memory-service >/dev/null 2>&1 || true
-      - air -c air.toml
+      - air -root . -c deploy/dev/air.toml
 
   dev:chat-quarkus:
     desc: Run the chat-quarkus app in dev mode. Use quick=true to skip npm install and dependency compilation.

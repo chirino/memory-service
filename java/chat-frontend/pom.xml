@@ -6,7 +6,7 @@
     <groupId>io.github.chirino.memory-service</groupId>
     <artifactId>memory-service-parent</artifactId>
     <version>999-SNAPSHOT</version>
-    <relativePath>../../java/pom.xml</relativePath>
+    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>chat-frontend</artifactId>
@@ -14,6 +14,7 @@
   <name>Memory Service - Demo Chat App - Frontend</name>
 
   <properties>
+    <frontend.dir>${maven.multiModuleProjectDirectory}/../frontends/chat-frontend</frontend.dir>
     <maven-jar-plugin.version>3.5.0</maven-jar-plugin.version>
     <node.docker.image>node:22.19.0-alpine</node.docker.image>
   </properties>
@@ -23,7 +24,7 @@
       <resource>
         <targetPath>META-INF/resources</targetPath>
         <filtering>false</filtering>
-        <directory>${project.basedir}/dist</directory>
+        <directory>${frontend.dir}/dist</directory>
       </resource>
     </resources>
     <plugins>
@@ -55,7 +56,7 @@
                 <argument>run</argument>
                 <argument>--rm</argument>
                 <argument>-v</argument>
-                <argument>${project.basedir}:/app</argument>
+                <argument>${frontend.dir}:/app</argument>
                 <argument>-v</argument>
                 <argument>chat-frontend-node-modules:/app/node_modules</argument>
                 <argument>-w</argument>

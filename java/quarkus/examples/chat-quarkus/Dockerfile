@@ -16,8 +16,8 @@ WORKDIR /build
 COPY java/mvnw ./java/mvnw
 COPY java/.mvn ./java/.mvn
 
-COPY ./frontends/chat-frontend/pom.xml ./frontends/chat-frontend/pom.xml
-COPY ./memory-service-contracts/pom.xml ./memory-service-contracts/pom.xml
+COPY ./java/chat-frontend/pom.xml ./java/chat-frontend/pom.xml
+COPY ./java/memory-service-contracts/pom.xml ./java/memory-service-contracts/pom.xml
 COPY ./java/pom.xml ./java/pom.xml
 COPY ./java/quarkus/examples/chat-quarkus/pom.xml ./java/quarkus/examples/chat-quarkus/pom.xml
 COPY ./java/quarkus/examples/pom.xml ./java/quarkus/examples/pom.xml
@@ -40,8 +40,6 @@ COPY ./java/spring/memory-service-spring-boot-autoconfigure/pom.xml ./java/sprin
 COPY ./java/spring/memory-service-spring-boot-docker-compose-starter/pom.xml ./java/spring/memory-service-spring-boot-docker-compose-starter/pom.xml
 COPY ./java/spring/memory-service-spring-boot-starter/pom.xml ./java/spring/memory-service-spring-boot-starter/pom.xml
 COPY ./java/spring/pom.xml ./java/spring/pom.xml
-COPY ./python/pom.xml ./python/pom.xml
-
 RUN ./java/mvnw -B -q -f java/pom.xml -Daether.connector.basic.threads=8 -Daether.metadataResolver.threads=8 -Daether.syncContext.named.time=120 quarkus:go-offline
 
 # Copy the frontend build into the chat app resources

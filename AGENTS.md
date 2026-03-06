@@ -26,13 +26,15 @@ When you discover something meaningful about this project during your work—arc
 **Essential commands**:
 - `./java/mvnw -f java/pom.xml test` - run Java/Quarkus/Spring tests
 - `./java/mvnw -f java/pom.xml compile` - compile Java modules (always run after Java changes)
-- `./java/mvnw -f java/pom.xml -pl :python verify` - regenerate Python gRPC stubs and validate Python package build/install (runs in Docker)
+- `task verify:python` - regenerate Python gRPC stubs and validate the LangChain package build/install (runs in Docker)
 - `task dev:memory-service` - backend dev mode (:8082)
 - `go test ./internal/bdd -run TestFeaturesPgKeycloak -count=1` - Go BDD runner for Postgres + Keycloak OIDC integration
 
 **Key paths**:
-- `memory-service-contracts/` - OpenAPI + proto sources of truth
+- `contracts/` - OpenAPI (`contracts/openapi/`) and protobuf (`contracts/protobuf/`) sources of truth
 - `main.go` + `internal/` - core Go implementation
+- `deploy/dev/air.toml` - local Air live-reload config for `task dev:memory-service`
+- `deploy/docker/prometheus.yml` - local Docker Compose Prometheus scrape config
 - `java/quarkus/examples/chat-quarkus/` - Demo chat app (Quarkus)
 - `java/spring/examples/chat-spring/` - Demo chat app (Spring)
 - `frontends/chat-frontend/` - Demo chat app frontend (React)
@@ -49,7 +51,7 @@ When you discover something meaningful about this project during your work—arc
 - Devcontainer Go gotcha: if `.devcontainer/Dockerfile` installs an older Go version than `go.mod` (e.g. 1.24.2 vs 1.24.6), Go auto-downloads a newer toolchain into `GOPATH`; keep `/go` writable by `vscode` (or set `GOPATH` to a user-owned path) to avoid `mkdir .../golang.org/toolchain: permission denied`.
 - Memory usage counters increment only on direct fetch reads (`GET /v1/memories`, gRPC `GetMemory`); search endpoints can return usage metadata with `include_usage` but do not increment counters.
 - Quarkus REST client module builds can require `-am` (`./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus -am ...`) so `memory-service-contracts` is built in the same reactor.
-- After moving the Maven reactor under `java/`, `maven.multiModuleProjectDirectory` resolves to `.../java`; Java modules that need repo-root siblings like `memory-service-contracts/` must use `../memory-service-contracts/...` paths.
+- Contract specs live in repo-root `contracts/`; Java modules should resolve them from `${maven.multiModuleProjectDirectory}/../contracts`, and the `java/memory-service-contracts` module publishes them via `../../contracts`.
 - The Maven wrapper and reactor root live under `java/`; repo-root Maven commands must use `./java/mvnw -f java/pom.xml ...`.
 
 ## Development Guidelines
@@ -67,10 +69,11 @@ This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree
 - Go changes (`main.go`, `internal/`, `go.mod`, `go.sum`, etc.): run Go build for affected packages (use `go build ./...` when scope is broad).
 - Java/Quarkus/Spring changes: run Maven compile for affected modules (prefer `-pl` targeted modules; use full `./java/mvnw -f java/pom.xml compile` only when scope is broad).
 - Frontend changes (`frontends/chat-frontend/`): run `npm run lint && npm run build` from `frontends/chat-frontend/`.
-- Python changes (`python/`): run `python3 -m compileall` on changed files/modules; run `./java/mvnw -f java/pom.xml -pl :python verify` when Python packaging/stubs are impacted.
+- Python changes (`python/`): run `python3 -m compileall` on changed files/modules; run `task verify:python` when Python packaging/stubs are impacted.
 - Cross-stack or uncertain impact: run all relevant checks above; full-repo compile is optional unless needed by the change scope.
 
 **Taskfile shell compatibility**: Task commands execute via `sh`; use POSIX redirection (`>/dev/null 2>&1`) instead of shell-specific forms like `&>` or malformed `2&>1`.
+- **TypeScript example task gotcha**: Under `typescript/examples/vecelai/doc-checkpoints/`, both `05-response-resumption/` and `05b-response-resumption/` exist; keep `Taskfile.yml` entries explicit instead of assuming a sequential directory list.
 
 **Test output strategy**: When running tests, redirect output to a file and search for errors instead of using `| tail`. This ensures you see all relevant error context:
 ```bash
@@ -80,7 +83,7 @@ task test:go > test.log 2>&1
 
 **Module-specific knowledge** lives in `FACTS.md` files within each module directory:
 - `./frontends/chat-frontend/FACTS.md`
-- `./memory-service-contracts/FACTS.md`
+- `./java/memory-service-contracts/FACTS.md`
 - `./java/quarkus/FACTS.md`
 - `./python/FACTS.md`
 - `./internal/sitebdd/FACTS.md`

@@ -86,8 +86,8 @@ For partial: `> **Status**: Partial — see [NNN](NNN-name.md) for continuation.
 - **Cross-references**: Link to other enhancements with `[NNN](NNN-name.md)` relative links
 - **Task checkboxes**: Use `- [ ]` for incomplete and `- [x]` for completed tasks
 - **Pre-release stance**: No backward compatibility needed. Don't deprecate — just delete/rename. Datastores are reset frequently.
-- **OpenAPI specs**: Agent API is in `openapi.yml`, Admin API is in `openapi-admin.yml`, both under `memory-service-contracts/src/main/resources/`
-- **Proto file**: gRPC definitions in `memory-service-contracts/src/main/resources/memory/v1/memory_service.proto`
+- **OpenAPI specs**: Agent API is in `contracts/openapi/openapi.yml`, Admin API is in `contracts/openapi/openapi-admin.yml`
+- **Proto file**: gRPC definitions in `contracts/protobuf/memory/v1/memory_service.proto`
 
 ## Tips
 

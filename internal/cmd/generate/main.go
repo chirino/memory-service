@@ -206,10 +206,10 @@ func downloadAndExtractProtoc(url, binDir string) {
 }
 
 func generateOpenAPI(root string) {
-	contractsDir := filepath.Join(root, "memory-service-contracts", "src", "main", "resources")
+	contractsDir := filepath.Join(root, "contracts")
 
 	// Agent API
-	agentSpec := filepath.Join(contractsDir, "openapi.yml")
+	agentSpec := filepath.Join(contractsDir, "openapi", "openapi.yml")
 	agentCfg := filepath.Join(root, "internal", "generated", "api", "cfg.yaml")
 	agentOut := filepath.Join(root, "internal", "generated", "api")
 	os.MkdirAll(agentOut, 0o755)
@@ -217,7 +217,7 @@ func generateOpenAPI(root string) {
 	run("go", "run", "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen", "--config="+agentCfg, agentSpec)
 
 	// Admin API
-	adminSpec := filepath.Join(contractsDir, "openapi-admin.yml")
+	adminSpec := filepath.Join(contractsDir, "openapi", "openapi-admin.yml")
 	adminCfg := filepath.Join(root, "internal", "generated", "admin", "cfg.yaml")
 	adminOut := filepath.Join(root, "internal", "generated", "admin")
 	os.MkdirAll(adminOut, 0o755)
@@ -226,11 +226,11 @@ func generateOpenAPI(root string) {
 }
 
 func generateEncryptionHeader(root string) {
-	protoFile := filepath.Join(root, "memory-service-contracts", "src", "main", "resources", "dataencryption", "v1", "encryption_header.proto")
+	protoFile := filepath.Join(root, "contracts", "protobuf", "dataencryption", "v1", "encryption_header.proto")
 	pbOut := filepath.Join(root, "internal", "generated", "pb")
 	os.MkdirAll(pbOut, 0o755)
 
-	protoInclude := filepath.Join(root, "memory-service-contracts", "src", "main", "resources")
+	protoInclude := filepath.Join(root, "contracts", "protobuf")
 	binDir := toolBinDir(root)
 	protocBin := filepath.Join(binDir, "protoc")
 	wellKnownIncludes := filepath.Join(binDir, "include")
@@ -246,11 +246,11 @@ func generateEncryptionHeader(root string) {
 }
 
 func generateGRPC(root string) {
-	protoFile := filepath.Join(root, "memory-service-contracts", "src", "main", "resources", "memory", "v1", "memory_service.proto")
+	protoFile := filepath.Join(root, "contracts", "protobuf", "memory", "v1", "memory_service.proto")
 	pbOut := filepath.Join(root, "internal", "generated", "pb")
 	os.MkdirAll(pbOut, 0o755)
 
-	protoInclude := filepath.Join(root, "memory-service-contracts", "src", "main", "resources")
+	protoInclude := filepath.Join(root, "contracts", "protobuf")
 	binDir := toolBinDir(root)
 	protocBin := filepath.Join(binDir, "protoc")
 	wellKnownIncludes := filepath.Join(binDir, "include")

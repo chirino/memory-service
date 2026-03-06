@@ -26,7 +26,7 @@
 
 **Devcontainer Python tooling**: `uv` is installed in `.devcontainer/Dockerfile` (not via `devcontainer.json` features), so Python checkpoint workflows can run immediately after `wt up`.
 
-**Module build**: `python/pom.xml` runs Python packaging tasks in Docker (`ghcr.io/astral-sh/uv:python3.11-bookworm`) so host setup only requires Docker.
+**Module build**: `Taskfile.yml` owns the Dockerized Python packaging tasks: `task generate:python` regenerates gRPC stubs, `task build:python:langchain` builds the wheel, and `task verify:python` runs the full stub/build/install verification flow with `ghcr.io/astral-sh/uv:python3.11-bookworm`.
 
 **Package layout**: Python integrations currently include both `python/langchain` (`memory-service-langchain`) and `python/langgraph` (`memory-service-langgraph`) for episodic memory `BaseStore` support.
 

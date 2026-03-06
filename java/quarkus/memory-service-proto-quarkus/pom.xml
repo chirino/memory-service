@@ -15,7 +15,7 @@
 
   <properties>
     <contracts.dir>${project.build.directory}/generated-resources/contracts</contracts.dir>
-    <contracts.source.dir>${maven.multiModuleProjectDirectory}/../memory-service-contracts/src/main/resources</contracts.source.dir>
+    <contracts.source.dir>${maven.multiModuleProjectDirectory}/../contracts</contracts.source.dir>
     <protoc.version>3.25.3</protoc.version>
   </properties>
 
@@ -83,9 +83,9 @@
               <exportAntProperties>true</exportAntProperties>
               <target>
                 <mkdir dir="${contracts.dir}"/>
-                <available file="${contracts.source.dir}/memory/v1/memory_service.proto" property="contracts.local.available"/>
+                <available file="${contracts.source.dir}/protobuf/memory/v1/memory_service.proto" property="contracts.local.available"/>
                 <copy failonerror="false" preservelastmodified="true" todir="${contracts.dir}">
-                  <fileset dir="${contracts.source.dir}" erroronmissingdir="false">
+                  <fileset dir="${contracts.source.dir}/protobuf" erroronmissingdir="false">
                     <include name="**/*.proto"/>
                   </fileset>
                 </copy>
