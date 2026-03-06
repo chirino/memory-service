@@ -22,7 +22,10 @@ import (
 // First call to allocatePort() returns 10090.
 var portCounter atomic.Int32
 var globalCheckpointProcessRegistry = newCheckpointProcessRegistry()
-var globalNodeBuildMutex sync.Mutex
+var globalTypeScriptVercelAIBuild struct {
+	once sync.Once
+	err  error
+}
 
 type checkpointProcessRegistry struct {
 	mu   sync.Mutex
@@ -417,7 +420,6 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 
 	isPython := fileExists(filepath.Join(s.CheckpointPath, "pyproject.toml"))
 	isNode := !isPython && fileExists(filepath.Join(s.CheckpointPath, "package.json"))
-	shouldLockNodeBuild := false
 
 	var cmd *exec.Cmd
 	if isPython {
@@ -431,16 +433,9 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 		cmd.Dir = s.CheckpointPath
 		cmd.Env = pythonBuildEnv(s.ProjectRoot)
 	} else if isNode {
-		nodeBuildScript := fmt.Sprintf(
-			"cd %s/typescript/vercelai && npm install && npm run build && cd %s && npm install && npm run build",
-			s.ProjectRoot,
-			s.CheckpointPath,
-		)
+		nodeBuildScript := fmt.Sprintf("cd %s && npm install && npm run build", s.CheckpointPath)
 		cmd = exec.Command("bash", "-lc", nodeBuildScript)
 		cmd.Dir = s.ProjectRoot
-		// Node checkpoints share the same typescript/vercelai dependency package.
-		// Parallel npm installs there can race and fail with ENOTEMPTY in CI.
-		shouldLockNodeBuild = true
 	} else {
 		mvnw := filepath.Join(s.ProjectRoot, "mvnw")
 		pom := filepath.Join(s.CheckpointPath, "pom.xml")
@@ -470,9 +465,12 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 	if streamOutput {
 		fmt.Printf("=== Building %s ===\n%s\n", s.CheckpointID, cmd.String())
 	}
-	if shouldLockNodeBuild {
-		globalNodeBuildMutex.Lock()
-		defer globalNodeBuildMutex.Unlock()
+	if isNode {
+		if err := ensureTypeScriptVercelAIPackageBuilt(s.ProjectRoot); err != nil {
+			s.buildExitCode = 1
+			fmt.Printf("=== Build failed: %s ===\n%s\n", s.CheckpointID, err)
+			return nil // step returns success; "the build should succeed" asserts the exit code
+		}
 	}
 	if err := cmd.Run(); err != nil {
 		if flushErr := flushAndCloseBuildOutput(cmd.Stdout); flushErr != nil {
@@ -504,6 +502,19 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 		fmt.Printf("=== Build OK: %s ===\n", s.CheckpointID)
 	}
 	return nil
+}
+
+func ensureTypeScriptVercelAIPackageBuilt(projectRoot string) error {
+	globalTypeScriptVercelAIBuild.once.Do(func() {
+		script := fmt.Sprintf("cd %s/typescript/vercelai && npm install && npm run build", projectRoot)
+		cmd := exec.Command("bash", "-lc", script)
+		cmd.Dir = projectRoot
+		cmd.Stdout = &prefixWriter{prefix: "[build] ", dst: os.Stdout}
+		cmd.Stderr = cmd.Stdout
+		globalTypeScriptVercelAIBuild.err = cmd.Run()
+		_ = flushAndCloseBuildOutput(cmd.Stdout)
+	})
+	return globalTypeScriptVercelAIBuild.err
 }
 
 // shouldRecord decides whether this checkpoint should be recorded based on
