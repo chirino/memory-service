@@ -1,0 +1,24 @@
+[
+  {
+    "captureId": "/docs/typescript-vecelai/response-resumption/#2",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/05-response-resumption",
+    "scenario": "[typescript-vecelai] Response Resumption Tutorial - 05-response-resumption",
+    "requestUrl": "http://localhost:10126/chat/a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/event-stream",
+    "body": "data: {\"eventType\":\"PartialResponse\",\"text\":\"Once upon a time, there was a curious little cat named Whiskers.\"}\n\ndata: {\"eventType\":\"PartialResponse\",\"text\":\" She explored the moonlit garden and found a hidden pond.\"}\n\n",
+    "capturedAt": "2026-03-06T13:29:14.754188Z"
+  },
+  {
+    "captureId": "/docs/typescript-vecelai/response-resumption/#3",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/05-response-resumption",
+    "scenario": "[typescript-vecelai] Response Resumption Tutorial - 05-response-resumption",
+    "requestUrl": "http://localhost:10126/v1/conversations/resume-check",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "[]",
+    "capturedAt": "2026-03-06T13:29:14.759923Z"
+  }
+]

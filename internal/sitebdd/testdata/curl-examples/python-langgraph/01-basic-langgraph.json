@@ -1,0 +1,13 @@
+[
+  {
+    "captureId": "/docs/python-langgraph/getting-started/#1",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/01-basic-langgraph",
+    "scenario": "[python-langgraph] Getting Started Tutorial - 01-basic-langgraph",
+    "requestUrl": "http://localhost:10104/chat",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "1 + 1 = 2.",
+    "capturedAt": "2026-03-06T14:58:31.56435947Z"
+  }
+]

@@ -21,36 +21,40 @@ This guide adds indexed history text and a proxied search endpoint.
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
   lang="typescript"
-  lines="4-9"
+  match='import { withMemoryService, withProxy } from "@chirino/memory-service-vercelai";'
+  before={0}
+  after={0}
 />
 
 **What changed**: Checkpoint `07` adds `withProxy` import used by the search endpoint.
 
-**Why**: The app can forward search requests to Memory Service while preserving user-scoped auth behavior.
+**Why needed**: The app can forward search requests to Memory Service while preserving user-scoped auth behavior.
 
 ## Add Indexed Content to History Appends
 
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
   lang="typescript"
-  lines="24-26"
+  match='function indexedContent(text: string, _role: "USER" | "AI"): string {'
+  before={0}
+  after={2}
 />
+
+**What changed**: Adds the `indexedContent(...)` projection function.
+
+**Why needed**: This is the redaction/transformation point before searchable index data is written.
 
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
   lang="typescript"
-  lines="42-48"
+  match="const result = await withMemoryService("
+  before={1}
+  after={7}
 />
 
-<CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
-  lang="typescript"
-  lines="84-90"
-/>
+**What changed**: Wires `indexer` into `withMemoryService(...)`.
 
-**What changed**: The app defines `indexedContent(...)` and passes it on each `appendHistoryEntry(...)` call.
-
-**Why**: `indexedContent` is the searchable projection of each encrypted history message.
+**Why needed**: USER/AI history entries need an explicit searchable projection for conversation search.
 
 > **Security warning**
 > `indexedContent` is stored as searchable index data and is not encrypted like message content. Redact or minimize sensitive values before writing it.
@@ -60,12 +64,14 @@ This guide adds indexed history text and a proxied search endpoint.
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
   lang="typescript"
-  lines="95-97"
+  match='app.post("/v1/conversations/search", async (req, res) => {'
+  before={0}
+  after={4}
 />
 
 **What changed**: The app adds `POST /v1/conversations/search` and relays request body to Memory Service.
 
-**Why**: Frontend clients can run semantic/fulltext search through the same agent app origin.
+**Why needed**: Frontend clients can run semantic/fulltext search through the same app origin.
 
 <TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/07-with-search">
 
@@ -88,7 +94,7 @@ Create searchable history:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput={`Sure, I can help with that.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/f1a4d9c2-5b6e-4a7d-8c21-9b3e5d6f7555 \
@@ -104,7 +110,7 @@ Search conversations:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "data"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"f1a4d9c2-5b6e-4a7d-8c21-9b3e5d6f7555"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/v1/conversations/search \

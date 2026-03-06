@@ -1,0 +1,24 @@
+[
+  {
+    "captureId": "/docs/quarkus/getting-started/#4",
+    "checkpoint": "quarkus/examples/doc-checkpoints/02-with-memory",
+    "scenario": "[quarkus] Getting Started Tutorial - 02-with-memory",
+    "requestUrl": "http://localhost:10124/chat/6a6e7762-4569-4f63-b01c-c3666a27428b",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hi Hiram! I’m an AI created to help answer questions and provide information. How can I assist you today?",
+    "capturedAt": "2026-03-06T14:59:01.359231095Z"
+  },
+  {
+    "captureId": "/docs/quarkus/getting-started/#5",
+    "checkpoint": "quarkus/examples/doc-checkpoints/02-with-memory",
+    "scenario": "[quarkus] Getting Started Tutorial - 02-with-memory",
+    "requestUrl": "http://localhost:10124/chat/6a6e7762-4569-4f63-b01c-c3666a27428b",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "You are Hiram! Beyond that, I don’t have any additional information about you unless you share more. How can I assist you further?",
+    "capturedAt": "2026-03-06T14:59:01.574987845Z"
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "captureId": "/docs/spring/response-resumption/#1",
+    "checkpoint": "spring/examples/doc-checkpoints/05-response-resumption",
+    "scenario": "[spring] Response Resumption Tutorial - 05-response-resumption",
+    "requestUrl": "http://localhost:10134/chat/8337ca02-62de-43e1-b69b-c663cb50acc4",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/event-stream",
+    "body": "data:Once upon a time, there was a curious little cat named Whiskers who loved to explore the garden behind her cozy cottage. Every morning, she would stretch lazily in the sunlight before venturing out to discover what new wonders the day might bring.\n\ndata:\ndata:\ndata:One particularly bright afternoon, Whiskers stumbled upon a mysterious path she had never seen before. It wound through a thicket of wildflowers and disappeared into a shady grove of ancient oak trees.\n\ndata:\ndata:\ndata:At the end of the path, she discovered a beautiful hidden pond where dragonflies danced across the water and frogs sang their evening chorus. Whiskers sat quietly by the edge, mesmerized by the peaceful scene.\n\ndata:\ndata:\ndata:As the sun began to set, painting the sky in shades of orange and pink, Whiskers made her way back home. She curled up by the fireplace, purring contentedly, already dreaming of tomorrow's adventure at her secret pond.\n\n",
+    "capturedAt": "2026-03-06T14:59:36.872400889Z"
+  }
+]

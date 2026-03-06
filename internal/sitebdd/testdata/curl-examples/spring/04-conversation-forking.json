@@ -1,0 +1,46 @@
+[
+  {
+    "captureId": "/docs/spring/conversation-forking/#2",
+    "checkpoint": "spring/examples/doc-checkpoints/04-conversation-forking",
+    "scenario": "[spring] Conversation Forking Tutorial - 04-conversation-forking",
+    "requestUrl": "http://localhost:10129/chat/a8391789-592d-4273-90df-7349b08b5d3d",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hello! How can I assist you today?",
+    "capturedAt": "2026-03-06T14:59:26.138950509Z"
+  },
+  {
+    "captureId": "/docs/spring/conversation-forking/#3",
+    "checkpoint": "spring/examples/doc-checkpoints/04-conversation-forking",
+    "scenario": "[spring] Conversation Forking Tutorial - 04-conversation-forking",
+    "requestUrl": "http://localhost:10129/v1/conversations/a8391789-592d-4273-90df-7349b08b5d3d/entries",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"id\":\"7b49adf0-ff34-4019-937d-258d9d154c93\",\"conversationId\":\"a8391789-592d-4273-90df-7349b08b5d3d\",\"userId\":\"bob\",\"channel\":\"history\",\"epoch\":null,\"contentType\":\"history\",\"content\":[{\"role\":\"USER\",\"text\":\"Hello from the root conversation.\"}],\"createdAt\":\"2026-03-06T14:59:24.681546Z\"},{\"id\":\"6a3d51d1-d4fb-482e-af40-74dfb9ae13e1\",\"conversationId\":\"a8391789-592d-4273-90df-7349b08b5d3d\",\"userId\":\"bob\",\"channel\":\"history\",\"epoch\":null,\"contentType\":\"history\",\"content\":[{\"role\":\"AI\",\"text\":\"Hello! How can I assist you today?\"}],\"createdAt\":\"2026-03-06T14:59:26.097352Z\"}],\"afterCursor\":null}",
+    "capturedAt": "2026-03-06T14:59:26.230359842Z"
+  },
+  {
+    "captureId": "/docs/spring/conversation-forking/#4",
+    "checkpoint": "spring/examples/doc-checkpoints/04-conversation-forking",
+    "scenario": "[spring] Conversation Forking Tutorial - 04-conversation-forking",
+    "requestUrl": "http://localhost:10129/chat/6dcb8f3f-bd21-459f-9127-96e5a94d276c?forkedAtConversationId=a8391789-592d-4273-90df-7349b08b5d3d\u0026forkedAtEntryId=6a3d51d1-d4fb-482e-af40-74dfb9ae13e1",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hello! How can I assist you today?",
+    "capturedAt": "2026-03-06T14:59:26.375371967Z"
+  },
+  {
+    "captureId": "/docs/spring/conversation-forking/#5",
+    "checkpoint": "spring/examples/doc-checkpoints/04-conversation-forking",
+    "scenario": "[spring] Conversation Forking Tutorial - 04-conversation-forking",
+    "requestUrl": "http://localhost:10129/v1/conversations/a8391789-592d-4273-90df-7349b08b5d3d/forks",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"conversationId\":\"a8391789-592d-4273-90df-7349b08b5d3d\",\"forkedAtEntryId\":null,\"forkedAtConversationId\":null,\"title\":\"Hello from the root conversation.\",\"createdAt\":\"2026-03-06T14:59:24.679556Z\"},{\"conversationId\":\"6dcb8f3f-bd21-459f-9127-96e5a94d276c\",\"forkedAtEntryId\":\"a73da4d2-c3a8-4502-a648-683e6b05bbc6\",\"forkedAtConversationId\":\"a8391789-592d-4273-90df-7349b08b5d3d\",\"title\":\"Continue from this fork.\",\"createdAt\":\"2026-03-06T14:59:26.264984Z\"}],\"afterCursor\":null}",
+    "capturedAt": "2026-03-06T14:59:26.419104717Z"
+  }
+]

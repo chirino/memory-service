@@ -1,0 +1,35 @@
+[
+  {
+    "captureId": "/docs/python-langgraph/memories/#1",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/30-memories",
+    "scenario": "[python-langgraph] Memories Tutorial - 30-memories",
+    "requestUrl": "http://localhost:10117/chat/bob-a0a1821b/c1234567-0000-0000-0000-000000000001",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Thanks for sharing! I'll remember that about you.",
+    "capturedAt": "2026-03-06T14:59:15.275096045Z"
+  },
+  {
+    "captureId": "/docs/python-langgraph/memories/#2",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/30-memories",
+    "scenario": "[python-langgraph] Memories Tutorial - 30-memories",
+    "requestUrl": "http://localhost:10117/chat/bob-a0a1821b/c1234567-0000-0000-0000-000000000002",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Your name is Bob. You also mentioned you love hiking and Python programming.",
+    "capturedAt": "2026-03-06T14:59:15.500450087Z"
+  },
+  {
+    "captureId": "/docs/python-langgraph/memories/#3",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/30-memories",
+    "scenario": "[python-langgraph] Memories Tutorial - 30-memories",
+    "requestUrl": "http://localhost:10117/v1/conversations/c1234567-0000-0000-0000-000000000002",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"id\":\"c1234567-0000-0000-0000-000000000002\",\"title\":\"What is my name?\",\"ownerUserId\":\"bob\",\"metadata\":{},\"createdAt\":\"2026-03-06T14:59:15.335675Z\",\"updatedAt\":\"2026-03-06T14:59:15.494419Z\",\"accessLevel\":\"owner\"}",
+    "capturedAt": "2026-03-06T14:59:15.564757879Z"
+  }
+]

@@ -73,7 +73,7 @@ Start a streaming response:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should match pattern "\\w+"
-`}>
+`} exampleOutput={`matching response`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/12b08143-3edb-4a86-a34e-e91aacc7fc02 \
@@ -107,7 +107,7 @@ Check whether a conversation has an in-progress response:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "["
-`}>
+`} exampleOutputLang="json" exampleOutput={`["12b08143-3edb-4a86-a34e-e91aacc7fc02"]`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \

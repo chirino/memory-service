@@ -108,7 +108,16 @@ And the response body should be json:
   "status": "ready"
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{
+  "id": "96618a21-c7fc-41c6-ba71-b1d83e3ecb95",
+  "href": "/v1/attachments/96618a21-c7fc-41c6-ba71-b1d83e3ecb95",
+  "contentType": "text/plain",
+  "filename": "test-upload.txt",
+  "size": 21,
+  "sha256": "a1b2c3d4...",
+  "expiresAt": "2025-01-28T11:30:00Z",
+  "status": "ready"
+}`}>
 
 ```bash
 echo "Hello, attachments!" > /tmp/test-upload.txt
@@ -118,21 +127,6 @@ curl -sSfX POST http://localhost:9090/v1/attachments \
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "id": "96618a21-c7fc-41c6-ba71-b1d83e3ecb95",
-  "href": "/v1/attachments/96618a21-c7fc-41c6-ba71-b1d83e3ecb95",
-  "contentType": "text/plain",
-  "filename": "test-upload.txt",
-  "size": 21,
-  "sha256": "a1b2c3d4...",
-  "expiresAt": "2025-01-28T11:30:00Z",
-  "status": "ready"
-}
-```
 
 Save the attachment ID for subsequent commands:
 
@@ -152,7 +146,7 @@ And the response body should be json:
   "expiresIn": %{response.body.expiresIn}
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"contentType":"text/plain","expiresAt":"2026-03-06T15:59:24Z","filename":"test-upload.txt","href":"/v1/attachments/a06af9bd-43a3-47a6-bbc5-d46aae03e36c","id":"a06af9bd-43a3-47a6-bbc5-d46aae03e36c","sha256":"45756124416f43c4c9c5138fb2909cea45ae20b9852e9def468370906be6c84a","size":20,"status":"ready"}`}>
 
 ```bash
 curl -sSfX GET "http://localhost:9090/v1/attachments/${ATTACHMENT_ID}/download-url" \
@@ -160,15 +154,6 @@ curl -sSfX GET "http://localhost:9090/v1/attachments/${ATTACHMENT_ID}/download-u
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "url": "/v1/attachments/download/dG9rZW4.../test-upload.txt",
-  "expiresIn": 300
-}
-```
 
 ### Download via Signed URL (No Auth Required)
 
@@ -180,7 +165,7 @@ And the response body should be text:
 """
 Hello, attachments!
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"expiresIn":300,"url":"/v1/attachments/download/MTcwNTV8MTc3MjgwOTQ2NA.DUpxA9YbqkQBTz943OIRA9V5zfLoT0t2Z7rX0DcGj3U/test-upload.txt"}`}>
 
 ```bash
 curl -sSf "http://localhost:9090${DOWNLOAD_URL}"

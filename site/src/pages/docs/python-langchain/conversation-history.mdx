@@ -58,7 +58,7 @@ Now test it again.
 <CurlTest steps={`
 Then the response status should be 200
 And the response should match pattern "\\d+"
-`}>
+`} exampleOutput={`42`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/0ef33d7b-11b1-4992-9785-681e222dbcd2 \
@@ -100,7 +100,7 @@ And the response should contain "ownerUserId"
 And the response should contain "bob"
 And the response should contain "accessLevel"
 And the response should contain "owner"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"id":"0ef33d7b-11b1-4992-9785-681e222dbcd2","ownerUserId":"bob","accessLevel":"owner","title":"Give me a random number between 1 and 100."}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/0ef33d7b-11b1-4992-9785-681e222dbcd2 \
@@ -137,7 +137,7 @@ And the response body should be json:
   "afterCursor": null
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"id":"0ef33d7b-11b1-4992-9785-681e222dbcd2","title":"Give me a random number between 1 and 10","ownerUserId":"bob","metadata":{},"createdAt":"2026-03-06T14:58:32.343885Z","updatedAt":"2026-03-06T14:58:32.458576Z","accessLevel":"owner"}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/0ef33d7b-11b1-4992-9785-681e222dbcd2/entries \
@@ -172,7 +172,7 @@ And the response should contain "ownerUserId"
 And the response should contain "bob"
 And the response should contain "accessLevel"
 And the response should contain "owner"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"id":"bedf7599-4b34-4310-83de-d70e95922774","conversationId":"0ef33d7b-11b1-4992-9785-681e222dbcd2","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.349103Z","content":[{"role":"USER","text":"Give me a random number between 1 and 100."}]},{"id":"3bfad611-ef90-40b5-a5e3-0ea20397e416","conversationId":"0ef33d7b-11b1-4992-9785-681e222dbcd2","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.42779Z","content":[{"role":"AI","text":"The random number between 1 and 100 is 42."}]}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations \

@@ -26,6 +26,7 @@ import (
 // registerCurlSteps registers all curl-related godog steps for the given scenario.
 func registerCurlSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
 	ctx.Step(`^I execute curl command:$`, s.executeCurlCommand)
+	ctx.Step(`^curl capture id is "([^"]*)"$`, s.setCurlCaptureID)
 	ctx.Step(`^the response status should be (\d+)$`, s.responseStatusShouldBe)
 	ctx.Step(`^the response should contain "([^"]*)"$`, s.responseShouldContain)
 	ctx.Step(`^the response should not contain "([^"]*)"$`, s.responseShouldNotContain)
@@ -34,6 +35,11 @@ func registerCurlSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
 	ctx.Step(`^the response body should be text:$`, s.responseBodyShouldBeText)
 	ctx.Step(`^set "([^"]*)" to the json response field "([^"]*)"$`, s.setContextVariableToJsonResponseField)
 	ctx.Step(`^the response should match pattern "([^"]*)"$`, s.responseShouldMatchPattern)
+}
+
+func (s *SiteScenario) setCurlCaptureID(captureID string) error {
+	s.pendingCurlCaptureID = strings.TrimSpace(captureID)
+	return nil
 }
 
 // executeCurlCommand parses a bash block containing one or more curl commands,
@@ -101,9 +107,11 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 		fmt.Printf("    [curl] status=%d body-len=%d\n", statusCode, len(respBody))
 		s.LastStatusCode = statusCode
 		s.LastRespBody = s.normalizeUsers(respBody)
+		s.lastRespCT = resp.Header.Get("Content-Type")
 		crCopy := cr
 		s.lastCurlReq = &crCopy
 	}
+	s.recordCurlExample()
 
 	return nil
 }

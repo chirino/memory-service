@@ -55,7 +55,13 @@ Test it with curl:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should match pattern "\\w+"
-`}>
+`} exampleOutputLang="text" exampleOutput={`Once upon a time, there was a curious little cat named Whiskers who loved to explore the garden behind her cozy cottage. Every morning, she would stretch lazily in the sunlight before venturing out to discover what new wonders the day might bring.
+
+One particularly bright afternoon, Whiskers stumbled upon a mysterious path she had never seen before. It wound through a thicket of wildflowers and disappeared into a shady grove of ancient oak trees.
+
+At the end of the path, she discovered a beautiful hidden pond where dragonflies danced across the water and frogs sang their evening chorus. Whiskers sat quietly by the edge, mesmerized by the peaceful scene.
+
+As the sun began to set, painting the sky in shades of orange and pink, Whiskers made her way back home. She curled up by the fireplace, purring contentedly, already dreaming of tomorrow's adventure at her secret pond.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/bafd53b0-ee0d-4d5f-83e3-406fbc3506cb \

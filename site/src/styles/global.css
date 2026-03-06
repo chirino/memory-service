@@ -144,10 +144,46 @@
     color: #b8f7d4;
   }
 
+  /* JSON blocks use a custom tokenizer in DocsLayout to get a terminal-like palette. */
+  pre[data-language="json"] {
+    border-color: #1f2937;
+    color: #fff !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+
+  pre[data-language="json"] code,
+  pre[data-language="json"] .line {
+    color: #fff !important;
+  }
+
+  pre[data-language="json"] .json-key {
+    color: #6f7cff;
+    font-weight: 700;
+  }
+
+  pre[data-language="json"] .json-string,
+  pre[data-language="json"] .json-number,
+  pre[data-language="json"] .json-literal {
+    color: #22c55e;
+  }
+
+  pre[data-language="json"] .json-punctuation,
+  pre[data-language="json"] .json-text {
+    color: #fff;
+  }
+
+  /* Plain text blocks should use a higher-contrast neutral gray */
+  pre[data-language="text"] code,
+  pre[data-language="text"] .line,
+  pre[data-language="text"] code span {
+    color: #d1d5db !important;
+  }
+
   /* Inline code styling */
   :not(pre) > code {
     @apply bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-primary-600 dark:text-primary-400;
   }
+
 }
 
 /* Component layer for reusable patterns */

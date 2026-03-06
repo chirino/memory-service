@@ -43,7 +43,8 @@ Add this method to the `MemoryServiceProxyController` to list forks for a conver
   lang="java"
   before={2}
   after={1}
->listConversationForks(@PathVariable String conversationId)</CodeFromFile>
+match="listConversationForks(@PathVariable String conversationId)"
+/>
 
 **What changed**: A new `GET /{conversationId}/forks` endpoint is added to `MemoryServiceProxyController`, delegating to `proxy.listConversationForks()`.
 
@@ -72,7 +73,7 @@ Create a turn on the source conversation:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput="Sure, I can help with that.">
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/a8391789-592d-4273-90df-7349b08b5d3d \
@@ -83,18 +84,12 @@ curl -NsSfX POST http://localhost:9090/chat/a8391789-592d-4273-90df-7349b08b5d3d
 
 </CurlTest>
 
-Example response:
-
-```text
-Sure, I can help with that.
-```
-
 Fetch the entry id to fork from:
 
 <CurlTest steps={`
 Then the response status should be 200
 And set "FORK_ENTRY_ID" to the json response field "data[1].id"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"id":"7b49adf0-ff34-4019-937d-258d9d154c93"},{"id":"6a3d51d1-d4fb-482e-af40-74dfb9ae13e1"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/a8391789-592d-4273-90df-7349b08b5d3d/entries \
@@ -103,27 +98,11 @@ curl -sSfX GET http://localhost:9090/v1/conversations/a8391789-592d-4273-90df-73
 
 </CurlTest>
 
-Example response from the entries API:
-
-```json
-{
-  "data": [
-    {
-      "id": "f4f78014-a89a-40c6-8823-7144a4fb4b31",
-      "conversationId": "a8391789-592d-4273-90df-7349b08b5d3d",
-      "channel": "history",
-      "contentType": "history",
-      "content": [{"role": "USER", "text": "Hello from the root conversation."}]
-    }
-  ]
-}
-```
-
 Create the forked conversation by calling chat with fork metadata:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput="Sure, I can help with that." exampleOutputLang="json" exampleOutput={`{"data":[{"id":"7b49adf0-ff34-4019-937d-258d9d154c93","conversationId":"a8391789-592d-4273-90df-7349b08b5d3d","userId":"bob","channel":"history","epoch":null,"contentType":"history","content":[{"role":"USER","text":"Hello from the root conversation."}],"createdAt":"2026-03-06T14:59:24.681546Z"},{"id":"6a3d51d1-d4fb-482e-af40-74dfb9ae13e1","conversationId":"a8391789-592d-4273-90df-7349b08b5d3d","userId":"bob","channel":"history","epoch":null,"contentType":"history","content":[{"role":"AI","text":"Hello! How can I assist you today?"}],"createdAt":"2026-03-06T14:59:26.097352Z"}],"afterCursor":null}`}>
 
 ```bash
 curl -NsSfX POST "http://localhost:9090/chat/6dcb8f3f-bd21-459f-9127-96e5a94d276c?forkedAtConversationId=a8391789-592d-4273-90df-7349b08b5d3d&forkedAtEntryId=${FORK_ENTRY_ID}" \
@@ -134,19 +113,13 @@ curl -NsSfX POST "http://localhost:9090/chat/6dcb8f3f-bd21-459f-9127-96e5a94d276
 
 </CurlTest>
 
-Example response:
-
-```text
-Sure, I can help with that.
-```
-
 List forks for the source conversation through the Spring proxy endpoint:
 
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "a8391789-592d-4273-90df-7349b08b5d3d"
 And the response should contain "6dcb8f3f-bd21-459f-9127-96e5a94d276c"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"a8391789-592d-4273-90df-7349b08b5d3d"},{"conversationId":"6dcb8f3f-bd21-459f-9127-96e5a94d276c"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/a8391789-592d-4273-90df-7349b08b5d3d/forks \
@@ -154,27 +127,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations/a8391789-592d-4273-90df-73
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "data": [
-    {
-      "conversationId": "a8391789-592d-4273-90df-7349b08b5d3d",
-      "title": "Hello from the root conversation.",
-      "createdAt": "2026-02-23T03:56:55.880524Z"
-    },
-    {
-      "conversationId": "6dcb8f3f-bd21-459f-9127-96e5a94d276c",
-      "forkedAtConversationId": "a8391789-592d-4273-90df-7349b08b5d3d",
-      "title": "Continue from this fork.",
-      "createdAt": "2026-02-23T03:57:31.598799Z"
-    }
-  ],
-  "afterCursor": null
-}
-```
 
 </TestScenario>
 

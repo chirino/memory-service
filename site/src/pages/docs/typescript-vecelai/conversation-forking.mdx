@@ -23,48 +23,75 @@ Checkpoint `04` adds fork query parsing:
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
   lang="typescript"
-  lines="50-53"
+  match="const forkedAtConversationId ="
+  before={0}
+  after={3}
 />
 
 **What changed**: The endpoint accepts optional `forkedAtConversationId` and `forkedAtEntryId` query parameters.
 
-**Why**: These values identify the source conversation and exact branch point when creating a fork.
+**Why needed**: These values identify the source conversation and exact branch point for creating a new forked branch.
 
 ## Pass Fork Metadata to the USER History Append
 
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
   lang="typescript"
-  lines="57-65"
+  match={`const result = await withMemoryService(
+    {
+      conversationId,
+      authorization,
+      memoryContentType: "vercelai",
+      userText: userMessage,
+      forkedAtConversationId,
+      forkedAtEntryId,
+    },
+    async (contextMemory) => {`}
+  before={0}
+  after={0}
 />
 
-**What changed**: Fork metadata is forwarded only to the first USER `appendHistoryEntry(...)` call.
+**What changed**: The chat handler now passes fork metadata (`forkedAtConversationId`, `forkedAtEntryId`) into `withMemoryService(...)`, so only the initial USER history write carries the fork link.
 
-**Why**: The first append into a new conversation ID is how Memory Service materializes a fork.
+**Why needed**: Memory Service creates the fork relationship from that first USER history append in the new conversation; later writes should not repeat fork metadata.
 
 ## Proxy the Fork Listing Endpoint
 
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
   lang="typescript"
-  lines="4-9"
+  match='import { withMemoryService, withProxy } from "@chirino/memory-service-vercelai";'
+  before={0}
+  after={0}
 />
+
+**What changed**: Adds `withProxy` to the imports.
+
+**Why needed**: Fork-listing routes proxy Memory Service APIs through the app layer.
 
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
   lang="typescript"
-  lines="23-29"
+  match="function asNumber(value: unknown): number | null {"
+  before={0}
+  after={6}
 />
+
+**What changed**: Adds a small query coercion helper for paging params.
+
+**Why needed**: Query values arrive as strings; the proxy API expects numeric `limit` or `null`.
 
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
   lang="typescript"
-  lines="103-110"
+  match='app.get("/v1/conversations/:conversationId/forks", async (req, res) => {'
+  before={0}
+  after={7}
 />
 
-**What changed**: Checkpoint `04` adds `withProxy` import, keeps `asNumber(...)` for paging params, and exposes `GET /v1/conversations/:conversationId/forks` with pagination passthrough.
+**What changed**: Exposes `GET /v1/conversations/:conversationId/forks` and forwards pagination args.
 
-**Why**: Frontend clients can discover and render branch structure through the app's API instead of calling Memory Service directly.
+**Why needed**: Clients can discover and render branch trees without calling Memory Service directly.
 
 ## Try It With Curl
 
@@ -89,7 +116,7 @@ Create the source conversation turn:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput={`Sure, I can help with that.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111 \
@@ -105,7 +132,7 @@ Read the branch point entry id from Memory Service:
 <CurlTest steps={`
 Then the response status should be 200
 And set "FORK_ENTRY_ID" to the json response field "data[0].id"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"id":"ff1c0c7b-f76f-495d-b73d-b88bd83de88f"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:8082/v1/conversations/c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111/entries?channel=history \
@@ -119,7 +146,7 @@ Create the forked conversation by calling chat with fork metadata:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"id":"ff1c0c7b-f76f-495d-b73d-b88bd83de88f","conversationId":"c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:59:40.352461Z","content":[{"role":"USER","text":"Hello from the root conversation."}]},{"id":"a370e1b2-953a-4767-aa38-69638621ff00","conversationId":"c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:59:40.382506Z","content":[{"role":"AI","text":"I am a TypeScript memory-service demo agent."}]}]}`}>
 
 ```bash
 curl -NsSfX POST "http://localhost:9090/chat/e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222?forkedAtConversationId=c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111&forkedAtEntryId=${FORK_ENTRY_ID}" \
@@ -136,7 +163,7 @@ List forks through the proxied endpoint:
 Then the response status should be 200
 And the response should contain "c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111"
 And the response should contain "e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111"},{"conversationId":"e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111/forks \

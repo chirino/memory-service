@@ -42,7 +42,8 @@ Add this method to `ConversationsResource.java` to list forks for a conversation
   lang="java"
   before={2}
   after={1}
->public Response listConversationForks</CodeFromFile>
+match="public Response listConversationForks"
+/>
 
 **What changed**: Added a `listConversationForks` endpoint at `GET /{conversationId}/forks` that calls `proxy.listConversationForks`. **Why**: Frontends need to discover all branches stemming from a conversation so users can navigate between them. The endpoint returns the root conversation and all its forks in a flat list, each annotated with its `forkedAtConversationId` so the UI can reconstruct the branch tree.
 
@@ -69,7 +70,7 @@ Create a turn on the source conversation:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput="Sure, I can help with that.">
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/88a1db4c-ce91-4391-a6c1-baf9bcc65a86 \
@@ -80,18 +81,12 @@ curl -NsSfX POST http://localhost:9090/chat/88a1db4c-ce91-4391-a6c1-baf9bcc65a86
 
 </CurlTest>
 
-Example response:
-
-```text
-Sure, I can help with that.
-```
-
 Fetch the entry id to fork from:
 
 <CurlTest steps={`
 Then the response status should be 200
 And set "FORK_ENTRY_ID" to the json response field "data[1].id"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"id":"04f83525-aa03-4beb-ac93-c33ec9c353b4"},{"id":"5fe98b13-17c6-4b19-bb49-a8b44da51927"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/88a1db4c-ce91-4391-a6c1-baf9bcc65a86/entries \
@@ -100,27 +95,11 @@ curl -sSfX GET http://localhost:9090/v1/conversations/88a1db4c-ce91-4391-a6c1-ba
 
 </CurlTest>
 
-Example response from the entries API:
-
-```json
-{
-  "data": [
-    {
-      "id": "2a9c8fd3-c11a-4b12-9a7f-43fd6d580034",
-      "conversationId": "88a1db4c-ce91-4391-a6c1-baf9bcc65a86",
-      "channel": "history",
-      "contentType": "history",
-      "content": [{"role": "USER", "text": "Hello from the root conversation."}]
-    }
-  ]
-}
-```
-
 Create the forked conversation by calling chat with fork metadata:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput="Sure, I can help with that." exampleOutputLang="json" exampleOutput={`{"data":[{"id":"04f83525-aa03-4beb-ac93-c33ec9c353b4","conversationId":"88a1db4c-ce91-4391-a6c1-baf9bcc65a86","userId":"bob","channel":"history","contentType":"history","content":[{"role":"USER","text":"Hello from the root conversation."}],"createdAt":"2026-03-06T14:59:00.689985Z"},{"id":"5fe98b13-17c6-4b19-bb49-a8b44da51927","conversationId":"88a1db4c-ce91-4391-a6c1-baf9bcc65a86","userId":"bob","channel":"history","contentType":"history","content":[{"role":"AI","text":"Hello! How can I assist you today?"}],"createdAt":"2026-03-06T14:59:01.427801Z"}]}`}>
 
 ```bash
 curl -NsSfX POST "http://localhost:9090/chat/d517e108-28f0-49a1-93cc-d0f48ebedf42?forkedAtConversationId=88a1db4c-ce91-4391-a6c1-baf9bcc65a86&forkedAtEntryId=${FORK_ENTRY_ID}" \
@@ -131,19 +110,13 @@ curl -NsSfX POST "http://localhost:9090/chat/d517e108-28f0-49a1-93cc-d0f48ebedf4
 
 </CurlTest>
 
-Example response:
-
-```text
-Sure, I can help with that.
-```
-
 List forks for the source conversation through the Quarkus proxy endpoint:
 
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "88a1db4c-ce91-4391-a6c1-baf9bcc65a86"
 And the response should contain "d517e108-28f0-49a1-93cc-d0f48ebedf42"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"88a1db4c-ce91-4391-a6c1-baf9bcc65a86"},{"conversationId":"d517e108-28f0-49a1-93cc-d0f48ebedf42"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/88a1db4c-ce91-4391-a6c1-baf9bcc65a86/forks \
@@ -151,27 +124,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations/88a1db4c-ce91-4391-a6c1-ba
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "data": [
-    {
-      "conversationId": "88a1db4c-ce91-4391-a6c1-baf9bcc65a86",
-      "title": "Hello from the root conversation.",
-      "createdAt": "2026-02-23T03:56:55.880524Z"
-    },
-    {
-      "conversationId": "d517e108-28f0-49a1-93cc-d0f48ebedf42",
-      "forkedAtConversationId": "88a1db4c-ce91-4391-a6c1-baf9bcc65a86",
-      "title": "Continue from this fork.",
-      "createdAt": "2026-02-23T03:57:31.598799Z"
-    }
-  ],
-  "afterCursor": null
-}
-```
 
 </TestScenario>
 

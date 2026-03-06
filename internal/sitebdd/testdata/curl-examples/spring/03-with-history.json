@@ -1,0 +1,46 @@
+[
+  {
+    "captureId": "/docs/spring/conversation-history/#1",
+    "checkpoint": "spring/examples/doc-checkpoints/03-with-history",
+    "scenario": "[spring] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10130/chat/564f4b5f-789c-473b-adbf-44ed85de5550",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Sure! Here's a random number between 1 and 100: **42**.",
+    "capturedAt": "2026-03-06T14:59:35.27539918Z"
+  },
+  {
+    "captureId": "/docs/spring/conversation-history/#2",
+    "checkpoint": "spring/examples/doc-checkpoints/03-with-history",
+    "scenario": "[spring] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10130/v1/conversations/564f4b5f-789c-473b-adbf-44ed85de5550",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"id\":\"564f4b5f-789c-473b-adbf-44ed85de5550\",\"title\":\"Give me a random number between 1 and 10\",\"ownerUserId\":\"bob\",\"createdAt\":\"2026-03-06T14:59:34.475934Z\",\"updatedAt\":\"2026-03-06T14:59:35.253296Z\",\"lastMessagePreview\":null,\"accessLevel\":\"owner\",\"forkedAtEntryId\":null,\"forkedAtConversationId\":null}",
+    "capturedAt": "2026-03-06T14:59:35.32292243Z"
+  },
+  {
+    "captureId": "/docs/spring/conversation-history/#3",
+    "checkpoint": "spring/examples/doc-checkpoints/03-with-history",
+    "scenario": "[spring] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10130/v1/conversations/564f4b5f-789c-473b-adbf-44ed85de5550/entries",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"id\":\"2c490144-1894-40a0-aa62-bb034abb15bd\",\"conversationId\":\"564f4b5f-789c-473b-adbf-44ed85de5550\",\"userId\":\"bob\",\"channel\":\"history\",\"epoch\":null,\"contentType\":\"history\",\"content\":[{\"role\":\"USER\",\"text\":\"Give me a random number between 1 and 100.\"}],\"createdAt\":\"2026-03-06T14:59:34.477525Z\"},{\"id\":\"9364dcd7-9afc-436e-a6d2-a9fb040daed3\",\"conversationId\":\"564f4b5f-789c-473b-adbf-44ed85de5550\",\"userId\":\"bob\",\"channel\":\"history\",\"epoch\":null,\"contentType\":\"history\",\"content\":[{\"role\":\"AI\",\"text\":\"Sure! Here's a random number between 1 and 100: **42**.\"}],\"createdAt\":\"2026-03-06T14:59:35.253296Z\"}],\"afterCursor\":null}",
+    "capturedAt": "2026-03-06T14:59:35.362864888Z"
+  },
+  {
+    "captureId": "/docs/spring/conversation-history/#4",
+    "checkpoint": "spring/examples/doc-checkpoints/03-with-history",
+    "scenario": "[spring] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10130/v1/conversations",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"id\":\"564f4b5f-789c-473b-adbf-44ed85de5550\",\"title\":\"Give me a random number between 1 and 10\",\"ownerUserId\":\"bob\",\"createdAt\":\"2026-03-06T14:59:34.475934Z\",\"updatedAt\":\"2026-03-06T14:59:35.253296Z\",\"lastMessagePreview\":null,\"accessLevel\":\"owner\"}],\"afterCursor\":null}",
+    "capturedAt": "2026-03-06T14:59:35.401635596Z"
+  }
+]

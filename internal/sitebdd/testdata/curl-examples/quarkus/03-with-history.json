@@ -1,0 +1,46 @@
+[
+  {
+    "captureId": "/docs/quarkus/conversation-history/#2",
+    "checkpoint": "quarkus/examples/doc-checkpoints/03-with-history",
+    "scenario": "[quarkus] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10122/chat/a2e24090-9de7-411b-8b50-e8b9d709ec9a",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Sure! The random number is 42.",
+    "capturedAt": "2026-03-06T14:59:01.434513053Z"
+  },
+  {
+    "captureId": "/docs/quarkus/conversation-history/#3",
+    "checkpoint": "quarkus/examples/doc-checkpoints/03-with-history",
+    "scenario": "[quarkus] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10122/v1/conversations/a2e24090-9de7-411b-8b50-e8b9d709ec9a/",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"id\":\"a2e24090-9de7-411b-8b50-e8b9d709ec9a\",\"title\":\"Give me a random number between 1 and 10\",\"ownerUserId\":\"bob\",\"createdAt\":\"2026-03-06T14:59:00.741511Z\",\"updatedAt\":\"2026-03-06T14:59:01.42859Z\",\"accessLevel\":\"owner\"}",
+    "capturedAt": "2026-03-06T14:59:01.489505136Z"
+  },
+  {
+    "captureId": "/docs/quarkus/conversation-history/#4",
+    "checkpoint": "quarkus/examples/doc-checkpoints/03-with-history",
+    "scenario": "[quarkus] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10122/v1/conversations/a2e24090-9de7-411b-8b50-e8b9d709ec9a/entries",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"id\":\"cf233b9c-cd63-4dc3-83e2-20d17e0c9d9e\",\"conversationId\":\"a2e24090-9de7-411b-8b50-e8b9d709ec9a\",\"userId\":\"bob\",\"channel\":\"history\",\"contentType\":\"history\",\"content\":[{\"role\":\"USER\",\"text\":\"Give me a random number between 1 and 100.\"}],\"createdAt\":\"2026-03-06T14:59:00.744322Z\"},{\"id\":\"54d0a584-4914-41a4-8467-5624d4b2027d\",\"conversationId\":\"a2e24090-9de7-411b-8b50-e8b9d709ec9a\",\"userId\":\"bob\",\"channel\":\"history\",\"contentType\":\"history\",\"content\":[{\"role\":\"AI\",\"text\":\"Sure! The random number is 42.\"}],\"createdAt\":\"2026-03-06T14:59:01.42859Z\"}]}",
+    "capturedAt": "2026-03-06T14:59:01.532498803Z"
+  },
+  {
+    "captureId": "/docs/quarkus/conversation-history/#5",
+    "checkpoint": "quarkus/examples/doc-checkpoints/03-with-history",
+    "scenario": "[quarkus] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10122/v1/conversations",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"id\":\"a2e24090-9de7-411b-8b50-e8b9d709ec9a\",\"title\":\"Give me a random number between 1 and 10\",\"ownerUserId\":\"bob\",\"createdAt\":\"2026-03-06T14:59:00.741511Z\",\"updatedAt\":\"2026-03-06T14:59:01.42859Z\",\"accessLevel\":\"owner\"}]}",
+    "capturedAt": "2026-03-06T14:59:01.570933136Z"
+  }
+]

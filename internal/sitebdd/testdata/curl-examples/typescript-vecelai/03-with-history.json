@@ -1,0 +1,13 @@
+[
+  {
+    "captureId": "/docs/typescript-vecelai/conversation-history/#2",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/03-with-history",
+    "scenario": "[typescript-vecelai] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10137/chat/52b0f67a-6d8a-4d35-a2e5-8abf0e7f1c22",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "The random number between 1 and 100 is 42.",
+    "capturedAt": "2026-03-06T14:59:40.445372918Z"
+  }
+]

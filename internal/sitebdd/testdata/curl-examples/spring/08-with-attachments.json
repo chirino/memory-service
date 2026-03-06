@@ -1,0 +1,45 @@
+[
+  {
+    "captureId": "/docs/spring/attachments/#2",
+    "checkpoint": "spring/examples/doc-checkpoints/08-with-attachments",
+    "scenario": "[spring] Attachments Tutorial - 08-with-attachments",
+    "requestUrl": "http://localhost:10128/v1/attachments",
+    "method": "POST",
+    "statusCode": 201,
+    "contentType": "application/json",
+    "body": "{\"contentType\":\"text/plain\",\"expiresAt\":\"2026-03-06T15:59:24Z\",\"filename\":\"test-upload.txt\",\"href\":\"/v1/attachments/a06af9bd-43a3-47a6-bbc5-d46aae03e36c\",\"id\":\"a06af9bd-43a3-47a6-bbc5-d46aae03e36c\",\"sha256\":\"45756124416f43c4c9c5138fb2909cea45ae20b9852e9def468370906be6c84a\",\"size\":20,\"status\":\"ready\"}",
+    "capturedAt": "2026-03-06T14:59:24.653455758Z"
+  },
+  {
+    "captureId": "/docs/spring/attachments/#3",
+    "checkpoint": "spring/examples/doc-checkpoints/08-with-attachments",
+    "scenario": "[spring] Attachments Tutorial - 08-with-attachments",
+    "requestUrl": "http://localhost:10128/v1/attachments/a06af9bd-43a3-47a6-bbc5-d46aae03e36c/download-url",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"expiresIn\":300,\"url\":\"/v1/attachments/download/MTcwNTV8MTc3MjgwOTQ2NA.DUpxA9YbqkQBTz943OIRA9V5zfLoT0t2Z7rX0DcGj3U/test-upload.txt\"}",
+    "capturedAt": "2026-03-06T14:59:24.682638091Z"
+  },
+  {
+    "captureId": "/docs/spring/attachments/#4",
+    "checkpoint": "spring/examples/doc-checkpoints/08-with-attachments",
+    "scenario": "[spring] Attachments Tutorial - 08-with-attachments",
+    "requestUrl": "http://localhost:10128/v1/attachments/download/MTcwNTV8MTc3MjgwOTQ2NA.DUpxA9YbqkQBTz943OIRA9V5zfLoT0t2Z7rX0DcGj3U/test-upload.txt",
+    "method": "",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hello, attachments!\n",
+    "capturedAt": "2026-03-06T14:59:25.06610255Z"
+  },
+  {
+    "captureId": "/docs/spring/attachments/#5",
+    "checkpoint": "spring/examples/doc-checkpoints/08-with-attachments",
+    "scenario": "[spring] Attachments Tutorial - 08-with-attachments",
+    "requestUrl": "http://localhost:10128/v1/attachments/a06af9bd-43a3-47a6-bbc5-d46aae03e36c",
+    "method": "DELETE",
+    "statusCode": 204,
+    "body": "",
+    "capturedAt": "2026-03-06T14:59:25.0880338Z"
+  }
+]

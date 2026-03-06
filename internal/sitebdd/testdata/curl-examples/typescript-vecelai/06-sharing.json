@@ -1,0 +1,35 @@
+[
+  {
+    "captureId": "/docs/typescript-vecelai/sharing/#1",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/06-sharing",
+    "scenario": "[typescript-vecelai] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10143/chat/d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "I am a TypeScript memory-service demo agent.",
+    "capturedAt": "2026-03-06T14:59:41.700702335Z"
+  },
+  {
+    "captureId": "/docs/typescript-vecelai/sharing/#2",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/06-sharing",
+    "scenario": "[typescript-vecelai] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10143/v1/conversations/d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444/memberships",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"afterCursor\":null,\"data\":[{\"conversationId\":\"d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444\",\"userId\":\"bob\",\"accessLevel\":\"owner\",\"createdAt\":\"2026-03-06T14:59:41.670039Z\"}]}",
+    "capturedAt": "2026-03-06T14:59:41.707982668Z"
+  },
+  {
+    "captureId": "/docs/typescript-vecelai/sharing/#3",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/06-sharing",
+    "scenario": "[typescript-vecelai] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10143/v1/conversations/d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444/memberships",
+    "method": "POST",
+    "statusCode": 201,
+    "contentType": "application/json",
+    "body": "{\"conversationId\":\"d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444\",\"userId\":\"alice\",\"accessLevel\":\"writer\",\"createdAt\":\"2026-03-06T14:59:41.714772Z\"}",
+    "capturedAt": "2026-03-06T14:59:41.717550043Z"
+  }
+]

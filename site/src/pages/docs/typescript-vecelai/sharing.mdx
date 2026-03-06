@@ -21,12 +21,14 @@ This guide adds sharing features to the TypeScript tutorial app.
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/06-sharing/src/app.ts"
   lang="typescript"
-  lines="4-9"
+  match='import { withMemoryService, withProxy } from "@chirino/memory-service-vercelai";'
+  before={0}
+  after={0}
 />
 
 **What changed**: Checkpoint `06` adds `withProxy` import used by the sharing endpoints.
 
-**Why**: Sharing operations are delegated to Memory Service through a thin authenticated proxy layer.
+**Why needed**: Sharing operations are delegated to Memory Service through a thin authenticated proxy layer.
 
 ## Membership Endpoints
 
@@ -35,24 +37,28 @@ Checkpoint `06` adds membership pass-through routes:
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/06-sharing/src/app.ts"
   lang="typescript"
-  lines="97-123"
+  match='app.get("/v1/conversations/:conversationId/memberships", async (req, res) => {'
+  before={0}
+  after={33}
 />
 
 **What changed**: The app exposes list/create/update/delete membership endpoints and relays each call to the Memory Service proxy.
 
-**Why**: Access control rules stay centralized in Memory Service while the app exposes a frontend-friendly API surface.
+**Why needed**: Access control stays centralized in Memory Service while the app exposes frontend-friendly routes.
 
 ## Ownership Transfer Endpoints
 
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/06-sharing/src/app.ts"
   lang="typescript"
-  lines="125-151"
+  match='app.get("/v1/ownership-transfers", async (req, res) => {'
+  before={0}
+  after={26}
 />
 
 **What changed**: The app adds list/create/accept/delete ownership transfer endpoints.
 
-**Why**: Ownership transfer is a multi-step flow; exposing all four operations lets clients complete that lifecycle.
+**Why needed**: Ownership transfer is multi-step, so clients need all lifecycle routes (list/create/accept/delete).
 
 ## Testing Membership Management
 
@@ -79,7 +85,7 @@ Create a conversation as bob:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutputLang="text" exampleOutput={`I am a TypeScript memory-service demo agent.`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/chat/d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444 \
@@ -95,7 +101,7 @@ List memberships:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "bob"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"conversationId":"d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444","userId":"bob","accessLevel":"owner","createdAt":"2026-03-06T14:59:41.670039Z"}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444/memberships \
@@ -109,7 +115,7 @@ Add alice as a writer:
 <CurlTest steps={`
 Then the response status should be 201
 And the response should contain "alice"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"conversationId":"d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444","userId":"alice","accessLevel":"writer","createdAt":"2026-03-06T14:59:41.714772Z"}`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/v1/conversations/d2c7e5a1-4b9d-4f8c-9e12-6c3b1a7f6444/memberships \

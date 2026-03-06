@@ -1,0 +1,24 @@
+[
+  {
+    "captureId": "/docs/spring/getting-started/#1",
+    "checkpoint": "spring/examples/doc-checkpoints/01-basic-agent",
+    "scenario": "[spring] Getting Started Tutorial - 01-basic-agent",
+    "requestUrl": "http://localhost:10131/chat",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hello Hiram! I'm an AI language model created by OpenAI, here to help answer questions and provide information on a wide range of topics. How can I assist you today?",
+    "capturedAt": "2026-03-06T14:59:31.348500053Z"
+  },
+  {
+    "captureId": "/docs/spring/getting-started/#2",
+    "checkpoint": "spring/examples/doc-checkpoints/01-basic-agent",
+    "scenario": "[spring] Getting Started Tutorial - 01-basic-agent",
+    "requestUrl": "http://localhost:10131/chat",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "That's a profound question! Identity can be multifaceted, encompassing aspects like your name, personal experiences, relationships, beliefs, and roles in society. If you're asking in a more abstract or philosophical sense, it might involve reflecting on your values, purpose, and what makes you unique. If you have specific aspects of your identity you're curious about or exploring, feel free to share more!",
+    "capturedAt": "2026-03-06T14:59:31.370053178Z"
+  }
+]

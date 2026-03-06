@@ -73,7 +73,7 @@ Create a turn on the source conversation:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput={`Sure, I can help with that.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/43b16f9d-a995-40e2-8538-c010ea2276ac \
@@ -89,7 +89,7 @@ Fetch the entry id to fork from:
 <CurlTest steps={`
 Then the response status should be 200
 And set "FORK_ENTRY_ID" to the json response field "data[1].id"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"id":"014764af-b5d0-49da-932f-76e985f5ecbc"},{"id":"3eb5e5cd-3ce0-4e50-80b8-7bfe754ce0e2"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/43b16f9d-a995-40e2-8538-c010ea2276ac/entries \
@@ -110,7 +110,7 @@ Create the forked conversation by calling chat with fork metadata:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"id":"014764af-b5d0-49da-932f-76e985f5ecbc","conversationId":"43b16f9d-a995-40e2-8538-c010ea2276ac","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.669566Z","content":[{"role":"USER","text":"Hello from the root conversation."}]},{"id":"3eb5e5cd-3ce0-4e50-80b8-7bfe754ce0e2","conversationId":"43b16f9d-a995-40e2-8538-c010ea2276ac","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.712486Z","content":[{"role":"AI","text":"I am a Python memory-service demo agent."}]}]}`}>
 
 ```bash
 curl -NsSfX POST "http://localhost:9090/chat/bdb74451-1164-47f5-823e-b71cff4b7855?forkedAtConversationId=43b16f9d-a995-40e2-8538-c010ea2276ac&forkedAtEntryId=${FORK_ENTRY_ID}" \
@@ -127,7 +127,7 @@ List forks for the source conversation through the Python proxy endpoint:
 Then the response status should be 200
 And the response should contain "43b16f9d-a995-40e2-8538-c010ea2276ac"
 And the response should contain "bdb74451-1164-47f5-823e-b71cff4b7855"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"43b16f9d-a995-40e2-8538-c010ea2276ac"},{"conversationId":"bdb74451-1164-47f5-823e-b71cff4b7855"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/43b16f9d-a995-40e2-8538-c010ea2276ac/forks \

@@ -58,7 +58,7 @@ Now test it again.
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "42"
-`}>
+`} exampleOutput={`42`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/53d23c96-6b29-4fbb-879d-db18bf4d94ff \
@@ -96,7 +96,7 @@ And the response should contain "ownerUserId"
 And the response should contain "bob"
 And the response should contain "accessLevel"
 And the response should contain "owner"
-`}>
+`} exampleOutputLang="json" exampleOutput={`42`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/53d23c96-6b29-4fbb-879d-db18bf4d94ff \
@@ -133,7 +133,7 @@ And the response body should be json:
   "afterCursor": null
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"id":"53d23c96-6b29-4fbb-879d-db18bf4d94ff","title":"Give me a random number between 1 and 10","ownerUserId":"bob","metadata":{},"createdAt":"2026-03-06T14:58:32.708132Z","updatedAt":"2026-03-06T14:58:32.875039Z","accessLevel":"owner"}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/53d23c96-6b29-4fbb-879d-db18bf4d94ff/entries \
@@ -168,7 +168,7 @@ And the response should contain "ownerUserId"
 And the response should contain "bob"
 And the response should contain "accessLevel"
 And the response should contain "owner"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"id":"819753ab-b3ac-42f8-89fb-dd02ec7f4a30","conversationId":"53d23c96-6b29-4fbb-879d-db18bf4d94ff","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.782652Z","content":[{"role":"USER","text":"Give me a random number between 1 and 100."}]},{"id":"4ff191fc-4663-46d5-bf66-e62758e760ec","conversationId":"53d23c96-6b29-4fbb-879d-db18bf4d94ff","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.851076Z","content":[{"role":"AI","text":"42"}]}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations \

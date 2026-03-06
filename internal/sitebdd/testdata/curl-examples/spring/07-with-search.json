@@ -1,0 +1,13 @@
+[
+  {
+    "captureId": "/docs/spring/indexing-and-search/#1",
+    "checkpoint": "spring/examples/doc-checkpoints/07-with-search",
+    "scenario": "[spring] Indexing And Search Tutorial - 07-with-search",
+    "requestUrl": "http://localhost:10133/chat/9f95b53b-4e99-4fab-b929-35a3c5e91f1b",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Sure! Here's a random number between 1 and 100: **42**.",
+    "capturedAt": "2026-03-06T14:59:36.389580847Z"
+  }
+]

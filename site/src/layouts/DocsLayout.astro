@@ -90,6 +90,75 @@ const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${site
     <Footer />
 
     <script>
+      function escapeHtml(text) {
+        return text
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function highlightJsonLine(lineText) {
+        const tokenPattern =
+          /"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(?:true|false|null)\b|[{}\[\]:,]|\s+|[^\s{}\[\]:,"]+/g;
+        let html = "";
+        let match;
+
+        while ((match = tokenPattern.exec(lineText)) !== null) {
+          const token = match[0];
+
+          if (/^\s+$/.test(token)) {
+            html += escapeHtml(token);
+            continue;
+          }
+
+          if (/^"(?:\\.|[^"\\])*"$/.test(token)) {
+            const rest = lineText.slice(tokenPattern.lastIndex);
+            const isKey = /^\s*:/.test(rest);
+            html += `<span class="${isKey ? "json-key" : "json-string"}">${escapeHtml(token)}</span>`;
+            continue;
+          }
+
+          if (/^-?\d/.test(token)) {
+            html += `<span class="json-number">${escapeHtml(token)}</span>`;
+            continue;
+          }
+
+          if (/^(true|false|null)$/.test(token)) {
+            html += `<span class="json-literal">${escapeHtml(token)}</span>`;
+            continue;
+          }
+
+          if (/^[{}\[\]:,]$/.test(token)) {
+            html += `<span class="json-punctuation">${escapeHtml(token)}</span>`;
+            continue;
+          }
+
+          html += `<span class="json-text">${escapeHtml(token)}</span>`;
+        }
+
+        return html;
+      }
+
+      function restyleJsonBlocks() {
+        document.querySelectorAll('pre[data-language="json"] code').forEach((code) => {
+          const lineNodes = Array.from(code.querySelectorAll(":scope > span.line"));
+
+          if (lineNodes.length === 0 || code.dataset.jsonStyled === "true") {
+            return;
+          }
+
+          lineNodes.forEach((lineNode) => {
+            lineNode.innerHTML = highlightJsonLine(lineNode.textContent || "");
+          });
+
+          code.dataset.jsonStyled = "true";
+        });
+      }
+
+      restyleJsonBlocks();
+
       // Mobile sidebar toggle
       const toggle = document.getElementById("sidebar-toggle");
       const sidebar = document.getElementById("sidebar");

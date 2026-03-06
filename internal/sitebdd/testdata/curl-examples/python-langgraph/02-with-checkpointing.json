@@ -1,0 +1,24 @@
+[
+  {
+    "captureId": "/docs/python-langgraph/getting-started/#2",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/02-with-checkpointing",
+    "scenario": "[python-langgraph] Getting Started Tutorial - 02-with-checkpointing",
+    "requestUrl": "http://localhost:10115/chat/08c5bb33-05aa-4e4d-85cd-a1dd7ab1e137",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hi Hiram! I am a LangGraph memory-service demo agent.",
+    "capturedAt": "2026-03-06T14:59:13.872112211Z"
+  },
+  {
+    "captureId": "/docs/python-langgraph/getting-started/#3",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/02-with-checkpointing",
+    "scenario": "[python-langgraph] Getting Started Tutorial - 02-with-checkpointing",
+    "requestUrl": "http://localhost:10115/chat/08c5bb33-05aa-4e4d-85cd-a1dd7ab1e137",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "You are Hiram, as you told me in your introduction.",
+    "capturedAt": "2026-03-06T14:59:14.075531753Z"
+  }
+]

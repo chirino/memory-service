@@ -71,7 +71,7 @@ Create a conversation as bob:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutputLang="text" exampleOutput={`I am a Python memory-service demo agent.`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/chat/a37bf20b-34eb-4471-b481-107c68ac3a9d \
@@ -87,7 +87,7 @@ List memberships:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "bob"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"conversationId":"a37bf20b-34eb-4471-b481-107c68ac3a9d","userId":"bob","accessLevel":"owner","createdAt":"2026-03-06T09:05:28.492968-05:00"}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/a37bf20b-34eb-4471-b481-107c68ac3a9d/memberships \
@@ -101,7 +101,7 @@ Add alice as a writer:
 <CurlTest steps={`
 Then the response status should be 201
 And the response should contain "alice"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"conversationId":"a37bf20b-34eb-4471-b481-107c68ac3a9d","userId":"alice","accessLevel":"writer","createdAt":"2026-03-06T09:05:28.670625-05:00"}`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/v1/conversations/a37bf20b-34eb-4471-b481-107c68ac3a9d/memberships \

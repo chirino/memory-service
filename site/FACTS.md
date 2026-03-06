@@ -2,11 +2,13 @@
 **Response recording docs naming**: Keep doc slugs/routes as `/response-resumption/` for compatibility, but use "Response Recording and Resumption" in page titles, sidebar labels, and cross-links.
 **TypeScript response-resumption deps**: `site/src/pages/docs/typescript-vecelai/response-resumption.mdx` must call out `@grpc/grpc-js` and `@grpc/proto-loader` install requirements for checkpoint `05`, because response recorder helpers are gRPC-backed and those packages are optional peers.
 **Search docs contract**: `POST /v1/conversations/search` uses `searchType` values `auto`, `semantic`, `fulltext` (not `keyword`) and also accepts an array of concrete types (for example `["semantic","fulltext"]`), with `limit` applied per requested type.
+**CodeFromFile match selection**: `site/src/components/CodeFromFile.astro` selects snippet regions via the `match="..."` prop and rejects default-slot matching; docs should always pass match anchors as props.
 
 **Python LangChain response-resumption scope**: `site/src/pages/docs/python-langchain/response-resumption.mdx` checkpoint `05` now demonstrates Memory Service gRPC-backed response recording/replay/cancel behavior and points to `python/examples/langchain/chat-langchain` for the full app implementation.
 
 **Rego code blocks**: Astro's default Shiki setup in this repo does not include bundled `rego` syntax. Rego fences are highlighted via `site/remark-rego-prism.mjs` (Prism `rego` grammar) wired into `astro.config.mjs`, with token colors scoped in `site/src/styles/global.css` under `pre.language-rego`.
-**Devcontainer site build gotcha**: If `npm run build` fails with missing `@rollup/rollup-linux-arm64-gnu`, run `npm install` in `site/` inside the devcontainer to restore optional Rollup binaries before retrying.
+**JSON code blocks**: Astro/Shiki emits JSON fences as inline-colored spans without stable token classes in this repo, so `site/src/layouts/DocsLayout.astro` retokenizes `pre[data-language="json"]` on the client and `site/src/styles/global.css` owns the JSON palette.
+**Site build optional-deps gotcha**: If `npm run build` fails with missing `@rollup/rollup-<platform>-<arch>`, run `npm install` in `site/` (host or devcontainer) to restore optional Rollup binaries before retrying.
 
 * The examples in the site docs are meant to guide a user through incremntally adding a feature from the memory-service to thier langgraph project.  Some examples build for other examples.  In these cases copy the source of the working previous example and then make modifications to it like a user would make those modifications due to him following the tutorial guide.   Make sure you add the <CurlTest> components to the pages so that you can tun tests to verify that the docs you are showing the user work like you expect them to work.
 

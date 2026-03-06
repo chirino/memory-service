@@ -139,7 +139,7 @@ Tell the agent something to remember:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutputLang="text" exampleOutput={`Thanks for sharing! I'll remember that about you.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/bob/c1234567-0000-0000-0000-000000000001 \
@@ -155,7 +155,7 @@ Start a **new conversation** and ask the agent to recall it. The memory persists
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Bob"
-`}>
+`} exampleOutputLang="text" exampleOutput={`Your name is Bob. You also mentioned you love hiking and Python programming.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/bob/c1234567-0000-0000-0000-000000000002 \
@@ -172,7 +172,7 @@ Verify the history was recorded for the second conversation:
 Then the response status should be 200
 And the response should contain "c1234567-0000-0000-0000-000000000002"
 And the response should contain "bob"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"id":"c1234567-0000-0000-0000-000000000002","title":"What is my name?","ownerUserId":"bob","metadata":{},"createdAt":"2026-03-06T14:59:15.335675Z","updatedAt":"2026-03-06T14:59:15.494419Z","accessLevel":"owner"}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/c1234567-0000-0000-0000-000000000002 \

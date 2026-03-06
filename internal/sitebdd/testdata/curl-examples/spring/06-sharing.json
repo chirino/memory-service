@@ -1,0 +1,46 @@
+[
+  {
+    "captureId": "/docs/spring/sharing/#1",
+    "checkpoint": "spring/examples/doc-checkpoints/06-sharing",
+    "scenario": "[spring] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10135/chat/381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/event-stream",
+    "body": "data:Hello! I'm ready to help with your sharing tests. What would you like to discuss?\n\n",
+    "capturedAt": "2026-03-06T14:59:41.431280502Z"
+  },
+  {
+    "captureId": "/docs/spring/sharing/#2",
+    "checkpoint": "spring/examples/doc-checkpoints/06-sharing",
+    "scenario": "[spring] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10135/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f5d71a30292/memberships",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"conversationId\":\"381ca8a4-7ade-4f45-a9dd-6f5d71a30292\",\"userId\":\"bob\",\"accessLevel\":\"owner\",\"createdAt\":\"2026-03-06T14:59:41.214058Z\"}],\"afterCursor\":null}",
+    "capturedAt": "2026-03-06T14:59:41.450452502Z"
+  },
+  {
+    "captureId": "/docs/spring/sharing/#3",
+    "checkpoint": "spring/examples/doc-checkpoints/06-sharing",
+    "scenario": "[spring] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10135/v1/conversations/381ca8a4-7ade-4f45-a9dd-6f5d71a30292/memberships",
+    "method": "POST",
+    "statusCode": 201,
+    "contentType": "application/json",
+    "body": "{\"conversationId\":\"381ca8a4-7ade-4f45-a9dd-6f5d71a30292\",\"userId\":\"alice\",\"accessLevel\":\"writer\",\"createdAt\":\"2026-03-06T14:59:41.462683Z\"}",
+    "capturedAt": "2026-03-06T14:59:41.465476752Z"
+  },
+  {
+    "captureId": "/docs/spring/sharing/#4",
+    "checkpoint": "spring/examples/doc-checkpoints/06-sharing",
+    "scenario": "[spring] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10135/chat/381ca8a4-7ade-4f45-a9dd-6f5d71a30292",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/event-stream",
+    "body": "data:Hi Alice! Great to hear from you. How can I help you today?\n\n",
+    "capturedAt": "2026-03-06T14:59:41.52684271Z"
+  }
+]

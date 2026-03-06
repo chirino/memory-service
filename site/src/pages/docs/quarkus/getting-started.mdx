@@ -32,7 +32,8 @@ Add the LangChain4j OpenAI dependency to your `pom.xml`:
   lang="xml"
   before={2}
   after={2}
->quarkus-langchain4j-openai</CodeFromFile>
+match="quarkus-langchain4j-openai"
+/>
 
 **Why**: This extension integrates LangChain4j with Quarkus and provides built-in support for calling OpenAI-compatible LLMs, along with CDI-managed AI service beans via `@RegisterAiService`.
 
@@ -82,7 +83,7 @@ And the response body should be text:
 """
 I am Claude, an AI assistant created by Anthropic. I'm here to help answer questions and have conversations on a wide variety of topics. How can I assist you today?
 """
-`}>
+`} exampleOutputLang="text" exampleOutput={`I am Claude, an AI assistant created by Anthropic. I'm here to help answer questions and have conversations on a wide variety of topics. How can I assist you today?`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat \
@@ -97,7 +98,7 @@ curl -NsSfX POST http://localhost:9090/chat \
 <CurlTest steps={`
 Then the response status should be 200
 And the response should not contain "Hiram"
-`}>
+`} exampleOutputLang="text" exampleOutput={`That's a great question! I don't have information about your identity from our conversation so far. Could you tell me more about yourself?`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat \
@@ -150,7 +151,8 @@ Configure the agent to connect to the Memory Service and configure OIDC authenti
   file="quarkus/examples/doc-checkpoints/02-with-memory/src/main/resources/application.properties"
   lang="properties"
   after={11}
-># Memory Service Client</CodeFromFile>
+match="# Memory Service Client"
+/>
 
 **What changed**: Added Memory Service client URL and API key, OIDC server configuration, and a route policy that requires authentication on `/chat/*`. **Why**: The Memory Service uses a dual-authentication pattern — your Quarkus app authenticates to it using a service account API key, while the user's Bearer token is passed through to enforce ownership of conversations. Enabling OIDC on the Quarkus side allows it to validate and propagate the user's identity automatically.
 
@@ -187,7 +189,7 @@ And the response body should be text:
 """
 Hi Hiram! I'm an AI created to help answer questions and provide information. How can I assist you today?
 """
-`}>
+`} exampleOutput={`Hi Hiram! I'm an AI created to help answer questions and provide information. How can I assist you today?`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/6a6e7762-4569-4f63-b01c-c3666a27428b \
@@ -203,7 +205,7 @@ curl -NsSfX POST http://localhost:9090/chat/6a6e7762-4569-4f63-b01c-c3666a27428b
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Hiram"
-`}>
+`} exampleOutputLang="text" exampleOutput={`You are Hiram.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/6a6e7762-4569-4f63-b01c-c3666a27428b \
@@ -230,4 +232,3 @@ Continue to [Conversation History](/docs/quarkus/conversation-history/) to learn
 Or jump ahead to:
 - [Conversation Forking](/docs/quarkus/conversation-forking/) - Branch conversations to explore alternative paths
 - [Response Recording and Resumption](/docs/quarkus/response-resumption/) - Streaming responses with resume and cancel support
-

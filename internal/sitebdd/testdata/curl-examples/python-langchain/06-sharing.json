@@ -1,0 +1,35 @@
+[
+  {
+    "captureId": "/docs/python-langchain/sharing/#1",
+    "checkpoint": "python/examples/langchain/doc-checkpoints/06-sharing",
+    "scenario": "[python-langchain] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10106/chat/a37bf20b-34eb-4471-b481-107c68ac3a9d",
+    "method": "POST",
+    "statusCode": 500,
+    "contentType": "text/plain",
+    "body": "Internal Server Error",
+    "capturedAt": "2026-03-06T14:58:32.622110887Z"
+  },
+  {
+    "captureId": "/docs/python-langchain/sharing/#2",
+    "checkpoint": "python/examples/langchain/doc-checkpoints/06-sharing",
+    "scenario": "[python-langchain] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10090/v1/conversations/a37bf20b-34eb-4471-b481-107c68ac3a9d/memberships",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"afterCursor\":null,\"data\":[{\"conversationId\":\"a37bf20b-34eb-4471-b481-107c68ac3a9d\",\"userId\":\"bob\",\"accessLevel\":\"owner\",\"createdAt\":\"2026-03-06T09:05:28.492968-05:00\"}]}",
+    "capturedAt": "2026-03-06T14:05:28.655844Z"
+  },
+  {
+    "captureId": "/docs/python-langchain/sharing/#3",
+    "checkpoint": "python/examples/langchain/doc-checkpoints/06-sharing",
+    "scenario": "[python-langchain] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10090/v1/conversations/a37bf20b-34eb-4471-b481-107c68ac3a9d/memberships",
+    "method": "POST",
+    "statusCode": 201,
+    "contentType": "application/json",
+    "body": "{\"conversationId\":\"a37bf20b-34eb-4471-b481-107c68ac3a9d\",\"userId\":\"alice\",\"accessLevel\":\"writer\",\"createdAt\":\"2026-03-06T09:05:28.670625-05:00\"}",
+    "capturedAt": "2026-03-06T14:05:28.676529Z"
+  }
+]

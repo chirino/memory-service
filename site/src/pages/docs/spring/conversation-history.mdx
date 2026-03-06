@@ -60,7 +60,7 @@ And the response body should be text:
 """
 Sure! Here's a random number between 1 and 100: **42**.
 """
-`}>
+`} exampleOutputLang="text" exampleOutput={`Sure! Here's a random number between 1 and 100: **42**.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/564f4b5f-789c-473b-adbf-44ed85de5550 \
@@ -114,7 +114,7 @@ And the response body should be json:
   "forkedAtConversationId": null
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"id":"564f4b5f-789c-473b-adbf-44ed85de5550","title":"Give me a random number between 1 and 10","ownerUserId":"bob","createdAt":"2026-03-06T14:59:34.475934Z","updatedAt":"2026-03-06T14:59:35.253296Z","lastMessagePreview":null,"accessLevel":"owner","forkedAtEntryId":null,"forkedAtConversationId":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/564f4b5f-789c-473b-adbf-44ed85de5550 \
@@ -127,7 +127,7 @@ curl -sSfX GET http://localhost:9090/v1/conversations/564f4b5f-789c-473b-adbf-44
 Then the response status should be 200
 And the response should contain "Give me a random number"
 And the response should contain "history"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"id":"2c490144-1894-40a0-aa62-bb034abb15bd","conversationId":"564f4b5f-789c-473b-adbf-44ed85de5550","userId":"bob","channel":"history","epoch":null,"contentType":"history","content":[{"role":"USER","text":"Give me a random number between 1 and 100."}],"createdAt":"2026-03-06T14:59:34.477525Z"},{"id":"9364dcd7-9afc-436e-a6d2-a9fb040daed3","conversationId":"564f4b5f-789c-473b-adbf-44ed85de5550","userId":"bob","channel":"history","epoch":null,"contentType":"history","content":[{"role":"AI","text":"Sure! Here's a random number between 1 and 100: **42**."}],"createdAt":"2026-03-06T14:59:35.253296Z"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/564f4b5f-789c-473b-adbf-44ed85de5550/entries \
@@ -135,36 +135,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations/564f4b5f-789c-473b-adbf-44
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "data": [
-    {
-      "id": "ca29a4e1-f112-44d2-8a5b-425f3b3bccce",
-      "conversationId": "564f4b5f-789c-473b-adbf-44ed85de5550",
-      "userId": "bob",
-      "channel": "history",
-      "epoch": null,
-      "contentType": "history",
-      "content": [{"role": "USER", "text": "Give me a random number between 1 and 100."}],
-      "createdAt": "2025-01-10T14:32:05Z"
-    },
-    {
-      "id": "c13fbe60-1162-4c7b-b48c-e759a490c089",
-      "conversationId": "564f4b5f-789c-473b-adbf-44ed85de5550",
-      "userId": "bob",
-      "channel": "history",
-      "epoch": null,
-      "contentType": "history",
-      "content": [{"role": "AI", "text": "Sure! Here's a random number between 1 and 100: **42**."}],
-      "createdAt": "2025-01-10T14:32:06Z"
-    }
-  ],
-  "nextCursor": null
-}
-```
 
 </TestScenario>
 
@@ -184,7 +154,7 @@ Then the response status should be 200
 And the response should contain "564f4b5f-789c-473b-adbf-44ed85de5550"
 And the response should contain "owner"
 And the response should contain "bob"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"id":"564f4b5f-789c-473b-adbf-44ed85de5550","title":"Give me a random number between 1 and 10","ownerUserId":"bob","createdAt":"2026-03-06T14:59:34.475934Z","updatedAt":"2026-03-06T14:59:35.253296Z","lastMessagePreview":null,"accessLevel":"owner"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations \
@@ -192,25 +162,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations \
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "data": [
-    {
-      "id": "564f4b5f-789c-473b-adbf-44ed85de5550",
-      "title": "Give me a random number between 1 and 10",
-      "ownerUserId": "bob",
-      "createdAt": "2025-01-10T14:32:05Z",
-      "updatedAt": "2025-01-10T14:32:06Z",
-      "lastMessagePreview": null,
-      "accessLevel": "owner"
-    }
-  ],
-  "nextCursor": null
-}
-```
 
 </TestScenario>
 
