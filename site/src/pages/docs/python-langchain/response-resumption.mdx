@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: Python Response Recording and Resumption
 description: Streaming responses with resume-check, resume, and cancel endpoints.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide covers streaming responses with recording, resumption, and cancellation so users can reconnect after a disconnect and continue where they left off.
 
@@ -16,6 +17,7 @@ For the protocol and behavior model, see [Response Recording and Resumption Conc
 **Starting checkpoint**: This guide starts from [python/examples/langchain/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langchain/doc-checkpoints/03-with-history)
 
 Make sure you've completed:
+
 - [Python Getting Started](/docs/python-langchain/getting-started/) - Minimal agent + memory checkpointer
 - [Python Conversation History](/docs/python-langchain/conversation-history/) - History recording and conversation APIs
 
@@ -161,5 +163,6 @@ curl -sSfX POST http://localhost:9090/v1/conversations/2946ccfc-cf26-43e1-87fc-f
 ## Next Steps
 
 Continue to:
+
 - [Sharing](/docs/python-langchain/sharing/) - Membership and ownership transfer APIs
 - [Indexing and Search](/docs/python-langchain/indexing-and-search/) - Indexed content and semantic/full-text search

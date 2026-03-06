@@ -3,8 +3,9 @@ layout: ../../../layouts/DocsLayout.astro
 title: Dev Services
 description: Automatic memory-service container startup for development and testing.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
 
 The Memory Service extension provides **Dev Services** that automatically start a memory-service container in development mode. This eliminates the need to manually configure and run the memory-service separately, making local development much easier.
 
@@ -32,6 +33,7 @@ When you run your Quarkus application in dev mode (`mvn quarkus:dev`), the exten
    - `memory-service.client.api-key` - The API key (generated or from your config)
 
 The memory-service container automatically connects to:
+
 - **PostgreSQL** dev service (if available) - for the main datastore
 - **Keycloak** dev service (if available) - for OIDC authentication
 - **Redis** dev service (if available and `memory-service.cache.type=redis`) - for caching
@@ -98,26 +100,35 @@ The memory-service container requires either PostgreSQL or MongoDB. Add one of t
 
 **PostgreSQL (Recommended):**
 
-<Code lang="xml" code={`<dependency>
+<Code
+  lang="xml"
+  code={`<dependency>
   <groupId>io.quarkus</groupId>
   <artifactId>quarkus-jdbc-postgresql</artifactId>
-</dependency>`} />
+</dependency>`}
+/>
 
 **MongoDB:**
 
-<Code lang="xml" code={`<dependency>
+<Code
+  lang="xml"
+  code={`<dependency>
   <groupId>io.quarkus</groupId>
   <artifactId>quarkus-mongodb-client</artifactId>
-</dependency>`} />
+</dependency>`}
+/>
 
 ### Required: OIDC Dev Service
 
 The memory-service container requires Keycloak for authentication. Add this dependency:
 
-<Code lang="xml" code={`<dependency>
+<Code
+  lang="xml"
+  code={`<dependency>
   <groupId>io.quarkus</groupId>
   <artifactId>quarkus-oidc</artifactId>
-</dependency>`} />
+</dependency>`}
+/>
 
 ### Optional: Cache Dev Services
 
@@ -125,17 +136,23 @@ If you're using response recording and resumption with Redis or Infinispan, add 
 
 **Redis (for `memory-service.cache.type=redis`):**
 
-<Code lang="xml" code={`<dependency>
+<Code
+  lang="xml"
+  code={`<dependency>
   <groupId>io.quarkus</groupId>
   <artifactId>quarkus-redis-client</artifactId>
-</dependency>`} />
+</dependency>`}
+/>
 
 **Infinispan (for `memory-service.cache.type=infinispan`):**
 
-<Code lang="xml" code={`<dependency>
+<Code
+  lang="xml"
+  code={`<dependency>
   <groupId>io.quarkus</groupId>
   <artifactId>quarkus-infinispan-client</artifactId>
-</dependency>`} />
+</dependency>`}
+/>
 
 ## Full `pom.xml` Example
 
@@ -150,18 +167,21 @@ Here's a complete `pom.xml` example showing all the dependencies needed for Dev 
   </dependency>
 
   <!-- PostgreSQL Dev Service (required) -->
-  <dependency>
-    <groupId>io.quarkus</groupId>
-    <artifactId>quarkus-jdbc-postgresql</artifactId>
-  </dependency>
+
+<dependency>
+  <groupId>io.quarkus</groupId>
+  <artifactId>quarkus-jdbc-postgresql</artifactId>
+</dependency>
 
   <!-- OIDC Dev Service (required) -->
-  <dependency>
-    <groupId>io.quarkus</groupId>
-    <artifactId>quarkus-oidc</artifactId>
-  </dependency>
+
+<dependency>
+  <groupId>io.quarkus</groupId>
+  <artifactId>quarkus-oidc</artifactId>
+</dependency>
 
   <!-- Redis Dev Service (optional, for response recording and resumption) -->
+
   <dependency>
     <groupId>io.quarkus</groupId>
     <artifactId>quarkus-redis-client</artifactId>
@@ -174,13 +194,7 @@ And the corresponding `application.properties`:
 memory-service.cache.type=redis
 
 # OIDC configuration
+
 quarkus.oidc.client-id=memory-service-client
 quarkus.oidc.credentials.secret=change-me`} />
 
-{/* 
-## Next Steps
-
-- [Getting Started](/docs/quarkus/getting-started/) - Learn how to integrate Memory Service with your agent
-- [Response Recording and Resumption](/docs/quarkus/response-resumption/) - Streaming responses with resume and cancel support
-- [Configuration](/docs/configuration/) - All configuration options 
-*/}

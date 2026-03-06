@@ -3,11 +3,12 @@ layout: ../../../layouts/DocsLayout.astro
 title: Attachments
 description: Proxy attachment upload, download, and management APIs from your agent app.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide covers proxying attachment operations — upload, download, signed URLs, and deletion — from your agent app to the Memory Service.
 
@@ -19,6 +20,7 @@ This guide covers proxying attachment operations — upload, download, signed UR
 **Starting checkpoint**: This guide starts from [java/spring/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the previous guides:
+
 - [Getting Started](/docs/spring/getting-started/) - Basic memory service integration
 - [Conversation History](/docs/spring/conversation-history/) - History recording and APIs
 

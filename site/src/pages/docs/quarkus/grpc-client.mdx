@@ -3,8 +3,9 @@ layout: ../../../layouts/DocsLayout.astro
 title: Quarkus gRPC Client
 description: Using the Memory Service gRPC client in Quarkus applications.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
 
 export const mavenDep = `<dependency>
   <groupId>io.github.chirino.memory-service</groupId>
@@ -38,15 +39,15 @@ quarkus.grpc.clients.search.port=9000
 
 The Memory Service gRPC API is split into multiple services:
 
-| Service | Description |
-|---------|-------------|
-| `ConversationsService` | CRUD operations for conversations |
-| `EntriesService` | List, append, and sync entries |
-| `ConversationMembershipsService` | Sharing and membership management |
-| `OwnershipTransfersService` | Ownership transfer operations |
-| `SearchService` | Semantic search and indexing |
-| `ResponseRecorderService` | Streaming response recording and resumption |
-| `SystemService` | Health checks |
+| Service                          | Description                                 |
+| -------------------------------- | ------------------------------------------- |
+| `ConversationsService`           | CRUD operations for conversations           |
+| `EntriesService`                 | List, append, and sync entries              |
+| `ConversationMembershipsService` | Sharing and membership management           |
+| `OwnershipTransfersService`      | Ownership transfer operations               |
+| `SearchService`                  | Semantic search and indexing                |
+| `ResponseRecorderService`        | Streaming response recording and resumption |
+| `SystemService`                  | Health checks                               |
 
 ## UUID Handling
 

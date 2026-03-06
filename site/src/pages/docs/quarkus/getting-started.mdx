@@ -3,12 +3,12 @@ layout: ../../../layouts/DocsLayout.astro
 title: Quarkus Getting Started
 description: Step-by-step guide to integrating Memory Service with your Quarkus AI agent.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
 
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide walks you through integrating Memory Service with a Quarkus AI agent. You'll start with basic chat memory and can progressively add features in the follow-up guides.
 
@@ -18,7 +18,7 @@ Make sure you've completed the [prerequisites](/docs/quarkus/) before starting t
 
 **Starting checkpoint**: View the complete code at [java/quarkus/examples/doc-checkpoints/01-basic-agent](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/01-basic-agent)
 
-First, let's create a new [Quarkus](https://quarkus.io/get-started/) application with: 
+First, let's create a new [Quarkus](https://quarkus.io/get-started/) application with:
 
 ```plain
 quarkus create example
@@ -32,7 +32,7 @@ Add the LangChain4j OpenAI dependency to your `pom.xml`:
   lang="xml"
   before={2}
   after={2}
-match="quarkus-langchain4j-openai"
+  match="quarkus-langchain4j-openai"
 />
 
 **Why**: This extension integrates LangChain4j with Quarkus and provides built-in support for calling OpenAI-compatible LLMs, along with CDI-managed AI service beans via `@RegisterAiService`.
@@ -71,6 +71,7 @@ Run your agent:
 ```bash
 export OPENAI_API_KEY=your-api-key
 ```
+
 ```bash
 mvn quarkus:dev
 ```
@@ -118,12 +119,15 @@ Let's add conversation memory.
 
 Add the Memory Service extension to your `pom.xml`:
 
-<Code lang="xml" code={`<dependency>
+<Code
+  lang="xml"
+  code={`<dependency>
     <groupId>io.github.chirino.memory-service</groupId>
     <artifactId>memory-service-extension</artifactId>
     <version>${PROJECT_VERSION}</version>
 </dependency>
-`} />
+`}
+/>
 
 Update the Agent interface to accept a conversation ID using the `@MemoryId` annotation:
 
@@ -151,7 +155,7 @@ Configure the agent to connect to the Memory Service and configure OIDC authenti
   file="java/quarkus/examples/doc-checkpoints/02-with-memory/src/main/resources/application.properties"
   lang="properties"
   after={11}
-match="# Memory Service Client"
+  match="# Memory Service Client"
 />
 
 **What changed**: Added Memory Service client URL and API key, OIDC server configuration, and a route policy that requires authentication on `/chat/*`. **Why**: The Memory Service uses a dual-authentication pattern — your Quarkus app authenticates to it using a service account API key, while the user's Bearer token is passed through to enforce ownership of conversations. Enabling OIDC on the Quarkus side allows it to validate and propagate the user's identity automatically.
@@ -179,7 +183,6 @@ function get-token() {
     | jq -r '.access_token'
 }
 ```
-
 
 Test it with curl—now with conversation memory:
 
@@ -219,16 +222,18 @@ curl -NsSfX POST http://localhost:9090/chat/6a6e7762-4569-4f63-b01c-c3666a27428b
 </TestScenario>
 
 If you browse to the demo agent app at [http://localhost:8080/](http://localhost:8080/), you will see that a conversation has been created with the ID `6a6e7762-4569-4f63-b01c-c3666a27428b`.
-But it won't show any messages.  That's because we are not yet storing what we call the history of the conversation.  The only thing being stored is the agent memory, and 
+But it won't show any messages. That's because we are not yet storing what we call the history of the conversation. The only thing being stored is the agent memory, and
 that's not typically what you want to display to a user in a UI.
 
 ## Next Steps
 
 Continue to [Conversation History](/docs/quarkus/conversation-history/) to learn how to:
+
 - Record conversation history for frontend display
 - Expose conversation APIs (messages, listing)
 - Build a complete chat UI experience
 
 Or jump ahead to:
+
 - [Conversation Forking](/docs/quarkus/conversation-forking/) - Branch conversations to explore alternative paths
 - [Response Recording and Resumption](/docs/quarkus/response-resumption/) - Streaming responses with resume and cancel support

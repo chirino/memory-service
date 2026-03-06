@@ -87,18 +87,19 @@ Response:
 }
 ```
 
-| Field | Description |
-|-------|-------------|
-| `id` | Unique attachment identifier (use as `attachmentId` when appending entries) |
-| `href` | Server path to download the attachment |
-| `contentType` | Detected MIME type |
-| `filename` | Original filename |
-| `size` | File size in bytes |
-| `sha256` | SHA-256 hash of the file contents |
-| `expiresAt` | When the unlinked attachment will be cleaned up |
-| `status` | Processing status (`ready` when upload is complete) |
+| Field         | Description                                                                 |
+| ------------- | --------------------------------------------------------------------------- |
+| `id`          | Unique attachment identifier (use as `attachmentId` when appending entries) |
+| `href`        | Server path to download the attachment                                      |
+| `contentType` | Detected MIME type                                                          |
+| `filename`    | Original filename                                                           |
+| `size`        | File size in bytes                                                          |
+| `sha256`      | SHA-256 hash of the file contents                                           |
+| `expiresAt`   | When the unlinked attachment will be cleaned up                             |
+| `status`      | Processing status (`ready` when upload is complete)                         |
 
 **Notes:**
+
 - `expiresIn` is an ISO 8601 duration (default `PT1H`, max `PT24H`)
 - Maximum file size is [10 MB by default (configurable)](/docs/configuration/#attachment-storage)
 - The uploaded attachment is unlinked until referenced in an entry
@@ -129,6 +130,7 @@ curl -X POST "http://localhost:8080/v1/conversations/{conversationId}/entries" \
 ```
 
 On persistence, the server:
+
 1. Links the attachment to the entry (clears the TTL)
 2. Rewrites `attachmentId` to an `href` in the stored content
 3. Auto-populates `contentType`, `name`, `size`, and `sha256` from the attachment record
@@ -153,27 +155,27 @@ The stored entry content will look like:
 
 ### Attachment Properties
 
-| Property | Required | Description |
-|----------|----------|-------------|
-| `attachmentId` | One of `href` or `attachmentId` | ID of a server-stored attachment |
-| `href` | One of `href` or `attachmentId` | URL to an external resource |
-| `contentType` | Required with `href` | MIME type (auto-populated for `attachmentId`) |
-| `name` | No | Display name |
-| `description` | No | Alt text or description |
-| `size` | No | File size in bytes (auto-populated for `attachmentId`) |
-| `sha256` | No | SHA-256 hash (auto-populated for `attachmentId`) |
+| Property       | Required                        | Description                                            |
+| -------------- | ------------------------------- | ------------------------------------------------------ |
+| `attachmentId` | One of `href` or `attachmentId` | ID of a server-stored attachment                       |
+| `href`         | One of `href` or `attachmentId` | URL to an external resource                            |
+| `contentType`  | Required with `href`            | MIME type (auto-populated for `attachmentId`)          |
+| `name`         | No                              | Display name                                           |
+| `description`  | No                              | Alt text or description                                |
+| `size`         | No                              | File size in bytes (auto-populated for `attachmentId`) |
+| `sha256`       | No                              | SHA-256 hash (auto-populated for `attachmentId`)       |
 
 ## Multi-Modal Content
 
 The Memory Service stores and serves all file types. How attachments are rendered is determined by the consuming application (agent framework or frontend). Common patterns:
 
-| Content Type | Typical Use |
-|-------------|-------------|
-| `image/*` | Inline image display, vision model input |
-| `audio/*` | Audio player, speech-to-text input |
-| `video/*` | Video player, video analysis |
-| `application/pdf` | PDF viewer, document analysis |
-| Other | Generic file download |
+| Content Type      | Typical Use                              |
+| ----------------- | ---------------------------------------- |
+| `image/*`         | Inline image display, vision model input |
+| `audio/*`         | Audio player, speech-to-text input       |
+| `video/*`         | Video player, video analysis             |
+| `application/pdf` | PDF viewer, document analysis            |
+| Other             | Generic file download                    |
 
 Agent frameworks like LangChain4j and Spring AI map these content types to their native multi-modal content objects when building LLM requests.
 
@@ -190,6 +192,7 @@ curl "http://localhost:8080/v1/attachments/{id}" \
 ```
 
 Access control:
+
 - **Unlinked attachments** — Only the original uploader can download
 - **Linked attachments** — Anyone with read access to the conversation can download
 
@@ -214,6 +217,7 @@ Response:
 The returned URL requires no authentication — it can be used directly in HTML tags or opened in a browser. The URL expires after 5 minutes by default.
 
 How signed URLs are generated depends on the storage backend:
+
 - **S3 storage** — Returns an S3 pre-signed URL pointing directly to the object
 - **Database storage** — Returns an HMAC-signed token URL served by the Memory Service
 
@@ -244,15 +248,14 @@ Include the parent's `attachmentId` in the forked entry just like any other atta
     {
       "role": "USER",
       "text": "Let me try a different question about that image",
-      "attachments": [
-        { "attachmentId": "{attachmentIdFromParent}" }
-      ]
+      "attachments": [{ "attachmentId": "{attachmentIdFromParent}" }]
     }
   ]
 }
 ```
 
 **Key details:**
+
 - The source attachment must belong to the same conversation group (fork tree). Cross-group references are rejected.
 - Multiple attachment records can share the same blob via reference counting. The stored file is only deleted when the last record referencing it is removed.
 - You can mix references to parent attachments with fresh uploads in the same entry.
@@ -262,6 +265,7 @@ Include the parent's `attachmentId` in the forked entry just like any other atta
 ### Unlinked Attachments (Temporary)
 
 Uploaded files that are never referenced in an entry expire automatically:
+
 - Default TTL: 1 hour (`PT1H`)
 - Maximum TTL: 24 hours (`PT24H`)
 - A cleanup job runs periodically (every 5 minutes by default) to delete expired files

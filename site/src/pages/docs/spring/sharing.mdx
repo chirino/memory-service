@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: Conversation Sharing
 description: Learn how to share conversations with other users and manage access control in your Spring Boot application
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 # Conversation Sharing
 
@@ -19,6 +20,7 @@ This guide shows you how to implement conversation sharing and ownership transfe
 **Starting checkpoint**: This guide starts from [java/spring/examples/doc-checkpoints/05-response-resumption](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/05-response-resumption)
 
 Make sure you've completed the previous guides:
+
 - [Conversation Forking](/docs/spring/conversation-forking/) - Branching conversations
 - [Response Recording and Resumption](/docs/spring/response-resumption/) - Streaming with resume support
 - Multiple test users in Keycloak (bob, alice, charlie)
@@ -32,7 +34,7 @@ Add the membership endpoints to your `MemoryServiceProxyController`:
   lang="java"
   before={1}
   after={23}
-match="// Membership management endpoints"
+  match="// Membership management endpoints"
 />
 
 **Why**: These endpoints give the agent app's frontend everything it needs to build a sharing UI — listing who has access, inviting new collaborators, promoting or demoting their access level, and revoking access. The `MemoryServiceProxy` handles authentication forwarding, so the Memory Service's access-level enforcement (owner, manager, writer, reader) is automatically applied based on the authenticated user's token.
@@ -338,4 +340,3 @@ Returns `204 No Content`. The transfer is deleted and ownership remains unchange
 ## Completed Checkpoint
 
 **Completed code**: View the full implementation at [java/spring/examples/doc-checkpoints/06-sharing](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/06-sharing)
-

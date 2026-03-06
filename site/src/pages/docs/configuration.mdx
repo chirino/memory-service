@@ -4,9 +4,9 @@ title: Configuration
 description: Configure Memory Service databases, vector stores, and authentication using CLI flags or environment variables.
 ---
 
-import ConfigToggle from '../../components/ConfigToggle.astro';
-import Cfg from '../../components/Cfg.astro';
-import ConfigBlock from '../../components/ConfigBlock.astro';
+import ConfigToggle from "../../components/ConfigToggle.astro";
+import Cfg from "../../components/Cfg.astro";
+import ConfigBlock from "../../components/ConfigBlock.astro";
 
 Memory Service is configured through CLI flags or environment variables. Use the toggle below to switch between formats.
 
@@ -16,78 +16,81 @@ Memory Service is configured through CLI flags or environment variables. Use the
 
 ## Server Configuration
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
-| <Cfg p="--tls-cert-file" e="MEMORY_SERVICE_TLS_CERT_FILE" /> | path | _(none)_ | TLS certificate file (self-signed if omitted) |
-| <Cfg p="--tls-key-file" e="MEMORY_SERVICE_TLS_KEY_FILE" /> | path | _(none)_ | TLS private key file (self-signed if omitted) |
-| <Cfg p="--advertised-address" e="MEMORY_SERVICE_ADVERTISED_ADDRESS" /> | `host:port` | auto-detected | Advertised address for client redirects |
-| <Cfg p="--read-header-timeout-seconds" e="MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS" /> | integer | `5` | HTTP read header timeout in seconds |
-| <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" /> | path | system temp dir | Directory for temporary files |
-| <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" /> | `true`, `false` | `false` | Enable HTTP access logging for `/health`, `/ready`, `/metrics` |
+| Flag                                                                                     | Values          | Default         | Description                                                    |
+| ---------------------------------------------------------------------------------------- | --------------- | --------------- | -------------------------------------------------------------- |
+| <Cfg p="--tls-cert-file" e="MEMORY_SERVICE_TLS_CERT_FILE" />                             | path            | _(none)_        | TLS certificate file (self-signed if omitted)                  |
+| <Cfg p="--tls-key-file" e="MEMORY_SERVICE_TLS_KEY_FILE" />                               | path            | _(none)_        | TLS private key file (self-signed if omitted)                  |
+| <Cfg p="--advertised-address" e="MEMORY_SERVICE_ADVERTISED_ADDRESS" />                   | `host:port`     | auto-detected   | Advertised address for client redirects                        |
+| <Cfg p="--read-header-timeout-seconds" e="MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS" /> | integer         | `5`             | HTTP read header timeout in seconds                            |
+| <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" />                                       | path            | system temp dir | Directory for temporary files                                  |
+| <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" />             | `true`, `false` | `false`         | Enable HTTP access logging for `/health`, `/ready`, `/metrics` |
 
 ### Network Listener
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
-| <Cfg p="--port" e="MEMORY_SERVICE_PORT" /> | integer | `8080` | HTTP/gRPC server port |
-| <Cfg p="--plain-text" e="MEMORY_SERVICE_PLAIN_TEXT" /> | `true`, `false` | `true` | Enable plaintext HTTP/1.1 + h2c + gRPC |
-| <Cfg p="--tls" e="MEMORY_SERVICE_TLS" /> | `true`, `false` | `true` | Enable TLS HTTP/1.1 + HTTP/2 + gRPC |
+| Flag                                                   | Values          | Default | Description                            |
+| ------------------------------------------------------ | --------------- | ------- | -------------------------------------- |
+| <Cfg p="--port" e="MEMORY_SERVICE_PORT" />             | integer         | `8080`  | HTTP/gRPC server port                  |
+| <Cfg p="--plain-text" e="MEMORY_SERVICE_PLAIN_TEXT" /> | `true`, `false` | `true`  | Enable plaintext HTTP/1.1 + h2c + gRPC |
+| <Cfg p="--tls" e="MEMORY_SERVICE_TLS" />               | `true`, `false` | `true`  | Enable TLS HTTP/1.1 + HTTP/2 + gRPC    |
 
 ### Management Network Listener
 
 By default, `/health`, `/ready`, and `/metrics` are served on the main port alongside the API. Set `--management-port` to move them onto a dedicated port, keeping them out of the main API's auth middleware — and making Prometheus scrape configuration more straightforward.
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
-| <Cfg p="--management-port" e="MEMORY_SERVICE_MANAGEMENT_PORT" /> | integer | _(unset)_ | Dedicated port for health and metrics. When unset, served on the main port. |
-| <Cfg p="--management-plain-text" e="MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT" /> | `true`, `false` | `true` | Enable plaintext HTTP for management server |
-| <Cfg p="--management-tls" e="MEMORY_SERVICE_MANAGEMENT_TLS" /> | `true`, `false` | `true` | Enable TLS for management server (uses same cert/key as main listener) |
+| Flag                                                                         | Values          | Default   | Description                                                                 |
+| ---------------------------------------------------------------------------- | --------------- | --------- | --------------------------------------------------------------------------- |
+| <Cfg p="--management-port" e="MEMORY_SERVICE_MANAGEMENT_PORT" />             | integer         | _(unset)_ | Dedicated port for health and metrics. When unset, served on the main port. |
+| <Cfg p="--management-plain-text" e="MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT" /> | `true`, `false` | `true`    | Enable plaintext HTTP for management server                                 |
+| <Cfg p="--management-tls" e="MEMORY_SERVICE_MANAGEMENT_TLS" />               | `true`, `false` | `true`    | Enable TLS for management server (uses same cert/key as main listener)      |
 
 ## DB Configuration
 
 Memory Service supports PostgreSQL and MongoDB as database backends. The database URL uses standard connection string formats (not JDBC).
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
-| <Cfg p="--db-kind" e="MEMORY_SERVICE_DB_KIND" /> | `postgres`, `mongo` | `postgres` | Database backend |
-| <Cfg p="--db-url" e="MEMORY_SERVICE_DB_URL" /> | URL | _(required)_ | Database connection URL |
-| <Cfg p="--db-max-open-conns" e="MEMORY_SERVICE_DB_MAX_OPEN_CONNS" /> | integer | `25` | Maximum number of open database connections (see backend notes below) |
-| <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> | integer | `5` | Idle/minimum connections (see backend notes below) |
-| `MEMORY_SERVICE_DB_MIGRATE_AT_START` | `true`, `false` | `true` | Run database migrations at startup |
+| Flag                                                                 | Values              | Default      | Description                                                           |
+| -------------------------------------------------------------------- | ------------------- | ------------ | --------------------------------------------------------------------- |
+| <Cfg p="--db-kind" e="MEMORY_SERVICE_DB_KIND" />                     | `postgres`, `mongo` | `postgres`   | Database backend                                                      |
+| <Cfg p="--db-url" e="MEMORY_SERVICE_DB_URL" />                       | URL                 | _(required)_ | Database connection URL                                               |
+| <Cfg p="--db-max-open-conns" e="MEMORY_SERVICE_DB_MAX_OPEN_CONNS" /> | integer             | `25`         | Maximum number of open database connections (see backend notes below) |
+| <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> | integer             | `5`          | Idle/minimum connections (see backend notes below)                    |
+| `MEMORY_SERVICE_DB_MIGRATE_AT_START`                                 | `true`, `false`     | `true`       | Run database migrations at startup                                    |
 
 ### DB: PostgreSQL Configuration
 
 PostgreSQL is the recommended database backend for Memory Service.
 
 - <Cfg p="--db-max-open-conns" e="MEMORY_SERVICE_DB_MAX_OPEN_CONNS" /> sets the maximum number of open connections.
-- <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> sets the maximum number of idle connections kept in the pool.
+- <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> sets the maximum number of idle connections kept
+  in the pool.
 
 <ConfigBlock property={`# Select PostgreSQL as the datastore
 --db-kind=postgres
 
 # PostgreSQL connection (standard URL format)
+
 --db-url=postgresql://postgres:postgres@localhost:5432/memoryservice`} />
 
 ### DB: MongoDB Configuration
 
 - <Cfg p="--db-max-open-conns" e="MEMORY_SERVICE_DB_MAX_OPEN_CONNS" /> sets the maximum connection pool size.
-- <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> sets the **minimum** pool size — connections MongoDB keeps open proactively. This is _not_ an idle-connection cap.
+- <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> sets the **minimum** pool size — connections
+  MongoDB keeps open proactively. This is _not_ an idle-connection cap.
 
 <ConfigBlock property={`# Select MongoDB as the datastore
 --db-kind=mongo
 
 # MongoDB connection
---db-url=mongodb://localhost:27017/memoryservice`} />
 
+--db-url=mongodb://localhost:27017/memoryservice`} />
 
 ## Cache Configuration
 
 Memory Service uses a unified cache configuration for all cache-dependent features, including the response recording manager and memory entries cache. Configure the cache backend once, and all features will use it automatically.
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
-| <Cfg p="--cache-kind" e="MEMORY_SERVICE_CACHE_KIND" /> | `none`, `redis`, `infinispan` | `none` | Cache backend for distributed caching |
-| `MEMORY_SERVICE_CACHE_EPOCH_TTL` | duration | `PT10M` | TTL for cached memory entries (sliding window) |
+| Flag                                                   | Values                        | Default | Description                                    |
+| ------------------------------------------------------ | ----------------------------- | ------- | ---------------------------------------------- |
+| <Cfg p="--cache-kind" e="MEMORY_SERVICE_CACHE_KIND" /> | `none`, `redis`, `infinispan` | `none`  | Cache backend for distributed caching          |
+| `MEMORY_SERVICE_CACHE_EPOCH_TTL`                       | duration                      | `PT10M` | TTL for cached memory entries (sliding window) |
 
 ### Memory Entries Cache
 
@@ -104,28 +107,30 @@ Features of the memory entries cache:
 
 The Response Resumer enables clients to reconnect to in-progress streaming responses after a network interruption. It automatically uses the configured cache backend — enabled when cache is `redis` or `infinispan`.
 
-| Env Var | Values | Default | Description |
-|---------|--------|---------|-------------|
+| Env Var                                               | Values   | Default | Description                   |
+| ----------------------------------------------------- | -------- | ------- | ----------------------------- |
 | `MEMORY_SERVICE_RESPONSE_RESUMER_TEMP_FILE_RETENTION` | duration | `PT30M` | How long to retain temp files |
 
 ### Cache: Redis Configuration
 
 Redis provides a fast, distributed cache with full support for the memory entries cache and response recording manager.
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
-| <Cfg p="--redis-hosts" e="MEMORY_SERVICE_REDIS_HOSTS" /> | Redis URL | `redis://localhost:6379` | Redis connection URL |
-| `MEMORY_SERVICE_CACHE_REDIS_CLIENT` | client name | default | Optional: specify a named Redis client |
+| Flag                                                     | Values      | Default                  | Description                            |
+| -------------------------------------------------------- | ----------- | ------------------------ | -------------------------------------- |
+| <Cfg p="--redis-hosts" e="MEMORY_SERVICE_REDIS_HOSTS" /> | Redis URL   | `redis://localhost:6379` | Redis connection URL                   |
+| `MEMORY_SERVICE_CACHE_REDIS_CLIENT`                      | client name | default                  | Optional: specify a named Redis client |
 
 <ConfigBlock property={`# Enable Redis cache (response recording manager will automatically use it)
 --cache-kind=redis
 
 # Redis connection
+
 --redis-hosts=redis://localhost:6379`}
   env={`# Enable Redis cache (response recording manager will automatically use it)
 MEMORY_SERVICE_CACHE_KIND=redis
 
 # Redis connection
+
 MEMORY_SERVICE_REDIS_HOSTS=redis://localhost:6379`}
 />
 
@@ -133,19 +138,20 @@ MEMORY_SERVICE_REDIS_HOSTS=redis://localhost:6379`}
 
 Infinispan provides a distributed cache with configurable cache names for memory entries and response recordings.
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
-| <Cfg p="--infinispan-host" e="MEMORY_SERVICE_INFINISPAN_HOST" /> | `host:port` | `localhost:11222` | Infinispan server host |
-| <Cfg p="--infinispan-username" e="MEMORY_SERVICE_INFINISPAN_USERNAME" /> | string | _(none)_ | Infinispan username |
-| <Cfg p="--infinispan-password" e="MEMORY_SERVICE_INFINISPAN_PASSWORD" /> | string | _(none)_ | Infinispan password |
-| `MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT` | duration | `PT30S` | Startup timeout for Infinispan connection |
-| `MEMORY_SERVICE_CACHE_INFINISPAN_MEMORY_ENTRIES_CACHE_NAME` | string | `memory-entries` | Infinispan cache name for memory entries |
-| `MEMORY_SERVICE_CACHE_INFINISPAN_RESPONSE_RECORDINGS_CACHE_NAME` | string | `response-recordings` | Infinispan cache name for response recordings |
+| Flag                                                                     | Values      | Default               | Description                                   |
+| ------------------------------------------------------------------------ | ----------- | --------------------- | --------------------------------------------- |
+| <Cfg p="--infinispan-host" e="MEMORY_SERVICE_INFINISPAN_HOST" />         | `host:port` | `localhost:11222`     | Infinispan server host                        |
+| <Cfg p="--infinispan-username" e="MEMORY_SERVICE_INFINISPAN_USERNAME" /> | string      | _(none)_              | Infinispan username                           |
+| <Cfg p="--infinispan-password" e="MEMORY_SERVICE_INFINISPAN_PASSWORD" /> | string      | _(none)_              | Infinispan password                           |
+| `MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT`                        | duration    | `PT30S`               | Startup timeout for Infinispan connection     |
+| `MEMORY_SERVICE_CACHE_INFINISPAN_MEMORY_ENTRIES_CACHE_NAME`              | string      | `memory-entries`      | Infinispan cache name for memory entries      |
+| `MEMORY_SERVICE_CACHE_INFINISPAN_RESPONSE_RECORDINGS_CACHE_NAME`         | string      | `response-recordings` | Infinispan cache name for response recordings |
 
 <ConfigBlock property={`# Enable Infinispan cache (response recording manager will automatically use it)
 --cache-kind=infinispan
 
 # Infinispan connection
+
 --infinispan-host=localhost:11222
 --infinispan-username=admin
 --infinispan-password=password`}
@@ -153,6 +159,7 @@ Infinispan provides a distributed cache with configurable cache names for memory
 MEMORY_SERVICE_CACHE_KIND=infinispan
 
 # Infinispan connection
+
 MEMORY_SERVICE_INFINISPAN_HOST=localhost:11222
 MEMORY_SERVICE_INFINISPAN_USERNAME=admin
 MEMORY_SERVICE_INFINISPAN_PASSWORD=password`}
@@ -162,21 +169,22 @@ MEMORY_SERVICE_INFINISPAN_PASSWORD=password`}
 
 Configure file attachment storage, size limits, and lifecycle.
 
-| Flag / Env Var | Values | Default | Description |
-|----------------|--------|---------|-------------|
-| <Cfg p="--attachments-kind" e="MEMORY_SERVICE_ATTACHMENTS_KIND" /> | `db`, `s3` | `db` | Storage backend for uploaded files |
-| `MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE` | memory size | `10M` | Maximum file size per upload (e.g., `10M`, `512K`, `1G`) |
-| `MEMORY_SERVICE_ATTACHMENTS_DEFAULT_EXPIRES_IN` | duration | `PT1H` | Default TTL for unlinked attachments |
-| `MEMORY_SERVICE_ATTACHMENTS_MAX_EXPIRES_IN` | duration | `PT24H` | Maximum allowed TTL clients can request |
-| `MEMORY_SERVICE_ATTACHMENTS_CLEANUP_INTERVAL` | duration | `PT5M` | How often the cleanup job runs |
-| `MEMORY_SERVICE_ATTACHMENTS_DOWNLOAD_URL_EXPIRES_IN` | duration | `PT5M` | Signed download URL expiry |
-| — | — | — | Signed download URLs are enabled automatically when `--encryption-dek-key` is set; the signing key is derived from it via HKDF-SHA256. |
+| Flag / Env Var                                                     | Values      | Default | Description                                                                                                                            |
+| ------------------------------------------------------------------ | ----------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| <Cfg p="--attachments-kind" e="MEMORY_SERVICE_ATTACHMENTS_KIND" /> | `db`, `s3`  | `db`    | Storage backend for uploaded files                                                                                                     |
+| `MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE`                              | memory size | `10M`   | Maximum file size per upload (e.g., `10M`, `512K`, `1G`)                                                                               |
+| `MEMORY_SERVICE_ATTACHMENTS_DEFAULT_EXPIRES_IN`                    | duration    | `PT1H`  | Default TTL for unlinked attachments                                                                                                   |
+| `MEMORY_SERVICE_ATTACHMENTS_MAX_EXPIRES_IN`                        | duration    | `PT24H` | Maximum allowed TTL clients can request                                                                                                |
+| `MEMORY_SERVICE_ATTACHMENTS_CLEANUP_INTERVAL`                      | duration    | `PT5M`  | How often the cleanup job runs                                                                                                         |
+| `MEMORY_SERVICE_ATTACHMENTS_DOWNLOAD_URL_EXPIRES_IN`               | duration    | `PT5M`  | Signed download URL expiry                                                                                                             |
+| —                                                                  | —           | —       | Signed download URLs are enabled automatically when `--encryption-dek-key` is set; the signing key is derived from it via HKDF-SHA256. |
 
 ### Attachment Storage: DB Configuration
 
 The default `db` backend stores attachments directly in the primary database (PostgreSQL or MongoDB). No additional configuration is required.
 
-<ConfigBlock property={`# Use database storage (default)
+<ConfigBlock
+  property={`# Use database storage (default)
 --attachments-kind=db`}
   env={`# Use database storage (default)
 MEMORY_SERVICE_ATTACHMENTS_KIND=db`}
@@ -186,23 +194,25 @@ MEMORY_SERVICE_ATTACHMENTS_KIND=db`}
 
 S3 storage offloads attachments to any S3-compatible object store. Use this for large files or high-throughput workloads.
 
-| Flag / Env Var | Values | Default | Description |
-|----------------|--------|---------|-------------|
-| <Cfg p="--attachments-s3-bucket" e="MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET" /> | string | `memory-service-attachments` | S3 bucket name |
-| <Cfg p="--attachments-s3-use-path-style" e="MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE" /> | `true`, `false` | `false` | Use path-style S3 addressing (required for LocalStack/MinIO) |
-| `MEMORY_SERVICE_ATTACHMENTS_S3_PREFIX` | string | _(empty)_ | Optional key prefix for all objects |
-| `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD` | `true`, `false` | `true` | Redirect clients directly to S3 via presigned URLs |
-| `MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT` | URL | _(none)_ | Override endpoint in presigned URLs |
+| Flag / Env Var                                                                               | Values          | Default                      | Description                                                  |
+| -------------------------------------------------------------------------------------------- | --------------- | ---------------------------- | ------------------------------------------------------------ |
+| <Cfg p="--attachments-s3-bucket" e="MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET" />                 | string          | `memory-service-attachments` | S3 bucket name                                               |
+| <Cfg p="--attachments-s3-use-path-style" e="MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE" /> | `true`, `false` | `false`                      | Use path-style S3 addressing (required for LocalStack/MinIO) |
+| `MEMORY_SERVICE_ATTACHMENTS_S3_PREFIX`                                                       | string          | _(empty)_                    | Optional key prefix for all objects                          |
+| `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD`                                              | `true`, `false` | `true`                       | Redirect clients directly to S3 via presigned URLs           |
+| `MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT`                                            | URL             | _(none)_                     | Override endpoint in presigned URLs                          |
 
 <ConfigBlock property={`# Select S3 storage
 --attachments-kind=s3
 
 # S3 bucket configuration
+
 --attachments-s3-bucket=memory-service-attachments`}
   env={`# Select S3 storage
 MEMORY_SERVICE_ATTACHMENTS_KIND=s3
 
 # S3 bucket configuration
+
 MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET=memory-service-attachments`}
 />
 
@@ -221,18 +231,18 @@ See [Attachments](/docs/concepts/attachments/) for details on how attachments wo
 
 Memory Service supports transparent encryption of stored data using AES-256-GCM. Configure encryption by selecting one or more providers via `--encryption-kind`. The first provider is primary — used for all new encryptions. Additional providers are decryption-only fallbacks, enabling zero-downtime key rotation.
 
-| Flag / Env Var | Values | Default | Description |
-|----------------|--------|---------|-------------|
-| <Cfg p="--encryption-kind" e="MEMORY_SERVICE_ENCRYPTION_KIND" /> | comma-separated IDs | `plain` | Ordered list of providers (`plain`, `dek`, `vault`, `kms`); first provider encrypts new data |
-| <Cfg p="--encryption-db-disabled" e="MEMORY_SERVICE_ENCRYPTION_DB_DISABLED" /> | `true`, `false` | `false` | Disable at-rest encryption for the database even when an encryption provider is active |
-| <Cfg p="--encryption-attachments-disabled" e="MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED" /> | `true`, `false` | `false` | Disable at-rest encryption for the attachment store even when an encryption provider is active |
+| Flag / Env Var                                                                                   | Values              | Default | Description                                                                                    |
+| ------------------------------------------------------------------------------------------------ | ------------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| <Cfg p="--encryption-kind" e="MEMORY_SERVICE_ENCRYPTION_KIND" />                                 | comma-separated IDs | `plain` | Ordered list of providers (`plain`, `dek`, `vault`, `kms`); first provider encrypts new data   |
+| <Cfg p="--encryption-db-disabled" e="MEMORY_SERVICE_ENCRYPTION_DB_DISABLED" />                   | `true`, `false`     | `false` | Disable at-rest encryption for the database even when an encryption provider is active         |
+| <Cfg p="--encryption-attachments-disabled" e="MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED" /> | `true`, `false`     | `false` | Disable at-rest encryption for the attachment store even when an encryption provider is active |
 
 ### Encryption: DEK (AES-256-GCM)
 
 The `dek` provider encrypts data locally using AES-256-GCM with a key you supply. No external service is required — all encryption happens in-process. Signed attachment download URLs are automatically derived from this key via HKDF-SHA256.
 
-| Flag / Env Var | Values | Default | Description |
-|----------------|--------|---------|-------------|
+| Flag / Env Var                                                         | Values               | Default  | Description                                                                                                                                |
+| ---------------------------------------------------------------------- | -------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | <Cfg p="--encryption-dek-key" e="MEMORY_SERVICE_ENCRYPTION_DEK_KEY" /> | hex or base64 string | _(none)_ | Comma-separated AES-256 keys (16/24/32 bytes). First key encrypts new data; additional keys are legacy decryption-only (for key rotation). |
 
 <ConfigBlock
@@ -260,16 +270,16 @@ MEMORY_SERVICE_ENCRYPTION_DEK_KEY=new-primary-key,old-legacy-key
 
 The `vault` provider uses HashiCorp Vault Transit to wrap data-encryption keys (DEKs). DEKs are loaded from the `encryption_deks` database table at startup — Vault is called only once at load time (never per request). A random DEK is generated on first start, wrapped via Vault Transit, and stored in the table. Loss of Vault access prevents startup but does not affect already-running instances.
 
-| Flag / Env Var | Values | Default | Description |
-|----------------|--------|---------|-------------|
+| Flag / Env Var                                                                             | Values | Default      | Description            |
+| ------------------------------------------------------------------------------------------ | ------ | ------------ | ---------------------- |
 | <Cfg p="--encryption-vault-transit-key" e="MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY" /> | string | _(required)_ | Vault Transit key name |
 
 Standard HashiCorp Vault environment variables are used for authentication:
 
-| Env Var | Description |
-|---------|-------------|
-| `VAULT_ADDR` | Vault server URL (e.g. `https://vault.example.com`) |
-| `VAULT_TOKEN` | Vault token (or use any other Vault auth method) |
+| Env Var       | Description                                         |
+| ------------- | --------------------------------------------------- |
+| `VAULT_ADDR`  | Vault server URL (e.g. `https://vault.example.com`) |
+| `VAULT_TOKEN` | Vault token (or use any other Vault auth method)    |
 
 <ConfigBlock
   property={`# Enable Vault encryption
@@ -280,6 +290,7 @@ MEMORY_SERVICE_ENCRYPTION_KIND=vault
 MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY=memory-service
 
 # HashiCorp Vault connection (standard env vars)
+
 VAULT_ADDR=https://vault.example.com
 VAULT_TOKEN=<token>`}
 />
@@ -288,17 +299,17 @@ VAULT_TOKEN=<token>`}
 
 The `kms` provider uses AWS KMS to wrap data-encryption keys (DEKs). DEKs are loaded from the `encryption_deks` database table at startup — KMS is called only once at load time (never per request). A random DEK is generated on first start, wrapped via `kms:Encrypt`, and stored in the table. Loss of KMS access prevents startup but does not affect already-running instances.
 
-| Flag / Env Var | Values | Default | Description |
-|----------------|--------|---------|-------------|
+| Flag / Env Var                                                               | Values | Default      | Description           |
+| ---------------------------------------------------------------------------- | ------ | ------------ | --------------------- |
 | <Cfg p="--encryption-kms-key-id" e="MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID" /> | string | _(required)_ | AWS KMS key ID or ARN |
 
 Standard AWS SDK environment variables are used for authentication:
 
-| Env Var | Description |
-|---------|-------------|
-| `AWS_REGION` | AWS region (e.g. `us-east-1`) |
-| `AWS_ACCESS_KEY_ID` | AWS access key ID |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret access key |
+| Env Var                 | Description                   |
+| ----------------------- | ----------------------------- |
+| `AWS_REGION`            | AWS region (e.g. `us-east-1`) |
+| `AWS_ACCESS_KEY_ID`     | AWS access key ID             |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret access key         |
 
 Any other credential source supported by the AWS SDK (IAM roles, `AWS_PROFILE`, instance metadata, etc.) is also honoured.
 
@@ -311,6 +322,7 @@ MEMORY_SERVICE_ENCRYPTION_KIND=kms
 MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID=arn:aws:kms:us-east-1:123456789012:key/mrk-...
 
 # AWS authentication (standard env vars)
+
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...`}
@@ -340,18 +352,19 @@ For semantic search capabilities, configure a vector store backend. The vector s
 
 > **Note:** A vector store requires an embedding provider. When a vector store is enabled, configure <Cfg p="--embedding-kind" e="MEMORY_SERVICE_EMBEDDING_KIND" /> to a value other than `none`. See [Embedding Configuration](#embedding-configuration).
 
-| Flag / Env Var | Values | Default | Description |
-|----------------|--------|---------|-------------|
-| <Cfg p="--vector-kind" e="MEMORY_SERVICE_VECTOR_KIND" /> | `none`, `pgvector`, `qdrant` | `none` | Vector store backend |
-| `MEMORY_SERVICE_VECTOR_MIGRATE_AT_START` | `true`, `false` | `true` | Run vector store migrations at startup |
-| `MEMORY_SERVICE_SEARCH_SEMANTIC_ENABLED` | `true`, `false` | `true` | Enable semantic (vector) search |
-| `MEMORY_SERVICE_SEARCH_FULLTEXT_ENABLED` | `true`, `false` | `true` | Enable full-text search |
+| Flag / Env Var                                           | Values                       | Default | Description                            |
+| -------------------------------------------------------- | ---------------------------- | ------- | -------------------------------------- |
+| <Cfg p="--vector-kind" e="MEMORY_SERVICE_VECTOR_KIND" /> | `none`, `pgvector`, `qdrant` | `none`  | Vector store backend                   |
+| `MEMORY_SERVICE_VECTOR_MIGRATE_AT_START`                 | `true`, `false`              | `true`  | Run vector store migrations at startup |
+| `MEMORY_SERVICE_SEARCH_SEMANTIC_ENABLED`                 | `true`, `false`              | `true`  | Enable semantic (vector) search        |
+| `MEMORY_SERVICE_SEARCH_FULLTEXT_ENABLED`                 | `true`, `false`              | `true`  | Enable full-text search                |
 
 ### Vector Store: pgvector Configuration
 
 pgvector integrates directly with PostgreSQL to add vector search capabilities alongside your existing data. It is the natural choice when the datastore is already PostgreSQL.
 
-<ConfigBlock property={`# pgvector (auto-selected when datastore is postgres)
+<ConfigBlock
+  property={`# pgvector (auto-selected when datastore is postgres)
 --vector-kind=pgvector`}
   env={`# pgvector (auto-selected when datastore is postgres)
 MEMORY_SERVICE_VECTOR_KIND=pgvector`}
@@ -361,17 +374,18 @@ MEMORY_SERVICE_VECTOR_KIND=pgvector`}
 
 Qdrant is a dedicated vector database for semantic search. When using Qdrant, the primary datastore (PostgreSQL or MongoDB) still stores all conversation data — Qdrant only stores embeddings and metadata.
 
-| Flag / Env Var | Default | Description |
-|----------------|---------|-------------|
-| <Cfg p="--vector-qdrant-host" e="MEMORY_SERVICE_VECTOR_QDRANT_HOST" /> | `localhost` | Qdrant server hostname or host:port |
-| `MEMORY_SERVICE_VECTOR_QDRANT_PORT` | `6334` | Qdrant gRPC port |
-| `MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_PREFIX` | `memory-service` | Prefix for derived collection name |
-| `MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_NAME` | _(none)_ | Optional explicit collection name override |
-| `MEMORY_SERVICE_VECTOR_QDRANT_API_KEY` | _(none)_ | API key for authentication |
-| `MEMORY_SERVICE_VECTOR_QDRANT_USE_TLS` | `false` | Enable TLS for gRPC connection |
-| `MEMORY_SERVICE_VECTOR_QDRANT_STARTUP_TIMEOUT` | `PT30S` | Startup migration timeout |
+| Flag / Env Var                                                         | Default          | Description                                |
+| ---------------------------------------------------------------------- | ---------------- | ------------------------------------------ |
+| <Cfg p="--vector-qdrant-host" e="MEMORY_SERVICE_VECTOR_QDRANT_HOST" /> | `localhost`      | Qdrant server hostname or host:port        |
+| `MEMORY_SERVICE_VECTOR_QDRANT_PORT`                                    | `6334`           | Qdrant gRPC port                           |
+| `MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_PREFIX`                       | `memory-service` | Prefix for derived collection name         |
+| `MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_NAME`                         | _(none)_         | Optional explicit collection name override |
+| `MEMORY_SERVICE_VECTOR_QDRANT_API_KEY`                                 | _(none)_         | API key for authentication                 |
+| `MEMORY_SERVICE_VECTOR_QDRANT_USE_TLS`                                 | `false`          | Enable TLS for gRPC connection             |
+| `MEMORY_SERVICE_VECTOR_QDRANT_STARTUP_TIMEOUT`                         | `PT30S`          | Startup migration timeout                  |
 
-<ConfigBlock property={`# Qdrant vector store
+<ConfigBlock
+  property={`# Qdrant vector store
 --vector-kind=qdrant
 --vector-qdrant-host=localhost:6334`}
   env={`# Qdrant vector store
@@ -385,15 +399,16 @@ By default, memory-service derives the collection name as `memory-service_<model
 
 The embedding provider controls how text is converted to vectors for semantic search. Embedding requires a vector store to be configured.
 
-| Flag / Env Var | Values | Default | Description |
-|----------------|--------|---------|-------------|
+| Flag / Env Var                                                 | Values                    | Default | Description                  |
+| -------------------------------------------------------------- | ------------------------- | ------- | ---------------------------- |
 | <Cfg p="--embedding-kind" e="MEMORY_SERVICE_EMBEDDING_KIND" /> | `none`, `local`, `openai` | `local` | Embedding provider selection |
 
 ### Embedding: Local Configuration
 
 The default `local` provider uses an in-process all-MiniLM-L6-v2 ONNX model (384 dimensions). No external API calls are required.
 
-<ConfigBlock property={`# Use local embedding model (default)
+<ConfigBlock
+  property={`# Use local embedding model (default)
 --embedding-kind=local`}
   env={`# Use local embedding model (default)
 MEMORY_SERVICE_EMBEDDING_KIND=local`}
@@ -403,14 +418,15 @@ MEMORY_SERVICE_EMBEDDING_KIND=local`}
 
 The `openai` provider uses the OpenAI Embeddings API for higher-quality embeddings.
 
-| Flag / Env Var | Default | Description |
-|----------------|---------|-------------|
-| <Cfg p="--embedding-openai-api-key" e="MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY" /> | _(required)_ | OpenAI API key |
-| `MEMORY_SERVICE_EMBEDDING_OPENAI_MODEL_NAME` | `text-embedding-3-small` | OpenAI model name |
-| `MEMORY_SERVICE_EMBEDDING_OPENAI_BASE_URL` | `https://api.openai.com/v1` | API base URL (for Azure OpenAI or proxies) |
-| `MEMORY_SERVICE_EMBEDDING_OPENAI_DIMENSIONS` | _(model default)_ | Optional dimension override |
+| Flag / Env Var                                                                     | Default                     | Description                                |
+| ---------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------ |
+| <Cfg p="--embedding-openai-api-key" e="MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY" /> | _(required)_                | OpenAI API key                             |
+| `MEMORY_SERVICE_EMBEDDING_OPENAI_MODEL_NAME`                                       | `text-embedding-3-small`    | OpenAI model name                          |
+| `MEMORY_SERVICE_EMBEDDING_OPENAI_BASE_URL`                                         | `https://api.openai.com/v1` | API base URL (for Azure OpenAI or proxies) |
+| `MEMORY_SERVICE_EMBEDDING_OPENAI_DIMENSIONS`                                       | _(model default)_           | Optional dimension override                |
 
-<ConfigBlock property={`# Use OpenAI embeddings
+<ConfigBlock
+  property={`# Use OpenAI embeddings
 --embedding-kind=openai
 --embedding-openai-api-key=sk-...`}
   env={`# Use OpenAI embeddings
@@ -422,9 +438,9 @@ MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY=sk-...`}
 
 Configure namespaced Memories policy loading.
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
-| <Cfg p="--policy-dir" e="MEMORY_SERVICE_POLICY_DIR" /> | path | built-in policies | Directory containing memory OPA/Rego policy files: `authz.rego` (`data.memories.authz.decision`), `attributes.rego` (`data.memories.attributes.attributes`), `filter.rego` (`data.memories.filter`) |
+| Flag                                                   | Values | Default           | Description                                                                                                                                                                                         |
+| ------------------------------------------------------ | ------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <Cfg p="--policy-dir" e="MEMORY_SERVICE_POLICY_DIR" /> | path   | built-in policies | Directory containing memory OPA/Rego policy files: `authz.rego` (`data.memories.authz.decision`), `attributes.rego` (`data.memories.attributes.attributes`), `filter.rego` (`data.memories.filter`) |
 
 ## API Key Authentication
 
@@ -445,7 +461,8 @@ Clients include the API key in requests via the `X-API-Key` header.
 
 Memory Service supports OIDC authentication via Keycloak or any compliant provider.
 
-<ConfigBlock property={`# OIDC configuration
+<ConfigBlock
+  property={`# OIDC configuration
 --oidc-issuer=http://localhost:8180/realms/memory-service`}
   env={`# OIDC configuration
 MEMORY_SERVICE_OIDC_ISSUER=http://localhost:8180/realms/memory-service`}
@@ -460,11 +477,11 @@ grants a role, the caller has that role.
 
 ### Roles
 
-| Role | Access | Description |
-|------|--------|-------------|
-| `admin` | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`. |
-| `auditor` | Read-only | View any user's conversations and search system-wide. Cannot modify data. |
-| `indexer` | Index only | Index any conversation's transcript for search. Cannot view or modify other data. |
+| Role      | Access       | Description                                                                       |
+| --------- | ------------ | --------------------------------------------------------------------------------- |
+| `admin`   | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`.     |
+| `auditor` | Read-only    | View any user's conversations and search system-wide. Cannot modify data.         |
+| `indexer` | Index only   | Index any conversation's transcript for search. Cannot view or modify other data. |
 
 ### Role Assignment
 
@@ -474,9 +491,9 @@ Roles can be assigned through three complementary mechanisms:
 
 Map OIDC token roles to internal Memory Service roles.
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| <Cfg p="--roles-admin-oidc-role" e="MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE" /> | _(none)_ | OIDC role name that maps to `admin` |
+| Flag                                                                             | Default  | Description                           |
+| -------------------------------------------------------------------------------- | -------- | ------------------------------------- |
+| <Cfg p="--roles-admin-oidc-role" e="MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE" />     | _(none)_ | OIDC role name that maps to `admin`   |
 | <Cfg p="--roles-auditor-oidc-role" e="MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE" /> | _(none)_ | OIDC role name that maps to `auditor` |
 | <Cfg p="--roles-indexer-oidc-role" e="MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE" /> | _(none)_ | OIDC role name that maps to `indexer` |
 
@@ -484,55 +501,62 @@ Map OIDC token roles to internal Memory Service roles.
 --roles-admin-oidc-role=administrator
 
 # Map OIDC "manager" role to internal "auditor" role
+
 --roles-auditor-oidc-role=manager
 
 # Map OIDC "transcript-indexer" role to internal "indexer" role
+
 --roles-indexer-oidc-role=transcript-indexer`} />
 
 #### User-Based Assignment
 
 Assign roles directly to user IDs (matched against the OIDC token principal name):
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| <Cfg p="--roles-admin-users" e="MEMORY_SERVICE_ROLES_ADMIN_USERS" /> | _(empty)_ | Comma-separated user IDs with admin access |
+| Flag                                                                     | Default   | Description                                  |
+| ------------------------------------------------------------------------ | --------- | -------------------------------------------- |
+| <Cfg p="--roles-admin-users" e="MEMORY_SERVICE_ROLES_ADMIN_USERS" />     | _(empty)_ | Comma-separated user IDs with admin access   |
 | <Cfg p="--roles-auditor-users" e="MEMORY_SERVICE_ROLES_AUDITOR_USERS" /> | _(empty)_ | Comma-separated user IDs with auditor access |
 | <Cfg p="--roles-indexer-users" e="MEMORY_SERVICE_ROLES_INDEXER_USERS" /> | _(empty)_ | Comma-separated user IDs with indexer access |
 
-<ConfigBlock property={`--roles-admin-users=alice,bob
+<ConfigBlock
+  property={`--roles-admin-users=alice,bob
 --roles-auditor-users=charlie,dave
---roles-indexer-users=indexer-user`} />
+--roles-indexer-users=indexer-user`}
+/>
 
 #### Client-Based Assignment (API Key)
 
 Assign roles to API key client IDs, allowing agents or services to call admin APIs.
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| <Cfg p="--roles-admin-clients" e="MEMORY_SERVICE_ROLES_ADMIN_CLIENTS" /> | _(empty)_ | Comma-separated API client IDs with admin access |
+| Flag                                                                         | Default   | Description                                        |
+| ---------------------------------------------------------------------------- | --------- | -------------------------------------------------- |
+| <Cfg p="--roles-admin-clients" e="MEMORY_SERVICE_ROLES_ADMIN_CLIENTS" />     | _(empty)_ | Comma-separated API client IDs with admin access   |
 | <Cfg p="--roles-auditor-clients" e="MEMORY_SERVICE_ROLES_AUDITOR_CLIENTS" /> | _(empty)_ | Comma-separated API client IDs with auditor access |
 | <Cfg p="--roles-indexer-clients" e="MEMORY_SERVICE_ROLES_INDEXER_CLIENTS" /> | _(empty)_ | Comma-separated API client IDs with indexer access |
 
-<ConfigBlock property={`--roles-admin-clients=admin-agent
+<ConfigBlock
+  property={`--roles-admin-clients=admin-agent
 --roles-auditor-clients=monitoring-agent,audit-agent
---roles-indexer-clients=indexer-service,summarizer-agent`} />
+--roles-indexer-clients=indexer-service,summarizer-agent`}
+/>
 
 ### Audit Logging
 
 All admin API calls are logged. Each request can include a `justification` field explaining why the admin action was taken.
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
+| Flag                                                                                     | Values          | Default | Description                                   |
+| ---------------------------------------------------------------------------------------- | --------------- | ------- | --------------------------------------------- |
 | <Cfg p="--admin-require-justification" e="MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION" /> | `true`, `false` | `false` | Require justification for all admin API calls |
 
 ### CORS Configuration
 
-| Env Var | Values | Default | Description |
-|---------|--------|---------|-------------|
-| `MEMORY_SERVICE_CORS_ENABLED` | `true`, `false` | `false` | Enable CORS |
+| Env Var                       | Values                  | Default  | Description          |
+| ----------------------------- | ----------------------- | -------- | -------------------- |
+| `MEMORY_SERVICE_CORS_ENABLED` | `true`, `false`         | `false`  | Enable CORS          |
 | `MEMORY_SERVICE_CORS_ORIGINS` | comma-separated origins | _(none)_ | Allowed CORS origins |
 
-<ConfigBlock property={`# Enable CORS
+<ConfigBlock
+  property={`# Enable CORS
 MEMORY_SERVICE_CORS_ENABLED=true
 MEMORY_SERVICE_CORS_ORIGINS=http://localhost:3000`}
   env={`# Enable CORS
@@ -546,33 +570,33 @@ Memory Service exposes Prometheus metrics and provides admin stats endpoints tha
 
 ### Management Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /health` | Liveness — returns `200 {"status":"ok"}` as soon as the process is up |
-| `GET /ready` | Readiness — returns `200 {"status":"ready"}` once all initialization (migrations, store connections, network listeners) has completed; returns `503 {"status":"starting"}` before that |
-| `GET /metrics` | Prometheus metrics |
+| Endpoint       | Description                                                                                                                                                                            |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`  | Liveness — returns `200 {"status":"ok"}` as soon as the process is up                                                                                                                  |
+| `GET /ready`   | Readiness — returns `200 {"status":"ready"}` once all initialization (migrations, store connections, network listeners) has completed; returns `503 {"status":"starting"}` before that |
+| `GET /metrics` | Prometheus metrics                                                                                                                                                                     |
 
 Use `/ready` for Kubernetes readiness probes and Docker Compose `healthcheck` (so dependent services wait for full startup). Use `/health` for liveness probes.
 
 ### Prometheus Configuration
 
-| Flag | Values | Default | Description |
-|------|--------|---------|-------------|
-| <Cfg p="--prometheus-url" e="MEMORY_SERVICE_PROMETHEUS_URL" /> | URL | _(none)_ | Prometheus server URL for admin stats queries |
+| Flag                                                           | Values | Default  | Description                                   |
+| -------------------------------------------------------------- | ------ | -------- | --------------------------------------------- |
+| <Cfg p="--prometheus-url" e="MEMORY_SERVICE_PROMETHEUS_URL" /> | URL    | _(none)_ | Prometheus server URL for admin stats queries |
 
 When `--prometheus-url` is not configured, admin stats endpoints return **501 Not Implemented**. All other Memory Service functionality works normally.
 
 #### Available Stats Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `/v1/admin/stats/request-rate` | HTTP request rate (requests/sec) |
-| `/v1/admin/stats/error-rate` | 5xx error rate (percent) |
-| `/v1/admin/stats/latency-p95` | P95 response latency (seconds) |
-| `/v1/admin/stats/cache-hit-rate` | Cache hit rate (percent) |
-| `/v1/admin/stats/db-pool-utilization` | DB connection pool usage (percent) |
-| `/v1/admin/stats/store-latency-p95` | Store operation P95 latency by type |
-| `/v1/admin/stats/store-throughput` | Store operations/sec by type |
+| Endpoint                              | Description                         |
+| ------------------------------------- | ----------------------------------- |
+| `/v1/admin/stats/request-rate`        | HTTP request rate (requests/sec)    |
+| `/v1/admin/stats/error-rate`          | 5xx error rate (percent)            |
+| `/v1/admin/stats/latency-p95`         | P95 response latency (seconds)      |
+| `/v1/admin/stats/cache-hit-rate`      | Cache hit rate (percent)            |
+| `/v1/admin/stats/db-pool-utilization` | DB connection pool usage (percent)  |
+| `/v1/admin/stats/store-latency-p95`   | Store operation P95 latency by type |
+| `/v1/admin/stats/store-throughput`    | Store operations/sec by type        |
 
 ### Prometheus Scrape Configuration
 
@@ -586,11 +610,11 @@ For production, use a dedicated management port so Prometheus scrapes only the m
 ```yaml
 # prometheus.yml — scrape the management port
 scrape_configs:
-  - job_name: 'memory-service'
+  - job_name: "memory-service"
     scrape_interval: 15s
     metrics_path: /metrics
     static_configs:
-      - targets: ['memory-service:8085']
+      - targets: ["memory-service:8085"]
 ```
 
 Without a management port, scrape the main port instead:
@@ -598,11 +622,11 @@ Without a management port, scrape the main port instead:
 ```yaml
 # prometheus.yml — no dedicated management port
 scrape_configs:
-  - job_name: 'memory-service'
+  - job_name: "memory-service"
     scrape_interval: 15s
     metrics_path: /metrics
     static_configs:
-      - targets: ['memory-service:8080']
+      - targets: ["memory-service:8080"]
 ```
 
 ## Example: Docker Compose

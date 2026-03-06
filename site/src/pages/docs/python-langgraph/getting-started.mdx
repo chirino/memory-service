@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: LangGraph Getting Started
 description: Step-by-step guide to integrating Memory Service with a Python FastAPI + LangGraph agent.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide walks you through a minimal LangGraph chatbot first, then adds incremental memory-service integration. The goal is to keep code changes small while unlocking memory features one step at a time.
 
@@ -18,19 +19,13 @@ Also complete **Step 2** on that page (build local `memory-service-langchain` wh
 
 Create a minimal LangGraph chatbot using `StateGraph(MessagesState)` and expose it over HTTP with FastAPI (no memory-service imports yet):
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/01-basic-langgraph/app.py"
-  lang="python"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/01-basic-langgraph/app.py" lang="python" />
 
 **Why**: `StateGraph(MessagesState)` is LangGraph's way of describing the computation as a directed graph where each node transforms state. `MessagesState` gives the graph a built-in `messages` list so nodes can append to it naturally. Starting with a single node keeps the structure clear before adding memory features.
 
 Add LangGraph dependencies:
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/01-basic-langgraph/pyproject.toml"
-  lang="toml"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/01-basic-langgraph/pyproject.toml" lang="toml" />
 
 The checkpoint reads model configuration from environment variables (`OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`) so local dev and `site-tests` can inject provider settings without code changes.
 

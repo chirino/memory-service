@@ -3,8 +3,9 @@ layout: ../../../layouts/DocsLayout.astro
 title: Spring gRPC Client
 description: Using the Memory Service gRPC client in Spring Boot applications.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
 
 export const mavenDep = `<dependency>
   <groupId>io.github.chirino.memory-service</groupId>
@@ -85,7 +86,7 @@ The `MemoryServiceStubs` provides access to all service stubs:
 import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 
-ConversationsServiceGrpc.ConversationsServiceBlockingStub conversations = 
+ConversationsServiceGrpc.ConversationsServiceBlockingStub conversations =
     stubs.conversationsService();
 
 GetConversationRequest request = GetConversationRequest.newBuilder()
@@ -133,7 +134,7 @@ import io.github.chirino.memory.grpc.v1.MessagesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.GetMessagesRequest;
 import io.grpc.stub.StreamObserver;
 
-MessagesServiceGrpc.MessagesServiceStub messages = 
+MessagesServiceGrpc.MessagesServiceStub messages =
     MessagesServiceGrpc.newStub(stubs.conversationsService().getChannel());
 
 GetMessagesRequest request = GetMessagesRequest.newBuilder()

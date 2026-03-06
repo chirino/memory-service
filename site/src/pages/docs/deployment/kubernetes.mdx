@@ -3,8 +3,9 @@ layout: ../../../layouts/DocsLayout.astro
 title: Kubernetes Deployment
 description: Deploy Memory Service on Kubernetes.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
 
 export const k8sDeployment = `apiVersion: apps/v1
 kind: Deployment

@@ -12,23 +12,23 @@ The regular Agent APIs are scoped to the authenticated caller: a user can only s
 
 Key differences:
 
-| Aspect | Regular APIs | Admin APIs |
-|--------|-------------|------------|
-| Scope | Caller's own resources | All users |
-| Deleted resources | Hidden | Visible (with `includeDeleted`) |
-| Role required | Any authenticated user | `admin` or `auditor` |
-| Audit logging | No | Yes — every call is logged |
-| Justification | Not applicable | Optional (or required, if configured) |
+| Aspect            | Regular APIs           | Admin APIs                            |
+| ----------------- | ---------------------- | ------------------------------------- |
+| Scope             | Caller's own resources | All users                             |
+| Deleted resources | Hidden                 | Visible (with `includeDeleted`)       |
+| Role required     | Any authenticated user | `admin` or `auditor`                  |
+| Audit logging     | No                     | Yes — every call is logged            |
+| Justification     | Not applicable         | Optional (or required, if configured) |
 
 ## Roles
 
 There are three admin roles, each granting a different level of privilege:
 
-| Role | Access | Description |
-|------|--------|-------------|
-| `admin` | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`. |
-| `auditor` | Read-only | View any user's conversations and search system-wide. Cannot modify data. |
-| `indexer` | Index only | Index any conversation's transcript for search. Cannot view or modify other data. |
+| Role      | Access       | Description                                                                       |
+| --------- | ------------ | --------------------------------------------------------------------------------- |
+| `admin`   | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`.     |
+| `auditor` | Read-only    | View any user's conversations and search system-wide. Cannot modify data.         |
+| `indexer` | Index only   | Index any conversation's transcript for search. Cannot view or modify other data. |
 
 Roles can be assigned via OIDC token roles, explicit user lists, or API key client IDs. See the [Admin Access Configuration](/docs/configuration/#admin-access-configuration) section of the configuration guide for details.
 
@@ -59,6 +59,7 @@ By default, `justification` is optional. Set `memory-service.admin.require-justi
 ### Audit Log Format
 
 Each audit log entry includes:
+
 - The admin's user ID (or API key client ID)
 - The HTTP method and path
 - The justification (if provided)
@@ -134,12 +135,12 @@ curl -X POST "http://localhost:8080/v1/admin/evict" \
 
 The `retentionPeriod` is an ISO 8601 duration. Common values:
 
-| Value | Meaning |
-|-------|---------|
-| `P90D` | 90 days |
-| `P1Y` | 1 year |
-| `PT24H` | 24 hours |
-| `P0D` | Immediately (all soft-deleted) |
+| Value   | Meaning                        |
+| ------- | ------------------------------ |
+| `P90D`  | 90 days                        |
+| `P1Y`   | 1 year                         |
+| `PT24H` | 24 hours                       |
+| `P0D`   | Immediately (all soft-deleted) |
 
 ### Streaming Eviction (SSE)
 

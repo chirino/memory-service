@@ -3,8 +3,9 @@ layout: ../../../layouts/DocsLayout.astro
 title: Docker Compose Integration
 description: Automatic memory-service container startup for development and testing.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
 
 Spring Boot 3.1+ includes built-in Docker Compose support that can automatically start and configure services defined in a `compose.yaml` file. This makes it easy to run Memory Service and its dependencies during development.
 
@@ -21,13 +22,15 @@ Spring Boot's Docker Compose integration provides:
 
 Add the Docker Compose dependency to your `pom.xml`:
 
-<Code lang="xml" code={`<dependency>
+<Code
+  lang="xml"
+  code={`<dependency>
     <groupId>io.github.chirino.memory-service</groupId>
     <artifactId>memory-service-spring-boot-docker-compose-starter</artifactId>
     <version>${PROJECT_VERSION}</version>
 </dependency>
-`} />
-
+`}
+/>
 
 Place a `compose.yaml` file in your project root (Spring Boot auto-detects it):
 
@@ -107,15 +110,16 @@ services:
       retries: 12
 ```
 
-Add a [`memory-service-realm.json`](https://raw.githubusercontent.com/chirino/memory-service/refs/heads/main/deploy/keycloak/memory-service-realm.json) file 
-to the root of your project.  This file contains an example Keycloak realm configuration for the Memory Service.
+Add a [`memory-service-realm.json`](https://raw.githubusercontent.com/chirino/memory-service/refs/heads/main/deploy/keycloak/memory-service-realm.json) file
+to the root of your project. This file contains an example Keycloak realm configuration for the Memory Service.
 
 ## Service Connection
 
-Spring Boot automatically detects the `memory-service` container and provides connection details via `MemoryServiceConnectionDetails`. The starter uses these connection 
+Spring Boot automatically detects the `memory-service` container and provides connection details via `MemoryServiceConnectionDetails`. The starter uses these connection
 details to configure the REST and gRPC clients.
 
 Make sure you comment out the memory-service.client properties in your application.properties file to pickup the connection details from the Docker Compose file.
+
 ```properties
 # These will override Docker Compose connection details if set
 #memory-service.client.base-url=http://localhost:8082
@@ -131,6 +135,7 @@ mvn spring-boot:run
 ```
 
 Spring Boot will:
+
 1. Detect the `compose.yaml` file
 2. Start all services defined in the file
 3. Wait for health checks to pass
@@ -158,11 +163,3 @@ If your `compose.yaml` is in a different location:
 ```properties
 spring.docker.compose.file=./docker/compose.yaml
 ```
-
-
-{/* 
-## Next Steps
-
-- [Getting Started](/docs/spring/getting-started/) - Build your first Spring AI agent with Memory Service
-- [Configuration](/docs/configuration/) - Learn about all configuration options 
-*/}

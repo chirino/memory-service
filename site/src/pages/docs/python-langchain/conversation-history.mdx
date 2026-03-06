@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: Python Conversation History
 description: Record conversation history and expose APIs for frontend applications.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide continues from [Python Getting Started](/docs/python-langchain/getting-started/) and shows how to record conversation history and expose APIs for frontend applications.
 
@@ -14,6 +15,7 @@ This guide continues from [Python Getting Started](/docs/python-langchain/gettin
 **Starting checkpoint**: View the code from the previous section at [python/examples/langchain/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/python/examples/langchain/doc-checkpoints/02-with-memory)
 
 Make sure you've completed the [Python Getting Started](/docs/python-langchain/getting-started/) guide first. You should have:
+
 - A working LangChain agent with Memory Service checkpointing
 - Memory Service running via Docker Compose
 - OIDC authentication configured
@@ -26,11 +28,7 @@ In the previous guide, you added conversation memory, but frontend conversation 
 
 To enable that, wire `MemoryServiceHistoryMiddleware` into the agent and bind request context:
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/03-with-history/app.py"
-  lang="python"
-  lines="52-64"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/03-with-history/app.py" lang="python" lines="52-64" />
 
 **What changed**: `MemoryServiceHistoryMiddleware()` is constructed and passed into `create_agent(middleware=[history_middleware])`. The `chat` endpoint wraps the `agent.invoke(...)` call in `with memory_service_scope(conversation_id):` instead of only setting `thread_id` in `configurable`.
 
@@ -74,16 +72,13 @@ curl -NsSfX POST http://localhost:9090/chat/0ef33d7b-11b1-4992-9785-681e222dbcd2
 ## Expose Conversation Entries API
 
 Checkpoint `03` exposes the same conversation endpoints as the Quarkus checkpoint:
+
 - `GET /v1/conversations/{conversation_id}`
 - `GET /v1/conversations/{conversation_id}/entries`
 
 The entries endpoint forces `channel=history` so frontend clients always receive recorded conversation turns.
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/03-with-history/app.py"
-  lang="python"
-  lines="90-105"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/03-with-history/app.py" lang="python" lines="90-105" />
 
 **What changed**: `proxy.list_conversation_entries(...)` is called with the hardcoded `channel="history"` parameter. The `get_conversation` endpoint delegates entirely to the proxy without modification.
 
@@ -152,11 +147,7 @@ curl -sSfX GET http://localhost:9090/v1/conversations/0ef33d7b-11b1-4992-9785-68
 
 To let users see all conversations they can access, expose `GET /v1/conversations`:
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/03-with-history/app.py"
-  lang="python"
-  lines="107-115"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/03-with-history/app.py" lang="python" lines="107-115" />
 
 **What changed**: A new `GET /v1/conversations` endpoint is added that calls `proxy.list_conversations(...)`.
 
@@ -190,6 +181,7 @@ curl -sSfX GET http://localhost:9090/v1/conversations \
 ## Next Steps
 
 Continue to:
+
 - [Indexing and Search](/docs/python-langchain/indexing-and-search/) — Add search indexing and semantic search to your conversations
 - [Conversation Forking](/docs/python-langchain/conversation-forking/) — Branch conversations to explore alternative paths
 - [Response Recording and Resumption](/docs/python-langchain/response-resumption/) — Streaming responses with resume and cancel support

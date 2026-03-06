@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: LangGraph Sharing
 description: Membership and ownership transfer APIs in the LangGraph tutorial app.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide shows how to add conversation sharing and ownership transfer APIs to the LangGraph tutorial app.
 
@@ -17,6 +18,7 @@ This guide shows how to add conversation sharing and ownership transfer APIs to 
 **Starting checkpoint**: This guide starts from [python/examples/langgraph/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/03-with-history)
 
 Make sure you've completed:
+
 - [LangGraph Conversation History](/docs/python-langgraph/conversation-history/) - History recording and conversation APIs
 - Multiple users in Keycloak (`bob`, `alice`, `charlie`)
 
@@ -26,11 +28,7 @@ Also complete **Step 2** in [LangGraph Dev Setup](/docs/python-langgraph/dev-set
 
 Checkpoint `06` adds membership endpoint passthroughs to the tutorial app:
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/06-sharing/app.py"
-  lang="python"
-  lines="86-109"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/06-sharing/app.py" lang="python" lines="86-109" />
 
 **What changed**: `GET /v1/conversations/{conversation_id}/memberships`, `POST /v1/conversations/{conversation_id}/memberships`, `PATCH /v1/conversations/{conversation_id}/memberships/{user_id}`, and `DELETE /v1/conversations/{conversation_id}/memberships/{user_id}` are added. Each delegates to the corresponding `proxy.*_membership` method.
 
@@ -40,11 +38,7 @@ Checkpoint `06` adds membership endpoint passthroughs to the tutorial app:
 
 Checkpoint `06` also exposes ownership transfer APIs:
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/06-sharing/app.py"
-  lang="python"
-  lines="112-135"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/06-sharing/app.py" lang="python" lines="112-135" />
 
 **What changed**: `GET /v1/ownership-transfers`, `POST /v1/ownership-transfers`, `POST /v1/ownership-transfers/{transfer_id}/accept`, and `DELETE /v1/ownership-transfers/{transfer_id}` are added, all forwarded through `proxy.*_ownership_transfer` methods.
 

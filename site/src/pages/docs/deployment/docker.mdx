@@ -3,8 +3,9 @@ layout: ../../../layouts/DocsLayout.astro
 title: Docker Deployment
 description: Deploy Memory Service using Docker.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
 
 export const productionConfig = `services:
   memory-service:
@@ -38,14 +39,14 @@ docker run -d \
 For a complete local setup with all dependencies:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   memory-service:
     image: ghcr.io/chirino/memory-service:latest
     ports:
-      - "8080:8080"   # REST API
-      - "9000:9000"   # gRPC API
+      - "8080:8080" # REST API
+      - "9000:9000" # gRPC API
     environment:
       - MEMORY_SERVICE_DB_URL=postgres://postgres:postgres@postgres:5432/memoryservice?sslmode=disable
       - MEMORY_SERVICE_DB_MIGRATE_AT_START=true
@@ -81,28 +82,28 @@ docker compose up -d
 
 ### Database Configuration
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MEMORY_SERVICE_DB_KIND` | Database type (`postgres` or `mongo`) | `postgres` |
-| `MEMORY_SERVICE_DB_URL` | Database connection URL | - |
-| `MEMORY_SERVICE_DB_MIGRATE_AT_START` | Run schema migrations on startup | `true` |
-| `MEMORY_SERVICE_DB_MAX_OPEN_CONNS` | Maximum open database connections | `25` |
-| `MEMORY_SERVICE_DB_MAX_IDLE_CONNS` | Idle/minimum connections in pool | `5` |
+| Variable                             | Description                           | Default    |
+| ------------------------------------ | ------------------------------------- | ---------- |
+| `MEMORY_SERVICE_DB_KIND`             | Database type (`postgres` or `mongo`) | `postgres` |
+| `MEMORY_SERVICE_DB_URL`              | Database connection URL               | -          |
+| `MEMORY_SERVICE_DB_MIGRATE_AT_START` | Run schema migrations on startup      | `true`     |
+| `MEMORY_SERVICE_DB_MAX_OPEN_CONNS`   | Maximum open database connections     | `25`       |
+| `MEMORY_SERVICE_DB_MAX_IDLE_CONNS`   | Idle/minimum connections in pool      | `5`        |
 
 ### Vector Store Configuration
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MEMORY_SERVICE_VECTOR_KIND` | Vector store type (`none`, `pgvector`, `qdrant`) | `none` |
-| `MEMORY_SERVICE_EMBEDDING_KIND` | Embedding provider (`none`, `local`, `openai`) | `local` |
-| `MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY` | OpenAI API key for embeddings | - |
+| Variable                                  | Description                                      | Default |
+| ----------------------------------------- | ------------------------------------------------ | ------- |
+| `MEMORY_SERVICE_VECTOR_KIND`              | Vector store type (`none`, `pgvector`, `qdrant`) | `none`  |
+| `MEMORY_SERVICE_EMBEDDING_KIND`           | Embedding provider (`none`, `local`, `openai`)   | `local` |
+| `MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY` | OpenAI API key for embeddings                    | -       |
 
 ### Authentication
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MEMORY_SERVICE_OIDC_ISSUER` | OIDC issuer URL | - |
-| `MEMORY_SERVICE_API_KEYS_<CLIENT>` | API key(s) for a client ID | - |
+| Variable                           | Description                | Default |
+| ---------------------------------- | -------------------------- | ------- |
+| `MEMORY_SERVICE_OIDC_ISSUER`       | OIDC issuer URL            | -       |
+| `MEMORY_SERVICE_API_KEYS_<CLIENT>` | API key(s) for a client ID | -       |
 
 ## Health Checks
 
@@ -137,10 +138,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
+          cpus: "2"
           memory: 1G
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
 ```
 

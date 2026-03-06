@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: TypeScript Getting Started
 description: Step-by-step guide to integrating Memory Service with a TypeScript Express + Vercel AI SDK agent.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide walks you through a minimal TypeScript agent using [Vercel AI SDK](https://ai-sdk.dev/docs/getting-started/nodejs), then adds incremental memory-service integration. The goal is to keep code changes small while unlocking memory features one step at a time.
 
@@ -17,10 +18,7 @@ Make sure you have completed [TypeScript Dev Setup](/docs/typescript-vecelai/dev
 
 Create a minimal Vercel AI SDK agent and expose it over HTTP with Express (no memory-service imports yet):
 
-<CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/01-basic-chat/src/app.ts"
-  lang="typescript"
-/>
+<CodeFromFile file="typescript/examples/vecelai/doc-checkpoints/01-basic-chat/src/app.ts" lang="typescript" />
 
 **What this shows**: A baseline `POST /chat` handler that calls Vercel AI SDK directly and returns plain text.
 
@@ -28,10 +26,7 @@ Create a minimal Vercel AI SDK agent and expose it over HTTP with Express (no me
 
 Add Vercel AI SDK dependencies:
 
-<CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/01-basic-chat/package.json"
-  lang="json"
-/>
+<CodeFromFile file="typescript/examples/vecelai/doc-checkpoints/01-basic-chat/package.json" lang="json" />
 
 **What this shows**: The minimum dependencies for the baseline app.
 

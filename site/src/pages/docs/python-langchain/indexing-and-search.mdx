@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: Python Indexing and Search
 description: Add search indexing and semantic search to your conversations.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide continues from [Conversation History](/docs/python-langchain/conversation-history/) and shows how to add search indexing to history entries and expose a search API for frontend applications.
 
@@ -31,11 +32,7 @@ This gives you a redaction point. You can remove sensitive data from `indexedCon
 
 The simplest provider is pass-through:
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/07-with-search/app.py"
-  lang="python"
-  lines="54-61"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/07-with-search/app.py" lang="python" lines="54-61" />
 
 **What changed**: `pass_through_indexed_content(text, role)` is defined and passed to `MemoryServiceHistoryMiddleware(indexed_content_provider=...)`. Without an `indexed_content_provider`, history entries are written with no `indexedContent` field and therefore cannot be searched.
 
@@ -56,11 +53,7 @@ def redacting_indexed_content(text: str, role: str) -> str:
 
 Expose `POST /v1/conversations/search` so frontend apps can query across conversations:
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/07-with-search/app.py"
-  lang="python"
-  lines="127-130"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/07-with-search/app.py" lang="python" lines="127-130" />
 
 **Why**: The search query, search type (`auto`, `semantic`, `fulltext`, or a concrete type array like `["semantic","fulltext"]`), and pagination options all live in the JSON request body, so the endpoint requires no query-parameter parsing — it just reads the body and passes it through. The Memory Service returns scored results with highlights, which the proxy relays back to the caller. Exposing the endpoint from the agent app rather than pointing the frontend directly at the Memory Service keeps all traffic behind a single origin and ensures the user's Bearer token is validated in one place.
 
@@ -121,5 +114,6 @@ curl -sSfX POST http://localhost:9090/v1/conversations/search \
 ## Next Steps
 
 Continue to:
+
 - [Conversation Forking](/docs/python-langchain/conversation-forking/) - Branch conversations to explore alternative paths
 - [Response Recording and Resumption](/docs/python-langchain/response-resumption/) - Streaming responses with resume and cancel support

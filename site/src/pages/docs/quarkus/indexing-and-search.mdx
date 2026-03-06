@@ -3,11 +3,12 @@ layout: ../../../layouts/DocsLayout.astro
 title: Indexing and Search
 description: Add search indexing and semantic search to your conversations.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide continues from [Conversation History](/docs/quarkus/conversation-history/) and shows how to add search indexing to your conversation history entries and expose a search API for frontend applications.
 
@@ -19,6 +20,7 @@ This guide continues from [Conversation History](/docs/quarkus/conversation-hist
 **Starting checkpoint**: View the code from the previous section at [java/quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the [Conversation History](/docs/quarkus/conversation-history/) guide first. You should have:
+
 - Conversation history recording with `@RecordConversation`
 - Conversation APIs exposed via `ConversationsResource`
 - Memory Service running via Docker Compose
@@ -46,6 +48,7 @@ To enable search indexing, create a bean that implements the `IndexedContentProv
 > `indexedContent` is not encrypted. Redact or minimize sensitive values before returning indexed text.
 
 The `IndexedContentProvider` interface has a single method:
+
 - **`getIndexedContent(String text, String role)`** — Transforms message text into content for the search index. The `role` parameter is either `"USER"` or `"AI"`. Return `null` to skip indexing for that message.
 
 ### Custom Redaction
@@ -58,7 +61,7 @@ For production applications, you'll likely want to redact sensitive information.
   lang="java"
   before={1}
   after={2}
-match="public String getIndexedContent(String text, String role)"
+  match="public String getIndexedContent(String text, String role)"
 />
 
 You can also return `null` to skip indexing entirely for certain messages — for example, you might choose not to index AI responses:
@@ -74,12 +77,13 @@ To let the frontend search across conversations, add a search endpoint to your `
   lang="java"
   before={4}
   after={2}
-match="public Response searchConversations"
+  match="public Response searchConversations"
 />
 
 **Why**: Exposing search through the Quarkus proxy rather than directly to clients ensures the Memory Service enforces that results are scoped to conversations the authenticated user has access to. The raw JSON forwarding keeps the endpoint simple while still letting callers control search type, grouping, and result limits via the request body.
 
 This endpoint accepts a JSON request body with the following fields:
+
 - **`query`** (required) — The search query text
 - **`searchType`** — Either a single type (`"auto"`, `"semantic"`, `"fulltext"`) or an array of concrete types (`["semantic","fulltext"]`)
 - **`limit`** — Maximum number of results per requested search type (default 20)
@@ -149,7 +153,7 @@ Example response:
         "userId": "bob",
         "channel": "history",
         "contentType": "history",
-        "content": [{"role": "USER", "text": "Give me a random number between 1 and 100."}],
+        "content": [{ "role": "USER", "text": "Give me a random number between 1 and 100." }],
         "createdAt": "2025-01-10T14:32:05Z"
       }
     }
@@ -159,6 +163,7 @@ Example response:
 ```
 
 Search results include:
+
 - **`conversationId`** and **`conversationTitle`** — For linking to the conversation
 - **`entryId`** — For deep-linking to a specific message
 - **`score`** — Relevance score
@@ -172,5 +177,6 @@ Search results include:
 ## Next Steps
 
 Continue to:
+
 - [Conversation Forking](/docs/quarkus/conversation-forking/) — Branch conversations to explore alternative paths
 - [Response Recording and Resumption](/docs/quarkus/response-resumption/) — Streaming responses with resume and cancel support
