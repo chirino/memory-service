@@ -3,11 +3,13 @@ layout: ../../../layouts/DocsLayout.astro
 title: TypeScript Response Recording and Resumption
 description: First add streaming (05a), then add response recording/resumption (05b).
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide is split into two implementation phases:
+
 1. `05a-streaming`: switch chat to streaming only.
 2. `05b-response-resumption`: add resume-check/replay/cancel on top of streaming.
 
@@ -84,7 +86,7 @@ And the response should contain "text"
 
 data: {"text":"upon "}
 
-data: {"text":"a time..."}`}> 
+data: {"text":"a time..."}`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333 \
@@ -192,7 +194,7 @@ And the response should contain "data:"
 And the response should contain "text"
 `} exampleOutputLang="text" exampleOutput={`data: {"text":"Once upon a time, there was a curious little cat named Whiskers."}
 
-data: {"text":" She explored the moonlit garden and found a hidden pond."}`}> 
+data: {"text":" She explored the moonlit garden and found a hidden pond."}`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/91b7f6be-1ab8-4a31-b86a-a4fd2c8b2d27 \

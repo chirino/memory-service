@@ -9,25 +9,33 @@ These pages explain the foundational ideas and APIs behind Memory Service. Under
 ## Concepts
 
 ### [Conversations](/docs/concepts/conversations/)
+
 The fundamental unit of organization. A conversation is a container for a sequence of entries, identified by a unique ID and owned by a user for access control.
 
 ### [Entries](/docs/concepts/entries/)
+
 The individual units of communication within a conversation. Entries are organized into channels (`history` and `memory`) and stored with full metadata.
 
 ### [Attachments](/docs/concepts/attachments/)
+
 Include binary files — images, audio, video, documents — in conversation entries with server-managed upload, access control, signed download URLs, and automatic lifecycle management.
 
 ### [Forking](/docs/concepts/forking/)
+
 Create a new conversation branch from any point in an existing conversation, preserving the original while exploring alternative paths.
 
 ### [Indexing & Search](/docs/concepts/indexing-and-search/)
+
 Find relevant messages across conversations using full-text keyword matching or semantic similarity search.
 
 ### [Response Recording and Resumption](/docs/concepts/response-resumption/)
+
 Reconnect after a disconnect and pick up a streaming response where it left off, with automatic token buffering and multi-instance redirect.
 
 ### [Sharing & Access Control](/docs/concepts/sharing/)
+
 Share conversations among multiple users with hierarchical permission levels — read, write, manager, and owner.
 
 ### [Admin APIs](/docs/concepts/admin-apis/)
+
 Administrative APIs for cross-user access, audit logging, and data lifecycle management. Covers admin and auditor roles, justification fields, and eviction of soft-deleted data.

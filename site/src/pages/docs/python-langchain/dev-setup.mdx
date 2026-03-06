@@ -3,7 +3,8 @@ layout: ../../../layouts/DocsLayout.astro
 title: Python Dev Setup
 description: Reproducible Python setup using uv and Dockerized dependencies.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
 
 Use [`uv`](https://docs.astral.sh/uv/getting-started/installation/) for deterministic Python environments and lockfile-driven installs. Use Docker for dependency services (memory-service, Keycloak, databases), not as your day-to-day Python package workflow.
 
@@ -21,16 +22,9 @@ This is temporary. After the package is released, you can remove `UV_FIND_LINKS`
 
 ## Baseline Runtime
 
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/02-with-memory/.python-version" lang="text" />
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/02-with-memory/.python-version"
-  lang="text"
-/>
-
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/02-with-memory/pyproject.toml"
-  lang="toml"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/02-with-memory/pyproject.toml" lang="toml" />
 
 This is the minimum dependency set users need to run Memory Service-backed Python examples.
 Until the package is released, `memory-service-langchain` is resolved from the local wheel built in Step 1 (`UV_FIND_LINKS`).

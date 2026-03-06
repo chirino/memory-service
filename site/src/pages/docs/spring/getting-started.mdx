@@ -3,11 +3,12 @@ layout: ../../../layouts/DocsLayout.astro
 title: Spring Getting Started
 description: Step-by-step guide to integrating Memory Service with your Spring Boot AI agent.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide walks you through integrating Memory Service with a Spring Boot AI agent. You'll start with basic chat memory and can progressively add features in the follow-up guides.
 
@@ -26,7 +27,6 @@ Once you download the starter project extract it and open it in your favorite ID
 unzip demo.zip
 cd demo
 ```
-
 
 Create a simple REST controller:
 
@@ -53,6 +53,7 @@ Run your agent:
 ```bash
 export OPENAI_API_KEY=your-api-key
 ```
+
 ```bash
 mvn spring-boot:run
 ```
@@ -100,7 +101,9 @@ Let's add conversation memory.
 
 Add the Memory Service Spring Boot starter and OAuth2 resource server dependencies to your `pom.xml`:
 
-<Code lang="xml" code={`<dependency>
+<Code
+  lang="xml"
+  code={`<dependency>
     <groupId>io.github.chirino.memory-service</groupId>
     <artifactId>memory-service-spring-boot-starter</artifactId>
     <version>${PROJECT_VERSION}</version>
@@ -109,7 +112,8 @@ Add the Memory Service Spring Boot starter and OAuth2 resource server dependenci
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
 </dependency>
-`} />
+`}
+/>
 
 Start the Memory Service in Docker Compose following the [Getting Started](/docs/getting-started/) guide.
 
@@ -218,16 +222,18 @@ curl -NsSfX POST http://localhost:9090/chat/2cdbd4b0-b48d-4f75-8f7a-9616301e5143
 </TestScenario>
 
 If you browse to the demo agent app at [http://localhost:8080/](http://localhost:8080/), you will see that a conversation has been created with the ID `2cdbd4b0-b48d-4f75-8f7a-9616301e5143`.
-But it won't show any messages.  That's because we are not yet storing what we call the history of the conversation.  The only thing being stored is the agent memory, and
+But it won't show any messages. That's because we are not yet storing what we call the history of the conversation. The only thing being stored is the agent memory, and
 that's not typically what you want to display to a user in a UI.
 
 ## Next Steps
 
 Continue to [Conversation History](/docs/spring/conversation-history/) to learn how to:
+
 - Record conversation history for frontend display
 - Expose conversation APIs (messages, listing)
 - Build a complete chat UI experience
 
 Or jump ahead to:
+
 - [Conversation Forking](/docs/spring/conversation-forking/) - Branch conversations to explore alternative paths
 - [Response Recording and Resumption](/docs/spring/response-resumption/) - Streaming responses with resume and cancel support

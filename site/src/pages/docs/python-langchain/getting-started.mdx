@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: Python Getting Started
 description: Step-by-step guide to integrating Memory Service with a Python FastAPI + LangGraph-style agent.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide walks you through a minimal Python agent first using [LangChain](https://docs.langchain.com/oss/python/langchain/overview), then adds incremental memory-service integration. The goal is to keep code changes small while unlocking memory features one step at a time.
 
@@ -18,10 +19,7 @@ Also complete **Step 2** on that page (build local `memory-service-langchain` wh
 
 Create a minimal LangChain agent and expose it over HTTP with FastAPI (no memory-service imports yet):
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/01-basic-agent/app.py"
-  lang="python"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/01-basic-agent/app.py" lang="python" />
 
 `create_agent()` builds a LangChain agent graph with the given model. Passing an empty `tools=[]` list gives a pure chat agent with no tool calls. The `system_prompt` primes every conversation with the agent's role.
 
@@ -31,10 +29,7 @@ The `POST /chat` endpoint accepts a raw text body and returns raw text — no JS
 
 Add LangChain dependencies:
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/01-basic-agent/pyproject.toml"
-  lang="toml"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/01-basic-agent/pyproject.toml" lang="toml" />
 
 <TestScenario checkpoint="python/examples/langchain/doc-checkpoints/01-basic-agent">
 
@@ -71,11 +66,7 @@ Checkpoint `02` is built from checkpoint `01` with three additions.
 
 ### Add a checkpointer and wire it into the agent
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/02-with-memory/app.py"
-  lang="python"
-  lines="46-56"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/02-with-memory/app.py" lang="python" lines="46-56" />
 
 **What changed**: `MemoryServiceCheckpointSaver()` is created and passed to `create_agent()` as `checkpointer=`.
 
@@ -85,11 +76,7 @@ Checkpoint `02` is built from checkpoint `01` with three additions.
 
 ### Change the endpoint to accept a `conversation_id`
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/02-with-memory/app.py"
-  lang="python"
-  lines="59-68"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/02-with-memory/app.py" lang="python" lines="59-68" />
 
 **What changed**: The route changes from `POST /chat` to `POST /chat/{conversation_id}`, and the agent invocation passes `{"configurable": {"thread_id": conversation_id}}`.
 

@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: LangGraph Episodic Memories
 description: Add persistent per-user memories to a LangGraph agent using the Memory Service episodic store.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide adds the Memory Service episodic store to your LangGraph agent. Unlike conversation checkpointing — which persists the message thread for a single conversation — episodic memories cross conversation boundaries, giving the agent a persistent long-term view of each user.
 
@@ -19,6 +20,7 @@ Memory values are stored encrypted at rest; metadata, derived attributes, and ca
 **Starting checkpoint**: This guide starts from [python/examples/langgraph/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/03-with-history)
 
 Make sure you've completed:
+
 - [LangGraph Getting Started](/docs/python-langgraph/getting-started/) — checkpointing and conversation memory
 - [LangGraph Conversation History](/docs/python-langgraph/conversation-history/) — history recording
 
@@ -34,6 +36,7 @@ cd python/langgraph && uv build && export UV_FIND_LINKS="$UV_FIND_LINKS:$PWD/dis
 The Memory Service provides a LangGraph `BaseStore` implementation (`AsyncMemoryServiceStore`) that stores and retrieves arbitrary key-value memories, namespaced per user.
 
 Memories are:
+
 - **Isolated per user** via namespace: `("user", user_id, "memories")`
 - **Recalled before each response** with `store.asearch()`
 - **Saved after each turn** with `store.aput()`
@@ -52,11 +55,7 @@ Checkpoint `30` adds episodic memories on top of the existing checkpointing and 
 
 ### Imports
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/30-memories/app.py"
-  lang="python"
-  lines="1-20"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/30-memories/app.py" lang="python" lines="1-20" />
 
 **What changed**: `RunnableConfig` is imported from `langchain_core.runnables` and `AsyncMemoryServiceStore` is imported from `memory_service_langgraph`. `uuid` is also imported to generate unique memory keys.
 
@@ -64,19 +63,15 @@ Checkpoint `30` adds episodic memories on top of the existing checkpointing and 
 
 `AsyncMemoryServiceStore` reads the Memory Service base URL from the environment:
 
-| Variable | Default | Purpose |
-|---|---|---|
+| Variable             | Default                 | Purpose                 |
+| -------------------- | ----------------------- | ----------------------- |
 | `MEMORY_SERVICE_URL` | `http://localhost:8083` | Memory Service base URL |
 
 The bearer token is forwarded from each incoming `Authorization` header — no static token configuration required.
 
 ### The `call_model` Node
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/30-memories/app.py"
-  lang="python"
-  lines="36-68"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/30-memories/app.py" lang="python" lines="36-68" />
 
 **What changed**: `call_model` becomes `async` and accepts a second `config: RunnableConfig` argument. It extracts `user_id` and `token` from `config["configurable"]`, builds a namespace `("user", user_id, "memories")`, then uses `AsyncMemoryServiceStore(token=token)` as an async context manager to recall memories before the model call and save the user's message as a new memory afterward.
 
@@ -90,11 +85,7 @@ The `history_middleware.wrap_model_call(...)` line records the user/AI turn to t
 
 ### Graph, App, and Endpoint
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/30-memories/app.py"
-  lang="python"
-  lines="71-101"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/30-memories/app.py" lang="python" lines="71-101" />
 
 **What changed**: The graph is compiled and the app is set up as before, but the endpoint changes from `POST /chat/{conversation_id}` to `POST /chat/{user_id}/{conversation_id}`. The endpoint extracts the bearer token from the `Authorization` header and passes `user_id`, `conversation_id` (as `thread_id`), and `token` through `config["configurable"]` into the graph.
 

@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: Python Sharing
 description: Membership and ownership transfer APIs in the Python tutorial app.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide shows how to add conversation sharing and ownership transfer APIs to the Python tutorial app.
 
@@ -17,6 +18,7 @@ This guide shows how to add conversation sharing and ownership transfer APIs to 
 **Starting checkpoint**: This guide starts from [python/examples/langchain/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langchain/doc-checkpoints/03-with-history)
 
 Make sure you've completed:
+
 - [Python Conversation History](/docs/python-langchain/conversation-history/) - History recording and conversation APIs
 - Multiple users in Keycloak (`bob`, `alice`, `charlie`)
 
@@ -26,11 +28,7 @@ Also complete **Step 2** in [Python Dev Setup](/docs/python-langchain/dev-setup/
 
 Checkpoint `06` adds membership endpoint passthroughs to the tutorial app:
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/06-sharing/app.py"
-  lang="python"
-  lines="127-152"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/06-sharing/app.py" lang="python" lines="127-152" />
 
 **Why**: These endpoints are thin pass-throughs so the agent app does not need to duplicate any membership logic. The `MemoryServiceProxy` injects the agent API key header automatically, while the user's Bearer token (forwarded by `install_fastapi_authorization_middleware`) provides identity for access-level enforcement on the Memory Service side. `parse_optional_json` is used on write operations to gracefully handle requests with empty bodies.
 
@@ -38,11 +36,7 @@ Checkpoint `06` adds membership endpoint passthroughs to the tutorial app:
 
 Checkpoint `06` also exposes ownership transfer APIs:
 
-<CodeFromFile
-  file="python/examples/langchain/doc-checkpoints/06-sharing/app.py"
-  lang="python"
-  lines="155-180"
-/>
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/06-sharing/app.py" lang="python" lines="155-180" />
 
 **Why**: Ownership transfer is a two-step handshake: the current owner creates a pending transfer, and the recipient accepts it, which atomically promotes the recipient to owner and demotes the previous owner to manager. Exposing list and delete allows both parties to view outstanding transfers and to cancel or decline them. The DELETE endpoint uses `parse_optional_json` because HTTP DELETE requests from some clients may omit a body entirely.
 

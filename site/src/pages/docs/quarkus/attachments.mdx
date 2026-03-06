@@ -3,11 +3,12 @@ layout: ../../../layouts/DocsLayout.astro
 title: Attachments
 description: Proxy attachment upload, download, and management APIs from your agent app.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide covers proxying attachment operations — upload, download, signed URLs, and deletion — from your agent app to the Memory Service.
 
@@ -19,6 +20,7 @@ This guide covers proxying attachment operations — upload, download, signed UR
 **Starting checkpoint**: This guide starts from [java/quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the previous guides:
+
 - [Getting Started](/docs/quarkus/getting-started/) - Basic memory service integration
 - [Conversation History](/docs/quarkus/conversation-history/) - History recording and APIs
 
@@ -69,7 +71,7 @@ Update `application.properties` to allow unauthenticated access to the signed do
   lang="properties"
   before={1}
   after={1}
-match="quarkus.http.auth.permission.attachment-download.paths"
+  match="quarkus.http.auth.permission.attachment-download.paths"
 />
 
 The `attachment-download` permission must allow unauthenticated access to `/v1/attachments/download/*` since signed URLs are meant to be used without an Authorization header. The `api` permission requires authentication on all other `/v1/*` endpoints. Quarkus matches the most specific path first, so the order in the properties file doesn't matter.

@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: LangGraph Conversation History
 description: Record conversation history and expose APIs for frontend applications.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide continues from [LangGraph Getting Started](/docs/python-langgraph/getting-started/) and shows how to record conversation history and expose APIs for frontend applications.
 
@@ -14,6 +15,7 @@ This guide continues from [LangGraph Getting Started](/docs/python-langgraph/get
 **Starting checkpoint**: View the code from the previous section at [python/examples/langgraph/doc-checkpoints/02-with-checkpointing](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/02-with-checkpointing)
 
 Make sure you've completed the [LangGraph Getting Started](/docs/python-langgraph/getting-started/) guide first. You should have:
+
 - A working LangGraph agent with Memory Service checkpointing
 - Memory Service running via Docker Compose
 - OIDC authentication configured
@@ -26,11 +28,7 @@ In the previous guide, you added conversation memory through LangGraph checkpoin
 
 To enable that, wire `MemoryServiceHistoryMiddleware` into the `call_model` node and bind request context:
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py"
-  lang="python"
-  lines="27-47"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py" lang="python" lines="27-47" />
 
 **What changed**: `MemoryServiceHistoryMiddleware` is imported and instantiated, `call_model` is updated to call `history_middleware.wrap_model_call(user_text, lambda: model.invoke(messages))`, and the endpoint wraps `graph.ainvoke()` in a `with memory_service_scope(conversation_id):` block.
 
@@ -75,11 +73,7 @@ curl -NsSfX POST http://localhost:9090/chat/53d23c96-6b29-4fbb-879d-db18bf4d94ff
 
 Checkpoint `03` exposes conversation endpoints for frontend apps:
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py"
-  lang="python"
-  lines="76-96"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py" lang="python" lines="76-96" />
 
 **What changed**: `GET /v1/conversations/{conversation_id}` and `GET /v1/conversations/{conversation_id}/entries` are added, both implemented by forwarding to `MemoryServiceProxy`. The entries endpoint hard-codes `channel="history"` so callers always receive recorded conversation turns.
 
@@ -148,11 +142,7 @@ curl -sSfX GET http://localhost:9090/v1/conversations/53d23c96-6b29-4fbb-879d-db
 
 To let users see all conversations they can access, expose `GET /v1/conversations`:
 
-<CodeFromFile
-  file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py"
-  lang="python"
-  lines="99-107"
-/>
+<CodeFromFile file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py" lang="python" lines="99-107" />
 
 **What changed**: `GET /v1/conversations` is added, forwarding `mode`, `afterCursor`, `limit`, and `query` parameters to `proxy.list_conversations()`.
 
@@ -186,6 +176,7 @@ curl -sSfX GET http://localhost:9090/v1/conversations \
 ## Next Steps
 
 Continue to:
+
 - [Indexing and Search](/docs/python-langgraph/indexing-and-search/) — Add search indexing and semantic search to your conversations
 - [Conversation Forking](/docs/python-langgraph/conversation-forking/) — Branch conversations to explore alternative paths
 - [Response Recording and Resumption](/docs/python-langgraph/response-resumption/) — Streaming responses with resume and cancel support

@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: Response Recording and Resumption
 description: Streaming responses with recording, resumption, and cancellation.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide covers streaming responses with recording, resumption, and cancellation so users can reconnect after a disconnect and pick up where they left off. For a conceptual overview of how response recording and resumption works, including the gRPC service contract and multi-instance redirect behavior, see [Response Recording and Resumption Concepts](/docs/concepts/response-resumption/).
 
@@ -14,6 +15,7 @@ This guide covers streaming responses with recording, resumption, and cancellati
 **Starting checkpoint**: This guide starts from [java/spring/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the previous guides:
+
 - [Getting Started](/docs/spring/getting-started/) - Basic memory service integration
 - [Conversation History](/docs/spring/conversation-history/) - History recording and APIs
 

@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: LangGraph Response Recording and Resumption
 description: Streaming responses with resume-check, resume, and cancel endpoints.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide covers streaming responses with recording, resumption, and cancellation so users can reconnect after a disconnect and continue where they left off.
 
@@ -16,6 +17,7 @@ For the protocol and behavior model, see [Response Recording and Resumption Conc
 **Starting checkpoint**: This guide starts from [python/examples/langgraph/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langgraph/doc-checkpoints/03-with-history)
 
 Make sure you've completed:
+
 - [LangGraph Getting Started](/docs/python-langgraph/getting-started/) - Minimal agent + memory checkpointer
 - [LangGraph Conversation History](/docs/python-langgraph/conversation-history/) - History recording and conversation APIs
 
@@ -141,5 +143,6 @@ curl -sSfX POST http://localhost:9090/v1/conversations/12b08143-3edb-4a86-a34e-e
 ## Next Steps
 
 Continue to:
+
 - [Sharing](/docs/python-langgraph/sharing/) - Membership and ownership transfer APIs
 - [Indexing and Search](/docs/python-langgraph/indexing-and-search/) - Indexed content and semantic/full-text search

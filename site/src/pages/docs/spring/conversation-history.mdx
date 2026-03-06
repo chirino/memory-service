@@ -3,11 +3,12 @@ layout: ../../../layouts/DocsLayout.astro
 title: Conversation History
 description: Record conversation history and expose APIs for frontend applications.
 ---
-import { Code } from 'astro:components';
-import { PROJECT_VERSION } from '../../../config';
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide continues from [Getting Started](/docs/spring/getting-started/) and shows how to record conversation history and expose APIs for frontend applications.
 
@@ -16,6 +17,7 @@ This guide continues from [Getting Started](/docs/spring/getting-started/) and s
 **Starting checkpoint**: View the code from the previous section at [java/spring/examples/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/02-with-memory)
 
 Make sure you've completed the [Getting Started](/docs/spring/getting-started/) guide first. You should have:
+
 - A working Spring Boot agent with the Memory Service starter
 - Memory Service running via Docker Compose
 - OAuth2 authentication configured
@@ -141,6 +143,7 @@ curl -sSfX GET http://localhost:9090/v1/conversations/564f4b5f-789c-473b-adbf-44
 ## Expose Conversation Listing API
 
 The `MemoryServiceProxyController` already includes the `listConversations` method (shown in the full code above). This endpoint supports:
+
 - **Pagination** via `after` (cursor) and `limit` parameters
 - **Search** via the `query` parameter for filtering conversations
 - **Mode** for different listing modes (e.g., `owned`, `shared`)
@@ -172,6 +175,7 @@ curl -sSfX GET http://localhost:9090/v1/conversations \
 ## Next Steps
 
 Continue to:
+
 - [Indexing and Search](/docs/spring/indexing-and-search/) — Add search indexing and semantic search to your conversations
 - [Conversation Forking](/docs/spring/conversation-forking/) — Branch conversations to explore alternative paths
 - [Response Recording and Resumption](/docs/spring/response-resumption/) — Streaming responses with resume and cancel support

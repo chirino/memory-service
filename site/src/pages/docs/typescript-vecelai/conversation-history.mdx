@@ -3,9 +3,10 @@ layout: ../../../layouts/DocsLayout.astro
 title: TypeScript Conversation History
 description: Record conversation history entries alongside memory channel state.
 ---
-import CodeFromFile from '../../../components/CodeFromFile.astro';
-import TestScenario from '../../../components/TestScenario.astro';
-import CurlTest from '../../../components/CurlTest.astro';
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
 
 This guide continues from [TypeScript Getting Started](/docs/typescript-vecelai/getting-started/) and adds `history` channel recording.
 
@@ -75,6 +76,7 @@ curl -NsSfX POST http://localhost:9090/chat/52b0f67a-6d8a-4d35-a2e5-8abf0e7f1c22
 ## Next Steps
 
 Continue to:
+
 - [Conversation Forking](/docs/typescript-vecelai/conversation-forking/) - Branch a conversation from a specific prior entry
 - [Response Recording and Resumption](/docs/typescript-vecelai/response-resumption/) - Stream responses and support resume/cancel
 - [Sharing](/docs/typescript-vecelai/sharing/) - Add conversation membership and ownership transfer APIs
