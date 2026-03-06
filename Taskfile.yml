@@ -70,7 +70,8 @@ tasks:
           typescript/examples/vecelai/doc-checkpoints/02-with-memory \
           typescript/examples/vecelai/doc-checkpoints/03-with-history \
           typescript/examples/vecelai/doc-checkpoints/04-conversation-forking \
-          typescript/examples/vecelai/doc-checkpoints/05-response-resumption \
+          typescript/examples/vecelai/doc-checkpoints/05a-streaming \
+          typescript/examples/vecelai/doc-checkpoints/05b-response-resumption \
           typescript/examples/vecelai/doc-checkpoints/06-sharing \
           typescript/examples/vecelai/doc-checkpoints/07-with-search; do
           (cd "$d" && npm ci && npm run prettier)
@@ -115,6 +116,20 @@ tasks:
     cmds:
       - |
         CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+
+  test:site:update-curl-examples:
+    desc: Run site tests, capture curl outputs, and sync docs exampleOutput blocks
+    env:
+      SITE_TEST_CAPTURE_CURL_OUTPUT: '{{.SITE_TEST_CAPTURE_CURL_OUTPUT | default "missing"}}'
+      SITE_TEST_BUILD_OUTPUT: '{{.SITE_TEST_BUILD_OUTPUT | default "on-fail"}}'
+    cmds:
+      - |
+        cd site
+        npm i
+        npm run build
+      - |
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+      - go run ./internal/cmd/sync_curl_examples --apply
 
   test:java:
     cmds:

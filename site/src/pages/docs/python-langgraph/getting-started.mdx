@@ -49,7 +49,7 @@ Test it with curl:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "2"
-`}>
+`} exampleOutputLang="text" exampleOutput={`1 + 1 = 2.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat \
@@ -121,7 +121,7 @@ function get-token() {
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Hi Hiram"
-`}>
+`} exampleOutputLang="text" exampleOutput={`Hi Hiram! I am a LangGraph memory-service demo agent.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/08c5bb33-05aa-4e4d-85cd-a1dd7ab1e137 \
@@ -135,7 +135,7 @@ curl -NsSfX POST http://localhost:9090/chat/08c5bb33-05aa-4e4d-85cd-a1dd7ab1e137
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Hiram"
-`}>
+`} exampleOutputLang="text" exampleOutput={`You are Hiram, as you told me in your introduction.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/08c5bb33-05aa-4e4d-85cd-a1dd7ab1e137 \

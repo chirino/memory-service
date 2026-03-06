@@ -1,0 +1,13 @@
+[
+  {
+    "captureId": "/docs/python-langchain/getting-started/#1",
+    "checkpoint": "python/examples/langchain/doc-checkpoints/01-basic-agent",
+    "scenario": "[python-langchain] Getting Started Tutorial - 01-basic-agent",
+    "requestUrl": "http://localhost:10103/chat",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "I am a Python memory-service demo agent.",
+    "capturedAt": "2026-03-06T14:58:32.279751762Z"
+  }
+]

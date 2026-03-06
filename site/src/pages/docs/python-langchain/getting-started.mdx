@@ -51,7 +51,7 @@ Test it with curl:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Python memory-service demo agent"
-`}>
+`} exampleOutputLang="text" exampleOutput={`I am a Python memory-service demo agent.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat \
@@ -115,7 +115,7 @@ function get-token() {
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Hi Hiram"
-`}>
+`} exampleOutputLang="text" exampleOutput={`Hi Hiram! I am a Python memory-service demo agent.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/46711077-9752-4cb1-ae45-9bad182503fc \
@@ -129,7 +129,7 @@ curl -NsSfX POST http://localhost:9090/chat/46711077-9752-4cb1-ae45-9bad182503fc
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Hiram"
-`}>
+`} exampleOutputLang="text" exampleOutput={`You are Hiram.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/46711077-9752-4cb1-ae45-9bad182503fc \

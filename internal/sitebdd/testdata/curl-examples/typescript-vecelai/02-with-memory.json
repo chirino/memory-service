@@ -1,0 +1,24 @@
+[
+  {
+    "captureId": "/docs/typescript-vecelai/getting-started/#2",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/02-with-memory",
+    "scenario": "[typescript-vecelai] Getting Started Tutorial - 02-with-memory",
+    "requestUrl": "http://localhost:10139/chat/7f6c3b21-9d6f-4f2b-bf19-1f3f2f0a8e11",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hi Hiram! I am a TypeScript memory-service demo agent.",
+    "capturedAt": "2026-03-06T14:59:40.230026168Z"
+  },
+  {
+    "captureId": "/docs/typescript-vecelai/getting-started/#3",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/02-with-memory",
+    "scenario": "[typescript-vecelai] Getting Started Tutorial - 02-with-memory",
+    "requestUrl": "http://localhost:10139/chat/7f6c3b21-9d6f-4f2b-bf19-1f3f2f0a8e11",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "You are Hiram.",
+    "capturedAt": "2026-03-06T14:59:40.264019168Z"
+  }
+]

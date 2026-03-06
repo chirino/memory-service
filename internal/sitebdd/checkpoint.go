@@ -142,9 +142,15 @@ type SiteScenario struct {
 	LastRespBody   string
 	LastStatusCode int
 	lastCurlReq    *curlRequest
+	lastRespCT     string
 
 	// Named variables set by "set X to the json response field Y" steps
 	ContextVars map[string]any
+
+	// Curl example output capture state
+	pendingCurlCaptureID string
+	curlCaptureSeq       int
+	curlCaptures         []CurlExampleCapture
 
 	// Shared services (set once before godog runs)
 	ProjectRoot   string
@@ -358,6 +364,9 @@ func (s *SiteScenario) stopCheckpoint(scenarioFailed bool) {
 		if err := s.Mock.SaveJournal(s.CheckpointID, journal); err != nil {
 			fmt.Printf("[checkpoint] Warning: save journal: %v\n", err)
 		}
+	}
+	if err := s.saveCurlExamples(); err != nil {
+		fmt.Printf("[checkpoint] Warning: save curl examples: %v\n", err)
 	}
 
 	// Scenario registry cleanup should happen even if start failed early.

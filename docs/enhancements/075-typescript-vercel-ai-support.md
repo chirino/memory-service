@@ -79,7 +79,8 @@ Implement progressive checkpoints under `typescript/examples/vecelai/doc-checkpo
 2. `02-with-memory`: persist AI state with Memory Service conversation-backed memory channel.
 3. `03-with-history`: record USER/AI turns to HISTORY and expose conversation/entry listing endpoints.
 4. `04-conversation-forking`: fork via first append using `forkedAtConversationId` + `forkedAtEntryId`.
-5. `05-response-resumption`: add recorder/replay/check/cancel flow.
+5. `05a-streaming`: switch to streaming chat (no recording/resume yet).
+6. `05b-response-resumption`: add recorder/replay/check/cancel flow.
 6. `06-sharing`: add memberships + ownership transfer endpoints.
 7. `07-indexing-and-search`: expose `/v1/conversations/search` with supported `searchType` values.
 
@@ -106,10 +107,10 @@ Each tutorial page is its own implementation/review phase so docs and code can b
    - Implement `04-conversation-forking` starting from `03-with-history`.
    - Publish `conversation-forking.mdx`.
 4. Phase 4 - Response Recording and Resumption page
-   - Implement `05-response-resumption` starting from `03-with-history` (Quarkus-aligned branch point).
+   - Implement `05a-streaming` starting from `03-with-history`, then implement `05b-response-resumption` from `05a-streaming`.
    - Publish `response-resumption.mdx`.
 5. Phase 5 - Sharing page
-   - Implement `06-sharing` starting from `05-response-resumption`.
+   - Implement `06-sharing` starting from `03-with-history` (Quarkus-aligned branch point).
    - Publish `sharing.mdx`.
 6. Phase 6 - Indexing and Search page
    - Implement `07-indexing-and-search` starting from `03-with-history` (Quarkus-aligned branch point).
@@ -227,7 +228,7 @@ For `typescript/vercelai` and checkpoint apps:
 
 - [ ] Create `typescript/vercelai` as a publishable npm package with stable public exports.
 - [ ] Create `typescript/examples/vecelai/chat-vecelai-ts` full example app that imports the package by final npm name.
-- [ ] Create `typescript/examples/vecelai/doc-checkpoints/01`-`07` incremental apps that import the package by final npm name.
+- [ ] Create `typescript/examples/vecelai/doc-checkpoints/01`, `02`, `03`, `04`, `05a`, `05b`, `06`, and `07` checkpoint apps that import the package by final npm name.
 - [ ] Add docs pages under `site/src/pages/docs/typescript-vecelai/`.
 - [ ] Add sidebar group `TypeScript - Vecel AI` in `site/src/components/DocsSidebar.astro`.
 - [ ] Add site test scenarios + fixtures for new checkpoints.

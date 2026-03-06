@@ -1,0 +1,13 @@
+[
+  {
+    "captureId": "/docs/quarkus/indexing-and-search/#2",
+    "checkpoint": "quarkus/examples/doc-checkpoints/07-with-search",
+    "scenario": "[quarkus] Indexing And Search Tutorial - 07-with-search",
+    "requestUrl": "http://localhost:10125/chat/415afe24-61a5-49b0-99fb-fbb4a58308cc",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Sure! The random number is 42.",
+    "capturedAt": "2026-03-06T14:59:28.092476718Z"
+  }
+]

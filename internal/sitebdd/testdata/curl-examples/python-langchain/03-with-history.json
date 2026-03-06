@@ -1,0 +1,46 @@
+[
+  {
+    "captureId": "/docs/python-langchain/conversation-history/#2",
+    "checkpoint": "python/examples/langchain/doc-checkpoints/03-with-history",
+    "scenario": "[python-langchain] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10114/chat/0ef33d7b-11b1-4992-9785-681e222dbcd2",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "The random number between 1 and 100 is 42.",
+    "capturedAt": "2026-03-06T14:58:32.46367647Z"
+  },
+  {
+    "captureId": "/docs/python-langchain/conversation-history/#3",
+    "checkpoint": "python/examples/langchain/doc-checkpoints/03-with-history",
+    "scenario": "[python-langchain] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10114/v1/conversations/0ef33d7b-11b1-4992-9785-681e222dbcd2",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"id\":\"0ef33d7b-11b1-4992-9785-681e222dbcd2\",\"title\":\"Give me a random number between 1 and 10\",\"ownerUserId\":\"bob\",\"metadata\":{},\"createdAt\":\"2026-03-06T14:58:32.343885Z\",\"updatedAt\":\"2026-03-06T14:58:32.458576Z\",\"accessLevel\":\"owner\"}",
+    "capturedAt": "2026-03-06T14:58:32.490542678Z"
+  },
+  {
+    "captureId": "/docs/python-langchain/conversation-history/#4",
+    "checkpoint": "python/examples/langchain/doc-checkpoints/03-with-history",
+    "scenario": "[python-langchain] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10114/v1/conversations/0ef33d7b-11b1-4992-9785-681e222dbcd2/entries",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"afterCursor\":null,\"data\":[{\"id\":\"bedf7599-4b34-4310-83de-d70e95922774\",\"conversationId\":\"0ef33d7b-11b1-4992-9785-681e222dbcd2\",\"userId\":\"bob\",\"clientId\":\"checkpoint-agent\",\"channel\":\"history\",\"contentType\":\"history\",\"createdAt\":\"2026-03-06T14:58:32.349103Z\",\"content\":[{\"role\":\"USER\",\"text\":\"Give me a random number between 1 and 100.\"}]},{\"id\":\"3bfad611-ef90-40b5-a5e3-0ea20397e416\",\"conversationId\":\"0ef33d7b-11b1-4992-9785-681e222dbcd2\",\"userId\":\"bob\",\"clientId\":\"checkpoint-agent\",\"channel\":\"history\",\"contentType\":\"history\",\"createdAt\":\"2026-03-06T14:58:32.42779Z\",\"content\":[{\"role\":\"AI\",\"text\":\"The random number between 1 and 100 is 42.\"}]}]}",
+    "capturedAt": "2026-03-06T14:58:32.522849012Z"
+  },
+  {
+    "captureId": "/docs/python-langchain/conversation-history/#5",
+    "checkpoint": "python/examples/langchain/doc-checkpoints/03-with-history",
+    "scenario": "[python-langchain] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10114/v1/conversations",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"afterCursor\":null,\"data\":[{\"id\":\"0ef33d7b-11b1-4992-9785-681e222dbcd2\",\"title\":\"Give me a random number between 1 and 10\",\"ownerUserId\":\"bob\",\"metadata\":{},\"createdAt\":\"2026-03-06T14:58:32.343885Z\",\"updatedAt\":\"2026-03-06T14:58:32.458576Z\",\"accessLevel\":\"owner\"}]}",
+    "capturedAt": "2026-03-06T14:58:32.554422637Z"
+  }
+]

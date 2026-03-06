@@ -41,7 +41,8 @@ Update `ChatResource.java` to inject `HistoryRecordingAgent` instead of `Agent`:
   file="quarkus/examples/doc-checkpoints/03-with-history/src/main/java/org/acme/ChatResource.java"
   lang="java"
   before={2}
->@Inject HistoryRecordingAgent agent</CodeFromFile>
+match="@Inject HistoryRecordingAgent agent"
+/>
 
 **What changed**: The injected field was changed from `Agent` to `HistoryRecordingAgent`. **Why**: Routing calls through `HistoryRecordingAgent` instead of `Agent` directly activates the `@RecordConversation` interceptor, so every exchange is automatically persisted to the history channel without any additional code in the resource class.
 
@@ -67,7 +68,7 @@ Now test it again.
 <CurlTest steps={`
 Then the response status should be 200
 And the response should match pattern "\\d+"
-`}>
+`} exampleOutput={`42`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/a2e24090-9de7-411b-8b50-e8b9d709ec9a \
@@ -94,7 +95,8 @@ add a jackson dependency to enable JSON serialization/deserialization to the `po
   lang="xml"
   before={2}
   after={1}
->quarkus-rest-jackson</CodeFromFile>
+match="quarkus-rest-jackson"
+/>
 
 **What changed**: Added the `quarkus-rest-jackson` dependency. **Why**: This enables automatic JSON serialization and deserialization for JAX-RS responses, which is needed for the conversation and entry list endpoints that return JSON from the Memory Service.
 
@@ -125,7 +127,7 @@ And the response body should be json:
   "accessLevel": "owner"
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"id":"a2e24090-9de7-411b-8b50-e8b9d709ec9a","ownerUserId":"bob","accessLevel":"owner","title":"Give me a random number between 1 and 100."}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/a2e24090-9de7-411b-8b50-e8b9d709ec9a/ \
@@ -133,19 +135,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations/a2e24090-9de7-411b-8b50-e8
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "id": "a2e24090-9de7-411b-8b50-e8b9d709ec9a",
-  "title": "Give me a random number between 1 and 10",
-  "ownerUserId": "bob",
-  "createdAt": "2025-01-10T14:32:05Z",
-  "updatedAt": "2025-01-10T14:32:06Z",
-  "accessLevel": "owner"
-}
-```
 
 <CurlTest steps={`
 Then the response status should be 200
@@ -174,7 +163,7 @@ And the response body should be json:
   ]
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"id":"a2e24090-9de7-411b-8b50-e8b9d709ec9a","title":"Give me a random number between 1 and 10","ownerUserId":"bob","createdAt":"2026-03-06T14:59:00.741511Z","updatedAt":"2026-03-06T14:59:01.42859Z","accessLevel":"owner"}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/a2e24090-9de7-411b-8b50-e8b9d709ec9a/entries \
@@ -182,33 +171,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations/a2e24090-9de7-411b-8b50-e8
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "data": [
-    {
-      "id": "0485af58-42f4-45a0-96f2-fa519ea86bc2",
-      "conversationId": "a2e24090-9de7-411b-8b50-e8b9d709ec9a",
-      "userId": "bob",
-      "channel": "history",
-      "contentType": "history",
-      "content": [{"role": "USER", "text": "Give me a random number between 1 and 100."}],
-      "createdAt": "2025-01-10T14:32:05Z"
-    },
-    {
-      "id": "63fad673-d36f-4277-8460-ebe70820ae9f",
-      "conversationId": "a2e24090-9de7-411b-8b50-e8b9d709ec9a",
-      "userId": "bob",
-      "channel": "history",
-      "contentType": "history",
-      "content": [{"role": "AI", "text": "Sure! The random number is 42."}],
-      "createdAt": "2025-01-10T14:32:06Z"
-    }
-  ]
-}
-```
 
 You should see the conversation and entries that were exchanged between you and the agent.
 
@@ -223,7 +185,8 @@ To let users browse all their conversations, add a listing method to `Conversati
   lang="java"
   before={2}
   after={6}
->public Response listConversations</CodeFromFile>
+match="public Response listConversations"
+/>
 
 **What changed**: Added a `listConversations` endpoint that accepts `mode`, `afterCursor`, `limit`, and `query` query parameters and forwards them to `MemoryServiceProxy`. **Why**: This gives frontends a paginated, filterable view of a user's conversations. The `mode` parameter can restrict results to conversations owned by the user or ones shared with them, while `query` enables keyword filtering without requiring a separate search index.
 
@@ -248,7 +211,7 @@ And the response body should be json:
   ]
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"id":"cf233b9c-cd63-4dc3-83e2-20d17e0c9d9e","conversationId":"a2e24090-9de7-411b-8b50-e8b9d709ec9a","userId":"bob","channel":"history","contentType":"history","content":[{"role":"USER","text":"Give me a random number between 1 and 100."}],"createdAt":"2026-03-06T14:59:00.744322Z"},{"id":"54d0a584-4914-41a4-8467-5624d4b2027d","conversationId":"a2e24090-9de7-411b-8b50-e8b9d709ec9a","userId":"bob","channel":"history","contentType":"history","content":[{"role":"AI","text":"Sure! The random number is 42."}],"createdAt":"2026-03-06T14:59:01.42859Z"}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations \
@@ -256,23 +219,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations \
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "data": [
-    {
-      "id": "a2e24090-9de7-411b-8b50-e8b9d709ec9a",
-      "title": "Give me a random number between 1 and 10",
-      "ownerUserId": "bob",
-      "createdAt": "2025-01-10T14:32:05Z",
-      "updatedAt": "2025-01-10T14:32:06Z",
-      "accessLevel": "owner"
-    }
-  ]
-}
-```
 
 </TestScenario>
 

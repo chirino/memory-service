@@ -1,5 +1,3 @@
-import "@grpc/grpc-js";
-import "@grpc/proto-loader";
 import express from "express";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
@@ -82,27 +80,20 @@ app.post("/chat/:conversationId", async (req, res) => {
             ...contextMemory.get(),
           ],
         });
-        const eventStream = responseRecorder.record(
-          result.textStream,
-          (chunk) => ({
-            eventType: "PartialResponse",
-            text: chunk,
-          }),
-        );
-        let assistantText = "";
+        const eventStream = responseRecorder.record(result.textStream);
         for await (const event of eventStream) {
           if (responseRecorder.isCanceled()) {
             break;
           }
-          if (typeof event === "object" && event !== null) {
-            const text = (event as { text?: unknown }).text;
-            if (typeof text === "string") {
-              assistantText += text;
-            }
-          }
-          res.write(`data: ${JSON.stringify(event)}\n\n`);
+          const payload =
+            typeof event === "object" &&
+            event !== null &&
+            typeof (event as { chunk?: unknown }).chunk === "string"
+              ? { text: (event as { chunk: string }).chunk }
+              : event;
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
         }
-        contextMemory.append({ role: "assistant", content: assistantText });
+        contextMemory.append({ role: "assistant", content: await result.text });
       },
     );
   } finally {

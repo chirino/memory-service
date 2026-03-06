@@ -22,24 +22,16 @@ Checkpoint `03` adds only the history recording delta:
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/03-with-history/src/app.ts"
   lang="typescript"
-  lines="4-8"
+  match="const result = await withMemoryService("
+  before={1}
+  after={26}
 />
 
-<CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/03-with-history/src/app.ts"
-  lang="typescript"
-  lines="34-47"
-/>
+**What changed**: The app uses `withMemoryService(...)` and passes `userText`.
 
-<CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/03-with-history/src/app.ts"
-  lang="typescript"
-  lines="68-84"
-/>
+**Note**: When `userText` is provided, `withMemoryService(...)` records both the USER history turn and the resulting AI history response automatically.
 
-**What changed**: The app imports `appendHistoryEntry(...)`, records the USER turn before model generation, and records the AI turn after generation.
-
-**Why**: `memory` keeps model context; `history` keeps human-readable conversation turns for downstream UX and search features.
+**Why needed**: `memory` keeps model context while `history` stores user-facing conversation turns for timeline, replay, and search features.
 
 <TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/03-with-history">
 
@@ -63,7 +55,7 @@ Send a chat turn:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should match pattern "\\d+"
-`}>
+`} exampleOutput={`42`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/52b0f67a-6d8a-4d35-a2e5-8abf0e7f1c22 \

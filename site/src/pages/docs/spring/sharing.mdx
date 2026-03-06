@@ -32,7 +32,8 @@ Add the membership endpoints to your `MemoryServiceProxyController`:
   lang="java"
   before={1}
   after={23}
->// Membership management endpoints</CodeFromFile>
+match="// Membership management endpoints"
+/>
 
 **Why**: These endpoints give the agent app's frontend everything it needs to build a sharing UI — listing who has access, inviting new collaborators, promoting or demoting their access level, and revoking access. The `MemoryServiceProxy` handles authentication forwarding, so the Memory Service's access-level enforcement (owner, manager, writer, reader) is automatically applied based on the authenticated user's token.
 
@@ -75,7 +76,7 @@ First, create a conversation as bob so the membership endpoints have data to wor
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutputLang="text" exampleOutput={`Hello! I'm ready to help with your sharing tests. What would you like to discuss?`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/chat/381ca8a4-7ade-4f45-a9dd-6f5d71a30292 \
@@ -103,7 +104,7 @@ And the response body should be json:
   ]
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"381ca8a4-7ade-4f45-a9dd-6f5d71a30292","userId":"bob","accessLevel":"owner","createdAt":"2026-03-06T14:59:41.214058Z"}],"afterCursor":null}`}>
 
 ```bash
 # As bob (owner), list members of the conversation
@@ -126,7 +127,7 @@ And the response body should be json:
   "createdAt": "%{response.body.createdAt}"
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"conversationId":"381ca8a4-7ade-4f45-a9dd-6f5d71a30292","userId":"alice","accessLevel":"writer","createdAt":"2026-03-06T14:59:41.462683Z"}`}>
 
 ```bash
 # Share conversation with alice as a writer
@@ -145,7 +146,7 @@ Alice can now read and write to the conversation:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutputLang="text" exampleOutput={`Hi Alice! Great to hear from you. How can I help you today?`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/chat/381ca8a4-7ade-4f45-a9dd-6f5d71a30292 \
@@ -337,5 +338,4 @@ Returns `204 No Content`. The transfer is deleted and ownership remains unchange
 ## Completed Checkpoint
 
 **Completed code**: View the full implementation at [spring/examples/doc-checkpoints/06-sharing](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/06-sharing)
-
 

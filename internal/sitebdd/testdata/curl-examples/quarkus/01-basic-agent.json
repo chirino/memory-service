@@ -1,0 +1,24 @@
+[
+  {
+    "captureId": "/docs/quarkus/getting-started/#1",
+    "checkpoint": "quarkus/examples/doc-checkpoints/01-basic-agent",
+    "scenario": "[quarkus] Getting Started Tutorial - 01-basic-agent",
+    "requestUrl": "http://localhost:10123/chat",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "I am Claude, an AI assistant created by Anthropic. I'm here to help answer questions and have conversations on a wide variety of topics. How can I assist you today?",
+    "capturedAt": "2026-03-06T14:58:55.970314092Z"
+  },
+  {
+    "captureId": "/docs/quarkus/getting-started/#2",
+    "checkpoint": "quarkus/examples/doc-checkpoints/01-basic-agent",
+    "scenario": "[quarkus] Getting Started Tutorial - 01-basic-agent",
+    "requestUrl": "http://localhost:10123/chat",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "That's a great question! I don't have information about your identity from our conversation so far. Could you tell me more about yourself?",
+    "capturedAt": "2026-03-06T14:58:55.988019134Z"
+  }
+]

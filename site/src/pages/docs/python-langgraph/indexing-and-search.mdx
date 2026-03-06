@@ -85,7 +85,7 @@ First, create searchable conversation content:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput={`Sure, I can help with that.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/b344ba48-6958-41c9-a8e3-c641ea633dab \
@@ -101,7 +101,7 @@ Search conversations:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "data"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"b344ba48-6958-41c9-a8e3-c641ea633dab"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/v1/conversations/search \

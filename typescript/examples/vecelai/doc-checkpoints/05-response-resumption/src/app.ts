@@ -1,5 +1,3 @@
-import "@grpc/grpc-js";
-import "@grpc/proto-loader";
 import express from "express";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";

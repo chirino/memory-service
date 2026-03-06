@@ -1,0 +1,24 @@
+[
+  {
+    "captureId": "/docs/typescript-vecelai/indexing-and-search/#2",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/07-with-search",
+    "scenario": "[typescript-vecelai] Indexing And Search Tutorial - 07-with-search",
+    "requestUrl": "http://localhost:10140/chat/f1a4d9c2-5b6e-4a7d-8c21-9b3e5d6f7555",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "I am a TypeScript memory-service demo agent.",
+    "capturedAt": "2026-03-06T14:59:41.523021752Z"
+  },
+  {
+    "captureId": "/docs/typescript-vecelai/indexing-and-search/#3",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/07-with-search",
+    "scenario": "[typescript-vecelai] Indexing And Search Tutorial - 07-with-search",
+    "requestUrl": "http://localhost:10140/v1/conversations/search",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"afterCursor\":null,\"data\":[{\"entryId\":\"a1db1598-e0b9-4906-8680-d73435ad541b\",\"conversationId\":\"f1a4d9c2-5b6e-4a7d-8c21-9b3e5d6f7555\",\"conversationTitle\":\"Give me a random number between 1 and 10\",\"score\":0.09910321980714798,\"kind\":\"postgres\",\"highlights\":\"Give me a **random** **number** between 1 and 100.\",\"entry\":{\"id\":\"a1db1598-e0b9-4906-8680-d73435ad541b\",\"conversationId\":\"f1a4d9c2-5b6e-4a7d-8c21-9b3e5d6f7555\",\"userId\":\"bob\",\"clientId\":\"checkpoint-agent\",\"channel\":\"history\",\"contentType\":\"history\",\"indexedContent\":\"Give me a random number between 1 and 100.\",\"createdAt\":\"2026-03-06T14:59:41.491895Z\",\"content\":[{\"role\":\"USER\",\"text\":\"Give me a random number between 1 and 100.\"}]}}]}",
+    "capturedAt": "2026-03-06T14:59:41.535236335Z"
+  }
+]

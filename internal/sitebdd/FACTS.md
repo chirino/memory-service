@@ -30,6 +30,13 @@ SITE_TEST_RECORD=missing OPENAI_API_KEY=sk-... \
 # Re-record all fixtures
 SITE_TEST_RECORD=all OPENAI_API_KEY=sk-... OPENAI_MODEL=gpt-4o \
   go test -tags=site_tests ./internal/sitebdd/ -v -count=1
+
+# Capture real curl responses for docs exampleOutput sync
+SITE_TEST_CAPTURE_CURL_OUTPUT=all \
+  go test -tags=site_tests ./internal/sitebdd/ -v -count=1
+
+# Sync captured outputs into <CurlTest exampleOutput={...}> blocks
+go run ./internal/cmd/sync_curl_examples --apply
 ```
 
 Site BDD build/checkpoint subprocess output is controlled by
@@ -40,6 +47,10 @@ Site BDD build/checkpoint subprocess output is controlled by
 
 `task test:site` now sets `SITE_TEST_BUILD_OUTPUT=on-fail` by default, so
 `gotestsum`/`go test -json` no longer forces streamed `[mvn]` logs.
+
+`TestSiteDocs` reuses an existing `site/dist/test-scenarios.json` if present and
+only runs `site npm run build` when the file is missing. If docs changed, rebuild
+the site before running site tests to avoid stale scenarios.
 
 After recording fixtures, update scenario expectations if model outputs changed.
 In practice this means adjusting the source MDX `<CurlTest steps={...}>`
@@ -134,6 +145,23 @@ compatibility.
 | _(unset or "false")_ | Playback only |
 | `missing` / `true` | Record checkpoints with no existing fixtures; play back the rest |
 | `all` / `force` | Re-record all checkpoints (overwrites existing fixtures) |
+
+## SITE_TEST_CAPTURE_CURL_OUTPUT env var
+
+Captured curl outputs are stored in:
+`internal/sitebdd/testdata/curl-examples/<framework>/<checkpoint>.json`
+
+Each capture record includes `captureId`, request metadata, status, content type,
+and body. `captureId` is generated from the docs route and curl-test ordinal:
+`/docs/<route>#<n>`.
+
+| Value | Behaviour |
+|-------|-----------|
+| _(unset)_ / `off` / `false` | Disabled |
+| `missing` / `true` | Add captures only when `captureId` is absent |
+| `all` / `force` | Upsert captures for all executed curl tests |
+
+Any other value is treated as `off`.
 
 ## Port allocation
 

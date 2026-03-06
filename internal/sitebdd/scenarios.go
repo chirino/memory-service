@@ -102,8 +102,9 @@ func generateFeatureFiles(scenarios []ScenarioData, dir string) error {
 		sb.WriteString("# Generated from test-scenarios.json — DO NOT EDIT\n")
 		sb.WriteString(fmt.Sprintf("Feature: %s\n", featureName))
 
+		curlOrdinal := 0
 		for _, item := range items {
-			if err := writeScenario(&sb, item); err != nil {
+			if err := writeScenario(&sb, item, sourceFile, &curlOrdinal); err != nil {
 				return err
 			}
 		}
@@ -116,7 +117,7 @@ func generateFeatureFiles(scenarios []ScenarioData, dir string) error {
 	return nil
 }
 
-func writeScenario(sb *strings.Builder, s ScenarioData) error {
+func writeScenario(sb *strings.Builder, s ScenarioData, sourceFile string, curlOrdinal *int) error {
 	tags := deriveTags(s)
 	if len(tags) > 0 {
 		sb.WriteString("\n  " + strings.Join(tags, " ") + "\n")
@@ -143,6 +144,9 @@ func writeScenario(sb *strings.Builder, s ScenarioData) error {
 		if !containsCurl(cmd.Bash) {
 			continue
 		}
+		*curlOrdinal = *curlOrdinal + 1
+		captureID := fmt.Sprintf("%s#%d", sourceFile, *curlOrdinal)
+		sb.WriteString(fmt.Sprintf("    Given curl capture id is %q\n", captureID))
 		sb.WriteString("    When I execute curl command:\n")
 		sb.WriteString("      \"\"\"\n")
 		for _, line := range strings.Split(strings.TrimSpace(cmd.Bash), "\n") {

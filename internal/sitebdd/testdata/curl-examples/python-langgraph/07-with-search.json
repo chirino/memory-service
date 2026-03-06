@@ -1,0 +1,24 @@
+[
+  {
+    "captureId": "/docs/python-langgraph/indexing-and-search/#2",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/07-with-search",
+    "scenario": "[python-langgraph] Indexing And Search Tutorial - 07-with-search",
+    "requestUrl": "http://localhost:10116/chat/b344ba48-6958-41c9-a8e3-c641ea633dab",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "I am a Python memory-service demo agent.",
+    "capturedAt": "2026-03-06T14:59:16.067059296Z"
+  },
+  {
+    "captureId": "/docs/python-langgraph/indexing-and-search/#3",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/07-with-search",
+    "scenario": "[python-langgraph] Indexing And Search Tutorial - 07-with-search",
+    "requestUrl": "http://localhost:10116/v1/conversations/search",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"afterCursor\":null,\"data\":[{\"entryId\":\"52bc8600-3e7d-4f6b-8610-1965effcd642\",\"conversationId\":\"b344ba48-6958-41c9-a8e3-c641ea633dab\",\"conversationTitle\":\"Give me a random number between 1 and 10\",\"score\":0.09910321980714798,\"kind\":\"postgres\",\"highlights\":\"Give me a **random** **number** between 1 and 100.\",\"entry\":{\"id\":\"52bc8600-3e7d-4f6b-8610-1965effcd642\",\"conversationId\":\"b344ba48-6958-41c9-a8e3-c641ea633dab\",\"userId\":\"bob\",\"clientId\":\"checkpoint-agent\",\"channel\":\"history\",\"contentType\":\"history\",\"indexedContent\":\"Give me a random number between 1 and 100.\",\"createdAt\":\"2026-03-06T14:59:15.923851Z\",\"content\":[{\"role\":\"USER\",\"text\":\"Give me a random number between 1 and 100.\"}]}}]}",
+    "capturedAt": "2026-03-06T14:59:16.167628504Z"
+  }
+]

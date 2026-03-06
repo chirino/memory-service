@@ -1,0 +1,24 @@
+[
+  {
+    "captureId": "/docs/spring/getting-started/#4",
+    "checkpoint": "spring/examples/doc-checkpoints/02-with-memory",
+    "scenario": "[spring] Getting Started Tutorial - 02-with-memory",
+    "requestUrl": "http://localhost:10132/chat/2cdbd4b0-b48d-4f75-8f7a-9616301e5143",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hello Hiram! I'm an AI assistant here to help you with any questions or information you might need. How can I assist you today?",
+    "capturedAt": "2026-03-06T14:59:35.745005597Z"
+  },
+  {
+    "captureId": "/docs/spring/getting-started/#5",
+    "checkpoint": "spring/examples/doc-checkpoints/02-with-memory",
+    "scenario": "[spring] Getting Started Tutorial - 02-with-memory",
+    "requestUrl": "http://localhost:10132/chat/2cdbd4b0-b48d-4f75-8f7a-9616301e5143",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "You mentioned earlier that your name is Hiram. If you’d like to share more about yourself or if there's something specific you're trying to explore or understand, feel free to let me know!",
+    "capturedAt": "2026-03-06T14:59:35.887465347Z"
+  }
+]

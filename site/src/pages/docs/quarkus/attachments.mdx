@@ -69,7 +69,8 @@ Update `application.properties` to allow unauthenticated access to the signed do
   lang="properties"
   before={1}
   after={1}
->quarkus.http.auth.permission.attachment-download.paths</CodeFromFile>
+match="quarkus.http.auth.permission.attachment-download.paths"
+/>
 
 The `attachment-download` permission must allow unauthenticated access to `/v1/attachments/download/*` since signed URLs are meant to be used without an Authorization header. The `api` permission requires authentication on all other `/v1/*` endpoints. Quarkus matches the most specific path first, so the order in the properties file doesn't matter.
 
@@ -110,7 +111,16 @@ And the response body should be json:
   "status": "ready"
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{
+  "id": "2a44d326-b032-4221-a363-4945fa71731d",
+  "href": "/v1/attachments/2a44d326-b032-4221-a363-4945fa71731d",
+  "contentType": "text/plain",
+  "filename": "test-upload.txt",
+  "size": 21,
+  "sha256": "a1b2c3d4...",
+  "expiresAt": "2025-01-28T11:30:00Z",
+  "status": "ready"
+}`}>
 
 ```bash
 echo "Hello, attachments!" > /tmp/test-upload.txt
@@ -120,21 +130,6 @@ curl -sSfX POST http://localhost:9090/v1/attachments \
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "id": "2a44d326-b032-4221-a363-4945fa71731d",
-  "href": "/v1/attachments/2a44d326-b032-4221-a363-4945fa71731d",
-  "contentType": "text/plain",
-  "filename": "test-upload.txt",
-  "size": 21,
-  "sha256": "a1b2c3d4...",
-  "expiresAt": "2025-01-28T11:30:00Z",
-  "status": "ready"
-}
-```
 
 Save the attachment ID for subsequent commands:
 
@@ -154,7 +149,7 @@ And the response body should be json:
   "expiresIn": %{response.body.expiresIn}
 }
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"contentType":"text/plain","expiresAt":"2026-03-06T15:59:00Z","filename":"test-upload.txt","href":"/v1/attachments/315e31ba-805b-4508-88ab-f197b0050030","id":"315e31ba-805b-4508-88ab-f197b0050030","sha256":"45756124416f43c4c9c5138fb2909cea45ae20b9852e9def468370906be6c84a","size":20,"status":"ready"}`}>
 
 ```bash
 curl -sSfX GET "http://localhost:9090/v1/attachments/${ATTACHMENT_ID}/download-url" \
@@ -162,15 +157,6 @@ curl -sSfX GET "http://localhost:9090/v1/attachments/${ATTACHMENT_ID}/download-u
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "url": "/v1/attachments/download/dG9rZW4.../test-upload.txt",
-  "expiresIn": 300
-}
-```
 
 ### Download via Signed URL (No Auth Required)
 
@@ -182,7 +168,7 @@ And the response body should be text:
 """
 Hello, attachments!
 """
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"expiresIn":300,"url":"/v1/attachments/download/MTcwNDd8MTc3MjgwOTQ0MA.iqQWNgAkLznmmHRC49o14ixpZfvrE_Xl-1yWSRmpqKA/test-upload.txt"}`}>
 
 ```bash
 curl -sSf "http://localhost:9090${DOWNLOAD_URL}"

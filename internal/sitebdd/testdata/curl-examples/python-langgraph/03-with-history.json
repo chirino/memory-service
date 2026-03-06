@@ -1,0 +1,46 @@
+[
+  {
+    "captureId": "/docs/python-langgraph/conversation-history/#2",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/03-with-history",
+    "scenario": "[python-langgraph] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10099/chat/53d23c96-6b29-4fbb-879d-db18bf4d94ff",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "42",
+    "capturedAt": "2026-03-06T14:58:32.879700387Z"
+  },
+  {
+    "captureId": "/docs/python-langgraph/conversation-history/#3",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/03-with-history",
+    "scenario": "[python-langgraph] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10099/v1/conversations/53d23c96-6b29-4fbb-879d-db18bf4d94ff",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"id\":\"53d23c96-6b29-4fbb-879d-db18bf4d94ff\",\"title\":\"Give me a random number between 1 and 10\",\"ownerUserId\":\"bob\",\"metadata\":{},\"createdAt\":\"2026-03-06T14:58:32.708132Z\",\"updatedAt\":\"2026-03-06T14:58:32.875039Z\",\"accessLevel\":\"owner\"}",
+    "capturedAt": "2026-03-06T14:58:32.906085054Z"
+  },
+  {
+    "captureId": "/docs/python-langgraph/conversation-history/#4",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/03-with-history",
+    "scenario": "[python-langgraph] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10099/v1/conversations/53d23c96-6b29-4fbb-879d-db18bf4d94ff/entries",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"afterCursor\":null,\"data\":[{\"id\":\"819753ab-b3ac-42f8-89fb-dd02ec7f4a30\",\"conversationId\":\"53d23c96-6b29-4fbb-879d-db18bf4d94ff\",\"userId\":\"bob\",\"clientId\":\"checkpoint-agent\",\"channel\":\"history\",\"contentType\":\"history\",\"createdAt\":\"2026-03-06T14:58:32.782652Z\",\"content\":[{\"role\":\"USER\",\"text\":\"Give me a random number between 1 and 100.\"}]},{\"id\":\"4ff191fc-4663-46d5-bf66-e62758e760ec\",\"conversationId\":\"53d23c96-6b29-4fbb-879d-db18bf4d94ff\",\"userId\":\"bob\",\"clientId\":\"checkpoint-agent\",\"channel\":\"history\",\"contentType\":\"history\",\"createdAt\":\"2026-03-06T14:58:32.851076Z\",\"content\":[{\"role\":\"AI\",\"text\":\"42\"}]}]}",
+    "capturedAt": "2026-03-06T14:58:32.933928137Z"
+  },
+  {
+    "captureId": "/docs/python-langgraph/conversation-history/#5",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/03-with-history",
+    "scenario": "[python-langgraph] Conversation History Tutorial - 03-with-history",
+    "requestUrl": "http://localhost:10099/v1/conversations",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"afterCursor\":null,\"data\":[{\"id\":\"53d23c96-6b29-4fbb-879d-db18bf4d94ff\",\"title\":\"Give me a random number between 1 and 10\",\"ownerUserId\":\"bob\",\"metadata\":{},\"createdAt\":\"2026-03-06T14:58:32.708132Z\",\"updatedAt\":\"2026-03-06T14:58:32.875039Z\",\"accessLevel\":\"owner\"}]}",
+    "capturedAt": "2026-03-06T14:58:32.963913179Z"
+  }
+]

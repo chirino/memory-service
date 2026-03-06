@@ -65,7 +65,7 @@ And the response body should be text:
 """
 Hello Hiram! I'm an AI language model created by OpenAI, here to help answer questions and provide information on a wide range of topics. How can I assist you today?
 """
-`}>
+`} exampleOutputLang="text" exampleOutput={`Hello Hiram! I'm an AI language model created by OpenAI, here to help answer questions and provide information on a wide range of topics. How can I assist you today?`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat \
@@ -80,7 +80,7 @@ curl -NsSfX POST http://localhost:9090/chat \
 <CurlTest steps={`
 Then the response status should be 200
 And the response should not contain "Hiram"
-`}>
+`} exampleOutputLang="text" exampleOutput={`That's a profound question! Identity can be multifaceted, encompassing aspects like your name, personal experiences, relationships, beliefs, and roles in society. If you're asking in a more abstract or philosophical sense, it might involve reflecting on your values, purpose, and what makes you unique. If you have specific aspects of your identity you're curious about or exploring, feel free to share more!`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat \
@@ -190,7 +190,7 @@ And the response body should be text:
 """
 Hello Hiram! I'm an AI assistant here to help you with any questions or information you might need. How can I assist you today?
 """
-`}>
+`} exampleOutput={`Hello Hiram! I'm an AI assistant here to help you with any questions or information you might need. How can I assist you today?`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/2cdbd4b0-b48d-4f75-8f7a-9616301e5143 \
@@ -204,7 +204,7 @@ curl -NsSfX POST http://localhost:9090/chat/2cdbd4b0-b48d-4f75-8f7a-9616301e5143
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "Hiram"
-`}>
+`} exampleOutputLang="text" exampleOutput={`You are Hiram.`}>
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/2cdbd4b0-b48d-4f75-8f7a-9616301e5143 \
@@ -231,4 +231,3 @@ Continue to [Conversation History](/docs/spring/conversation-history/) to learn 
 Or jump ahead to:
 - [Conversation Forking](/docs/spring/conversation-forking/) - Branch conversations to explore alternative paths
 - [Response Recording and Resumption](/docs/spring/response-resumption/) - Streaming responses with resume and cancel support
-

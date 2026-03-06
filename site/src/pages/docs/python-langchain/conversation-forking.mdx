@@ -73,7 +73,7 @@ Create a turn on the source conversation:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput="Sure, I can help with that.">
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/16de0661-0dcf-4df2-9964-7f23c4de5fc6 \
@@ -84,18 +84,12 @@ curl -NsSfX POST http://localhost:9090/chat/16de0661-0dcf-4df2-9964-7f23c4de5fc6
 
 </CurlTest>
 
-Example response:
-
-```text
-Sure, I can help with that.
-```
-
 Fetch the entry id to fork from:
 
 <CurlTest steps={`
 Then the response status should be 200
 And set "FORK_ENTRY_ID" to the json response field "data[1].id"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"id":"38507d19-7f88-4c73-8ec1-076e85099dae"},{"id":"5436d8eb-4159-4021-86c9-37d19b9b52fe"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/16de0661-0dcf-4df2-9964-7f23c4de5fc6/entries \
@@ -112,27 +106,11 @@ FORK_ENTRY_ID="$(curl -sSfX GET http://localhost:9090/v1/conversations/16de0661-
 echo "$FORK_ENTRY_ID"
 ```
 
-Example response from the entries API:
-
-```json
-{
-  "data": [
-    {
-      "id": "9dded20f-4118-4d7a-b633-141311ec589e",
-      "conversationId": "16de0661-0dcf-4df2-9964-7f23c4de5fc6",
-      "channel": "history",
-      "contentType": "history",
-      "content": [{"role": "USER", "text": "Hello from the root conversation."}]
-    }
-  ]
-}
-```
-
 Create the forked conversation by calling chat with fork metadata:
 
 <CurlTest steps={`
 Then the response status should be 200
-`}>
+`} exampleOutput="Sure, I can help with that." exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"id":"38507d19-7f88-4c73-8ec1-076e85099dae","conversationId":"16de0661-0dcf-4df2-9964-7f23c4de5fc6","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.36852Z","content":[{"role":"USER","text":"Hello from the root conversation."}]},{"id":"5436d8eb-4159-4021-86c9-37d19b9b52fe","conversationId":"16de0661-0dcf-4df2-9964-7f23c4de5fc6","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.426653Z","content":[{"role":"USER","text":"Hello from the root conversation."}]},{"id":"88bcdd7d-3d16-4f66-a426-cb1948e52461","conversationId":"16de0661-0dcf-4df2-9964-7f23c4de5fc6","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.471499Z","content":[{"role":"AI","text":"I am a Python memory-service demo agent."}]}]}`}>
 
 ```bash
 curl -NsSfX POST "http://localhost:9090/chat/bb745717-236b-4c81-bc0a-766d10622e19?forkedAtConversationId=16de0661-0dcf-4df2-9964-7f23c4de5fc6&forkedAtEntryId=${FORK_ENTRY_ID}" \
@@ -143,19 +121,13 @@ curl -NsSfX POST "http://localhost:9090/chat/bb745717-236b-4c81-bc0a-766d10622e1
 
 </CurlTest>
 
-Example response:
-
-```text
-Sure, I can help with that.
-```
-
 List forks for the source conversation through the Python proxy endpoint:
 
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "16de0661-0dcf-4df2-9964-7f23c4de5fc6"
 And the response should contain "bb745717-236b-4c81-bc0a-766d10622e19"
-`}>
+`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"16de0661-0dcf-4df2-9964-7f23c4de5fc6"},{"conversationId":"bb745717-236b-4c81-bc0a-766d10622e19"}],"afterCursor":null}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/16de0661-0dcf-4df2-9964-7f23c4de5fc6/forks \
@@ -163,27 +135,6 @@ curl -sSfX GET http://localhost:9090/v1/conversations/16de0661-0dcf-4df2-9964-7f
 ```
 
 </CurlTest>
-
-Example response:
-
-```json
-{
-  "data": [
-    {
-      "conversationId": "16de0661-0dcf-4df2-9964-7f23c4de5fc6",
-      "title": "Hello from the root conversation.",
-      "createdAt": "2026-02-23T03:56:55.880524Z"
-    },
-    {
-      "conversationId": "bb745717-236b-4c81-bc0a-766d10622e19",
-      "forkedAtConversationId": "16de0661-0dcf-4df2-9964-7f23c4de5fc6",
-      "title": "Continue from this fork.",
-      "createdAt": "2026-02-23T03:57:31.598799Z"
-    }
-  ],
-  "afterCursor": null
-}
-```
 
 </TestScenario>
 

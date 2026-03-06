@@ -1,0 +1,46 @@
+[
+  {
+    "captureId": "/docs/quarkus/conversation-forking/#2",
+    "checkpoint": "quarkus/examples/doc-checkpoints/04-conversation-forking",
+    "scenario": "[quarkus] Conversation Forking Tutorial - 04-conversation-forking",
+    "requestUrl": "http://localhost:10121/chat/88a1db4c-ce91-4391-a6c1-baf9bcc65a86",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hello! How can I assist you today?",
+    "capturedAt": "2026-03-06T14:59:01.438962803Z"
+  },
+  {
+    "captureId": "/docs/quarkus/conversation-forking/#3",
+    "checkpoint": "quarkus/examples/doc-checkpoints/04-conversation-forking",
+    "scenario": "[quarkus] Conversation Forking Tutorial - 04-conversation-forking",
+    "requestUrl": "http://localhost:10121/v1/conversations/88a1db4c-ce91-4391-a6c1-baf9bcc65a86/entries",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"id\":\"04f83525-aa03-4beb-ac93-c33ec9c353b4\",\"conversationId\":\"88a1db4c-ce91-4391-a6c1-baf9bcc65a86\",\"userId\":\"bob\",\"channel\":\"history\",\"contentType\":\"history\",\"content\":[{\"role\":\"USER\",\"text\":\"Hello from the root conversation.\"}],\"createdAt\":\"2026-03-06T14:59:00.689985Z\"},{\"id\":\"5fe98b13-17c6-4b19-bb49-a8b44da51927\",\"conversationId\":\"88a1db4c-ce91-4391-a6c1-baf9bcc65a86\",\"userId\":\"bob\",\"channel\":\"history\",\"contentType\":\"history\",\"content\":[{\"role\":\"AI\",\"text\":\"Hello! How can I assist you today?\"}],\"createdAt\":\"2026-03-06T14:59:01.427801Z\"}]}",
+    "capturedAt": "2026-03-06T14:59:01.498012428Z"
+  },
+  {
+    "captureId": "/docs/quarkus/conversation-forking/#4",
+    "checkpoint": "quarkus/examples/doc-checkpoints/04-conversation-forking",
+    "scenario": "[quarkus] Conversation Forking Tutorial - 04-conversation-forking",
+    "requestUrl": "http://localhost:10121/chat/d517e108-28f0-49a1-93cc-d0f48ebedf42?forkedAtConversationId=88a1db4c-ce91-4391-a6c1-baf9bcc65a86\u0026forkedAtEntryId=5fe98b13-17c6-4b19-bb49-a8b44da51927",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hello! How can I assist you today?",
+    "capturedAt": "2026-03-06T14:59:01.712258886Z"
+  },
+  {
+    "captureId": "/docs/quarkus/conversation-forking/#5",
+    "checkpoint": "quarkus/examples/doc-checkpoints/04-conversation-forking",
+    "scenario": "[quarkus] Conversation Forking Tutorial - 04-conversation-forking",
+    "requestUrl": "http://localhost:10121/v1/conversations/88a1db4c-ce91-4391-a6c1-baf9bcc65a86/forks",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"conversationId\":\"88a1db4c-ce91-4391-a6c1-baf9bcc65a86\",\"title\":\"Hello from the root conversation.\",\"createdAt\":\"2026-03-06T14:59:00.68268Z\"},{\"conversationId\":\"d517e108-28f0-49a1-93cc-d0f48ebedf42\",\"forkedAtEntryId\":\"fb57a22c-1564-48d1-bff2-c2a5fedb3cb5\",\"forkedAtConversationId\":\"88a1db4c-ce91-4391-a6c1-baf9bcc65a86\",\"title\":\"Continue from this fork.\",\"createdAt\":\"2026-03-06T14:59:01.533946Z\"}]}",
+    "capturedAt": "2026-03-06T14:59:01.757363053Z"
+  }
+]

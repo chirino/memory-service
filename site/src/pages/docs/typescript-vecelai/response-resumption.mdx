@@ -1,81 +1,173 @@
 ---
 layout: ../../../layouts/DocsLayout.astro
 title: TypeScript Response Recording and Resumption
-description: Stream AI responses and support resume-check/resume/cancel endpoints.
+description: First add streaming (05a), then add response recording/resumption (05b).
 ---
 import CodeFromFile from '../../../components/CodeFromFile.astro';
 import TestScenario from '../../../components/TestScenario.astro';
 import CurlTest from '../../../components/CurlTest.astro';
 
-This guide adds token streaming and local response recording to support reconnect and cancellation.
+This guide is split into two implementation phases:
+1. `05a-streaming`: switch chat to streaming only.
+2. `05b-response-resumption`: add resume-check/replay/cancel on top of streaming.
 
 For the behavior model, see [Response Recording and Resumption Concepts](/docs/concepts/response-resumption/).
 
-## Prerequisites
+## Phase 1: Streaming Only (`05a`)
 
 **Starting checkpoint**: [typescript/examples/vecelai/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/03-with-history)
 
-Install the gRPC response-recording dependencies in checkpoint `05`:
+### Switch from `generateText` to `streamText`
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05a-streaming/src/app.ts"
+  lang="typescript"
+  match='import { streamText } from "ai";'
+  before={0}
+  after={0}
+/>
+
+**What changed**: Replaces `generateText` import with `streamText`.
+
+**Why needed**: This checkpoint introduces token streaming; `streamText` is the Vercel AI SDK streaming primitive.
+
+### Stream SSE chunks from `/chat`
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05a-streaming/src/app.ts"
+  lang="typescript"
+  match='res.setHeader("Content-Type", "text/event-stream");'
+  before={0}
+  after={2}
+/>
+
+**What changed**: Sets SSE response headers.
+
+**Why needed**: Clients need an open `text/event-stream` response to receive incremental chunks.
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05a-streaming/src/app.ts"
+  lang="typescript"
+  match="try {"
+  before={0}
+  after={35}
+/>
+
+**What changed**: Streams model output through `responseRecorder.record(...)`, emits SSE payloads as `{ text }`, and appends `await result.text` to context memory.
+
+**Why needed**: Streaming improves UX latency while still persisting one durable assistant turn after generation completes.
+
+**Why `res.end()`**: The `finally { res.end(); }` ensures the SSE response is always closed (success, cancel, or error) so clients do not wait indefinitely on an open HTTP stream.
+
+<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/05a-streaming">
+
+Make sure you define a shell function that can get the bearer token for the bob user:
 
 ```bash
-cd typescript/examples/vecelai/doc-checkpoints/05-response-resumption
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "data:"
+And the response should contain "text"
+`} exampleOutput={`data: {"text":"Once "}
+
+data: {"text":"upon "}
+
+data: {"text":"a time..."}`}> 
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Write a short story about a cat."
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Phase 2: Response Recording + Resumption (`05b`)
+
+**Starting checkpoint**: [typescript/examples/vecelai/doc-checkpoints/05a-streaming](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/05a-streaming)
+
+Install the optional gRPC dependencies used by response recording:
+
+```bash
+cd typescript/examples/vecelai/doc-checkpoints/05b-response-resumption
 npm install @grpc/grpc-js @grpc/proto-loader
 ```
 
-## Add Streaming + Recording
-
-Checkpoint `05` introduces `streamText(...)` and gRPC-backed response recording helpers:
+### Add response recording helpers
 
 <CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
+  file="typescript/examples/vecelai/doc-checkpoints/05b-response-resumption/src/app.ts"
   lang="typescript"
-  lines="1-2"
+  match="memoryServiceCancel,"
+  before={1}
+  after={4}
 />
+
+**What changed**: Adds SDK helpers for resume-check, replay, and cancel.
+
+**Why needed**: These functions connect the app to Memory Service response-recording APIs.
+
+### Record streamed output
 
 <CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
+  file="typescript/examples/vecelai/doc-checkpoints/05b-response-resumption/src/app.ts"
   lang="typescript"
-  lines="6-11"
+  match="await withMemoryService("
+  before={0}
+  after={10}
 />
+
+**What changed**: The chat handler callback now accepts `responseRecorder` as the second parameter from `withMemoryService(...)`.
+
+**Why needed**: `responseRecorder` is provided by the SDK helper and is the object used to record live stream output for replay/resume.
 
 <CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
+  file="typescript/examples/vecelai/doc-checkpoints/05b-response-resumption/src/app.ts"
   lang="typescript"
-  lines="52-82"
+  match="const result = streamText({"
+  before={11}
+  after={28}
 />
 
-**What changed**: The handler switches from single-response generation to streamed chunks and records each emitted chunk with `responseRecorder.record(...)`.
+**What changed**: Wraps `result.textStream` with `responseRecorder.record(...)`, emits `{ text }` SSE payloads, and appends `await result.text` to context memory.
 
-**Why**: Recording the in-progress chunks lets reconnecting clients replay exactly what was produced so far.
+**Why needed**: Recorded chunks can be replayed later if a client disconnects mid-stream.
 
-## Persist Final Turn After Stream Completion
+**Why `res.end()`**: The `finally { res.end(); }` in `/chat` closes the live SSE stream even when recording is canceled or an error occurs, preventing stuck client connections.
+
+### Add resume-check / replay / cancel endpoints
 
 <CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
+  file="typescript/examples/vecelai/doc-checkpoints/05b-response-resumption/src/app.ts"
   lang="typescript"
-  lines="52-85"
+  match='app.post("/v1/conversations/resume-check", async (req, res) => {'
+  before={0}
+  after={27}
 />
 
-**What changed**: `withMemoryService(...)` wraps the stream call so USER/AI turns are persisted when the callback completes.
+**What changed**: Adds `/resume-check`, `/:conversationId/resume`, and `/:conversationId/cancel` endpoints.
 
-**Why**: Streaming transport stays transient, while conversation state remains durable in Memory Service.
+**Why needed**: These endpoints expose reconnect and cancellation controls without changing the `/chat` request contract.
 
 > **Security note**
 > Any `indexedContent` you attach to history entries is stored as non-encrypted search index data. Redact or minimize sensitive content.
 
-## Add Resume APIs
-
-<CodeFromFile
-  file="typescript/examples/vecelai/doc-checkpoints/05-response-resumption/src/app.ts"
-  lang="typescript"
-  lines="88-115"
-/>
-
-**What changed**: The app adds `/resume-check`, `/:conversationId/resume`, and `/:conversationId/cancel` endpoints backed by `ResponseRecordingManager`.
-
-**Why**: These endpoints expose reconnect and cancellation behavior without changing the main chat contract.
-
-<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/05-response-resumption">
+<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/05b-response-resumption">
 
 Make sure you define a shell function that can get the bearer token for the bob user:
 
@@ -97,11 +189,13 @@ Start a streaming response:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "data:"
-And the response should contain "PartialResponse"
-`}>
+And the response should contain "text"
+`} exampleOutputLang="text" exampleOutput={`data: {"text":"Once upon a time, there was a curious little cat named Whiskers."}
+
+data: {"text":" She explored the moonlit garden and found a hidden pond."}`}> 
 
 ```bash
-curl -NsSfX POST http://localhost:9090/chat/a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333 \
+curl -NsSfX POST http://localhost:9090/chat/91b7f6be-1ab8-4a31-b86a-a4fd2c8b2d27 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Write a short story about a cat."
@@ -114,13 +208,13 @@ Check whether a conversation has an in-progress response:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "["
-`}>
+`} exampleOutput='["91b7f6be-1ab8-4a31-b86a-a4fd2c8b2d27"]' exampleOutputLang="json" exampleOutput={`[]`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $(get-token)" \
-  -d '["a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333"]'
+  -d '["91b7f6be-1ab8-4a31-b86a-a4fd2c8b2d27"]'
 ```
 
 </CurlTest>

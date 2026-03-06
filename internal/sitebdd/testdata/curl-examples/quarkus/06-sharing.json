@@ -1,0 +1,46 @@
+[
+  {
+    "captureId": "/docs/quarkus/sharing/#1",
+    "checkpoint": "quarkus/examples/doc-checkpoints/06-sharing",
+    "scenario": "[quarkus] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10127/chat/4f65f1b4-d0fb-41ab-b8f9-0aedcc721103",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hello! I'm ready to help with your sharing tests. What would you like to discuss?",
+    "capturedAt": "2026-03-06T14:59:33.335043637Z"
+  },
+  {
+    "captureId": "/docs/quarkus/sharing/#2",
+    "checkpoint": "quarkus/examples/doc-checkpoints/06-sharing",
+    "scenario": "[quarkus] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10127/v1/conversations/4f65f1b4-d0fb-41ab-b8f9-0aedcc721103/memberships",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"data\":[{\"conversationId\":\"4f65f1b4-d0fb-41ab-b8f9-0aedcc721103\",\"userId\":\"bob\",\"accessLevel\":\"owner\",\"createdAt\":\"2026-03-06T14:59:31.839688Z\"}]}",
+    "capturedAt": "2026-03-06T14:59:33.37043047Z"
+  },
+  {
+    "captureId": "/docs/quarkus/sharing/#3",
+    "checkpoint": "quarkus/examples/doc-checkpoints/06-sharing",
+    "scenario": "[quarkus] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10127/v1/conversations/4f65f1b4-d0fb-41ab-b8f9-0aedcc721103/memberships",
+    "method": "POST",
+    "statusCode": 201,
+    "contentType": "application/json",
+    "body": "{\"conversationId\":\"4f65f1b4-d0fb-41ab-b8f9-0aedcc721103\",\"userId\":\"alice\",\"accessLevel\":\"writer\",\"createdAt\":\"2026-03-06T14:59:33.389589Z\"}",
+    "capturedAt": "2026-03-06T14:59:33.394797595Z"
+  },
+  {
+    "captureId": "/docs/quarkus/sharing/#4",
+    "checkpoint": "quarkus/examples/doc-checkpoints/06-sharing",
+    "scenario": "[quarkus] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10127/chat/4f65f1b4-d0fb-41ab-b8f9-0aedcc721103",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hi Alice! Great to hear from you. How can I help you today?",
+    "capturedAt": "2026-03-06T14:59:33.632579137Z"
+  }
+]

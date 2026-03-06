@@ -1,0 +1,35 @@
+[
+  {
+    "captureId": "/docs/python-langgraph/sharing/#1",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/06-sharing",
+    "scenario": "[python-langgraph] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10119/chat/466db939-7218-4d03-9e31-810b134c063a",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "I am a Python memory-service demo agent.",
+    "capturedAt": "2026-03-06T14:59:16.069451921Z"
+  },
+  {
+    "captureId": "/docs/python-langgraph/sharing/#2",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/06-sharing",
+    "scenario": "[python-langgraph] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10119/v1/conversations/466db939-7218-4d03-9e31-810b134c063a/memberships",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"afterCursor\":null,\"data\":[{\"conversationId\":\"466db939-7218-4d03-9e31-810b134c063a\",\"userId\":\"bob\",\"accessLevel\":\"owner\",\"createdAt\":\"2026-03-06T14:59:15.939792Z\"}]}",
+    "capturedAt": "2026-03-06T14:59:16.115245712Z"
+  },
+  {
+    "captureId": "/docs/python-langgraph/sharing/#3",
+    "checkpoint": "python/examples/langgraph/doc-checkpoints/06-sharing",
+    "scenario": "[python-langgraph] Sharing Tutorial - 06-sharing",
+    "requestUrl": "http://localhost:10119/v1/conversations/466db939-7218-4d03-9e31-810b134c063a/memberships",
+    "method": "POST",
+    "statusCode": 201,
+    "contentType": "application/json",
+    "body": "{\"conversationId\":\"466db939-7218-4d03-9e31-810b134c063a\",\"userId\":\"alice\",\"accessLevel\":\"writer\",\"createdAt\":\"2026-03-06T14:59:16.159763Z\"}",
+    "capturedAt": "2026-03-06T14:59:16.164477379Z"
+  }
+]

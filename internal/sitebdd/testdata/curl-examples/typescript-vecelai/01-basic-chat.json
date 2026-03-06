@@ -1,0 +1,13 @@
+[
+  {
+    "captureId": "/docs/typescript-vecelai/getting-started/#1",
+    "checkpoint": "typescript/examples/vecelai/doc-checkpoints/01-basic-chat",
+    "scenario": "[typescript-vecelai] Getting Started Tutorial - 01-basic-chat",
+    "requestUrl": "http://localhost:10138/chat",
+    "method": "POST",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "I am a TypeScript memory-service demo agent.",
+    "capturedAt": "2026-03-06T14:59:40.144704126Z"
+  }
+]

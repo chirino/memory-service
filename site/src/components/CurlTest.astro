@@ -1,4 +1,6 @@
 ---
+import { convert } from "html-to-text";
+import { Code } from "astro:components";
 // Wraps a single curl command (bash code block) with its Cucumber test assertions.
 // The bash block is rendered normally for documentation; assertions are hidden and
 // extracted during build by TestScenario.astro for automated testing.
@@ -16,11 +18,47 @@
 //   </CurlTest>
 interface Props {
   steps?: string;
+  exampleOutput?: string;
+  exampleOutputLang?: string;
 }
-const { steps } = Astro.props;
+const { steps, exampleOutput, exampleOutputLang } = Astro.props;
+
+function prettyExampleOutput(value: string, lang: string): string {
+  if (lang !== "json") {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return value;
+  }
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return value;
+  }
+}
+
+const hasExampleOutput = typeof exampleOutput === "string" && exampleOutput.trim().length > 0;
+const defaultSlotHtml = await Astro.slots.render("default");
+const defaultSlotText = convert(defaultSlotHtml, {
+  wordwrap: false,
+})
+  .replace(/\s+/g, " ")
+  .trim();
+const looksLikeJqPipe = /\|\s*jq\b/.test(defaultSlotText);
+const resolvedExampleOutputLang = exampleOutputLang ?? (looksLikeJqPipe ? "json" : "text");
+const renderedExampleOutput = hasExampleOutput ? prettyExampleOutput(exampleOutput!, resolvedExampleOutputLang) : "";
 ---
 
 <div class="curl-test">
   <slot />
+  {
+    hasExampleOutput && (
+      <div class="example-output">
+        <p>Example output:</p>
+        <Code code={renderedExampleOutput} lang={resolvedExampleOutputLang} />
+      </div>
+    )
+  }
   {steps && <div class="steps" hidden data-steps={steps} />}
 </div>

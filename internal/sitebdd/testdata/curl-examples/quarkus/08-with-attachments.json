@@ -1,0 +1,45 @@
+[
+  {
+    "captureId": "/docs/quarkus/attachments/#2",
+    "checkpoint": "quarkus/examples/doc-checkpoints/08-with-attachments",
+    "scenario": "[quarkus] Attachments Tutorial - 08-with-attachments",
+    "requestUrl": "http://localhost:10120/v1/attachments",
+    "method": "POST",
+    "statusCode": 201,
+    "contentType": "application/json",
+    "body": "{\"contentType\":\"text/plain\",\"expiresAt\":\"2026-03-06T15:59:00Z\",\"filename\":\"test-upload.txt\",\"href\":\"/v1/attachments/315e31ba-805b-4508-88ab-f197b0050030\",\"id\":\"315e31ba-805b-4508-88ab-f197b0050030\",\"sha256\":\"45756124416f43c4c9c5138fb2909cea45ae20b9852e9def468370906be6c84a\",\"size\":20,\"status\":\"ready\"}",
+    "capturedAt": "2026-03-06T14:59:00.615986969Z"
+  },
+  {
+    "captureId": "/docs/quarkus/attachments/#3",
+    "checkpoint": "quarkus/examples/doc-checkpoints/08-with-attachments",
+    "scenario": "[quarkus] Attachments Tutorial - 08-with-attachments",
+    "requestUrl": "http://localhost:10120/v1/attachments/315e31ba-805b-4508-88ab-f197b0050030/download-url",
+    "method": "GET",
+    "statusCode": 200,
+    "contentType": "application/json",
+    "body": "{\"expiresIn\":300,\"url\":\"/v1/attachments/download/MTcwNDd8MTc3MjgwOTQ0MA.iqQWNgAkLznmmHRC49o14ixpZfvrE_Xl-1yWSRmpqKA/test-upload.txt\"}",
+    "capturedAt": "2026-03-06T14:59:00.764968844Z"
+  },
+  {
+    "captureId": "/docs/quarkus/attachments/#4",
+    "checkpoint": "quarkus/examples/doc-checkpoints/08-with-attachments",
+    "scenario": "[quarkus] Attachments Tutorial - 08-with-attachments",
+    "requestUrl": "http://localhost:10120/v1/attachments/download/MTcwNDd8MTc3MjgwOTQ0MA.iqQWNgAkLznmmHRC49o14ixpZfvrE_Xl-1yWSRmpqKA/test-upload.txt",
+    "method": "",
+    "statusCode": 200,
+    "contentType": "text/plain",
+    "body": "Hello, attachments!\n",
+    "capturedAt": "2026-03-06T14:59:00.779074553Z"
+  },
+  {
+    "captureId": "/docs/quarkus/attachments/#5",
+    "checkpoint": "quarkus/examples/doc-checkpoints/08-with-attachments",
+    "scenario": "[quarkus] Attachments Tutorial - 08-with-attachments",
+    "requestUrl": "http://localhost:10120/v1/attachments/315e31ba-805b-4508-88ab-f197b0050030",
+    "method": "DELETE",
+    "statusCode": 204,
+    "body": "",
+    "capturedAt": "2026-03-06T14:59:00.796510886Z"
+  }
+]

@@ -7,15 +7,18 @@ interface Props {
   file: string;
   lang?: string;
   lines?: string;
+  match?: string;
   before?: number;
   after?: number;
 }
 
-const { file, lang = "java", lines, before = 0, after = 0 } = Astro.props;
+const { file, lang = "java", lines, match, before = 0, after = 0 } = Astro.props;
 
-// Get match string from slot content (if provided)
-const slotContent = await Astro.slots.render("default");
-const matchString = slotContent ? slotContent.trim() : null;
+if (Astro.slots.has("default")) {
+  throw new Error(`CodeFromFile no longer supports default slot matching. Use the "match" prop instead.`);
+}
+
+const matchString = match?.trim() || null;
 
 // Resolve relative to project root (parent of site/ directory)
 const filePath = resolve(process.cwd(), "..", file);
