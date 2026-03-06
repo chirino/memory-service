@@ -1,5 +1,6 @@
 package com.example.demo;
 
+import io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisor;
 import io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisorBuilder;
 import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryBuilder;
 import io.github.chirino.memoryservice.security.SecurityHelper;
@@ -12,6 +13,7 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -33,7 +35,11 @@ public class ChatController {
     }
 
     @PostMapping("/chat/{conversationId}")
-    public String chat(@PathVariable String conversationId, @RequestBody String message) {
+    public String chat(
+            @PathVariable String conversationId,
+            @RequestParam(required = false) String forkedAtConversationId,
+            @RequestParam(required = false) String forkedAtEntryId,
+            @RequestBody String message) {
 
         String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
         var chatMemoryAdvisor =
@@ -50,8 +56,22 @@ public class ChatController {
                         .defaultSystem("You are a helpful assistant.")
                         .defaultAdvisors(historyAdvisor, chatMemoryAdvisor)
                         .defaultAdvisors(
-                                advisor ->
-                                        advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
+                                advisor -> {
+                                    advisor.param(ChatMemory.CONVERSATION_ID, conversationId);
+                                    if (forkedAtConversationId != null
+                                            && !forkedAtConversationId.isBlank()) {
+                                        advisor.param(
+                                                ConversationHistoryStreamAdvisor
+                                                        .FORKED_AT_CONVERSATION_ID_KEY,
+                                                forkedAtConversationId);
+                                    }
+                                    if (forkedAtEntryId != null && !forkedAtEntryId.isBlank()) {
+                                        advisor.param(
+                                                ConversationHistoryStreamAdvisor
+                                                        .FORKED_AT_ENTRY_ID_KEY,
+                                                forkedAtEntryId);
+                                    }
+                                })
                         .build();
 
         return chatClient.prompt().user(message).call().content();

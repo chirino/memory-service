@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -21,6 +22,10 @@ import (
 // First call to allocatePort() returns 10090.
 var portCounter atomic.Int32
 var globalCheckpointProcessRegistry = newCheckpointProcessRegistry()
+var globalTypeScriptVercelAIBuild struct {
+	once sync.Once
+	err  error
+}
 
 type checkpointProcessRegistry struct {
 	mu   sync.Mutex
@@ -78,7 +83,11 @@ func killCheckpointProcess(cmd *exec.Cmd) {
 		return
 	}
 	if cmd.Process != nil {
-		_ = cmd.Process.Kill()
+		if pgid, err := syscall.Getpgid(cmd.Process.Pid); err == nil {
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		} else {
+			_ = cmd.Process.Kill()
+		}
 	}
 	_ = cmd.Wait()
 	if closeErr := flushAndCloseBuildOutput(cmd.Stdout); closeErr != nil {
@@ -205,8 +214,9 @@ func (s *SiteScenario) startCheckpoint() error {
 
 	// Determine application type
 	isPython := fileExists(filepath.Join(s.CheckpointPath, "pyproject.toml"))
+	isNode := !isPython && fileExists(filepath.Join(s.CheckpointPath, "package.json"))
 	quarkusJar := filepath.Join(s.CheckpointPath, "target", "quarkus-app", "quarkus-run.jar")
-	isQuarkus := !isPython && fileExists(quarkusJar)
+	isQuarkus := !isPython && !isNode && fileExists(quarkusJar)
 
 	var cmd *exec.Cmd
 	switch {
@@ -218,6 +228,9 @@ func (s *SiteScenario) startCheckpoint() error {
 		}
 		cmd = exec.Command(python, "-m", "uvicorn", "app:app",
 			"--host", "0.0.0.0", "--port", fmt.Sprintf("%d", s.CheckpointPort))
+
+	case isNode:
+		cmd = exec.Command("npm", "run", "start")
 
 	case isQuarkus:
 		cmd = exec.Command("java",
@@ -250,13 +263,16 @@ func (s *SiteScenario) startCheckpoint() error {
 	}
 
 	cmd.Dir = s.CheckpointPath
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Base env: OpenAI mock routing + memory service URL in all supported forms.
 	cmd.Env = append(os.Environ(),
 		"OPENAI_BASE_URL="+s.Mock.URL(),
 		"OPENAI_API_KEY="+s.apiKey(),
 		"OPENAI_MODEL=mock-gpt-markdown",
+		"PORT="+fmt.Sprintf("%d", s.CheckpointPort),
 		// Memory service URL env vars for each framework
-		"MEMORY_SERVICE_URL="+s.MemServiceURL,             // Python apps
+		"MEMORY_SERVICE_URL="+s.MemServiceURL,             // Python + Node apps
+		"MEMORY_SERVICE_API_KEY=agent-api-key-1",          // Node helper defaults
 		"MEMORY_SERVICE_CLIENT_URL="+s.MemServiceURL,      // Quarkus: memory-service.client.url
 		"MEMORY_SERVICE_CLIENT_BASE_URL="+s.MemServiceURL, // Spring fallback (cmd arg takes precedence)
 	)
@@ -396,13 +412,14 @@ func (s *SiteScenario) replayAndCleanupCheckpointLog(shouldReplay bool) error {
 	return replayBuildOutput(path)
 }
 
-// buildCheckpoint builds the checkpoint using Maven (Java) or uv (Python).
+// buildCheckpoint builds the checkpoint using npm (Node), Maven (Java), or uv (Python).
 func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 	if s.CheckpointPath == "" {
 		return fmt.Errorf("checkpoint not set")
 	}
 
 	isPython := fileExists(filepath.Join(s.CheckpointPath, "pyproject.toml"))
+	isNode := !isPython && fileExists(filepath.Join(s.CheckpointPath, "package.json"))
 
 	var cmd *exec.Cmd
 	if isPython {
@@ -415,6 +432,10 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 		)
 		cmd.Dir = s.CheckpointPath
 		cmd.Env = pythonBuildEnv(s.ProjectRoot)
+	} else if isNode {
+		nodeBuildScript := fmt.Sprintf("cd %s && npm install && npm run build", s.CheckpointPath)
+		cmd = exec.Command("bash", "-lc", nodeBuildScript)
+		cmd.Dir = s.ProjectRoot
 	} else {
 		mvnw := filepath.Join(s.ProjectRoot, "mvnw")
 		pom := filepath.Join(s.CheckpointPath, "pom.xml")
@@ -443,6 +464,13 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 
 	if streamOutput {
 		fmt.Printf("=== Building %s ===\n%s\n", s.CheckpointID, cmd.String())
+	}
+	if isNode {
+		if err := ensureTypeScriptVercelAIPackageBuilt(s.ProjectRoot); err != nil {
+			s.buildExitCode = 1
+			fmt.Printf("=== Build failed: %s ===\n%s\n", s.CheckpointID, err)
+			return nil // step returns success; "the build should succeed" asserts the exit code
+		}
 	}
 	if err := cmd.Run(); err != nil {
 		if flushErr := flushAndCloseBuildOutput(cmd.Stdout); flushErr != nil {
@@ -474,6 +502,19 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 		fmt.Printf("=== Build OK: %s ===\n", s.CheckpointID)
 	}
 	return nil
+}
+
+func ensureTypeScriptVercelAIPackageBuilt(projectRoot string) error {
+	globalTypeScriptVercelAIBuild.once.Do(func() {
+		script := fmt.Sprintf("cd %s/typescript/vercelai && npm install && npm run build", projectRoot)
+		cmd := exec.Command("bash", "-lc", script)
+		cmd.Dir = projectRoot
+		cmd.Stdout = &prefixWriter{prefix: "[build] ", dst: os.Stdout}
+		cmd.Stderr = cmd.Stdout
+		globalTypeScriptVercelAIBuild.err = cmd.Run()
+		_ = flushAndCloseBuildOutput(cmd.Stdout)
+	})
+	return globalTypeScriptVercelAIBuild.err
 }
 
 // shouldRecord decides whether this checkpoint should be recorded based on

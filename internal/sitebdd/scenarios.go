@@ -233,6 +233,8 @@ func deriveFramework(sourceFile string) string {
 		return "quarkus"
 	case strings.HasPrefix(sourceFile, "/docs/spring/"):
 		return "spring"
+	case strings.HasPrefix(sourceFile, "/docs/typescript-vecelai/"):
+		return "typescript-vecelai"
 	default:
 		return "unknown"
 	}

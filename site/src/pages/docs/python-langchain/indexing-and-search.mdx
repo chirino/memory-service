@@ -41,6 +41,9 @@ The simplest provider is pass-through:
 
 **Why**: The `indexed_content_provider` hook is called before each entry is written, and whatever string it returns is stored as the cleartext `indexedContent` field that the search index reads. Returning the message text verbatim (pass-through) makes every message fully searchable. The `del role` line suppresses an unused-argument linting warning; in production code the `role` argument would be used to skip indexing AI responses or to apply different redaction rules per speaker.
 
+> **Security warning**
+> `indexedContent` is not encrypted. Redact or minimize sensitive values before returning indexed text.
+
 For production, replace pass-through with redaction logic. Example:
 
 ```python

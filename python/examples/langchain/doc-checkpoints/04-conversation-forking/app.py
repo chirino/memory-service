@@ -57,17 +57,18 @@ async def chat(conversation_id: str, request: Request) -> PlainTextResponse:
         raise HTTPException(400, "message is required")
     forked_at_conversation_id = request.query_params.get("forkedAtConversationId")
     forked_at_entry_id = request.query_params.get("forkedAtEntryId")
-    if bool(forked_at_conversation_id) != bool(forked_at_entry_id):
-        raise HTTPException(
-            400,
-            "forkedAtConversationId and forkedAtEntryId must be provided together",
-        )
 
     with memory_service_scope(
         conversation_id,
         forked_at_conversation_id,
         forked_at_entry_id,
     ):
+        history_middleware.append_user_history(
+            conversation_id,
+            user_message,
+            forked_at_conversation_id=forked_at_conversation_id,
+            forked_at_entry_id=forked_at_entry_id,
+        )
         result = agent.invoke(
             {"messages": [{"role": "user", "content": user_message}]},
             {"configurable": {"thread_id": conversation_id}},

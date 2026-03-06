@@ -1,0 +1,34 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: TypeScript - Vecel AI Guides
+description: Integrate Memory Service with Express and Vercel AI SDK.
+---
+
+These guides walk through a TypeScript + Express + Vercel AI SDK integration for Memory Service.
+
+Each page maps to a runnable checkpoint under `typescript/examples/vecelai/doc-checkpoints/` and includes executable curl scenarios.
+
+Before starting, complete [TypeScript Dev Setup](/docs/typescript-vecelai/dev-setup/).
+
+## Guides
+
+### [Getting Started](/docs/typescript-vecelai/getting-started/)
+Build a minimal Express chat app and add conversation-backed memory.
+
+### [Conversation History](/docs/typescript-vecelai/conversation-history/)
+Record user/AI turns in the history channel and expose conversation APIs.
+
+### [Indexing and Search](/docs/typescript-vecelai/indexing-and-search/)
+Index history text and expose `POST /v1/conversations/search`.
+
+### [Conversation Forking](/docs/typescript-vecelai/conversation-forking/)
+Create and list conversation forks.
+
+### [Response Recording and Resumption](/docs/typescript-vecelai/response-resumption/)
+Stream responses and support resume-check/resume/cancel APIs.
+
+### [Sharing](/docs/typescript-vecelai/sharing/)
+Manage memberships and ownership transfers.
+
+### [Dev Setup](/docs/typescript-vecelai/dev-setup/)
+Local setup and pre-publish package workflow.

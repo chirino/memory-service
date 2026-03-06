@@ -10,6 +10,8 @@
 
 **Forking parity**: Python checkpoint `04-conversation-forking` keeps `/chat/{id}` as `text/plain` and accepts fork metadata via query params (`forkedAtConversationId`, `forkedAtEntryId`) which are bound through `memory_service_scope(...)`.
 
+**Fork metadata ordering gotcha**: In LangChain integrations, checkpoint writes can happen before history middleware writes. `MemoryServiceCheckpointSaver.put(...)` must include fork metadata on the initial append payload (not only 404 retry paths), otherwise a new fork conversation can be created as a root before USER history is written.
+
 **Response resumption pattern**: Keep checkpoint `05` route handlers thin by delegating resume-check/replay/cancel state handling to `memory_service_langchain.MemoryServiceResponseRecordingManager`, mirroring the Quarkus `ResumeResource` style.
 
 **Checkpoint `05` tutorial scope**: `python/examples/langchain/doc-checkpoints/05-response-resumption` is intentionally minimal: `/chat` accepts plain text body, emits SSE `PartialResponse` events only, uses `MemoryServiceResponseRecordingManager()`, replays in events mode, and proxies `/cancel` to Memory Service.

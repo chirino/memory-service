@@ -25,6 +25,10 @@ const navigation: NavSection[] = [
     ],
   },
   {
+    title: "Guides",
+    items: [],
+  },
+  {
     title: "Core Concepts",
     href: "/docs/concepts/",
     collapsible: true,
@@ -102,6 +106,20 @@ const navigation: NavSection[] = [
       { label: "Sharing", href: "/docs/python-langgraph/sharing/" },
       { label: "Episodic Memories", href: "/docs/python-langgraph/memories/" },
       { label: "Dev Setup", href: "/docs/python-langgraph/dev-setup/" },
+    ],
+  },
+  {
+    title: "TypeScript - Vecel AI",
+    href: "/docs/typescript-vecelai/",
+    collapsible: true,
+    items: [
+      { label: "Getting Started", href: "/docs/typescript-vecelai/getting-started/" },
+      { label: "Conversation History", href: "/docs/typescript-vecelai/conversation-history/" },
+      { label: "Indexing and Search", href: "/docs/typescript-vecelai/indexing-and-search/" },
+      { label: "Conversation Forking", href: "/docs/typescript-vecelai/conversation-forking/" },
+      { label: "Response Recording and Resumption", href: "/docs/typescript-vecelai/response-resumption/" },
+      { label: "Sharing", href: "/docs/typescript-vecelai/sharing/" },
+      { label: "Dev Setup", href: "/docs/typescript-vecelai/dev-setup/" },
     ],
   },
   // {
@@ -183,7 +201,7 @@ function isSectionExpanded(section: NavSection) {
         ) : (
           <h3 class="sidebar-heading mb-2">{section.title}</h3>
         )}
-        {isSectionExpanded(section) && (
+        {isSectionExpanded(section) && section.items.length > 0 && (
           <ul class:list={["space-y-1", section.collapsible && "sidebar-items-indented"]}>
             {section.items.map((item) => (
               <li>

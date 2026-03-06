@@ -95,6 +95,7 @@ leaking background servers.
 | Indicator | Framework |
 |-----------|-----------|
 | `pyproject.toml` present | Python (uvicorn) |
+| `package.json` present (without `pyproject.toml`) | Node/TypeScript (`npm run start`) |
 | `target/quarkus-app/quarkus-run.jar` present | Quarkus |
 | Any `*.jar` in `target/` (not -sources.jar) | Spring Boot |
 
@@ -115,6 +116,11 @@ Fixtures live in `internal/sitebdd/testdata/openai-mock/fixtures/<framework>/<ch
 The framework is the first path segment of the checkpoint ID
 (e.g., `quarkus/examples/chat-quarkus/01-basic-agent` → framework=`quarkus`,
 name=`01-basic-agent`).
+
+Special framework mappings:
+- `python/examples/langchain/...` → `python-langchain`
+- `python/examples/langgraph/...` → `python-langgraph`
+- `typescript/examples/vecelai/...` → `typescript-vecelai`
 
 The Go playback reader ignores WireMock scenario-state fields (`scenarioName`,
 `requiredScenarioState`, `newScenarioState`) and simply serves files in
@@ -146,6 +152,12 @@ gating explicit at the application HTTP layer.
 
 `task test:site` now hard-fails with an explicit message if gotest output contains
 `(unknown)`, so abrupt test-process termination patterns are surfaced immediately.
+
+`deriveFramework` in `internal/sitebdd/scenarios.go` recognizes framework paths
+for `quarkus`, `spring`, `python-langchain`, `python-langgraph`, and
+`typescript-vecelai`. This avoids UUID-registry collisions between TypeScript
+and Python scenarios that intentionally reuse the same fixed conversation IDs in docs.
+
 
 ## Common failures
 

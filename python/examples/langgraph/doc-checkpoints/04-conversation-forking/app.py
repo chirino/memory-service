@@ -61,11 +61,6 @@ async def chat(conversation_id: str, request: Request) -> PlainTextResponse:
 
     forked_at_conversation_id = request.query_params.get("forkedAtConversationId")
     forked_at_entry_id = request.query_params.get("forkedAtEntryId")
-    if bool(forked_at_conversation_id) != bool(forked_at_entry_id):
-        raise HTTPException(
-            400,
-            "forkedAtConversationId and forkedAtEntryId must be provided together",
-        )
 
     with memory_service_scope(
         conversation_id,

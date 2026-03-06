@@ -36,7 +36,7 @@ Keep the chat endpoint the same shape (`text/plain` input). Fork creation is don
 
 **What changed**: The `chat` endpoint now reads optional `forkedAtConversationId` and `forkedAtEntryId` query parameters, and passes them as additional arguments to `memory_service_scope(conversation_id, forked_at_conversation_id, forked_at_entry_id)`.
 
-**Why**: When three arguments are passed to `memory_service_scope`, the first history entry written in that scope is tagged with fork metadata (`forkedAtConversationId`, `forkedAtEntryId`). Memory Service uses that metadata to link the new conversation back to the branch point in the source conversation. The fork parameters must both be present or both absent — providing only one would create an incomplete link, so the endpoint returns HTTP 400 if they do not match.
+**Why**: When three arguments are passed to `memory_service_scope`, the first history entry written in that scope is tagged with fork metadata (`forkedAtConversationId`, `forkedAtEntryId`). Memory Service uses that metadata to link the new conversation back to the branch point in the source conversation.
 
 ### Listing Forks
 
@@ -106,24 +106,17 @@ FORK_ENTRY_ID="$(curl -sSfX GET http://localhost:9090/v1/conversations/43b16f9d-
 echo "$FORK_ENTRY_ID"
 ```
 
-Create a fork by appending the first turn to a different conversation ID through the Memory Service API with fork metadata:
+Create the forked conversation by calling chat with fork metadata:
 
 <CurlTest steps={`
-Then the response status should be 201
+Then the response status should be 200
 `}>
 
 ```bash
-curl -sSfX POST http://localhost:8082/v1/conversations/bdb74451-1164-47f5-823e-b71cff4b7855/entries \
+curl -NsSfX POST "http://localhost:9090/chat/bdb74451-1164-47f5-823e-b71cff4b7855?forkedAtConversationId=43b16f9d-a995-40e2-8538-c010ea2276ac&forkedAtEntryId=${FORK_ENTRY_ID}" \
+  -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
-  -H "X-API-Key: agent-api-key-1" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channel": "history",
-    "contentType": "history",
-    "content": [{"role": "USER", "text": "Continue from this fork."}],
-    "forkedAtConversationId": "43b16f9d-a995-40e2-8538-c010ea2276ac",
-    "forkedAtEntryId": "${FORK_ENTRY_ID}"
-  }' | jq
+  -d "Continue from this fork."
 ```
 
 </CurlTest>

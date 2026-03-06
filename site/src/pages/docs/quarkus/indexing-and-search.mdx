@@ -42,6 +42,9 @@ To enable search indexing, create a bean that implements the `IndexedContentProv
 
 **What changed**: Created `PassThroughIndexedContentProvider`, a CDI `@ApplicationScoped` bean that implements `IndexedContentProvider` and returns the message text as-is. **Why**: By providing even a pass-through implementation, every message recorded by `@RecordConversation` will have its text placed in the cleartext search index. This single class activates the entire search pipeline with no other changes required.
 
+> **Security warning**
+> `indexedContent` is not encrypted. Redact or minimize sensitive values before returning indexed text.
+
 The `IndexedContentProvider` interface has a single method:
 - **`getIndexedContent(String text, String role)`** — Transforms message text into content for the search index. The `role` parameter is either `"USER"` or `"AI"`. Return `null` to skip indexing for that message.
 

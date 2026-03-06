@@ -16,6 +16,9 @@
 * add includeDeleted=true admin
 * fix: python request streaming is broken.
 * rename: ResponseResumer to ResponseRecorder
+* rename: memory channel to the context channel.
+* should the /sync endpoint take a flatten entries to just a list of content messages?
+* create reference docs?
 
 # Performance Related
 

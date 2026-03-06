@@ -140,6 +140,7 @@ func (m *MockServer) SaveJournal(checkpointID string, journal []capturedCall) er
 //	"quarkus/examples/chat-quarkus/01-basic-agent"         → <fixturesDir>/quarkus/01-basic-agent
 //	"python/examples/langchain/doc-checkpoints/03-with-history" → <fixturesDir>/python-langchain/03-with-history
 //	"python/examples/langgraph/doc-checkpoints/30-memories"     → <fixturesDir>/python-langgraph/30-memories
+//	"typescript/examples/vecelai/doc-checkpoints/03-with-history" → <fixturesDir>/typescript-vecelai/03-with-history
 func (m *MockServer) fixtureDir(checkpointID string) string {
 	name := lastSegment(checkpointID)
 	var framework string
@@ -148,6 +149,8 @@ func (m *MockServer) fixtureDir(checkpointID string) string {
 		framework = "python-langchain"
 	case strings.HasPrefix(checkpointID, "python/") && strings.Contains(checkpointID, "/langgraph/"):
 		framework = "python-langgraph"
+	case strings.HasPrefix(checkpointID, "typescript/") && strings.Contains(checkpointID, "/vecelai/"):
+		framework = "typescript-vecelai"
 	default:
 		parts := strings.SplitN(checkpointID, "/", 2)
 		framework = parts[0]

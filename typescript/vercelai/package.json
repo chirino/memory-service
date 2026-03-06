@@ -1,0 +1,43 @@
+{
+  "name": "@chirino/memory-service-vercelai",
+  "version": "0.0.1",
+  "description": "Memory Service helpers for Express + Vercel AI SDK",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "proto"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "prettier": "prettier -w \"src/**/*.{ts,tsx,js}\""
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@grpc/grpc-js": "^1.14.0",
+    "@grpc/proto-loader": "^0.8.0",
+    "ai": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@grpc/grpc-js": {
+      "optional": true
+    },
+    "@grpc/proto-loader": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "ai": "^5.0.0",
+    "prettier": "^3.8.1",
+    "typescript": "^5.8.2"
+  }
+}

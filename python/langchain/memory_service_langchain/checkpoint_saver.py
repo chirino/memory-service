@@ -315,19 +315,20 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             ],
         }
 
+        append_payload = self._payload_with_fork_metadata(payload)
+
         response = self._request(
             "POST",
             f"/v1/conversations/{conv_id}/entries",
             thread_id=thread_id,
-            json_body=payload,
+            json_body=append_payload,
         )
         if response.status_code == 404:
-            fork_payload = self._payload_with_fork_metadata(payload)
             response = self._request(
                 "POST",
                 f"/v1/conversations/{conv_id}/entries",
                 thread_id=thread_id,
-                json_body=fork_payload,
+                json_body=append_payload,
             )
         if response.status_code == 404:
             # Auto-create the conversation with the derived UUID so subsequent
@@ -342,14 +343,14 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
                 "POST",
                 f"/v1/conversations/{conv_id}/entries",
                 thread_id=thread_id,
-                json_body=payload,
+                json_body=append_payload,
             )
         if self._is_duplicate_conversation_error(response):
             response = self._request(
                 "POST",
                 f"/v1/conversations/{conv_id}/entries",
                 thread_id=thread_id,
-                json_body=payload,
+                json_body=append_payload,
             )
         if response.status_code >= 400:
             raise RuntimeError(response.text)

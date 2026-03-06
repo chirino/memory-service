@@ -1,0 +1,168 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: TypeScript Getting Started
+description: Step-by-step guide to integrating Memory Service with a TypeScript Express + Vercel AI SDK agent.
+---
+import CodeFromFile from '../../../components/CodeFromFile.astro';
+import TestScenario from '../../../components/TestScenario.astro';
+import CurlTest from '../../../components/CurlTest.astro';
+
+This guide walks you through a minimal TypeScript agent using [Vercel AI SDK](https://ai-sdk.dev/docs/getting-started/nodejs), then adds incremental memory-service integration. The goal is to keep code changes small while unlocking memory features one step at a time.
+
+Make sure you have completed [TypeScript Dev Setup](/docs/typescript-vecelai/dev-setup/) first.
+
+## Step 1: Start with a Minimal Agent
+
+**Starting checkpoint**: [typescript/examples/vecelai/doc-checkpoints/01-basic-chat](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/01-basic-chat)
+
+Create a minimal Vercel AI SDK agent and expose it over HTTP with Express (no memory-service imports yet):
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/01-basic-chat/src/app.ts"
+  lang="typescript"
+/>
+
+The checkpoint calls Vercel AI SDK directly with `createOpenAI(...)` and `generateText(...)`, then returns plain text.
+
+The `POST /chat` endpoint accepts a raw text body and returns raw text — no JSON serialization, keeping curl testing simple.
+
+`OPENAI_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` are read from environment variables, so you can point the same code at any OpenAI-compatible model endpoint without edits.
+
+Add Vercel AI SDK dependencies:
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/01-basic-chat/package.json"
+  lang="json"
+/>
+
+<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/01-basic-chat">
+
+Run the app:
+
+```bash
+cd typescript/examples/vecelai/doc-checkpoints/01-basic-chat
+npm install
+npm run dev
+```
+
+Test it with curl:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "TypeScript memory-service demo agent"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat \
+  -H "Content-Type: text/plain" \
+  -d "Hi, who are you?"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Step 2: Enable Memory-Backed Conversations
+
+**Starting checkpoint**: [typescript/examples/vecelai/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/02-with-memory)
+
+Checkpoint `02` is built from checkpoint `01` with three additions.
+
+### Import the context memory helper
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/02-with-memory/src/app.ts"
+  lang="typescript"
+  lines="4-4"
+/>
+
+**What changed**: The checkpoint imports `withContextMemory(...)` from `@chirino/memory-service-vercelai`.
+
+**Why**: This helper gives you a ChatMemory-style workflow: read current memory, mutate in-process memory, and persist efficiently at the end.
+
+The endpoint also forwards `Authorization: Bearer ...` to Memory Service calls so access control remains user-scoped.
+
+### Change the endpoint to accept a `conversationId`
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/02-with-memory/src/app.ts"
+  lang="typescript"
+  lines="25-27"
+/>
+
+**What changed**: The route changes from `POST /chat` to `POST /chat/{conversationId}`.
+
+**Why**: The conversation ID in the URL becomes the storage key for memory entries. Calls to the same ID reuse context; a new ID starts fresh context.
+
+### Use context memory in the chat flow
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/02-with-memory/src/app.ts"
+  lang="typescript"
+  lines="37-60"
+/>
+
+**What changed**: The handler wraps generation in `withContextMemory(...)`, gets prior messages with `contextMemory.get()`, then calls `contextMemory.append(...)` for USER and AI messages.
+
+**Why**: If you only append, the helper persists only the delta via append calls. If you call `contextMemory.clear()` or `contextMemory.set([...])`, it automatically switches to full sync (`/entries/sync`) to replace memory state.
+
+You can also replace memory explicitly:
+
+```typescript
+contextMemory.clear();
+contextMemory.set([
+  { role: "USER", text: userMessage },
+  { role: "AI", text: assistantText },
+]);
+```
+
+Make sure Memory Service and Keycloak are running, then define a helper to get a user token:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/02-with-memory">
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hi Hiram"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/7f6c3b21-9d6f-4f2b-bf19-1f3f2f0a8e11 \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Hi, I'm Hiram, who are you?"
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Hiram"
+`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/7f6c3b21-9d6f-4f2b-bf19-1f3f2f0a8e11 \
+  -H "Authorization: Bearer $(get-token)" \
+  -H "Content-Type: text/plain" \
+  -d "Who am I?"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Next Steps
+
+Continue to [Conversation History](/docs/typescript-vecelai/conversation-history/) to record user/AI turns in the `history` channel.

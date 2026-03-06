@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package memory.v1;
+
+service ResponseRecorderService {
+  rpc Record(stream RecordRequest) returns (RecordResponse);
+  rpc Replay(ReplayRequest) returns (stream ReplayResponse);
+  rpc Cancel(CancelRecordRequest) returns (CancelRecordResponse);
+  rpc CheckRecordings(CheckRecordingsRequest) returns (CheckRecordingsResponse);
+}
+
+enum RecordStatus {
+  RECORD_STATUS_UNSPECIFIED = 0;
+  RECORD_STATUS_SUCCESS = 1;
+  RECORD_STATUS_CANCELLED = 2;
+  RECORD_STATUS_ERROR = 3;
+}
+
+message RecordRequest {
+  bytes conversation_id = 1;
+  string content = 2;
+  bool complete = 3;
+}
+
+message RecordResponse {
+  RecordStatus status = 1;
+  string error_message = 2;
+}
+
+message ReplayRequest {
+  bytes conversation_id = 1;
+}
+
+message ReplayResponse {
+  string content = 1;
+  string redirect_address = 2;
+}
+
+message CancelRecordRequest {
+  bytes conversation_id = 1;
+}
+
+message CancelRecordResponse {
+  bool accepted = 1;
+  string redirect_address = 2;
+}
+
+message CheckRecordingsRequest {
+  repeated bytes conversation_ids = 1;
+}
+
+message CheckRecordingsResponse {
+  repeated bytes conversation_ids = 1;
+}
