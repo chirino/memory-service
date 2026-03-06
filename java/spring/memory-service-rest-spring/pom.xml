@@ -15,7 +15,7 @@
 
   <properties>
     <contracts.dir>${project.build.directory}/generated-resources/contracts</contracts.dir>
-    <contracts.source.dir>${maven.multiModuleProjectDirectory}/memory-service-contracts/src/main/resources</contracts.source.dir>
+    <contracts.source.dir>${maven.multiModuleProjectDirectory}/../memory-service-contracts/src/main/resources</contracts.source.dir>
     <generated.sources.dir>${project.build.directory}/generated-sources/openapi</generated.sources.dir>
     <openapi.package.base>io.github.chirino.memoryservice.client</openapi.package.base>
   </properties>
