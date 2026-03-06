@@ -28,7 +28,7 @@ tasks:
   image:chat-quarkus:
     desc: Build the chat-quarkus container image
     cmds:
-      - docker build -t ghcr.io/chirino/memory-service-chat-quarkus:latest -f quarkus/examples/chat-quarkus/Dockerfile .
+      - docker build -t ghcr.io/chirino/memory-service-chat-quarkus:latest -f java/quarkus/examples/chat-quarkus/Dockerfile .
 
   generate:
     desc: "generate and format source files"
@@ -80,7 +80,7 @@ tasks:
   generate:spotless:
     internal: true
     cmds:
-      - mvn -q -B -T 1C spotless:apply
+      - ./java/mvnw -q -B -T 1C -f java/pom.xml spotless:apply
 
   test:
     deps:
@@ -133,7 +133,7 @@ tasks:
 
   test:java:
     cmds:
-      - mvn -T 1C clean test {{.CLI_ARGS}}
+      - ./java/mvnw -T 1C -f java/pom.xml clean test {{.CLI_ARGS}}
 
 
   dev:memory-service:
@@ -178,10 +178,10 @@ tasks:
     cmds:
       - cmd: cd frontends/chat-frontend && npm i
         if: '{{eq .quick ""}}'
-      - cmd: ./mvnw -T 1C install -pl :memory-service-extension-deployment -am -DskipTests
+      - cmd: ./java/mvnw -T 1C -f java/pom.xml install -pl :memory-service-extension-deployment -am -DskipTests
         if: '{{eq .quick ""}}'
       - docker compose stop chat-quarkus >/dev/null 2>&1 || true
-      - ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
+      - ./java/mvnw -T 1C -f java/pom.xml -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
 
   dev:chat-langchain:
     desc: Run the chat-langchain app in dev mode. Use quick=true to skip frontend install/build and package compilation.

@@ -16,7 +16,7 @@ This guide shows you how to implement conversation sharing and ownership transfe
 
 ## Prerequisites
 
-**Starting checkpoint**: This guide starts from [quarkus/examples/doc-checkpoints/05-response-resumption](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/05-response-resumption)
+**Starting checkpoint**: This guide starts from [java/quarkus/examples/doc-checkpoints/05-response-resumption](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/05-response-resumption)
 
 Make sure you've completed the previous guides:
 - [Conversation Forking](/docs/quarkus/conversation-forking/) - Branching conversations
@@ -28,7 +28,7 @@ Make sure you've completed the previous guides:
 Add the membership endpoints to your `ConversationsResource`:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/06-sharing/src/main/java/org/acme/ConversationsResource.java"
+  file="java/quarkus/examples/doc-checkpoints/06-sharing/src/main/java/org/acme/ConversationsResource.java"
   lang="java"
   before={0}
   after={35}
@@ -42,7 +42,7 @@ match="// Membership management endpoints"
 Create a new `OwnershipTransfersResource`:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/06-sharing/src/main/java/org/acme/OwnershipTransfersResource.java"
+  file="java/quarkus/examples/doc-checkpoints/06-sharing/src/main/java/org/acme/OwnershipTransfersResource.java"
   lang="java"
 />
 
@@ -70,7 +70,7 @@ function get-token() {
 }
 ```
 
-<TestScenario checkpoint="quarkus/examples/doc-checkpoints/06-sharing">
+<TestScenario checkpoint="java/quarkus/examples/doc-checkpoints/06-sharing">
 
 First, create a conversation as bob so the membership endpoints have data to work with:
 
@@ -337,6 +337,6 @@ Returns `204 No Content`. The transfer is deleted and ownership remains unchange
 
 ## Completed Checkpoint
 
-**Completed code**: View the full implementation at [quarkus/examples/doc-checkpoints/06-sharing](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/06-sharing)
+**Completed code**: View the full implementation at [java/quarkus/examples/doc-checkpoints/06-sharing](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/06-sharing)
 
 

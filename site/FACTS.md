@@ -47,8 +47,8 @@ The fixture lookup uses:
 - `framework` is derived from the checkpoint path:
   - `python/examples/langchain/...` → `python-langchain`
   - `python/examples/langgraph/...` → `python-langgraph`
-  - `quarkus/examples/...` → `quarkus`
-  - `spring/examples/...` → `spring`
+  - `java/quarkus/examples/...` → `quarkus`
+  - `java/spring/examples/...` → `spring`
 - `checkpoint-name` = last path segment (e.g. `05-response-resumption`)
 
 LangChain and LangGraph fixtures are in **separate** directories (`python-langchain/` and `python-langgraph/`), so checkpoints with the same name can have independent fixtures.

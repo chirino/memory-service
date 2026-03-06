@@ -112,7 +112,7 @@ jobs:
 
       - name: Run Java Tests
         if: contains('test-java', matrix.job)
-        run: mvn -T 1C clean test
+        run: ./java/mvnw -T 1C -f java/pom.xml clean test
 
       - name: Add JUnit summary to job
         if: always() && contains('test-java', matrix.job)
@@ -169,7 +169,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: quarkus/examples/chat-quarkus/Dockerfile
+          file: java/quarkus/examples/chat-quarkus/Dockerfile
           push: false
           tags: ghcr.io/chirino/memory-service-chat-quarkus:latest
           cache-from: type=gha,scope=image-chat-quarkus

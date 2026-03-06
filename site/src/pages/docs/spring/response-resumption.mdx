@@ -11,7 +11,7 @@ This guide covers streaming responses with recording, resumption, and cancellati
 
 ## Prerequisites
 
-**Starting checkpoint**: This guide starts from [spring/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/03-with-history)
+**Starting checkpoint**: This guide starts from [java/spring/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the previous guides:
 - [Getting Started](/docs/spring/getting-started/) - Basic memory service integration
@@ -24,7 +24,7 @@ When users disconnect during a streaming response (page reload, network issues),
 Update `ChatController.java` to use streaming:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/05-response-resumption/src/main/java/com/example/demo/ChatController.java"
+  file="java/spring/examples/doc-checkpoints/05-response-resumption/src/main/java/com/example/demo/ChatController.java"
   lang="java"
 />
 
@@ -32,7 +32,7 @@ Update `ChatController.java` to use streaming:
 
 **Why**: Server-Sent Events (SSE) allow the browser to receive tokens as they are generated rather than waiting for the full response. This makes the app feel significantly more responsive for longer answers. The `SseEmitter` with a `0L` timeout means the connection stays open indefinitely until the stream finishes, the client disconnects, or a cancel request arrives.
 
-<TestScenario checkpoint="spring/examples/doc-checkpoints/05-response-resumption">
+<TestScenario checkpoint="java/spring/examples/doc-checkpoints/05-response-resumption">
 
 Test it with curl:
 
@@ -72,7 +72,7 @@ and you should see the response streaming to the browser.
 ## Response Recording and Resumption
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/05-response-resumption/src/main/java/com/example/demo/ResumeController.java"
+  file="java/spring/examples/doc-checkpoints/05-response-resumption/src/main/java/com/example/demo/ResumeController.java"
   lang="java"
 />
 

@@ -126,7 +126,7 @@ type SiteScenario struct {
 	ScenarioName string
 
 	// Checkpoint state
-	CheckpointID          string // e.g. "quarkus/examples/chat-quarkus/01-basic-agent"
+	CheckpointID          string // e.g. "java/quarkus/examples/chat-quarkus/01-basic-agent"
 	CheckpointPath        string // absolute filesystem path
 	CheckpointPort        int    // dynamically allocated TCP port
 	checkpointPathClaimed bool
@@ -446,7 +446,7 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 		cmd = exec.Command("bash", "-lc", nodeBuildScript)
 		cmd.Dir = s.ProjectRoot
 	} else {
-		mvnw := filepath.Join(s.ProjectRoot, "mvnw")
+		mvnw := filepath.Join(s.ProjectRoot, "java", "mvnw")
 		pom := filepath.Join(s.CheckpointPath, "pom.xml")
 		args := []string{"-B", "clean", "package", "-DskipTests", "-f", pom}
 		if len(extraArgs) > 0 {

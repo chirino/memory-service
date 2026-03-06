@@ -124,8 +124,8 @@ env var in `checkpoint.go → startCheckpoint()` and document it here.
 ## Fixture file format
 
 Fixtures live in `internal/sitebdd/testdata/openai-mock/fixtures/<framework>/<checkpoint-name>/NNN.json`.
-The framework is the first path segment of the checkpoint ID
-(e.g., `quarkus/examples/chat-quarkus/01-basic-agent` → framework=`quarkus`,
+The framework is derived from the checkpoint ID
+(e.g., `java/quarkus/examples/chat-quarkus/01-basic-agent` → framework=`quarkus`,
 name=`01-basic-agent`).
 
 Special framework mappings:

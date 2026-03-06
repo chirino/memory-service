@@ -211,7 +211,7 @@ func ensureJavaCheckpointArtifacts(t *testing.T, projectRoot string, scenarios [
 	t.Helper()
 	needsJava := false
 	for _, s := range scenarios {
-		if strings.HasPrefix(s.Checkpoint, "quarkus/") || strings.HasPrefix(s.Checkpoint, "spring/") {
+		if strings.HasPrefix(s.Checkpoint, "java/quarkus/") || strings.HasPrefix(s.Checkpoint, "java/spring/") {
 			needsJava = true
 			break
 		}
@@ -220,9 +220,10 @@ func ensureJavaCheckpointArtifacts(t *testing.T, projectRoot string, scenarios [
 		return
 	}
 
-	mvnw := filepath.Join(projectRoot, "mvnw")
+	mvnw := filepath.Join(projectRoot, "java", "mvnw")
 	args := []string{
 		"-B", "-T", "1C",
+		"-f", filepath.Join(projectRoot, "java", "pom.xml"),
 		"-DskipTests",
 		"install",
 		"-pl", ":memory-service-extension-deployment,:memory-service-spring-boot-starter",

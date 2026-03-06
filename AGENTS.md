@@ -21,22 +21,22 @@ When you discover something meaningful about this project during your work—arc
 
 ## Quick Reference
 
-**Build**: `./mvnw` (Maven Wrapper)
+**Build**: `./java/mvnw -f java/pom.xml` (Maven Wrapper)
 
 **Essential commands**:
-- `./mvnw quarkus:dev -pl memory-service` - backend dev mode (:8080)
-- `./mvnw test` - run tests
-- `./mvnw compile` - compile (always run after Java changes)
-- `./mvnw -pl python verify` - regenerate Python gRPC stubs and validate Python package build/install (runs in Docker)
+- `./java/mvnw -f java/pom.xml test` - run Java/Quarkus/Spring tests
+- `./java/mvnw -f java/pom.xml compile` - compile Java modules (always run after Java changes)
+- `./java/mvnw -f java/pom.xml -pl :python verify` - regenerate Python gRPC stubs and validate Python package build/install (runs in Docker)
+- `task dev:memory-service` - backend dev mode (:8082)
 - `go test ./internal/bdd -run TestFeaturesPgKeycloak -count=1` - Go BDD runner for Postgres + Keycloak OIDC integration
 
 **Key paths**:
 - `memory-service-contracts/` - OpenAPI + proto sources of truth
-- `memory-service/` - core implementation
-- `quarkus/examples/chat-quarkus/` - Demo chat app (Quarkus)
-- `spring/examples/chat-spring/` - Demo chat app (Spring)
+- `main.go` + `internal/` - core Go implementation
+- `java/quarkus/examples/chat-quarkus/` - Demo chat app (Quarkus)
+- `java/spring/examples/chat-spring/` - Demo chat app (Spring)
 - `frontends/chat-frontend/` - Demo chat app frontend (React)
-- `site-tests/` - Documentation test module (MDX `<TestScenario>/<CurlTest>` to Cucumber pipeline)
+- `internal/sitebdd/` - Documentation test module (MDX `<TestScenario>/<CurlTest>` to Go/Cucumber pipeline)
 
 **API gotchas**:
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).
@@ -48,7 +48,8 @@ When you discover something meaningful about this project during your work—arc
 - Go cache serialization gotcha: `model.Entry` has custom JSON marshaling for `content`; keep marshal/unmarshal behavior symmetric or cached memory entries lose content and break sync/list semantics.
 - Devcontainer Go gotcha: if `.devcontainer/Dockerfile` installs an older Go version than `go.mod` (e.g. 1.24.2 vs 1.24.6), Go auto-downloads a newer toolchain into `GOPATH`; keep `/go` writable by `vscode` (or set `GOPATH` to a user-owned path) to avoid `mkdir .../golang.org/toolchain: permission denied`.
 - Memory usage counters increment only on direct fetch reads (`GET /v1/memories`, gRPC `GetMemory`); search endpoints can return usage metadata with `include_usage` but do not increment counters.
-- Quarkus REST client module builds can require `-am` (`./mvnw -pl quarkus/memory-service-rest-quarkus -am ...`) so `memory-service-contracts` is built in the same reactor.
+- Quarkus REST client module builds can require `-am` (`./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus -am ...`) so `memory-service-contracts` is built in the same reactor.
+- The Maven wrapper and reactor root live under `java/`; repo-root Maven commands must use `./java/mvnw -f java/pom.xml ...`.
 
 ## Development Guidelines
 
@@ -63,9 +64,9 @@ This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree
 
 **Verify only changed modules (required)**:
 - Go changes (`main.go`, `internal/`, `go.mod`, `go.sum`, etc.): run Go build for affected packages (use `go build ./...` when scope is broad).
-- Java/Quarkus/Spring changes: run Maven compile for affected modules (prefer `-pl` targeted modules; use full `./mvnw compile` only when scope is broad).
+- Java/Quarkus/Spring changes: run Maven compile for affected modules (prefer `-pl` targeted modules; use full `./java/mvnw -f java/pom.xml compile` only when scope is broad).
 - Frontend changes (`frontends/chat-frontend/`): run `npm run lint && npm run build` from `frontends/chat-frontend/`.
-- Python changes (`python/`): run `python3 -m compileall` on changed files/modules; run `./mvnw -pl python verify` when Python packaging/stubs are impacted.
+- Python changes (`python/`): run `python3 -m compileall` on changed files/modules; run `./java/mvnw -f java/pom.xml -pl :python verify` when Python packaging/stubs are impacted.
 - Cross-stack or uncertain impact: run all relevant checks above; full-repo compile is optional unless needed by the change scope.
 
 **Taskfile shell compatibility**: Task commands execute via `sh`; use POSIX redirection (`>/dev/null 2>&1`) instead of shell-specific forms like `&>` or malformed `2&>1`.
@@ -79,12 +80,12 @@ task test:go > test.log 2>&1
 **Module-specific knowledge** lives in `FACTS.md` files within each module directory:
 - `./frontends/chat-frontend/FACTS.md`
 - `./memory-service-contracts/FACTS.md`
-- `./quarkus/FACTS.md`
+- `./java/quarkus/FACTS.md`
 - `./python/FACTS.md`
 - `./internal/sitebdd/FACTS.md`
 - `./internal/FACTS.md`
 - `./site/FACTS.md`
-- `./spring/FACTS.md`
+- `./java/spring/FACTS.md`
 
 **Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 
