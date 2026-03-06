@@ -102,7 +102,7 @@ services:
     # build:
     #   context: .devcontainer
     #   dockerfile: Dockerfile
-    # command: ["air", "-c", "air.toml"]
+    # command: ["air", "-root", ".", "-c", "deploy/dev/air.toml"]
     ### </dev-mode> #######################################################
 
     environment:
@@ -173,7 +173,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -219,5 +219,3 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
-
-

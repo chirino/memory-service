@@ -1,5 +1,7 @@
 # memory-service-contracts facts
 
+- Contract sources live in repo-root `contracts/`, split as `contracts/openapi/` and `contracts/protobuf/`; the `java/memory-service-contracts` module publishes them as resources via `../../contracts` instead of using `src/main/resources`.
+
 - In `CreateEntryRequest` (`openapi.yml` and `memory/v1/memory_service.proto`), `forkedAtEntryId`/`forked_at_entry_id` is optional even when `forkedAtConversationId`/`forked_at_conversation_id` is set.
 - When `forkedAtEntryId` is unset during fork-on-append, inherited source entries are excluded; newly appended messages become the first entries of the fork.
 - OpenAPI generator gotcha: avoid `default` on a `oneOf` union for `searchType` in `openapi.yml`; Quarkus REST client generation can emit invalid Java code (unresolved enum symbol like `auto`) when a union field has a scalar default.

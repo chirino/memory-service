@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${PYTHON_DIR}/.." && pwd)"
 
-PROTO_ROOT="${REPO_ROOT}/memory-service-contracts/src/main/resources"
+PROTO_ROOT="${REPO_ROOT}/contracts/protobuf"
 OUT_ROOT="${PYTHON_DIR}/langchain/memory_service_langchain/grpc"
 PROTO_FILE="memory/v1/memory_service.proto"
 GRPC_TOOLS_VERSION="${GRPC_TOOLS_VERSION:-1.74.0}"
