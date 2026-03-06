@@ -32,6 +32,7 @@ func registerCheckpointSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
 	// Cleanup after each scenario (handles panics / step failures)
 	ctx.After(func(ctx context.Context, sc *godog.Scenario, err error) (context.Context, error) {
 		s.stopCheckpoint(err != nil)
+		s.finishWave()
 		return ctx, nil
 	})
 }
@@ -53,6 +54,7 @@ func (s *SiteScenario) checkpointIsActive(checkpointID string) error {
 
 	// Decide record vs. playback before starting
 	s.Recording = s.shouldRecord()
+	s.Wave = globalScenarioWaveCoordinator.Enter()
 
 	if !fileExists(s.CheckpointPath) {
 		return fmt.Errorf("checkpoint directory does not exist: %s", s.CheckpointPath)
@@ -99,10 +101,28 @@ func (s *SiteScenario) theApplicationShouldBeRunning() error {
 	if err := s.checkpointCmd.Process.Signal(syscall.Signal(0)); err != nil {
 		return fmt.Errorf("checkpoint process has exited: %v", err)
 	}
+	s.markWaveReady()
 	return nil
 }
 
 func (s *SiteScenario) iStopTheCheckpoint() error {
 	s.stopCheckpoint(false)
 	return nil
+}
+
+func (s *SiteScenario) markWaveReady() {
+	if s.Wave == nil || s.waveReady {
+		return
+	}
+	globalScenarioWaveCoordinator.MarkReady(s.Wave)
+	s.waveReady = true
+}
+
+func (s *SiteScenario) finishWave() {
+	if s.Wave == nil {
+		return
+	}
+	s.markWaveReady()
+	globalScenarioWaveCoordinator.Finish(s.Wave)
+	s.Wave = nil
 }

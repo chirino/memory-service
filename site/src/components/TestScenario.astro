@@ -47,9 +47,7 @@ try {
     }
 
     // Merge: append scenarios to existing entry or add new one
-    const existingIndex = allScenarios.findIndex(
-      (s) => s.checkpoint === testData.checkpoint && s.sourceFile === testData.sourceFile,
-    );
+    const existingIndex = allScenarios.findIndex((s) => s.checkpoint === testData.checkpoint && s.sourceFile === testData.sourceFile);
 
     if (existingIndex >= 0) {
       // Append new scenarios to existing entry, skipping duplicates

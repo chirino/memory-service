@@ -129,10 +129,12 @@ type SiteScenario struct {
 	CheckpointID          string // e.g. "java/quarkus/examples/chat-quarkus/01-basic-agent"
 	CheckpointPath        string // absolute filesystem path
 	CheckpointPort        int    // dynamically allocated TCP port
+	Wave                  *scenarioWave
 	checkpointPathClaimed bool
 	checkpointCmd         *exec.Cmd
 	checkpointLogPath     string
 	buildExitCode         int
+	waveReady             bool
 
 	// OpenAI mock recording
 	Recording bool
