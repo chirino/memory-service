@@ -11,7 +11,7 @@ These guides walk you through integrating Memory Service with a **Spring Boot** 
 Before starting any of the tutorials below, make sure you have the following installed:
 
 - **Java 21** or later
-- **Maven** (or use the included `./mvnw` wrapper)
+- **Maven** (or use the repo-local `./java/mvnw -f java/pom.xml` wrapper)
 - **Docker** (for Memory Service)
 - **curl** and **jq** installed
 
@@ -24,7 +24,7 @@ Clone the repository and build all modules:
 ```bash
 git clone https://github.com/chirino/memory-service.git
 cd memory-service
-./mvnw -DskipTests clean install
+./java/mvnw -f java/pom.xml -DskipTests clean install
 ```
 
 This installs all project artifacts to your local Maven repository.

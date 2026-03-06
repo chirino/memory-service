@@ -46,6 +46,8 @@ func (s *SiteScenario) setCurlCaptureID(captureID string) error {
 // applies port and user substitutions, executes each as a Go HTTP request,
 // and stores the last response.
 func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
+	globalScenarioWaveCoordinator.WaitForCurlPhase(s.Wave)
+
 	bash := block.Content
 
 	// Execute any setup commands (e.g., echo "..." > /tmp/file)

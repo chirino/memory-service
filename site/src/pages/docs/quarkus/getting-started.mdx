@@ -16,7 +16,7 @@ Make sure you've completed the [prerequisites](/docs/quarkus/) before starting t
 
 ## Step 1: Create a Simple LangChain4j App
 
-**Starting checkpoint**: View the complete code at [quarkus/examples/doc-checkpoints/01-basic-agent](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/01-basic-agent)
+**Starting checkpoint**: View the complete code at [java/quarkus/examples/doc-checkpoints/01-basic-agent](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/01-basic-agent)
 
 First, let's create a new [Quarkus](https://quarkus.io/get-started/) application with: 
 
@@ -28,7 +28,7 @@ cd example
 Add the LangChain4j OpenAI dependency to your `pom.xml`:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/01-basic-agent/pom.xml"
+  file="java/quarkus/examples/doc-checkpoints/01-basic-agent/pom.xml"
   lang="xml"
   before={2}
   after={2}
@@ -40,7 +40,7 @@ match="quarkus-langchain4j-openai"
 Create a simple AI service interface:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/01-basic-agent/src/main/java/org/acme/Agent.java"
+  file="java/quarkus/examples/doc-checkpoints/01-basic-agent/src/main/java/org/acme/Agent.java"
   lang="java"
 />
 
@@ -49,7 +49,7 @@ Create a simple AI service interface:
 Create a REST resource to expose the agent:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/01-basic-agent/src/main/java/org/acme/ChatResource.java"
+  file="java/quarkus/examples/doc-checkpoints/01-basic-agent/src/main/java/org/acme/ChatResource.java"
   lang="java"
 />
 
@@ -58,13 +58,13 @@ Create a REST resource to expose the agent:
 Configure your LLM in `application.properties` so it gets OpenAI credentials from the environment variables and change the HTTP port to 9090 to avoid conflict with services that will be started later:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/01-basic-agent/src/main/resources/application.properties"
+  file="java/quarkus/examples/doc-checkpoints/01-basic-agent/src/main/resources/application.properties"
   lang="properties"
 />
 
 **Why**: Reading credentials from environment variables keeps secrets out of source control. The port is moved to 9090 so it doesn't conflict with the Memory Service and Keycloak that will be started on ports 8082 and 8081 in later steps.
 
-<TestScenario checkpoint="quarkus/examples/doc-checkpoints/01-basic-agent">
+<TestScenario checkpoint="java/quarkus/examples/doc-checkpoints/01-basic-agent">
 
 Run your agent:
 
@@ -72,7 +72,7 @@ Run your agent:
 export OPENAI_API_KEY=your-api-key
 ```
 ```bash
-./mvnw quarkus:dev
+mvn quarkus:dev
 ```
 
 Test it with curl:
@@ -114,7 +114,7 @@ Let's add conversation memory.
 
 ## Step 2: Add Memory Service Extension
 
-**Starting checkpoint**: View the complete code at [quarkus/examples/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/02-with-memory)
+**Starting checkpoint**: View the complete code at [java/quarkus/examples/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/02-with-memory)
 
 Add the Memory Service extension to your `pom.xml`:
 
@@ -128,7 +128,7 @@ Add the Memory Service extension to your `pom.xml`:
 Update the Agent interface to accept a conversation ID using the `@MemoryId` annotation:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/02-with-memory/src/main/java/org/acme/Agent.java"
+  file="java/quarkus/examples/doc-checkpoints/02-with-memory/src/main/java/org/acme/Agent.java"
   lang="java"
 />
 
@@ -137,7 +137,7 @@ Update the Agent interface to accept a conversation ID using the `@MemoryId` ann
 Update the REST resource to accept a conversation ID:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/02-with-memory/src/main/java/org/acme/ChatResource.java"
+  file="java/quarkus/examples/doc-checkpoints/02-with-memory/src/main/java/org/acme/ChatResource.java"
   lang="java"
 />
 
@@ -148,7 +148,7 @@ Start the Memory Service in Docker Compose following the [Getting Started](/docs
 Configure the agent to connect to the Memory Service and configure OIDC authentication in `application.properties`:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/02-with-memory/src/main/resources/application.properties"
+  file="java/quarkus/examples/doc-checkpoints/02-with-memory/src/main/resources/application.properties"
   lang="properties"
   after={11}
 match="# Memory Service Client"
@@ -156,13 +156,13 @@ match="# Memory Service Client"
 
 **What changed**: Added Memory Service client URL and API key, OIDC server configuration, and a route policy that requires authentication on `/chat/*`. **Why**: The Memory Service uses a dual-authentication pattern — your Quarkus app authenticates to it using a service account API key, while the user's Bearer token is passed through to enforce ownership of conversations. Enabling OIDC on the Quarkus side allows it to validate and propagate the user's identity automatically.
 
-<TestScenario checkpoint="quarkus/examples/doc-checkpoints/02-with-memory">
+<TestScenario checkpoint="java/quarkus/examples/doc-checkpoints/02-with-memory">
 
 Run your agent again:
 
 ```bash
 export OPENAI_API_KEY=your-api-key
-./mvnw quarkus:dev
+mvn quarkus:dev
 ```
 
 Make sure you define a shell function that can get the bearer token for the bob user:

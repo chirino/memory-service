@@ -16,7 +16,7 @@ This guide continues from [Conversation History](/docs/quarkus/conversation-hist
 
 ## Prerequisites
 
-**Starting checkpoint**: View the code from the previous section at [quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/03-with-history)
+**Starting checkpoint**: View the code from the previous section at [java/quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the [Conversation History](/docs/quarkus/conversation-history/) guide first. You should have:
 - Conversation history recording with `@RecordConversation`
@@ -36,7 +36,7 @@ This design gives your application a chance to **redact sensitive information** 
 To enable search indexing, create a bean that implements the `IndexedContentProvider` interface. The simplest implementation passes text through unchanged:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/PassThroughIndexedContentProvider.java"
+  file="java/quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/PassThroughIndexedContentProvider.java"
   lang="java"
 />
 
@@ -54,7 +54,7 @@ For production applications, you'll likely want to redact sensitive information.
 `text.replaceAll("\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b", "[REDACTED]")`
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/PassThroughIndexedContentProvider.java"
+  file="java/quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/PassThroughIndexedContentProvider.java"
   lang="java"
   before={1}
   after={2}
@@ -70,7 +70,7 @@ You can also return `null` to skip indexing entirely for certain messages — fo
 To let the frontend search across conversations, add a search endpoint to your `ConversationsResource`:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/ConversationsResource.java"
+  file="java/quarkus/examples/doc-checkpoints/07-with-search/src/main/java/org/acme/ConversationsResource.java"
   lang="java"
   before={4}
   after={2}
@@ -88,7 +88,7 @@ This endpoint accepts a JSON request body with the following fields:
 
 If you request an unavailable concrete type (for example `"semantic"` with no vector backend configured), Memory Service returns `501 search_type_unavailable`.
 
-<TestScenario checkpoint="quarkus/examples/doc-checkpoints/07-with-search">
+<TestScenario checkpoint="java/quarkus/examples/doc-checkpoints/07-with-search">
 
 Make sure you define a shell function that can get the bearer token for the bob user:
 
@@ -167,7 +167,7 @@ Search results include:
 
 ## Completed Checkpoint
 
-**Completed code**: View the full implementation at [quarkus/examples/doc-checkpoints/07-with-search](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/07-with-search)
+**Completed code**: View the full implementation at [java/quarkus/examples/doc-checkpoints/07-with-search](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/07-with-search)
 
 ## Next Steps
 

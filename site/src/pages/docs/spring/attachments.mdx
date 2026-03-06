@@ -16,7 +16,7 @@ This guide covers proxying attachment operations — upload, download, signed UR
 
 ## Prerequisites
 
-**Starting checkpoint**: This guide starts from [spring/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/03-with-history)
+**Starting checkpoint**: This guide starts from [java/spring/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the previous guides:
 - [Getting Started](/docs/spring/getting-started/) - Basic memory service integration
@@ -36,7 +36,7 @@ The `MemoryServiceProxy` helper already handles the complexity of multipart uplo
 Create `AttachmentsProxyController.java` to proxy authenticated attachment operations to the Memory Service:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/08-with-attachments/src/main/java/com/example/demo/AttachmentsProxyController.java"
+  file="java/spring/examples/doc-checkpoints/08-with-attachments/src/main/java/com/example/demo/AttachmentsProxyController.java"
   lang="java"
 />
 
@@ -54,7 +54,7 @@ Browser elements like `<img>`, `<audio>`, and `<video>` tags cannot send Authori
 Create `AttachmentDownloadProxyController.java`:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/08-with-attachments/src/main/java/com/example/demo/AttachmentDownloadProxyController.java"
+  file="java/spring/examples/doc-checkpoints/08-with-attachments/src/main/java/com/example/demo/AttachmentDownloadProxyController.java"
   lang="java"
 />
 
@@ -65,13 +65,13 @@ This endpoint requires no bearer token — the signed token in the URL path prov
 Update `SecurityConfig.java` to allow unauthenticated access to the signed download path:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/08-with-attachments/src/main/java/com/example/demo/SecurityConfig.java"
+  file="java/spring/examples/doc-checkpoints/08-with-attachments/src/main/java/com/example/demo/SecurityConfig.java"
   lang="java"
 />
 
 The key change is adding `.requestMatchers("/v1/attachments/download/**").permitAll()` before `.anyRequest().authenticated()`. This allows signed download URLs to work without an Authorization header, while all other endpoints still require authentication.
 
-<TestScenario checkpoint="spring/examples/doc-checkpoints/08-with-attachments">
+<TestScenario checkpoint="java/spring/examples/doc-checkpoints/08-with-attachments">
 
 ## Testing
 

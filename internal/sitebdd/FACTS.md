@@ -62,12 +62,19 @@ the newly recorded fixture content.
 The test suite reads `site/dist/test-scenarios.json`
 (produced by `cd site && npm run build`) and generates Gherkin `.feature` files at
 runtime into a temp directory. Those features are handed to `godog` with
-`Concurrency: runtime.NumCPU()`.
+`Concurrency: runtime.NumCPU()` (falling back to 1 if the CPU count is unknown).
 
 Before running scenarios, `TestSiteDocs` installs Java checkpoint dependencies into
 the local Maven repo (`:memory-service-extension-deployment` and
 `:memory-service-spring-boot-starter`). This avoids parallel checkpoint builds
 failing to resolve `999-SNAPSHOT` artifacts.
+
+Scenario execution is wave-gated. Up to `runtime.NumCPU()` scenarios are admitted
+into a wave, and those scenarios can build and start checkpoints concurrently.
+The first curl step in each scenario waits until every scenario in the current
+wave has either reached `the application should be running` or exited early.
+Only after the whole wave drains can the next wave begin building. This prevents
+curl traffic from overlapping with checkpoint build/start work.
 
 Strict JSON assertions (`response body should be json`) replay the last GET request
 up to 4 times with short backoff before failing. This stabilizes checks for
@@ -124,8 +131,8 @@ env var in `checkpoint.go → startCheckpoint()` and document it here.
 ## Fixture file format
 
 Fixtures live in `internal/sitebdd/testdata/openai-mock/fixtures/<framework>/<checkpoint-name>/NNN.json`.
-The framework is the first path segment of the checkpoint ID
-(e.g., `quarkus/examples/chat-quarkus/01-basic-agent` → framework=`quarkus`,
+The framework is derived from the checkpoint ID
+(e.g., `java/quarkus/examples/chat-quarkus/01-basic-agent` → framework=`quarkus`,
 name=`01-basic-agent`).
 
 Special framework mappings:

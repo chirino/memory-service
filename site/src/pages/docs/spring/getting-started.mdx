@@ -15,7 +15,7 @@ Make sure you've completed the [prerequisites](/docs/spring/) before starting th
 
 ## Step 1: Create a Simple Spring AI App
 
-**Starting checkpoint**: View the complete code at [spring/examples/doc-checkpoints/01-basic-agent](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/01-basic-agent)
+**Starting checkpoint**: View the complete code at [java/spring/examples/doc-checkpoints/01-basic-agent](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/01-basic-agent)
 
 First, let's create a new Spring Boot application. Use [Spring Initializr](https://start.spring.io/#!type=maven-project&language=java&platformVersion=3.5.10&packaging=jar&configurationFileFormat=properties&jvmVersion=21&groupId=com.example&artifactId=demo&name=demo&description=Demo%20project%20for%20Spring%20Boot&packageName=com.example.demo&dependencies=spring-ai-openai,web) to setup the project.
 Make sure to use Spring Boot 3.5 as that the latest version supported by Spring AI and add the OpenAI and Spring Web dependencies.
@@ -31,7 +31,7 @@ cd demo
 Create a simple REST controller:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/01-basic-agent/src/main/java/com/example/demo/ChatController.java"
+  file="java/spring/examples/doc-checkpoints/01-basic-agent/src/main/java/com/example/demo/ChatController.java"
   lang="java"
 />
 
@@ -40,13 +40,13 @@ Create a simple REST controller:
 Configure the server port and OpenAI credentials in `application.properties`:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/01-basic-agent/src/main/resources/application.properties"
+  file="java/spring/examples/doc-checkpoints/01-basic-agent/src/main/resources/application.properties"
   lang="properties"
 />
 
 **Why**: Keeping credentials in environment variables rather than hardcoded values prevents secrets from being committed to source control and makes it straightforward to point the app at a different model or a local proxy without code changes.
 
-<TestScenario checkpoint="spring/examples/doc-checkpoints/01-basic-agent">
+<TestScenario checkpoint="java/spring/examples/doc-checkpoints/01-basic-agent">
 
 Run your agent:
 
@@ -54,7 +54,7 @@ Run your agent:
 export OPENAI_API_KEY=your-api-key
 ```
 ```bash
-./mvnw spring-boot:run
+mvn spring-boot:run
 ```
 
 Test it with curl:
@@ -96,7 +96,7 @@ Let's add conversation memory.
 
 ## Step 2: Add Memory Service Starter
 
-**Starting checkpoint**: View the complete code at [spring/examples/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/02-with-memory)
+**Starting checkpoint**: View the complete code at [java/spring/examples/doc-checkpoints/02-with-memory](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/02-with-memory)
 
 Add the Memory Service Spring Boot starter and OAuth2 resource server dependencies to your `pom.xml`:
 
@@ -139,7 +139,7 @@ spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8081/realm
 Configure security:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/02-with-memory/src/main/java/com/example/demo/SecurityConfig.java"
+  file="java/spring/examples/doc-checkpoints/02-with-memory/src/main/java/com/example/demo/SecurityConfig.java"
   lang="java"
 />
 
@@ -150,7 +150,7 @@ Configure security:
 Update the controller to use chat memory:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/02-with-memory/src/main/java/com/example/demo/ChatController.java"
+  file="java/spring/examples/doc-checkpoints/02-with-memory/src/main/java/com/example/demo/ChatController.java"
   lang="java"
 />
 
@@ -158,13 +158,13 @@ Update the controller to use chat memory:
 
 **Why**: `MemoryServiceChatMemoryRepositoryBuilder.build(bearerToken)` creates a repository that reads and writes the agent's context window to and from the Memory Service under the current user's identity, so every user's conversation history is stored separately and securely. `MessageWindowChatMemory` keeps only the most recent N messages in the prompt, preventing the context window from growing unbounded across many turns.
 
-<TestScenario checkpoint="spring/examples/doc-checkpoints/02-with-memory">
+<TestScenario checkpoint="java/spring/examples/doc-checkpoints/02-with-memory">
 
 Run your agent again:
 
 ```bash
 export OPENAI_API_KEY=your-api-key
-./mvnw spring-boot:run
+mvn spring-boot:run
 ```
 
 Make sure you define a shell function that can get the bearer token for the bob user:

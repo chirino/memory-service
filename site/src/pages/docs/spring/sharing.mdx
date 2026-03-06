@@ -16,7 +16,7 @@ This guide shows you how to implement conversation sharing and ownership transfe
 
 ## Prerequisites
 
-**Starting checkpoint**: This guide starts from [spring/examples/doc-checkpoints/05-response-resumption](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/05-response-resumption)
+**Starting checkpoint**: This guide starts from [java/spring/examples/doc-checkpoints/05-response-resumption](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/05-response-resumption)
 
 Make sure you've completed the previous guides:
 - [Conversation Forking](/docs/spring/conversation-forking/) - Branching conversations
@@ -28,7 +28,7 @@ Make sure you've completed the previous guides:
 Add the membership endpoints to your `MemoryServiceProxyController`:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/06-sharing/src/main/java/com/example/demo/MemoryServiceProxyController.java"
+  file="java/spring/examples/doc-checkpoints/06-sharing/src/main/java/com/example/demo/MemoryServiceProxyController.java"
   lang="java"
   before={1}
   after={23}
@@ -42,7 +42,7 @@ match="// Membership management endpoints"
 Create a new `OwnershipTransfersController`:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/06-sharing/src/main/java/com/example/demo/OwnershipTransfersController.java"
+  file="java/spring/examples/doc-checkpoints/06-sharing/src/main/java/com/example/demo/OwnershipTransfersController.java"
   lang="java"
 />
 
@@ -70,7 +70,7 @@ function get-token() {
 }
 ```
 
-<TestScenario checkpoint="spring/examples/doc-checkpoints/06-sharing">
+<TestScenario checkpoint="java/spring/examples/doc-checkpoints/06-sharing">
 
 First, create a conversation as bob so the membership endpoints have data to work with:
 
@@ -337,5 +337,5 @@ Returns `204 No Content`. The transfer is deleted and ownership remains unchange
 
 ## Completed Checkpoint
 
-**Completed code**: View the full implementation at [spring/examples/doc-checkpoints/06-sharing](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/06-sharing)
+**Completed code**: View the full implementation at [java/spring/examples/doc-checkpoints/06-sharing](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/06-sharing)
 

@@ -16,7 +16,7 @@ This guide covers proxying attachment operations — upload, download, signed UR
 
 ## Prerequisites
 
-**Starting checkpoint**: This guide starts from [quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/03-with-history)
+**Starting checkpoint**: This guide starts from [java/quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the previous guides:
 - [Getting Started](/docs/quarkus/getting-started/) - Basic memory service integration
@@ -36,7 +36,7 @@ The `MemoryServiceProxy` helper already handles the complexity of multipart uplo
 Create `AttachmentsProxyResource.java` to proxy authenticated attachment operations to the Memory Service:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/08-with-attachments/src/main/java/org/acme/AttachmentsProxyResource.java"
+  file="java/quarkus/examples/doc-checkpoints/08-with-attachments/src/main/java/org/acme/AttachmentsProxyResource.java"
   lang="java"
 />
 
@@ -54,7 +54,7 @@ Browser elements like `<img>`, `<audio>`, and `<video>` tags cannot send Authori
 Create `AttachmentDownloadProxyResource.java`:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/08-with-attachments/src/main/java/org/acme/AttachmentDownloadProxyResource.java"
+  file="java/quarkus/examples/doc-checkpoints/08-with-attachments/src/main/java/org/acme/AttachmentDownloadProxyResource.java"
   lang="java"
 />
 
@@ -65,7 +65,7 @@ This endpoint requires no bearer token — the signed token in the URL path prov
 Update `application.properties` to allow unauthenticated access to the signed download path while requiring authentication for all other `/v1/*` endpoints:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/08-with-attachments/src/main/resources/application.properties"
+  file="java/quarkus/examples/doc-checkpoints/08-with-attachments/src/main/resources/application.properties"
   lang="properties"
   before={1}
   after={1}
@@ -74,7 +74,7 @@ match="quarkus.http.auth.permission.attachment-download.paths"
 
 The `attachment-download` permission must allow unauthenticated access to `/v1/attachments/download/*` since signed URLs are meant to be used without an Authorization header. The `api` permission requires authentication on all other `/v1/*` endpoints. Quarkus matches the most specific path first, so the order in the properties file doesn't matter.
 
-<TestScenario checkpoint="quarkus/examples/doc-checkpoints/08-with-attachments">
+<TestScenario checkpoint="java/quarkus/examples/doc-checkpoints/08-with-attachments">
 
 ## Testing
 

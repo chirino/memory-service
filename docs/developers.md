@@ -19,33 +19,32 @@ export OPENAI_BASE_URL=http://host.docker.internal:1234
 Run the chat-quarkus in dev mode, but firsts compile it's dependencies:
 ```bash
 
-./mvnw -T 1C install -pl ':chat-quarkus' -am -DskipTests && \
+./java/mvnw -T 1C -f java/pom.xml install -pl ':chat-quarkus' -am -DskipTests && \
     docker compose build memory-service && \
-    ./mvnw -T 1C -pl :chat-quarkus quarkus:dev
+    ./java/mvnw -T 1C -f java/pom.xml -pl :chat-quarkus quarkus:dev
 ```
 
 The above handles starting all depdencies including the memory-service in containers.
 
 ## Running memeory-service and chat-quarkus in dev mode.
 
-Run the memory-service in dev mode, but first compile it's dependencies..
+Run the memory-service in dev mode:
 ```bash
-./mvnw -T 1C install -pl ':memory-service' -am -DskipTests && \
-    ./mvnw -T 1C -pl :memory-service quarkus:dev
+task dev:memory-service
 ```
 
 The above handles starting all depdencies of the memory-service in containers.
 
 Run the chat-quarkus in dev mode, but firsts compile it's dependencies..
 ```bash
-./mvnw -T 1C install -pl ':memory-service-extension-deployment' -am -DskipTests && \
-    ./mvnw -T 1C -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
+./java/mvnw -T 1C -f java/pom.xml install -pl ':memory-service-extension-deployment' -am -DskipTests && \
+    ./java/mvnw -T 1C -f java/pom.xml -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
 ```
 
 ## Running memeory-service and chat-string /w docker compose 
 
 ```bash
-./mvnw -DskipTests -am -pl :memory-service-spring-boot-docker-compose-starter clean install && ./mvnw -pl :chat-spring spring-boot:run
+./java/mvnw -DskipTests -f java/pom.xml -am -pl :memory-service-spring-boot-docker-compose-starter clean install && ./java/mvnw -f java/pom.xml -pl :chat-spring spring-boot:run
 ```
 
 If you don't want it to start the memory-service in a container on boot then run this before starting it:

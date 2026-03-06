@@ -11,7 +11,7 @@ This guide covers streaming responses with recording, resumption, and cancellati
 
 ## Prerequisites
 
-**Starting checkpoint**: This guide starts from [quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/03-with-history)
+**Starting checkpoint**: This guide starts from [java/quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the previous guides:
 - [Getting Started](/docs/quarkus/getting-started/) - Basic memory service integration
@@ -24,7 +24,7 @@ When users disconnect during a streaming response (page reload, network issues),
 Update the `Agent.java` to use streaming responses:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/Agent.java"
+  file="java/quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/Agent.java"
   lang="java"
 />
 
@@ -33,7 +33,7 @@ Update the `Agent.java` to use streaming responses:
 Update the `HistoryRecordingAgent.java` to use streaming responses:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/HistoryRecordingAgent.java"
+  file="java/quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/HistoryRecordingAgent.java"
   lang="java"
 />
 
@@ -42,13 +42,13 @@ Update the `HistoryRecordingAgent.java` to use streaming responses:
 Update `ChatResource.java` to use Server Sent Events (SSE) to stream the responses to the client:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/ChatResource.java"
+  file="java/quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/ChatResource.java"
   lang="java"
 />
 
 **What changed**: The `chat` method now returns `Multi<String>` instead of `String`. **Why**: Returning a reactive stream from a JAX-RS endpoint causes Quarkus RESTEasy Reactive to automatically stream each emitted token to the HTTP client as a Server-Sent Event. The client receives tokens incrementally as the LLM produces them, instead of waiting for the full response.
 
-<TestScenario checkpoint="quarkus/examples/doc-checkpoints/05-response-resumption">
+<TestScenario checkpoint="java/quarkus/examples/doc-checkpoints/05-response-resumption">
 
 Test it with curl:
 
@@ -83,7 +83,7 @@ and you should see the response streaming to the browser.
 ## Response Recording and Resumption
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/ResumeResource.java"
+  file="java/quarkus/examples/doc-checkpoints/05-response-resumption/src/main/java/org/acme/ResumeResource.java"
   lang="java"
 />
 

@@ -14,7 +14,7 @@ This guide covers conversation forking — letting users branch off from any poi
 
 ## Prerequisites
 
-**Starting checkpoint**: This guide starts from [spring/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/spring/examples/doc-checkpoints/03-with-history)
+**Starting checkpoint**: This guide starts from [java/spring/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the previous guides:
 - [Getting Started](/docs/spring/getting-started/) - Basic memory service integration
@@ -27,7 +27,7 @@ Make sure you've completed the previous guides:
 Forks are created implicitly when the first entry is appended to a new conversation with fork metadata. In this checkpoint, the `ChatController` accepts optional fork query params and forwards them to the history advisor:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/04-conversation-forking/src/main/java/com/example/demo/ChatController.java"
+  file="java/spring/examples/doc-checkpoints/04-conversation-forking/src/main/java/com/example/demo/ChatController.java"
   lang="java"
   lines="33-74"
 />
@@ -39,7 +39,7 @@ Forks are created implicitly when the first entry is appended to a new conversat
 Add this method to the `MemoryServiceProxyController` to list forks for a conversation:
 
 <CodeFromFile
-  file="spring/examples/doc-checkpoints/04-conversation-forking/src/main/java/com/example/demo/MemoryServiceProxyController.java"
+  file="java/spring/examples/doc-checkpoints/04-conversation-forking/src/main/java/com/example/demo/MemoryServiceProxyController.java"
   lang="java"
   before={2}
   after={1}
@@ -52,7 +52,7 @@ match="listConversationForks(@PathVariable String conversationId)"
 
 ## Try It With Curl
 
-<TestScenario checkpoint="spring/examples/doc-checkpoints/04-conversation-forking">
+<TestScenario checkpoint="java/spring/examples/doc-checkpoints/04-conversation-forking">
 
 Define a helper to get a bearer token for `bob`:
 

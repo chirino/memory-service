@@ -14,7 +14,7 @@ This guide covers conversation forking — letting users branch off from any poi
 
 ## Prerequisites
 
-**Starting checkpoint**: This guide starts from [quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/quarkus/examples/doc-checkpoints/03-with-history)
+**Starting checkpoint**: This guide starts from [java/quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/03-with-history)
 
 Make sure you've completed the previous guides:
 - [Getting Started](/docs/quarkus/getting-started/) - Basic memory service integration
@@ -27,7 +27,7 @@ Make sure you've completed the previous guides:
 Forks are created implicitly when the first entry is appended to a new conversation with fork metadata. In this checkpoint, `HistoryRecordingAgent` remains the same as the previous step, and fork metadata is passed when creating entries through the Memory Service API:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/04-conversation-forking/src/main/java/org/acme/HistoryRecordingAgent.java"
+  file="java/quarkus/examples/doc-checkpoints/04-conversation-forking/src/main/java/org/acme/HistoryRecordingAgent.java"
   lang="java"
 />
 
@@ -38,7 +38,7 @@ Forks are created implicitly when the first entry is appended to a new conversat
 Add this method to `ConversationsResource.java` to list forks for a conversation:
 
 <CodeFromFile
-  file="quarkus/examples/doc-checkpoints/04-conversation-forking/src/main/java/org/acme/ConversationsResource.java"
+  file="java/quarkus/examples/doc-checkpoints/04-conversation-forking/src/main/java/org/acme/ConversationsResource.java"
   lang="java"
   before={2}
   after={1}
@@ -49,7 +49,7 @@ match="public Response listConversationForks"
 
 ## Try It With Curl
 
-<TestScenario checkpoint="quarkus/examples/doc-checkpoints/04-conversation-forking">
+<TestScenario checkpoint="java/quarkus/examples/doc-checkpoints/04-conversation-forking">
 
 Define a helper to get a bearer token for `bob`:
 

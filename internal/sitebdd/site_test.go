@@ -58,6 +58,16 @@ func TestSiteDocs(t *testing.T) {
 		return
 	}
 
+	tagFilter := strings.TrimSpace(os.Getenv("GODOG_TAGS"))
+	scheduledScenarios, err := countScheduledScenarios(scenarios, tagFilter)
+	require.NoError(t, err, "parse GODOG_TAGS")
+	if scheduledScenarios == 0 {
+		t.Skipf("no scenarios matched GODOG_TAGS=%q", tagFilter)
+		return
+	}
+
+	globalScenarioWaveCoordinator.Reset(scheduledScenarios, siteScenarioConcurrency())
+
 	t.Logf("Loaded %d scenario(s) from %s", len(scenarios), scenariosFile)
 
 	// Generate .feature files into a temp directory
@@ -111,7 +121,7 @@ func TestSiteDocs(t *testing.T) {
 	opts := godog.Options{
 		Format:      "progress",
 		Paths:       []string{featureDir},
-		Concurrency: runtime.NumCPU(),
+		Concurrency: siteScenarioConcurrency(),
 		Randomize:   0, // deterministic order for reproducibility
 	}
 
@@ -122,8 +132,8 @@ func TestSiteDocs(t *testing.T) {
 
 	// Pass through godog tag filters via GODOG_TAGS env var
 	// e.g. GODOG_TAGS=@quarkus go test -tags=site_tests ./internal/sitebdd/
-	if tags := os.Getenv("GODOG_TAGS"); tags != "" {
-		opts.Tags = tags
+	if tagFilter != "" {
+		opts.Tags = tagFilter
 	}
 
 	opts.TestingT = t
@@ -211,7 +221,7 @@ func ensureJavaCheckpointArtifacts(t *testing.T, projectRoot string, scenarios [
 	t.Helper()
 	needsJava := false
 	for _, s := range scenarios {
-		if strings.HasPrefix(s.Checkpoint, "quarkus/") || strings.HasPrefix(s.Checkpoint, "spring/") {
+		if strings.HasPrefix(s.Checkpoint, "java/quarkus/") || strings.HasPrefix(s.Checkpoint, "java/spring/") {
 			needsJava = true
 			break
 		}
@@ -220,9 +230,10 @@ func ensureJavaCheckpointArtifacts(t *testing.T, projectRoot string, scenarios [
 		return
 	}
 
-	mvnw := filepath.Join(projectRoot, "mvnw")
+	mvnw := filepath.Join(projectRoot, "java", "mvnw")
 	args := []string{
 		"-B", "-T", "1C",
+		"-f", filepath.Join(projectRoot, "java", "pom.xml"),
 		"-DskipTests",
 		"install",
 		"-pl", ":memory-service-extension-deployment,:memory-service-spring-boot-starter",
@@ -265,6 +276,13 @@ func ensurePythonPackages(t *testing.T, projectRoot string, scenarios []Scenario
 	if needsLanggraph {
 		runBuild("python/langgraph")
 	}
+}
+
+func siteScenarioConcurrency() int {
+	if n := runtime.NumCPU(); n > 0 {
+		return n
+	}
+	return 1
 }
 
 // testWriter adapts testing.T.Log as an io.Writer so we can stream
