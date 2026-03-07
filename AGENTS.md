@@ -59,9 +59,6 @@ When you discover something meaningful about this project during your work—arc
 **Security**: Don't commit secrets; pass them with env vars
 **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`). Include test commands and config changes.
 
-## Worktree-Isolated Execution
-
-This project has a `.devcontainer/devcontainer.json` and uses `wt` (git worktree manager). If the `wt` command is available, commands that open ports, start services, use shared resources, run builds with artifacts at fixed paths, or run integration/end-to-end tests **MUST** be run inside the devcontainer using `wt exec -- <command>`. Run `wt up` first to ensure the devcontainer is running. Do NOT use `wt exec` for read-only operations (file reads, git commands, editing, linting). See [.skills/wt/SKILL.md](.skills/wt/SKILL.md) for full details including proxy access to container services.
 
 ## Notes for AI Assistants
 
@@ -93,7 +90,7 @@ task test:go > test.log 2>&1
 
 **Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 
-**Enhancement docs**: When implementing work from `docs/enhancements/`, update the corresponding enhancement doc as you complete each phase. If the implementation diverges from the original design, update the doc to reflect what was actually implemented.
+**Enhancement docs**: Proposed enhancements stay in `docs/enhancements/`. Non-proposed enhancements live in `docs/enhancements/<status>/` where status is `implemented`, `partial`, or `superseded`. When implementing work from `docs/enhancements/`, update the corresponding enhancement doc as you complete each phase. If the implementation diverges from the original design, update the doc to reflect what was actually implemented.
 
 **Workarounds**: If you implement a workaround (e.g., to avoid a bug, limitation, or missing feature in a dependency), you MUST:
 1. Record it in `./WORKAROUNDS.md` with: what the workaround is, why it was needed, and what a proper fix might look like.

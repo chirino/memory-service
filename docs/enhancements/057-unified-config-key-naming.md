@@ -8,7 +8,7 @@ status: proposed
 
 ## Summary
 
-Audit all configuration keys and consolidate them under a consistent `memory-service.*` prefix with uniform naming conventions. This continues the work started by [Enhancement 051 (Datastore Config Isolation)](051-datastore-config-isolation.md) and [Enhancement 053 (Redis Config Consolidation)](053-redis-config-consolidation.md).
+Audit all configuration keys and consolidate them under a consistent `memory-service.*` prefix with uniform naming conventions. This continues the work started by [Enhancement 051 (Datastore Config Isolation)](implemented/051-datastore-config-isolation.md) and [Enhancement 053 (Redis Config Consolidation)](implemented/053-redis-config-consolidation.md).
 
 ## Motivation
 
