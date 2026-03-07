@@ -2,15 +2,20 @@
 name: enhancement-docs
 description: Use when writing or editing enhancement documents in docs/enhancements/. Provides format, conventions, and numbering guidance.
 autoTrigger:
-  - files: ["docs/enhancements/*.md"]
+  - files: ["docs/enhancements/*.md", "docs/enhancements/**/*.md"]
 ---
 
 # Enhancement Document Format
 
-Enhancement docs live in `docs/enhancements/` and follow the naming convention `NNN-kebab-case-title.md` where NNN is zero-padded and sequential. Check the highest existing number before creating a new one:
+Enhancement docs use the naming convention `NNN-kebab-case-title.md` where NNN is zero-padded and sequential.
+
+- New/proposed docs live in `docs/enhancements/`.
+- Non-proposed docs move to `docs/enhancements/<status>/` where status is `implemented`, `partial`, or `superseded`.
+
+Check the highest existing number before creating a new one:
 
 ```bash
-ls docs/enhancements/ | sort -n | tail -3
+find docs/enhancements -maxdepth 2 -name '*.md' | sort -n | tail -3
 ```
 
 ## Required Structure
@@ -32,7 +37,7 @@ When superseded, add:
 ---
 status: superseded
 superseded-by:
-  - NNN-replacement-name.md
+  - implemented/NNN-replacement-name.md
 ---
 ```
 
@@ -45,7 +50,7 @@ superseded-by:
 ```
 
 For implemented docs: `> **Status**: Implemented.`
-For partial: `> **Status**: Partial — see [NNN](NNN-name.md) for continuation.`
+For partial: `> **Status**: Partial — see [NNN](../implemented/NNN-name.md) for continuation.`
 
 ### 3. Core Sections
 
@@ -70,10 +75,10 @@ For partial: `> **Status**: Partial — see [NNN](NNN-name.md) for continuation.
 
 \```bash
 # Compile
-./mvnw compile
+./java/mvnw -f java/pom.xml compile
 
 # Run tests
-./mvnw test -pl memory-service > test.log 2>&1
+./java/mvnw -f java/pom.xml test -pl memory-service > test.log 2>&1
 # Search for failures using Grep tool on test.log
 \```
 ```
@@ -83,7 +88,7 @@ For partial: `> **Status**: Partial — see [NNN](NNN-name.md) for continuation.
 - **Code blocks**: Use language tags — `java`, `yaml`, `json`, `gherkin`, `bash`, `protobuf`, `sql`
 - **Before/after examples**: Show the change clearly with labeled code blocks
 - **Tables**: Use markdown tables for field constraints, API parameters, file lists
-- **Cross-references**: Link to other enhancements with `[NNN](NNN-name.md)` relative links
+- **Cross-references**: Link to other enhancements with paths relative to the current doc, for example `[065](implemented/065-go-port.md)` from a proposed doc or `[017](../implemented/017-hide-conversation-groups.md)` from a partial doc
 - **Task checkboxes**: Use `- [ ]` for incomplete and `- [x]` for completed tasks
 - **Pre-release stance**: No backward compatibility needed. Don't deprecate — just delete/rename. Datastores are reset frequently.
 - **OpenAPI specs**: Agent API is in `contracts/openapi/openapi.yml`, Admin API is in `contracts/openapi/openapi-admin.yml`

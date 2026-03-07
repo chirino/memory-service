@@ -93,7 +93,7 @@ task test:go > test.log 2>&1
 
 **Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
 
-**Enhancement docs**: When implementing work from `docs/enhancements/`, update the corresponding enhancement doc as you complete each phase. If the implementation diverges from the original design, update the doc to reflect what was actually implemented.
+**Enhancement docs**: Proposed enhancements stay in `docs/enhancements/`. Non-proposed enhancements live in `docs/enhancements/<status>/` where status is `implemented`, `partial`, or `superseded`. When implementing work from `docs/enhancements/`, update the corresponding enhancement doc as you complete each phase. If the implementation diverges from the original design, update the doc to reflect what was actually implemented.
 
 **Workarounds**: If you implement a workaround (e.g., to avoid a bug, limitation, or missing feature in a dependency), you MUST:
 1. Record it in `./WORKAROUNDS.md` with: what the workaround is, why it was needed, and what a proper fix might look like.
