@@ -1935,10 +1935,10 @@ func (s *MongoStore) adminListConversationsLatestFork(ctx context.Context, baseF
 		filtered = append(filtered, d)
 	}
 
-	// Sort by created_at ASC for pagination.
+	// Sort by updated_at DESC so most recently active groups appear first.
 	for i := 0; i < len(filtered); i++ {
 		for j := i + 1; j < len(filtered); j++ {
-			if filtered[j].CreatedAt.Before(filtered[i].CreatedAt) {
+			if filtered[j].UpdatedAt.After(filtered[i].UpdatedAt) {
 				filtered[i], filtered[j] = filtered[j], filtered[i]
 			}
 		}
