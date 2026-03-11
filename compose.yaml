@@ -202,7 +202,7 @@ services:
     image: ghcr.io/chirino/memory-service-chat-quarkus:latest
     build:
       context: .
-      dockerfile: ./quarkus/examples/chat-quarkus/Dockerfile
+      dockerfile: ./java/quarkus/examples/chat-quarkus/Dockerfile
     environment:
       # Unified config - gRPC client settings are auto-derived from this URL
       MEMORY_SERVICE_CLIENT_URL: http://memory-service:8080

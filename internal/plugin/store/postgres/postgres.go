@@ -1594,9 +1594,9 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 	}
 
 	if query.AfterCursor != nil {
-		tx = tx.Where("c.created_at > (SELECT created_at FROM conversations WHERE id = ?)", *query.AfterCursor)
+		tx = tx.Where("c.updated_at < (SELECT updated_at FROM conversations WHERE id = ?)", *query.AfterCursor)
 	}
-	tx = tx.Order("c.created_at ASC").Limit(query.Limit + 1)
+	tx = tx.Order("c.updated_at DESC").Limit(query.Limit + 1)
 
 	type row struct {
 		ID                     uuid.UUID              `gorm:"column:id"`
