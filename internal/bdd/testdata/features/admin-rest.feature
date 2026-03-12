@@ -62,6 +62,94 @@ Feature: Admin REST API
     And set "conversationId" to "${bobConversationId}"
     And the conversation should not be deleted
 
+  Scenario: Admin deleting a fork soft-deletes all conversations in the group
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry to fork at"}]
+    }
+    """
+    And set "forkEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    Given I am authenticated as admin user "alice"
+    When I call DELETE "/v1/admin/conversations/${forkConversationId}" with body:
+    """
+    {
+      "justification": "Test fork deletion"
+    }
+    """
+    Then the response status should be 204
+    # Both the fork and the root should be soft-deleted (same conversation group)
+    And set "conversationId" to "${forkConversationId}"
+    And the conversation should be soft-deleted
+    And set "conversationId" to "${bobConversationId}"
+    And the conversation should be soft-deleted
+
+  Scenario: Admin deleting the root soft-deletes all conversations in the group
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry to fork at"}]
+    }
+    """
+    And set "forkEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    Given I am authenticated as admin user "alice"
+    When I call DELETE "/v1/admin/conversations/${bobConversationId}" with body:
+    """
+    {
+      "justification": "Test root deletion"
+    }
+    """
+    Then the response status should be 204
+    # Both the root and the fork should be soft-deleted (same conversation group)
+    And set "conversationId" to "${bobConversationId}"
+    And the conversation should be soft-deleted
+    And set "conversationId" to "${forkConversationId}"
+    And the conversation should be soft-deleted
+
+  Scenario: Admin restoring via fork ID restores all conversations in the group
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry to fork at"}]
+    }
+    """
+    And set "forkEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    And the conversation owned by "bob" is deleted
+    Given I am authenticated as admin user "alice"
+    When I call POST "/v1/admin/conversations/${forkConversationId}/restore" with body:
+    """
+    {
+      "justification": "Test fork restoration"
+    }
+    """
+    Then the response status should be 200
+    # Both the fork and the root should be restored (same conversation group)
+    And set "conversationId" to "${forkConversationId}"
+    And the conversation should not be deleted
+    And set "conversationId" to "${bobConversationId}"
+    And the conversation should not be deleted
+
   Scenario: Restoring an already-active conversation returns conflict
     When I call POST "/v1/admin/conversations/${aliceConversationId}/restore" with body:
     """
