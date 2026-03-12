@@ -131,6 +131,24 @@ func (p *PostgresTestDB) SoftDeleteConversation(ctx context.Context, conversatio
 	return nil
 }
 
+func (p *PostgresTestDB) SoftDeleteConversationOnly(ctx context.Context, conversationID string, days int) error {
+	conn, err := p.conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	deletedAt := time.Now().AddDate(0, 0, -days)
+
+	_, err = conn.Exec(ctx,
+		`UPDATE conversations SET deleted_at = $1 WHERE id = $2`,
+		deletedAt, conversationID)
+	if err != nil {
+		return fmt.Errorf("failed to soft-delete conversation: %w", err)
+	}
+	return nil
+}
+
 func (p *PostgresTestDB) DeleteAllTasks(ctx context.Context) error {
 	conn, err := p.conn(ctx)
 	if err != nil {

@@ -62,6 +62,100 @@ Feature: Admin REST API
     And set "conversationId" to "${bobConversationId}"
     And the conversation should not be deleted
 
+  Scenario: Admin deleting a fork soft-deletes all conversations in the group
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry to fork at"}]
+    }
+    """
+    And set "forkEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    Given I am authenticated as admin user "alice"
+    When I call DELETE "/v1/admin/conversations/${forkConversationId}" with body:
+    """
+    {
+      "justification": "Test fork deletion"
+    }
+    """
+    Then the response status should be 204
+    # Both the fork and the root should be soft-deleted (same conversation group)
+    And set "conversationId" to "${forkConversationId}"
+    And the conversation should be soft-deleted
+    And set "conversationId" to "${bobConversationId}"
+    And the conversation should be soft-deleted
+
+  Scenario: Admin deleting the root soft-deletes all conversations in the group
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry to fork at"}]
+    }
+    """
+    And set "forkEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    Given I am authenticated as admin user "alice"
+    When I call DELETE "/v1/admin/conversations/${bobConversationId}" with body:
+    """
+    {
+      "justification": "Test root deletion"
+    }
+    """
+    Then the response status should be 204
+    # Both the root and the fork should be soft-deleted (same conversation group)
+    And set "conversationId" to "${bobConversationId}"
+    And the conversation should be soft-deleted
+    And set "conversationId" to "${forkConversationId}"
+    And the conversation should be soft-deleted
+
+  Scenario: Admin restoring via fork ID restores all conversations in the group
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry to fork at"}]
+    }
+    """
+    And set "forkEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    Given I am authenticated as admin user "alice"
+    And I call DELETE "/v1/admin/conversations/${forkConversationId}" with body:
+    """
+    {
+      "justification": "Test fork deletion before restore"
+    }
+    """
+    And the response status should be 204
+    When I call POST "/v1/admin/conversations/${forkConversationId}/restore" with body:
+    """
+    {
+      "justification": "Test fork restoration"
+    }
+    """
+    Then the response status should be 200
+    # Both the fork and the root should be restored (same conversation group)
+    And set "conversationId" to "${forkConversationId}"
+    And the conversation should not be deleted
+    And set "conversationId" to "${bobConversationId}"
+    And the conversation should not be deleted
+
   Scenario: Restoring an already-active conversation returns conflict
     When I call POST "/v1/admin/conversations/${aliceConversationId}/restore" with body:
     """
@@ -247,7 +341,73 @@ Feature: Admin REST API
     Given I am authenticated as admin user "alice"
     When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob"
     Then the response status should be 200
-    # Should return only one conversation per fork tree (the most recently updated)
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${forkConversationId}"
+
+  Scenario: Admin latest-fork returns one conversation per group across users
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
+    }
+    """
+    And set "firstEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${firstEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    And I call POST "/v1/conversations/${forkConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Fork entry"}]
+    }
+    """
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations?mode=latest-fork"
+    Then the response status should be 200
+    And the response should contain 2 conversations
+    And the response body "data[0].id" should be "${forkConversationId}"
+    And the response body "data[1].id" should be "${aliceConversationId}"
+
+  Scenario: Admin latest-fork honors deleted filters within a fork tree
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
+    }
+    """
+    And set "firstEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${firstEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    And I call POST "/v1/conversations/${forkConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Fork entry"}]
+    }
+    """
+    And I soft-delete conversation "${forkConversationId}" directly in storage
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${bobConversationId}"
+    When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob&includeDeleted=true"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${forkConversationId}"
+    When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob&onlyDeleted=true"
+    Then the response status should be 200
+    And the response should contain 1 conversation
     And the response body "data[0].id" should be "${forkConversationId}"
 
   Scenario: Admin can list conversations with mode=roots
@@ -270,8 +430,30 @@ Feature: Admin REST API
     Given I am authenticated as admin user "alice"
     When I call GET "/v1/admin/conversations?mode=roots&userId=bob"
     Then the response status should be 200
-    # Should return only root conversations (not forks)
+    And the response should contain 1 conversation
     And the response body "data[0].id" should be "${bobConversationId}"
+
+  Scenario: Admin can list conversations with mode=all
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "First entry"}]
+    }
+    """
+    And set "firstEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${firstEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations?mode=all&userId=bob"
+    Then the response status should be 200
+    And the response should contain 2 conversations
+    And the response body "data[0].id" should be "${forkConversationId}"
+    And the response body "data[1].id" should be "${bobConversationId}"
 
   Scenario: Admin can list forks for any conversation
     # First authenticate as bob to create entries and forks

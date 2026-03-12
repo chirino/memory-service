@@ -307,6 +307,23 @@ func (m *MongoTestDB) SoftDeleteConversation(ctx context.Context, conversationID
 	return nil
 }
 
+func (m *MongoTestDB) SoftDeleteConversationOnly(ctx context.Context, conversationID string, days int) error {
+	client, db, err := m.db(ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect(ctx)
+
+	deletedAt := time.Now().AddDate(0, 0, -days)
+
+	_, err = db.Collection("conversations").UpdateByID(ctx, conversationID,
+		bson.M{"$set": bson.M{"deleted_at": deletedAt}})
+	if err != nil {
+		return fmt.Errorf("failed to soft-delete conversation: %w", err)
+	}
+	return nil
+}
+
 func (m *MongoTestDB) DeleteAllTasks(ctx context.Context) error {
 	client, db, err := m.db(ctx)
 	if err != nil {

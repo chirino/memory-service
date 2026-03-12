@@ -152,16 +152,24 @@ tasks:
       - ./java/mvnw -q -B -T 1C -f java/pom.xml spotless:apply
 
   test:
+    desc: Test go and java
     deps:
       - test:go
       - test:java
 
   test:go:
+    desc: Test go
     cmds:
       - |
         CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race ./... {{.CLI_ARGS}}
 
+  test:java:
+    desc: Test java
+    cmds:
+      - ./java/mvnw -T 1C -f java/pom.xml clean test {{.CLI_ARGS}}
+
   test:site:
+    desc: Test site examples
     env:
       SITE_TEST_BUILD_OUTPUT: '{{.SITE_TEST_BUILD_OUTPUT | default "on-fail"}}'
     cmds:
@@ -199,11 +207,6 @@ tasks:
       - |
         CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
       - go run ./internal/cmd/sync_curl_examples --apply
-
-  test:java:
-    cmds:
-      - ./java/mvnw -T 1C -f java/pom.xml clean test {{.CLI_ARGS}}
-
 
   dev:memory-service:
     desc: Run the memory-service app in dev mode.

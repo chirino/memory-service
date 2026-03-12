@@ -1,6 +1,7 @@
 package bdd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -16,6 +17,7 @@ func init() {
 		ctx.Step(`^there is a conversation owned by "([^"]*)" with title "([^"]*)"$`, a.thereIsAConversationOwnedByWithTitle)
 		ctx.Step(`^the conversation owned by "([^"]*)" has an entry "([^"]*)"$`, a.theConversationOwnedByHasAnEntry)
 		ctx.Step(`^the conversation owned by "([^"]*)" is deleted$`, a.theConversationOwnedByIsDeleted)
+		ctx.Step(`^I soft-delete conversation "([^"]*)" directly in storage$`, a.iSoftDeleteConversationDirectlyInStorage)
 
 		// Admin conversation assertion steps
 		ctx.Step(`^all conversations should have ownerUserId "([^"]*)"$`, a.allConversationsShouldHaveOwnerUserId)
@@ -102,6 +104,17 @@ func (a *adminSteps) theConversationOwnedByIsDeleted(owner string) error {
 	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("DELETE", "/v1/admin/conversations/"+convID, &godog.DocString{Content: body}, false, true)
 	a.s.CurrentUser = savedUser
 	return err
+}
+
+func (a *adminSteps) iSoftDeleteConversationDirectlyInStorage(conversationID string) error {
+	if a.s.Suite.DB == nil {
+		return fmt.Errorf("no TestDB configured")
+	}
+	expanded, err := a.s.Expand(conversationID)
+	if err != nil {
+		return err
+	}
+	return a.s.Suite.DB.SoftDeleteConversationOnly(context.Background(), expanded, 0)
 }
 
 func (a *adminSteps) allConversationsShouldHaveOwnerUserId(expected string) error {

@@ -56,30 +56,8 @@ Feature: Conversations REST API
     When I list conversations
     Then the response status should be 200
     And the response should contain at least 2 conversations
-    And the response body should be json:
-    """
-    {
-      "afterCursor": null,
-      "data": [
-        {
-          "id": "${response.body.data[0].id}",
-          "title": "${response.body.data[0].title}",
-          "ownerUserId": "alice",
-          "createdAt": "${response.body.data[0].createdAt}",
-          "updatedAt": "${response.body.data[0].updatedAt}",
-          "accessLevel": "owner"
-        },
-        {
-          "id": "${response.body.data[1].id}",
-          "title": "${response.body.data[1].title}",
-          "ownerUserId": "alice",
-          "createdAt": "${response.body.data[1].createdAt}",
-          "updatedAt": "${response.body.data[1].updatedAt}",
-          "accessLevel": "owner"
-        }
-      ]
-    }
-    """
+    And the response body "data[0].title" should be "Second Conversation"
+    And the response body "data[1].title" should be "First Conversation"
 
   Scenario: List conversations with pagination
     Given I have a conversation with title "Conversation 1"
@@ -88,6 +66,8 @@ Feature: Conversations REST API
     When I list conversations with limit 2
     Then the response status should be 200
     And the response should contain 2 conversations
+    And the response body "data[0].title" should be "Conversation 3"
+    And the response body "data[1].title" should be "Conversation 2"
     And set "firstConversationId" to the json response field "data[0].id"
     When I list conversations with limit 2 and afterCursor "${firstConversationId}"
     Then the response status should be 200

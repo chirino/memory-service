@@ -326,7 +326,7 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 	}
 
 	if afterCursor != nil {
-		tx = tx.Where("c.created_at > (SELECT created_at FROM conversations WHERE id = ?)", *afterCursor)
+		tx = tx.Where("c.created_at < (SELECT created_at FROM conversations WHERE id = ?)", *afterCursor)
 	}
 
 	queryLimit := requestedLimit + 1
@@ -342,7 +342,7 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 		}
 	}
 
-	tx = tx.Order("c.created_at ASC").Limit(queryLimit)
+	tx = tx.Order("c.created_at DESC").Limit(queryLimit)
 
 	type row struct {
 		ID                     uuid.UUID              `gorm:"column:id"`
@@ -1566,37 +1566,7 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 // --- Admin ---
 
 func (s *PostgresStore) AdminListConversations(ctx context.Context, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
-	tx := s.db.WithContext(ctx).
-		Table("conversations c").
-		Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.created_at, c.updated_at, c.deleted_at, 'owner' as access_level")
-
-	if !query.IncludeDeleted && !query.OnlyDeleted {
-		tx = tx.Where("c.deleted_at IS NULL")
-	}
-	if query.OnlyDeleted {
-		tx = tx.Where("c.deleted_at IS NOT NULL")
-	}
-	if query.UserID != nil {
-		tx = tx.Where("c.owner_user_id = ?", *query.UserID)
-	}
-	if query.DeletedAfter != nil {
-		tx = tx.Where("c.deleted_at >= ?", *query.DeletedAfter)
-	}
-	if query.DeletedBefore != nil {
-		tx = tx.Where("c.deleted_at < ?", *query.DeletedBefore)
-	}
-
-	switch query.Mode {
-	case model.ListModeRoots:
-		tx = tx.Where("c.forked_at_conversation_id IS NULL")
-	case model.ListModeLatestFork:
-		tx = tx.Where("c.updated_at = (SELECT MAX(c2.updated_at) FROM conversations c2 WHERE c2.conversation_group_id = c.conversation_group_id)")
-	}
-
-	if query.AfterCursor != nil {
-		tx = tx.Where("c.updated_at < (SELECT updated_at FROM conversations WHERE id = ?)", *query.AfterCursor)
-	}
-	tx = tx.Order("c.updated_at DESC").Limit(query.Limit + 1)
+	const selectColumns = "c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.created_at, c.updated_at, c.deleted_at, 'owner' as access_level"
 
 	type row struct {
 		ID                     uuid.UUID              `gorm:"column:id"`
@@ -1611,6 +1581,46 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 		DeletedAt              *time.Time             `gorm:"column:deleted_at"`
 		AccessLevel            model.AccessLevel      `gorm:"column:access_level"`
 	}
+
+	base := s.db.WithContext(ctx).Table("conversations c")
+
+	if !query.IncludeDeleted && !query.OnlyDeleted {
+		base = base.Where("c.deleted_at IS NULL")
+	}
+	if query.OnlyDeleted {
+		base = base.Where("c.deleted_at IS NOT NULL")
+	}
+	if query.UserID != nil {
+		base = base.Where("c.owner_user_id = ?", *query.UserID)
+	}
+	if query.DeletedAfter != nil {
+		base = base.Where("c.deleted_at >= ?", *query.DeletedAfter)
+	}
+	if query.DeletedBefore != nil {
+		base = base.Where("c.deleted_at < ?", *query.DeletedBefore)
+	}
+
+	var tx *gorm.DB
+	switch query.Mode {
+	case model.ListModeRoots:
+		tx = base.
+			Where("c.forked_at_conversation_id IS NULL").
+			Select(selectColumns)
+	case model.ListModeLatestFork:
+		ranked := base.Select(selectColumns + ", ROW_NUMBER() OVER (PARTITION BY c.conversation_group_id ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC) AS group_rank")
+		tx = s.db.WithContext(ctx).
+			Table("(?) AS ranked", ranked).
+			Select("id, title, owner_user_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, created_at, updated_at, deleted_at, access_level").
+			Where("group_rank = 1")
+	default:
+		tx = base.Select(selectColumns)
+	}
+
+	if query.AfterCursor != nil {
+		tx = tx.Where("created_at < (SELECT created_at FROM conversations WHERE id = ?)", *query.AfterCursor)
+	}
+	tx = tx.Order("created_at DESC").Limit(query.Limit + 1)
+
 	var rows []row
 	if err := tx.Scan(&rows).Error; err != nil {
 		return nil, nil, fmt.Errorf("failed to admin list conversations: %w", err)

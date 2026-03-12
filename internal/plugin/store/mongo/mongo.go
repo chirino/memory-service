@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -517,11 +518,11 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 		var cursorDoc convDoc
 		err := s.conversations().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc)
 		if err == nil {
-			filter["created_at"] = bson.M{"$gt": cursorDoc.CreatedAt}
+			filter["created_at"] = bson.M{"$lt": cursorDoc.CreatedAt}
 		}
 	}
 
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(int64(limit + 1))
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(int64(limit + 1))
 	cur, err := s.conversations().Find(ctx, filter, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list conversations: %w", err)
@@ -565,7 +566,7 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 // listConversationsLatestFork returns only the most recently updated conversation per group.
 func (s *MongoStore) listConversationsLatestFork(ctx context.Context, baseFilter bson.M, accessMap map[string]model.AccessLevel, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
 	// Load all candidates, then keep only the one with max updated_at per group.
-	opts := options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}, {Key: "created_at", Value: 1}})
+	opts := options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}, {Key: "created_at", Value: -1}, {Key: "_id", Value: -1}})
 	cur, err := s.conversations().Find(ctx, baseFilter, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list conversations (latest-fork): %w", err)
@@ -586,10 +587,11 @@ func (s *MongoStore) listConversationsLatestFork(ctx context.Context, baseFilter
 		filtered = append(filtered, d)
 	}
 
-	// Sort by created_at ASC for pagination consistency.
+	// Sort by created_at DESC to keep newest conversations first.
 	for i := 0; i < len(filtered); i++ {
 		for j := i + 1; j < len(filtered); j++ {
-			if filtered[j].CreatedAt.Before(filtered[i].CreatedAt) {
+			if filtered[j].CreatedAt.After(filtered[i].CreatedAt) ||
+				(filtered[j].CreatedAt.Equal(filtered[i].CreatedAt) && filtered[j].ID > filtered[i].ID) {
 				filtered[i], filtered[j] = filtered[j], filtered[i]
 			}
 		}
@@ -1870,11 +1872,11 @@ func (s *MongoStore) AdminListConversations(ctx context.Context, query registrys
 		var cursorDoc convDoc
 		err := s.conversations().FindOne(ctx, bson.M{"_id": *query.AfterCursor}).Decode(&cursorDoc)
 		if err == nil {
-			filter["created_at"] = bson.M{"$gt": cursorDoc.CreatedAt}
+			filter["created_at"] = bson.M{"$lt": cursorDoc.CreatedAt}
 		}
 	}
 
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(int64(query.Limit + 1))
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(int64(query.Limit + 1))
 	cur, err := s.conversations().Find(ctx, filter, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to admin list conversations: %w", err)
@@ -1915,7 +1917,7 @@ func (s *MongoStore) AdminListConversations(ctx context.Context, query registrys
 }
 
 func (s *MongoStore) adminListConversationsLatestFork(ctx context.Context, baseFilter bson.M, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
-	opts := options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}, {Key: "created_at", Value: 1}})
+	opts := options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}, {Key: "created_at", Value: -1}, {Key: "_id", Value: -1}})
 	cur, err := s.conversations().Find(ctx, baseFilter, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to admin list conversations (latest-fork): %w", err)
@@ -1935,14 +1937,12 @@ func (s *MongoStore) adminListConversationsLatestFork(ctx context.Context, baseF
 		filtered = append(filtered, d)
 	}
 
-	// Sort by updated_at DESC so most recently active groups appear first.
-	for i := 0; i < len(filtered); i++ {
-		for j := i + 1; j < len(filtered); j++ {
-			if filtered[j].UpdatedAt.After(filtered[i].UpdatedAt) {
-				filtered[i], filtered[j] = filtered[j], filtered[i]
-			}
+	sort.Slice(filtered, func(i, j int) bool {
+		if !filtered[i].CreatedAt.Equal(filtered[j].CreatedAt) {
+			return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
 		}
-	}
+		return filtered[i].ID > filtered[j].ID
+	})
 
 	start := 0
 	if query.AfterCursor != nil {

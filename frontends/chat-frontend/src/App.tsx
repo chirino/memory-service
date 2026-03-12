@@ -112,12 +112,7 @@ function App() {
         limit: 20,
         mode: "latest-fork",
       })) as unknown as ListUserConversationsResponse;
-      const data = Array.isArray(response.data) ? response.data : [];
-      return [...data].sort((a, b) => {
-        const aTime = new Date(a.updatedAt || a.createdAt || "").getTime();
-        const bTime = new Date(b.updatedAt || b.createdAt || "").getTime();
-        return bTime - aTime;
-      });
+      return Array.isArray(response.data) ? response.data : [];
     },
   });
   // Extract conversation IDs for resume check
