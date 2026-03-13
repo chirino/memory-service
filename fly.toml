@@ -1,0 +1,56 @@
+# Fly.io configuration for memory-service
+# Deploy with: ./deploy/fly/deploy.sh
+
+app = "memory-service-poc"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # ── Datastore ──────────────────────────────────────────────
+  MEMORY_SERVICE_DB_KIND = "postgres"
+  MEMORY_SERVICE_DB_MIGRATE_AT_START = "true"
+
+  # ── Cache (disabled — no Redis on free tier) ──────────────
+  MEMORY_SERVICE_CACHE_KIND = "none"
+
+  # ── Vector search (disabled — no Qdrant on free tier) ─────
+  MEMORY_SERVICE_VECTOR_KIND = "none"
+  MEMORY_SERVICE_EMBEDDING_KIND = "none"
+
+  # ── Auth (API keys only — no OIDC on free tier) ──────────
+  MEMORY_SERVICE_MODE = "prod"
+  MEMORY_SERVICE_ROLES_INDEXER_CLIENTS = "agent"
+
+  # ── Server ────────────────────────────────────────────────
+  MEMORY_SERVICE_PORT = "8080"
+  MEMORY_SERVICE_PLAIN_TEXT = "true"
+  MEMORY_SERVICE_TLS = "false"
+
+  # ── Attachments ───────────────────────────────────────────
+  MEMORY_SERVICE_ATTACHMENTS_KIND = "db"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  path = "/ready"
+  timeout = "5s"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
