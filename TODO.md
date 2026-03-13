@@ -2,7 +2,6 @@
 
 * document index/search apis: provide RAG example (see [042-index-search-docs.md](docs/enhancements/implemented/042-index-search-docs.md))
 * make all common memory-service config options prefixed with "memory-service." (see [057-unified-config-key-naming.md](docs/enhancements/057-unified-config-key-naming.md))
-* bug: delete a fork, restore: it does not show up restored.
 * support getting getting the clientID from the bearer token.
 * Add tsx/js support vercel AI api.
 * Go: Avoid using file buffer for the encryption store.
