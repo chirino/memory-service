@@ -17,7 +17,7 @@ func Command() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "db-url",
-				Sources:  cli.EnvVars("MEMORY_SERVICE_DB_URL"),
+				Sources:  cli.EnvVars("MEMORY_SERVICE_DB_URL", "DATABASE_URL"),
 				Usage:    "Database connection URL",
 				Required: true,
 			},
