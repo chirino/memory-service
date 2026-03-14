@@ -24,6 +24,19 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 	if err = applyDurationEnv("MEMORY_SERVICE_CACHE_EPOCH_TTL", &c.CacheEpochTTL); err != nil {
 		return err
 	}
+	if raw := strings.TrimSpace(os.Getenv("MEMORY_SERVICE_CACHE_LOCAL_MAX_BYTES")); raw != "" {
+		size, parseErr := ParseMemorySize(raw)
+		if parseErr != nil {
+			return fmt.Errorf("invalid MEMORY_SERVICE_CACHE_LOCAL_MAX_BYTES: %w", parseErr)
+		}
+		c.CacheLocalMaxBytes = size
+	}
+	if err = applyInt64Env("MEMORY_SERVICE_CACHE_LOCAL_NUM_COUNTERS", &c.CacheLocalNumCounters); err != nil {
+		return err
+	}
+	if err = applyInt64Env("MEMORY_SERVICE_CACHE_LOCAL_BUFFER_ITEMS", &c.CacheLocalBufferItems); err != nil {
+		return err
+	}
 	applyStringEnv("MEMORY_SERVICE_CACHE_REDIS_CLIENT", &c.CacheRedisClient)
 	if err = applyDurationEnv("MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT", &c.InfinispanStartupTimeout); err != nil {
 		return err
@@ -44,7 +57,7 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 	}
 
 	if raw := strings.TrimSpace(os.Getenv("MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE")); raw != "" {
-		size, parseErr := parseMemorySize(raw)
+		size, parseErr := ParseMemorySize(raw)
 		if parseErr != nil {
 			return fmt.Errorf("invalid MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE: %w", parseErr)
 		}
@@ -212,6 +225,19 @@ func applyIntEnv(key string, dest *int) error {
 	return nil
 }
 
+func applyInt64Env(key string, dest *int64) error {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return nil
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid %s: %w", key, err)
+	}
+	*dest = v
+	return nil
+}
+
 func applyBoolEnv(key string, dest *bool) error {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
@@ -288,7 +314,7 @@ func parseDuration(raw string) (time.Duration, error) {
 	return total, nil
 }
 
-func parseMemorySize(raw string) (int64, error) {
+func ParseMemorySize(raw string) (int64, error) {
 	v := strings.TrimSpace(strings.ToUpper(raw))
 	if v == "" {
 		return 0, fmt.Errorf("empty size")

@@ -1,5 +1,7 @@
 # Internal Module Facts
 
+**Go cache plugin architecture**: The Go service selects cache backends through `internal/registry/cache` and currently injects a `MemoryEntriesCache` into store loaders before datastore initialization. `cfg.CacheType` is shared by both the memory-entries cache plugins (`internal/plugin/cache/*`) and the response-recording locator-store selection in `internal/resumer/locator_store.go`, so new cache kinds usually need both an entries-cache implementation and locator-store behavior.
+
 **GORM `record not found` log-noise rule**: If a `record not found` log line is found, treat expected-miss lookups as noise and refactor those call sites from `First(...).Error` to `Limit(1).Find(...)` with `RowsAffected` checks. Keep `First` for true not-found error paths; don't use global logger suppression.
 
 **Error observability**: All 500-level errors MUST produce a full stack trace in the server logs. Never swallow exceptions silently — always log the stack trace for server errors.

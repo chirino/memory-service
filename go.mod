@@ -4,6 +4,7 @@ go 1.24.6
 
 require (
 	github.com/4meepo/tagalign v1.4.3
+	github.com/asg017/sqlite-vec-go-bindings v0.1.6
 	github.com/aws/aws-sdk-go-v2 v1.41.2
 	github.com/aws/aws-sdk-go-v2/config v1.32.10
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.10
@@ -12,6 +13,7 @@ require (
 	github.com/charmbracelet/log v0.4.2
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/cucumber/godog v0.15.1
+	github.com/dgraph-io/ristretto/v2 v2.4.0
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-task/task/v3 v3.48.0
@@ -19,6 +21,7 @@ require (
 	github.com/hashicorp/vault/api v1.22.0
 	github.com/itchyny/gojq v0.12.18
 	github.com/jackc/pgx/v5 v5.7.2
+	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/oapi-codegen/oapi-codegen/v2 v2.5.1
 	github.com/oapi-codegen/runtime v1.1.2
 	github.com/open-policy-agent/opa v1.13.0
@@ -39,6 +42,7 @@ require (
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.1
 	google.golang.org/protobuf v1.36.11
 	gorm.io/driver/postgres v1.6.0
+	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 	gotest.tools/gotestsum v1.13.0
 )
@@ -67,7 +71,6 @@ require (
 	github.com/alecthomas/chroma/v2 v2.23.0 // indirect
 	github.com/alfatraining/structtag v1.0.0 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
-	github.com/asg017/sqlite-vec-go-bindings v0.1.6 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.5 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.18 // indirect
@@ -198,7 +201,6 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
-	github.com/mattn/go-sqlite3 v1.14.34 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -299,7 +301,6 @@ require (
 	gopkg.in/ini.v1 v1.67.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/driver/sqlite v1.6.0 // indirect
 	mvdan.cc/sh/moreinterp v0.0.0-20260120230322-19def062a997 // indirect
 	mvdan.cc/sh/v3 v3.12.1-0.20260124232039-e74afc18e65b // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect

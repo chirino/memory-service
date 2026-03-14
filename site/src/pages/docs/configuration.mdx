@@ -119,10 +119,10 @@ MEMORY_SERVICE_ATTACHMENTS_FS_DIR=/tmp/memory-service-attachments`}/>
 
 Memory Service uses a unified cache configuration for all cache-dependent features, including the response recording manager and memory entries cache. Configure the cache backend once, and all features will use it automatically.
 
-| Flag                                                   | Values                        | Default | Description                                    |
-| ------------------------------------------------------ | ----------------------------- | ------- | ---------------------------------------------- |
-| <Cfg p="--cache-kind" e="MEMORY_SERVICE_CACHE_KIND" /> | `none`, `redis`, `infinispan` | `none`  | Cache backend for distributed caching          |
-| `MEMORY_SERVICE_CACHE_EPOCH_TTL`                       | duration                      | `PT10M` | TTL for cached memory entries (sliding window) |
+| Flag                                                   | Values                                 | Default | Description                                             |
+| ------------------------------------------------------ | -------------------------------------- | ------- | ------------------------------------------------------- |
+| <Cfg p="--cache-kind" e="MEMORY_SERVICE_CACHE_KIND" /> | `none`, `local`, `redis`, `infinispan` | `none`  | Cache backend for memory entries and response recording |
+| `MEMORY_SERVICE_CACHE_EPOCH_TTL`                       | duration                               | `PT10M` | TTL for cached memory entries                           |
 
 ### Memory Entries Cache
 
@@ -131,13 +131,13 @@ When a cache backend is configured, Memory Service caches memory entries to redu
 Features of the memory entries cache:
 
 - **Automatic population**: Cache is populated on first read and updated after sync operations
-- **Sliding TTL**: TTL is refreshed on every cache access (get or set)
+- **Write-refreshed TTL**: TTL is refreshed when entries are written back into cache
 - **In-memory pagination**: Cache stores complete entry list; pagination is applied in-memory
 - **Graceful degradation**: Falls back to database queries if cache is unavailable
 
-### Response Resumer Settings
+### Response Recording Settings
 
-The Response Resumer enables clients to reconnect to in-progress streaming responses after a network interruption. It automatically uses the configured cache backend — enabled when cache is `redis` or `infinispan`.
+Response Recording and Resumption lets clients reconnect to in-progress streaming responses after a network interruption. It automatically uses the configured cache backend and is enabled when cache is `local`, `redis`, or `infinispan`.
 
 | Env Var                                               | Values   | Default | Description                   |
 | ----------------------------------------------------- | -------- | ------- | ----------------------------- |
@@ -165,6 +165,29 @@ MEMORY_SERVICE_CACHE_KIND=redis
 
 MEMORY_SERVICE_REDIS_HOSTS=redis://localhost:6379`}
 />
+
+### Cache: Local Configuration
+
+The local backend is intended for single-instance deployments such as local agents or embedded development setups. It is process-local, so do not use it when the service is running with replicas.
+
+| Flag / Env Var                                                                     | Values      | Default  | Description                                                                                     |
+| ---------------------------------------------------------------------------------- | ----------- | -------- | ----------------------------------------------------------------------------------------------- |
+| <Cfg p="--cache-local-max-bytes" e="MEMORY_SERVICE_CACHE_LOCAL_MAX_BYTES" />       | memory size | `64M`    | Total process-local memory budget for cached entries                                            |
+| <Cfg p="--cache-local-num-counters" e="MEMORY_SERVICE_CACHE_LOCAL_NUM_COUNTERS" /> | integer     | `100000` | Higher values improve eviction/admission decisions for larger working sets, but use more memory |
+| <Cfg p="--cache-local-buffer-items" e="MEMORY_SERVICE_CACHE_LOCAL_BUFFER_ITEMS" /> | integer     | `64`     | Internal batch size for cache reads. Higher values can help under very high read contention     |
+
+<ConfigBlock property={`# Enable process-local cache
+--cache-kind=local
+
+# Process-local cache budget
+
+--cache-local-max-bytes=64M`}
+  env={`# Enable process-local cache
+MEMORY_SERVICE_CACHE_KIND=local
+
+# Process-local cache budget
+
+MEMORY_SERVICE_CACHE_LOCAL_MAX_BYTES=64M`}/>
 
 ### Cache: Infinispan Configuration
 

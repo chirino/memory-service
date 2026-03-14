@@ -24,6 +24,7 @@ import (
 	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
 	_ "github.com/chirino/memory-service/internal/plugin/attach/s3store"
 	_ "github.com/chirino/memory-service/internal/plugin/cache/infinispan"
+	_ "github.com/chirino/memory-service/internal/plugin/cache/local"
 	_ "github.com/chirino/memory-service/internal/plugin/cache/noop"
 	_ "github.com/chirino/memory-service/internal/plugin/cache/redis"
 	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
@@ -46,6 +47,9 @@ import (
 func Command() *cli.Command {
 	cfg := config.DefaultConfig()
 	var readHeaderTimeoutSecs int = 5
+	var cacheLocalMaxBytes string
+	var cacheLocalNumCounters int
+	var cacheLocalBufferItems int
 	return &cli.Command{
 		Name:  "serve",
 		Usage: "Start the memory service HTTP and gRPC servers",
@@ -57,7 +61,7 @@ func Command() *cli.Command {
    MEMORY_SERVICE_API_KEYS_AGENT_A=secret-key-1
    MEMORY_SERVICE_API_KEYS_AGENT_B=key-one,key-two
 `,
-		Flags: flags(&cfg, &readHeaderTimeoutSecs),
+		Flags: flags(&cfg, &readHeaderTimeoutSecs, &cacheLocalMaxBytes, &cacheLocalNumCounters, &cacheLocalBufferItems),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			if err := cfg.ApplyJavaCompatFromEnv(); err != nil {
 				return err
@@ -74,6 +78,19 @@ func Command() *cli.Command {
 					os.Setenv(envVar, v)
 				}
 			}
+			if strings.TrimSpace(cacheLocalMaxBytes) != "" {
+				size, err := config.ParseMemorySize(cacheLocalMaxBytes)
+				if err != nil {
+					return err
+				}
+				cfg.CacheLocalMaxBytes = size
+			}
+			if cmd.IsSet("cache-local-num-counters") {
+				cfg.CacheLocalNumCounters = int64(cacheLocalNumCounters)
+			}
+			if cmd.IsSet("cache-local-buffer-items") {
+				cfg.CacheLocalBufferItems = int64(cacheLocalBufferItems)
+			}
 			cfg.Listener.ReadHeaderTimeout = time.Duration(readHeaderTimeoutSecs) * time.Second
 			cfg.ManagementListener.ReadHeaderTimeout = cfg.Listener.ReadHeaderTimeout
 			cfg.ManagementListenerEnabled = cmd.IsSet("management-port")
@@ -83,7 +100,9 @@ func Command() *cli.Command {
 	}
 }
 
-func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
+func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *string, cacheLocalNumCounters *int, cacheLocalBufferItems *int) []cli.Flag {
+	*cacheLocalNumCounters = int(cfg.CacheLocalNumCounters)
+	*cacheLocalBufferItems = int(cfg.CacheLocalBufferItems)
 	return []cli.Flag{
 
 		// ── Server ────────────────────────────────────────────────
@@ -260,6 +279,29 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Sources:     cli.EnvVars("MEMORY_SERVICE_INFINISPAN_PASSWORD"),
 			Destination: &cfg.InfinispanPassword,
 			Usage:       "Infinispan password",
+		},
+		&cli.StringFlag{
+			Name:        "cache-local-max-bytes",
+			Category:    "Cache:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_CACHE_LOCAL_MAX_BYTES"),
+			Destination: cacheLocalMaxBytes,
+			Usage:       "Process-local memory cache budget (for example 64M, 512K, 1G)",
+		},
+		&cli.IntFlag{
+			Name:        "cache-local-num-counters",
+			Category:    "Cache:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_CACHE_LOCAL_NUM_COUNTERS"),
+			Destination: cacheLocalNumCounters,
+			Value:       *cacheLocalNumCounters,
+			Usage:       "Ristretto counter count for the process-local cache",
+		},
+		&cli.IntFlag{
+			Name:        "cache-local-buffer-items",
+			Category:    "Cache:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_CACHE_LOCAL_BUFFER_ITEMS"),
+			Destination: cacheLocalBufferItems,
+			Value:       *cacheLocalBufferItems,
+			Usage:       "Ristretto buffer size for the process-local cache",
 		},
 
 		// ── Attachment Storage ────────────────────────────────────
