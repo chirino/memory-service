@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=1 go build -tags "sqlite_fts5 sqlite_json" -o /memory-service .
+RUN CGO_ENABLED=1 go build -buildvcs=false -tags "sqlite_fts5 sqlite_json" -o /memory-service .
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
