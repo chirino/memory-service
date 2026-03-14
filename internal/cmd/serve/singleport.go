@@ -24,15 +24,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-type RunningServers struct {
-	Addr            net.Addr
-	Port            int
-	HTTPServerPlain *http.Server
-	HTTPServerTLS   *http.Server
-	GRPCServer      *grpc.Server
-	Close           func(ctx context.Context) error
-}
-
 func StartSinglePortHTTPAndGRPC(
 	_ context.Context,
 	cfg config.ListenerConfig,
@@ -46,10 +37,11 @@ func StartSinglePortHTTPAndGRPC(
 		cfg.ReadHeaderTimeout = 5 * time.Second
 	}
 
-	baseLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
+	prepared, err := prepareListener(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("single-port listen failed: %w", err)
 	}
+	baseLis := prepared.Listener
 
 	dispatch := grpcOrHTTPHandler(grpcServer, httpHandler)
 	muxer := cmux.New(baseLis)
@@ -81,6 +73,7 @@ func StartSinglePortHTTPAndGRPC(
 		cert, err := loadServerCertificate(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
 			_ = baseLis.Close()
+			_ = prepared.Cleanup()
 			return nil, err
 		}
 
@@ -138,6 +131,9 @@ func StartSinglePortHTTPAndGRPC(
 			}
 
 			_ = baseLis.Close()
+			if err := prepared.Cleanup(); err != nil && shutdownErr == nil {
+				shutdownErr = err
+			}
 		})
 		return shutdownErr
 	}
@@ -145,6 +141,8 @@ func StartSinglePortHTTPAndGRPC(
 	return &RunningServers{
 		Addr:            baseLis.Addr(),
 		Port:            port,
+		Endpoint:        prepared.Address,
+		Network:         prepared.Network,
 		HTTPServerPlain: plainServer,
 		HTTPServerTLS:   tlsServer,
 		GRPCServer:      grpcServer,

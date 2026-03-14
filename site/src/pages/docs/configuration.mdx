@@ -27,21 +27,45 @@ Memory Service is configured through CLI flags or environment variables. Use the
 
 ### Network Listener
 
-| Flag                                                   | Values          | Default | Description                            |
-| ------------------------------------------------------ | --------------- | ------- | -------------------------------------- |
-| <Cfg p="--port" e="MEMORY_SERVICE_PORT" />             | integer         | `8080`  | HTTP/gRPC server port                  |
-| <Cfg p="--plain-text" e="MEMORY_SERVICE_PLAIN_TEXT" /> | `true`, `false` | `true`  | Enable plaintext HTTP/1.1 + h2c + gRPC |
-| <Cfg p="--tls" e="MEMORY_SERVICE_TLS" />               | `true`, `false` | `true`  | Enable TLS HTTP/1.1 + HTTP/2 + gRPC    |
+`--port` and `--unix-socket` are mutually exclusive when both are explicitly configured. If `--unix-socket` is set, the default port value is ignored for the main listener.
+
+| Flag                                                     | Values          | Default   | Description                                             |
+| -------------------------------------------------------- | --------------- | --------- | ------------------------------------------------------- |
+| <Cfg p="--port" e="MEMORY_SERVICE_PORT" />               | integer         | `8080`    | HTTP/gRPC server port                                   |
+| <Cfg p="--unix-socket" e="MEMORY_SERVICE_UNIX_SOCKET" /> | path            | _(unset)_ | Absolute path to a Unix socket for the HTTP/gRPC server |
+| <Cfg p="--plain-text" e="MEMORY_SERVICE_PLAIN_TEXT" />   | `true`, `false` | `true`    | Enable plaintext HTTP/1.1 + h2c + gRPC                  |
+| <Cfg p="--tls" e="MEMORY_SERVICE_TLS" />                 | `true`, `false` | `true`    | Enable TLS HTTP/1.1 + HTTP/2 + gRPC                     |
+
+When a Unix socket path points into a directory that does not exist yet, Memory Service creates the parent directory with permissions restricted to the current user.
 
 ### Management Network Listener
 
 By default, `/health`, `/ready`, and `/metrics` are served on the main port alongside the API. Set `--management-port` to move them onto a dedicated port, keeping them out of the main API's auth middleware — and making Prometheus scrape configuration more straightforward.
 
-| Flag                                                                         | Values          | Default   | Description                                                                 |
-| ---------------------------------------------------------------------------- | --------------- | --------- | --------------------------------------------------------------------------- |
-| <Cfg p="--management-port" e="MEMORY_SERVICE_MANAGEMENT_PORT" />             | integer         | _(unset)_ | Dedicated port for health and metrics. When unset, served on the main port. |
-| <Cfg p="--management-plain-text" e="MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT" /> | `true`, `false` | `true`    | Enable plaintext HTTP for management server                                 |
-| <Cfg p="--management-tls" e="MEMORY_SERVICE_MANAGEMENT_TLS" />               | `true`, `false` | `true`    | Enable TLS for management server (uses same cert/key as main listener)      |
+`--management-port` and `--management-unix-socket` are mutually exclusive when both are explicitly configured. If `--management-unix-socket` is set, the default management port value is ignored for that listener.
+
+| Flag                                                                           | Values          | Default   | Description                                                                 |
+| ------------------------------------------------------------------------------ | --------------- | --------- | --------------------------------------------------------------------------- |
+| <Cfg p="--management-port" e="MEMORY_SERVICE_MANAGEMENT_PORT" />               | integer         | _(unset)_ | Dedicated port for health and metrics. When unset, served on the main port. |
+| <Cfg p="--management-unix-socket" e="MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET" /> | path            | _(unset)_ | Absolute path to a Unix socket for the management server                    |
+| <Cfg p="--management-plain-text" e="MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT" />   | `true`, `false` | `true`    | Enable plaintext HTTP for management server                                 |
+| <Cfg p="--management-tls" e="MEMORY_SERVICE_MANAGEMENT_TLS" />                 | `true`, `false` | `true`    | Enable TLS for management server (uses same cert/key as main listener)      |
+
+Unix socket example:
+
+<ConfigBlock
+  property={`# Main API over a Unix socket
+--unix-socket=$HOME/.local/run/memory-service/api.sock
+
+# Optional dedicated management socket
+
+--management-unix-socket=$HOME/.local/run/memory-service/mgmt.sock`}
+  env={`# Main API over a Unix socket
+MEMORY_SERVICE_UNIX_SOCKET=$HOME/.local/run/memory-service/api.sock
+
+# Optional dedicated management socket
+
+MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET=$HOME/.local/run/memory-service/mgmt.sock`}/>
 
 ## DB Configuration
 

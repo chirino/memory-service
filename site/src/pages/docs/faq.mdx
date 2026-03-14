@@ -59,6 +59,25 @@ See the [Getting Started](/docs/getting-started/) guide for detailed instruction
 In development mode, the Quarkus Dev Services automatically start Memory Service in a Docker container. For production environments,
 you'll deploy Memory Service as a separate service.
 
+### Can I run Memory Service without binding a TCP port?
+
+Yes. The Go server supports Unix domain sockets for local single-machine deployments:
+
+```bash
+memory-service serve \
+  --db-url=postgresql://postgres:postgres@localhost:5432/memoryservice \
+  --unix-socket="$HOME/.local/run/memory-service/api.sock"
+```
+
+Then access it with tools that support Unix sockets:
+
+```bash
+curl --unix-socket "$HOME/.local/run/memory-service/api.sock" \
+  http://localhost/ready
+```
+
+This mode is intended for local agent processes. Browser apps cannot connect directly to a Unix socket.
+
 ## Features
 
 ### What is conversation forking?

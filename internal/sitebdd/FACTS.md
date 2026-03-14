@@ -193,6 +193,11 @@ for `quarkus`, `spring`, `python-langchain`, `python-langgraph`, and
 `typescript-vecelai`. This avoids UUID-registry collisions between TypeScript
 and Python scenarios that intentionally reuse the same fixed conversation IDs in docs.
 
+`steps_curl.go` currently assumes Memory Service docs examples use TCP URLs such
+as `http://localhost:8082` and does not yet support `curl --unix-socket ...`.
+Enhancements that add Unix-socket docs/examples need matching parser/execution
+support in `internal/sitebdd` to keep those examples testable.
+
 
 ## Common failures
 
