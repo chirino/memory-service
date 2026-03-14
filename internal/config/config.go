@@ -13,6 +13,7 @@ import (
 // ListenerConfig holds the network/TLS settings for a single listener (main or management).
 type ListenerConfig struct {
 	Port              int
+	UnixSocket        string
 	EnablePlainText   bool
 	EnableTLS         bool
 	TLSCertFile       string
@@ -142,8 +143,9 @@ type Config struct {
 	// Server
 	Listener           ListenerConfig
 	ManagementListener ListenerConfig
-	// ManagementListenerEnabled is true when --management-port (or MEMORY_SERVICE_MANAGEMENT_PORT)
-	// was explicitly provided. When false, management endpoints are served on the main port.
+	// ManagementListenerEnabled is true when --management-port / --management-unix-socket
+	// (or their env vars) was explicitly provided. When false, management endpoints are
+	// served on the main port.
 	ManagementListenerEnabled bool
 	// ManagementAccessLog enables HTTP access logging for management endpoints (/health, /ready, /metrics).
 	// Disabled by default to suppress high-frequency probe noise from the access log.

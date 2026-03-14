@@ -28,10 +28,11 @@ func startManagementServer(cfg config.ListenerConfig, handler http.Handler) (net
 		cfg.ReadHeaderTimeout = 5 * time.Second
 	}
 
-	baseLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
+	prepared, err := prepareListener(cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("management listen failed: %w", err)
 	}
+	baseLis := prepared.Listener
 
 	muxer := cmux.New(baseLis)
 
@@ -62,6 +63,7 @@ func startManagementServer(cfg config.ListenerConfig, handler http.Handler) (net
 		cert, err := loadServerCertificate(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
 			_ = baseLis.Close()
+			_ = prepared.Cleanup()
 			return nil, nil, err
 		}
 		tlsWrapped := tls.NewListener(tlsLis, &tls.Config{
@@ -101,10 +103,13 @@ func startManagementServer(cfg config.ListenerConfig, handler http.Handler) (net
 				}
 			}
 			_ = baseLis.Close()
+			if err := prepared.Cleanup(); err != nil && shutdownErr == nil {
+				shutdownErr = err
+			}
 		})
 		return shutdownErr
 	}
 
-	log.Info("Management server listening", "addr", baseLis.Addr())
+	log.Info("Management server listening", "addr", prepared.Address, "network", prepared.Network)
 	return baseLis.Addr(), closeFn, nil
 }

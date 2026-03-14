@@ -76,7 +76,16 @@ func Command() *cli.Command {
 			}
 			cfg.Listener.ReadHeaderTimeout = time.Duration(readHeaderTimeoutSecs) * time.Second
 			cfg.ManagementListener.ReadHeaderTimeout = cfg.Listener.ReadHeaderTimeout
-			cfg.ManagementListenerEnabled = cmd.IsSet("management-port")
+			selections := listenerSelections{
+				mainPortExplicit:       cmd.IsSet("port"),
+				mainUnixSocketExplicit: cmd.IsSet("unix-socket"),
+				mgmtPortExplicit:       cmd.IsSet("management-port"),
+				mgmtUnixSocketExplicit: cmd.IsSet("management-unix-socket"),
+			}
+			if err := validateListenerSelections(cfg, selections); err != nil {
+				return err
+			}
+			cfg.ManagementListenerEnabled = selections.mgmtPortExplicit || selections.mgmtUnixSocketExplicit
 			cfg.AttachTypeExplicit = cmd.IsSet("attachments-kind")
 			return run(config.WithContext(ctx, &cfg), cfg)
 		},
@@ -147,6 +156,13 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Value:       cfg.Listener.Port,
 			Usage:       "HTTP server port",
 		},
+		&cli.StringFlag{
+			Name:        "unix-socket",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_UNIX_SOCKET"),
+			Destination: &cfg.Listener.UnixSocket,
+			Usage:       "Absolute path to a Unix socket for the HTTP/gRPC server",
+		},
 		&cli.BoolFlag{
 			Name:        "plain-text",
 			Category:    "Network Listener:",
@@ -172,6 +188,13 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Destination: &cfg.ManagementListener.Port,
 			Value:       cfg.ManagementListener.Port,
 			Usage:       "Dedicated port for health and metrics (0 = OS-assigned random port); when unset, served on the main port",
+		},
+		&cli.StringFlag{
+			Name:        "management-unix-socket",
+			Category:    "Network Listener: Management:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET"),
+			Destination: &cfg.ManagementListener.UnixSocket,
+			Usage:       "Absolute path to a Unix socket for the management server",
 		},
 		&cli.BoolFlag{
 			Name:        "management-plain-text",

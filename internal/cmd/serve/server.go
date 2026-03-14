@@ -53,6 +53,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	log.Info("Starting memory service",
 		"httpPort", cfg.Listener.Port,
+		"httpSocket", strings.TrimSpace(cfg.Listener.UnixSocket),
 		"db", cfg.DatastoreType,
 		"cache", cfg.CacheType,
 		"vector", cfg.VectorType,
@@ -315,6 +316,8 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 
 	log.Info("Server listening",
+		"addr", running.Endpoint,
+		"network", running.Network,
 		"port", running.Port,
 		"plaintext", cfg.Listener.EnablePlainText,
 		"tls", cfg.Listener.EnableTLS,
