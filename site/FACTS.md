@@ -3,6 +3,7 @@
 **TypeScript response-resumption deps**: `site/src/pages/docs/typescript-vecelai/response-resumption.mdx` must call out `@grpc/grpc-js` and `@grpc/proto-loader` install requirements for checkpoint `05`, because response recorder helpers are gRPC-backed and those packages are optional peers.
 **Search docs contract**: `POST /v1/conversations/search` uses `searchType` values `auto`, `semantic`, `fulltext` (not `keyword`) and also accepts an array of concrete types (for example `["semantic","fulltext"]`), with `limit` applied per requested type.
 **CodeFromFile match selection**: `site/src/components/CodeFromFile.astro` selects snippet regions via the `match="..."` prop and rejects default-slot matching; docs should always pass match anchors as props.
+**CodeFromFile tracked-file gotcha**: `CodeFromFile` reads files from the checked-out repo during Astro build. Do not point it at ignored names like `.env`; use tracked examples such as `.env.example` or CI site builds will fail even if local builds pass.
 
 **Python LangChain response-resumption scope**: `site/src/pages/docs/python-langchain/response-resumption.mdx` checkpoint `05` now demonstrates Memory Service gRPC-backed response recording/replay/cancel behavior and points to `python/examples/langchain/chat-langchain` for the full app implementation.
 

@@ -33,9 +33,12 @@ No LangGraph source file needs a transport edit. The checkpoint already construc
   lines="97-123"
 />
 
-Set the socket path in the file that supplies environment variables for the running process. If you keep those in a `.env` file next to the app, it should look like this:
+Set the socket path in the file that supplies environment variables for the running process. If you keep those in a `.env` file next to the app, this `.env.example` snippet shows the exact value to add:
 
-<CodeFromFile file="python/examples/langgraph/doc-checkpoints/05-response-resumption/docs-snippets/.env" lang="bash" />
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/05-response-resumption/docs-snippets/.env.example"
+  lang="bash"
+/>
 
 The LangGraph store, history middleware, proxy, and response recorder all pick that up automatically.
 

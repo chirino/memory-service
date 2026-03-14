@@ -33,9 +33,12 @@ No Python source file changes are required. This checkpoint already builds the c
   lines="96-115"
 />
 
-That means the file you update is the one that sets environment variables before the app starts. If you keep those in a `.env` file next to the app, it should look like this:
+That means the file you update is the one that sets environment variables before the app starts. If you keep those in a `.env` file next to the app, this `.env.example` snippet shows the exact value to add:
 
-<CodeFromFile file="python/examples/langchain/doc-checkpoints/05-response-resumption/docs-snippets/.env" lang="bash" />
+<CodeFromFile
+  file="python/examples/langchain/doc-checkpoints/05-response-resumption/docs-snippets/.env.example"
+  lang="bash"
+/>
 
 `MemoryServiceCheckpointSaver`, `MemoryServiceHistoryMiddleware`, `MemoryServiceProxy`, and `MemoryServiceResponseRecordingManager` will route both REST and gRPC over that socket automatically once that environment variable is present.
 
