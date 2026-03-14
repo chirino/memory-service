@@ -10,6 +10,7 @@ public class MemoryServiceGrpcProperties {
 
     private boolean enabled = false;
     private String target = "localhost:6565";
+    private String unixSocket;
     private boolean plaintext = true;
     private Duration keepAliveTime;
     private Duration keepAliveTimeout;
@@ -29,6 +30,14 @@ public class MemoryServiceGrpcProperties {
 
     public void setTarget(String target) {
         this.target = target;
+    }
+
+    public String getUnixSocket() {
+        return unixSocket;
+    }
+
+    public void setUnixSocket(String unixSocket) {
+        this.unixSocket = unixSocket;
     }
 
     public boolean isPlaintext() {

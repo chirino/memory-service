@@ -135,6 +135,7 @@ type SiteScenario struct {
 	checkpointLogPath     string
 	buildExitCode         int
 	waveReady             bool
+	UseUnixSocketMemoryService bool
 
 	// OpenAI mock recording
 	Recording bool
@@ -155,9 +156,10 @@ type SiteScenario struct {
 	curlCaptures         []CurlExampleCapture
 
 	// Shared services (set once before godog runs)
-	ProjectRoot   string
-	MemServiceURL string
-	Mock          *MockServer
+	ProjectRoot         string
+	MemServiceURL       string
+	MemServiceUnixSocket string
+	Mock                *MockServer
 
 	t testing.TB
 }
@@ -227,6 +229,15 @@ func (s *SiteScenario) startCheckpoint() error {
 	isQuarkus := !isPython && !isNode && fileExists(quarkusJar)
 
 	var cmd *exec.Cmd
+	memoryServiceURL := s.MemServiceURL
+	memoryServiceBaseURL := s.MemServiceURL
+	springMemoryServiceArg := "--memory-service.client.url=" + s.MemServiceURL
+	if s.UseUnixSocketMemoryService {
+		memoryServiceURL = "http://localhost"
+		memoryServiceBaseURL = "http://localhost"
+		springMemoryServiceArg =
+			"--memory-service.client.url=unix://" + s.MemServiceUnixSocket
+	}
 	switch {
 	case isPython:
 		venvPython := filepath.Join(s.CheckpointPath, ".venv", "bin", "python")
@@ -254,8 +265,7 @@ func (s *SiteScenario) startCheckpoint() error {
 		springArgs := []string{
 			"-jar", jar,
 			fmt.Sprintf("--server.port=%d", s.CheckpointPort),
-			// Override memory service URL via highest-priority Spring command-line arg
-			"--memory-service.client.base-url=" + s.MemServiceURL,
+			springMemoryServiceArg,
 		}
 		if s.checkpointHasProperty("spring.security.oauth2") {
 			// Point the OAuth2 client provider (login + ClientRegistrationRepository) at the
@@ -279,11 +289,14 @@ func (s *SiteScenario) startCheckpoint() error {
 		"OPENAI_MODEL=mock-gpt-markdown",
 		"PORT="+fmt.Sprintf("%d", s.CheckpointPort),
 		// Memory service URL env vars for each framework
-		"MEMORY_SERVICE_URL="+s.MemServiceURL,             // Python + Node apps
+		"MEMORY_SERVICE_URL="+memoryServiceURL,            // Python + Node apps
 		"MEMORY_SERVICE_API_KEY=agent-api-key-1",          // Node helper defaults
-		"MEMORY_SERVICE_CLIENT_URL="+s.MemServiceURL,      // Quarkus: memory-service.client.url
-		"MEMORY_SERVICE_CLIENT_BASE_URL="+s.MemServiceURL, // Spring fallback (cmd arg takes precedence)
+		"MEMORY_SERVICE_CLIENT_URL="+memoryServiceBaseURL, // Quarkus: memory-service.client.url
 	)
+	if s.UseUnixSocketMemoryService {
+		cmd.Env = append(cmd.Env, "MEMORY_SERVICE_UNIX_SOCKET="+s.MemServiceUnixSocket)
+		cmd.Env = appendEnv(cmd.Env, "MEMORY_SERVICE_CLIENT_URL=unix://"+s.MemServiceUnixSocket)
+	}
 
 	// Quarkus with OIDC: bypass Keycloak using mock introspection endpoint (no JWT needed).
 	if isQuarkus && s.checkpointHasProperty("quarkus.oidc.auth-server-url") {

@@ -1,5 +1,7 @@
 import type { ModelMessage } from "ai";
+import { Agent, type Dispatcher } from "undici";
 import { createRequire } from "node:module";
+import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type HistoryRole = "USER" | "AI";
@@ -7,6 +9,7 @@ const MAX_MESSAGES_PER_MEMORY_ENTRY = 100;
 
 type MemoryServiceProxyOptions = {
   baseUrl?: string;
+  unixSocket?: string;
   apiKey?: string;
   authorization?: string | null;
 };
@@ -19,12 +22,52 @@ type ListEntriesOptions = {
   forks?: string | null;
 };
 
-function memoryServiceBaseUrl(baseUrl?: string): string {
+const memoryServiceDispatchers = new Map<string, Dispatcher>();
+
+function resolveMemoryServiceUnixSocket(
+  unixSocket?: string,
+): string | undefined {
+  const candidate = (
+    unixSocket ??
+    process.env.MEMORY_SERVICE_UNIX_SOCKET ??
+    ""
+  ).trim();
+  if (!candidate) {
+    return undefined;
+  }
+  if (!isAbsolute(candidate)) {
+    throw new Error("MEMORY_SERVICE_UNIX_SOCKET must be an absolute path");
+  }
+  return candidate;
+}
+
+function memoryServiceBaseUrl(baseUrl?: string, unixSocket?: string): string {
+  if (resolveMemoryServiceUnixSocket(unixSocket)) {
+    return "http://localhost";
+  }
   return (
     baseUrl ??
     process.env.MEMORY_SERVICE_URL ??
     "http://localhost:8082"
   ).replace(/\/$/, "");
+}
+
+function memoryServiceDispatcher(unixSocket?: string): Dispatcher | undefined {
+  const socketPath = resolveMemoryServiceUnixSocket(unixSocket);
+  if (!socketPath) {
+    return undefined;
+  }
+  const existing = memoryServiceDispatchers.get(socketPath);
+  if (existing) {
+    return existing;
+  }
+  const created = new Agent({
+    connect: {
+      socketPath,
+    },
+  });
+  memoryServiceDispatchers.set(socketPath, created);
+  return created;
 }
 
 function memoryServiceApiKey(apiKey?: string): string {
@@ -63,12 +106,12 @@ async function memoryServiceRequest(
     contentType?: string;
   },
 ): Promise<Response> {
-  const url = `${memoryServiceBaseUrl(options.baseUrl)}${path}`;
+  const url = `${memoryServiceBaseUrl(options.baseUrl, options.unixSocket)}${path}`;
   const headers = memoryServiceHeaders(options);
   if (options.contentType) {
     headers["Content-Type"] = options.contentType;
   }
-  return fetch(url, {
+  const init: RequestInit & { dispatcher?: Dispatcher } = {
     method,
     headers,
     body:
@@ -77,7 +120,12 @@ async function memoryServiceRequest(
         : typeof options.body === "string"
           ? options.body
           : JSON.stringify(options.body),
-  });
+  };
+  const dispatcher = memoryServiceDispatcher(options.unixSocket);
+  if (dispatcher) {
+    init.dispatcher = dispatcher;
+  }
+  return fetch(url, init);
 }
 
 async function relayResponse(
@@ -522,6 +570,10 @@ function resolveGrpcTarget(): string {
   if (explicit) {
     return explicit;
   }
+  const unixSocket = resolveMemoryServiceUnixSocket();
+  if (unixSocket) {
+    return `unix://${unixSocket}`;
+  }
   const base = process.env.MEMORY_SERVICE_URL ?? "http://localhost:8082";
   try {
     const parsed = new URL(base);
@@ -743,6 +795,7 @@ class BufferedContextMemory {
       channel: "memory",
       authorization: this.options.authorization,
       baseUrl: this.options.baseUrl,
+      unixSocket: this.options.unixSocket,
       apiKey: this.options.apiKey,
       memoryContentType: this.options.memoryContentType,
     });
@@ -786,6 +839,7 @@ class BufferedContextMemory {
         conversationId: this.options.conversationId,
         authorization: this.options.authorization,
         baseUrl: this.options.baseUrl,
+        unixSocket: this.options.unixSocket,
         apiKey: this.options.apiKey,
         memoryContentType: this.options.memoryContentType,
         messages: this.appendedMessages,
@@ -796,6 +850,7 @@ class BufferedContextMemory {
       conversationId: this.options.conversationId,
       authorization: this.options.authorization,
       baseUrl: this.options.baseUrl,
+      unixSocket: this.options.unixSocket,
       apiKey: this.options.apiKey,
       memoryContentType: this.options.memoryContentType,
       messages: this.messages,
@@ -1125,6 +1180,7 @@ export async function withMemoryService<T>(
       authorization: options.authorization,
       baseUrl: options.baseUrl,
       apiKey: options.apiKey,
+      unixSocket: options.unixSocket,
       role: "USER",
       text: userText,
       indexedContent:
@@ -1145,6 +1201,7 @@ export async function withMemoryService<T>(
         authorization: options.authorization,
         baseUrl: options.baseUrl,
         apiKey: options.apiKey,
+        unixSocket: options.unixSocket,
         memoryContentType: options.memoryContentType,
       },
       (contextMemory) => callback(contextMemory, responseRecorder),
@@ -1167,6 +1224,7 @@ export async function withMemoryService<T>(
         authorization: options.authorization,
         baseUrl: options.baseUrl,
         apiKey: options.apiKey,
+        unixSocket: options.unixSocket,
         role: "AI",
         text: assistantText,
         events: coalescedHistoryEvents,
@@ -1183,6 +1241,7 @@ export async function withMemoryService<T>(
         authorization: options.authorization,
         baseUrl: options.baseUrl,
         apiKey: options.apiKey,
+        unixSocket: options.unixSocket,
         role: "AI",
         text: assistantText,
         indexedContent:

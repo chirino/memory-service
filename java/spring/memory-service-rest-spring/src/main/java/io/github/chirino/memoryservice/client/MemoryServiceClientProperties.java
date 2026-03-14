@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "memory-service.client")
 public class MemoryServiceClientProperties {
 
-    private String baseUrl = "http://localhost:8080";
+    private String url = "http://localhost:8080";
     private String apiKey;
 
     /**
@@ -24,20 +24,12 @@ public class MemoryServiceClientProperties {
     private String tempDir;
     private Map<String, String> defaultHeaders = new LinkedHashMap<>();
 
-    public String getBaseUrl() {
-        return baseUrl;
+    public String getUrl() {
+        return url;
     }
 
-    public void setBaseUrl(String baseUrl) {
-        this.baseUrl = baseUrl;
-    }
-
-    public String getApiKey() {
-        return apiKey;
-    }
-
-    public void setApiKey(String apiKey) {
-        this.apiKey = apiKey;
+    public void setUrl(String url) {
+        this.url = url;
     }
 
     public String getOidcClientRegistration() {
@@ -46,6 +38,14 @@ public class MemoryServiceClientProperties {
 
     public void setOidcClientRegistration(String oidcClientRegistration) {
         this.oidcClientRegistration = oidcClientRegistration;
+    }
+
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public void setApiKey(String apiKey) {
+        this.apiKey = apiKey;
     }
 
     public String getBearerToken() {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -66,6 +67,14 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 	// Substitute to reach our in-process memory service.
 	memServiceHost := strings.TrimPrefix(s.MemServiceURL, "http://")
 	bash = strings.ReplaceAll(bash, "localhost:8082", memServiceHost)
+	if s.UseUnixSocketMemoryService {
+		bash = strings.ReplaceAll(bash, "/tmp/memory-service.sock", s.MemServiceUnixSocket)
+		bash = strings.ReplaceAll(
+			bash,
+			"$HOME/.local/run/memory-service/api.sock",
+			s.MemServiceUnixSocket,
+		)
+	}
 
 	// Apply user isolation substitutions
 	bash = s.rewriteUsers(bash)
@@ -84,8 +93,6 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 		return nil
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-
 	for i, cr := range requests {
 		fmt.Printf("  [curl %d/%d] %s %s\n", i+1, len(requests), cr.Method, cr.URL)
 		if err := s.claimRequestUUIDs(cr); err != nil {
@@ -97,12 +104,16 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 			return fmt.Errorf("build request %d: %w", i+1, err)
 		}
 
+		client := httpClientForCurl(cr)
 		resp, err := client.Do(req.Clone(context.Background()))
 		if err != nil {
 			return fmt.Errorf("execute curl %d: %w", i+1, err)
 		}
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, err := readResponseBody(resp.Body, cr.MaxTime)
 		_ = resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("read curl %d response body: %w", i+1, err)
+		}
 		respBody := string(bodyBytes)
 		statusCode := resp.StatusCode
 
@@ -278,14 +289,17 @@ func (s *SiteScenario) replayLastCurlRequest() error {
 		return fmt.Errorf("last request method %s is not replay-safe", req.Method)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpClientForCurl(*s.lastCurlReq)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("execute replay request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyBytes, err := readResponseBody(resp.Body, s.lastCurlReq.MaxTime)
+	if err != nil {
+		return fmt.Errorf("read replay request body: %w", err)
+	}
 	s.LastStatusCode = resp.StatusCode
 	s.LastRespBody = s.normalizeUsers(string(bodyBytes))
 	return nil
@@ -478,9 +492,60 @@ func pathOrRoot(path string) string {
 type curlRequest struct {
 	Method     string
 	URL        string
+	UnixSocket string
+	MaxTime    time.Duration
 	Headers    []string
 	Body       string
 	FormFields []string // -F "name=@filepath" or "name=value"
+}
+
+func httpClientForCurl(cr curlRequest) *http.Client {
+	transport := &http.Transport{}
+	if cr.UnixSocket != "" {
+		socketPath := cr.UnixSocket
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socketPath)
+		}
+	}
+	return &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}
+}
+
+func readResponseBody(body io.ReadCloser, maxTime time.Duration) ([]byte, error) {
+	if maxTime <= 0 {
+		return io.ReadAll(body)
+	}
+
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(maxTime, func() {
+		close(timedOut)
+		_ = body.Close()
+	})
+	defer timer.Stop()
+
+	var buf bytes.Buffer
+	chunk := make([]byte, 4096)
+	for {
+		n, err := body.Read(chunk)
+		if n > 0 {
+			buf.Write(chunk[:n])
+		}
+		if err == nil {
+			continue
+		}
+		if err == io.EOF {
+			return buf.Bytes(), nil
+		}
+		select {
+		case <-timedOut:
+			return buf.Bytes(), nil
+		default:
+			return buf.Bytes(), err
+		}
+	}
 }
 
 func (cr *curlRequest) toHTTPRequest() (*http.Request, error) {
@@ -746,8 +811,17 @@ func parseCurlTokens(tokens []string) (curlRequest, error) {
 		case "--connect-timeout", "--max-time", "-m", "--retry",
 			"--retry-delay", "-u", "--user", "--proxy", "-x",
 			"--cacert", "--cert", "--key", "-A", "--user-agent",
-			"-e", "--referer", "-b", "--cookie", "-c", "--cookie-jar":
+			"-e", "--referer", "-b", "--cookie", "-c", "--cookie-jar",
+			"--unix-socket":
 			i++ // skip the argument too
+			if tok == "--unix-socket" && i < len(tokens) {
+				cr.UnixSocket = tokens[i]
+			}
+			if (tok == "--max-time" || tok == "-m") && i < len(tokens) {
+				if seconds, err := strconv.ParseFloat(tokens[i], 64); err == nil && seconds > 0 {
+					cr.MaxTime = time.Duration(seconds * float64(time.Second))
+				}
+			}
 		default:
 			if !strings.HasPrefix(tok, "-") && cr.URL == "" {
 				cr.URL = tok

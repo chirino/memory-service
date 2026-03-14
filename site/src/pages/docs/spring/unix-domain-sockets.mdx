@@ -1,0 +1,110 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Spring Boot Over Unix Domain Sockets
+description: Configure the Spring client starter to use a Memory Service Unix domain socket with one property.
+---
+
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+
+This guide continues from [Spring Response Recording and Resumption](/docs/spring/response-resumption/). Keep the same checkpoint app and switch the client transport by setting one Spring property.
+
+## Local Memory Service
+
+```bash
+memory-service serve \
+  --db-kind=sqlite \
+  --db-url=file:$HOME/.local/share/memory-service/memory.db \
+  --vector-kind=sqlite \
+  --cache-kind=local \
+  --unix-socket=$HOME/.local/run/memory-service/api.sock
+```
+
+Those options keep the Spring example focused on transport, not infrastructure: SQLite provides both durable storage and vector indexing, `cache-kind=local` keeps caching inside the process, the database file is persisted under `$HOME/.local/share`, and the socket is placed under `$HOME/.local/run` so the access boundary stays in the user's home directory instead of `/tmp`.
+
+## Agent Configuration
+
+Update your Spring Boot configuration file. In the checkpoint app, edit `java/spring/examples/doc-checkpoints/05-response-resumption/src/main/resources/application.properties`. In your own app, that same block lives in `src/main/resources/application.properties`.
+
+<CodeFromFile
+  file="java/spring/examples/doc-checkpoints/05-response-resumption/docs-snippets/application.properties"
+  lang="properties"
+/>
+
+Replace the old `memory-service.client.url=http://...` line with `memory-service.client.url=unix://${HOME}/.local/run/memory-service/api.sock`. The Spring REST client wrapper and the gRPC response-recorder channel will both follow that URL automatically.
+
+<TestScenario checkpoint="java/spring/examples/doc-checkpoints/05-response-resumption">
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Start a streaming response, but disconnect before it finishes:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "data:"
+`} exampleOutput={`data: {"text":"Once "}`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/0b8c8c2f-4304-45f7-9cb8-e1ff666a1c8c \
+  --max-time 0.2 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Write a short story about a cat."
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "0b8c8c2f-4304-45f7-9cb8-e1ff666a1c8c"
+`} exampleOutputLang="json" exampleOutput={`["0b8c8c2f-4304-45f7-9cb8-e1ff666a1c8c"]`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '["0b8c8c2f-4304-45f7-9cb8-e1ff666a1c8c"]'
+```
+
+</CurlTest>
+
+Resume the interrupted response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "data:"
+`} exampleOutput={`data: {"text":"Once "}`}>
+
+```bash
+curl -NsSfX GET http://localhost:9090/v1/conversations/0b8c8c2f-4304-45f7-9cb8-e1ff666a1c8c/resume \
+  --max-time 0.5 \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "0b8c8c2f-4304-45f7-9cb8-e1ff666a1c8c"
+`} exampleOutputLang="json" exampleOutput={`{"id":"0b8c8c2f-4304-45f7-9cb8-e1ff666a1c8c"}`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/0b8c8c2f-4304-45f7-9cb8-e1ff666a1c8c \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+</TestScenario>

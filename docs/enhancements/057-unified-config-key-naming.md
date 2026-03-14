@@ -146,7 +146,7 @@ The following keys are already correctly namespaced and need no changes:
 **gRPC**: `memory-service.grpc-advertised-address`
 **Prometheus**: `memory-service.prometheus.url`
 **Response Resumer**: `memory-service.response-resumer.enabled`, `memory-service.temp-dir`
-**Client** (extensions): `memory-service.client.url`, `memory-service.client.api-key`, `memory-service.client.base-url`, `memory-service.client.log-requests`, `memory-service.client.temp-dir`
+**Client** (extensions): `memory-service.client.url`, `memory-service.client.api-key`, `memory-service.client.log-requests`, `memory-service.client.temp-dir`
 
 ## Testing
 

@@ -20,7 +20,9 @@
     "clean": "rm -rf dist",
     "prettier": "prettier -w \"src/**/*.{ts,tsx,js}\""
   },
-  "dependencies": {},
+  "dependencies": {
+    "undici": "^7.16.0"
+  },
   "peerDependencies": {
     "@grpc/grpc-js": "^1.14.0",
     "@grpc/proto-loader": "^0.8.0",

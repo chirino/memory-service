@@ -7,3 +7,7 @@
 **Ownership transfer pagination parity**: `chat-quarkus` forwards optional `afterCursor` and `limit` query params on `GET /v1/ownership-transfers` to `MemoryServiceProxy.listPendingTransfers(...)`.
 
 **ResponseRecordingManager scope**: Quarkus `ResponseRecordingManager` is the full response-stream lifecycle contract (`recorder(...)`, `replay(...)`, `check(...)`, `requestCancel(...)`, `enabled()`), not only replay/resume.
+
+**UDS client knob**: Quarkus now uses `memory-service.client.url=unix:///absolute/path.sock` for both REST and gRPC. REST uses the extension's custom UDS HTTP client/proxy path, and gRPC uses `grpc-netty-shaded` with `NioDomainSocketChannel` + `UnixDomainSocketAddress`.
+
+**Checkpoint `05` parity**: `java/quarkus/examples/doc-checkpoints/05-response-resumption` now restores proxied conversation REST routes via `ConversationsResource`, so the UDS docs can verify one explicit REST proxy call in addition to response resumption.

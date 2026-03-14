@@ -1,6 +1,7 @@
 package io.github.chirino.memoryservice.history;
 
 import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
+import io.github.chirino.memoryservice.client.MemoryServiceClients;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.io.IOException;
 import java.net.URI;
@@ -108,7 +109,7 @@ public class AttachmentResolver {
         }
 
         // Download from memory service
-        String baseUrl = properties.getBaseUrl();
+        String baseUrl = MemoryServiceClients.resolveBaseUrl(properties);
         String url = baseUrl + "/v1/attachments/" + ref.id();
         String bearer = SecurityHelper.bearerToken(authorizedClientService);
 

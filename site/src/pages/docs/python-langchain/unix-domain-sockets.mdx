@@ -1,0 +1,121 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python LangChain Over Unix Domain Sockets
+description: Configure the LangChain package to use a Memory Service Unix domain socket with no transport code in the app.
+---
+
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+
+This guide starts from the same response-resumption checkpoint as [Python Response Recording and Resumption](/docs/python-langchain/response-resumption/). The only change is transport configuration.
+
+## Local Memory Service
+
+```bash
+memory-service serve \
+  --db-kind=sqlite \
+  --db-url=file:$HOME/.local/share/memory-service/memory.db \
+  --vector-kind=sqlite \
+  --cache-kind=local \
+  --unix-socket=$HOME/.local/run/memory-service/api.sock
+```
+
+Those options are chosen to keep the example fully local: SQLite backs both the datastore and vector search, `cache-kind=local` avoids any external cache dependency, the database file lives under `$HOME/.local/share`, and the socket lives under `$HOME/.local/run` so filesystem permissions in the user's home directory help protect access.
+
+## Agent Configuration
+
+No Python source file changes are required. This checkpoint already builds the checkpointer, history middleware, proxy, and response recorder from package defaults:
+
+<CodeFromFile
+  file="python/examples/langchain/doc-checkpoints/05-response-resumption/app.py"
+  lang="python"
+  lines="96-115"
+/>
+
+That means the file you update is the one that sets environment variables before the app starts. If you keep those in a `.env` file next to the app, it should look like this:
+
+<CodeFromFile file="python/examples/langchain/doc-checkpoints/05-response-resumption/docs-snippets/.env" lang="bash" />
+
+`MemoryServiceCheckpointSaver`, `MemoryServiceHistoryMiddleware`, `MemoryServiceProxy`, and `MemoryServiceResponseRecordingManager` will route both REST and gRPC over that socket automatically once that environment variable is present.
+
+<TestScenario checkpoint="python/examples/langchain/doc-checkpoints/05-response-resumption">
+
+Define the bearer-token helper used by the checkpoint app:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Start a streaming response, but disconnect before it finishes:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "PartialResponse"
+`} exampleOutput={`data: {"eventType":"PartialResponse","chunk":"Once "}`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/9b3c1d74-53c2-4df0-a680-7a63d4550d91 \
+  --max-time 0.2 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Write a short story about a cat."
+```
+
+</CurlTest>
+
+Check that the response is resumable:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "9b3c1d74-53c2-4df0-a680-7a63d4550d91"
+`} exampleOutputLang="json" exampleOutput={`["9b3c1d74-53c2-4df0-a680-7a63d4550d91"]`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '["9b3c1d74-53c2-4df0-a680-7a63d4550d91"]'
+```
+
+</CurlTest>
+
+Resume the interrupted response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "PartialResponse"
+`} exampleOutput={`data: {"eventType":"PartialResponse","chunk":"Once "}`}>
+
+```bash
+curl -NsSfX GET http://localhost:9090/v1/conversations/9b3c1d74-53c2-4df0-a680-7a63d4550d91/resume \
+  --max-time 0.5 \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+Verify that proxied REST traffic also works:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "9b3c1d74-53c2-4df0-a680-7a63d4550d91"
+`} exampleOutputLang="json" exampleOutput={`{"id":"9b3c1d74-53c2-4df0-a680-7a63d4550d91"}`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/9b3c1d74-53c2-4df0-a680-7a63d4550d91 \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+</TestScenario>

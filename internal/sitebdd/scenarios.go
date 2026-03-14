@@ -131,14 +131,23 @@ func writeScenario(sb *strings.Builder, s ScenarioData, sourceFile string, curlO
 		title = deriveFeatureName(s.SourceFile)
 	}
 	checkpointName := lastSegment(s.Checkpoint)
-	sb.WriteString(fmt.Sprintf("  Scenario: [%s] %s - %s\n", framework, title, checkpointName))
+	scenarioLabel := title
+	if checkpointName != "" {
+		scenarioLabel += " - " + checkpointName
+	}
+	sb.WriteString(fmt.Sprintf("  Scenario: [%s] %s\n", framework, scenarioLabel))
 	sb.WriteString(fmt.Sprintf("    # From %s\n", s.SourceFile))
 
-	sb.WriteString(fmt.Sprintf("    Given checkpoint %q is active\n", s.Checkpoint))
-	sb.WriteString("    When I build the checkpoint\n")
-	sb.WriteString("    Then the build should succeed\n\n")
-	sb.WriteString("    When I start the checkpoint\n")
-	sb.WriteString("    Then the application should be running\n\n")
+	if scenarioUsesUnixSocket(sourceFile) {
+		sb.WriteString("    Given the docs scenario uses the unix socket memory service\n")
+	}
+	if s.Checkpoint != "" {
+		sb.WriteString(fmt.Sprintf("    Given checkpoint %q is active\n", s.Checkpoint))
+		sb.WriteString("    When I build the checkpoint\n")
+		sb.WriteString("    Then the build should succeed\n\n")
+		sb.WriteString("    When I start the checkpoint\n")
+		sb.WriteString("    Then the application should be running\n\n")
+	}
 
 	for _, cmd := range s.Scenarios {
 		if !containsCurl(cmd.Bash) {
@@ -174,7 +183,9 @@ func writeScenario(sb *strings.Builder, s ScenarioData, sourceFile string, curlO
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("    When I stop the checkpoint\n")
+	if s.Checkpoint != "" {
+		sb.WriteString("    When I stop the checkpoint\n")
+	}
 	return nil
 }
 
@@ -227,6 +238,8 @@ func deriveTags(s ScenarioData) []string {
 
 func deriveFramework(sourceFile string) string {
 	switch {
+	case strings.HasPrefix(sourceFile, "/docs/concepts/"):
+		return "concepts"
 	case strings.HasPrefix(sourceFile, "/docs/python-langchain/"):
 		return "python-langchain"
 	case strings.HasPrefix(sourceFile, "/docs/python-langgraph/"):
@@ -242,6 +255,10 @@ func deriveFramework(sourceFile string) string {
 	default:
 		return "unknown"
 	}
+}
+
+func scenarioUsesUnixSocket(sourceFile string) bool {
+	return strings.Contains(sourceFile, "/unix-domain-sockets")
 }
 
 func lastSegment(path string) string {

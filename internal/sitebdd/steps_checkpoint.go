@@ -15,6 +15,7 @@ import (
 
 // registerCheckpointSteps registers checkpoint lifecycle godog steps.
 func registerCheckpointSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
+	ctx.Step(`^the docs scenario uses the unix socket memory service$`, s.docsScenarioUsesUnixSocketMemoryService)
 	ctx.Step(`^checkpoint "([^"]*)" is active$`, s.checkpointIsActive)
 	ctx.Step(`^I build the checkpoint$`, s.iBuildTheCheckpoint)
 	ctx.Step(`^I build the checkpoint with "([^"]*)"$`, s.iBuildTheCheckpointWith)
@@ -35,6 +36,11 @@ func registerCheckpointSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
 		s.finishWave()
 		return ctx, nil
 	})
+}
+
+func (s *SiteScenario) docsScenarioUsesUnixSocketMemoryService() error {
+	s.UseUnixSocketMemoryService = true
+	return nil
 }
 
 // checkpointIsActive sets the checkpoint, allocates a unique port and user suffix.

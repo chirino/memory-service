@@ -15,7 +15,7 @@
     "body": "data: {\"id\":\"chatcmpl-python-fixture-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-python-fixture-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Once upon a time, there was a curious little cat named Whiskers.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-python-fixture-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" She explored the moonlit garden and found a hidden pond.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-python-fixture-001\",\"object\":\"chat.completion.chunk\",\"created\":1707440400,\"model\":\"mock-gpt-markdown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
     "chunkedDribbleDelay": {
       "numberOfChunks": 4,
-      "totalDuration": 80
+      "totalDuration": 600
     }
   }
 }

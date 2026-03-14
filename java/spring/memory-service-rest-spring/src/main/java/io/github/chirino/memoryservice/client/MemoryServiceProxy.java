@@ -73,7 +73,7 @@ public class MemoryServiceProxy {
 
     private WebClient createWebClient() {
         var builder = MemoryServiceClients.createWebClient(properties, webClientBuilder, null);
-        builder.baseUrl(properties.getBaseUrl());
+        builder.baseUrl(MemoryServiceClients.resolveBaseUrl(properties));
         return builder.build();
     }
 

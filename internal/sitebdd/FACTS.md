@@ -7,33 +7,33 @@
 cd site && npm ci && npm run build && cd ..
 
 # Compile check (fast, no Docker needed)
-go build -tags=site_tests ./internal/sitebdd/
+go build -tags='site_tests sqlite_fts5' ./internal/sitebdd/
 
 # Run all site-docs scenarios
-go test -tags=site_tests ./internal/sitebdd/ -v -count=1
+go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1
 
 # Run targeted scenarios via task (preferred for reruns)
 GODOG_TAGS='@python-langchain and @checkpoint_python_examples_langchain_doc_checkpoints_05_response_resumption' \
   task test:site -- -count=1
 
 # Run only quarkus scenarios
-go test -tags=site_tests ./internal/sitebdd/ -v -count=1 -godog.tags=@quarkus
+go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1 -godog.tags=@quarkus
 
 # Run only one checkpoint
-go test -tags=site_tests ./internal/sitebdd/ -v -count=1 \
+go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1 \
   -godog.tags=@checkpoint_quarkus_examples_chat_quarkus_01_basic_agent
 
 # Record fixtures only for checkpoints that have none
 SITE_TEST_RECORD=missing OPENAI_API_KEY=sk-... \
-  go test -tags=site_tests ./internal/sitebdd/ -v -count=1
+  go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1
 
 # Re-record all fixtures
 SITE_TEST_RECORD=all OPENAI_API_KEY=sk-... OPENAI_MODEL=gpt-4o \
-  go test -tags=site_tests ./internal/sitebdd/ -v -count=1
+  go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1
 
 # Capture real curl responses for docs exampleOutput sync
 SITE_TEST_CAPTURE_CURL_OUTPUT=all \
-  go test -tags=site_tests ./internal/sitebdd/ -v -count=1
+  go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1
 
 # Sync captured outputs into <CurlTest exampleOutput={...}> blocks
 go run ./internal/cmd/sync_curl_examples --apply
@@ -108,6 +108,10 @@ test process via `os.Exit(2)` to force fixture/isolation fixes. Before exiting,
 the mock force-kills all currently tracked checkpoint subprocesses to avoid
 leaking background servers.
 
+Playback now honors fixture `response.chunkedDribbleDelay` for streaming bodies.
+For `text/event-stream` fixtures it replays complete SSE events with delays, so
+response-resumption docs can reliably test mid-stream disconnect and resume flows.
+
 ## Checkpoint framework detection
 
 | Indicator | Framework |
@@ -122,8 +126,8 @@ leaking background servers.
 | Env var | Purpose |
 |---------|---------|
 | `MEMORY_SERVICE_URL` | Generic; used by most apps |
-| `QUARKUS_REST_CLIENT_MEMORY_SERVICE_URL` | Quarkus MicroProfile REST client |
-| `SPRING_MEMORY_SERVICE_BASE_URL` | Spring framework override |
+| `MEMORY_SERVICE_CLIENT_URL` | Shared Java client URL for Spring and Quarkus (`http://...` or `unix:///...`) |
+| `QUARKUS_REST_CLIENT_MEMORY_SERVICE_URL` | Quarkus MicroProfile REST client fallback |
 
 If a checkpoint app doesn't pick up the URL from one of these, add the appropriate
 env var in `checkpoint.go → startCheckpoint()` and document it here.
@@ -193,10 +197,14 @@ for `quarkus`, `spring`, `python-langchain`, `python-langgraph`, and
 `typescript-vecelai`. This avoids UUID-registry collisions between TypeScript
 and Python scenarios that intentionally reuse the same fixed conversation IDs in docs.
 
-`steps_curl.go` currently assumes Memory Service docs examples use TCP URLs such
-as `http://localhost:8082` and does not yet support `curl --unix-socket ...`.
-Enhancements that add Unix-socket docs/examples need matching parser/execution
-support in `internal/sitebdd` to keep those examples testable.
+`steps_curl.go` supports `curl --unix-socket ...` and rewrites the docs'
+`$HOME/.local/run/memory-service/api.sock` placeholder to the suite's shared
+UDS-backed Memory Service path for `/unix-domain-sockets/` pages.
+
+UDS concept/framework docs start a shared in-process Memory Service configured
+with sqlite datastore, sqlite vector search, local cache, filesystem
+attachments, and a Unix socket listener. Those runs require the
+`sqlite_fts5` build tag; `task test:site*` includes it.
 
 
 ## Common failures

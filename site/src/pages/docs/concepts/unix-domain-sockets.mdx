@@ -1,0 +1,54 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Unix Domain Sockets
+description: Run Memory Service locally over a Unix domain socket and point agent clients at it with configuration only.
+---
+
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
+
+Unix domain sockets are the simplest way to run Memory Service next to an agent on the same machine. The service stays off a TCP port, filesystem permissions become part of the access boundary, and the client packages in this repo can switch transports with one config knob.
+
+## Local Stack
+
+For a fully local setup, use SQLite for the datastore, SQLite for vector storage, the process-local cache, and a Unix socket listener:
+
+```bash
+memory-service serve \
+  --db-kind=sqlite \
+  --db-url=file:$HOME/.local/share/memory-service/memory.db \
+  --vector-kind=sqlite \
+  --cache-kind=local \
+  --unix-socket=$HOME/.local/run/memory-service/api.sock
+```
+
+These options keep the local stack self-contained. `db-kind=sqlite` and `vector-kind=sqlite` keep both the primary datastore and vector index in local files instead of requiring Postgres, MongoDB, or Qdrant; `cache-kind=local` keeps caching in-process instead of requiring Redis or Infinispan; `db-url=file:$HOME/.local/share/...` stores persistent data in the user's home directory; and `--unix-socket=$HOME/.local/run/...` keeps the live socket out of `/tmp`, where other local users are more likely to discover and probe it.
+
+The framework guides reuse that same server shape. They only change the client-side configuration.
+
+<TestScenario description="Local unix socket stack">
+
+Verify that the local socket is reachable:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "\"status\":\"ok\""
+`} exampleOutputLang="json" exampleOutput={`{"status":"ok"}`}>
+
+```bash
+curl -sSf --unix-socket $HOME/.local/run/memory-service/api.sock \
+  http://localhost/ready
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Framework Knobs
+
+- Python LangChain and LangGraph: `MEMORY_SERVICE_UNIX_SOCKET=$HOME/.local/run/memory-service/api.sock`
+- TypeScript / Vercel AI: `MEMORY_SERVICE_UNIX_SOCKET=$HOME/.local/run/memory-service/api.sock`
+- Spring Boot: `memory-service.client.url=unix://${HOME}/.local/run/memory-service/api.sock`
+- Quarkus: `memory-service.client.url=unix://${HOME}/.local/run/memory-service/api.sock`
+
+Browser code still cannot connect directly to a Unix domain socket. Keep UDS between the Memory Service process and the server-side agent app.

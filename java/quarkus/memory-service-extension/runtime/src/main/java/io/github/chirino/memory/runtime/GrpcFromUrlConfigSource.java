@@ -80,7 +80,13 @@ public class GrpcFromUrlConfigSource implements ConfigSource {
 
             // Validate that we have a proper URL with scheme and host
             String scheme = uri.getScheme();
-            if (scheme == null || (!scheme.equals("http") && !scheme.equals("https"))) {
+            if (scheme == null) {
+                return Map.of();
+            }
+            if (scheme.equals("unix")) {
+                return Map.of();
+            }
+            if (!scheme.equals("http") && !scheme.equals("https")) {
                 // Not a valid HTTP/HTTPS URL
                 return Map.of();
             }
