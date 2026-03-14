@@ -1,6 +1,7 @@
 {
   "realm": "memory-service",
   "enabled": true,
+  "sslRequired": "none",
   "displayName": "Memory Service",
   "users": [
     {
