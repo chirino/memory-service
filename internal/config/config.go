@@ -2,7 +2,10 @@ package config
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -73,7 +76,11 @@ type Config struct {
 	CacheEpochTTL time.Duration
 
 	// Attachment store type
-	AttachType string // "db", "postgres", "mongo", or "s3"
+	AttachType string // "db", "postgres", "mongo", "s3", or "fs"
+	// AttachTypeExplicit records whether the attachment store was explicitly set by flag/env.
+	AttachTypeExplicit bool
+	// AttachFSDir overrides the local filesystem directory used by the "fs" attachment store.
+	AttachFSDir string
 
 	// Attachment behavior.
 	AttachmentMaxSize              int64
@@ -287,4 +294,79 @@ func (c *Config) ResolvedTempDir() string {
 		return dir
 	}
 	return os.TempDir()
+}
+
+// ResolvedAttachmentsFSDir returns the configured filesystem attachment root or derives it from
+// the SQLite DB path when possible.
+func (c *Config) ResolvedAttachmentsFSDir() (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("attachment fs dir: missing config")
+	}
+	if dir := strings.TrimSpace(c.AttachFSDir); dir != "" {
+		return dir, nil
+	}
+	dbPath, err := c.SQLiteFilePath()
+	if err != nil {
+		return "", fmt.Errorf("attachment fs dir: %w", err)
+	}
+	return dbPath + ".attachments", nil
+}
+
+// SQLiteFilePath resolves a file-backed SQLite DB path from the configured DBURL.
+func (c *Config) SQLiteFilePath() (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("sqlite db url is not configured")
+	}
+	dsn := strings.TrimSpace(c.DBURL)
+	if dsn == "" {
+		return "", fmt.Errorf("sqlite db url is not configured")
+	}
+	if dsn == ":memory:" {
+		return "", fmt.Errorf("sqlite db url %q is not file-backed", dsn)
+	}
+
+	if strings.HasPrefix(dsn, "file:") {
+		return sqliteURIFilePath(dsn)
+	}
+
+	dbPath := dsn
+	if idx := strings.IndexRune(dbPath, '?'); idx >= 0 {
+		if strings.Contains(strings.ToLower(dbPath[idx+1:]), "mode=memory") {
+			return "", fmt.Errorf("sqlite db url %q is not file-backed", dsn)
+		}
+		dbPath = dbPath[:idx]
+	}
+	dbPath = strings.TrimSpace(dbPath)
+	if dbPath == "" {
+		return "", fmt.Errorf("sqlite db url %q does not include a file path", dsn)
+	}
+	return filepath.Clean(dbPath), nil
+}
+
+func sqliteURIFilePath(dsn string) (string, error) {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "", fmt.Errorf("invalid sqlite file URI %q: %w", dsn, err)
+	}
+	q := u.Query()
+	if strings.EqualFold(strings.TrimSpace(q.Get("mode")), "memory") {
+		return "", fmt.Errorf("sqlite db url %q is not file-backed", dsn)
+	}
+
+	if u.Host != "" && u.Host != "localhost" {
+		return "", fmt.Errorf("sqlite db url %q does not resolve to a local file path", dsn)
+	}
+
+	rawPath := strings.TrimSpace(u.Path)
+	if rawPath == "" {
+		rawPath = strings.TrimSpace(u.Opaque)
+	}
+	if rawPath == "" || rawPath == ":memory:" || rawPath == "::memory:" {
+		return "", fmt.Errorf("sqlite db url %q is not file-backed", dsn)
+	}
+	path, err := url.PathUnescape(rawPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid sqlite file URI path %q: %w", dsn, err)
+	}
+	return filepath.Clean(filepath.FromSlash(path)), nil
 }

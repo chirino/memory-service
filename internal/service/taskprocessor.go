@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/chirino/memory-service/internal/model"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
 	"github.com/google/uuid"
@@ -55,7 +56,12 @@ func (p *TaskProcessor) logErr(ctx context.Context, msg string, args ...any) {
 }
 
 func (p *TaskProcessor) processBatch(ctx context.Context) {
-	tasks, err := p.store.ClaimReadyTasks(ctx, p.batchSize)
+	var tasks []model.Task
+	err := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		var err error
+		tasks, err = p.store.ClaimReadyTasks(writeCtx, p.batchSize)
+		return err
+	})
 	if err != nil {
 		p.logErr(ctx, "TaskProcessor: claim tasks failed", "err", err)
 		return
@@ -63,11 +69,15 @@ func (p *TaskProcessor) processBatch(ctx context.Context) {
 	for _, task := range tasks {
 		if err := p.executeTask(ctx, task.TaskType, task.TaskBody); err != nil {
 			p.logErr(ctx, "TaskProcessor: task failed", "taskId", task.ID, "type", task.TaskType, "err", err)
-			if fErr := p.store.FailTask(ctx, task.ID, err.Error(), p.retryDelay); fErr != nil {
+			if fErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+				return p.store.FailTask(writeCtx, task.ID, err.Error(), p.retryDelay)
+			}); fErr != nil {
 				p.logErr(ctx, "TaskProcessor: fail task record failed", "taskId", task.ID, "err", fErr)
 			}
 		} else {
-			if dErr := p.store.DeleteTask(ctx, task.ID); dErr != nil {
+			if dErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+				return p.store.DeleteTask(writeCtx, task.ID)
+			}); dErr != nil {
 				p.logErr(ctx, "TaskProcessor: delete task failed", "taskId", task.ID, "err", dErr)
 			}
 		}

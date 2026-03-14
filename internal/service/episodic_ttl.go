@@ -51,7 +51,14 @@ func (s *EpisodicTTLService) Start(ctx context.Context) {
 
 func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 	// Pass 1: expire memories whose TTL has elapsed.
-	n, err := s.store.ExpireMemories(ctx)
+	var (
+		n   int64
+		err error
+	)
+	err = s.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		n, err = s.store.ExpireMemories(writeCtx)
+		return err
+	})
 	if err != nil {
 		log.Error("Episodic TTL expiry failed", "err", err)
 	} else if n > 0 {
@@ -59,7 +66,10 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 	}
 
 	// Pass 2A: hard-delete superseded update rows once vector cleanup is confirmed.
-	n, err = s.store.HardDeleteEvictableUpdates(ctx, s.evictionBatch)
+	err = s.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		n, err = s.store.HardDeleteEvictableUpdates(writeCtx, s.evictionBatch)
+		return err
+	})
 	if err != nil {
 		log.Error("Episodic eviction (updates) failed", "err", err)
 	} else if n > 0 {
@@ -67,7 +77,10 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 	}
 
 	// Pass 2B: tombstone delete/expired rows once vector cleanup is confirmed.
-	n, err = s.store.TombstoneDeletedMemories(ctx, s.evictionBatch)
+	err = s.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		n, err = s.store.TombstoneDeletedMemories(writeCtx, s.evictionBatch)
+		return err
+	})
 	if err != nil {
 		log.Error("Episodic tombstone pass failed", "err", err)
 	} else if n > 0 {
@@ -77,7 +90,10 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 	// Pass 3: hard-delete tombstones older than the retention period.
 	if s.tombstoneRetention > 0 {
 		olderThan := time.Now().Add(-s.tombstoneRetention)
-		n, err = s.store.HardDeleteExpiredTombstones(ctx, olderThan, s.evictionBatch)
+		err = s.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+			n, err = s.store.HardDeleteExpiredTombstones(writeCtx, olderThan, s.evictionBatch)
+			return err
+		})
 		if err != nil {
 			log.Error("Episodic tombstone cleanup failed", "err", err)
 		} else if n > 0 {

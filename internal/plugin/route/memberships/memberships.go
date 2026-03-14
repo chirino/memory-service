@@ -1,12 +1,14 @@
 package memberships
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/gin-gonic/gin"
@@ -78,16 +80,20 @@ func listMemberships(c *gin.Context, store registrystore.MemoryStore) {
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 
-	memberships, cursor, err := store.ListMemberships(c.Request.Context(), userID, convID, afterCursor, limit)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		memberships, cursor, err := store.ListMemberships(ctx, userID, convID, afterCursor, limit)
+		if err != nil {
+			return err
+		}
+		resp := make([]membershipResponse, len(memberships))
+		for i := range memberships {
+			resp[i] = toMembershipResponse(convID, memberships[i])
+		}
+		c.JSON(http.StatusOK, gin.H{"data": resp, "afterCursor": cursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	resp := make([]membershipResponse, len(memberships))
-	for i := range memberships {
-		resp[i] = toMembershipResponse(convID, memberships[i])
-	}
-	c.JSON(http.StatusOK, gin.H{"data": resp, "afterCursor": cursor})
 }
 
 func shareConversation(c *gin.Context, store registrystore.MemoryStore) {
@@ -107,12 +113,16 @@ func shareConversation(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	membership, err := store.ShareConversation(c.Request.Context(), userID, convID, req.UserID, req.AccessLevel)
-	if err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		membership, err := store.ShareConversation(ctx, userID, convID, req.UserID, req.AccessLevel)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusCreated, toMembershipResponse(convID, *membership))
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusCreated, toMembershipResponse(convID, *membership))
 }
 
 func updateMembership(c *gin.Context, store registrystore.MemoryStore) {
@@ -132,12 +142,16 @@ func updateMembership(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	membership, err := store.UpdateMembership(c.Request.Context(), userID, convID, memberUserID, req.AccessLevel)
-	if err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		membership, err := store.UpdateMembership(ctx, userID, convID, memberUserID, req.AccessLevel)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, toMembershipResponse(convID, *membership))
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, toMembershipResponse(convID, *membership))
 }
 
 func deleteMembership(c *gin.Context, store registrystore.MemoryStore) {
@@ -149,11 +163,15 @@ func deleteMembership(c *gin.Context, store registrystore.MemoryStore) {
 	}
 	memberUserID := c.Param("userId")
 
-	if err := store.DeleteMembership(c.Request.Context(), userID, convID, memberUserID); err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		if err := store.DeleteMembership(ctx, userID, convID, memberUserID); err != nil {
+			return err
+		}
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.Status(http.StatusNoContent)
 }
 
 func handleError(c *gin.Context, err error) {

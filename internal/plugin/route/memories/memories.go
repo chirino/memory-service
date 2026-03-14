@@ -15,6 +15,7 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/episodic"
 	generatedapi "github.com/chirino/memory-service/internal/generated/api"
+	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	"github.com/chirino/memory-service/internal/security"
@@ -94,35 +95,43 @@ func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "attribute extraction error"})
 			return
 		}
-		result, err := store.PutMemory(c.Request.Context(), registryepisodic.PutMemoryRequest{
-			Namespace:        req.Namespace,
-			Key:              req.Key,
-			Value:            req.Value,
-			Index:            index,
-			TTLSeconds:       ttlSeconds,
-			PolicyAttributes: extracted,
-		})
-		if err != nil {
+		if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
+			result, err := store.PutMemory(ctx, registryepisodic.PutMemoryRequest{
+				Namespace:        req.Namespace,
+				Key:              req.Key,
+				Value:            req.Value,
+				Index:            index,
+				TTLSeconds:       ttlSeconds,
+				PolicyAttributes: extracted,
+			})
+			if err != nil {
+				return err
+			}
+			c.JSON(http.StatusOK, toAPIMemoryWriteResult(result))
+			return nil
+		}); err != nil {
 			handleError(c, err)
-			return
 		}
-		c.JSON(http.StatusOK, toAPIMemoryWriteResult(result))
 		return
 	}
 
 	// No OPA: store without policy attributes.
-	result, err := store.PutMemory(c.Request.Context(), registryepisodic.PutMemoryRequest{
-		Namespace:  req.Namespace,
-		Key:        req.Key,
-		Value:      req.Value,
-		Index:      index,
-		TTLSeconds: ttlSeconds,
-	})
-	if err != nil {
+	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
+		result, err := store.PutMemory(ctx, registryepisodic.PutMemoryRequest{
+			Namespace:  req.Namespace,
+			Key:        req.Key,
+			Value:      req.Value,
+			Index:      index,
+			TTLSeconds: ttlSeconds,
+		})
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, toAPIMemoryWriteResult(result))
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, toAPIMemoryWriteResult(result))
 }
 
 func getMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
@@ -164,33 +173,37 @@ func getMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, p
 		}
 	}
 
-	item, err := store.GetMemory(c.Request.Context(), ns, key)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	if item == nil {
-		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "memory not found"})
-		return
-	}
-
-	fetchedAt := time.Now().UTC()
-	if err := store.IncrementMemoryLoads(c.Request.Context(), []registryepisodic.MemoryKey{{
-		Namespace: ns,
-		Key:       key,
-	}}, fetchedAt); err != nil {
-		log.Warn("failed to increment memory usage counters", "namespace", ns, "key", key, "err", err)
-	}
-	if includeUsage {
-		usage, err := store.GetMemoryUsage(c.Request.Context(), ns, key)
+	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
+		item, err := store.GetMemory(ctx, ns, key)
 		if err != nil {
-			log.Warn("failed to load memory usage counters", "namespace", ns, "key", key, "err", err)
-		} else {
-			item.Usage = usage
+			return err
 		}
-	}
+		if item == nil {
+			c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "memory not found"})
+			return nil
+		}
 
-	c.JSON(http.StatusOK, toAPIMemoryItem(*item))
+		fetchedAt := time.Now().UTC()
+		if err := store.IncrementMemoryLoads(ctx, []registryepisodic.MemoryKey{{
+			Namespace: ns,
+			Key:       key,
+		}}, fetchedAt); err != nil {
+			log.Warn("failed to increment memory usage counters", "namespace", ns, "key", key, "err", err)
+		}
+		if includeUsage {
+			usage, err := store.GetMemoryUsage(ctx, ns, key)
+			if err != nil {
+				log.Warn("failed to load memory usage counters", "namespace", ns, "key", key, "err", err)
+			} else {
+				item.Usage = usage
+			}
+		}
+
+		c.JSON(http.StatusOK, toAPIMemoryItem(*item))
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
 }
 
 func deleteMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
@@ -231,11 +244,15 @@ func deleteMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore
 		}
 	}
 
-	if err := store.DeleteMemory(c.Request.Context(), ns, key); err != nil {
+	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
+		if err := store.DeleteMemory(ctx, ns, key); err != nil {
+			return err
+		}
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.Status(http.StatusNoContent)
 }
 
 func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, embedder registryembed.Embedder) {
@@ -285,32 +302,43 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 		query = *req.Query
 	}
 	if query != "" && embedder != nil {
-		items, err := semanticSearch(c, store, embedder, effectivePrefix, filter, query, limit)
-		if err != nil {
+		if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+			items, err := semanticSearch(c, store, embedder, effectivePrefix, filter, query, limit)
+			if err != nil {
+				return err
+			}
+			if includeUsage {
+				enrichMemoryItemsWithUsage(ctx, store, items)
+			}
+			if len(items) > 0 {
+				respItems := toAPIMemoryItems(items)
+				c.JSON(http.StatusOK, generatedapi.SearchMemoriesResponse{Items: &respItems})
+			}
+			return nil
+		}); err != nil {
 			handleError(c, err)
 			return
 		}
-		if includeUsage {
-			enrichMemoryItemsWithUsage(c.Request.Context(), store, items)
-		}
-		if len(items) > 0 {
-			respItems := toAPIMemoryItems(items)
-			c.JSON(http.StatusOK, generatedapi.SearchMemoriesResponse{Items: &respItems})
+		if c.Writer.Written() {
 			return
 		}
 	}
 
-	items, err := store.SearchMemories(c.Request.Context(), effectivePrefix, filter, limit, offset)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	if includeUsage {
-		enrichMemoryItemsWithUsage(c.Request.Context(), store, items)
-	}
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		items, err := store.SearchMemories(ctx, effectivePrefix, filter, limit, offset)
+		if err != nil {
+			return err
+		}
+		if includeUsage {
+			enrichMemoryItemsWithUsage(ctx, store, items)
+		}
 
-	respItems := toAPIMemoryItems(items)
-	c.JSON(http.StatusOK, generatedapi.SearchMemoriesResponse{Items: &respItems})
+		respItems := toAPIMemoryItems(items)
+		c.JSON(http.StatusOK, generatedapi.SearchMemoriesResponse{Items: &respItems})
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
 }
 
 func listNamespaces(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
@@ -373,19 +401,23 @@ func listNamespacesWithParams(c *gin.Context, store registryepisodic.EpisodicSto
 		}
 	}
 
-	namespaces, err := store.ListNamespaces(c.Request.Context(), registryepisodic.ListNamespacesRequest{
-		Prefix:   prefix,
-		Suffix:   suffix,
-		MaxDepth: maxDepth,
-	})
-	if err != nil {
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		namespaces, err := store.ListNamespaces(ctx, registryepisodic.ListNamespacesRequest{
+			Prefix:   prefix,
+			Suffix:   suffix,
+			MaxDepth: maxDepth,
+		})
+		if err != nil {
+			return err
+		}
+		if namespaces == nil {
+			namespaces = [][]string{}
+		}
+		c.JSON(http.StatusOK, generatedapi.ListMemoryNamespacesResponse{Namespaces: &namespaces})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	if namespaces == nil {
-		namespaces = [][]string{}
-	}
-	c.JSON(http.StatusOK, generatedapi.ListMemoryNamespacesResponse{Namespaces: &namespaces})
 }
 
 func listMemoryEvents(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
@@ -472,26 +504,30 @@ func listMemoryEventsWithParams(c *gin.Context, store registryepisodic.EpisodicS
 		req.Before = &before
 	}
 
-	page, err := store.ListMemoryEvents(c.Request.Context(), req)
-	if err != nil {
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		page, err := store.ListMemoryEvents(ctx, req)
+		if err != nil {
+			return err
+		}
+
+		events := make([]generatedapi.MemoryEventItem, 0, len(page.Events))
+		for _, e := range page.Events {
+			ev := toAPIMemoryEventItem(e)
+			events = append(events, ev)
+		}
+
+		var cursor *string
+		if page.AfterCursor != "" {
+			cursor = &page.AfterCursor
+		}
+		c.JSON(http.StatusOK, generatedapi.ListMemoryEventsResponse{
+			Events:      &events,
+			AfterCursor: cursor,
+		})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-
-	events := make([]generatedapi.MemoryEventItem, 0, len(page.Events))
-	for _, e := range page.Events {
-		ev := toAPIMemoryEventItem(e)
-		events = append(events, ev)
-	}
-
-	var cursor *string
-	if page.AfterCursor != "" {
-		cursor = &page.AfterCursor
-	}
-	c.JSON(http.StatusOK, generatedapi.ListMemoryEventsResponse{
-		Events:      &events,
-		AfterCursor: cursor,
-	})
 }
 
 func toAPIMemoryEventItem(e registryepisodic.MemoryEvent) generatedapi.MemoryEventItem {
@@ -610,11 +646,15 @@ func HandleAdminDeleteMemory(c *gin.Context, store registryepisodic.EpisodicStor
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid memory ID"})
 		return
 	}
-	if err := store.AdminForceDeleteMemory(c.Request.Context(), memID); err != nil {
+	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
+		if err := store.AdminForceDeleteMemory(ctx, memID); err != nil {
+			return err
+		}
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.Status(http.StatusNoContent)
 }
 
 // HandleAdminGetMemoryIndexStatus exposes pending-index count for wrapper-native adapters.
@@ -622,12 +662,16 @@ func HandleAdminGetMemoryIndexStatus(c *gin.Context, store registryepisodic.Epis
 	if !ensureAdmin(c) {
 		return
 	}
-	count, err := store.AdminCountPendingIndexing(c.Request.Context())
-	if err != nil {
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		count, err := store.AdminCountPendingIndexing(ctx)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"pending": count})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"pending": count})
 }
 
 // HandleAdminTriggerMemoryIndex exposes index trigger for wrapper-native adapters.
@@ -665,16 +709,20 @@ func HandleAdminGetMemoryUsage(c *gin.Context, store registryepisodic.EpisodicSt
 		c.JSON(http.StatusBadRequest, gin.H{"error": "key is required"})
 		return
 	}
-	usage, err := store.GetMemoryUsage(c.Request.Context(), ns, key)
-	if err != nil {
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		usage, err := store.GetMemoryUsage(ctx, ns, key)
+		if err != nil {
+			return err
+		}
+		if usage == nil {
+			c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "memory usage not found"})
+			return nil
+		}
+		c.JSON(http.StatusOK, toAPIMemoryUsage(*usage))
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	if usage == nil {
-		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "memory usage not found"})
-		return
-	}
-	c.JSON(http.StatusOK, toAPIMemoryUsage(*usage))
 }
 
 // HandleAdminListTopMemoryUsage exposes top usage listing for wrapper-native adapters.
@@ -704,25 +752,29 @@ func HandleAdminListTopMemoryUsage(c *gin.Context, store registryepisodic.Episod
 		return
 	}
 
-	items, err := store.ListTopMemoryUsage(c.Request.Context(), registryepisodic.ListTopMemoryUsageRequest{
-		Prefix: prefix,
-		Sort:   sortBy,
-		Limit:  limit,
-	})
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-
-	respItems := make([]gin.H, 0, len(items))
-	for _, item := range items {
-		respItems = append(respItems, gin.H{
-			"namespace": item.Namespace,
-			"key":       item.Key,
-			"usage":     toAPIMemoryUsage(item.Usage),
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		items, err := store.ListTopMemoryUsage(ctx, registryepisodic.ListTopMemoryUsageRequest{
+			Prefix: prefix,
+			Sort:   sortBy,
+			Limit:  limit,
 		})
+		if err != nil {
+			return err
+		}
+
+		respItems := make([]gin.H, 0, len(items))
+		for _, item := range items {
+			respItems = append(respItems, gin.H{
+				"namespace": item.Namespace,
+				"key":       item.Key,
+				"usage":     toAPIMemoryUsage(item.Usage),
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"items": respItems})
+		return nil
+	}); err != nil {
+		handleError(c, err)
 	}
-	c.JSON(http.StatusOK, gin.H{"items": respItems})
 }
 
 // --- Helpers ---

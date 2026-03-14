@@ -18,6 +18,7 @@ import (
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
+	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -154,6 +155,14 @@ type MongoStore struct {
 	db           *mongo.Database
 	enc          *dataencryption.Service
 	entriesCache registrycache.MemoryEntriesCache
+}
+
+func (s *MongoStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
+}
+
+func (s *MongoStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
 }
 
 // ForceImport is a no-op variable that can be referenced to ensure this package's init() runs.

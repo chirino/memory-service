@@ -122,6 +122,78 @@ func mapError(err error) error {
 	}
 }
 
+func withMemoryRead[T any](ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) (T, error)) (T, error) {
+	var out T
+	err := store.InReadTx(ctx, func(txCtx context.Context) error {
+		var err error
+		out, err = fn(txCtx)
+		return err
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return out, nil
+}
+
+func withMemoryWrite[T any](ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) (T, error)) (T, error) {
+	var out T
+	err := store.InWriteTx(ctx, func(txCtx context.Context) error {
+		var err error
+		out, err = fn(txCtx)
+		return err
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return out, nil
+}
+
+func inMemoryRead(ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) error) error {
+	return store.InReadTx(ctx, fn)
+}
+
+func inMemoryWrite(ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) error) error {
+	return store.InWriteTx(ctx, fn)
+}
+
+func withEpisodicRead[T any](ctx context.Context, store registryepisodic.EpisodicStore, fn func(context.Context) (T, error)) (T, error) {
+	var out T
+	err := store.InReadTx(ctx, func(txCtx context.Context) error {
+		var err error
+		out, err = fn(txCtx)
+		return err
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return out, nil
+}
+
+func withEpisodicWrite[T any](ctx context.Context, store registryepisodic.EpisodicStore, fn func(context.Context) (T, error)) (T, error) {
+	var out T
+	err := store.InWriteTx(ctx, func(txCtx context.Context) error {
+		var err error
+		out, err = fn(txCtx)
+		return err
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return out, nil
+}
+
+func inEpisodicRead(ctx context.Context, store registryepisodic.EpisodicStore, fn func(context.Context) error) error {
+	return store.InReadTx(ctx, fn)
+}
+
+func inEpisodicWrite(ctx context.Context, store registryepisodic.EpisodicStore, fn func(context.Context) error) error {
+	return store.InWriteTx(ctx, fn)
+}
+
 // --- System Service ---
 
 type SystemServer struct {
@@ -170,7 +242,17 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 		query = &q
 	}
 
-	summaries, cursor, err := s.Store.ListConversations(ctx, userID, query, afterCursor, limit, mode)
+	summaries, cursor, err := func() ([]registrystore.ConversationSummary, *string, error) {
+		type result struct {
+			summaries []registrystore.ConversationSummary
+			cursor    *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			summaries, cursor, err := s.Store.ListConversations(txCtx, userID, query, afterCursor, limit, mode)
+			return result{summaries: summaries, cursor: cursor}, err
+		})
+		return out.summaries, out.cursor, err
+	}()
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -205,7 +287,9 @@ func (s *ConversationsServer) CreateConversation(ctx context.Context, req *pb.Cr
 		meta = req.GetMetadata().AsMap()
 	}
 
-	conv, err := s.Store.CreateConversation(ctx, userID, req.GetTitle(), meta, nil, nil)
+	conv, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+		return s.Store.CreateConversation(txCtx, userID, req.GetTitle(), meta, nil, nil)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -224,7 +308,9 @@ func (s *ConversationsServer) GetConversation(ctx context.Context, req *pb.GetCo
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	conv, err := s.Store.GetConversation(ctx, userID, convID)
+	conv, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+		return s.Store.GetConversation(txCtx, userID, convID)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -247,7 +333,9 @@ func (s *ConversationsServer) UpdateConversation(ctx context.Context, req *pb.Up
 		title = req.Title
 	}
 
-	conv, err := s.Store.UpdateConversation(ctx, userID, convID, title, nil)
+	conv, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+		return s.Store.UpdateConversation(txCtx, userID, convID, title, nil)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -265,7 +353,9 @@ func (s *ConversationsServer) DeleteConversation(ctx context.Context, req *pb.De
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	if err := s.Store.DeleteConversation(ctx, userID, convID); err != nil {
+	if err := inMemoryWrite(ctx, s.Store, func(txCtx context.Context) error {
+		return s.Store.DeleteConversation(txCtx, userID, convID)
+	}); err != nil {
 		return nil, mapError(err)
 	}
 	return &emptypb.Empty{}, nil
@@ -294,7 +384,17 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 		}
 	}
 
-	forks, cursor, err := s.Store.ListForks(ctx, userID, convID, afterCursor, limit)
+	forks, cursor, err := func() ([]registrystore.ConversationForkSummary, *string, error) {
+		type result struct {
+			forks  []registrystore.ConversationForkSummary
+			cursor *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			forks, cursor, err := s.Store.ListForks(txCtx, userID, convID, afterCursor, limit)
+			return result{forks: forks, cursor: cursor}, err
+		})
+		return out.forks, out.cursor, err
+	}()
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -402,7 +502,9 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 
 	allForks := req.GetForks() == "all"
 
-	result, err := s.Store.GetEntries(ctx, userID, convID, afterCursor, limit, &channel, epochFilter, clientIDPtr, allForks)
+	result, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
+		return s.Store.GetEntries(txCtx, userID, convID, afterCursor, limit, &channel, epochFilter, clientIDPtr, allForks)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -473,7 +575,9 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 			forkedAtEntryID = &id
 		}
 		// Try to create the fork conversation with the specified conversation ID
-		_, _ = s.Store.CreateConversationWithID(ctx, userID, convID, "", nil, &forkedAtConvID, forkedAtEntryID)
+		_, _ = withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+			return s.Store.CreateConversationWithID(txCtx, userID, convID, "", nil, &forkedAtConvID, forkedAtEntryID)
+		})
 		// Ignore error — conversation may already exist
 	}
 
@@ -486,11 +590,13 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 		content, _ = list.MarshalJSON()
 	}
 
-	entries, err := s.Store.AppendEntries(ctx, userID, convID, []registrystore.CreateEntryRequest{{
-		Content:     content,
-		ContentType: entry.GetContentType(),
-		Channel:     ch,
-	}}, &clientID, nil)
+	entries, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) ([]model.Entry, error) {
+		return s.Store.AppendEntries(txCtx, userID, convID, []registrystore.CreateEntryRequest{{
+			Content:     content,
+			ContentType: entry.GetContentType(),
+			Channel:     ch,
+		}}, &clientID, nil)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -529,11 +635,13 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 		syncContent, _ = list.MarshalJSON()
 	}
 
-	result, err := s.Store.SyncAgentEntry(ctx, userID, convID, registrystore.CreateEntryRequest{
-		Content:     syncContent,
-		ContentType: entry.GetContentType(),
-		Channel:     "memory",
-	}, clientID)
+	result, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.SyncResult, error) {
+		return s.Store.SyncAgentEntry(txCtx, userID, convID, registrystore.CreateEntryRequest{
+			Content:     syncContent,
+			ContentType: entry.GetContentType(),
+			Channel:     "memory",
+		}, clientID)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -605,7 +713,17 @@ func (s *MembershipsServer) ListMemberships(ctx context.Context, req *pb.ListMem
 		}
 	}
 
-	memberships, cursor, err := s.Store.ListMemberships(ctx, userID, convID, afterCursor, limit)
+	memberships, cursor, err := func() ([]model.ConversationMembership, *string, error) {
+		type result struct {
+			memberships []model.ConversationMembership
+			cursor      *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			memberships, cursor, err := s.Store.ListMemberships(txCtx, userID, convID, afterCursor, limit)
+			return result{memberships: memberships, cursor: cursor}, err
+		})
+		return out.memberships, out.cursor, err
+	}()
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -637,7 +755,9 @@ func (s *MembershipsServer) ShareConversation(ctx context.Context, req *pb.Share
 	}
 
 	level := protoToAccessLevel(req.GetAccessLevel())
-	m, err := s.Store.ShareConversation(ctx, userID, convID, req.GetUserId(), level)
+	m, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*model.ConversationMembership, error) {
+		return s.Store.ShareConversation(txCtx, userID, convID, req.GetUserId(), level)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -662,7 +782,9 @@ func (s *MembershipsServer) UpdateMembership(ctx context.Context, req *pb.Update
 	}
 
 	level := protoToAccessLevel(req.GetAccessLevel())
-	m, err := s.Store.UpdateMembership(ctx, userID, convID, req.GetMemberUserId(), level)
+	m, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*model.ConversationMembership, error) {
+		return s.Store.UpdateMembership(txCtx, userID, convID, req.GetMemberUserId(), level)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -686,7 +808,9 @@ func (s *MembershipsServer) DeleteMembership(ctx context.Context, req *pb.Delete
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	if err := s.Store.DeleteMembership(ctx, userID, convID, req.GetMemberUserId()); err != nil {
+	if err := inMemoryWrite(ctx, s.Store, func(txCtx context.Context) error {
+		return s.Store.DeleteMembership(txCtx, userID, convID, req.GetMemberUserId())
+	}); err != nil {
 		return nil, mapError(err)
 	}
 	return &emptypb.Empty{}, nil
@@ -740,7 +864,17 @@ func (s *TransfersServer) ListOwnershipTransfers(ctx context.Context, req *pb.Li
 		}
 	}
 
-	transfers, cursor, err := s.Store.ListPendingTransfers(ctx, userID, role, afterCursor, limit)
+	transfers, cursor, err := func() ([]registrystore.OwnershipTransferDto, *string, error) {
+		type result struct {
+			transfers []registrystore.OwnershipTransferDto
+			cursor    *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			transfers, cursor, err := s.Store.ListPendingTransfers(txCtx, userID, role, afterCursor, limit)
+			return result{transfers: transfers, cursor: cursor}, err
+		})
+		return out.transfers, out.cursor, err
+	}()
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -772,7 +906,9 @@ func (s *TransfersServer) GetOwnershipTransfer(ctx context.Context, req *pb.GetO
 		return nil, status.Error(codes.InvalidArgument, "invalid transfer_id")
 	}
 
-	t, err := s.Store.GetTransfer(ctx, userID, transferID)
+	t, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.OwnershipTransferDto, error) {
+		return s.Store.GetTransfer(txCtx, userID, transferID)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -797,7 +933,9 @@ func (s *TransfersServer) CreateOwnershipTransfer(ctx context.Context, req *pb.C
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	t, err := s.Store.CreateOwnershipTransfer(ctx, userID, convID, req.GetNewOwnerUserId())
+	t, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.OwnershipTransferDto, error) {
+		return s.Store.CreateOwnershipTransfer(txCtx, userID, convID, req.GetNewOwnerUserId())
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -822,7 +960,9 @@ func (s *TransfersServer) AcceptOwnershipTransfer(ctx context.Context, req *pb.A
 		return nil, status.Error(codes.InvalidArgument, "invalid transfer_id")
 	}
 
-	if err := s.Store.AcceptTransfer(ctx, userID, transferID); err != nil {
+	if err := inMemoryWrite(ctx, s.Store, func(txCtx context.Context) error {
+		return s.Store.AcceptTransfer(txCtx, userID, transferID)
+	}); err != nil {
 		return nil, mapError(err)
 	}
 	return &emptypb.Empty{}, nil
@@ -839,7 +979,9 @@ func (s *TransfersServer) DeleteOwnershipTransfer(ctx context.Context, req *pb.D
 		return nil, status.Error(codes.InvalidArgument, "invalid transfer_id")
 	}
 
-	if err := s.Store.DeleteTransfer(ctx, userID, transferID); err != nil {
+	if err := inMemoryWrite(ctx, s.Store, func(txCtx context.Context) error {
+		return s.Store.DeleteTransfer(txCtx, userID, transferID)
+	}); err != nil {
 		return nil, mapError(err)
 	}
 	return &emptypb.Empty{}, nil
@@ -893,7 +1035,9 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 		afterCursor = &v
 	}
 
-	results, err := s.Store.SearchEntries(ctx, userID, req.GetQuery(), afterCursor, limit, includeEntry, false)
+	results, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.SearchResults, error) {
+		return s.Store.SearchEntries(txCtx, userID, req.GetQuery(), afterCursor, limit, includeEntry, false)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -948,7 +1092,9 @@ func (s *SearchServer) IndexConversations(ctx context.Context, req *pb.IndexConv
 		})
 	}
 
-	result, err := s.Store.IndexEntries(ctx, entries)
+	result, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.IndexConversationsResponse, error) {
+		return s.Store.IndexEntries(txCtx, entries)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -973,7 +1119,17 @@ func (s *SearchServer) ListUnindexedEntries(ctx context.Context, req *pb.ListUni
 		afterCursor = req.Cursor
 	}
 
-	entries, cursor, err := s.Store.ListUnindexedEntries(ctx, limit, afterCursor)
+	entries, cursor, err := func() ([]model.Entry, *string, error) {
+		type result struct {
+			entries []model.Entry
+			cursor  *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			entries, cursor, err := s.Store.ListUnindexedEntries(txCtx, limit, afterCursor)
+			return result{entries: entries, cursor: cursor}, err
+		})
+		return out.entries, out.cursor, err
+	}()
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -1051,13 +1207,15 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 		policyAttrs = extracted
 	}
 
-	result, err := s.Store.PutMemory(ctx, registryepisodic.PutMemoryRequest{
-		Namespace:        namespace,
-		Key:              key,
-		Value:            value,
-		Index:            index,
-		TTLSeconds:       int(req.GetTtlSeconds()),
-		PolicyAttributes: policyAttrs,
+	result, err := withEpisodicWrite(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryWriteResult, error) {
+		return s.Store.PutMemory(txCtx, registryepisodic.PutMemoryRequest{
+			Namespace:        namespace,
+			Key:              key,
+			Value:            value,
+			Index:            index,
+			TTLSeconds:       int(req.GetTtlSeconds()),
+			PolicyAttributes: policyAttrs,
+		})
 	})
 	if err != nil {
 		return nil, episodicInternalError("failed to store memory", err)
@@ -1100,29 +1258,38 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 		}
 	}
 
-	item, err := s.Store.GetMemory(ctx, namespace, key)
+	item, err := withEpisodicWrite(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryItem, error) {
+		item, err := s.Store.GetMemory(txCtx, namespace, key)
+		if err != nil {
+			return nil, err
+		}
+		if item == nil {
+			return nil, nil
+		}
+
+		fetchedAt := time.Now().UTC()
+		if err := s.Store.IncrementMemoryLoads(txCtx, []registryepisodic.MemoryKey{{
+			Namespace: namespace,
+			Key:       key,
+		}}, fetchedAt); err != nil {
+			log.Warn("failed to increment memory usage counters", "namespace", namespace, "key", key, "err", err)
+		}
+
+		if req.GetIncludeUsage() {
+			usage, err := s.Store.GetMemoryUsage(txCtx, namespace, key)
+			if err != nil {
+				log.Warn("failed to load memory usage counters", "namespace", namespace, "key", key, "err", err)
+			} else {
+				item.Usage = usage
+			}
+		}
+		return item, nil
+	})
 	if err != nil {
 		return nil, episodicInternalError("failed to fetch memory", err)
 	}
 	if item == nil {
 		return nil, status.Error(codes.NotFound, "memory not found")
-	}
-
-	fetchedAt := time.Now().UTC()
-	if err := s.Store.IncrementMemoryLoads(ctx, []registryepisodic.MemoryKey{{
-		Namespace: namespace,
-		Key:       key,
-	}}, fetchedAt); err != nil {
-		log.Warn("failed to increment memory usage counters", "namespace", namespace, "key", key, "err", err)
-	}
-
-	if req.GetIncludeUsage() {
-		usage, err := s.Store.GetMemoryUsage(ctx, namespace, key)
-		if err != nil {
-			log.Warn("failed to load memory usage counters", "namespace", namespace, "key", key, "err", err)
-		} else {
-			item.Usage = usage
-		}
 	}
 
 	resp, err := memoryItemToProto(*item)
@@ -1163,7 +1330,9 @@ func (s *MemoriesServer) DeleteMemory(ctx context.Context, req *pb.DeleteMemoryR
 		}
 	}
 
-	if err := s.Store.DeleteMemory(ctx, namespace, key); err != nil {
+	if err := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
+		return s.Store.DeleteMemory(txCtx, namespace, key)
+	}); err != nil {
 		return nil, episodicInternalError("failed to delete memory", err)
 	}
 	return &emptypb.Empty{}, nil
@@ -1206,24 +1375,38 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 
 	query := strings.TrimSpace(req.GetQuery())
 	if query != "" && s.Embedder != nil {
-		items, err := semanticSearchMemories(ctx, s.Store, s.Embedder, effectivePrefix, filter, query, limit)
+		items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
+			return semanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, filter, query, limit)
+		})
 		if err != nil {
 			return nil, episodicInternalError("semantic search error", err)
 		}
 		if req.GetIncludeUsage() {
-			enrichMemoryItemsWithUsage(ctx, s.Store, items)
+			if err := inEpisodicRead(ctx, s.Store, func(txCtx context.Context) error {
+				enrichMemoryItemsWithUsage(txCtx, s.Store, items)
+				return nil
+			}); err != nil {
+				return nil, episodicInternalError("failed to enrich memory usage", err)
+			}
 		}
 		if len(items) > 0 {
 			return memoryItemsToSearchResponse(items)
 		}
 	}
 
-	items, err := s.Store.SearchMemories(ctx, effectivePrefix, filter, limit, offset)
+	items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
+		return s.Store.SearchMemories(txCtx, effectivePrefix, filter, limit, offset)
+	})
 	if err != nil {
 		return nil, episodicInternalError("failed to search memories", err)
 	}
 	if req.GetIncludeUsage() {
-		enrichMemoryItemsWithUsage(ctx, s.Store, items)
+		if err := inEpisodicRead(ctx, s.Store, func(txCtx context.Context) error {
+			enrichMemoryItemsWithUsage(txCtx, s.Store, items)
+			return nil
+		}); err != nil {
+			return nil, episodicInternalError("failed to enrich memory usage", err)
+		}
 	}
 	return memoryItemsToSearchResponse(items)
 }
@@ -1264,10 +1447,12 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 		}
 	}
 
-	namespaces, err := s.Store.ListNamespaces(ctx, registryepisodic.ListNamespacesRequest{
-		Prefix:   prefix,
-		Suffix:   suffix,
-		MaxDepth: maxDepth,
+	namespaces, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([][]string, error) {
+		return s.Store.ListNamespaces(txCtx, registryepisodic.ListNamespacesRequest{
+			Prefix:   prefix,
+			Suffix:   suffix,
+			MaxDepth: maxDepth,
+		})
 	})
 	if err != nil {
 		return nil, episodicInternalError("failed to list namespaces", err)
@@ -1292,7 +1477,9 @@ func (s *MemoriesServer) GetMemoryIndexStatus(ctx context.Context, _ *emptypb.Em
 		return nil, status.Error(codes.PermissionDenied, "admin role required")
 	}
 
-	count, err := s.Store.AdminCountPendingIndexing(ctx)
+	count, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (int64, error) {
+		return s.Store.AdminCountPendingIndexing(txCtx)
+	})
 	if err != nil {
 		return nil, episodicInternalError("failed to read memory index status", err)
 	}
@@ -1321,7 +1508,9 @@ func (s *MemoriesServer) GetMemoryUsage(ctx context.Context, req *pb.GetMemoryUs
 		return nil, status.Error(codes.InvalidArgument, "key is required")
 	}
 
-	usage, err := s.Store.GetMemoryUsage(ctx, namespace, key)
+	usage, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryUsage, error) {
+		return s.Store.GetMemoryUsage(txCtx, namespace, key)
+	})
 	if err != nil {
 		return nil, episodicInternalError("failed to read memory usage", err)
 	}
@@ -1369,10 +1558,12 @@ func (s *MemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.ListTop
 		limit = 1000
 	}
 
-	items, err := s.Store.ListTopMemoryUsage(ctx, registryepisodic.ListTopMemoryUsageRequest{
-		Prefix: prefix,
-		Sort:   sortBy,
-		Limit:  limit,
+	items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.TopMemoryUsageItem, error) {
+		return s.Store.ListTopMemoryUsage(txCtx, registryepisodic.ListTopMemoryUsageRequest{
+			Prefix: prefix,
+			Sort:   sortBy,
+			Limit:  limit,
+		})
 	})
 	if err != nil {
 		return nil, episodicInternalError("failed to list memory usage", err)
@@ -1632,14 +1823,16 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 			}
 			expiresAt := time.Now().Add(expiresIn)
 
-			attachment, err := s.Store.CreateAttachment(stream.Context(), userID, uuid.Nil, model.Attachment{
-				Filename:    filename,
-				ContentType: contentType,
-				Size:        &out.res.Size,
-				SHA256:      &out.res.SHA256,
-				StorageKey:  &out.res.StorageKey,
-				ExpiresAt:   &expiresAt,
-				Status:      "ready",
+			attachment, err := withMemoryWrite(stream.Context(), s.Store, func(txCtx context.Context) (*model.Attachment, error) {
+				return s.Store.CreateAttachment(txCtx, userID, uuid.Nil, model.Attachment{
+					Filename:    filename,
+					ContentType: contentType,
+					Size:        &out.res.Size,
+					SHA256:      &out.res.SHA256,
+					StorageKey:  &out.res.StorageKey,
+					ExpiresAt:   &expiresAt,
+					Status:      "ready",
+				})
 			})
 			if err != nil {
 				return mapError(err)
@@ -1715,7 +1908,9 @@ func (s *AttachmentsServer) GetAttachment(ctx context.Context, req *pb.GetAttach
 		return nil, status.Error(codes.InvalidArgument, "invalid attachment id")
 	}
 
-	attachment, err := s.Store.GetAttachment(ctx, userID, uuid.Nil, attachmentID)
+	attachment, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*model.Attachment, error) {
+		return s.Store.GetAttachment(txCtx, userID, uuid.Nil, attachmentID)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -1735,7 +1930,9 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 	if err != nil {
 		return status.Error(codes.InvalidArgument, "invalid attachment id")
 	}
-	attachment, err := s.Store.GetAttachment(stream.Context(), userID, uuid.Nil, attachmentID)
+	attachment, err := withMemoryRead(stream.Context(), s.Store, func(txCtx context.Context) (*model.Attachment, error) {
+		return s.Store.GetAttachment(txCtx, userID, uuid.Nil, attachmentID)
+	})
 	if err != nil {
 		return mapError(err)
 	}
@@ -2076,7 +2273,9 @@ func (s *ResponseRecorderServer) requireConversationAccess(ctx context.Context, 
 	if userID == "" {
 		return status.Error(codes.Unauthenticated, "missing authorization")
 	}
-	conv, err := s.Store.GetConversation(ctx, userID, conversationID)
+	conv, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+		return s.Store.GetConversation(txCtx, userID, conversationID)
+	})
 	if err != nil {
 		return mapError(err)
 	}

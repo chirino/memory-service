@@ -36,7 +36,6 @@ echo "OPENAI_API_KEY=your-api-key-here" > .env
 
 > _**Note for OS X users:**_ The included demo app requires that you [enable host networking](how-to-enable-host-networking.png) in Docker desktop.
 
-
 ```bash
 docker compose build
 docker compose up -d

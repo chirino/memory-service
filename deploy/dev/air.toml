@@ -3,7 +3,7 @@ tmp_dir = "/tmp"
 [build]
   args_bin = []
   pre_cmd = []
-  cmd = "CGO_ENABLED=0 go build ${GO_BUILD_FLAGS} -ldflags=\"${GO_LD_FLAGS}\" -o ./bin/memory-service ."
+  cmd = "CGO_ENABLED=1 go build -tags \"sqlite_fts5 sqlite_json\" ${GO_BUILD_FLAGS} -ldflags=\"${GO_LD_FLAGS}\" -o ./bin/memory-service ."
   post_cmd = []
   full_bin = "TERM=dumb dlv --check-go-version=false --continue --listen=:2345 --api-version=2 --only-same-user=false --headless --accept-multiclient exec -- ./bin/memory-service serve"
   # full_bin = "./bin/memory-service serve"

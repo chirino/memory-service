@@ -8,6 +8,7 @@ import (
 
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
 )
 
@@ -20,6 +21,14 @@ type fakeEpisodicStore struct {
 	upserts          [][]registryepisodic.MemoryVectorUpsert
 	deletedVectorIDs []uuid.UUID
 	indexedAtByID    map[uuid.UUID]time.Time
+}
+
+func (f *fakeEpisodicStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
+}
+
+func (f *fakeEpisodicStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
 }
 
 func (f *fakeEpisodicStore) FindMemoriesPendingIndexing(_ context.Context, _ int) ([]registryepisodic.PendingMemory, error) {

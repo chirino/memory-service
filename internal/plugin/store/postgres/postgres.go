@@ -17,6 +17,7 @@ import (
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
+	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/postgres"
@@ -109,6 +110,14 @@ type PostgresStore struct {
 	cfg          *config.Config
 	enc          *dataencryption.Service
 	entriesCache registrycache.MemoryEntriesCache
+}
+
+func (s *PostgresStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
+}
+
+func (s *PostgresStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
 }
 
 func pgUniqueViolation(err error) (*pgconn.PgError, bool) {

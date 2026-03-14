@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
@@ -113,21 +114,23 @@ func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registr
 			filename = &name
 		}
 		sourceURL := req.SourceURL
-		attachment, err := store.CreateAttachment(c.Request.Context(), userID, uuid.Nil, model.Attachment{
-			Filename:    filename,
-			ContentType: fileContentType,
-			SourceURL:   &sourceURL,
-			ExpiresAt:   &expiresAt,
-			Status:      "downloading",
-		})
-		if err != nil {
+		if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+			attachment, err := store.CreateAttachment(ctx, userID, uuid.Nil, model.Attachment{
+				Filename:    filename,
+				ContentType: fileContentType,
+				SourceURL:   &sourceURL,
+				ExpiresAt:   &expiresAt,
+				Status:      "downloading",
+			})
+			if err != nil {
+				return err
+			}
+			go completeSourceURLAttachment(store, attachStore, cfg, attachment.ID, userID, sourceURL, fileContentType)
+			c.JSON(http.StatusCreated, toUploadResponse(attachment))
+			return nil
+		}); err != nil {
 			handleError(c, err)
-			return
 		}
-
-		go completeSourceURLAttachment(store, attachStore, cfg, attachment.ID, userID, sourceURL, fileContentType)
-
-		c.JSON(http.StatusCreated, toUploadResponse(attachment))
 		return
 	}
 
@@ -156,21 +159,24 @@ func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registr
 	}
 	expiresAt := time.Now().Add(expiresIn)
 
-	attachment, err := store.CreateAttachment(c.Request.Context(), userID, uuid.Nil, model.Attachment{
-		Filename:    &header.Filename,
-		ContentType: fileContentType,
-		Size:        &result.Size,
-		SHA256:      &result.SHA256,
-		StorageKey:  &result.StorageKey,
-		ExpiresAt:   &expiresAt,
-		Status:      "ready",
-	})
-	if err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		attachment, err := store.CreateAttachment(ctx, userID, uuid.Nil, model.Attachment{
+			Filename:    &header.Filename,
+			ContentType: fileContentType,
+			Size:        &result.Size,
+			SHA256:      &result.SHA256,
+			StorageKey:  &result.StorageKey,
+			ExpiresAt:   &expiresAt,
+			Status:      "ready",
+		})
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusCreated, toUploadResponse(attachment))
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-
-	c.JSON(http.StatusCreated, toUploadResponse(attachment))
 }
 
 func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
@@ -181,37 +187,41 @@ func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore 
 		return
 	}
 
-	attachment, err := store.GetAttachment(c.Request.Context(), userID, uuid.Nil, attachID)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	if strings.EqualFold(attachment.Status, "downloading") && attachment.SourceURL != nil && strings.TrimSpace(*attachment.SourceURL) != "" {
-		c.Redirect(http.StatusTemporaryRedirect, *attachment.SourceURL)
-		return
-	}
-	if strings.EqualFold(attachment.Status, "failed") {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "attachment download failed"})
-		return
-	}
-	if strings.EqualFold(attachment.Status, "uploading") {
-		c.JSON(http.StatusConflict, gin.H{"error": "attachment upload in progress"})
-		return
-	}
-
-	if attachment.StorageKey == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "attachment content not available"})
-		return
-	}
-
-	if cfg.S3DirectDownload {
-		if signed, err := attachStore.GetSignedURL(c.Request.Context(), *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn); err == nil {
-			c.Redirect(http.StatusFound, signed.String())
-			return
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		attachment, err := store.GetAttachment(ctx, userID, uuid.Nil, attachID)
+		if err != nil {
+			return err
 		}
-	}
+		if strings.EqualFold(attachment.Status, "downloading") && attachment.SourceURL != nil && strings.TrimSpace(*attachment.SourceURL) != "" {
+			c.Redirect(http.StatusTemporaryRedirect, *attachment.SourceURL)
+			return nil
+		}
+		if strings.EqualFold(attachment.Status, "failed") {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "attachment download failed"})
+			return nil
+		}
+		if strings.EqualFold(attachment.Status, "uploading") {
+			c.JSON(http.StatusConflict, gin.H{"error": "attachment upload in progress"})
+			return nil
+		}
 
-	streamAttachment(c, attachStore, *attachment.StorageKey, attachment)
+		if attachment.StorageKey == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "attachment content not available"})
+			return nil
+		}
+
+		if cfg.S3DirectDownload {
+			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn); err == nil {
+				c.Redirect(http.StatusFound, signed.String())
+				return nil
+			}
+		}
+
+		streamAttachment(c, attachStore, *attachment.StorageKey, attachment)
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
 }
 
 func deleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore) {
@@ -222,24 +232,27 @@ func deleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachSto
 		return
 	}
 
-	attachment, err := store.GetAttachment(c.Request.Context(), userID, uuid.Nil, attachID)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-
-	if attachment.StorageKey != nil {
-		if err := attachStore.Delete(c.Request.Context(), *attachment.StorageKey); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete attachment content"})
-			return
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		attachment, err := store.GetAttachment(ctx, userID, uuid.Nil, attachID)
+		if err != nil {
+			return err
 		}
-	}
 
-	if err := store.DeleteAttachment(c.Request.Context(), userID, uuid.Nil, attachID); err != nil {
+		if attachment.StorageKey != nil {
+			if err := attachStore.Delete(ctx, *attachment.StorageKey); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete attachment content"})
+				return nil
+			}
+		}
+
+		if err := store.DeleteAttachment(ctx, userID, uuid.Nil, attachID); err != nil {
+			return err
+		}
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.Status(http.StatusNoContent)
 }
 
 func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, signingKey []byte) {
@@ -250,53 +263,57 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 		return
 	}
 
-	attachment, err := store.GetAttachment(c.Request.Context(), userID, uuid.Nil, attachID)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	if strings.EqualFold(attachment.Status, "downloading") && attachment.SourceURL != nil && strings.TrimSpace(*attachment.SourceURL) != "" {
-		c.JSON(http.StatusOK, gin.H{
-			"url":       *attachment.SourceURL,
-			"expiresIn": 0,
-			"status":    "downloading",
-		})
-		return
-	}
-	if strings.EqualFold(attachment.Status, "failed") {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "attachment download failed"})
-		return
-	}
-	if strings.EqualFold(attachment.Status, "uploading") {
-		c.JSON(http.StatusConflict, gin.H{"error": "attachment upload in progress"})
-		return
-	}
-	if attachment.StorageKey == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "attachment content not available"})
-		return
-	}
-
-	if cfg.S3DirectDownload {
-		if signedURL, err := attachStore.GetSignedURL(c.Request.Context(), *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn); err == nil {
-			c.JSON(http.StatusOK, gin.H{"url": signedURL.String(), "expiresIn": int(cfg.AttachmentDownloadURLExpiresIn.Seconds())})
-			return
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		attachment, err := store.GetAttachment(ctx, userID, uuid.Nil, attachID)
+		if err != nil {
+			return err
 		}
-	}
+		if strings.EqualFold(attachment.Status, "downloading") && attachment.SourceURL != nil && strings.TrimSpace(*attachment.SourceURL) != "" {
+			c.JSON(http.StatusOK, gin.H{
+				"url":       *attachment.SourceURL,
+				"expiresIn": 0,
+				"status":    "downloading",
+			})
+			return nil
+		}
+		if strings.EqualFold(attachment.Status, "failed") {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "attachment download failed"})
+			return nil
+		}
+		if strings.EqualFold(attachment.Status, "uploading") {
+			c.JSON(http.StatusConflict, gin.H{"error": "attachment upload in progress"})
+			return nil
+		}
+		if attachment.StorageKey == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "attachment content not available"})
+			return nil
+		}
 
-	if len(signingKey) == 0 {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "download URLs are not available: encryption key is not configured"})
-		return
-	}
+		if cfg.S3DirectDownload {
+			if signedURL, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn); err == nil {
+				c.JSON(http.StatusOK, gin.H{"url": signedURL.String(), "expiresIn": int(cfg.AttachmentDownloadURLExpiresIn.Seconds())})
+				return nil
+			}
+		}
 
-	filename := "download"
-	if attachment.Filename != nil && strings.TrimSpace(*attachment.Filename) != "" {
-		filename = *attachment.Filename
+		if len(signingKey) == 0 {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "download URLs are not available: encryption key is not configured"})
+			return nil
+		}
+
+		filename := "download"
+		if attachment.Filename != nil && strings.TrimSpace(*attachment.Filename) != "" {
+			filename = *attachment.Filename
+		}
+		token := signDownloadToken(*attachment.StorageKey, signingKey, time.Now().Add(cfg.AttachmentDownloadURLExpiresIn))
+		c.JSON(http.StatusOK, gin.H{
+			"url":       fmt.Sprintf("/v1/attachments/download/%s/%s", token, filename),
+			"expiresIn": int(cfg.AttachmentDownloadURLExpiresIn.Seconds()),
+		})
+		return nil
+	}); err != nil {
+		handleError(c, err)
 	}
-	token := signDownloadToken(*attachment.StorageKey, signingKey, time.Now().Add(cfg.AttachmentDownloadURLExpiresIn))
-	c.JSON(http.StatusOK, gin.H{
-		"url":       fmt.Sprintf("/v1/attachments/download/%s/%s", token, filename),
-		"expiresIn": int(cfg.AttachmentDownloadURLExpiresIn.Seconds()),
-	})
 }
 
 func downloadByToken(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte) {
@@ -307,12 +324,17 @@ func downloadByToken(c *gin.Context, store registrystore.MemoryStore, attachStor
 	}
 
 	// Direct lookup by storage key — avoids the previous limit-200 scan.
-	adminAtt, err := store.AdminGetAttachmentByStorageKey(c.Request.Context(), storageKey)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		adminAtt, err := store.AdminGetAttachmentByStorageKey(ctx, storageKey)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "attachment not found"})
+			return nil
+		}
+		streamAttachment(c, attachStore, storageKey, &adminAtt.Attachment)
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "attachment not found"})
-		return
 	}
-	streamAttachment(c, attachStore, storageKey, &adminAtt.Attachment)
 }
 
 func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore, storageKey string, attachment *model.Attachment) {
@@ -547,12 +569,17 @@ func completeSourceURLAttachment(store registrystore.MemoryStore, attachStore re
 	size := result.Size
 	sha := result.SHA256
 	storageKey := result.StorageKey
-	if _, err := store.UpdateAttachment(ctx, userID, attachmentID, registrystore.AttachmentUpdate{
-		StorageKey:  &storageKey,
-		ContentType: &resolvedContentType,
-		Size:        &size,
-		SHA256:      &sha,
-		Status:      &status,
+	if err := store.InWriteTx(ctx, func(txCtx context.Context) error {
+		if _, err := store.UpdateAttachment(txCtx, userID, attachmentID, registrystore.AttachmentUpdate{
+			StorageKey:  &storageKey,
+			ContentType: &resolvedContentType,
+			Size:        &size,
+			SHA256:      &sha,
+			Status:      &status,
+		}); err != nil {
+			return err
+		}
+		return nil
 	}); err != nil {
 		log.Error("Failed to update downloaded attachment", "attachmentId", attachmentID.String(), "err", err)
 	}
@@ -560,8 +587,13 @@ func completeSourceURLAttachment(store registrystore.MemoryStore, attachStore re
 
 func markSourceURLAttachmentFailed(ctx context.Context, store registrystore.MemoryStore, attachmentID uuid.UUID, userID string, cause error) {
 	status := "failed"
-	if _, err := store.UpdateAttachment(ctx, userID, attachmentID, registrystore.AttachmentUpdate{
-		Status: &status,
+	if err := store.InWriteTx(ctx, func(txCtx context.Context) error {
+		if _, err := store.UpdateAttachment(txCtx, userID, attachmentID, registrystore.AttachmentUpdate{
+			Status: &status,
+		}); err != nil {
+			return err
+		}
+		return nil
 	}); err != nil {
 		log.Error("Failed to mark attachment as failed", "attachmentId", attachmentID.String(), "err", err, "cause", cause)
 		return

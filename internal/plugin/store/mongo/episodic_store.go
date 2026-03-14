@@ -18,6 +18,7 @@ import (
 	episodicqdrant "github.com/chirino/memory-service/internal/plugin/store/episodicqdrant"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
+	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -185,6 +186,14 @@ type mongoEpisodicStore struct {
 	vectors *mongo.Collection
 	enc     *dataencryption.Service
 	qdrant  *episodicqdrant.Client
+}
+
+func (s *mongoEpisodicStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
+}
+
+func (s *mongoEpisodicStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
 }
 
 // memoryDoc is the BSON document representation of a memory row.
