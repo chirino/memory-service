@@ -2,6 +2,7 @@ package conversations
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryroute "github.com/chirino/memory-service/internal/registry/route"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
@@ -98,12 +100,16 @@ func listConversations(c *gin.Context, store registrystore.MemoryStore) {
 	limit := queryInt(c, "limit", 20)
 	query := queryPtr(c, "query")
 
-	summaries, cursor, err := store.ListConversations(c.Request.Context(), userID, query, afterCursor, limit, mode)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		summaries, cursor, err := store.ListConversations(ctx, userID, query, afterCursor, limit, mode)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": summaries, "afterCursor": cursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": summaries, "afterCursor": cursor})
 }
 
 func createConversation(c *gin.Context, store registrystore.MemoryStore) {
@@ -152,22 +158,28 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore) {
 		forkEntryID = &id
 	}
 
-	var conv *registrystore.ConversationDetail
-	var err error
-	if convID != nil {
-		conv, err = store.CreateConversationWithID(c.Request.Context(), userID, *convID, req.Title, req.Metadata, forkConvID, forkEntryID)
-	} else {
-		conv, err = store.CreateConversation(c.Request.Context(), userID, req.Title, req.Metadata, forkConvID, forkEntryID)
-	}
-	if err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		var (
+			conv *registrystore.ConversationDetail
+			err  error
+		)
+		if convID != nil {
+			conv, err = store.CreateConversationWithID(ctx, userID, *convID, req.Title, req.Metadata, forkConvID, forkEntryID)
+		} else {
+			conv, err = store.CreateConversation(ctx, userID, req.Title, req.Metadata, forkConvID, forkEntryID)
+		}
+		if err != nil {
+			return err
+		}
+		// Java parity: fork creation returns 200, regular creation returns 201.
+		if forkConvID != nil {
+			c.JSON(http.StatusOK, conv)
+		} else {
+			c.JSON(http.StatusCreated, conv)
+		}
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
-	}
-	// Java parity: fork creation returns 200, regular creation returns 201.
-	if forkConvID != nil {
-		c.JSON(http.StatusOK, conv)
-	} else {
-		c.JSON(http.StatusCreated, conv)
 	}
 }
 
@@ -179,12 +191,16 @@ func getConversation(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	conv, err := store.GetConversation(c.Request.Context(), userID, convID)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		conv, err := store.GetConversation(ctx, userID, convID)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, conv)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, conv)
 }
 
 func updateConversation(c *gin.Context, store registrystore.MemoryStore) {
@@ -227,12 +243,16 @@ func updateConversation(c *gin.Context, store registrystore.MemoryStore) {
 		}
 	}
 
-	conv, err := store.UpdateConversation(c.Request.Context(), userID, convID, title, metadata)
-	if err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		conv, err := store.UpdateConversation(ctx, userID, convID, title, metadata)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, conv)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, conv)
 }
 
 func deleteConversation(c *gin.Context, store registrystore.MemoryStore) {
@@ -243,11 +263,15 @@ func deleteConversation(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	if err := store.DeleteConversation(c.Request.Context(), userID, convID); err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		if err := store.DeleteConversation(ctx, userID, convID); err != nil {
+			return err
+		}
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.Status(http.StatusNoContent)
 }
 
 func listForks(c *gin.Context, store registrystore.MemoryStore) {
@@ -261,12 +285,16 @@ func listForks(c *gin.Context, store registrystore.MemoryStore) {
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 
-	forks, cursor, err := store.ListForks(c.Request.Context(), userID, convID, afterCursor, limit)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		forks, cursor, err := store.ListForks(ctx, userID, convID, afterCursor, limit)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": forks, "afterCursor": cursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": forks, "afterCursor": cursor})
 }
 
 func cancelResponse(c *gin.Context, store registrystore.MemoryStore, resumer *internalresumer.Store, resumerEnabled bool) {
@@ -277,26 +305,30 @@ func cancelResponse(c *gin.Context, store registrystore.MemoryStore, resumer *in
 		return
 	}
 
-	conv, err := store.GetConversation(c.Request.Context(), userID, convID)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	if !conv.AccessLevel.IsAtLeast(model.AccessLevelWriter) {
-		handleError(c, &registrystore.ForbiddenError{})
-		return
-	}
-	if !resumerEnabled {
-		c.JSON(http.StatusConflict, gin.H{"error": "response resumer disabled"})
-		return
-	}
-	if _, err := resumer.RequestCancelWithAddress(c.Request.Context(), convID.String(), ""); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		conv, err := store.GetConversation(ctx, userID, convID)
+		if err != nil {
+			return err
+		}
+		if !conv.AccessLevel.IsAtLeast(model.AccessLevelWriter) {
+			handleError(c, &registrystore.ForbiddenError{})
+			return nil
+		}
+		if !resumerEnabled {
+			c.JSON(http.StatusConflict, gin.H{"error": "response resumer disabled"})
+			return nil
+		}
+		if _, err := resumer.RequestCancelWithAddress(ctx, convID.String(), ""); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return nil
+		}
 
-	// Contract expects 200 when cancellation request is accepted.
-	c.Status(http.StatusOK)
+		// Contract expects 200 when cancellation request is accepted.
+		c.Status(http.StatusOK)
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
 }
 
 // --- Helpers ---

@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
+	"github.com/google/uuid"
 )
 
 // EvictionService periodically cleans up soft-deleted records past retention.
@@ -45,7 +46,12 @@ func (e *EvictionService) Start(ctx context.Context) {
 
 func (e *EvictionService) runEviction(ctx context.Context) {
 	cutoff := time.Now().Add(-e.retention)
-	total, err := e.store.CountEvictableGroups(ctx, cutoff)
+	var total int64
+	err := e.store.InReadTx(ctx, func(readCtx context.Context) error {
+		var err error
+		total, err = e.store.CountEvictableGroups(readCtx, cutoff)
+		return err
+	})
 	if err != nil {
 		log.Error("Eviction: count failed", "err", err)
 		return
@@ -57,7 +63,12 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 	log.Info("Eviction: starting", "total", total, "cutoff", cutoff)
 	evicted := 0
 	for {
-		ids, err := e.store.FindEvictableGroupIDs(ctx, cutoff, e.batchSize)
+		var ids []uuid.UUID
+		err := e.store.InReadTx(ctx, func(readCtx context.Context) error {
+			var err error
+			ids, err = e.store.FindEvictableGroupIDs(readCtx, cutoff, e.batchSize)
+			return err
+		})
 		if err != nil {
 			log.Error("Eviction: find IDs failed", "err", err)
 			return
@@ -65,15 +76,17 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 		if len(ids) == 0 {
 			break
 		}
-		// Create vector delete tasks before hard-deleting so orphaned
-		// embeddings are cleaned up asynchronously by the task processor.
-		for _, id := range ids {
-			body := map[string]interface{}{"conversationGroupId": id.String()}
-			if err := e.store.CreateTask(ctx, "vector_store_delete", body); err != nil {
-				log.Error("Eviction: create vector delete task failed", "groupId", id, "err", err)
+		if err := e.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+			// Create vector delete tasks before hard-deleting so orphaned
+			// embeddings are cleaned up asynchronously by the task processor.
+			for _, id := range ids {
+				body := map[string]interface{}{"conversationGroupId": id.String()}
+				if err := e.store.CreateTask(writeCtx, "vector_store_delete", body); err != nil {
+					log.Error("Eviction: create vector delete task failed", "groupId", id, "err", err)
+				}
 			}
-		}
-		if err := e.store.HardDeleteConversationGroups(ctx, ids); err != nil {
+			return e.store.HardDeleteConversationGroups(writeCtx, ids)
+		}); err != nil {
 			log.Error("Eviction: hard delete failed", "err", err)
 		}
 		evicted += len(ids)

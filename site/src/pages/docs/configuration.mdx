@@ -45,15 +45,15 @@ By default, `/health`, `/ready`, and `/metrics` are served on the main port alon
 
 ## DB Configuration
 
-Memory Service supports PostgreSQL and MongoDB as database backends. The database URL uses standard connection string formats (not JDBC).
+Memory Service supports PostgreSQL, SQLite, and MongoDB as database backends. The database URL uses standard connection string formats (not JDBC).
 
-| Flag                                                                 | Values              | Default      | Description                                                           |
-| -------------------------------------------------------------------- | ------------------- | ------------ | --------------------------------------------------------------------- |
-| <Cfg p="--db-kind" e="MEMORY_SERVICE_DB_KIND" />                     | `postgres`, `mongo` | `postgres`   | Database backend                                                      |
-| <Cfg p="--db-url" e="MEMORY_SERVICE_DB_URL" />                       | URL                 | _(required)_ | Database connection URL                                               |
-| <Cfg p="--db-max-open-conns" e="MEMORY_SERVICE_DB_MAX_OPEN_CONNS" /> | integer             | `25`         | Maximum number of open database connections (see backend notes below) |
-| <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> | integer             | `5`          | Idle/minimum connections (see backend notes below)                    |
-| `MEMORY_SERVICE_DB_MIGRATE_AT_START`                                 | `true`, `false`     | `true`       | Run database migrations at startup                                    |
+| Flag                                                                 | Values                        | Default      | Description                                                           |
+| -------------------------------------------------------------------- | ----------------------------- | ------------ | --------------------------------------------------------------------- |
+| <Cfg p="--db-kind" e="MEMORY_SERVICE_DB_KIND" />                     | `postgres`, `sqlite`, `mongo` | `postgres`   | Database backend                                                      |
+| <Cfg p="--db-url" e="MEMORY_SERVICE_DB_URL" />                       | URL                           | _(required)_ | Database connection URL                                               |
+| <Cfg p="--db-max-open-conns" e="MEMORY_SERVICE_DB_MAX_OPEN_CONNS" /> | integer                       | `25`         | Maximum number of open database connections (see backend notes below) |
+| <Cfg p="--db-max-idle-conns" e="MEMORY_SERVICE_DB_MAX_IDLE_CONNS" /> | integer                       | `5`          | Idle/minimum connections (see backend notes below)                    |
+| `MEMORY_SERVICE_DB_MIGRATE_AT_START`                                 | `true`, `false`               | `true`       | Run database migrations at startup                                    |
 
 ### DB: PostgreSQL Configuration
 
@@ -69,6 +69,38 @@ PostgreSQL is the recommended database backend for Memory Service.
 # PostgreSQL connection (standard URL format)
 
 --db-url=postgresql://postgres:postgres@localhost:5432/memoryservice`} />
+
+### DB: SQLite Configuration
+
+SQLite is intended for local development, demos, single-node deployments, and CI runs that do not need a separate database container.
+
+- <Cfg p="--db-url" e="MEMORY_SERVICE_DB_URL" /> can be a plain file path or a `file:` SQLite URI.
+- SQLite uses a shared database handle with conservative internal pooling and write serialization. The `--db-max-open-conns` and `--db-max-idle-conns` settings are not used for SQLite.
+- When <Cfg p="--attachments-kind" e="MEMORY_SERVICE_ATTACHMENTS_KIND" /> is omitted in SQLite mode, it defaults to `fs`.
+- When `MEMORY_SERVICE_ATTACHMENTS_FS_DIR` is omitted in SQLite mode, the attachment directory is derived from the SQLite DB path by appending `.attachments`.
+
+<ConfigBlock property={`# Select SQLite as the datastore
+--db-kind=sqlite
+
+# SQLite file path or file: URI
+
+--db-url=/tmp/memory-service.sqlite
+
+# Optional: explicit attachment root (otherwise /tmp/memory-service.sqlite.attachments)
+
+--attachments-kind=fs
+--attachments-fs-dir=/tmp/memory-service-attachments`}
+  env={`# Select SQLite as the datastore
+MEMORY_SERVICE_DB_KIND=sqlite
+
+# SQLite file path or file: URI
+
+MEMORY_SERVICE_DB_URL=/tmp/memory-service.sqlite
+
+# Optional: explicit attachment root (otherwise /tmp/memory-service.sqlite.attachments)
+
+MEMORY_SERVICE_ATTACHMENTS_KIND=fs
+MEMORY_SERVICE_ATTACHMENTS_FS_DIR=/tmp/memory-service-attachments`}/>
 
 ### DB: MongoDB Configuration
 
@@ -169,15 +201,16 @@ MEMORY_SERVICE_INFINISPAN_PASSWORD=password`}
 
 Configure file attachment storage, size limits, and lifecycle.
 
-| Flag / Env Var                                                     | Values      | Default | Description                                                                                                                            |
-| ------------------------------------------------------------------ | ----------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| <Cfg p="--attachments-kind" e="MEMORY_SERVICE_ATTACHMENTS_KIND" /> | `db`, `s3`  | `db`    | Storage backend for uploaded files                                                                                                     |
-| `MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE`                              | memory size | `10M`   | Maximum file size per upload (e.g., `10M`, `512K`, `1G`)                                                                               |
-| `MEMORY_SERVICE_ATTACHMENTS_DEFAULT_EXPIRES_IN`                    | duration    | `PT1H`  | Default TTL for unlinked attachments                                                                                                   |
-| `MEMORY_SERVICE_ATTACHMENTS_MAX_EXPIRES_IN`                        | duration    | `PT24H` | Maximum allowed TTL clients can request                                                                                                |
-| `MEMORY_SERVICE_ATTACHMENTS_CLEANUP_INTERVAL`                      | duration    | `PT5M`  | How often the cleanup job runs                                                                                                         |
-| `MEMORY_SERVICE_ATTACHMENTS_DOWNLOAD_URL_EXPIRES_IN`               | duration    | `PT5M`  | Signed download URL expiry                                                                                                             |
-| —                                                                  | —           | —       | Signed download URLs are enabled automatically when `--encryption-dek-key` is set; the signing key is derived from it via HKDF-SHA256. |
+| Flag / Env Var                                                     | Values           | Default  | Description                                                                                                                            |
+| ------------------------------------------------------------------ | ---------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| <Cfg p="--attachments-kind" e="MEMORY_SERVICE_ATTACHMENTS_KIND" /> | `db`, `fs`, `s3` | `db`     | Storage backend for uploaded files                                                                                                     |
+| `MEMORY_SERVICE_ATTACHMENTS_FS_DIR`                                | path             | _(auto)_ | Root directory for the `fs` attachment backend. In SQLite mode this defaults to `<db-path>.attachments`.                               |
+| `MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE`                              | memory size      | `10M`    | Maximum file size per upload (e.g., `10M`, `512K`, `1G`)                                                                               |
+| `MEMORY_SERVICE_ATTACHMENTS_DEFAULT_EXPIRES_IN`                    | duration         | `PT1H`   | Default TTL for unlinked attachments                                                                                                   |
+| `MEMORY_SERVICE_ATTACHMENTS_MAX_EXPIRES_IN`                        | duration         | `PT24H`  | Maximum allowed TTL clients can request                                                                                                |
+| `MEMORY_SERVICE_ATTACHMENTS_CLEANUP_INTERVAL`                      | duration         | `PT5M`   | How often the cleanup job runs                                                                                                         |
+| `MEMORY_SERVICE_ATTACHMENTS_DOWNLOAD_URL_EXPIRES_IN`               | duration         | `PT5M`   | Signed download URL expiry                                                                                                             |
+| —                                                                  | —                | —        | Signed download URLs are enabled automatically when `--encryption-dek-key` is set; the signing key is derived from it via HKDF-SHA256. |
 
 ### Attachment Storage: DB Configuration
 
@@ -188,6 +221,23 @@ The default `db` backend stores attachments directly in the primary database (Po
 --attachments-kind=db`}
   env={`# Use database storage (default)
 MEMORY_SERVICE_ATTACHMENTS_KIND=db`}
+/>
+
+### Attachment Storage: Filesystem Configuration
+
+The `fs` backend stores attachment bytes on the local filesystem while keeping metadata in the primary datastore.
+
+- SQLite uses `fs` by default.
+- If `MEMORY_SERVICE_ATTACHMENTS_FS_DIR` is unset in SQLite mode, memory-service derives the directory from the SQLite DB path and creates it automatically on startup.
+- `fs` also works with non-SQLite backends when you want filesystem-backed blobs without S3.
+
+<ConfigBlock
+  property={`# Store attachment bytes on local disk
+--attachments-kind=fs
+--attachments-fs-dir=/var/lib/memory-service/attachments`}
+  env={`# Store attachment bytes on local disk
+MEMORY_SERVICE_ATTACHMENTS_KIND=fs
+MEMORY_SERVICE_ATTACHMENTS_FS_DIR=/var/lib/memory-service/attachments`}
 />
 
 ### Attachment Storage: S3 Configuration
@@ -352,12 +402,12 @@ For semantic search capabilities, configure a vector store backend. The vector s
 
 > **Note:** A vector store requires an embedding provider. When a vector store is enabled, configure <Cfg p="--embedding-kind" e="MEMORY_SERVICE_EMBEDDING_KIND" /> to a value other than `none`. See [Embedding Configuration](#embedding-configuration).
 
-| Flag / Env Var                                           | Values                       | Default | Description                            |
-| -------------------------------------------------------- | ---------------------------- | ------- | -------------------------------------- |
-| <Cfg p="--vector-kind" e="MEMORY_SERVICE_VECTOR_KIND" /> | `none`, `pgvector`, `qdrant` | `none`  | Vector store backend                   |
-| `MEMORY_SERVICE_VECTOR_MIGRATE_AT_START`                 | `true`, `false`              | `true`  | Run vector store migrations at startup |
-| `MEMORY_SERVICE_SEARCH_SEMANTIC_ENABLED`                 | `true`, `false`              | `true`  | Enable semantic (vector) search        |
-| `MEMORY_SERVICE_SEARCH_FULLTEXT_ENABLED`                 | `true`, `false`              | `true`  | Enable full-text search                |
+| Flag / Env Var                                           | Values                                 | Default | Description                            |
+| -------------------------------------------------------- | -------------------------------------- | ------- | -------------------------------------- |
+| <Cfg p="--vector-kind" e="MEMORY_SERVICE_VECTOR_KIND" /> | `none`, `pgvector`, `qdrant`, `sqlite` | `none`  | Vector store backend                   |
+| `MEMORY_SERVICE_VECTOR_MIGRATE_AT_START`                 | `true`, `false`                        | `true`  | Run vector store migrations at startup |
+| `MEMORY_SERVICE_SEARCH_SEMANTIC_ENABLED`                 | `true`, `false`                        | `true`  | Enable semantic (vector) search        |
+| `MEMORY_SERVICE_SEARCH_FULLTEXT_ENABLED`                 | `true`, `false`                        | `true`  | Enable full-text search                |
 
 ### Vector Store: pgvector Configuration
 
@@ -394,6 +444,23 @@ MEMORY_SERVICE_VECTOR_QDRANT_HOST=localhost:6334`}
 />
 
 By default, memory-service derives the collection name as `memory-service_<model>-<dimensions>`, for example `memory-service_openai-text-embedding-3-small-1536`. Set `MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_NAME` to force a specific collection.
+
+### Vector Store: SQLite Configuration
+
+The `sqlite` vector backend stores conversation embeddings and episodic memory vectors in the same SQLite database file by using `sqlite-vec` scalar functions.
+
+- `MEMORY_SERVICE_VECTOR_KIND=sqlite` requires `MEMORY_SERVICE_DB_KIND=sqlite`.
+- This backend enables both conversation semantic search and episodic memory semantic search.
+- You still need an embedding provider such as `MEMORY_SERVICE_EMBEDDING_KIND=local`.
+
+<ConfigBlock
+  property={`# SQLite vector store (requires --db-kind=sqlite)
+--vector-kind=sqlite
+--embedding-kind=local`}
+  env={`# SQLite vector store (requires MEMORY_SERVICE_DB_KIND=sqlite)
+MEMORY_SERVICE_VECTOR_KIND=sqlite
+MEMORY_SERVICE_EMBEDDING_KIND=local`}
+/>
 
 ## Embedding Configuration
 

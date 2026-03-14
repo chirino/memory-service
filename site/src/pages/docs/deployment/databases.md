@@ -84,6 +84,33 @@ MEMORY_SERVICE_DB_KIND=mongo
 MEMORY_SERVICE_DB_URL=mongodb://admin:password@localhost:27017/memoryservice
 ```
 
+## SQLite
+
+SQLite is the lightest-weight backend and works well for local development, demos, and single-node deployments.
+
+### Configuration
+
+```bash
+MEMORY_SERVICE_DB_KIND=sqlite
+MEMORY_SERVICE_DB_URL=/tmp/memory-service.sqlite
+MEMORY_SERVICE_ATTACHMENTS_KIND=fs
+
+# Optional override. When omitted, memory-service uses
+# /tmp/memory-service.sqlite.attachments
+MEMORY_SERVICE_ATTACHMENTS_FS_DIR=/tmp/memory-service-attachments
+```
+
+### Semantic Search
+
+SQLite semantic search uses `sqlite-vec` inside the same database file:
+
+```bash
+MEMORY_SERVICE_VECTOR_KIND=sqlite
+MEMORY_SERVICE_EMBEDDING_KIND=local
+```
+
+This enables both conversation semantic search and episodic memory semantic search.
+
 ## Embedding Configuration
 
 Configure the embedding model for vector generation:

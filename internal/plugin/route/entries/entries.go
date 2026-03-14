@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/gin-gonic/gin"
@@ -106,12 +107,16 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 		epochFilter = filter
 	}
 
-	result, err := store.GetEntries(c.Request.Context(), userID, convID, afterCursor, limit, channelPtr, epochFilter, clientIDParam, allForks)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(context.Context) error {
+		result, err := store.GetEntries(c.Request.Context(), userID, convID, afterCursor, limit, channelPtr, epochFilter, clientIDParam, allForks)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor})
 }
 
 func appendEntry(c *gin.Context, store registrystore.MemoryStore) {
@@ -241,55 +246,61 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore) {
 		}
 	}
 
-	// Resolve attachmentId references in content before creating entries.
-	// This replaces attachmentId with href and tracks attachment IDs to link after creation.
-	type pendingLink struct {
-		attachmentID uuid.UUID
-		entryIndex   int
-	}
-	var pendingLinks []pendingLink
-
-	for i, entry := range entries {
-		ch := model.Channel(strings.ToLower(entry.Channel))
-		if ch != model.ChannelHistory {
-			continue
+	if err := routetx.MemoryWrite(c, store, func(context.Context) error {
+		// Resolve attachmentId references inside the write scope so SQLite
+		// attachment lookups and cross-link record creation see the required tx context.
+		type pendingLink struct {
+			attachmentID uuid.UUID
+			entryIndex   int
 		}
-		modified, links, err := resolveAttachmentRefs(c.Request.Context(), store, userID, convID, entry.Content)
+		var pendingLinks []pendingLink
+		for i, entry := range entries {
+			ch := model.Channel(strings.ToLower(entry.Channel))
+			if ch != model.ChannelHistory {
+				continue
+			}
+			modified, links, err := resolveAttachmentRefs(c.Request.Context(), store, userID, convID, entry.Content)
+			if err != nil {
+				return err
+			}
+			if modified != nil {
+				entries[i].Content = modified
+			}
+			for _, id := range links {
+				pendingLinks = append(pendingLinks, pendingLink{attachmentID: id, entryIndex: i})
+			}
+		}
+
+		result, err := store.AppendEntries(c.Request.Context(), userID, convID, entries, clientID, req.Epoch)
 		if err != nil {
+			return err
+		}
+
+		// Link attachments to created entries by updating entry_id.
+		for _, link := range pendingLinks {
+			if link.entryIndex < len(result) {
+				entryID := result[link.entryIndex].ID
+				if _, err := store.UpdateAttachment(c.Request.Context(), userID, link.attachmentID, registrystore.AttachmentUpdate{
+					EntryID: &entryID,
+				}); err != nil {
+					return err
+				}
+			}
+		}
+
+		if len(result) == 1 {
+			c.JSON(http.StatusCreated, result[0])
+		} else {
+			c.JSON(http.StatusCreated, result)
+		}
+		return nil
+	}); err != nil {
+		var attachmentErr *attachmentRefError
+		if errors.As(err, &attachmentErr) {
 			handleAttachmentError(c, err)
 			return
 		}
-		if modified != nil {
-			entries[i].Content = modified
-		}
-		for _, id := range links {
-			pendingLinks = append(pendingLinks, pendingLink{attachmentID: id, entryIndex: i})
-		}
-	}
-
-	result, err := store.AppendEntries(c.Request.Context(), userID, convID, entries, clientID, req.Epoch)
-	if err != nil {
 		handleError(c, err)
-		return
-	}
-
-	// Link attachments to created entries by updating entry_id.
-	for _, link := range pendingLinks {
-		if link.entryIndex < len(result) {
-			entryID := result[link.entryIndex].ID
-			if _, err := store.UpdateAttachment(c.Request.Context(), userID, link.attachmentID, registrystore.AttachmentUpdate{
-				EntryID: &entryID,
-			}); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to link attachment to entry"})
-				return
-			}
-		}
-	}
-
-	if len(result) == 1 {
-		c.JSON(http.StatusCreated, result[0])
-	} else {
-		c.JSON(http.StatusCreated, result)
 	}
 }
 
@@ -546,12 +557,16 @@ func syncMemory(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	result, err := store.SyncAgentEntry(c.Request.Context(), userID, convID, req, clientID)
-	if err != nil {
+	if err := routetx.MemoryWrite(c, store, func(context.Context) error {
+		result, err := store.SyncAgentEntry(c.Request.Context(), userID, convID, req, clientID)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, result)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, result)
 }
 
 func handleError(c *gin.Context, err error) {

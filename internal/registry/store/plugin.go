@@ -167,6 +167,11 @@ type OwnershipTransferDto struct {
 
 // MemoryStore defines the primary data access interface for the memory service.
 type MemoryStore interface {
+	// InReadTx runs fn in a read transaction scope.
+	InReadTx(ctx context.Context, fn func(context.Context) error) error
+	// InWriteTx runs fn in a write transaction scope.
+	InWriteTx(ctx context.Context, fn func(context.Context) error) error
+
 	// Conversations
 	CreateConversation(ctx context.Context, userID string, title string, metadata map[string]interface{}, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
 	// CreateConversationWithID creates a conversation with the given ID. Used by gRPC AppendEntry for fork-on-append.

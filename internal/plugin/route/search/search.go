@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
@@ -65,6 +66,15 @@ func HandleListUnindexed(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 func searchConversations(c *gin.Context, store registrystore.MemoryStore, cfg *config.Config, embedder registryembed.Embedder, vectorStore registryvector.VectorStore) {
+	if err := routetx.MemoryRead(c, store, func(context.Context) error {
+		searchConversationsInReadTx(c, store, cfg, embedder, vectorStore)
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
+}
+
+func searchConversationsInReadTx(c *gin.Context, store registrystore.MemoryStore, cfg *config.Config, embedder registryembed.Embedder, vectorStore registryvector.VectorStore) {
 	userID := security.GetUserID(c)
 
 	var req struct {
@@ -581,85 +591,93 @@ func paginateSearchResults(results []registrystore.SearchResult, afterCursor *st
 }
 
 func indexConversations(c *gin.Context, store registrystore.MemoryStore) {
-	// Role check: indexer or admin required.
-	if !security.HasRole(c, security.RoleIndexer) && !security.HasRole(c, security.RoleAdmin) {
-		c.JSON(http.StatusForbidden, gin.H{"code": "forbidden", "error": "indexer or admin role required"})
-		return
-	}
-
-	// Accept both bare array [{...}] and wrapped {"entries": [{...}]} formats.
-	bodyBytes, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
-		return
-	}
-
-	var entries []registrystore.IndexEntryRequest
-
-	// Try bare array first.
-	if err := json.Unmarshal(bodyBytes, &entries); err != nil {
-		// Try wrapped format.
-		var wrapped struct {
-			Entries []registrystore.IndexEntryRequest `json:"entries"`
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		// Role check: indexer or admin required.
+		if !security.HasRole(c, security.RoleIndexer) && !security.HasRole(c, security.RoleAdmin) {
+			c.JSON(http.StatusForbidden, gin.H{"code": "forbidden", "error": "indexer or admin role required"})
+			return nil
 		}
-		if err2 := json.Unmarshal(bodyBytes, &wrapped); err2 != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-			return
-		}
-		entries = wrapped.Entries
-	}
 
-	if len(entries) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one entry required"})
-		return
-	}
+		// Accept both bare array [{...}] and wrapped {"entries": [{...}]} formats.
+		bodyBytes, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
+			return nil
+		}
 
-	// Validate required fields.
-	for _, entry := range entries {
-		if entry.EntryID == uuid.Nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "entryId is required"})
-			return
-		}
-		if entry.ConversationID == uuid.Nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "conversationId is required"})
-			return
-		}
-		if entry.IndexedContent == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "indexedContent is required"})
-			return
-		}
-	}
+		var entries []registrystore.IndexEntryRequest
 
-	result, err := store.IndexEntries(c.Request.Context(), entries)
-	if err != nil {
+		// Try bare array first.
+		if err := json.Unmarshal(bodyBytes, &entries); err != nil {
+			// Try wrapped format.
+			var wrapped struct {
+				Entries []registrystore.IndexEntryRequest `json:"entries"`
+			}
+			if err2 := json.Unmarshal(bodyBytes, &wrapped); err2 != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+				return nil
+			}
+			entries = wrapped.Entries
+		}
+
+		if len(entries) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "at least one entry required"})
+			return nil
+		}
+
+		// Validate required fields.
+		for _, entry := range entries {
+			if entry.EntryID == uuid.Nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "entryId is required"})
+				return nil
+			}
+			if entry.ConversationID == uuid.Nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "conversationId is required"})
+				return nil
+			}
+			if entry.IndexedContent == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "indexedContent is required"})
+				return nil
+			}
+		}
+
+		result, err := store.IndexEntries(ctx, entries)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, result)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, result)
 }
 
 func listUnindexed(c *gin.Context, store registrystore.MemoryStore) {
-	// Role check: indexer or admin required.
-	if !security.HasRole(c, security.RoleIndexer) && !security.HasRole(c, security.RoleAdmin) {
-		c.JSON(http.StatusForbidden, gin.H{"code": "forbidden", "error": "indexer or admin role required"})
-		return
-	}
-
-	limit := 20
-	if v := c.Query("limit"); v != "" {
-		var l int
-		if _, err := fmt.Sscanf(v, "%d", &l); err == nil && l > 0 {
-			limit = l
+	if err := routetx.MemoryRead(c, store, func(context.Context) error {
+		// Role check: indexer or admin required.
+		if !security.HasRole(c, security.RoleIndexer) && !security.HasRole(c, security.RoleAdmin) {
+			c.JSON(http.StatusForbidden, gin.H{"code": "forbidden", "error": "indexer or admin role required"})
+			return nil
 		}
-	}
-	afterCursor := queryPtr(c, "afterCursor")
 
-	entries, cursor, err := store.ListUnindexedEntries(c.Request.Context(), limit, afterCursor)
-	if err != nil {
+		limit := 20
+		if v := c.Query("limit"); v != "" {
+			var l int
+			if _, err := fmt.Sscanf(v, "%d", &l); err == nil && l > 0 {
+				limit = l
+			}
+		}
+		afterCursor := queryPtr(c, "afterCursor")
+
+		entries, cursor, err := store.ListUnindexedEntries(c.Request.Context(), limit, afterCursor)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": entries, "afterCursor": cursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": entries, "afterCursor": cursor})
 }
 
 func handleError(c *gin.Context, err error) {

@@ -181,6 +181,12 @@ type MemoryEventPage struct {
 
 // EpisodicStore defines the primary data access interface for namespaced episodic memories.
 type EpisodicStore interface {
+	// InReadTx runs fn in a read transaction scope.
+	InReadTx(ctx context.Context, fn func(context.Context) error) error
+
+	// InWriteTx runs fn in a write transaction scope.
+	InWriteTx(ctx context.Context, fn func(context.Context) error) error
+
 	// PutMemory upserts a memory. On update, the previous active row is soft-deleted.
 	PutMemory(ctx context.Context, req PutMemoryRequest) (*MemoryWriteResult, error)
 

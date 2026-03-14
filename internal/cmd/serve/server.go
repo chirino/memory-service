@@ -3,6 +3,7 @@ package serve
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
@@ -124,7 +125,22 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// "db" is a Java-parity alias: resolve to the store matching the configured datastore.
 	var attachStore registryattach.AttachmentStore
 	attachStoreName := cfg.AttachType
-	if attachStoreName == "db" {
+	if cfg.DatastoreType == "sqlite" {
+		switch strings.TrimSpace(attachStoreName) {
+		case "", "db":
+			if cfg.AttachTypeExplicit {
+				return nil, fmt.Errorf("attachments-kind=%q is not supported with db-kind=sqlite; use --attachments-kind=fs", cfg.AttachType)
+			}
+			attachStoreName = "fs"
+		case "fs":
+			// explicit, supported
+		default:
+			return nil, fmt.Errorf("attachments-kind=%q is not supported with db-kind=sqlite; use --attachments-kind=fs", cfg.AttachType)
+		}
+		if _, err := cfg.ResolvedAttachmentsFSDir(); err != nil {
+			return nil, err
+		}
+	} else if attachStoreName == "db" {
 		switch cfg.DatastoreType {
 		case "mongo":
 			attachStoreName = "mongo"
@@ -155,6 +171,9 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// Initialize embedder and vector store (optional, for semantic search)
 	var embedder registryembed.Embedder
 	var vectorStore registryvector.VectorStore
+	if cfg.VectorType == "sqlite" && cfg.DatastoreType != "sqlite" {
+		return nil, fmt.Errorf("vector-kind=%q requires db-kind=sqlite", cfg.VectorType)
+	}
 	if cfg.SearchSemanticEnabled && cfg.EmbedType != "" && cfg.EmbedType != "none" {
 		embedLoader, err := registryembed.Select(cfg.EmbedType)
 		if err != nil {

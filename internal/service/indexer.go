@@ -52,7 +52,12 @@ func (b *BackgroundIndexer) Start(ctx context.Context) {
 }
 
 func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
-	entries, err := b.store.FindEntriesPendingVectorIndexing(ctx, b.batch)
+	var entries []model.Entry
+	err := b.store.InReadTx(ctx, func(readCtx context.Context) error {
+		var err error
+		entries, err = b.store.FindEntriesPendingVectorIndexing(readCtx, b.batch)
+		return err
+	})
 	if err != nil {
 		log.Error("Indexer: list unindexed entries failed", "err", err)
 		return
@@ -104,7 +109,9 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 	now := time.Now()
 	count := 0
 	for _, c := range candidates {
-		if err := b.store.SetIndexedAt(ctx, c.entry.ID, c.entry.ConversationGroupID, now); err != nil {
+		if err := b.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+			return b.store.SetIndexedAt(writeCtx, c.entry.ID, c.entry.ConversationGroupID, now)
+		}); err != nil {
 			log.Error("Indexer: set indexed_at failed", "entryId", c.entry.ID, "err", err)
 			continue
 		}

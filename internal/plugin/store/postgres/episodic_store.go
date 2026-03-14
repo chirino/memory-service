@@ -14,6 +14,7 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	episodicqdrant "github.com/chirino/memory-service/internal/plugin/store/episodicqdrant"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
 	pgvec "github.com/pgvector/pgvector-go"
 	"gorm.io/driver/postgres"
@@ -59,6 +60,14 @@ type postgresEpisodicStore struct {
 	db     *gorm.DB
 	s      *PostgresStore // for encrypt/decrypt helpers
 	qdrant *episodicqdrant.Client
+}
+
+func (e *postgresEpisodicStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
+}
+
+func (e *postgresEpisodicStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
 }
 
 // memoryRow is the GORM-level row for the memories table.

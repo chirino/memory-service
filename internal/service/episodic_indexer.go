@@ -74,7 +74,12 @@ func (idx *EpisodicIndexer) Trigger(ctx context.Context) (EpisodicIndexRunStats,
 
 func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 	stats := EpisodicIndexRunStats{}
-	pending, err := idx.store.FindMemoriesPendingIndexing(ctx, idx.batchSize)
+	var pending []registryepisodic.PendingMemory
+	err := idx.store.InReadTx(ctx, func(readCtx context.Context) error {
+		var err error
+		pending, err = idx.store.FindMemoriesPendingIndexing(readCtx, idx.batchSize)
+		return err
+	})
 	if err != nil {
 		log.Error("Episodic indexer: find pending failed", "err", err)
 		stats.Failures++
@@ -85,16 +90,17 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 		stats.Processed++
 		if m.DeletedAt != nil {
 			// Soft-deleted: remove vector entries.
-			if err := idx.store.DeleteMemoryVectors(ctx, m.ID); err != nil {
+			if err := idx.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+				if err := idx.store.DeleteMemoryVectors(writeCtx, m.ID); err != nil {
+					return err
+				}
+				return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
+			}); err != nil {
 				log.Warn("Episodic indexer: delete vectors failed", "id", m.ID, "err", err)
 				stats.Failures++
 				continue
 			}
 			stats.VectorDeletes++
-			if err := idx.store.SetMemoryIndexedAt(ctx, m.ID, time.Now()); err != nil {
-				log.Error("Episodic indexer: set indexed_at failed", "id", m.ID, "err", err)
-				stats.Failures++
-			}
 			continue
 		}
 
@@ -102,7 +108,9 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 		if idx.embedder == nil || len(m.IndexedContent) == 0 {
 			// No embedder or no value — mark as indexed with no vector.
 			stats.SkippedNoEmbedding++
-			if err := idx.store.SetMemoryIndexedAt(ctx, m.ID, time.Now()); err != nil {
+			if err := idx.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+				return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
+			}); err != nil {
 				log.Error("Episodic indexer: set indexed_at failed", "id", m.ID, "err", err)
 				stats.Failures++
 			}
@@ -151,15 +159,20 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 		}
 
 		if len(upserts) > 0 {
-			if err := idx.store.UpsertMemoryVectors(ctx, upserts); err != nil {
+			if err := idx.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+				if err := idx.store.UpsertMemoryVectors(writeCtx, upserts); err != nil {
+					return err
+				}
+				return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
+			}); err != nil {
 				log.Warn("Episodic indexer: upsert vectors failed", "id", m.ID, "err", err)
 				stats.Failures++
 				continue
 			}
 			stats.VectorUpserts += len(upserts)
-		}
-
-		if err := idx.store.SetMemoryIndexedAt(ctx, m.ID, time.Now()); err != nil {
+		} else if err := idx.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+			return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
+		}); err != nil {
 			log.Error("Episodic indexer: set indexed_at failed", "id", m.ID, "err", err)
 			stats.Failures++
 		}

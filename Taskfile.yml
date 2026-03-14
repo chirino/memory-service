@@ -9,7 +9,7 @@ vars:
   KIND_CLUSTER_NAME: memory-service
   ENVOY_GATEWAY_VERSION: v1.7.0
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
-  PYTHON_DOCKER_IMAGE: ghcr.io/astral-sh/uv:python3.11-bookworm
+  PYTHON_DOCKER_IMAGE: astral/uv:python3.11-bookworm
   GRPC_TOOLS_VERSION: "1.74.0"
   
 

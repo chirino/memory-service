@@ -172,7 +172,7 @@ The generated stubs expose `ResponseRecorderServiceStub` with:
 
 ### Taskfile Integration
 
-Use `Taskfile.yml` to run Python build tasks in Docker (via `ghcr.io/astral-sh/uv:python3.11-bookworm`):
+Use `Taskfile.yml` to run Python build tasks in Docker (via `astral/uv:python3.11-bookworm`):
 
 ```bash
 task generate:python         # regenerate Python gRPC stubs

@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
@@ -295,12 +296,16 @@ func adminListConversations(c *gin.Context, store registrystore.MemoryStore) {
 		}
 	}
 
-	summaries, cursor, err := store.AdminListConversations(c.Request.Context(), query)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		summaries, cursor, err := store.AdminListConversations(ctx, query)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": summaries, "afterCursor": cursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": summaries, "afterCursor": cursor})
 }
 
 func adminGetConversation(c *gin.Context, store registrystore.MemoryStore) {
@@ -309,12 +314,16 @@ func adminGetConversation(c *gin.Context, store registrystore.MemoryStore) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
-	conv, err := store.AdminGetConversation(c.Request.Context(), id)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		conv, err := store.AdminGetConversation(ctx, id)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, conv)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, conv)
 }
 
 func adminDeleteConversation(c *gin.Context, store registrystore.MemoryStore) {
@@ -323,11 +332,15 @@ func adminDeleteConversation(c *gin.Context, store registrystore.MemoryStore) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
-	if err := store.AdminDeleteConversation(c.Request.Context(), id); err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		if err := store.AdminDeleteConversation(ctx, id); err != nil {
+			return err
+		}
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.Status(http.StatusNoContent)
 }
 
 func adminRestoreConversation(c *gin.Context, store registrystore.MemoryStore) {
@@ -336,16 +349,19 @@ func adminRestoreConversation(c *gin.Context, store registrystore.MemoryStore) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
-	if err := store.AdminRestoreConversation(c.Request.Context(), id); err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		if err := store.AdminRestoreConversation(ctx, id); err != nil {
+			return err
+		}
+		conv, err := store.AdminGetConversation(ctx, id)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, conv)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	conv, err := store.AdminGetConversation(c.Request.Context(), id)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, conv)
 }
 
 func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
@@ -373,12 +389,16 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 		query.Channel = &v
 	}
 
-	result, err := store.AdminGetEntries(c.Request.Context(), id, query)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		result, err := store.AdminGetEntries(ctx, id, query)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor})
 }
 
 func adminGetMemberships(c *gin.Context, store registrystore.MemoryStore) {
@@ -390,28 +410,32 @@ func adminGetMemberships(c *gin.Context, store registrystore.MemoryStore) {
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 
-	memberships, cursor, err := store.AdminListMemberships(c.Request.Context(), id, afterCursor, limit)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	// Wrap memberships to include conversationId (parity with Java AdminResource)
-	type membershipResponse struct {
-		ConversationID uuid.UUID         `json:"conversationId"`
-		UserID         string            `json:"userId"`
-		AccessLevel    model.AccessLevel `json:"accessLevel"`
-		CreatedAt      time.Time         `json:"createdAt"`
-	}
-	wrapped := make([]membershipResponse, len(memberships))
-	for i, m := range memberships {
-		wrapped[i] = membershipResponse{
-			ConversationID: id,
-			UserID:         m.UserID,
-			AccessLevel:    m.AccessLevel,
-			CreatedAt:      m.CreatedAt,
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		memberships, cursor, err := store.AdminListMemberships(ctx, id, afterCursor, limit)
+		if err != nil {
+			return err
 		}
+		// Wrap memberships to include conversationId (parity with Java AdminResource)
+		type membershipResponse struct {
+			ConversationID uuid.UUID         `json:"conversationId"`
+			UserID         string            `json:"userId"`
+			AccessLevel    model.AccessLevel `json:"accessLevel"`
+			CreatedAt      time.Time         `json:"createdAt"`
+		}
+		wrapped := make([]membershipResponse, len(memberships))
+		for i, m := range memberships {
+			wrapped[i] = membershipResponse{
+				ConversationID: id,
+				UserID:         m.UserID,
+				AccessLevel:    m.AccessLevel,
+				CreatedAt:      m.CreatedAt,
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"data": wrapped, "afterCursor": cursor})
+		return nil
+	}); err != nil {
+		handleError(c, err)
 	}
-	c.JSON(http.StatusOK, gin.H{"data": wrapped, "afterCursor": cursor})
 }
 
 func adminListForks(c *gin.Context, store registrystore.MemoryStore) {
@@ -423,12 +447,16 @@ func adminListForks(c *gin.Context, store registrystore.MemoryStore) {
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 
-	forks, cursor, err := store.AdminListForks(c.Request.Context(), id, afterCursor, limit)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		forks, cursor, err := store.AdminListForks(ctx, id, afterCursor, limit)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": forks, "afterCursor": cursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": forks, "afterCursor": cursor})
 }
 
 func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
@@ -460,19 +488,23 @@ func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
 		includeEntry = *req.IncludeEntry
 	}
 
-	results, err := store.AdminSearchEntries(c.Request.Context(), registrystore.AdminSearchQuery{
-		Query:          req.Query,
-		UserID:         req.UserID,
-		Limit:          req.Limit,
-		IncludeEntry:   includeEntry,
-		IncludeDeleted: includeDeleted,
-		AfterCursor:    req.AfterCursor,
-	})
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		results, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
+			Query:          req.Query,
+			UserID:         req.UserID,
+			Limit:          req.Limit,
+			IncludeEntry:   includeEntry,
+			IncludeDeleted: includeDeleted,
+			AfterCursor:    req.AfterCursor,
+		})
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": results.Data, "afterCursor": results.AfterCursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": results.Data, "afterCursor": results.AfterCursor})
 }
 
 func adminListAttachments(c *gin.Context, store registrystore.MemoryStore) {
@@ -493,12 +525,16 @@ func adminListAttachments(c *gin.Context, store registrystore.MemoryStore) {
 		query.EntryID = &id
 	}
 
-	attachments, cursor, err := store.AdminListAttachments(c.Request.Context(), query)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		attachments, cursor, err := store.AdminListAttachments(ctx, query)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": attachments, "afterCursor": cursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": attachments, "afterCursor": cursor})
 }
 
 func adminGetAttachment(c *gin.Context, store registrystore.MemoryStore) {
@@ -507,12 +543,16 @@ func adminGetAttachment(c *gin.Context, store registrystore.MemoryStore) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "attachment not found"})
 		return
 	}
-	attachment, err := store.AdminGetAttachment(c.Request.Context(), attachmentID)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		attachment, err := store.AdminGetAttachment(ctx, attachmentID)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, attachment)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, attachment)
 }
 
 func adminDeleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore) {
@@ -522,21 +562,24 @@ func adminDeleteAttachment(c *gin.Context, store registrystore.MemoryStore, atta
 		return
 	}
 
-	attachment, err := store.AdminGetAttachment(c.Request.Context(), attachmentID)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		attachment, err := store.AdminGetAttachment(ctx, attachmentID)
+		if err != nil {
+			return err
+		}
 
-	if err := store.AdminDeleteAttachment(c.Request.Context(), attachmentID); err != nil {
-		handleError(c, err)
-		return
-	}
+		if err := store.AdminDeleteAttachment(ctx, attachmentID); err != nil {
+			return err
+		}
 
-	if attachStore != nil && attachment.StorageKey != nil && attachment.RefCount <= 1 {
-		_ = attachStore.Delete(c.Request.Context(), *attachment.StorageKey)
+		if attachStore != nil && attachment.StorageKey != nil && attachment.RefCount <= 1 {
+			_ = attachStore.Delete(ctx, *attachment.StorageKey)
+		}
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
+		handleError(c, err)
 	}
-	c.Status(http.StatusNoContent)
 }
 
 func adminGetAttachmentContent(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
@@ -546,49 +589,53 @@ func adminGetAttachmentContent(c *gin.Context, store registrystore.MemoryStore, 
 		return
 	}
 
-	attachment, err := store.AdminGetAttachment(c.Request.Context(), attachmentID)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		attachment, err := store.AdminGetAttachment(ctx, attachmentID)
+		if err != nil {
+			return err
+		}
+		if attachStore == nil || attachment.StorageKey == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "attachment content not available"})
+			return nil
+		}
+
+		if cfg != nil && cfg.S3DirectDownload {
+			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn); err == nil {
+				c.Redirect(http.StatusFound, signed.String())
+				return nil
+			}
+		}
+
+		reader, err := attachStore.Retrieve(ctx, *attachment.StorageKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve attachment content"})
+			return nil
+		}
+		defer reader.Close()
+
+		if attachment.SHA256 != nil && *attachment.SHA256 != "" {
+			etag := fmt.Sprintf("\"%s\"", *attachment.SHA256)
+			c.Header("ETag", etag)
+			if c.GetHeader("If-None-Match") == etag {
+				c.Header("Cache-Control", "private, max-age=300, immutable")
+				c.Status(http.StatusNotModified)
+				return nil
+			}
+		}
+		c.Header("Cache-Control", "private, max-age=300, immutable")
+		c.Header("Content-Type", attachment.ContentType)
+		if attachment.Filename != nil && *attachment.Filename != "" {
+			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", *attachment.Filename))
+		}
+		if attachment.Size != nil {
+			c.Header("Content-Length", strconv.FormatInt(*attachment.Size, 10))
+		}
+		c.Status(http.StatusOK)
+		_, _ = io.Copy(c.Writer, reader)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	if attachStore == nil || attachment.StorageKey == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "attachment content not available"})
-		return
-	}
-
-	if cfg != nil && cfg.S3DirectDownload {
-		if signed, err := attachStore.GetSignedURL(c.Request.Context(), *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn); err == nil {
-			c.Redirect(http.StatusFound, signed.String())
-			return
-		}
-	}
-
-	reader, err := attachStore.Retrieve(c.Request.Context(), *attachment.StorageKey)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve attachment content"})
-		return
-	}
-	defer reader.Close()
-
-	if attachment.SHA256 != nil && *attachment.SHA256 != "" {
-		etag := fmt.Sprintf("\"%s\"", *attachment.SHA256)
-		c.Header("ETag", etag)
-		if c.GetHeader("If-None-Match") == etag {
-			c.Header("Cache-Control", "private, max-age=300, immutable")
-			c.Status(http.StatusNotModified)
-			return
-		}
-	}
-	c.Header("Cache-Control", "private, max-age=300, immutable")
-	c.Header("Content-Type", attachment.ContentType)
-	if attachment.Filename != nil && *attachment.Filename != "" {
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", *attachment.Filename))
-	}
-	if attachment.Size != nil {
-		c.Header("Content-Length", strconv.FormatInt(*attachment.Size, 10))
-	}
-	c.Status(http.StatusOK)
-	_, _ = io.Copy(c.Writer, reader)
 }
 
 func adminGetAttachmentDownloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
@@ -598,32 +645,36 @@ func adminGetAttachmentDownloadURL(c *gin.Context, store registrystore.MemorySto
 		return
 	}
 
-	attachment, err := store.AdminGetAttachment(c.Request.Context(), attachmentID)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	if attachStore == nil || attachment.StorageKey == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "attachment content not available"})
-		return
-	}
-
-	expires := 15 * time.Minute
-	if cfg != nil && cfg.AttachmentDownloadURLExpiresIn > 0 {
-		expires = cfg.AttachmentDownloadURLExpiresIn
-	}
-
-	if cfg == nil || cfg.S3DirectDownload {
-		if signed, err := attachStore.GetSignedURL(c.Request.Context(), *attachment.StorageKey, expires); err == nil {
-			c.JSON(http.StatusOK, gin.H{"url": signed.String(), "expiresIn": int(expires.Seconds())})
-			return
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		attachment, err := store.AdminGetAttachment(ctx, attachmentID)
+		if err != nil {
+			return err
 		}
-	}
+		if attachStore == nil || attachment.StorageKey == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "attachment content not available"})
+			return nil
+		}
 
-	c.JSON(http.StatusOK, gin.H{
-		"url":       fmt.Sprintf("/v1/admin/attachments/%s/content", attachment.ID),
-		"expiresIn": int(expires.Seconds()),
-	})
+		expires := 15 * time.Minute
+		if cfg != nil && cfg.AttachmentDownloadURLExpiresIn > 0 {
+			expires = cfg.AttachmentDownloadURLExpiresIn
+		}
+
+		if cfg == nil || cfg.S3DirectDownload {
+			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, expires); err == nil {
+				c.JSON(http.StatusOK, gin.H{"url": signed.String(), "expiresIn": int(expires.Seconds())})
+				return nil
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"url":       fmt.Sprintf("/v1/admin/attachments/%s/content", attachment.ID),
+			"expiresIn": int(expires.Seconds()),
+		})
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
 }
 
 func adminEvict(c *gin.Context, store registrystore.MemoryStore) {
@@ -658,74 +709,75 @@ func adminEvict(c *gin.Context, store registrystore.MemoryStore) {
 	// Check if SSE is requested
 	asyncRequested := strings.EqualFold(c.Query("async"), "true")
 	acceptsSSE := strings.Contains(strings.ToLower(c.GetHeader("Accept")), "text/event-stream")
-	if asyncRequested || acceptsSSE {
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Writer.Header().Set("Cache-Control", "no-cache")
-		c.Writer.Header().Set("Connection", "keep-alive")
-		c.Writer.Flush()
-
-		total, err := store.CountEvictableGroups(c.Request.Context(), cutoff)
-		if err != nil {
-			fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		if asyncRequested || acceptsSSE {
+			c.Writer.Header().Set("Content-Type", "text/event-stream")
+			c.Writer.Header().Set("Cache-Control", "no-cache")
+			c.Writer.Header().Set("Connection", "keep-alive")
 			c.Writer.Flush()
-			return
-		}
 
-		if total == 0 {
-			fmt.Fprintf(c.Writer, "event: progress\ndata: {\"progress\":100}\n\n")
-			c.Writer.Flush()
-			return
-		}
-
-		batchSize := 1000
-		evicted := int64(0)
-		for {
-			ids, err := store.FindEvictableGroupIDs(c.Request.Context(), cutoff, batchSize)
+			total, err := store.CountEvictableGroups(ctx, cutoff)
 			if err != nil {
 				fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
 				c.Writer.Flush()
-				return
+				return nil
+			}
+
+			if total == 0 {
+				fmt.Fprintf(c.Writer, "event: progress\ndata: {\"progress\":100}\n\n")
+				c.Writer.Flush()
+				return nil
+			}
+
+			batchSize := 1000
+			evicted := int64(0)
+			for {
+				ids, err := store.FindEvictableGroupIDs(ctx, cutoff, batchSize)
+				if err != nil {
+					fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
+					c.Writer.Flush()
+					return nil
+				}
+				if len(ids) == 0 {
+					break
+				}
+				createVectorDeleteTasks(ctx, store, ids)
+				if err := store.HardDeleteConversationGroups(ctx, ids); err != nil {
+					log.Error("Eviction batch failed", "err", err)
+				}
+				evicted += int64(len(ids))
+				progress := int(float64(evicted) / float64(total) * 100)
+				if progress > 100 {
+					progress = 100
+				}
+				fmt.Fprintf(c.Writer, "event: progress\ndata: {\"progress\":%d}\n\n", progress)
+				c.Writer.Flush()
+			}
+
+			fmt.Fprintf(c.Writer, "event: progress\ndata: {\"progress\":100}\n\n")
+			c.Writer.Flush()
+			return nil
+		}
+
+		batchSize := 1000
+		for {
+			ids, err := store.FindEvictableGroupIDs(ctx, cutoff, batchSize)
+			if err != nil {
+				return err
 			}
 			if len(ids) == 0 {
 				break
 			}
-			createVectorDeleteTasks(c.Request.Context(), store, ids)
-			if err := store.HardDeleteConversationGroups(c.Request.Context(), ids); err != nil {
-				log.Error("Eviction batch failed", "err", err)
+			createVectorDeleteTasks(ctx, store, ids)
+			if err := store.HardDeleteConversationGroups(ctx, ids); err != nil {
+				return err
 			}
-			evicted += int64(len(ids))
-			progress := int(float64(evicted) / float64(total) * 100)
-			if progress > 100 {
-				progress = 100
-			}
-			fmt.Fprintf(c.Writer, "event: progress\ndata: {\"progress\":%d}\n\n", progress)
-			c.Writer.Flush()
 		}
-
-		fmt.Fprintf(c.Writer, "event: progress\ndata: {\"progress\":100}\n\n")
-		c.Writer.Flush()
-		return
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
+		handleError(c, err)
 	}
-
-	// Non-streaming mode
-	batchSize := 1000
-	for {
-		ids, err := store.FindEvictableGroupIDs(c.Request.Context(), cutoff, batchSize)
-		if err != nil {
-			handleError(c, err)
-			return
-		}
-		if len(ids) == 0 {
-			break
-		}
-		// Create vector_store_delete tasks for each group before hard-deleting
-		createVectorDeleteTasks(c.Request.Context(), store, ids)
-		if err := store.HardDeleteConversationGroups(c.Request.Context(), ids); err != nil {
-			handleError(c, err)
-			return
-		}
-	}
-	c.Status(http.StatusNoContent)
 }
 
 func createVectorDeleteTasks(ctx context.Context, store registrystore.MemoryStore, groupIDs []uuid.UUID) {

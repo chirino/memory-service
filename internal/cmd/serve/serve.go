@@ -19,6 +19,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	// Import all plugins to trigger init() registration
+	_ "github.com/chirino/memory-service/internal/plugin/attach/filesystem"
 	_ "github.com/chirino/memory-service/internal/plugin/attach/mongostore"
 	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
 	_ "github.com/chirino/memory-service/internal/plugin/attach/s3store"
@@ -35,8 +36,10 @@ import (
 	_ "github.com/chirino/memory-service/internal/plugin/route/system"
 	_ "github.com/chirino/memory-service/internal/plugin/store/mongo"
 	_ "github.com/chirino/memory-service/internal/plugin/store/postgres"
+	_ "github.com/chirino/memory-service/internal/plugin/store/sqlite"
 	_ "github.com/chirino/memory-service/internal/plugin/vector/pgvector"
 	_ "github.com/chirino/memory-service/internal/plugin/vector/qdrant"
+	_ "github.com/chirino/memory-service/internal/plugin/vector/sqlitevec"
 )
 
 // Command returns the serve sub-command.
@@ -74,6 +77,7 @@ func Command() *cli.Command {
 			cfg.Listener.ReadHeaderTimeout = time.Duration(readHeaderTimeoutSecs) * time.Second
 			cfg.ManagementListener.ReadHeaderTimeout = cfg.Listener.ReadHeaderTimeout
 			cfg.ManagementListenerEnabled = cmd.IsSet("management-port")
+			cfg.AttachTypeExplicit = cmd.IsSet("attachments-kind")
 			return run(config.WithContext(ctx, &cfg), cfg)
 		},
 	}
@@ -273,6 +277,13 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int) []cli.Flag {
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET"),
 			Destination: &cfg.S3Bucket,
 			Usage:       "S3 bucket for attachments",
+		},
+		&cli.StringFlag{
+			Name:        "attachments-fs-dir",
+			Category:    "Attachment Storage:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_FS_DIR"),
+			Destination: &cfg.AttachFSDir,
+			Usage:       "Filesystem directory for local attachment storage",
 		},
 		&cli.BoolFlag{
 			Name:        "attachments-s3-use-path-style",

@@ -23,6 +23,16 @@ func observe(op string, start time.Time) {
 	security.StoreLatency.WithLabelValues(op).Observe(time.Since(start).Seconds())
 }
 
+func (m *metricsStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
+	defer observe("in_read_tx", time.Now())
+	return m.inner.InReadTx(ctx, fn)
+}
+
+func (m *metricsStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
+	defer observe("in_write_tx", time.Now())
+	return m.inner.InWriteTx(ctx, fn)
+}
+
 func (m *metricsStore) CreateConversation(ctx context.Context, userID string, title string, metadata map[string]interface{}, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*store.ConversationDetail, error) {
 	defer observe("create_conversation", time.Now())
 	return m.inner.CreateConversation(ctx, userID, title, metadata, forkedAtConversationID, forkedAtEntryID)

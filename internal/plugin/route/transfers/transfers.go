@@ -1,10 +1,12 @@
 package transfers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/gin-gonic/gin"
@@ -63,12 +65,16 @@ func listTransfers(c *gin.Context, store registrystore.MemoryStore) {
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 
-	transfers, cursor, err := store.ListPendingTransfers(c.Request.Context(), userID, role, afterCursor, limit)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		transfers, cursor, err := store.ListPendingTransfers(ctx, userID, role, afterCursor, limit)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": transfers, "afterCursor": cursor})
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": transfers, "afterCursor": cursor})
 }
 
 func createTransfer(c *gin.Context, store registrystore.MemoryStore) {
@@ -87,12 +93,16 @@ func createTransfer(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	transfer, err := store.CreateOwnershipTransfer(c.Request.Context(), userID, convID, req.NewOwnerUserId)
-	if err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		transfer, err := store.CreateOwnershipTransfer(ctx, userID, convID, req.NewOwnerUserId)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusCreated, transfer)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusCreated, transfer)
 }
 
 func getTransfer(c *gin.Context, store registrystore.MemoryStore) {
@@ -103,12 +113,16 @@ func getTransfer(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	transfer, err := store.GetTransfer(c.Request.Context(), userID, transferID)
-	if err != nil {
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		transfer, err := store.GetTransfer(ctx, userID, transferID)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, transfer)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.JSON(http.StatusOK, transfer)
 }
 
 func deleteTransfer(c *gin.Context, store registrystore.MemoryStore) {
@@ -119,11 +133,15 @@ func deleteTransfer(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	if err := store.DeleteTransfer(c.Request.Context(), userID, transferID); err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		if err := store.DeleteTransfer(ctx, userID, transferID); err != nil {
+			return err
+		}
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.Status(http.StatusNoContent)
 }
 
 func acceptTransfer(c *gin.Context, store registrystore.MemoryStore) {
@@ -134,11 +152,15 @@ func acceptTransfer(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	if err := store.AcceptTransfer(c.Request.Context(), userID, transferID); err != nil {
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		if err := store.AcceptTransfer(ctx, userID, transferID); err != nil {
+			return err
+		}
+		c.Status(http.StatusNoContent)
+		return nil
+	}); err != nil {
 		handleError(c, err)
-		return
 	}
-	c.Status(http.StatusNoContent)
 }
 
 func handleError(c *gin.Context, err error) {

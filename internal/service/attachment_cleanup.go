@@ -43,10 +43,16 @@ func (s *AttachmentCleanupService) Start(ctx context.Context) {
 func (s *AttachmentCleanupService) cleanupOnce(ctx context.Context) {
 	var afterCursor *string
 	for {
-		attachments, cursor, err := s.store.AdminListAttachments(ctx, registrystore.AdminAttachmentQuery{
-			Status:      "expired",
-			Limit:       200,
-			AfterCursor: afterCursor,
+		var attachments []registrystore.AdminAttachment
+		var cursor *string
+		err := s.store.InReadTx(ctx, func(readCtx context.Context) error {
+			var err error
+			attachments, cursor, err = s.store.AdminListAttachments(readCtx, registrystore.AdminAttachmentQuery{
+				Status:      "expired",
+				Limit:       200,
+				AfterCursor: afterCursor,
+			})
+			return err
 		})
 		if err != nil {
 			log.Error("Attachment cleanup list failed", "err", err)
@@ -57,7 +63,9 @@ func (s *AttachmentCleanupService) cleanupOnce(ctx context.Context) {
 			if attachment.EntryID != nil {
 				continue
 			}
-			if err := s.store.AdminDeleteAttachment(ctx, attachment.ID); err != nil {
+			if err := s.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+				return s.store.AdminDeleteAttachment(writeCtx, attachment.ID)
+			}); err != nil {
 				log.Error("Attachment cleanup delete failed", "attachmentId", attachment.ID.String(), "err", err)
 				continue
 			}
