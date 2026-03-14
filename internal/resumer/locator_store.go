@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chirino/memory-service/internal/config"
@@ -29,18 +30,20 @@ func NewLocatorStore(ctx context.Context, cfg *config.Config) (LocatorStore, err
 	switch strings.ToLower(strings.TrimSpace(cfg.CacheType)) {
 	case "", "none":
 		return noopLocatorStore{}, nil
+	case "local":
+		return newLocalLocatorStore(), nil
 	case "redis":
 		if strings.TrimSpace(cfg.RedisURL) == "" {
-			return nil, fmt.Errorf("response resumer: redis cache enabled but MEMORY_SERVICE_REDIS_URL is not set")
+			return nil, fmt.Errorf("response recording: redis cache enabled but MEMORY_SERVICE_REDIS_URL is not set")
 		}
 		opts, err := goredis.ParseURL(cfg.RedisURL)
 		if err != nil {
-			return nil, fmt.Errorf("response resumer: invalid redis url: %w", err)
+			return nil, fmt.Errorf("response recording: invalid redis url: %w", err)
 		}
 		return newRedisLocatorStore(ctx, opts)
 	case "infinispan":
 		if strings.TrimSpace(cfg.InfinispanHost) == "" {
-			return nil, fmt.Errorf("response resumer: infinispan cache enabled but MEMORY_SERVICE_INFINISPAN_HOST is not set")
+			return nil, fmt.Errorf("response recording: infinispan cache enabled but MEMORY_SERVICE_INFINISPAN_HOST is not set")
 		}
 		timeout := cfg.InfinispanStartupTimeout
 		if timeout <= 0 {
@@ -56,7 +59,7 @@ func NewLocatorStore(ctx context.Context, cfg *config.Config) (LocatorStore, err
 		}
 		return newRedisLocatorStore(timeoutCtx, opts)
 	default:
-		return nil, fmt.Errorf("response resumer: unsupported cache type %q", cfg.CacheType)
+		return nil, fmt.Errorf("response recording: unsupported cache type %q", cfg.CacheType)
 	}
 }
 
@@ -64,10 +67,26 @@ type redisLocatorStore struct {
 	client *goredis.Client
 }
 
+type localLocatorStore struct {
+	mu    sync.RWMutex
+	items map[string]localLocatorEntry
+}
+
+type localLocatorEntry struct {
+	locator   Locator
+	expiresAt time.Time
+}
+
+func newLocalLocatorStore() *localLocatorStore {
+	return &localLocatorStore{
+		items: map[string]localLocatorEntry{},
+	}
+}
+
 func newRedisLocatorStore(ctx context.Context, opts *goredis.Options) (*redisLocatorStore, error) {
 	client := goredis.NewClient(opts)
 	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("response resumer: cache ping failed: %w", err)
+		return nil, fmt.Errorf("response recording: cache ping failed: %w", err)
 	}
 	return &redisLocatorStore{client: client}, nil
 }
@@ -110,6 +129,61 @@ func (s *redisLocatorStore) Exists(ctx context.Context, conversationID string) (
 	return exists > 0, nil
 }
 
+func (s *localLocatorStore) Available() bool {
+	return true
+}
+
+func (s *localLocatorStore) Get(_ context.Context, conversationID string) (*Locator, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.getLocked(conversationID, time.Now())
+	if !ok {
+		return nil, nil
+	}
+	locator := entry.locator
+	return &locator, nil
+}
+
+func (s *localLocatorStore) Upsert(_ context.Context, conversationID string, locator Locator, ttl time.Duration) error {
+	if ttl <= 0 {
+		ttl = 10 * time.Second
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.items[normalizeConversationID(conversationID)] = localLocatorEntry{
+		locator:   locator,
+		expiresAt: time.Now().Add(ttl),
+	}
+	return nil
+}
+
+func (s *localLocatorStore) Remove(_ context.Context, conversationID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.items, normalizeConversationID(conversationID))
+	return nil
+}
+
+func (s *localLocatorStore) Exists(_ context.Context, conversationID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.getLocked(conversationID, time.Now())
+	return ok, nil
+}
+
+func (s *localLocatorStore) getLocked(conversationID string, now time.Time) (localLocatorEntry, bool) {
+	key := normalizeConversationID(conversationID)
+	entry, ok := s.items[key]
+	if !ok {
+		return localLocatorEntry{}, false
+	}
+	if !entry.expiresAt.IsZero() && now.After(entry.expiresAt) {
+		delete(s.items, key)
+		return localLocatorEntry{}, false
+	}
+	return entry, true
+}
+
 type noopLocatorStore struct{}
 
 func (noopLocatorStore) Available() bool { return false }
@@ -132,4 +206,8 @@ func (noopLocatorStore) Exists(_ context.Context, _ string) (bool, error) {
 
 func locatorKey(conversationID string) string {
 	return locatorKeyPrefix + strings.TrimSpace(conversationID)
+}
+
+func normalizeConversationID(conversationID string) string {
+	return strings.TrimSpace(conversationID)
 }

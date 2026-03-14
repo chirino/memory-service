@@ -315,7 +315,7 @@ func cancelResponse(c *gin.Context, store registrystore.MemoryStore, resumer *in
 			return nil
 		}
 		if !resumerEnabled {
-			c.JSON(http.StatusConflict, gin.H{"error": "response resumer disabled"})
+			c.JSON(http.StatusConflict, gin.H{"error": "response recording disabled"})
 			return nil
 		}
 		if _, err := resumer.RequestCancelWithAddress(ctx, convID.String(), ""); err != nil {

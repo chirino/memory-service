@@ -62,7 +62,7 @@ type Config struct {
 	DatastoreType string // "postgres" or "mongo"
 
 	// Cache backend type
-	CacheType string // "redis", "infinispan", or "none"
+	CacheType string // "local", "redis", "infinispan", or "none"
 
 	// Optional named Redis client (Java parity surface).
 	CacheRedisClient string
@@ -74,6 +74,10 @@ type Config struct {
 
 	// Memory entries cache TTL.
 	CacheEpochTTL time.Duration
+	// Process-local cache options.
+	CacheLocalMaxBytes    int64
+	CacheLocalNumCounters int64
+	CacheLocalBufferItems int64
 
 	// Attachment store type
 	AttachType string // "db", "postgres", "mongo", "s3", or "fs"
@@ -233,6 +237,9 @@ func DefaultConfig() Config {
 		InfinispanMemoryEntriesCacheName:      "memory-entries",
 		InfinispanResponseRecordingsCacheName: "response-recordings",
 		CacheEpochTTL:                         10 * time.Minute,
+		CacheLocalMaxBytes:                    64 * 1024 * 1024,
+		CacheLocalNumCounters:                 100000,
+		CacheLocalBufferItems:                 64,
 		AttachType:                            "db",
 		AttachmentMaxSize:                     10 * 1024 * 1024, // 10 MB
 		AttachmentDefaultExpiresIn:            time.Hour,
