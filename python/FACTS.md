@@ -42,6 +42,10 @@
 
 **LangChain gRPC target default**: `MemoryServiceHistoryMiddleware` and `MemoryServiceResponseRecordingManager` derive default gRPC target from `MEMORY_SERVICE_URL` (`host:port`, with `80/443` fallback), matching the Go single-port server topology; `MEMORY_SERVICE_GRPC_PORT`/`MEMORY_SERVICE_GRPC_TARGET` still override.
 
+**Python client transport split**: `python/langchain` does not ship a generated REST client; REST calls are hand-written `httpx.Client`/`AsyncClient` wrappers keyed off `MEMORY_SERVICE_URL`, while gRPC uses generated stubs plus explicit `grpc.insecure_channel(target)` construction.
+
+**UDS config knob**: `MEMORY_SERVICE_UNIX_SOCKET` now drives both Python REST and gRPC transport setup. LangChain/LangGraph wrappers build `httpx` UDS transports for REST and derive `unix:///absolute/path.sock` for gRPC unless an explicit gRPC target override is set.
+
 **Recorder stream deadline gotcha**: Do not set per-call gRPC deadlines on `ResponseRecorderService.Record(stream)`; long generations can outlive the deadline and terminate the stream without a final `complete`, leaving recordings marked in-progress.
 
 **gRPC fork-warning mitigation**: `GrpcResponseRecorder` now starts the gRPC `Record` stream lazily on first emitted token instead of constructor time; this avoids noisy `fork_posix.cc` warnings during model setup in some local runtimes.

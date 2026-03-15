@@ -22,6 +22,11 @@ from langgraph.store.base import (
 )
 
 from .indexing import IndexBuilder, IndexRedactor, build_index_payload
+from .transport import (
+    httpx_async_client_kwargs,
+    resolve_rest_base_url,
+    resolve_unix_socket,
+)
 
 
 class AsyncMemoryServiceStore(BaseStore):
@@ -36,12 +41,14 @@ class AsyncMemoryServiceStore(BaseStore):
     def __init__(
         self,
         base_url: str | None = None,
+        unix_socket: str | None = None,
         token: str | None = None,
         timeout: float = 10.0,
         index_builder: IndexBuilder | None = None,
         index_redactor: IndexRedactor | None = None,
     ) -> None:
-        self._base_url = (base_url or os.environ.get("MEMORY_SERVICE_URL", "http://localhost:8082")).rstrip("/")
+        self._base_url = resolve_rest_base_url(base_url, unix_socket)
+        self._unix_socket = resolve_unix_socket(unix_socket)
         self._token = token or os.environ.get("MEMORY_SERVICE_TOKEN", "")
         if index_builder is not None and index_redactor is not None:
             raise ValueError("index_builder and index_redactor are mutually exclusive")
@@ -49,9 +56,12 @@ class AsyncMemoryServiceStore(BaseStore):
             logger.debug("memory-service request: %s %s", request.method, request.url)
 
         self._client = httpx.AsyncClient(
-            base_url=self._base_url,
+            **httpx_async_client_kwargs(
+                base_url=self._base_url,
+                unix_socket=self._unix_socket,
+                timeout=timeout,
+            ),
             headers={"Authorization": f"Bearer {self._token}"} if self._token else {},
-            timeout=timeout,
             event_hooks={"request": [_log_request]},
         )
         if index_builder is not None:

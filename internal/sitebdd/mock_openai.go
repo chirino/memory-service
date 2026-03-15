@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // capturedCall holds one recorded OpenAI chat completion request/response pair.
@@ -20,6 +21,18 @@ type capturedCall struct {
 	StatusCode int
 	Headers    map[string]string
 	Body       string
+}
+
+type chunkedDribbleDelay struct {
+	NumberOfChunks int `json:"numberOfChunks"`
+	TotalDuration  int `json:"totalDuration"`
+}
+
+type fixtureResponse struct {
+	Body                string
+	Headers             map[string]string
+	Status              int
+	ChunkedDribbleDelay *chunkedDribbleDelay `json:"chunkedDribbleDelay"`
 }
 
 // mockScenarioState is per-scenario state inside the shared mock server.
@@ -229,21 +242,23 @@ func (m *MockServer) handleChatCompletions(w http.ResponseWriter, r *http.Reques
 		checkpointID := state.checkpointID
 		state.mu.Unlock()
 
-		if body, headers, status, ok := m.loadFixture(checkpointID, idx); ok {
+		if fixture, ok := m.loadFixture(checkpointID, idx); ok {
 			// Use fixture headers if present; default to application/json.
-			ct := headers["Content-Type"]
+			ct := fixture.Headers["Content-Type"]
 			if ct == "" {
 				ct = "application/json"
 			}
 			w.Header().Set("Content-Type", ct)
-			for k, v := range headers {
+			for k, v := range fixture.Headers {
 				if strings.EqualFold(k, "Content-Type") {
 					continue // already set above
 				}
 				w.Header().Set(k, v)
 			}
-			w.WriteHeader(status)
-			_, _ = w.Write([]byte(body))
+			w.WriteHeader(fixture.Status)
+			if err := writeFixtureBody(w, fixture); err != nil {
+				log.Printf("[openai-mock] fixture write failed: checkpoint=%q fixtureIndex=%d error=%v", checkpointID, idx+1, err)
+			}
 			return
 		}
 		m.fatalMockFailure(
@@ -263,12 +278,11 @@ func (m *MockServer) handleChatCompletions(w http.ResponseWriter, r *http.Reques
 }
 
 // loadFixture reads NNN.json for the given 0-based index from the fixture directory.
-// Returns body, headers, status, and whether the fixture was found.
-func (m *MockServer) loadFixture(checkpointID string, idx int) (body string, headers map[string]string, status int, ok bool) {
+func (m *MockServer) loadFixture(checkpointID string, idx int) (fixtureResponse, bool) {
 	dir := m.fixtureDir(checkpointID)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", nil, 0, false
+		return fixtureResponse{}, false
 	}
 
 	var files []string
@@ -280,30 +294,108 @@ func (m *MockServer) loadFixture(checkpointID string, idx int) (body string, hea
 	sort.Strings(files)
 
 	if idx >= len(files) {
-		return "", nil, 0, false
+		return fixtureResponse{}, false
 	}
 
 	data, err := os.ReadFile(filepath.Join(dir, files[idx]))
 	if err != nil {
-		return "", nil, 0, false
+		return fixtureResponse{}, false
 	}
 
 	var stub struct {
-		Response struct {
-			Status  int               `json:"status"`
-			Headers map[string]string `json:"headers"`
-			Body    string            `json:"body"`
-		} `json:"response"`
+		Response fixtureResponse `json:"response"`
 	}
 	if err := json.Unmarshal(data, &stub); err != nil {
-		return "", nil, 0, false
+		return fixtureResponse{}, false
 	}
 
-	s := stub.Response.Status
-	if s == 0 {
-		s = 200
+	if stub.Response.Status == 0 {
+		stub.Response.Status = 200
 	}
-	return stub.Response.Body, stub.Response.Headers, s, true
+	return stub.Response, true
+}
+
+func writeFixtureBody(w http.ResponseWriter, fixture fixtureResponse) error {
+	dribble := fixture.ChunkedDribbleDelay
+	if dribble == nil || dribble.NumberOfChunks <= 1 || dribble.TotalDuration <= 0 {
+		_, err := io.WriteString(w, fixture.Body)
+		return err
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		_, err := io.WriteString(w, fixture.Body)
+		return err
+	}
+
+	body := []byte(fixture.Body)
+	if len(body) == 0 {
+		return nil
+	}
+
+	if strings.Contains(strings.ToLower(fixture.Headers["Content-Type"]), "text/event-stream") {
+		return writeFixtureSSEBody(w, fixture.Body, dribble.TotalDuration, flusher)
+	}
+
+	chunkCount := dribble.NumberOfChunks
+	if chunkCount > len(body) {
+		chunkCount = len(body)
+	}
+	chunkSize := (len(body) + chunkCount - 1) / chunkCount
+	interval := time.Duration(dribble.TotalDuration) * time.Millisecond
+	if chunkCount > 1 {
+		interval /= time.Duration(chunkCount - 1)
+	}
+
+	for offset := 0; offset < len(body); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(body) {
+			end = len(body)
+		}
+		if _, err := w.Write(body[offset:end]); err != nil {
+			return err
+		}
+		flusher.Flush()
+		if end < len(body) && interval > 0 {
+			time.Sleep(interval)
+		}
+	}
+	return nil
+}
+
+func writeFixtureSSEBody(w http.ResponseWriter, body string, totalDurationMs int, flusher http.Flusher) error {
+	events := splitSSEEvents(body)
+	if len(events) == 0 {
+		_, err := io.WriteString(w, body)
+		return err
+	}
+
+	interval := time.Duration(totalDurationMs) * time.Millisecond
+	if len(events) > 1 {
+		interval /= time.Duration(len(events) - 1)
+	}
+
+	for i, event := range events {
+		if _, err := io.WriteString(w, event); err != nil {
+			return err
+		}
+		flusher.Flush()
+		if i < len(events)-1 && interval > 0 {
+			time.Sleep(interval)
+		}
+	}
+	return nil
+}
+
+func splitSSEEvents(body string) []string {
+	var events []string
+	for _, event := range strings.Split(body, "\n\n") {
+		if event == "" {
+			continue
+		}
+		events = append(events, event+"\n\n")
+	}
+	return events
 }
 
 func (m *MockServer) fatalMockFailure(reason, context string, reqBody []byte) {

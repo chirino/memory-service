@@ -39,6 +39,9 @@ public class MemoryServiceClientAliasConfigSourceFactory implements ConfigSource
                     if ("api-key".equals(suffix)) {
                         continue;
                     }
+                    if ("url".equals(suffix) && value.getValue().startsWith("unix://")) {
+                        continue;
+                    }
                     String targetName = TARGET_PREFIX + suffix;
                     props.put(targetName, value.getValue());
                 }

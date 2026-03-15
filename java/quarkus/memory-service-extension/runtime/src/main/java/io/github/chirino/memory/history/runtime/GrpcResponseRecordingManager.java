@@ -15,18 +15,26 @@ import io.github.chirino.memory.grpc.v1.RecordRequest;
 import io.github.chirino.memory.grpc.v1.RecordStatus;
 import io.github.chirino.memory.grpc.v1.ReplayRequest;
 import io.github.chirino.memory.grpc.v1.ReplayResponse;
+import io.github.chirino.memory.runtime.MemoryServiceClientUrl;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Metadata;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
+import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.nio.NioEventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.socket.nio.NioDomainSocketChannel;
+import io.grpc.netty.shaded.io.netty.util.concurrent.DefaultThreadFactory;
 import io.grpc.stub.MetadataUtils;
 import io.quarkus.grpc.GrpcClient;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.SecurityIdentityAssociation;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.subscription.MultiEmitter;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import java.net.UnixDomainSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +52,9 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
             Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> API_KEY_HEADER =
             Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER);
+    private static final EventLoopGroup UDS_EVENT_LOOP_GROUP =
+            new NioEventLoopGroup(
+                    1, new DefaultThreadFactory("memory-service-quarkus-grpc-uds", true));
 
     private static ByteString toByteString(String uuidStr) {
         if (uuidStr == null || uuidStr.isBlank()) {
@@ -75,13 +86,29 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
     @Inject ObjectMapper objectMapper;
 
     private final String configuredApiKey;
+    private final String configuredUnixSocket;
 
     private final String grpcTarget;
+    private final ManagedChannel unixSocketChannel;
+    private final MutinyResponseRecorderServiceGrpc.MutinyResponseRecorderServiceStub
+            unixSocketRecorderService;
 
     public GrpcResponseRecordingManager() {
         var config = ConfigProvider.getConfig();
         this.configuredApiKey =
                 config.getOptionalValue("memory-service.client.api-key", String.class).orElse(null);
+        MemoryServiceClientUrl clientUrl =
+                MemoryServiceClientUrl.parse(
+                        config.getOptionalValue("memory-service.client.url", String.class)
+                                .orElse(null));
+        this.configuredUnixSocket = clientUrl.unixSocketPath();
+        if (clientUrl.usesUnixSocket()) {
+            this.grpcTarget = clientUrl.configuredUrl();
+            this.unixSocketChannel = buildUnixSocketChannel(configuredUnixSocket);
+            this.unixSocketRecorderService =
+                    MutinyResponseRecorderServiceGrpc.newMutinyStub(unixSocketChannel);
+            return;
+        }
         String host =
                 config.getOptionalValue("quarkus.grpc.clients.responserecorder.host", String.class)
                         .orElse("localhost");
@@ -89,6 +116,8 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
                 config.getOptionalValue("quarkus.grpc.clients.responserecorder.port", String.class)
                         .orElse("9000");
         this.grpcTarget = host + ":" + port;
+        this.unixSocketChannel = null;
+        this.unixSocketRecorderService = null;
     }
 
     @Override
@@ -221,11 +250,12 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
             String bearerToken) {
         Metadata metadata = buildMetadata(bearerToken);
         Set<String> keys = metadata.keys();
+        MutinyResponseRecorderServiceGrpc.MutinyResponseRecorderServiceStub baseStub =
+                unixSocketRecorderService != null ? unixSocketRecorderService : recorderService;
         if (keys == null || keys.isEmpty()) {
-            return recorderService;
+            return baseStub;
         }
-        return recorderService.withInterceptors(
-                MetadataUtils.newAttachHeadersInterceptor(metadata));
+        return baseStub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
     }
 
     private Metadata buildMetadata(String bearerToken) {
@@ -397,6 +427,26 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
         void close() {
             channel.shutdown();
         }
+    }
+
+    @PreDestroy
+    void closeUnixSocketChannel() {
+        if (unixSocketChannel != null) {
+            unixSocketChannel.shutdown();
+        }
+        UDS_EVENT_LOOP_GROUP.shutdownGracefully();
+    }
+
+    private static ManagedChannel buildUnixSocketChannel(String unixSocket) {
+        if (!unixSocket.startsWith("/")) {
+            throw new IllegalArgumentException(
+                    "memory-service.client.url must use unix:///absolute/path syntax");
+        }
+        return NettyChannelBuilder.forAddress(UnixDomainSocketAddress.of(unixSocket))
+                .channelType(NioDomainSocketChannel.class, UnixDomainSocketAddress.class)
+                .eventLoopGroup(UDS_EVENT_LOOP_GROUP)
+                .usePlaintext()
+                .build();
     }
 
     private SecurityIdentity getSecurityIdentity() {

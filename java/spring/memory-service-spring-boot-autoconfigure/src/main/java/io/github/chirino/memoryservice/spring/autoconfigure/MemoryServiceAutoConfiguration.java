@@ -1,6 +1,7 @@
 package io.github.chirino.memoryservice.spring.autoconfigure;
 
 import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
+import io.github.chirino.memoryservice.client.MemoryServiceEndpoint;
 import io.github.chirino.memoryservice.client.MemoryServiceProxy;
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
 import io.github.chirino.memoryservice.client.api.SearchApi;
@@ -47,7 +48,9 @@ public class MemoryServiceAutoConfiguration {
 
         WebClient.Builder builder =
                 webClientBuilderProvider.getIfAvailable(ApiClient::buildWebClientBuilder);
-        ApiClient apiClient = (builder != null) ? new ApiClient(builder.build()) : new ApiClient();
+        if (builder == null) {
+            builder = ApiClient.buildWebClientBuilder();
+        }
 
         MemoryServiceConnectionDetails connectionDetails =
                 connectionDetailsProvider.getIfAvailable();
@@ -61,17 +64,20 @@ public class MemoryServiceAutoConfiguration {
                     "MemoryService connection details not provided; falling back to properties");
         }
 
-        String basePath =
+        String url =
                 Optional.ofNullable(connectionDetails)
                         .map(MemoryServiceConnectionDetails::getBaseUri)
                         .map(URI::toString)
                         .orElseGet(
                                 () ->
-                                        Optional.ofNullable(properties.getBaseUrl())
+                                        Optional.ofNullable(properties.getUrl())
                                                 .filter(StringUtils::hasText)
-                                                .orElseGet(apiClient::getBasePath));
+                                                .orElse("http://localhost:8080"));
 
-        apiClient.setBasePath(basePath);
+        properties.setUrl(url);
+        ApiClient apiClient =
+                io.github.chirino.memoryservice.client.MemoryServiceClients.createApiClient(
+                        properties, builder, null);
         configureApiKey(properties, connectionDetails, apiClient);
         configureBearer(properties, apiClient);
         return apiClient;
@@ -144,17 +150,17 @@ public class MemoryServiceAutoConfiguration {
             }
             // Prefer connection details for base URL (overrides the default value)
             if (connectionDetails.getBaseUri() != null) {
-                properties.setBaseUrl(connectionDetails.getBaseUri().toString());
+                properties.setUrl(connectionDetails.getBaseUri().toString());
             }
             logger.info(
-                    "MemoryServiceProxy configured from connection details: baseUrl={},"
+                    "MemoryServiceProxy configured from connection details: url={},"
                             + " apiKeyPresent={}",
-                    properties.getBaseUrl(),
+                    properties.getUrl(),
                     StringUtils.hasText(properties.getApiKey()));
         } else {
             logger.info(
-                    "MemoryServiceProxy configured from properties: baseUrl={}, apiKeyPresent={}",
-                    properties.getBaseUrl(),
+                    "MemoryServiceProxy configured from properties: url={}, apiKeyPresent={}",
+                    properties.getUrl(),
                     StringUtils.hasText(properties.getApiKey()));
         }
 
@@ -174,8 +180,13 @@ public class MemoryServiceAutoConfiguration {
         if (connectionDetails != null && connectionDetails.getBaseUri() != null) {
             return connectionDetails.getBaseUri();
         }
-        if (StringUtils.hasText(properties.getBaseUrl())) {
-            return URI.create(properties.getBaseUrl());
+        if (StringUtils.hasText(properties.getUrl())) {
+            MemoryServiceEndpoint endpoint =
+                    io.github.chirino.memoryservice.client.MemoryServiceClients.resolveEndpoint(
+                            properties);
+            if (!endpoint.usesUnixSocket()) {
+                return endpoint.tcpUri();
+            }
         }
         return null;
     }
@@ -190,21 +201,42 @@ public class MemoryServiceAutoConfiguration {
 
         MemoryServiceConnectionDetails connectionDetails =
                 connectionDetailsProvider.getIfAvailable();
+        if (StringUtils.hasText(clientProperties.getApiKey())
+                && !grpcProperties.getHeaders().containsKey("X-API-Key")) {
+            grpcProperties.getHeaders().put("X-API-Key", clientProperties.getApiKey());
+        }
 
         // If gRPC is explicitly configured, use those settings
         if (grpcProperties.isEnabled()) {
+            MemoryServiceEndpoint endpoint =
+                    io.github.chirino.memoryservice.client.MemoryServiceClients.resolveEndpoint(
+                            clientProperties);
+            if (!StringUtils.hasText(grpcProperties.getUnixSocket()) && endpoint.usesUnixSocket()) {
+                grpcProperties.setUnixSocket(endpoint.unixSocketPath());
+            }
             logger.info(
-                    "Creating gRPC ManagedChannel (explicit config): target={}, plaintext={}",
+                    "Creating gRPC ManagedChannel (explicit config): target={}, unixSocket={},"
+                            + " plaintext={}",
                     grpcProperties.getTarget(),
+                    grpcProperties.getUnixSocket(),
                     grpcProperties.isPlaintext());
             return MemoryServiceGrpcClients.channelBuilder(grpcProperties).build();
         }
 
-        // Otherwise, try to auto-derive from REST client baseUrl or connection details
+        MemoryServiceEndpoint endpoint =
+                io.github.chirino.memoryservice.client.MemoryServiceClients.resolveEndpoint(
+                        clientProperties);
+        if (endpoint.usesUnixSocket()) {
+            grpcProperties.setUnixSocket(endpoint.unixSocketPath());
+            grpcProperties.setPlaintext(true);
+            logger.info("Auto-configuring gRPC from url={}", endpoint.configuredUrl());
+            return MemoryServiceGrpcClients.channelBuilder(grpcProperties).build();
+        }
+
+        // Otherwise, try to auto-derive from REST client URL or connection details
         URI baseUri = resolveBaseUri(connectionDetails, clientProperties);
         if (baseUri == null) {
-            logger.info(
-                    "gRPC channel not created: no explicit gRPC config and no baseUrl available");
+            logger.info("gRPC channel not created: no explicit gRPC config and no URL available");
             return null;
         }
 

@@ -21,10 +21,13 @@ import (
 
 	// Import plugins so they register themselves via init()
 	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
+	_ "github.com/chirino/memory-service/internal/plugin/attach/filesystem"
+	_ "github.com/chirino/memory-service/internal/plugin/cache/local"
 	_ "github.com/chirino/memory-service/internal/plugin/cache/noop"
 	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
 	_ "github.com/chirino/memory-service/internal/plugin/route/system"
 	_ "github.com/chirino/memory-service/internal/plugin/store/postgres"
+	_ "github.com/chirino/memory-service/internal/plugin/store/sqlite"
 )
 
 func TestSiteDocs(t *testing.T) {
@@ -44,6 +47,7 @@ func TestSiteDocs(t *testing.T) {
 	// Load test scenarios
 	scenarios, err := loadScenarios(scenariosFile)
 	require.NoError(t, err, "load scenarios")
+	assignScenarioWaves(scenarios, siteScenarioConcurrency())
 
 	// Java checkpoint docs depend on local 999-SNAPSHOT artifacts. Install them
 	// once up front so parallel scenario builds can resolve dependencies reliably.
@@ -66,7 +70,7 @@ func TestSiteDocs(t *testing.T) {
 		return
 	}
 
-	globalScenarioWaveCoordinator.Reset(scheduledScenarios, siteScenarioConcurrency())
+	globalScenarioWaveCoordinator.Reset(scenarios, tagFilter)
 
 	t.Logf("Loaded %d scenario(s) from %s", len(scenarios), scenariosFile)
 
@@ -117,6 +121,35 @@ func TestSiteDocs(t *testing.T) {
 	memServiceURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
 	t.Logf("Memory service: %s", memServiceURL)
 
+	udsRoot := t.TempDir()
+	require.NoError(t, os.Chmod(udsRoot, 0o700), "secure uds temp dir")
+	udsSocketPath := filepath.Join(udsRoot, "memory-service.sock")
+	udsCfg := config.DefaultConfig()
+	udsCfg.Mode = config.ModeTesting
+	udsCfg.OIDCIssuer = mock.URL()
+	udsCfg.DBURL = "file:" + filepath.Join(udsRoot, "memory-service.db")
+	udsCfg.DatastoreType = "sqlite"
+	udsCfg.CacheType = "local"
+	udsCfg.AttachType = "fs"
+	udsCfg.AttachFSDir = filepath.Join(udsRoot, "attachments")
+	udsCfg.VectorType = "sqlite"
+	udsCfg.EmbedType = "none"
+	udsCfg.SearchSemanticEnabled = false
+	udsCfg.SearchFulltextEnabled = true
+	udsCfg.APIKeys = map[string]string{
+		"agent-api-key-1": "checkpoint-agent",
+	}
+	udsCfg.EncryptionKey = cfg.EncryptionKey
+	udsCfg.Listener.Port = 0
+	udsCfg.Listener.UnixSocket = udsSocketPath
+	udsCfg.Listener.EnableTLS = false
+
+	udsCtx := config.WithContext(context.Background(), &udsCfg)
+	udsSrv, err := serve.StartServer(udsCtx, &udsCfg)
+	require.NoError(t, err, "start uds memory service")
+	t.Cleanup(func() { _ = udsSrv.Shutdown(context.Background()) })
+	t.Logf("UDS memory service: %s", udsSocketPath)
+
 	// Build godog options
 	opts := godog.Options{
 		Format:      "progress",
@@ -165,6 +198,7 @@ func TestSiteDocs(t *testing.T) {
 				ContextVars:   map[string]any{},
 				ProjectRoot:   projectRoot,
 				MemServiceURL: memServiceURL,
+				MemServiceUnixSocket: udsSocketPath,
 				Mock:          mock,
 				t:             t,
 			}

@@ -1,0 +1,117 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Python LangGraph Over Unix Domain Sockets
+description: Configure the LangGraph package to use a Memory Service Unix domain socket with configuration only.
+---
+
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+
+This guide continues from [Python LangGraph Response Recording and Resumption](/docs/python-langgraph/response-resumption/). The checkpoint app stays the same; only the Memory Service connection changes.
+
+## Local Memory Service
+
+```bash
+memory-service serve \
+  --db-kind=sqlite \
+  --db-url=file:$HOME/.local/share/memory-service/memory.db \
+  --vector-kind=sqlite \
+  --cache-kind=local \
+  --unix-socket=$HOME/.local/run/memory-service/api.sock
+```
+
+Those options keep the LangGraph example self-contained on one machine: SQLite handles durable storage and vector indexing, `cache-kind=local` removes the need for Redis or another cache service, and the socket path stays under the user's home directory instead of `/tmp` so local access stays tied more closely to normal account permissions.
+
+## Agent Configuration
+
+No LangGraph source file needs a transport edit. The checkpoint already constructs the Memory Service helpers with their default configuration:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/05-response-resumption/app.py"
+  lang="python"
+  lines="97-123"
+/>
+
+Set the socket path in the file that supplies environment variables for the running process. If you keep those in a `.env` file next to the app, this `.env.example` snippet shows the exact value to add:
+
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/05-response-resumption/docs-snippets/.env.example"
+  lang="bash"
+/>
+
+The LangGraph store, history middleware, proxy, and response recorder all pick that up automatically.
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/05-response-resumption">
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Start a streaming response, but disconnect before it finishes:
+
+<CurlTest steps={`
+Then the response status should be 200
+`} exampleOutput={``}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/6a4df6af-70d0-4a7c-823d-8cd4f150da84 \
+  --max-time 0.5 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Write a short story about a cat."
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "6a4df6af-70d0-4a7c-823d-8cd4f150da84"
+`} exampleOutputLang="json" exampleOutput={`["6a4df6af-70d0-4a7c-823d-8cd4f150da84"]`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '["6a4df6af-70d0-4a7c-823d-8cd4f150da84"]'
+```
+
+</CurlTest>
+
+Resume the interrupted response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "PartialResponse"
+`} exampleOutput={`data: {"eventType":"PartialResponse","chunk":"Once "}`}>
+
+```bash
+curl -NsSfX GET http://localhost:9090/v1/conversations/6a4df6af-70d0-4a7c-823d-8cd4f150da84/resume \
+  --max-time 0.5 \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "6a4df6af-70d0-4a7c-823d-8cd4f150da84"
+`} exampleOutputLang="json" exampleOutput={`{"id":"6a4df6af-70d0-4a7c-823d-8cd4f150da84"}`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/6a4df6af-70d0-4a7c-823d-8cd4f150da84 \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+</TestScenario>
