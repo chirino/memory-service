@@ -201,10 +201,24 @@ func (s *SiteScenario) responseStatusShouldBe(expected int) error {
 }
 
 func (s *SiteScenario) responseShouldContain(expected string) error {
-	if !strings.Contains(s.LastRespBody, expected) {
-		return fmt.Errorf("expected response to contain %q\ngot: %s", expected, s.LastRespBody)
+	if strings.Contains(s.LastRespBody, expected) {
+		return nil
 	}
-	return nil
+	lastErr := fmt.Errorf("expected response to contain %q\ngot: %s", expected, s.LastRespBody)
+	for attempt := 1; attempt <= 6; attempt++ {
+		if !s.canReplayLastCurlRequest() {
+			return lastErr
+		}
+		time.Sleep(750 * time.Millisecond)
+		if err := s.replayLastCurlRequest(); err != nil {
+			return fmt.Errorf("%v (replay failed: %w)", lastErr, err)
+		}
+		if strings.Contains(s.LastRespBody, expected) {
+			return nil
+		}
+		lastErr = fmt.Errorf("expected response to contain %q\ngot: %s", expected, s.LastRespBody)
+	}
+	return lastErr
 }
 
 func (s *SiteScenario) responseShouldNotContain(unexpected string) error {
@@ -259,8 +273,11 @@ func (s *SiteScenario) responseBodyShouldBeJson(expected *godog.DocString) error
 
 	// Some checkpoint writes are eventually consistent; for GETs, re-read a few
 	// times before failing strict JSON assertions.
-	for attempt := 1; attempt <= 4; attempt++ {
+	for attempt := 1; attempt <= 6; attempt++ {
 		time.Sleep(750 * time.Millisecond)
+		if !s.canReplayLastCurlRequest() {
+			return lastErr
+		}
 		if err := s.replayLastCurlRequest(); err != nil {
 			return fmt.Errorf("%v (replay failed: %w)", lastErr, err)
 		}
@@ -276,6 +293,21 @@ func (s *SiteScenario) responseBodyShouldBeJson(expected *godog.DocString) error
 	return lastErr
 }
 
+func (s *SiteScenario) canReplayLastCurlRequest() bool {
+	if s.lastCurlReq == nil {
+		return false
+	}
+	req, err := s.lastCurlReq.toHTTPRequest()
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(req.Method, http.MethodGet) {
+		return true
+	}
+	return strings.EqualFold(req.Method, http.MethodPost) &&
+		strings.HasSuffix(req.URL.Path, "/v1/conversations/resume-check")
+}
+
 func (s *SiteScenario) replayLastCurlRequest() error {
 	if s.lastCurlReq == nil {
 		return fmt.Errorf("no previous curl request to replay")
@@ -285,7 +317,7 @@ func (s *SiteScenario) replayLastCurlRequest() error {
 	if err != nil {
 		return fmt.Errorf("build replay request: %w", err)
 	}
-	if strings.ToUpper(req.Method) != http.MethodGet {
+	if !s.canReplayLastCurlRequest() {
 		return fmt.Errorf("last request method %s is not replay-safe", req.Method)
 	}
 

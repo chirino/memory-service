@@ -17,6 +17,7 @@ type ScenarioData struct {
 	SourceFile  string        `json:"sourceFile"`
 	Description string        `json:"description,omitempty"`
 	Scenarios   []ScenarioCmd `json:"scenarios"`
+	WaveID      int           `json:"-"`
 }
 
 type ScenarioCmd struct {
@@ -115,6 +116,39 @@ func generateFeatureFiles(scenarios []ScenarioData, dir string) error {
 		}
 	}
 	return nil
+}
+
+func assignScenarioWaves(scenarios []ScenarioData, maxWaveSize int) {
+	if maxWaveSize < 1 {
+		maxWaveSize = 1
+	}
+
+	waveID := 1
+	waveSize := 0
+	waveKeys := map[string]struct{}{}
+
+	for i := range scenarios {
+		if scenarios[i].Checkpoint == "" {
+			scenarios[i].WaveID = 0
+			continue
+		}
+
+		key := scenarios[i].Checkpoint
+		if waveSize >= maxWaveSize {
+			waveID++
+			waveSize = 0
+			waveKeys = map[string]struct{}{}
+		}
+		if _, exists := waveKeys[key]; exists {
+			waveID++
+			waveSize = 0
+			waveKeys = map[string]struct{}{}
+		}
+
+		scenarios[i].WaveID = waveID
+		waveKeys[key] = struct{}{}
+		waveSize++
+	}
 }
 
 func writeScenario(sb *strings.Builder, s ScenarioData, sourceFile string, curlOrdinal *int) error {
@@ -227,6 +261,9 @@ func deriveTags(s ScenarioData) []string {
 	fw := deriveFramework(s.SourceFile)
 	if fw != "unknown" {
 		tags = append(tags, "@"+fw)
+	}
+	if s.WaveID > 0 {
+		tags = append(tags, fmt.Sprintf("@wave_%d", s.WaveID))
 	}
 	if s.Checkpoint != "" {
 		tag := "@checkpoint_" + strings.ToLower(strings.NewReplacer("/", "_", "-", "_", ".", "_").Replace(s.Checkpoint))

@@ -564,7 +564,7 @@ wheels = [
 [[package]]
 name = "memory-service-langchain"
 version = "0.1.0"
-source = { registry = "../../../../dist" }
+source = { registry = "/workspaces/t3code-5edd3ed0/python/dist" }
 dependencies = [
     { name = "fastapi" },
     { name = "grpcio" },
@@ -574,9 +574,9 @@ dependencies = [
     { name = "langgraph" },
     { name = "protobuf" },
 ]
-sdist = { path = "memory_service_langchain-0.1.0.tar.gz" }
+sdist = { path = "/workspaces/t3code-5edd3ed0/python/dist/memory_service_langchain-0.1.0.tar.gz" }
 wheels = [
-    { path = "memory_service_langchain-0.1.0-py3-none-any.whl" },
+    { path = "/workspaces/t3code-5edd3ed0/python/dist/memory_service_langchain-0.1.0-py3-none-any.whl" },
 ]
 
 [[package]]

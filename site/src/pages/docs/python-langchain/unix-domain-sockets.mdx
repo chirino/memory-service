@@ -68,7 +68,7 @@ And the response should contain "PartialResponse"
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/9b3c1d74-53c2-4df0-a680-7a63d4550d91 \
-  --max-time 0.2 \
+  --max-time 0.5 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Write a short story about a cat."

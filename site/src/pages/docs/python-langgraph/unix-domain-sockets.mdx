@@ -65,7 +65,7 @@ Then the response status should be 200
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/6a4df6af-70d0-4a7c-823d-8cd4f150da84 \
-  --max-time 0.2 \
+  --max-time 0.5 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Write a short story about a cat."

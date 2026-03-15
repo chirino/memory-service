@@ -47,6 +47,7 @@ func TestSiteDocs(t *testing.T) {
 	// Load test scenarios
 	scenarios, err := loadScenarios(scenariosFile)
 	require.NoError(t, err, "load scenarios")
+	assignScenarioWaves(scenarios, siteScenarioConcurrency())
 
 	// Java checkpoint docs depend on local 999-SNAPSHOT artifacts. Install them
 	// once up front so parallel scenario builds can resolve dependencies reliably.
@@ -69,7 +70,7 @@ func TestSiteDocs(t *testing.T) {
 		return
 	}
 
-	globalScenarioWaveCoordinator.Reset(scheduledScenarios, siteScenarioConcurrency())
+	globalScenarioWaveCoordinator.Reset(scenarios, tagFilter)
 
 	t.Logf("Loaded %d scenario(s) from %s", len(scenarios), scenariosFile)
 

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -27,6 +28,7 @@ func registerCheckpointSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
 
 	ctx.Before(func(ctx context.Context, sc *godog.Scenario) (context.Context, error) {
 		s.ScenarioName = sc.Name
+		s.WaveID = waveIDFromScenario(sc)
 		return ctx, nil
 	})
 
@@ -60,7 +62,7 @@ func (s *SiteScenario) checkpointIsActive(checkpointID string) error {
 
 	// Decide record vs. playback before starting
 	s.Recording = s.shouldRecord()
-	s.Wave = globalScenarioWaveCoordinator.Enter()
+	s.Wave = globalScenarioWaveCoordinator.Enter(s.WaveID)
 
 	if !fileExists(s.CheckpointPath) {
 		return fmt.Errorf("checkpoint directory does not exist: %s", s.CheckpointPath)
@@ -131,4 +133,18 @@ func (s *SiteScenario) finishWave() {
 	s.markWaveReady()
 	globalScenarioWaveCoordinator.Finish(s.Wave)
 	s.Wave = nil
+}
+
+func waveIDFromScenario(sc *godog.Scenario) int {
+	for _, tag := range sc.Tags {
+		name := strings.TrimPrefix(tag.Name, "@")
+		if !strings.HasPrefix(name, "wave_") {
+			continue
+		}
+		waveID, err := strconv.Atoi(strings.TrimPrefix(name, "wave_"))
+		if err == nil && waveID > 0 {
+			return waveID
+		}
+	}
+	return 0
 }
