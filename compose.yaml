@@ -49,6 +49,19 @@ services:
       timeout: 3s
       retries: 10
 
+  infinispan:
+    image: quay.io/infinispan/server:16.1
+    ports:
+      - "11222:11222"
+    environment:
+      USER: admin
+      PASS: password
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11222/rest/v3/container/health/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
     command: ["start-dev", "--import-realm"]
@@ -159,6 +172,10 @@ services:
       MEMORY_SERVICE_VECTOR_QDRANT_HOST: qdrant
       MEMORY_SERVICE_VECTOR_QDRANT_PORT: 6334
       MEMORY_SERVICE_VECTOR_QDRANT_API_KEY: change-me
+      ## To enable Infinispan vector search
+      MEMORY_SERVICE_VECTOR_INFINISPAN_URL: ${MEMORY_SERVICE_VECTOR_INFINISPAN_URL:-http://infinispan:11222}
+      MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME: ${MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME:-admin}
+      MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD: ${MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD:-password}
 
       # ── Embeddings ─────────────────────────────────────────────
       #MEMORY_SERVICE_EMBEDDING_KIND: none
@@ -172,6 +189,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      infinispan:
         condition: service_healthy
       keycloak:
         condition: service_healthy
