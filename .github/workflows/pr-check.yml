@@ -108,7 +108,6 @@ jobs:
           mkdir -p reports
           export GODOG_REPORT_DIR=./reports
           export GODOG_REPORT_FORMAT=cucumber
-          export SITE_TEST_DIAGNOSTICS=1
           export SITE_TEST_SCENARIO_CONCURRENCY=2
           go run github.com/go-task/task/v3/cmd/task test:site
 

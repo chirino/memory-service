@@ -48,26 +48,6 @@ Site BDD build/checkpoint subprocess output is controlled by
 `task test:site` now sets `SITE_TEST_BUILD_OUTPUT=on-fail` by default, so
 `gotestsum`/`go test -json` no longer forces streamed `[mvn]` logs.
 
-`SITE_TEST_DIAGNOSTICS=1` enables extra sitebdd diagnostics:
-- wave admission / curl release / wave drain transitions
-- checkpoint build/start/ready timing lines
-- failure-time tails from the checkpoint log captured for that scenario
-
-Checkpoint log replay on failure now keys off sitebdd's own failure flag, not
-just godog's `After(..., err)` argument. Status-assertion failures can leave
-`err` nil, so relying on the hook argument alone can suppress the failed
-checkpoint's captured stdout/stderr in CI.
-
-When `SITE_TEST_DIAGNOSTICS` is enabled, Spring checkpoints also start with
-`server.error.include-message=always`, `server.error.include-exception=true`,
-`server.error.include-stacktrace=always`, and DEBUG logging for
-`com.example.demo`, `io.github.chirino.memoryservice.history`, and
-`io.github.chirino.memoryservice.client`. That makes the failing HTTP 500 body
-and checkpoint log materially more useful for CI-only Spring issues.
-
-If `SITE_TEST_DIAGNOSTICS` is unset, CI still enables the same diagnostics via
-`CI=true`; local runs stay quiet unless you opt in.
-
 `SITE_TEST_SCENARIO_CONCURRENCY=<n>` overrides the default wave size / godog
 scenario concurrency. When unset, sitebdd still uses `runtime.NumCPU()`.
 

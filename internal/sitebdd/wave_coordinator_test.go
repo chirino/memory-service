@@ -14,21 +14,21 @@ func TestScenarioWaveCoordinatorBlocksCurlUntilWaveReady(t *testing.T) {
 		{Checkpoint: "beta", WaveID: 1},
 	}, "")
 
-	waveA := c.Enter(1, "alpha")
-	waveB := c.Enter(1, "beta")
+	waveA := c.Enter(1)
+	waveB := c.Enter(1)
 
 	released := make(chan struct{})
 	go func() {
-		c.WaitForCurlPhase(waveA, "alpha")
+		c.WaitForCurlPhase(waveA)
 		close(released)
 	}()
 
 	assertChannelBlocked(t, released, 100*time.Millisecond)
 
-	c.MarkReady(waveA, "alpha")
+	c.MarkReady(waveA)
 	assertChannelBlocked(t, released, 100*time.Millisecond)
 
-	c.MarkReady(waveB, "beta")
+	c.MarkReady(waveB)
 	assertChannelReceives(t, released, 500*time.Millisecond)
 }
 
@@ -39,17 +39,17 @@ func TestScenarioWaveCoordinatorBlocksNextWaveUntilCurrentWaveFinishes(t *testin
 		{Checkpoint: "beta", WaveID: 2},
 	}, "")
 
-	wave1 := c.Enter(1, "alpha")
+	wave1 := c.Enter(1)
 
 	admittedWave2 := make(chan *scenarioWave, 1)
 	go func() {
-		admittedWave2 <- c.Enter(2, "beta")
+		admittedWave2 <- c.Enter(2)
 	}()
 
 	assertChannelBlocked(t, admittedWave2, 100*time.Millisecond)
 
-	c.MarkReady(wave1, "alpha")
-	c.Finish(wave1, "alpha")
+	c.MarkReady(wave1)
+	c.Finish(wave1)
 
 	select {
 	case wave2 := <-admittedWave2:

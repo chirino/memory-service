@@ -3,8 +3,6 @@
 package sitebdd
 
 import (
-	"fmt"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -74,28 +72,15 @@ func (c *scenarioWaveCoordinator) Reset(scenarios []ScenarioData, filter string)
 		}
 	}
 
-	if siteDiagnosticsEnabled() {
-		ids := make([]int, 0, len(c.waves))
-		for id := range c.waves {
-			ids = append(ids, id)
-		}
-		sort.Ints(ids)
-		summaries := make([]string, 0, len(ids))
-		for _, id := range ids {
-			summaries = append(summaries, fmt.Sprintf("%d:%d", id, c.waves[id].expected))
-		}
-		siteDiagnosticf("wave-reset filter=%q current=%d waves=%s", filter, c.currentWaveID, strings.Join(summaries, ","))
-	}
 }
 
-func (c *scenarioWaveCoordinator) Enter(waveID int, scenarioKey string) *scenarioWave {
+func (c *scenarioWaveCoordinator) Enter(waveID int) *scenarioWave {
 	if waveID < 1 {
 		return nil
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	waitLogged := false
 	for {
 		if c.currentWaveID == 0 {
 			return nil
@@ -104,89 +89,46 @@ func (c *scenarioWaveCoordinator) Enter(waveID int, scenarioKey string) *scenari
 			wave := c.waves[waveID]
 			if wave != nil {
 				wave.admitted++
-				siteDiagnosticf(
-					"wave-enter scenario=%q wave=%d admitted=%d/%d",
-					scenarioKey,
-					wave.id,
-					wave.admitted,
-					wave.expected,
-				)
 			}
 			return wave
-		}
-		if !waitLogged {
-			siteDiagnosticf(
-				"wave-enter-wait scenario=%q target=%d current=%d",
-				scenarioKey,
-				waveID,
-				c.currentWaveID,
-			)
-			waitLogged = true
 		}
 		c.cond.Wait()
 	}
 }
 
-func (c *scenarioWaveCoordinator) MarkReady(wave *scenarioWave, scenarioKey string) {
+func (c *scenarioWaveCoordinator) MarkReady(wave *scenarioWave) {
 	if wave == nil {
 		return
 	}
 	c.mu.Lock()
 	if wave.ready < wave.expected {
 		wave.ready++
-		siteDiagnosticf(
-			"wave-ready scenario=%q wave=%d ready=%d/%d",
-			scenarioKey,
-			wave.id,
-			wave.ready,
-			wave.expected,
-		)
 		if wave.ready == wave.expected {
 			wave.curlReleased = true
-			siteDiagnosticf("wave-release wave=%d", wave.id)
 			c.cond.Broadcast()
 		}
 	}
 	c.mu.Unlock()
 }
 
-func (c *scenarioWaveCoordinator) WaitForCurlPhase(wave *scenarioWave, scenarioKey string) {
+func (c *scenarioWaveCoordinator) WaitForCurlPhase(wave *scenarioWave) {
 	if wave == nil {
 		return
 	}
 	c.mu.Lock()
-	waitLogged := false
 	for !wave.curlReleased {
-		if !waitLogged {
-			siteDiagnosticf(
-				"curl-wait scenario=%q wave=%d ready=%d/%d",
-				scenarioKey,
-				wave.id,
-				wave.ready,
-				wave.expected,
-			)
-			waitLogged = true
-		}
 		c.cond.Wait()
 	}
-	siteDiagnosticf("curl-release scenario=%q wave=%d", scenarioKey, wave.id)
 	c.mu.Unlock()
 }
 
-func (c *scenarioWaveCoordinator) Finish(wave *scenarioWave, scenarioKey string) {
+func (c *scenarioWaveCoordinator) Finish(wave *scenarioWave) {
 	if wave == nil {
 		return
 	}
 	c.mu.Lock()
 	if wave.finished < wave.expected {
 		wave.finished++
-		siteDiagnosticf(
-			"wave-finish scenario=%q wave=%d finished=%d/%d",
-			scenarioKey,
-			wave.id,
-			wave.finished,
-			wave.expected,
-		)
 	}
 	if wave.finished == wave.expected && c.currentWaveID == wave.id {
 		delete(c.waves, wave.id)
@@ -197,7 +139,6 @@ func (c *scenarioWaveCoordinator) Finish(wave *scenarioWave, scenarioKey string)
 				break
 			}
 		}
-		siteDiagnosticf("wave-advance from=%d to=%d", wave.id, c.currentWaveID)
 		c.cond.Broadcast()
 	}
 	c.mu.Unlock()

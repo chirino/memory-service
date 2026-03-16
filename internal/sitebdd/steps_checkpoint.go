@@ -29,13 +29,12 @@ func registerCheckpointSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
 	ctx.Before(func(ctx context.Context, sc *godog.Scenario) (context.Context, error) {
 		s.ScenarioName = sc.Name
 		s.WaveID = waveIDFromScenario(sc)
-		s.scenarioFailed = false
 		return ctx, nil
 	})
 
 	// Cleanup after each scenario (handles panics / step failures)
 	ctx.After(func(ctx context.Context, sc *godog.Scenario, err error) (context.Context, error) {
-		s.stopCheckpoint(err != nil || s.scenarioFailed)
+		s.stopCheckpoint(err != nil)
 		s.finishWave()
 		return ctx, nil
 	})
@@ -63,7 +62,7 @@ func (s *SiteScenario) checkpointIsActive(checkpointID string) error {
 
 	// Decide record vs. playback before starting
 	s.Recording = s.shouldRecord()
-	s.Wave = globalScenarioWaveCoordinator.Enter(s.WaveID, s.scenarioKey())
+	s.Wave = globalScenarioWaveCoordinator.Enter(s.WaveID)
 
 	if !fileExists(s.CheckpointPath) {
 		return fmt.Errorf("checkpoint directory does not exist: %s", s.CheckpointPath)
@@ -123,7 +122,7 @@ func (s *SiteScenario) markWaveReady() {
 	if s.Wave == nil || s.waveReady {
 		return
 	}
-	globalScenarioWaveCoordinator.MarkReady(s.Wave, s.scenarioKey())
+	globalScenarioWaveCoordinator.MarkReady(s.Wave)
 	s.waveReady = true
 }
 
@@ -132,7 +131,7 @@ func (s *SiteScenario) finishWave() {
 		return
 	}
 	s.markWaveReady()
-	globalScenarioWaveCoordinator.Finish(s.Wave, s.scenarioKey())
+	globalScenarioWaveCoordinator.Finish(s.Wave)
 	s.Wave = nil
 }
 

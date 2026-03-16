@@ -47,7 +47,7 @@ func (s *SiteScenario) setCurlCaptureID(captureID string) error {
 // applies port and user substitutions, executes each as a Go HTTP request,
 // and stores the last response.
 func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
-	globalScenarioWaveCoordinator.WaitForCurlPhase(s.Wave, s.scenarioKey())
+	globalScenarioWaveCoordinator.WaitForCurlPhase(s.Wave)
 
 	bash := block.Content
 
@@ -123,9 +123,6 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 		s.lastRespCT = resp.Header.Get("Content-Type")
 		crCopy := cr
 		s.lastCurlReq = &crCopy
-		if statusCode >= 500 {
-			s.emitFailureDiagnostics("http status >= 500")
-		}
 	}
 	s.recordCurlExample()
 
@@ -198,9 +195,7 @@ func (s *SiteScenario) executeSetupCommands(bash string) {
 
 func (s *SiteScenario) responseStatusShouldBe(expected int) error {
 	if s.LastStatusCode != expected {
-		err := fmt.Errorf("expected status %d, got %d\nbody: %s", expected, s.LastStatusCode, s.LastRespBody)
-		s.emitFailureDiagnostics(err.Error())
-		return err
+		return fmt.Errorf("expected status %d, got %d\nbody: %s", expected, s.LastStatusCode, s.LastRespBody)
 	}
 	return nil
 }
@@ -212,21 +207,17 @@ func (s *SiteScenario) responseShouldContain(expected string) error {
 	lastErr := fmt.Errorf("expected response to contain %q\ngot: %s", expected, s.LastRespBody)
 	for attempt := 1; attempt <= 6; attempt++ {
 		if !s.canReplayLastCurlRequest() {
-			s.emitFailureDiagnostics(lastErr.Error())
 			return lastErr
 		}
 		time.Sleep(750 * time.Millisecond)
 		if err := s.replayLastCurlRequest(); err != nil {
-			wrapped := fmt.Errorf("%v (replay failed: %w)", lastErr, err)
-			s.emitFailureDiagnostics(wrapped.Error())
-			return wrapped
+			return fmt.Errorf("%v (replay failed: %w)", lastErr, err)
 		}
 		if strings.Contains(s.LastRespBody, expected) {
 			return nil
 		}
 		lastErr = fmt.Errorf("expected response to contain %q\ngot: %s", expected, s.LastRespBody)
 	}
-	s.emitFailureDiagnostics(lastErr.Error())
 	return lastErr
 }
 
