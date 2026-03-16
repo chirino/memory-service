@@ -42,13 +42,19 @@
 
 **LangChain gRPC target default**: `MemoryServiceHistoryMiddleware` and `MemoryServiceResponseRecordingManager` derive default gRPC target from `MEMORY_SERVICE_URL` (`host:port`, with `80/443` fallback), matching the Go single-port server topology; `MEMORY_SERVICE_GRPC_PORT`/`MEMORY_SERVICE_GRPC_TARGET` still override.
 
+**Python client transport split**: `python/langchain` does not ship a generated REST client; REST calls are hand-written `httpx.Client`/`AsyncClient` wrappers keyed off `MEMORY_SERVICE_URL`, while gRPC uses generated stubs plus explicit `grpc.insecure_channel(target)` construction.
+
+**UDS config knob**: `MEMORY_SERVICE_UNIX_SOCKET` now drives both Python REST and gRPC transport setup. LangChain/LangGraph wrappers build `httpx` UDS transports for REST and derive `unix:///absolute/path.sock` for gRPC unless an explicit gRPC target override is set.
+
 **Recorder stream deadline gotcha**: Do not set per-call gRPC deadlines on `ResponseRecorderService.Record(stream)`; long generations can outlive the deadline and terminate the stream without a final `complete`, leaving recordings marked in-progress.
 
-**gRPC fork-warning mitigation**: `GrpcResponseRecorder` now starts the gRPC `Record` stream lazily on first emitted token instead of constructor time; this avoids noisy `fork_posix.cc` warnings during model setup in some local runtimes.
+**Recorder registration timing**: Python `GrpcResponseRecorder` starts the gRPC `Record` stream eagerly so `resume-check` can see an in-progress response before the first text token is emitted, matching the Java and TypeScript clients.
 
 **gRPC replay timeout behavior**: `MemoryServiceResponseRecordingManager` uses no replay deadline by default (`MEMORY_SERVICE_GRPC_REPLAY_TIMEOUT_SECONDS` unset), and treats gRPC `DEADLINE_EXCEEDED`/`CANCELLED` as normal stream termination for `/resume` SSE to avoid ASGI crash logs on disconnect/long-poll edges.
 
 **Disconnect-resume behavior**: `MemoryServiceResponseRecordingManager.stream_from_source(...)` now runs source production in a background task; if the active SSE client disconnects, generation/recording continues while gRPC replay/check remain the source of truth.
+
+**Resume-check access race**: Python chat/checkpoint apps that use `stream_from_source(...)` should create the conversation (or append USER history) before returning `StreamingResponse`; otherwise `CheckRecordings` can return `[]` even when replay works, because access control checks the conversation before the background producer has created it.
 
 **Local cancel behavior**: `MemoryServiceResponseRecordingManager.cancel(...)` must cancel the local producer task (not just flip a state flag) so `finally` runs promptly and closes the recorder stream when users click Stop.
 

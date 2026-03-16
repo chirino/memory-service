@@ -127,6 +127,13 @@ async def chat(
 
     stream_mode = "events"
 
+    history_middleware.append_user_history(
+        conversation_id,
+        message,
+        forked_at_conversation_id=body.forkedAtConversationId,
+        forked_at_entry_id=body.forkedAtEntryId,
+    )
+
     async def source():
         with memory_service_scope(
             conversation_id,
@@ -134,13 +141,6 @@ async def chat(
             body.forkedAtEntryId,
             stream_mode,
         ):
-            history_middleware.append_user_history(
-                conversation_id,
-                message,
-                forked_at_conversation_id=body.forkedAtConversationId,
-                forked_at_entry_id=body.forkedAtEntryId,
-            )
-
             async def chunk_stream():
                 async for chunk, _metadata in graph.astream(
                     {"messages": [{"role": "user", "content": message}]},

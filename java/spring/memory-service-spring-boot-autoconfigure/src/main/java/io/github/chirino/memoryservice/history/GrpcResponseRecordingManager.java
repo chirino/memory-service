@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -269,7 +270,8 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
         private final String conversationId;
         private final Sinks.Many<ResponseCancelSignal> cancelSink =
                 Sinks.many().multicast().onBackpressureBuffer();
-        private final StreamObserver<RecordRequest> requestObserver;
+        private final AtomicInteger startAttempts = new AtomicInteger();
+        private volatile StreamObserver<RecordRequest> requestObserver;
         private final AtomicBoolean firstMessage = new AtomicBoolean(true);
         private final AtomicBoolean completed = new AtomicBoolean(false);
 
@@ -278,32 +280,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
                 String conversationId) {
             this.service = service;
             this.conversationId = conversationId;
-            this.requestObserver =
-                    this.service.record(
-                            new StreamObserver<>() {
-                                @Override
-                                public void onNext(RecordResponse response) {
-                                    if (response.getStatus()
-                                            == RecordStatus.RECORD_STATUS_CANCELLED) {
-                                        cancelSink.tryEmitNext(ResponseCancelSignal.CANCEL);
-                                    }
-                                    cancelSink.tryEmitComplete();
-                                }
-
-                                @Override
-                                public void onError(Throwable t) {
-                                    LOG.warn(
-                                            "Record stream error for conversationId={}",
-                                            conversationId,
-                                            t);
-                                    cancelSink.tryEmitError(t);
-                                }
-
-                                @Override
-                                public void onCompleted() {
-                                    cancelSink.tryEmitComplete();
-                                }
-                            });
+            startStream();
         }
 
         @Override
@@ -311,11 +288,15 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
             if (token == null || token.isBlank() || completed.get()) {
                 return;
             }
+            StreamObserver<RecordRequest> observer = ensureStarted();
+            if (observer == null) {
+                return;
+            }
             RecordRequest.Builder builder = RecordRequest.newBuilder().setContent(token);
             if (firstMessage.compareAndSet(true, false)) {
                 builder.setConversationId(toByteString(conversationId));
             }
-            requestObserver.onNext(builder.build());
+            observer.onNext(builder.build());
         }
 
         @Override
@@ -323,18 +304,85 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
             if (!completed.compareAndSet(false, true)) {
                 return;
             }
+            StreamObserver<RecordRequest> observer = ensureStarted();
+            if (observer == null) {
+                cancelSink.tryEmitComplete();
+                return;
+            }
             RecordRequest.Builder builder = RecordRequest.newBuilder().setComplete(true);
             if (firstMessage.compareAndSet(true, false)) {
                 builder.setConversationId(toByteString(conversationId));
             }
-            requestObserver.onNext(builder.build());
-            requestObserver.onCompleted();
+            observer.onNext(builder.build());
+            observer.onCompleted();
             cancelSink.tryEmitComplete();
         }
 
         @Override
         public Flux<ResponseCancelSignal> cancelStream() {
             return cancelSink.asFlux();
+        }
+
+        private StreamObserver<RecordRequest> ensureStarted() {
+            if (requestObserver != null) {
+                return requestObserver;
+            }
+            return startStream();
+        }
+
+        private StreamObserver<RecordRequest> startStream() {
+            int attempt = startAttempts.incrementAndGet();
+            try {
+                StreamObserver<RecordRequest> observer =
+                        this.service
+                                .withWaitForReady()
+                                .record(
+                                        new StreamObserver<>() {
+                                            @Override
+                                            public void onNext(RecordResponse response) {
+                                                if (response.getStatus()
+                                                        == RecordStatus.RECORD_STATUS_CANCELLED) {
+                                                    cancelSink.tryEmitNext(
+                                                            ResponseCancelSignal.CANCEL);
+                                                }
+                                                cancelSink.tryEmitComplete();
+                                            }
+
+                                            @Override
+                                            public void onError(Throwable t) {
+                                                LOG.warn(
+                                                        "Record stream error for conversationId={}"
+                                                                + " url={} attempt={}",
+                                                        conversationId,
+                                                        clientProperties.getUrl(),
+                                                        attempt,
+                                                        t);
+                                                cancelSink.tryEmitError(t);
+                                            }
+
+                                            @Override
+                                            public void onCompleted() {
+                                                cancelSink.tryEmitComplete();
+                                            }
+                                        });
+                requestObserver = observer;
+                if (attempt > 1) {
+                    LOG.info(
+                            "Record stream recovered for conversationId={} url={} attempt={}",
+                            conversationId,
+                            clientProperties.getUrl(),
+                            attempt);
+                }
+                return observer;
+            } catch (RuntimeException e) {
+                LOG.warn(
+                        "Failed to start record stream for conversationId={} url={} attempt={}",
+                        conversationId,
+                        clientProperties.getUrl(),
+                        attempt,
+                        e);
+                return null;
+            }
         }
     }
 }

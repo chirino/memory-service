@@ -57,13 +57,16 @@ class GrpcResponseRecorder(BaseResponseRecorder):
         self._completed = threading.Event()
         self._finished = threading.Event()
         self._cancelled = threading.Event()
+        self._registered = threading.Event()
         self._start_lock = threading.Lock()
         self._error: Exception | None = None
         self._channel: grpc.Channel | None = None
         self._stub: memory_service_pb2_grpc.ResponseRecorderServiceStub | None = None
         self._thread: threading.Thread | None = None
+        self._ensure_started()
 
     def _iter_requests(self) -> Iterator[memory_service_pb2.RecordRequest]:
+        self._registered.set()
         yield memory_service_pb2.RecordRequest(conversation_id=self._conversation_id_bytes)
         while True:
             item = self._queue.get()
@@ -92,6 +95,11 @@ class GrpcResponseRecorder(BaseResponseRecorder):
                     target=self._run, name="memory-service-recorder", daemon=True
                 )
                 self._thread.start()
+                if not self._registered.wait(timeout=1.0):
+                    LOG.warning(
+                        "gRPC response recorder did not start consuming initial registration promptly for conversation_id=%s",
+                        self._conversation_id,
+                    )
             except Exception as exc:
                 self._error = exc
                 self._completed.set()

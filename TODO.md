@@ -18,6 +18,7 @@
 * rename: memory channel to the context channel.
 * should the /sync endpoint take a flatten entries to just a list of content messages?
 * create reference docs?
+* python/ts don't configure the lib via ENV vars.
 
 # Performance Related
 

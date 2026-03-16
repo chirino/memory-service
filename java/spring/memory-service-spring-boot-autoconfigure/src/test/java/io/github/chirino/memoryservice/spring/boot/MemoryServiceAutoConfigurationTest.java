@@ -25,7 +25,7 @@ class MemoryServiceAutoConfigurationTest {
     void createsApiClientWithApiKey() {
         contextRunner
                 .withPropertyValues(
-                        "memory-service.client.base-url=https://example.test",
+                        "memory-service.client.url=https://example.test",
                         "memory-service.client.api-key=xyz")
                 .run(
                         context -> {

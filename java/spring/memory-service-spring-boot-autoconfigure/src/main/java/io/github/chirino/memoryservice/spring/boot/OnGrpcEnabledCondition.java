@@ -11,7 +11,7 @@ import org.springframework.util.StringUtils;
  * Condition that matches when gRPC should be enabled. gRPC is enabled when:
  * <ul>
  *   <li>{@code memory-service.grpc.enabled=true} is explicitly set, OR</li>
- *   <li>{@code memory-service.client.base-url} is configured (auto-derive gRPC settings)</li>
+ *   <li>{@code memory-service.client.url} is configured (auto-derive gRPC settings)</li>
  * </ul>
  */
 public class OnGrpcEnabledCondition extends SpringBootCondition {
@@ -21,7 +21,7 @@ public class OnGrpcEnabledCondition extends SpringBootCondition {
             ConditionContext context, AnnotatedTypeMetadata metadata) {
 
         String grpcEnabled = context.getEnvironment().getProperty("memory-service.grpc.enabled");
-        String baseUrl = context.getEnvironment().getProperty("memory-service.client.base-url");
+        String url = context.getEnvironment().getProperty("memory-service.client.url");
 
         // Check if explicitly enabled
         if ("true".equalsIgnoreCase(grpcEnabled)) {
@@ -39,20 +39,18 @@ public class OnGrpcEnabledCondition extends SpringBootCondition {
                             .items("memory-service.grpc.enabled=false"));
         }
 
-        // Auto-enable if baseUrl is configured
-        if (StringUtils.hasText(baseUrl)) {
+        // Auto-enable if url is configured
+        if (StringUtils.hasText(url)) {
             return ConditionOutcome.match(
                     ConditionMessage.forCondition("OnGrpcEnabled")
                             .found("property")
-                            .items("memory-service.client.base-url=" + baseUrl));
+                            .items("memory-service.client.url=" + url));
         }
 
         // No configuration found
         return ConditionOutcome.noMatch(
                 ConditionMessage.forCondition("OnGrpcEnabled")
                         .didNotFind("property")
-                        .items(
-                                "memory-service.grpc.enabled or"
-                                        + " memory-service.client.base-url"));
+                        .items("memory-service.grpc.enabled or memory-service.client.url"));
     }
 }

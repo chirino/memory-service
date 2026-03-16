@@ -17,6 +17,7 @@ type ScenarioData struct {
 	SourceFile  string        `json:"sourceFile"`
 	Description string        `json:"description,omitempty"`
 	Scenarios   []ScenarioCmd `json:"scenarios"`
+	WaveID      int           `json:"-"`
 }
 
 type ScenarioCmd struct {
@@ -117,6 +118,39 @@ func generateFeatureFiles(scenarios []ScenarioData, dir string) error {
 	return nil
 }
 
+func assignScenarioWaves(scenarios []ScenarioData, maxWaveSize int) {
+	if maxWaveSize < 1 {
+		maxWaveSize = 1
+	}
+
+	waveID := 1
+	waveSize := 0
+	waveKeys := map[string]struct{}{}
+
+	for i := range scenarios {
+		if scenarios[i].Checkpoint == "" {
+			scenarios[i].WaveID = 0
+			continue
+		}
+
+		key := scenarios[i].Checkpoint
+		if waveSize >= maxWaveSize {
+			waveID++
+			waveSize = 0
+			waveKeys = map[string]struct{}{}
+		}
+		if _, exists := waveKeys[key]; exists {
+			waveID++
+			waveSize = 0
+			waveKeys = map[string]struct{}{}
+		}
+
+		scenarios[i].WaveID = waveID
+		waveKeys[key] = struct{}{}
+		waveSize++
+	}
+}
+
 func writeScenario(sb *strings.Builder, s ScenarioData, sourceFile string, curlOrdinal *int) error {
 	tags := deriveTags(s)
 	if len(tags) > 0 {
@@ -131,14 +165,23 @@ func writeScenario(sb *strings.Builder, s ScenarioData, sourceFile string, curlO
 		title = deriveFeatureName(s.SourceFile)
 	}
 	checkpointName := lastSegment(s.Checkpoint)
-	sb.WriteString(fmt.Sprintf("  Scenario: [%s] %s - %s\n", framework, title, checkpointName))
+	scenarioLabel := title
+	if checkpointName != "" {
+		scenarioLabel += " - " + checkpointName
+	}
+	sb.WriteString(fmt.Sprintf("  Scenario: [%s] %s\n", framework, scenarioLabel))
 	sb.WriteString(fmt.Sprintf("    # From %s\n", s.SourceFile))
 
-	sb.WriteString(fmt.Sprintf("    Given checkpoint %q is active\n", s.Checkpoint))
-	sb.WriteString("    When I build the checkpoint\n")
-	sb.WriteString("    Then the build should succeed\n\n")
-	sb.WriteString("    When I start the checkpoint\n")
-	sb.WriteString("    Then the application should be running\n\n")
+	if scenarioUsesUnixSocket(sourceFile) {
+		sb.WriteString("    Given the docs scenario uses the unix socket memory service\n")
+	}
+	if s.Checkpoint != "" {
+		sb.WriteString(fmt.Sprintf("    Given checkpoint %q is active\n", s.Checkpoint))
+		sb.WriteString("    When I build the checkpoint\n")
+		sb.WriteString("    Then the build should succeed\n\n")
+		sb.WriteString("    When I start the checkpoint\n")
+		sb.WriteString("    Then the application should be running\n\n")
+	}
 
 	for _, cmd := range s.Scenarios {
 		if !containsCurl(cmd.Bash) {
@@ -174,7 +217,9 @@ func writeScenario(sb *strings.Builder, s ScenarioData, sourceFile string, curlO
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("    When I stop the checkpoint\n")
+	if s.Checkpoint != "" {
+		sb.WriteString("    When I stop the checkpoint\n")
+	}
 	return nil
 }
 
@@ -217,6 +262,9 @@ func deriveTags(s ScenarioData) []string {
 	if fw != "unknown" {
 		tags = append(tags, "@"+fw)
 	}
+	if s.WaveID > 0 {
+		tags = append(tags, fmt.Sprintf("@wave_%d", s.WaveID))
+	}
 	if s.Checkpoint != "" {
 		tag := "@checkpoint_" + strings.ToLower(strings.NewReplacer("/", "_", "-", "_", ".", "_").Replace(s.Checkpoint))
 		tag = strings.Trim(tag, "_")
@@ -227,6 +275,8 @@ func deriveTags(s ScenarioData) []string {
 
 func deriveFramework(sourceFile string) string {
 	switch {
+	case strings.HasPrefix(sourceFile, "/docs/concepts/"):
+		return "concepts"
 	case strings.HasPrefix(sourceFile, "/docs/python-langchain/"):
 		return "python-langchain"
 	case strings.HasPrefix(sourceFile, "/docs/python-langgraph/"):
@@ -242,6 +292,10 @@ func deriveFramework(sourceFile string) string {
 	default:
 		return "unknown"
 	}
+}
+
+func scenarioUsesUnixSocket(sourceFile string) bool {
+	return strings.Contains(sourceFile, "/unix-domain-sockets")
 }
 
 func lastSegment(path string) string {

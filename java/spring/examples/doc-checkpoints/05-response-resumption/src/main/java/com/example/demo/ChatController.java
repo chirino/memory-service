@@ -4,13 +4,20 @@ import io.github.chirino.memoryservice.history.ConversationHistoryStreamAdvisorB
 import io.github.chirino.memoryservice.memory.MemoryServiceChatMemoryRepositoryBuilder;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,10 +26,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/chat")
 class ChatController {
+    private static final Logger LOG = LoggerFactory.getLogger(ChatController.class);
+
     private final ChatClient.Builder chatClientBuilder;
     private final MemoryServiceChatMemoryRepositoryBuilder repositoryBuilder;
     private final ConversationHistoryStreamAdvisorBuilder historyAdvisorBuilder;
@@ -42,7 +52,7 @@ class ChatController {
     @PostMapping(
             path = "/{conversationId}",
             consumes = MediaType.TEXT_PLAIN_VALUE,
-            produces = MediaType.TEXT_PLAIN_VALUE)
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(@PathVariable String conversationId, @RequestBody String userMessage) {
 
         String bearerToken = SecurityHelper.bearerToken(authorizedClientService);
@@ -64,28 +74,86 @@ class ChatController {
                                         advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
                         .build();
 
-        Flux<String> responseFlux = chatClient.prompt().user(userMessage).stream().content();
+        Flux<String> responseFlux =
+                chatClient.prompt().user(userMessage).stream()
+                        .chatClientResponse()
+                        .map(this::extractContent)
+                        // Schedule subscription work off the request thread so the SSE response
+                        // can be committed before an upstream failure is translated to HTTP 500.
+                        .subscribeOn(Schedulers.boundedElastic());
 
         SseEmitter emitter = new SseEmitter(0L);
         Disposable subscription =
                 responseFlux.subscribe(
-                        chunk -> safeSend(emitter, chunk),
-                        emitter::completeWithError,
-                        emitter::complete);
+                        chunk -> safeSendChunk(emitter, new TokenFrame(chunk)),
+                        failure -> safeCompleteWithError(emitter, failure),
+                        () -> safeComplete(emitter));
 
         emitter.onCompletion(subscription::dispose);
         emitter.onTimeout(
                 () -> {
                     subscription.dispose();
-                    emitter.complete();
+                    safeComplete(emitter);
                 });
         return emitter;
     }
 
-    private void safeSend(SseEmitter emitter, String chunk) {
+    private void safeSendChunk(SseEmitter emitter, TokenFrame frame) {
         try {
-            emitter.send(chunk);
+            emitter.send(SseEmitter.event().data(frame));
         } catch (IOException | IllegalStateException ignored) {
+            // Client disconnected or emitter already completed.
+        }
+    }
+
+    private void safeComplete(SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (IllegalStateException ignored) {
+            // Emitter already completed.
+        }
+    }
+
+    private void safeCompleteWithError(SseEmitter emitter, Throwable failure) {
+        LOG.warn("Streaming chat failed", failure);
+        try {
+            emitter.completeWithError(failure);
+        } catch (IllegalStateException ignored) {
+            // Emitter already completed.
+        }
+    }
+
+    private String extractContent(ChatClientResponse response) {
+        ChatResponse payload = response.chatResponse();
+        if (payload == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (Generation generation : payload.getResults()) {
+            Object output = generation.getOutput();
+            if (output instanceof AssistantMessage assistant) {
+                String text = assistant.getText();
+                if (StringUtils.hasText(text)) {
+                    builder.append(text);
+                }
+                continue;
+            }
+            if (output != null) {
+                builder.append(output.toString());
+            }
+        }
+        return builder.toString();
+    }
+
+    public static final class TokenFrame {
+        private final String text;
+
+        public TokenFrame(String text) {
+            this.text = text;
+        }
+
+        public String getText() {
+            return text;
         }
     }
 }

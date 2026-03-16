@@ -2,6 +2,7 @@ package io.github.chirino.memoryservice.spring.boot;
 
 import io.github.chirino.memoryservice.client.MemoryServiceClientProperties;
 import io.github.chirino.memoryservice.client.MemoryServiceClients;
+import io.github.chirino.memoryservice.client.MemoryServiceEndpoint;
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
 import io.github.chirino.memoryservice.grpc.MemoryServiceGrpcClients;
 import io.github.chirino.memoryservice.grpc.MemoryServiceGrpcProperties;
@@ -18,6 +19,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.ReactiveOAuth2AuthorizedClientManager;
+import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration(proxyBeanMethods = false)
@@ -49,12 +51,23 @@ public class MemoryServiceAutoConfiguration {
     public ManagedChannel memoryServiceChannel(
             MemoryServiceGrpcProperties grpcProperties,
             MemoryServiceClientProperties clientProperties) {
+        if (StringUtils.hasText(clientProperties.getApiKey())
+                && !grpcProperties.getHeaders().containsKey("X-API-Key")) {
+            grpcProperties.getHeaders().put("X-API-Key", clientProperties.getApiKey());
+        }
 
-        // If gRPC target is not explicitly configured, derive it from REST client baseUrl
+        // If gRPC target is not explicitly configured, derive it from REST client URL
         if (!grpcProperties.isEnabled()) {
-            String baseUrl = clientProperties.getBaseUrl();
+            MemoryServiceEndpoint endpoint = MemoryServiceClients.resolveEndpoint(clientProperties);
+            if (endpoint.usesUnixSocket()) {
+                grpcProperties.setUnixSocket(endpoint.unixSocketPath());
+                grpcProperties.setPlaintext(true);
+                LOG.info("Auto-configuring gRPC from REST client url={}", endpoint.configuredUrl());
+                return MemoryServiceGrpcClients.channelBuilder(grpcProperties).build();
+            }
+            String url = clientProperties.getUrl();
             try {
-                URI uri = URI.create(baseUrl);
+                URI uri = endpoint.tcpUri();
                 String host = uri.getHost();
                 if (host == null) {
                     host = "localhost";
@@ -67,21 +80,18 @@ public class MemoryServiceAutoConfiguration {
 
                 String target = host + ":" + port;
                 LOG.info(
-                        "Auto-configuring gRPC from REST client baseUrl={}: target={},"
+                        "Auto-configuring gRPC from REST client url={}: target={},"
                                 + " plaintext={}",
-                        baseUrl,
+                        url,
                         target,
                         plaintext);
 
                 grpcProperties.setTarget(target);
                 grpcProperties.setPlaintext(plaintext);
             } catch (Exception e) {
-                LOG.warn(
-                        "Failed to derive gRPC settings from baseUrl={}: {}",
-                        baseUrl,
-                        e.getMessage());
+                LOG.warn("Failed to derive gRPC settings from url={}: {}", url, e.getMessage());
                 throw new IllegalStateException(
-                        "Cannot configure gRPC channel from baseUrl: " + baseUrl, e);
+                        "Cannot configure gRPC channel from url: " + url, e);
             }
         }
 

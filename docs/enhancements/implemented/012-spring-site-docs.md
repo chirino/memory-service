@@ -94,7 +94,7 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
    - Start Memory Service via Docker Compose (ref: `chat-spring/compose.yaml`)
    - Configure connection in `application.properties`:
      ```properties
-     memory-service.client.base-url=${MEMORY_SERVICE_URL:http://localhost:8082}
+     memory-service.client.url=${MEMORY_SERVICE_URL:http://localhost:8082}
      memory-service.client.api-key=${MEMORY_SERVICE_API_KEY:}
      memory-service.client.log-requests=true
      ```
@@ -358,7 +358,7 @@ The documentation will live at `site/src/pages/docs/spring/` with the following 
    - Search messages
 
 4. **Configuration Properties**
-   - `memory-service.client.base-url`
+   - `memory-service.client.url`
    - `memory-service.client.api-key`
    - `memory-service.client.bearer-token`
    - `memory-service.client.log-requests`
