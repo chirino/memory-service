@@ -25,6 +25,10 @@
       <artifactId>memory-service-rest-quarkus</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>io.grpc</groupId>
+      <artifactId>grpc-netty-shaded</artifactId>
+    </dependency>
 
     <!-- LangChain4j support -->
     <dependency>

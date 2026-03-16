@@ -121,6 +121,11 @@ async def chat(conversation_id: str, request: Request) -> StreamingResponse:
     if not user_message:
         raise HTTPException(400, "message is required")
 
+    await proxy.ensure_conversation(
+        conversation_id,
+        f"Python checkpoint {conversation_id}",
+    )
+
     async def source():
         with memory_service_scope(conversation_id):
             async for chunk, _metadata in agent.astream(

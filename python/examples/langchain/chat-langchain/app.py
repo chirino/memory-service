@@ -121,6 +121,11 @@ async def chat(
 
     stream_mode = "events"
 
+    await proxy.ensure_conversation(
+        conversation_id,
+        f"Python chat {conversation_id}",
+    )
+
     async def source():
         with memory_service_scope(
             conversation_id,

@@ -8,7 +8,6 @@ import logging
 import os
 import threading
 from typing import Any, AsyncIterator, Callable
-from urllib.parse import urlparse
 import uuid
 
 import grpc
@@ -16,6 +15,7 @@ import grpc
 from .grpc.memory.v1 import memory_service_pb2, memory_service_pb2_grpc
 from .request_context import get_request_authorization
 from .response_recorder import BaseResponseRecorder, create_grpc_response_recorder
+from .transport import resolve_grpc_target
 
 
 LOG = logging.getLogger("uvicorn.error")
@@ -30,18 +30,6 @@ _GRPC_REPLAY_TERMINAL_CODES = {
     grpc.StatusCode.DEADLINE_EXCEEDED,
     grpc.StatusCode.CANCELLED,
 }
-
-
-def _grpc_port_from_url(parsed_url: Any) -> str:
-    port = getattr(parsed_url, "port", None)
-    if port is not None:
-        return str(port)
-    scheme = getattr(parsed_url, "scheme", "")
-    if scheme == "https":
-        return "443"
-    return "80"
-
-
 @dataclass
 class _ResumeState:
     tokens: list[str]
@@ -60,6 +48,7 @@ class MemoryServiceResponseRecordingManager:
         *,
         token_delay_seconds: float = 0.01,
         base_url: str | None = None,
+        unix_socket: str | None = None,
         api_key: str | None = None,
         authorization_getter: Callable[[], str | None] | None = None,
         grpc_target: str | None = None,
@@ -73,13 +62,11 @@ class MemoryServiceResponseRecordingManager:
         self._api_key = api_key or os.getenv("MEMORY_SERVICE_API_KEY", "agent-api-key-1")
         self._authorization_getter = authorization_getter or get_request_authorization
 
-        resolved_base_url = (base_url or os.getenv("MEMORY_SERVICE_URL", "http://localhost:8082")).rstrip("/")
-        parsed = urlparse(resolved_base_url)
-        grpc_host = parsed.hostname or "localhost"
-
-        configured_target = grpc_target or os.getenv("MEMORY_SERVICE_GRPC_TARGET")
-        grpc_port = os.getenv("MEMORY_SERVICE_GRPC_PORT") or _grpc_port_from_url(parsed)
-        self._grpc_target = configured_target or f"{grpc_host}:{grpc_port}"
+        self._grpc_target = resolve_grpc_target(
+            base_url=base_url,
+            grpc_target=grpc_target,
+            unix_socket=unix_socket,
+        )
 
         self._grpc_timeout_seconds = grpc_timeout_seconds or float(
             os.getenv("MEMORY_SERVICE_GRPC_TIMEOUT_SECONDS", "30")

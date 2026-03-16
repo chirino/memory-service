@@ -25,6 +25,8 @@ import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -310,6 +312,18 @@ public class MemoryServiceProxy {
                     .entity(Map.of("error", "Unsupported file type: " + reqContentType))
                     .build();
         }
+        if (memoryServiceApiBuilder.usesUnixSocket()) {
+            try {
+                UnixSocketHttpClient.HttpResponseData response =
+                        unixSocketClient().exchange("POST", "/v1/attachments", null, request);
+                return jsonResponse(response);
+            } catch (Exception e) {
+                LOG.errorf(e, "Error creating attachment from URL");
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(Map.of("error", "Create from URL proxy failed: " + e.getMessage()))
+                        .build();
+            }
+        }
         try {
             String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments";
             String jsonBody = OBJECT_MAPPER.writeValueAsString(request);
@@ -377,6 +391,34 @@ public class MemoryServiceProxy {
                         : "application/octet-stream";
         String filename = formValue.getFileName();
 
+        if (memoryServiceApiBuilder.usesUnixSocket()) {
+            try {
+                byte[] requestBody =
+                        buildMultipartRequest(
+                                formValue.getFileItem().getInputStream(),
+                                filename,
+                                contentType,
+                                expiresIn);
+                String boundary = currentMultipartBoundary;
+                UnixSocketHttpClient.HttpResponseData response =
+                        unixSocketClient()
+                                .exchange(
+                                        "POST",
+                                        "/v1/attachments",
+                                        expiresIn == null || expiresIn.isBlank()
+                                                ? null
+                                                : Map.of("expiresIn", expiresIn),
+                                        requestBody,
+                                        "multipart/form-data; boundary=" + boundary,
+                                        Map.of());
+                return jsonResponse(response);
+            } catch (Exception e) {
+                LOG.errorf(e, "Error uploading attachment");
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(Map.of("error", "Upload proxy failed: " + e.getMessage()))
+                        .build();
+            }
+        }
         try {
             InputStream fileStream = formValue.getFileItem().getInputStream();
 
@@ -448,6 +490,22 @@ public class MemoryServiceProxy {
      * Retrieves an attachment by ID. Handles 302 redirects (e.g. S3 presigned URLs).
      */
     public Response retrieveAttachment(String id) {
+        if (memoryServiceApiBuilder.usesUnixSocket()) {
+            try {
+                UnixSocketHttpClient.HttpResponseData upstream =
+                        unixSocketClient()
+                                .exchange("GET", "/v1/attachments/" + id, null, (Object) null);
+                return binaryResponse(upstream);
+            } catch (Exception e) {
+                LOG.errorf(e, "Error retrieving attachment %s", id);
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(
+                                Map.of(
+                                        "error",
+                                        "Retrieve attachment proxy failed: " + e.getMessage()))
+                        .build();
+            }
+        }
         Client client = ClientBuilder.newClient();
         try {
             String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + id;
@@ -493,6 +551,27 @@ public class MemoryServiceProxy {
      * Gets a signed download URL for an attachment.
      */
     public Response getAttachmentDownloadUrl(String id) {
+        if (memoryServiceApiBuilder.usesUnixSocket()) {
+            try {
+                UnixSocketHttpClient.HttpResponseData upstream =
+                        unixSocketClient()
+                                .exchange(
+                                        "GET",
+                                        "/v1/attachments/" + id + "/download-url",
+                                        null,
+                                        (Object) null);
+                return jsonResponse(upstream);
+            } catch (Exception e) {
+                LOG.errorf(e, "Error getting attachment download URL for %s", id);
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(
+                                Map.of(
+                                        "error",
+                                        "Get attachment download URL proxy failed: "
+                                                + e.getMessage()))
+                        .build();
+            }
+        }
         Client client = ClientBuilder.newClient();
         try {
             String url =
@@ -519,6 +598,25 @@ public class MemoryServiceProxy {
      * Deletes an attachment by ID.
      */
     public Response deleteAttachment(String id) {
+        if (memoryServiceApiBuilder.usesUnixSocket()) {
+            try {
+                UnixSocketHttpClient.HttpResponseData upstream =
+                        unixSocketClient()
+                                .exchange("DELETE", "/v1/attachments/" + id, null, (Object) null);
+                if (upstream.statusCode() == 204) {
+                    return Response.noContent().build();
+                }
+                return jsonResponse(upstream);
+            } catch (Exception e) {
+                LOG.errorf(e, "Error deleting attachment %s", id);
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(
+                                Map.of(
+                                        "error",
+                                        "Delete attachment proxy failed: " + e.getMessage()))
+                        .build();
+            }
+        }
         Client client = ClientBuilder.newClient();
         try {
             String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + id;
@@ -545,6 +643,30 @@ public class MemoryServiceProxy {
      * Downloads an attachment using a signed token. No authentication required.
      */
     public Response downloadAttachmentByToken(String token, String filename) {
+        if (memoryServiceApiBuilder.usesUnixSocket()) {
+            try {
+                UnixSocketHttpClient.HttpResponseData upstream =
+                        new UnixSocketHttpClient(
+                                        memoryServiceApiBuilder.getUnixSocketPath(),
+                                        OBJECT_MAPPER,
+                                        null,
+                                        null)
+                                .exchange(
+                                        "GET",
+                                        "/v1/attachments/download/" + token + "/" + filename,
+                                        null,
+                                        (Object) null);
+                return binaryResponse(upstream);
+            } catch (Exception e) {
+                LOG.errorf(e, "Error downloading attachment by token");
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(
+                                Map.of(
+                                        "error",
+                                        "Download attachment proxy failed: " + e.getMessage()))
+                        .build();
+            }
+        }
         Client client = ClientBuilder.newClient();
         try {
             String url =
@@ -609,6 +731,73 @@ public class MemoryServiceProxy {
             req = req.header("X-API-Key", apiKey);
         }
         return req;
+    }
+
+    private Response jsonResponse(UnixSocketHttpClient.HttpResponseData upstream) {
+        return Response.status(upstream.statusCode())
+                .type(MediaType.APPLICATION_JSON)
+                .entity(new String(upstream.body(), StandardCharsets.UTF_8))
+                .build();
+    }
+
+    private Response binaryResponse(UnixSocketHttpClient.HttpResponseData upstream) {
+        if (upstream.statusCode() == 302) {
+            String location = upstream.header("location");
+            return Response.temporaryRedirect(URI.create(location)).build();
+        }
+        Response.ResponseBuilder builder =
+                Response.status(upstream.statusCode())
+                        .entity(new ByteArrayInputStream(upstream.body()));
+        copyHeader(upstream, builder, "content-type", "Content-Type");
+        copyHeader(upstream, builder, "content-length", "Content-Length");
+        copyHeader(upstream, builder, "content-disposition", "Content-Disposition");
+        copyHeader(upstream, builder, "cache-control", "Cache-Control");
+        return builder.build();
+    }
+
+    private void copyHeader(
+            UnixSocketHttpClient.HttpResponseData upstream,
+            Response.ResponseBuilder builder,
+            String headerName,
+            String responseName) {
+        String value = upstream.header(headerName);
+        if (value != null) {
+            builder.header(responseName, value);
+        }
+    }
+
+    private UnixSocketHttpClient unixSocketClient() {
+        return new UnixSocketHttpClient(
+                memoryServiceApiBuilder.getUnixSocketPath(),
+                OBJECT_MAPPER,
+                memoryServiceApiBuilder.getApiKey(),
+                bearerToken(securityIdentity));
+    }
+
+    private String currentMultipartBoundary;
+
+    private byte[] buildMultipartRequest(
+            InputStream fileStream, String filename, String contentType, String expiresIn)
+            throws Exception {
+        currentMultipartBoundary = "----Boundary" + UUID.randomUUID().toString().replace("-", "");
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            String partHeader =
+                    "--"
+                            + currentMultipartBoundary
+                            + "\r\n"
+                            + "Content-Disposition: form-data; name=\"file\"; filename=\""
+                            + (filename != null ? filename : "upload")
+                            + "\"\r\n"
+                            + "Content-Type: "
+                            + contentType
+                            + "\r\n\r\n";
+            out.write(partHeader.getBytes(StandardCharsets.UTF_8));
+            fileStream.transferTo(out);
+            out.write(
+                    ("\r\n--" + currentMultipartBoundary + "--\r\n")
+                            .getBytes(StandardCharsets.UTF_8));
+            return out.toByteArray();
+        }
     }
 
     // ---- Private helpers ----

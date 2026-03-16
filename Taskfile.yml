@@ -174,7 +174,7 @@ tasks:
       SITE_TEST_BUILD_OUTPUT: '{{.SITE_TEST_BUILD_OUTPUT | default "on-fail"}}'
     cmds:
       - |
-        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='site_tests sqlite_fts5' ./internal/sitebdd/ {{.CLI_ARGS}}
 
   test:site:record-missing:
     desc: Run site tests and record only missing OpenAI fixtures
@@ -183,7 +183,7 @@ tasks:
       SITE_TEST_BUILD_OUTPUT: '{{.SITE_TEST_BUILD_OUTPUT | default "on-fail"}}'
     cmds:
       - |
-        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='site_tests sqlite_fts5' ./internal/sitebdd/ {{.CLI_ARGS}}
 
   test:site:record-all:
     desc: Run site tests and re-record all OpenAI fixtures
@@ -192,7 +192,7 @@ tasks:
       SITE_TEST_BUILD_OUTPUT: '{{.SITE_TEST_BUILD_OUTPUT | default "on-fail"}}'
     cmds:
       - |
-        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='site_tests sqlite_fts5' ./internal/sitebdd/ {{.CLI_ARGS}}
 
   test:site:update-curl-examples:
     desc: Run site tests, capture curl outputs, and sync docs exampleOutput blocks
@@ -205,7 +205,7 @@ tasks:
         npm i
         npm run build
       - |
-        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags=site_tests ./internal/sitebdd/ {{.CLI_ARGS}}
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='site_tests sqlite_fts5' ./internal/sitebdd/ {{.CLI_ARGS}}
       - go run ./internal/cmd/sync_curl_examples --apply
 
   dev:memory-service:

@@ -199,4 +199,12 @@ class GrpcFromUrlConfigSourceTest {
                 .containsEntry(GRPC_PORT, "9443")
                 .containsEntry(GRPC_PLAIN_TEXT, "false");
     }
+
+    @Test
+    void parseUrl_shouldIgnoreUnixUrls() {
+        Map<String, String> props =
+                GrpcFromUrlConfigSource.parseUrl(
+                        "unix:///home/test/.local/run/memory-service.sock");
+        assertThat(props).isEmpty();
+    }
 }

@@ -126,15 +126,18 @@ type SiteScenario struct {
 	ScenarioName string
 
 	// Checkpoint state
-	CheckpointID          string // e.g. "java/quarkus/examples/chat-quarkus/01-basic-agent"
-	CheckpointPath        string // absolute filesystem path
-	CheckpointPort        int    // dynamically allocated TCP port
-	Wave                  *scenarioWave
-	checkpointPathClaimed bool
-	checkpointCmd         *exec.Cmd
-	checkpointLogPath     string
-	buildExitCode         int
-	waveReady             bool
+	CheckpointID               string // e.g. "java/quarkus/examples/chat-quarkus/01-basic-agent"
+	CheckpointPath             string // absolute filesystem path
+	CheckpointPort             int    // dynamically allocated TCP port
+	WaveID                     int
+	Wave                       *scenarioWave
+	checkpointPathClaimed      bool
+	checkpointCmd              *exec.Cmd
+	checkpointLogPath          string
+	buildExitCode              int
+	scenarioFailed             bool
+	waveReady                  bool
+	UseUnixSocketMemoryService bool
 
 	// OpenAI mock recording
 	Recording bool
@@ -155,9 +158,10 @@ type SiteScenario struct {
 	curlCaptures         []CurlExampleCapture
 
 	// Shared services (set once before godog runs)
-	ProjectRoot   string
-	MemServiceURL string
-	Mock          *MockServer
+	ProjectRoot          string
+	MemServiceURL        string
+	MemServiceUnixSocket string
+	Mock                 *MockServer
 
 	t testing.TB
 }
@@ -227,6 +231,15 @@ func (s *SiteScenario) startCheckpoint() error {
 	isQuarkus := !isPython && !isNode && fileExists(quarkusJar)
 
 	var cmd *exec.Cmd
+	memoryServiceURL := s.MemServiceURL
+	memoryServiceBaseURL := s.MemServiceURL
+	springMemoryServiceArg := "--memory-service.client.url=" + s.MemServiceURL
+	if s.UseUnixSocketMemoryService {
+		memoryServiceURL = "http://localhost"
+		memoryServiceBaseURL = "http://localhost"
+		springMemoryServiceArg =
+			"--memory-service.client.url=unix://" + s.MemServiceUnixSocket
+	}
 	switch {
 	case isPython:
 		venvPython := filepath.Join(s.CheckpointPath, ".venv", "bin", "python")
@@ -254,8 +267,7 @@ func (s *SiteScenario) startCheckpoint() error {
 		springArgs := []string{
 			"-jar", jar,
 			fmt.Sprintf("--server.port=%d", s.CheckpointPort),
-			// Override memory service URL via highest-priority Spring command-line arg
-			"--memory-service.client.base-url=" + s.MemServiceURL,
+			springMemoryServiceArg,
 		}
 		if s.checkpointHasProperty("spring.security.oauth2") {
 			// Point the OAuth2 client provider (login + ClientRegistrationRepository) at the
@@ -267,8 +279,37 @@ func (s *SiteScenario) startCheckpoint() error {
 				"--spring.security.oauth2.resourceserver.jwt.issuer-uri="+s.Mock.URL(),
 			)
 		}
+		if siteDiagnosticsEnabled() {
+			springArgs = append(springArgs,
+				"--server.error.include-message=always",
+				"--server.error.include-exception=true",
+				"--server.error.include-stacktrace=always",
+				"--logging.level.com.example.demo=DEBUG",
+				"--logging.level.io.github.chirino.memoryservice.history=DEBUG",
+				"--logging.level.io.github.chirino.memoryservice.client=DEBUG",
+			)
+		}
 		cmd = exec.Command("java", springArgs...)
 	}
+
+	framework := "spring"
+	switch {
+	case isPython:
+		framework = "python"
+	case isNode:
+		framework = "node"
+	case isQuarkus:
+		framework = "quarkus"
+	}
+	siteDiagnosticf(
+		"checkpoint-start scenario=%q wave=%d checkpoint=%q framework=%s port=%d uds=%t",
+		s.scenarioKey(),
+		s.WaveID,
+		s.CheckpointID,
+		framework,
+		s.CheckpointPort,
+		s.UseUnixSocketMemoryService,
+	)
 
 	cmd.Dir = s.CheckpointPath
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -279,11 +320,14 @@ func (s *SiteScenario) startCheckpoint() error {
 		"OPENAI_MODEL=mock-gpt-markdown",
 		"PORT="+fmt.Sprintf("%d", s.CheckpointPort),
 		// Memory service URL env vars for each framework
-		"MEMORY_SERVICE_URL="+s.MemServiceURL,             // Python + Node apps
+		"MEMORY_SERVICE_URL="+memoryServiceURL,            // Python + Node apps
 		"MEMORY_SERVICE_API_KEY=agent-api-key-1",          // Node helper defaults
-		"MEMORY_SERVICE_CLIENT_URL="+s.MemServiceURL,      // Quarkus: memory-service.client.url
-		"MEMORY_SERVICE_CLIENT_BASE_URL="+s.MemServiceURL, // Spring fallback (cmd arg takes precedence)
+		"MEMORY_SERVICE_CLIENT_URL="+memoryServiceBaseURL, // Quarkus: memory-service.client.url
 	)
+	if s.UseUnixSocketMemoryService {
+		cmd.Env = append(cmd.Env, "MEMORY_SERVICE_UNIX_SOCKET="+s.MemServiceUnixSocket)
+		cmd.Env = appendEnv(cmd.Env, "MEMORY_SERVICE_CLIENT_URL=unix://"+s.MemServiceUnixSocket)
+	}
 
 	// Quarkus with OIDC: bypass Keycloak using mock introspection endpoint (no JWT needed).
 	if isQuarkus && s.checkpointHasProperty("quarkus.oidc.auth-server-url") {
@@ -336,6 +380,13 @@ func (s *SiteScenario) startCheckpoint() error {
 	}
 	s.checkpointCmd = cmd
 	globalCheckpointProcessRegistry.Track(cmd)
+	siteDiagnosticf(
+		"checkpoint-started scenario=%q wave=%d checkpoint=%q pid=%d",
+		s.scenarioKey(),
+		s.WaveID,
+		s.CheckpointID,
+		cmd.Process.Pid,
+	)
 
 	// Wait for port to become available (up to 90s)
 	if err := waitForPort(s.CheckpointPort, 90*time.Second); err != nil {
@@ -354,6 +405,13 @@ func (s *SiteScenario) startCheckpoint() error {
 	if streamOutput {
 		fmt.Printf("[checkpoint:%d] Ready: %s\n", s.CheckpointPort, readyURL)
 	}
+	siteDiagnosticf(
+		"checkpoint-ready scenario=%q wave=%d checkpoint=%q ready=%s",
+		s.scenarioKey(),
+		s.WaveID,
+		s.CheckpointID,
+		readyURL,
+	)
 	return nil
 }
 
@@ -423,6 +481,56 @@ func (s *SiteScenario) replayAndCleanupCheckpointLog(shouldReplay bool) error {
 	return replayBuildOutput(path)
 }
 
+func (s *SiteScenario) emitFailureDiagnostics(reason string) {
+	s.scenarioFailed = true
+	if !siteDiagnosticsEnabled() {
+		return
+	}
+
+	method := ""
+	url := ""
+	if s.lastCurlReq != nil {
+		method = s.lastCurlReq.Method
+		url = s.lastCurlReq.URL
+	}
+	siteDiagnosticf(
+		"failure scenario=%q wave=%d checkpoint=%q reason=%q status=%d request=%s %s",
+		s.scenarioKey(),
+		s.WaveID,
+		s.CheckpointID,
+		reason,
+		s.LastStatusCode,
+		method,
+		url,
+	)
+
+	tail, err := readFileTail(s.checkpointLogPath, diagnosticLogTailBytes)
+	if err != nil {
+		siteDiagnosticf(
+			"failure-log-tail scenario=%q checkpoint=%q error=%v",
+			s.scenarioKey(),
+			s.CheckpointID,
+			err,
+		)
+		return
+	}
+	tail = strings.TrimSpace(tail)
+	if tail == "" {
+		siteDiagnosticf(
+			"failure-log-tail scenario=%q checkpoint=%q empty=true",
+			s.scenarioKey(),
+			s.CheckpointID,
+		)
+		return
+	}
+	fmt.Printf(
+		"[sitebdd] checkpoint-log-tail scenario=%q checkpoint=%q\n%s\n",
+		s.scenarioKey(),
+		s.CheckpointID,
+		tail,
+	)
+}
+
 // buildCheckpoint builds the checkpoint using npm (Node), Maven (Java), or uv (Python).
 func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 	if s.CheckpointPath == "" {
@@ -459,6 +567,13 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 	}
 
 	streamOutput := shouldStreamBuildOutput()
+	buildStarted := time.Now()
+	siteDiagnosticf(
+		"checkpoint-build-start scenario=%q wave=%d checkpoint=%q",
+		s.scenarioKey(),
+		s.WaveID,
+		s.CheckpointID,
+	)
 	var capturePath string
 	if streamOutput {
 		cmd.Stdout = &prefixWriter{prefix: "[build] ", dst: os.Stdout}
@@ -500,6 +615,14 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 		if capturePath != "" {
 			_ = os.Remove(capturePath)
 		}
+		siteDiagnosticf(
+			"checkpoint-build-failed scenario=%q wave=%d checkpoint=%q duration=%s exit=%d",
+			s.scenarioKey(),
+			s.WaveID,
+			s.CheckpointID,
+			time.Since(buildStarted).Round(time.Millisecond),
+			s.buildExitCode,
+		)
 		return nil // step returns success; "the build should succeed" asserts the exit code
 	}
 	if flushErr := flushAndCloseBuildOutput(cmd.Stdout); flushErr != nil {
@@ -512,6 +635,13 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 	if streamOutput {
 		fmt.Printf("=== Build OK: %s ===\n", s.CheckpointID)
 	}
+	siteDiagnosticf(
+		"checkpoint-build-ready scenario=%q wave=%d checkpoint=%q duration=%s",
+		s.scenarioKey(),
+		s.WaveID,
+		s.CheckpointID,
+		time.Since(buildStarted).Round(time.Millisecond),
+	)
 	return nil
 }
 

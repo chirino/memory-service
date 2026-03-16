@@ -7,12 +7,15 @@ import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.PdfFileContent;
 import dev.langchain4j.data.message.VideoContent;
+import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
+import io.github.chirino.memory.runtime.UnixSocketHttpClient;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.core.Response;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -41,11 +44,7 @@ public class AttachmentResolver {
 
     @Inject SecurityIdentity securityIdentity;
 
-    @ConfigProperty(name = "memory-service.client.url")
-    Optional<String> clientUrl;
-
-    @ConfigProperty(name = "quarkus.rest-client.memory-service-client.url")
-    Optional<String> quarkusRestClientUrl;
+    @Inject MemoryServiceApiBuilder memoryServiceApiBuilder;
 
     @ConfigProperty(name = "memory-service.client.temp-dir")
     Optional<String> tempDir;
@@ -96,10 +95,36 @@ public class AttachmentResolver {
     }
 
     private Content downloadAndConvert(AttachmentRef ref) throws IOException {
-        String baseUrl =
-                clientUrl.orElseGet(() -> quarkusRestClientUrl.orElse("http://localhost:8080"));
-        String url = baseUrl + "/v1/attachments/" + ref.id();
         String bearer = bearerToken(securityIdentity);
+        if (memoryServiceApiBuilder.usesUnixSocket()) {
+            UnixSocketHttpClient client =
+                    new UnixSocketHttpClient(
+                            memoryServiceApiBuilder.getUnixSocketPath(),
+                            new com.fasterxml.jackson.databind.ObjectMapper(),
+                            memoryServiceApiBuilder.getApiKey(),
+                            bearer);
+            UnixSocketHttpClient.HttpResponseData response =
+                    client.exchange("GET", "/v1/attachments/" + ref.id(), null, (Object) null);
+            if (response.statusCode() == 302) {
+                return toContentFromUrl(ref.contentType(), response.header("location"));
+            }
+            if (response.statusCode() == 200) {
+                String contentType = response.header("content-type");
+                if (contentType == null) {
+                    contentType = ref.contentType();
+                }
+                if (contentType == null) {
+                    contentType = "application/octet-stream";
+                }
+                return streamToTempFileAndConvert(
+                        new ByteArrayInputStream(response.body()), contentType);
+            }
+            LOG.warnf(
+                    "Unexpected status %d downloading attachment %s",
+                    response.statusCode(), ref.id());
+            return null;
+        }
+        String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + ref.id();
         Client client = ClientBuilder.newClient();
         try {
             var req = client.target(url).request();

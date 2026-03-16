@@ -12,6 +12,8 @@ from typing import Any, Callable, Mapping, overload
 import httpx
 from fastapi.responses import JSONResponse
 
+from .transport import httpx_async_client_kwargs
+
 
 _request_authorization: ContextVar[str | None] = ContextVar(
     "request_authorization",
@@ -268,8 +270,9 @@ async def memory_service_request(
     include_authorization: bool = True,
     extra_headers: Mapping[str, str] | None = None,
 ) -> httpx.Response:
-    resolved_base_url = (base_url or os.getenv("MEMORY_SERVICE_URL", "http://localhost:8082")).rstrip("/")
-    async with httpx.AsyncClient(base_url=resolved_base_url, timeout=timeout_seconds) as client:
+    async with httpx.AsyncClient(
+        **httpx_async_client_kwargs(base_url=base_url, timeout=timeout_seconds)
+    ) as client:
         return await client.request(
             method=method,
             url=path,

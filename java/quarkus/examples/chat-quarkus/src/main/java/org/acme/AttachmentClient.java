@@ -1,6 +1,7 @@
 package org.acme;
 
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
+import io.github.chirino.memory.runtime.UnixSocketHttpClient;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -36,6 +37,31 @@ public class AttachmentClient {
     @SuppressWarnings("unchecked")
     public Map<String, Object> createFromUrl(String sourceUrl, String contentType, String name) {
         try {
+            if (apiBuilder.usesUnixSocket()) {
+                UnixSocketHttpClient.HttpResponseData response =
+                        new UnixSocketHttpClient(
+                                        apiBuilder.getUnixSocketPath(),
+                                        new com.fasterxml.jackson.databind.ObjectMapper(),
+                                        apiBuilder.getApiKey(),
+                                        io.github.chirino.memory.security.SecurityHelper
+                                                .bearerToken(securityIdentity))
+                                .exchange(
+                                        "POST",
+                                        "/v1/attachments",
+                                        null,
+                                        Map.of(
+                                                "sourceUrl", sourceUrl,
+                                                "contentType", contentType,
+                                                "name", name));
+                if (response.statusCode() == 201) {
+                    var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    return mapper.readValue(response.body(), Map.class);
+                }
+                LOG.warnf(
+                        "Failed to create attachment from URL: HTTP %d - %s",
+                        response.statusCode(), new String(response.body(), StandardCharsets.UTF_8));
+                return null;
+            }
             String url = apiBuilder.getBaseUrl() + "/v1/attachments";
             String jsonBody =
                     "{\"sourceUrl\":\""

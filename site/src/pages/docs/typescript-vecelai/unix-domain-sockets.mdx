@@ -1,0 +1,104 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: TypeScript Vercel AI Over Unix Domain Sockets
+description: Configure the TypeScript helpers to use a Memory Service Unix domain socket with no custom fetch or gRPC setup.
+---
+
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+
+This guide starts from [TypeScript Response Recording and Resumption](/docs/typescript-vecelai/response-resumption/). The application code stays the same. Only the Memory Service transport changes.
+
+## Local Memory Service
+
+```bash
+memory-service serve \
+  --db-kind=sqlite \
+  --db-url=file:$HOME/.local/share/memory-service/memory.db \
+  --vector-kind=sqlite \
+  --cache-kind=local \
+  --unix-socket=$HOME/.local/run/memory-service/api.sock
+```
+
+Those flags keep the TypeScript example local and low-friction: SQLite handles both stored records and vector search, `cache-kind=local` avoids a separate cache service, the database file sits under `$HOME/.local/share`, and the Unix socket sits under `$HOME/.local/run` so it benefits from the user's home-directory permissions rather than a shared `/tmp` location.
+
+## Agent Configuration
+
+No TypeScript source file needs a host or socket change. The checkpoint already calls the package helpers without transport-specific wiring in the app:
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05b-response-resumption/src/app.ts"
+  lang="typescript"
+  lines="48-58"
+/>
+
+Update the file that sets environment variables before `node dist/app.js` or `tsx src/app.ts` starts. If you keep those in a `.env` file next to the app, this `.env.example` snippet shows the exact value to add:
+
+<CodeFromFile
+  file="typescript/examples/vecelai/doc-checkpoints/05b-response-resumption/docs-snippets/.env.example"
+  lang="bash"
+/>
+
+The package will route both `fetch`-based REST requests and the response-recorder gRPC client over that socket.
+
+<TestScenario checkpoint="typescript/examples/vecelai/doc-checkpoints/05b-response-resumption">
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Start a streaming response, but disconnect before it finishes:
+
+<CurlTest steps={`
+Then the response status should be 200
+`} exampleOutput={`data: {"text":"Once "}`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/7aa65d1d-ec04-46d7-b0cc-6bf6f96ca4b7 \
+  --max-time 0.15 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Write a short story about a cat."
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "["
+`} exampleOutputLang="json" exampleOutput={`[]`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '["7aa65d1d-ec04-46d7-b0cc-6bf6f96ca4b7"]'
+```
+
+</CurlTest>
+
+Resume the interrupted response:
+
+<CurlTest steps={`
+Then the response status should be 200
+`} exampleOutput={`data: {"text":"Once "}`}>
+
+```bash
+curl -NsSfX GET http://localhost:9090/v1/conversations/7aa65d1d-ec04-46d7-b0cc-6bf6f96ca4b7/resume \
+  --max-time 0.5 \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+</TestScenario>

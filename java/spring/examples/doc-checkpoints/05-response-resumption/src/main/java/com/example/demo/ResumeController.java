@@ -5,6 +5,8 @@ import io.github.chirino.memoryservice.history.ResponseRecordingManager;
 import io.github.chirino.memoryservice.security.SecurityHelper;
 import java.io.IOException;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,8 @@ import reactor.core.Disposable;
 @RestController
 @RequestMapping("/v1/conversations")
 class ResumeController {
+    private static final Logger LOG = LoggerFactory.getLogger(ResumeController.class);
+
     private final ResponseRecordingManager recordingManager;
     private final MemoryServiceProxy proxy;
     private final OAuth2AuthorizedClientService authorizedClientService;
@@ -49,15 +53,17 @@ class ResumeController {
                 recordingManager
                         .replay(conversationId, bearerToken)
                         .subscribe(
-                                chunk -> safeSend(emitter, chunk),
-                                emitter::completeWithError,
-                                emitter::complete);
+                                chunk ->
+                                        safeSendChunk(
+                                                emitter, new ChatController.TokenFrame(chunk)),
+                                failure -> safeCompleteWithError(emitter, failure),
+                                () -> safeComplete(emitter));
 
         emitter.onCompletion(subscription::dispose);
         emitter.onTimeout(
                 () -> {
                     subscription.dispose();
-                    emitter.complete();
+                    safeComplete(emitter);
                 });
         return emitter;
     }
@@ -67,11 +73,28 @@ class ResumeController {
         return proxy.cancelResponse(conversationId);
     }
 
-    private void safeSend(SseEmitter emitter, String chunk) {
+    private void safeSendChunk(SseEmitter emitter, ChatController.TokenFrame frame) {
         try {
-            emitter.send(chunk);
+            emitter.send(SseEmitter.event().data(frame));
         } catch (IOException | IllegalStateException ignored) {
             // Client disconnected or emitter already completed
+        }
+    }
+
+    private void safeComplete(SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (IllegalStateException ignored) {
+            // Emitter already completed.
+        }
+    }
+
+    private void safeCompleteWithError(SseEmitter emitter, Throwable failure) {
+        LOG.warn("Replay stream failed", failure);
+        try {
+            emitter.completeWithError(failure);
+        } catch (IllegalStateException ignored) {
+            // Emitter already completed.
         }
     }
 }

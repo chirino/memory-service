@@ -24,6 +24,7 @@ from .request_context import (
     get_request_forked_at_conversation_id,
     get_request_forked_at_entry_id,
 )
+from .transport import httpx_client_kwargs, resolve_rest_base_url, resolve_unix_socket
 
 # Stable namespace UUID for deriving conversation UUIDs from arbitrary thread_ids.
 _CONV_ID_NAMESPACE = _uuid_module.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
@@ -38,6 +39,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
         self,
         *,
         base_url: str | None = None,
+        unix_socket: str | None = None,
         api_key: str | None = None,
         authorization_getter: Callable[[], str | None] | None = None,
         forked_at_conversation_id_getter: Callable[[], str | None] | None = None,
@@ -45,7 +47,8 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
-        self.base_url = (base_url or os.getenv("MEMORY_SERVICE_URL", "http://localhost:8082")).rstrip("/")
+        self.base_url = resolve_rest_base_url(base_url, unix_socket)
+        self.unix_socket = resolve_unix_socket(unix_socket)
         self.api_key = api_key or os.getenv("MEMORY_SERVICE_API_KEY", "agent-api-key-1")
         self.authorization_getter = authorization_getter or get_request_authorization
         self.forked_at_conversation_id_getter = (
@@ -87,7 +90,13 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
         params: dict[str, Any] | None = None,
         json_body: Any | None = None,
     ) -> httpx.Response:
-        with httpx.Client(base_url=self.base_url, timeout=30.0) as client:
+        with httpx.Client(
+            **httpx_client_kwargs(
+                base_url=self.base_url,
+                unix_socket=self.unix_socket,
+                timeout=30.0,
+            )
+        ) as client:
             return client.request(
                 method=method,
                 url=path,

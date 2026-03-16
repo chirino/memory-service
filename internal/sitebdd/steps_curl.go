@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -46,7 +47,7 @@ func (s *SiteScenario) setCurlCaptureID(captureID string) error {
 // applies port and user substitutions, executes each as a Go HTTP request,
 // and stores the last response.
 func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
-	globalScenarioWaveCoordinator.WaitForCurlPhase(s.Wave)
+	globalScenarioWaveCoordinator.WaitForCurlPhase(s.Wave, s.scenarioKey())
 
 	bash := block.Content
 
@@ -66,6 +67,14 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 	// Substitute to reach our in-process memory service.
 	memServiceHost := strings.TrimPrefix(s.MemServiceURL, "http://")
 	bash = strings.ReplaceAll(bash, "localhost:8082", memServiceHost)
+	if s.UseUnixSocketMemoryService {
+		bash = strings.ReplaceAll(bash, "/tmp/memory-service.sock", s.MemServiceUnixSocket)
+		bash = strings.ReplaceAll(
+			bash,
+			"$HOME/.local/run/memory-service/api.sock",
+			s.MemServiceUnixSocket,
+		)
+	}
 
 	// Apply user isolation substitutions
 	bash = s.rewriteUsers(bash)
@@ -84,8 +93,6 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 		return nil
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-
 	for i, cr := range requests {
 		fmt.Printf("  [curl %d/%d] %s %s\n", i+1, len(requests), cr.Method, cr.URL)
 		if err := s.claimRequestUUIDs(cr); err != nil {
@@ -97,12 +104,16 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 			return fmt.Errorf("build request %d: %w", i+1, err)
 		}
 
+		client := httpClientForCurl(cr)
 		resp, err := client.Do(req.Clone(context.Background()))
 		if err != nil {
 			return fmt.Errorf("execute curl %d: %w", i+1, err)
 		}
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, err := readResponseBody(resp.Body, cr.MaxTime)
 		_ = resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("read curl %d response body: %w", i+1, err)
+		}
 		respBody := string(bodyBytes)
 		statusCode := resp.StatusCode
 
@@ -112,6 +123,9 @@ func (s *SiteScenario) executeCurlCommand(block *godog.DocString) error {
 		s.lastRespCT = resp.Header.Get("Content-Type")
 		crCopy := cr
 		s.lastCurlReq = &crCopy
+		if statusCode >= 500 {
+			s.emitFailureDiagnostics("http status >= 500")
+		}
 	}
 	s.recordCurlExample()
 
@@ -184,16 +198,36 @@ func (s *SiteScenario) executeSetupCommands(bash string) {
 
 func (s *SiteScenario) responseStatusShouldBe(expected int) error {
 	if s.LastStatusCode != expected {
-		return fmt.Errorf("expected status %d, got %d\nbody: %s", expected, s.LastStatusCode, s.LastRespBody)
+		err := fmt.Errorf("expected status %d, got %d\nbody: %s", expected, s.LastStatusCode, s.LastRespBody)
+		s.emitFailureDiagnostics(err.Error())
+		return err
 	}
 	return nil
 }
 
 func (s *SiteScenario) responseShouldContain(expected string) error {
-	if !strings.Contains(s.LastRespBody, expected) {
-		return fmt.Errorf("expected response to contain %q\ngot: %s", expected, s.LastRespBody)
+	if strings.Contains(s.LastRespBody, expected) {
+		return nil
 	}
-	return nil
+	lastErr := fmt.Errorf("expected response to contain %q\ngot: %s", expected, s.LastRespBody)
+	for attempt := 1; attempt <= 6; attempt++ {
+		if !s.canReplayLastCurlRequest() {
+			s.emitFailureDiagnostics(lastErr.Error())
+			return lastErr
+		}
+		time.Sleep(750 * time.Millisecond)
+		if err := s.replayLastCurlRequest(); err != nil {
+			wrapped := fmt.Errorf("%v (replay failed: %w)", lastErr, err)
+			s.emitFailureDiagnostics(wrapped.Error())
+			return wrapped
+		}
+		if strings.Contains(s.LastRespBody, expected) {
+			return nil
+		}
+		lastErr = fmt.Errorf("expected response to contain %q\ngot: %s", expected, s.LastRespBody)
+	}
+	s.emitFailureDiagnostics(lastErr.Error())
+	return lastErr
 }
 
 func (s *SiteScenario) responseShouldNotContain(unexpected string) error {
@@ -248,8 +282,11 @@ func (s *SiteScenario) responseBodyShouldBeJson(expected *godog.DocString) error
 
 	// Some checkpoint writes are eventually consistent; for GETs, re-read a few
 	// times before failing strict JSON assertions.
-	for attempt := 1; attempt <= 4; attempt++ {
+	for attempt := 1; attempt <= 6; attempt++ {
 		time.Sleep(750 * time.Millisecond)
+		if !s.canReplayLastCurlRequest() {
+			return lastErr
+		}
 		if err := s.replayLastCurlRequest(); err != nil {
 			return fmt.Errorf("%v (replay failed: %w)", lastErr, err)
 		}
@@ -265,6 +302,21 @@ func (s *SiteScenario) responseBodyShouldBeJson(expected *godog.DocString) error
 	return lastErr
 }
 
+func (s *SiteScenario) canReplayLastCurlRequest() bool {
+	if s.lastCurlReq == nil {
+		return false
+	}
+	req, err := s.lastCurlReq.toHTTPRequest()
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(req.Method, http.MethodGet) {
+		return true
+	}
+	return strings.EqualFold(req.Method, http.MethodPost) &&
+		strings.HasSuffix(req.URL.Path, "/v1/conversations/resume-check")
+}
+
 func (s *SiteScenario) replayLastCurlRequest() error {
 	if s.lastCurlReq == nil {
 		return fmt.Errorf("no previous curl request to replay")
@@ -274,18 +326,21 @@ func (s *SiteScenario) replayLastCurlRequest() error {
 	if err != nil {
 		return fmt.Errorf("build replay request: %w", err)
 	}
-	if strings.ToUpper(req.Method) != http.MethodGet {
+	if !s.canReplayLastCurlRequest() {
 		return fmt.Errorf("last request method %s is not replay-safe", req.Method)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpClientForCurl(*s.lastCurlReq)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("execute replay request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyBytes, err := readResponseBody(resp.Body, s.lastCurlReq.MaxTime)
+	if err != nil {
+		return fmt.Errorf("read replay request body: %w", err)
+	}
 	s.LastStatusCode = resp.StatusCode
 	s.LastRespBody = s.normalizeUsers(string(bodyBytes))
 	return nil
@@ -478,9 +533,60 @@ func pathOrRoot(path string) string {
 type curlRequest struct {
 	Method     string
 	URL        string
+	UnixSocket string
+	MaxTime    time.Duration
 	Headers    []string
 	Body       string
 	FormFields []string // -F "name=@filepath" or "name=value"
+}
+
+func httpClientForCurl(cr curlRequest) *http.Client {
+	transport := &http.Transport{}
+	if cr.UnixSocket != "" {
+		socketPath := cr.UnixSocket
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socketPath)
+		}
+	}
+	return &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}
+}
+
+func readResponseBody(body io.ReadCloser, maxTime time.Duration) ([]byte, error) {
+	if maxTime <= 0 {
+		return io.ReadAll(body)
+	}
+
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(maxTime, func() {
+		close(timedOut)
+		_ = body.Close()
+	})
+	defer timer.Stop()
+
+	var buf bytes.Buffer
+	chunk := make([]byte, 4096)
+	for {
+		n, err := body.Read(chunk)
+		if n > 0 {
+			buf.Write(chunk[:n])
+		}
+		if err == nil {
+			continue
+		}
+		if err == io.EOF {
+			return buf.Bytes(), nil
+		}
+		select {
+		case <-timedOut:
+			return buf.Bytes(), nil
+		default:
+			return buf.Bytes(), err
+		}
+	}
 }
 
 func (cr *curlRequest) toHTTPRequest() (*http.Request, error) {
@@ -746,8 +852,17 @@ func parseCurlTokens(tokens []string) (curlRequest, error) {
 		case "--connect-timeout", "--max-time", "-m", "--retry",
 			"--retry-delay", "-u", "--user", "--proxy", "-x",
 			"--cacert", "--cert", "--key", "-A", "--user-agent",
-			"-e", "--referer", "-b", "--cookie", "-c", "--cookie-jar":
+			"-e", "--referer", "-b", "--cookie", "-c", "--cookie-jar",
+			"--unix-socket":
 			i++ // skip the argument too
+			if tok == "--unix-socket" && i < len(tokens) {
+				cr.UnixSocket = tokens[i]
+			}
+			if (tok == "--max-time" || tok == "-m") && i < len(tokens) {
+				if seconds, err := strconv.ParseFloat(tokens[i], 64); err == nil && seconds > 0 {
+					cr.MaxTime = time.Duration(seconds * float64(time.Second))
+				}
+			}
 		default:
 			if !strings.HasPrefix(tok, "-") && cr.URL == "" {
 				cr.URL = tok

@@ -118,6 +118,25 @@ class MemoryServiceProxy:
     async def get_conversation(self, conversation_id: str) -> httpx.Response:
         return await self._request("GET", f"/v1/conversations/{conversation_id}")
 
+    async def create_conversation(self, payload: dict[str, Any]) -> httpx.Response:
+        return await self._request(
+            "POST",
+            "/v1/conversations",
+            json_body=payload,
+        )
+
+    async def ensure_conversation(self, conversation_id: str, title: str) -> None:
+        response = await self.create_conversation({"id": conversation_id, "title": title})
+        if response.status_code in (200, 201):
+            return
+        if response.status_code == 409:
+            return
+        body = response.text.lower()
+        if "duplicate key value violates unique constraint" in body and "conversation_groups_pkey" in body:
+            return
+        if response.status_code >= 400:
+            response.raise_for_status()
+
     async def update_conversation(self, conversation_id: str, payload: dict[str, Any]) -> httpx.Response:
         return await self._request(
             "PATCH",

@@ -128,6 +128,8 @@ async def chat(conversation_id: str, request: Request) -> StreamingResponse:
     if not user_message:
         raise HTTPException(400, "message is required")
 
+    history_middleware.append_user_history(conversation_id, user_message)
+
     async def source():
         response_text_parts: list[str] = []
         partial_history_persisted = False
@@ -143,7 +145,6 @@ async def chat(conversation_id: str, request: Request) -> StreamingResponse:
             partial_history_persisted = True
 
         with memory_service_scope(conversation_id):
-            history_middleware.append_user_history(conversation_id, user_message)
             try:
                 async for chunk, _metadata in graph.astream(
                     {"messages": [{"role": "user", "content": user_message}]},

@@ -8,6 +8,7 @@ ARG USERNAME=vscode
 RUN apt-get update && apt-get install -y --no-install-recommends \
         jq \
         build-essential \
+        libsqlite3-dev \
         maven \
         supervisor \
         ripgrep \

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -15,6 +16,7 @@ import (
 
 // registerCheckpointSteps registers checkpoint lifecycle godog steps.
 func registerCheckpointSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
+	ctx.Step(`^the docs scenario uses the unix socket memory service$`, s.docsScenarioUsesUnixSocketMemoryService)
 	ctx.Step(`^checkpoint "([^"]*)" is active$`, s.checkpointIsActive)
 	ctx.Step(`^I build the checkpoint$`, s.iBuildTheCheckpoint)
 	ctx.Step(`^I build the checkpoint with "([^"]*)"$`, s.iBuildTheCheckpointWith)
@@ -26,15 +28,22 @@ func registerCheckpointSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
 
 	ctx.Before(func(ctx context.Context, sc *godog.Scenario) (context.Context, error) {
 		s.ScenarioName = sc.Name
+		s.WaveID = waveIDFromScenario(sc)
+		s.scenarioFailed = false
 		return ctx, nil
 	})
 
 	// Cleanup after each scenario (handles panics / step failures)
 	ctx.After(func(ctx context.Context, sc *godog.Scenario, err error) (context.Context, error) {
-		s.stopCheckpoint(err != nil)
+		s.stopCheckpoint(err != nil || s.scenarioFailed)
 		s.finishWave()
 		return ctx, nil
 	})
+}
+
+func (s *SiteScenario) docsScenarioUsesUnixSocketMemoryService() error {
+	s.UseUnixSocketMemoryService = true
+	return nil
 }
 
 // checkpointIsActive sets the checkpoint, allocates a unique port and user suffix.
@@ -54,7 +63,7 @@ func (s *SiteScenario) checkpointIsActive(checkpointID string) error {
 
 	// Decide record vs. playback before starting
 	s.Recording = s.shouldRecord()
-	s.Wave = globalScenarioWaveCoordinator.Enter()
+	s.Wave = globalScenarioWaveCoordinator.Enter(s.WaveID, s.scenarioKey())
 
 	if !fileExists(s.CheckpointPath) {
 		return fmt.Errorf("checkpoint directory does not exist: %s", s.CheckpointPath)
@@ -114,7 +123,7 @@ func (s *SiteScenario) markWaveReady() {
 	if s.Wave == nil || s.waveReady {
 		return
 	}
-	globalScenarioWaveCoordinator.MarkReady(s.Wave)
+	globalScenarioWaveCoordinator.MarkReady(s.Wave, s.scenarioKey())
 	s.waveReady = true
 }
 
@@ -123,6 +132,20 @@ func (s *SiteScenario) finishWave() {
 		return
 	}
 	s.markWaveReady()
-	globalScenarioWaveCoordinator.Finish(s.Wave)
+	globalScenarioWaveCoordinator.Finish(s.Wave, s.scenarioKey())
 	s.Wave = nil
+}
+
+func waveIDFromScenario(sc *godog.Scenario) int {
+	for _, tag := range sc.Tags {
+		name := strings.TrimPrefix(tag.Name, "@")
+		if !strings.HasPrefix(name, "wave_") {
+			continue
+		}
+		waveID, err := strconv.Atoi(strings.TrimPrefix(name, "wave_"))
+		if err == nil && waveID > 0 {
+			return waveID
+		}
+	}
+	return 0
 }

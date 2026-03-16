@@ -1,0 +1,110 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Quarkus Over Unix Domain Sockets
+description: Configure the Quarkus extension to use a Memory Service Unix domain socket with one property.
+---
+
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+
+This guide starts from [Quarkus Response Recording and Resumption](/docs/quarkus/response-resumption/). The application code stays the same. Only the extension configuration changes.
+
+## Local Memory Service
+
+```bash
+memory-service serve \
+  --db-kind=sqlite \
+  --db-url=file:$HOME/.local/share/memory-service/memory.db \
+  --vector-kind=sqlite \
+  --cache-kind=local \
+  --unix-socket=$HOME/.local/run/memory-service/api.sock
+```
+
+Those options make the Quarkus example easy to run locally: SQLite handles persistent data and vector search without extra services, `cache-kind=local` avoids a network cache, the database file lives under `$HOME/.local/share`, and the socket path stays under `$HOME/.local/run` so home-directory permissions help constrain local access.
+
+## Agent Configuration
+
+Update your Quarkus configuration file. In the checkpoint app, edit `java/quarkus/examples/doc-checkpoints/05-response-resumption/src/main/resources/application.properties`. In your own app, that same block lives in `src/main/resources/application.properties`.
+
+<CodeFromFile
+  file="java/quarkus/examples/doc-checkpoints/05-response-resumption/docs-snippets/application.properties"
+  lang="properties"
+/>
+
+Replace the old `memory-service.client.url=http://...` line with `memory-service.client.url=unix://${HOME}/.local/run/memory-service/api.sock`. That URL now drives both the REST wrapper used by the extension and the gRPC response-recorder client.
+
+<TestScenario checkpoint="java/quarkus/examples/doc-checkpoints/05-response-resumption">
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Start a streaming response, but disconnect before it finishes:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Once"
+`} exampleOutput={`Once upon a time, there was a curious little cat named Whiskers.`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/3f5f467f-c0f5-4fd0-a6d4-50e12d7fed95 \
+  --max-time 0.2 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Write a short story about a cat."
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "3f5f467f-c0f5-4fd0-a6d4-50e12d7fed95"
+`} exampleOutputLang="json" exampleOutput={`["3f5f467f-c0f5-4fd0-a6d4-50e12d7fed95"]`}>
+
+```bash
+curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '["3f5f467f-c0f5-4fd0-a6d4-50e12d7fed95"]'
+```
+
+</CurlTest>
+
+Resume the interrupted response:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "Once"
+`} exampleOutput={`Once upon a time, there was a curious little cat named Whiskers.`}>
+
+```bash
+curl -NsSfX GET http://localhost:9090/v1/conversations/3f5f467f-c0f5-4fd0-a6d4-50e12d7fed95/resume \
+  --max-time 0.5 \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "3f5f467f-c0f5-4fd0-a6d4-50e12d7fed95"
+`} exampleOutputLang="json" exampleOutput={`{"id":"3f5f467f-c0f5-4fd0-a6d4-50e12d7fed95"}`}>
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/3f5f467f-c0f5-4fd0-a6d4-50e12d7fed95 \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+</TestScenario>
