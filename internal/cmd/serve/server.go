@@ -79,6 +79,12 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 	ctx = dataencryption.WithContext(ctx, encSvc)
 
+	// S3 direct download bypasses the server, so encrypted attachments cannot be
+	// decrypted on the fly. Fail fast when both options are active.
+	if cfg.S3DirectDownload && encSvc.IsPrimaryReal() {
+		return nil, fmt.Errorf("MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=true is incompatible with encryption provider %q; S3 direct downloads bypass the server so attachments cannot be decrypted on the fly — disable direct download or use encryption-kind=plain", cfg.EncryptionProviders)
+	}
+
 	// Initialize cache and inject into context so store loaders can read it.
 	if cacheLoader, err := registrycache.Select(cfg.CacheType); err != nil {
 		log.Warn("Cache not available", "cache", cfg.CacheType, "err", err)
