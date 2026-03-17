@@ -13,6 +13,12 @@ Unix domain sockets are the simplest way to run Memory Service next to an agent 
 
 For a fully local setup, use SQLite for the datastore, SQLite for vector storage, the process-local cache, and a Unix socket listener:
 
+> **Note:** The `memory-service` CLI has not yet been released as a standalone binary. You can install it from source with [Go](https://go.dev/dl/):
+>
+> ```bash
+> go install github.com/chirino/memory-service@latest
+> ```
+
 ```bash
 memory-service serve \
   --db-kind=sqlite \
