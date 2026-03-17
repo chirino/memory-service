@@ -2092,6 +2092,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 		case <-cancelStream:
 			if recorder != nil {
 				if err := recorder.Complete(); err != nil {
+					log.Warn("record stream: complete failed after cancel", "conversation_id", convID, "error", err)
 					return status.Error(codes.Internal, err.Error())
 				}
 			}
@@ -2103,6 +2104,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 			if err == io.EOF {
 				if recorder != nil {
 					if err := recorder.Complete(); err != nil {
+						log.Warn("record stream: complete failed on EOF", "conversation_id", convID, "error", err)
 						return status.Error(codes.Internal, err.Error())
 					}
 				}
@@ -2127,10 +2129,12 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 				advertised := s.resolveAdvertisedAddress(stream.Context())
 				recorder, err = s.Resumer.RecorderWithAddress(stream.Context(), convID, advertised)
 				if err != nil {
+					log.Warn("record stream: failed to create recorder", "conversation_id", convID, "error", err)
 					return status.Error(codes.Internal, err.Error())
 				}
 				cancelStream, err = s.Resumer.CancelStream(stream.Context(), convID)
 				if err != nil {
+					log.Warn("record stream: failed to subscribe to cancel channel", "conversation_id", convID, "error", err)
 					return status.Error(codes.Internal, err.Error())
 				}
 			}
@@ -2140,6 +2144,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 
 			if recorder != nil && req.GetContent() != "" {
 				if err := recorder.Record(req.GetContent()); err != nil {
+					log.Warn("record stream: failed to write chunk", "conversation_id", convID, "error", err)
 					return status.Error(codes.Internal, err.Error())
 				}
 			}
@@ -2149,6 +2154,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 					return err
 				}
 				if err := recorder.Complete(); err != nil {
+					log.Warn("record stream: complete failed", "conversation_id", convID, "error", err)
 					return status.Error(codes.Internal, err.Error())
 				}
 				return stream.SendAndClose(&pb.RecordResponse{

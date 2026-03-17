@@ -15,6 +15,15 @@ import (
 )
 
 func main() {
+	if lvl := os.Getenv("MEMORY_SERVICE_LOG_LEVEL"); lvl != "" {
+		level, err := log.ParseLevel(lvl)
+		if err != nil {
+			log.Warn("invalid MEMORY_SERVICE_LOG_LEVEL, using default", "value", lvl, "error", err)
+		} else {
+			log.SetLevel(level)
+		}
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

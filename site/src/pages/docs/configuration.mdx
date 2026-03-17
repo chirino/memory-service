@@ -16,14 +16,15 @@ Memory Service is configured through CLI flags or environment variables. Use the
 
 ## Server Configuration
 
-| Flag                                                                                     | Values          | Default         | Description                                                    |
-| ---------------------------------------------------------------------------------------- | --------------- | --------------- | -------------------------------------------------------------- |
-| <Cfg p="--tls-cert-file" e="MEMORY_SERVICE_TLS_CERT_FILE" />                             | path            | _(none)_        | TLS certificate file (self-signed if omitted)                  |
-| <Cfg p="--tls-key-file" e="MEMORY_SERVICE_TLS_KEY_FILE" />                               | path            | _(none)_        | TLS private key file (self-signed if omitted)                  |
-| <Cfg p="--advertised-address" e="MEMORY_SERVICE_ADVERTISED_ADDRESS" />                   | `host:port`     | auto-detected   | Advertised address for client redirects                        |
-| <Cfg p="--read-header-timeout-seconds" e="MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS" /> | integer         | `5`             | HTTP read header timeout in seconds                            |
-| <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" />                                       | path            | system temp dir | Directory for temporary files                                  |
-| <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" />             | `true`, `false` | `false`         | Enable HTTP access logging for `/health`, `/ready`, `/metrics` |
+| Flag                                                                                     | Values                                    | Default         | Description                                                    |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------- | --------------- | -------------------------------------------------------------- |
+| <Cfg p="--tls-cert-file" e="MEMORY_SERVICE_TLS_CERT_FILE" />                             | path                                      | _(none)_        | TLS certificate file (self-signed if omitted)                  |
+| <Cfg p="--tls-key-file" e="MEMORY_SERVICE_TLS_KEY_FILE" />                               | path                                      | _(none)_        | TLS private key file (self-signed if omitted)                  |
+| <Cfg p="--advertised-address" e="MEMORY_SERVICE_ADVERTISED_ADDRESS" />                   | `host:port`                               | auto-detected   | Advertised address for client redirects                        |
+| <Cfg p="--read-header-timeout-seconds" e="MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS" /> | integer                                   | `5`             | HTTP read header timeout in seconds                            |
+| <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" />                                       | path                                      | system temp dir | Directory for temporary files                                  |
+| <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" />             | `true`, `false`                           | `false`         | Enable HTTP access logging for `/health`, `/ready`, `/metrics` |
+| `MEMORY_SERVICE_LOG_LEVEL`                                                               | `debug`, `info`, `warn`, `error`, `fatal` | `info`          | Server log level                                               |
 
 ### Network Listener
 

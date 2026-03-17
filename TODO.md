@@ -1,28 +1,21 @@
 # TODO List
 
 * document index/search apis: provide RAG example (see [042-index-search-docs.md](docs/enhancements/implemented/042-index-search-docs.md))
-* make all common memory-service config options prefixed with "memory-service." (see [057-unified-config-key-naming.md](docs/enhancements/057-unified-config-key-naming.md))
 * support getting getting the clientID from the bearer token.
-* Add tsx/js support vercel AI api.
 * Go: Avoid using file buffer for the encryption store.
 * can we use generated server stubs for REST handlers?
-* topK in vector search
 * a way to support batch processing of old conversations / memories to create/update/reinforce memories
 * track memory load counts, as a way to track how important/useful a memory is (see [072-memory-load-counts.md](docs/enhancements/implemented/072-memory-load-counts.md)).
 * get all the python examples working as good as the Java ones.
-* improve ghe memories usecase, add support for it to all the frameworks.
-* fix: In the current contract, forkedAtEntryId is supposed to be required whenever forkedAtConversationId is set. allow it to be unset.
+* improve the memories usecase, add support for it to all the frameworks.
 * add includeDeleted=true admin
 * fix: python request streaming is broken.
 * rename: ResponseResumer to ResponseRecorder
 * rename: memory channel to the context channel.
 * should the /sync endpoint take a flatten entries to just a list of content messages?
-* create reference docs?
 * python/ts don't configure the lib via ENV vars.
 * support using github.com/99designs/keyring to store the DEK (local usecases)
 * add go build tags that can disable features such as UDS, libsql etc..
-* make MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD false by default 
-* bug: enabling dek, breaks response streaming termination.
 
 # Performance Related
 

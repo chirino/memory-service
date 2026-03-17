@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/devcontainers/base:bookworm
 
-ARG GO_VERSION=1.24.6
+ARG GO_VERSION=1.26.1
 ARG NODE_VERSION=20
 ARG USERNAME=vscode
 
@@ -102,10 +102,9 @@ RUN COMP_DIR="/etc/bash_completion.d" \
 
 # Install Go dev tools without writing root-owned files into runtime GOPATH.
 RUN GOBIN=/usr/local/bin GOPATH=/tmp/go GOCACHE=/tmp/go-cache go install gotest.tools/gotestsum@latest \
-    && GOBIN=/usr/local/bin GOPATH=/tmp/go GOCACHE=/tmp/go-cache go install github.com/go-delve/delve/cmd/dlv@v1.25.1 \
+    && GOBIN=/usr/local/bin GOPATH=/tmp/go GOCACHE=/tmp/go-cache go install github.com/go-delve/delve/cmd/dlv@v1.26.1 \
     && GOBIN=/usr/local/bin GOPATH=/tmp/go GOCACHE=/tmp/go-cache go install github.com/cosmtrek/air@v1.51.0 \
     && rm -rf /tmp/go /tmp/go-cache
-
 
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 

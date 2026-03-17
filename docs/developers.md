@@ -1,5 +1,61 @@
 # Development Tips
 
+## Required Development Tools
+
+### Core Runtimes
+
+| Tool | Install |
+|------|---------|
+| [Go](https://go.dev/dl/) (1.26+) | https://go.dev/dl/ |
+| [Node.js](https://nodejs.org/) (v20+) | https://nodejs.org/ or `brew install node` |
+| [Java 21 (Temurin)](https://adoptium.net/) | https://adoptium.net/ or `brew install --cask temurin@21` |
+| [Docker](https://docs.docker.com/get-docker/) + Compose | https://docs.docker.com/get-docker/ |
+
+### Build & Task Runner
+
+| Tool | Install |
+|------|---------|
+| [task](https://taskfile.dev/installation/) — project task runner | `brew install go-task` or https://taskfile.dev/installation/ |
+
+### Go Dev Tools
+
+| Tool | Install |
+|------|---------|
+| [air](https://github.com/air-verse/air) — hot reload for `task dev:memory-service` | `go install github.com/cosmtrek/air@v1.51.0` |
+| [gotestsum](https://github.com/gotestyourself/gotestsum) — test runner used by `task test:go` | `go install gotest.tools/gotestsum@latest` |
+| [dlv](https://github.com/go-delve/delve) — Go debugger | `go install github.com/go-delve/delve/cmd/dlv@latest` |
+
+> **Note:** Code generation tools (`oapi-codegen`, `protoc`, `protoc-gen-go`, `protoc-gen-go-grpc`, `tagalign`) are auto-installed by `go generate ./...` — no manual setup needed.
+
+### API Testing
+
+| Tool | Install |
+|------|---------|
+| [jq](https://jqlang.github.io/jq/) — JSON processor | `brew install jq` |
+| [grpcurl](https://github.com/fullstorydev/grpcurl) — gRPC curl | `brew install grpcurl` |
+
+### Kubernetes (optional — needed for `task kind:*`)
+
+| Tool | Install |
+|------|---------|
+| [kind](https://kind.sigs.k8s.io/) — local k8s clusters | `brew install kind` |
+| [kubectl](https://kubernetes.io/docs/tasks/tools/) | `brew install kubectl` |
+| [kustomize](https://kubectl.docs.kubernetes.io/installation/kustomize/) | `brew install kustomize` |
+
+### Python (optional — needed for Python SDK work)
+
+| Tool | Install |
+|------|---------|
+| [uv](https://docs.astral.sh/uv/) — Python package manager | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+
+### GitHub CLI (optional)
+
+| Tool | Install |
+|------|---------|
+| [gh](https://cli.github.com/) — GitHub CLI | `brew install gh` |
+
+
+
 ## Running agaist a local LLM like LM Studio
 
 Before running the chat example apps:

@@ -1,7 +1,9 @@
 package model
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -125,8 +127,8 @@ func (e Entry) MarshalJSON() ([]byte, error) {
 		if json.Valid(e.Content) {
 			aux.Content = e.Content
 		} else {
-			// Fallback: treat as a plain string
-			aux.Content, _ = json.Marshal(string(e.Content))
+			// Binary content (e.g. MSEH-encrypted bytes): base64-encode to preserve losslessly.
+			aux.Content, _ = json.Marshal("b64:" + base64.StdEncoding.EncodeToString(e.Content))
 		}
 	}
 	return json.Marshal(aux)
@@ -150,10 +152,17 @@ func (e *Entry) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	// If content was encoded as a JSON string fallback, unquote it back to raw bytes.
+	// If content was encoded as a JSON string, unquote and decode it.
 	if len(aux.Content) > 0 && aux.Content[0] == '"' {
 		var s string
 		if err := json.Unmarshal(aux.Content, &s); err == nil {
+			if after, ok := strings.CutPrefix(s, "b64:"); ok {
+				decoded, err := base64.StdEncoding.DecodeString(after)
+				if err == nil {
+					e.Content = decoded
+					return nil
+				}
+			}
 			e.Content = []byte(s)
 			return nil
 		}
