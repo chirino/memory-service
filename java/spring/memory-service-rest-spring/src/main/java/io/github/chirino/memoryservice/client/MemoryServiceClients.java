@@ -1,6 +1,10 @@
 package io.github.chirino.memoryservice.client;
 
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelPromise;
+import io.netty.channel.unix.DomainSocketAddress;
 import java.net.SocketAddress;
 import java.net.UnixDomainSocketAddress;
 import java.time.Duration;
@@ -106,6 +110,15 @@ public final class MemoryServiceClients {
             httpClient =
                     httpClient
                             .remoteAddress(() -> socketAddress(endpoint))
+                            // Reactor Netty selects NioDomainSocketChannel when native
+                            // transport is absent, but NioDomainSocketChannel.doConnect()
+                            // passes the address straight to the JDK SocketChannel which
+                            // only accepts java.net.UnixDomainSocketAddress. Intercept the
+                            // connect call to convert the Netty DomainSocketAddress.
+                            .doOnChannelInit(
+                                    (observer, channel, remoteAddress) ->
+                                            channel.pipeline()
+                                                    .addFirst(new DomainSocketAddressAdapter()))
                             .protocol(HttpProtocol.HTTP11);
         }
         Duration timeout = properties.getTimeout();
@@ -117,7 +130,7 @@ public final class MemoryServiceClients {
 
     static SocketAddress socketAddress(MemoryServiceEndpoint endpoint) {
         Assert.isTrue(endpoint.usesUnixSocket(), "endpoint must use a unix socket");
-        return UnixDomainSocketAddress.of(endpoint.unixSocketPath());
+        return new DomainSocketAddress(endpoint.unixSocketPath());
     }
 
     private static ExchangeFilterFunction logRequests(MemoryServiceClientProperties properties) {
@@ -138,6 +151,28 @@ public final class MemoryServiceClients {
                     hasApiKey);
             return next.exchange(request);
         };
+    }
+
+    /**
+     * Converts Netty {@link DomainSocketAddress} to JDK {@link UnixDomainSocketAddress} before the
+     * channel connect. This bridges the gap between Reactor Netty (which uses {@code
+     * DomainSocketAddress} for transport selection) and the JDK NIO {@code NioDomainSocketChannel}
+     * (which requires {@code UnixDomainSocketAddress}).
+     */
+    static final class DomainSocketAddressAdapter extends ChannelOutboundHandlerAdapter {
+        @Override
+        public void connect(
+                ChannelHandlerContext ctx,
+                SocketAddress remoteAddress,
+                SocketAddress localAddress,
+                ChannelPromise promise)
+                throws Exception {
+            if (remoteAddress instanceof DomainSocketAddress dsa) {
+                super.connect(ctx, UnixDomainSocketAddress.of(dsa.path()), localAddress, promise);
+            } else {
+                super.connect(ctx, remoteAddress, localAddress, promise);
+            }
+        }
     }
 
     private static ExchangeFilterFunction oauth(
