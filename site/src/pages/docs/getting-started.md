@@ -34,8 +34,6 @@ echo "OPENAI_API_KEY=your-api-key-here" > .env
 
 ### 3. Deploy with Docker Compose
 
-> _**Note for OS X users:**_ The included demo app requires that you [enable host networking](how-to-enable-host-networking.png) in Docker desktop.
-
 ```bash
 docker compose build
 docker compose up -d
@@ -55,7 +53,7 @@ This will start:
 
 ### 4. Access the Demo Chat App
 
-Open [`http://localhost:8080`](http://localhost:8080) in your browser and sign in with:
+Open `http://localhost:8080` in your browser and sign in with:
 
 - Username: `bob`
 - Password: `bob`

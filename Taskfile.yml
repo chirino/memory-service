@@ -230,8 +230,17 @@ tasks:
       MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
       # ── Observability ──────────────────────────────────────────
       MEMORY_SERVICE_PROMETHEUS_URL: http://localhost:9092
+      # ── Encryption ─────────────────────────────────────────────
+      MEMORY_SERVICE_ENCRYPTION_KIND: dek
+      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: '{{.MEMORY_SERVICE_ENCRYPTION_DEK_KEY | default "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}'
       # ── Attachments ────────────────────────────────────────────
-      MEMORY_SERVICE_ATTACHMENTS_KIND: db
+      MEMORY_SERVICE_ATTACHMENTS_KIND: s3
+      MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
+      MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE: "true"
+      AWS_ENDPOINT_URL: http://localhost:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
       # ── Vector search ──────────────────────────────────────────
       MEMORY_SERVICE_VECTOR_KIND: qdrant
       MEMORY_SERVICE_VECTOR_QDRANT_HOST: localhost
