@@ -34,8 +34,6 @@ echo "OPENAI_API_KEY=your-api-key-here" > .env
 
 ### 3. Deploy with Docker Compose
 
-> _**Note for OS X users:**_ The included demo app requires that you [enable host networking](how-to-enable-host-networking.png) in Docker desktop.
-
 ```bash
 docker compose build
 docker compose up -d
@@ -48,12 +46,14 @@ This will start:
 - **Keycloak** for authentication (used by the memory service and demo chat app)
 - **PostgreSQL** for data and vector storage (used by the memory service)
 - **Redis** for caching (used by the memory service)
+- **Qdrant** for vector search (used by the memory service)
+- **MinIO** for S3-compatible object storage (used by the memory service for attachments)
 - **Prometheus** for metrics collection
 - **Grafana** for metrics dashboards
 
 ### 4. Access the Demo Chat App
 
-Open [`http://localhost:8080`](http://localhost:8080) in your browser and sign in with:
+Open `http://localhost:8080` in your browser and sign in with:
 
 - Username: `bob`
 - Password: `bob`
@@ -77,8 +77,11 @@ Keycloak is pre-configured with these test users:
 
 ## Next Steps
 
-- Understand [Core Concepts](/docs/concepts/)
+- Understand the APIs exposed by the Memory Service in [Core Concepts](/docs/concepts/)
 - Explore Developer Guides for
-  - [Quarkus Langchain4j](/docs/quarkus/)
-  - [Spring AI](/docs/spring/)
-- Learn about [Server Configuration Options](/docs/configuration/)
+  - [Python LangChain](/docs/python-langchain/)
+  - [Python LangGraph](/docs/python-langgraph/)
+  - [TypeScript Vercel AI](/docs/typescript-vecelai/)
+  - [Java Quarkus Langchain4j](/docs/quarkus/)
+  - [Java Spring AI](/docs/spring/)
+- Learn how to [configure the service](/docs/configuration/)

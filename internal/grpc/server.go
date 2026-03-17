@@ -2061,11 +2061,8 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 		if retErr == nil || recorder == nil || convID == "" {
 			return
 		}
-		if !isClientDisconnectError(retErr, stream.Context()) {
-			return
-		}
 		if err := recorder.Complete(); err != nil {
-			log.Warn("failed to clean up response recorder after client disconnect", "conversation_id", convID, "error", err)
+			log.Warn("failed to clean up response recorder after stream error", "conversation_id", convID, "error", err)
 		}
 	}()
 
@@ -2160,25 +2157,6 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 			}
 		}
 	}
-}
-
-func isClientDisconnectError(err error, ctx context.Context) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	if ctx != nil {
-		if ctxErr := ctx.Err(); errors.Is(ctxErr, context.Canceled) || errors.Is(ctxErr, context.DeadlineExceeded) {
-			return true
-		}
-	}
-	grpcStatus, ok := status.FromError(err)
-	if !ok {
-		return false
-	}
-	return grpcStatus.Code() == codes.Canceled || grpcStatus.Code() == codes.DeadlineExceeded
 }
 
 func (s *ResponseRecorderServer) Replay(req *pb.ReplayRequest, stream pb.ResponseRecorderService_ReplayServer) error {
