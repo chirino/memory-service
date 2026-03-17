@@ -10,7 +10,7 @@ Welcome to the Memory Service documentation. This guide will help you integrate 
 
 ## What is Memory Service?
 
-Memory Service is a backend service designed to solve the persistent memory problems for AI agents systems. It stores all messages exchanged between agents, users, and LLMs in a structured, queryable format.
+Memory Service is a backend service designed to solve the persistent memory problem for AI agent systems. It stores all messages exchanged between agents, users, and LLMs in a structured, queryable format.
 
 ### Key Capabilities
 
@@ -37,14 +37,14 @@ All the blue components in the diagram above are part of this project.
 The diagram above shows a full production deployment, but Memory Service is designed to start small and grow
 with your requirements. You only bring in the infrastructure you actually need:
 
-| Deployment               | Data Store | Cache               | Vector Search | File Storage      |
-| ------------------------ | ---------- | ------------------- | ------------- | ----------------- |
-| **Local/light**          | SQLite     | none                | none          | none              |
-| **Local/full**           | SQLite     | local               | sqlite-vec    | local disk        |
-| **Single Node**          | PostgreSQL | local               | pgvector      | PostgreSQL (Lobs) |
-| **Multi Node**           | PostgreSQL | Redis               | pgvector      | Minio             |
-| **Enterprise**           | PostgreSQL | Infinispan          | Qdrant        | S3                |
-| **Enterprise/NoSQL**.    | MongoDB    | Redis               | Qdrant        | MongoDB GridFS    |
+| Deployment           | Data Store | Cache      | Vector Search | File Storage      |
+| -------------------- | ---------- | ---------- | ------------- | ----------------- |
+| **Local/light**      | SQLite     | none       | none          | none              |
+| **Local/full**       | SQLite     | local      | sqlite-vec    | local disk        |
+| **Single Node**      | PostgreSQL | local      | pgvector      | PostgreSQL (Lobs) |
+| **Multi Node**       | PostgreSQL | Redis      | pgvector      | Minio             |
+| **Enterprise**       | PostgreSQL | Infinispan | Qdrant        | S3                |
+| **Enterprise/NoSQL** | MongoDB    | Redis      | Qdrant        | MongoDB GridFS    |
 
 For local development or simple deployments, a single SQLite database is all you need — no external services required.
 Semantic search, caching, and distributed file storage are each opt-in, added only when your scale or requirements demand them.
@@ -70,10 +70,10 @@ Semantic search, caching, and distributed file storage are each opt-in, added on
       Build persistent AI agents with Spring Boot and Spring AI
     </p>
   </a>
-  <a href="python/getting-started/" class="card p-4 hover:border-primary-500 transition-colors">
+  <a href="python-langchain/getting-started/" class="card p-4 hover:border-primary-500 transition-colors">
     <h3 class="font-semibold text-gray-900 dark:text-white">Python Integration</h3>
     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-      Build persistent AI agents with Python, FastAPI, and LangGraph patterns
+      Build persistent AI agents with Python, LangChain, and LangGraph
     </p>
   </a>
   <a href="configuration/" class="card p-4 hover:border-primary-500 transition-colors">

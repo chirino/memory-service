@@ -19,7 +19,7 @@ Forking creates a copy of a conversation up to, but not including, the specified
 
 The forked conversation:
 
-- Gets a new new conversation ID
+- Gets a new conversation ID
 - References the parent conversation
 - Can be modified independently
 

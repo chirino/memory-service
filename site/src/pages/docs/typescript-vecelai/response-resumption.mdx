@@ -210,7 +210,7 @@ Check whether a conversation has an in-progress response:
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "["
-`} exampleOutput='["91b7f6be-1ab8-4a31-b86a-a4fd2c8b2d27"]' exampleOutputLang="json" exampleOutput={`[]`}>
+`} exampleOutputLang="json" exampleOutput={`[]`}>
 
 ```bash
 curl -sSfX POST http://localhost:9090/v1/conversations/resume-check \
