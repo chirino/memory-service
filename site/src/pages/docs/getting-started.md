@@ -77,8 +77,11 @@ Keycloak is pre-configured with these test users:
 
 ## Next Steps
 
-- Understand [Core Concepts](/docs/concepts/)
+- Understand the APIs exposed by the Memory Service in [Core Concepts](/docs/concepts/)
 - Explore Developer Guides for
-  - [Quarkus Langchain4j](/docs/quarkus/)
-  - [Spring AI](/docs/spring/)
-- Learn about [Server Configuration Options](/docs/configuration/)
+  - [Python LangChain](/docs/python-langchain/)
+  - [Python LangGraph](/docs/python-langgraph/)
+  - [TypeScript Vercel AI](/docs/typescript-vecelai/)
+  - [Java Quarkus Langchain4j](/docs/quarkus/)
+  - [Java Spring AI](/docs/spring/)
+- Learn how to [configure the service](/docs/configuration/)

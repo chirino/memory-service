@@ -28,9 +28,25 @@ Memory Service is a backend service designed to solve the persistent memory prob
 
 ![Memory Service Architecture](memory-service-architecture.png)
 
-Memory Service is packaged as container image and provides both REST and gRPC APIs. It also provides
-several client side components to simplify integration with Quarkus LangChain4j and Spring AI applications.
+Memory Service is packaged as a container image and provides both REST and gRPC APIs. It also provides
+several client-side components to simplify integration with Quarkus LangChain4j and Spring AI applications.
 All the blue components in the diagram above are part of this project.
+
+### Scales With Your Needs
+
+The diagram above shows a full production deployment, but Memory Service is designed to start small and grow
+with your requirements. You only bring in the infrastructure you actually need:
+
+| Deployment                 | Data Store            | Cache               | Vector Search       | File Storage |
+| -------------------------- | --------------------- | ------------------- | ------------------- | ------------ |
+| **Local / feature light ** | SQLite (embedded)     | none                | none                | none         |
+| **Local / full featured ** | SQLite (embedded)     | local               | SQLite              | local disk   |
+| **Single Node**            | PostgreSQL            | local               | PGVector (built-in) | PostgreSQL   |
+| **Multi Node**             | PostgreSQL            | Redis or Infinispan | PGVector            | PostgreSQL   |
+| **Production**             | PostgreSQL or MongoDB | Redis or Infinispan | Qdrant              | S3 / MinIO   |
+
+For local development or simple deployments, a single SQLite database is all you need — no external services required.
+Semantic search, caching, and distributed file storage are each opt-in, added only when your scale or requirements demand them.
 
 ## Quick Navigation
 

@@ -2159,7 +2159,6 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 	}
 }
 
-
 func (s *ResponseRecorderServer) Replay(req *pb.ReplayRequest, stream pb.ResponseRecorderService_ReplayServer) error {
 	if !s.Enabled {
 		return nil
