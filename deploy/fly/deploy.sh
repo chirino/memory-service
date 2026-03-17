@@ -80,11 +80,10 @@ fly postgres attach "$PG_APP_NAME" --app "$APP_NAME" 2>/dev/null || {
     warn "Postgres already attached or attach failed — checking if DATABASE_URL is set..."
 }
 
-# Verify DATABASE_URL is set; map it to MEMORY_SERVICE_DB_URL
+# Verify DATABASE_URL is set (Fly sets it via `postgres attach`)
+# The Dockerfile entrypoint maps DATABASE_URL → MEMORY_SERVICE_DB_URL at boot
 if fly secrets list --app "$APP_NAME" | grep -q "DATABASE_URL"; then
-    info "DATABASE_URL is set. Mapping to MEMORY_SERVICE_DB_URL..."
-    # Fly sets DATABASE_URL on attach; we read it and also set our env var
-    # The app reads MEMORY_SERVICE_DB_URL, so we set it from DATABASE_URL at runtime
+    info "DATABASE_URL is set (mapped to MEMORY_SERVICE_DB_URL at container boot)."
 else
     error "DATABASE_URL not found. Manually attach Postgres or set MEMORY_SERVICE_DB_URL."
     error "  fly postgres attach $PG_APP_NAME --app $APP_NAME"
@@ -103,8 +102,6 @@ ENCRYPTION_KEY="${ENCRYPTION_KEY:-$(openssl rand -hex 32)}"
 # Generate attachment signing secret
 ATTACHMENT_SECRET="${ATTACHMENT_SECRET:-$(openssl rand -hex 32)}"
 
-# DATABASE_URL is set automatically by `fly postgres attach`.
-# The app reads DATABASE_URL as a fallback for MEMORY_SERVICE_DB_URL.
 fly secrets set --app "$APP_NAME" \
     MEMORY_SERVICE_API_KEYS_AGENT="$AGENT_API_KEY" \
     MEMORY_SERVICE_ENCRYPTION_DEK_KEY="$ENCRYPTION_KEY" \

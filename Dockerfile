@@ -20,4 +20,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /memory-service /memory-service
 EXPOSE 8080
-ENTRYPOINT ["/memory-service", "serve"]
+
+# Map Fly.io's DATABASE_URL to the app's expected env var
+ENTRYPOINT ["sh", "-c", "MEMORY_SERVICE_DB_URL=${MEMORY_SERVICE_DB_URL:-$DATABASE_URL} exec /memory-service serve"]

@@ -195,7 +195,7 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 		&cli.StringFlag{
 			Name:        "db-url",
 			Category:    "Database:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_DB_URL", "DATABASE_URL"),
+			Sources:     cli.EnvVars("MEMORY_SERVICE_DB_URL"),
 			Destination: &cfg.DBURL,
 			Usage:       "Database connection URL",
 			Required:    true,
