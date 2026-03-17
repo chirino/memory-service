@@ -113,7 +113,7 @@ jobs:
 
       - name: Run Java Tests
         if: contains('test-java', matrix.job)
-        run: ./java/mvnw -T 1C -f java/pom.xml clean test
+        run: ./java/mvnw -T 1C -f java/pom.xml clean install
 
       - name: Add JUnit summary to job
         if: always() && contains('test-java', matrix.job)
