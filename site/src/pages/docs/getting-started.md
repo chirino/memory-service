@@ -48,6 +48,8 @@ This will start:
 - **Keycloak** for authentication (used by the memory service and demo chat app)
 - **PostgreSQL** for data and vector storage (used by the memory service)
 - **Redis** for caching (used by the memory service)
+- **Qdrant** for vector search (used by the memory service)
+- **MinIO** for S3-compatible object storage (used by the memory service for attachments)
 - **Prometheus** for metrics collection
 - **Grafana** for metrics dashboards
 

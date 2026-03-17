@@ -133,11 +133,18 @@ services:
 
       # ── Encryption ─────────────────────────────────────────────
       # Dev key — replace with a securely generated value in production.
-      # Enables at-rest encryption and signed attachment download URLs.
+      # Enables at-rest encryption for conversations, memories, and attchments.
+      MEMORY_SERVICE_ENCRYPTION_KIND: dek
       MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
 
       # ── Attachments ────────────────────────────────────────────
-      MEMORY_SERVICE_ATTACHMENTS_KIND: db
+      MEMORY_SERVICE_ATTACHMENTS_KIND: s3
+      MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
+      MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE: "true" # needed for minio
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
 
       # ── Vector search ──────────────────────────────────────────
       ## To disable vector search
@@ -164,6 +171,8 @@ services:
         condition: service_healthy
       prometheus:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8085/ready || exit 1"]
       interval: 10s
@@ -196,6 +205,36 @@ services:
       - "3001:3000"
     depends_on:
       prometheus:
+        condition: service_healthy
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc:latest
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set minio http://minio:9000 minioadmin minioadmin; do
+        echo 'Waiting for MinIO...'; sleep 2;
+      done;
+      mc mb --ignore-existing minio/memory-service-attachments"
+    depends_on:
+      minio:
         condition: service_healthy
 
   chat-quarkus:

@@ -296,7 +296,7 @@ S3 storage offloads attachments to any S3-compatible object store. Use this for 
 | <Cfg p="--attachments-s3-bucket" e="MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET" />                 | string          | `memory-service-attachments` | S3 bucket name                                               |
 | <Cfg p="--attachments-s3-use-path-style" e="MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE" /> | `true`, `false` | `false`                      | Use path-style S3 addressing (required for LocalStack/MinIO) |
 | `MEMORY_SERVICE_ATTACHMENTS_S3_PREFIX`                                                       | string          | _(empty)_                    | Optional key prefix for all objects                          |
-| `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD`                                              | `true`, `false` | `true`                       | Redirect clients directly to S3 via presigned URLs           |
+| `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD`                                              | `true`, `false` | `false`                      | Redirect clients directly to S3 via presigned URLs           |
 | `MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT`                                            | URL             | _(none)_                     | Override endpoint in presigned URLs                          |
 
 <ConfigBlock property={`# Select S3 storage
@@ -313,14 +313,14 @@ MEMORY_SERVICE_ATTACHMENTS_KIND=s3
 MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET=memory-service-attachments`}
 />
 
-**Direct download vs. proxy mode:** By default, download endpoints return presigned S3 URLs that redirect clients directly to the S3 backend. Set `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=false` to proxy downloads through memory-service instead.
+**Direct download vs. proxy mode:** By default, downloads are proxied through memory-service. Set `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=true` to redirect clients directly to the S3 backend via presigned URLs instead.
 
 When using a self-hosted S3-compatible store (like MinIO) that is only reachable at an internal address, you have two options:
 
-1. **Proxy mode** — set `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=false`. Downloads stream through memory-service; no client-reachable S3 endpoint needed.
-2. **Direct download with external endpoint** — keep direct download enabled and set `MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT` to a client-reachable URL (e.g., `http://minio-api.example.com`).
+1. **Proxy mode** _(default)_ — downloads stream through memory-service; no client-reachable S3 endpoint needed.
+2. **Direct download with external endpoint** — set `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=true` and `MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT` to a client-reachable URL (e.g., `http://minio-api.example.com`).
 
-> **S3 incompatibility**: S3 direct download is incompatible with encryption. Disable direct download when using a real encryption provider.
+> **S3 incompatibility**: S3 direct download is incompatible with encryption. Keep direct download disabled (the default) when using a real encryption provider.
 
 See [Attachments](/docs/concepts/attachments/) for details on how attachments work.
 
@@ -429,7 +429,7 @@ AWS_SECRET_ACCESS_KEY=...`}
 
 When a non-`plain` provider is the primary provider, file attachments are encrypted automatically — no extra configuration is needed. When `plain` is active (the default), attachments are stored as-is with no overhead.
 
-> **S3 incompatibility**: Attachment encryption is incompatible with S3 direct download. Set `MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD=false` when using encryption with S3.
+> **S3 incompatibility**: Attachment encryption is incompatible with S3 direct download. Direct download is disabled by default; do not enable it when using encryption with S3.
 
 ### Key rotation
 

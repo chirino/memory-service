@@ -277,7 +277,7 @@ func DefaultConfig() Config {
 		QdrantPort:                   6334,
 		QdrantCollectionPrefix:       "memory-service",
 		QdrantStartupTimeout:         30 * time.Second,
-		S3DirectDownload:             true,
+		S3DirectDownload:             false,
 		AdminOIDCRole:                "admin",
 		AuditorOIDCRole:              "auditor",
 		EncryptionProviders:          "plain",
