@@ -1,8 +1,8 @@
 package io.github.chirino.memoryservice.client;
 
 import io.github.chirino.memoryservice.client.invoker.ApiClient;
-import io.netty.channel.unix.DomainSocketAddress;
 import java.net.SocketAddress;
+import java.net.UnixDomainSocketAddress;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
@@ -117,7 +117,7 @@ public final class MemoryServiceClients {
 
     static SocketAddress socketAddress(MemoryServiceEndpoint endpoint) {
         Assert.isTrue(endpoint.usesUnixSocket(), "endpoint must use a unix socket");
-        return new DomainSocketAddress(endpoint.unixSocketPath());
+        return UnixDomainSocketAddress.of(endpoint.unixSocketPath());
     }
 
     private static ExchangeFilterFunction logRequests(MemoryServiceClientProperties properties) {
