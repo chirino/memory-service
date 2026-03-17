@@ -413,8 +413,11 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 }
 
 func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*registrystore.ConversationDetail, error) {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
 		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 	access, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader)
@@ -439,8 +442,11 @@ func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conv
 }
 
 func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, conversationID uuid.UUID, title *string, metadata map[string]interface{}) (*registrystore.ConversationDetail, error) {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
 		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
@@ -465,8 +471,11 @@ func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, c
 }
 
 func (s *PostgresStore) DeleteConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+	if err != nil {
+		return err
+	}
+	if !found {
 		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
@@ -732,16 +741,19 @@ func (s *PostgresStore) GetTransfer(ctx context.Context, userID string, transfer
 
 // resolveConversationID finds the primary (non-deleted) conversation ID for a group.
 func (s *PostgresStore) resolveConversationID(ctx context.Context, groupID uuid.UUID) uuid.UUID {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("conversation_group_id = ? AND deleted_at IS NULL", groupID).First(&conv).Error; err != nil {
+	conv, found, _ := s.lookupConversation(ctx, "conversation_group_id = ? AND deleted_at IS NULL", groupID)
+	if !found {
 		return uuid.Nil
 	}
 	return conv.ID
 }
 
 func (s *PostgresStore) CreateOwnershipTransfer(ctx context.Context, userID string, conversationID uuid.UUID, toUserID string) (*registrystore.OwnershipTransferDto, error) {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
 		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
@@ -1666,8 +1678,11 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 }
 
 func (s *PostgresStore) AdminGetConversation(ctx context.Context, conversationID uuid.UUID) (*registrystore.ConversationDetail, error) {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
 		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 	return &registrystore.ConversationDetail{
@@ -1688,8 +1703,11 @@ func (s *PostgresStore) AdminGetConversation(ctx context.Context, conversationID
 }
 
 func (s *PostgresStore) AdminDeleteConversation(ctx context.Context, conversationID uuid.UUID) error {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
+	if err != nil {
+		return err
+	}
+	if !found {
 		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 	now := time.Now()
@@ -1699,8 +1717,11 @@ func (s *PostgresStore) AdminDeleteConversation(ctx context.Context, conversatio
 }
 
 func (s *PostgresStore) AdminRestoreConversation(ctx context.Context, conversationID uuid.UUID) error {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
+	if err != nil {
+		return err
+	}
+	if !found {
 		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 	if conv.DeletedAt == nil {
@@ -1712,8 +1733,11 @@ func (s *PostgresStore) AdminRestoreConversation(ctx context.Context, conversati
 }
 
 func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID uuid.UUID, query registrystore.AdminMessageQuery) (*registrystore.PagedEntries, error) {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
 		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 
@@ -1758,8 +1782,11 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID uuid
 }
 
 func (s *PostgresStore) AdminListMemberships(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !found {
 		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 
@@ -1787,8 +1814,11 @@ func (s *PostgresStore) AdminListMemberships(ctx context.Context, conversationID
 }
 
 func (s *PostgresStore) AdminListForks(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
-	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
+	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !found {
 		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 
@@ -2717,9 +2747,23 @@ func (s *PostgresStore) DeleteAttachment(ctx context.Context, userID string, con
 	return nil
 }
 
-func (s *PostgresStore) getGroupID(ctx context.Context, userID string, conversationID uuid.UUID, minLevel model.AccessLevel) (uuid.UUID, error) {
+// lookupConversation fetches a single conversation using Limit(1).Find to avoid
+// GORM logging "record not found" when absence is expected control flow.
+func (s *PostgresStore) lookupConversation(ctx context.Context, where string, args ...interface{}) (model.Conversation, bool, error) {
 	var conv model.Conversation
-	if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", conversationID).First(&conv).Error; err != nil {
+	result := s.db.WithContext(ctx).Where(where, args...).Limit(1).Find(&conv)
+	if result.Error != nil {
+		return conv, false, result.Error
+	}
+	return conv, result.RowsAffected > 0, nil
+}
+
+func (s *PostgresStore) getGroupID(ctx context.Context, userID string, conversationID uuid.UUID, minLevel model.AccessLevel) (uuid.UUID, error) {
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if !found {
 		return uuid.Nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, minLevel); err != nil {
