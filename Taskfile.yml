@@ -231,7 +231,7 @@ tasks:
       # ── Observability ──────────────────────────────────────────
       MEMORY_SERVICE_PROMETHEUS_URL: http://localhost:9092
       # ── Encryption ─────────────────────────────────────────────
-      # MEMORY_SERVICE_ENCRYPTION_KIND: dek
+      MEMORY_SERVICE_ENCRYPTION_KIND: dek
       MEMORY_SERVICE_ENCRYPTION_DEK_KEY: '{{.MEMORY_SERVICE_ENCRYPTION_DEK_KEY | default "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}'
       # ── Attachments ────────────────────────────────────────────
       MEMORY_SERVICE_ATTACHMENTS_KIND: s3
@@ -250,7 +250,7 @@ tasks:
       MEMORY_SERVICE_EMBEDDING_KIND: '{{.MEMORY_SERVICE_EMBEDDING_KIND | default "openai"}}'
       MEMORY_SERVICE_OPENAI_API_KEY: '{{.OPENAI_API_KEY | default "none"}}'
     cmds:
-      - docker compose up -d 
+      - docker compose up -d qdrant postgres redis keycloak prometheus minio minio-init
       - docker compose stop memory-service >/dev/null 2>&1 || true
       - air -root . -c deploy/dev/air.toml
 

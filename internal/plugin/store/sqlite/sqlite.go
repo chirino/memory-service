@@ -161,6 +161,7 @@ func (s *SQLiteStore) decrypt(ciphertext []byte) ([]byte, error) {
 func (s *SQLiteStore) decryptString(data []byte) string {
 	plain, err := s.decrypt(data)
 	if err != nil {
+		log.Warn("dek: decryption failed, returning raw bytes", "error", err)
 		return string(data) // fallback for unencrypted data
 	}
 	return string(plain)
