@@ -231,7 +231,7 @@ tasks:
       # ── Observability ──────────────────────────────────────────
       MEMORY_SERVICE_PROMETHEUS_URL: http://localhost:9092
       # ── Encryption ─────────────────────────────────────────────
-      MEMORY_SERVICE_ENCRYPTION_KIND: dek
+      # MEMORY_SERVICE_ENCRYPTION_KIND: dek
       MEMORY_SERVICE_ENCRYPTION_DEK_KEY: '{{.MEMORY_SERVICE_ENCRYPTION_DEK_KEY | default "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}'
       # ── Attachments ────────────────────────────────────────────
       MEMORY_SERVICE_ATTACHMENTS_KIND: s3

@@ -22,6 +22,7 @@
 * support using github.com/99designs/keyring to store the DEK (local usecases)
 * add go build tags that can disable features such as UDS, libsql etc..
 * make MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD false by default 
+* bug: enabling dek, breaks response streaming termination.
 
 # Performance Related
 

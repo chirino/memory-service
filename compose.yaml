@@ -134,7 +134,7 @@ services:
       # ── Encryption ─────────────────────────────────────────────
       # Dev key — replace with a securely generated value in production.
       # Enables at-rest encryption for conversations, memories, and attchments.
-      MEMORY_SERVICE_ENCRYPTION_KIND: dek
+      # MEMORY_SERVICE_ENCRYPTION_KIND: dek
       MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
 
       # ── Attachments ────────────────────────────────────────────
