@@ -32,20 +32,19 @@ Memory Service is currently in active development and has not yet reached versio
 
 ### Current Features
 
-- **Conversation Storage** - Store and retrieve conversation history
-- **Entry Management** - Full CRUD operations for entries
+- **Conversation Storage** - Store and retrieve conversation history with PostgreSQL, SQLite, and MongoDB
+- **Entry Management** - Append-only entries with full conversation context
 - **Conversation Forking** - Fork conversations at any entry
-- **Semantic Search** - Vector-based search across conversations
-- **Access Control** - User-based permissions and sharing
-- **Multiple Databases** - Support for PostgreSQL and MongoDB
-- **Caching** - Redis and Infinispan cache support
+- **Semantic Search** - Vector-based search via pgvector, sqlite-vec, and Qdrant
+- **Full-Text Search** - Keyword-based search across indexed content
+- **Access Control** - User-based permissions and sharing with ownership transfer
+- **Episodic Memories** - Namespaced key-value store with OPA/Rego policies and vector indexing
+- **Encryption at Rest** - AES-GCM encryption for stored entries and memory values
+- **Response Recording and Resumption** - Streaming responses survive client reconnects
+- **File Attachments** - Server-stored files with signed download URLs
+- **Caching** - Local, Redis, and Infinispan cache support
 - **APIs** - REST and gRPC interfaces
-
-### Planned Features
-
-- Spring Boot starter support
-- Additional vector store integrations
-- Multi-agent conversation support
+- **Framework Integrations** - Quarkus LangChain4j, Spring AI, Python LangChain/LangGraph, TypeScript Vercel AI
 
 ---
 

@@ -31,6 +31,7 @@ use is not recommended at this time.
 Memory Service supports:
 
 - **PostgreSQL** (recommended) - with pgvector for semantic search
+- **SQLite** - lightweight, single-file option for local development and small deployments
 - **MongoDB** - with full-text search support
 
 ### What vector stores are supported?
@@ -38,7 +39,8 @@ Memory Service supports:
 For semantic search capabilities:
 
 - **pgvector** - PostgreSQL extension for in-database vector search
-- **Qdrant** - Dedicated vector database via LangChain4j integration
+- **sqlite-vec** - SQLite extension for local vector search
+- **Qdrant** - Dedicated vector database via native gRPC integration
 
 ### What caches are supported?
 
@@ -56,8 +58,7 @@ See the [Getting Started](/docs/getting-started/) guide for detailed instruction
 
 ### Do I need to run a separate service?
 
-In development mode, the Quarkus Dev Services automatically start Memory Service in a Docker container. For production environments,
-you'll deploy Memory Service as a separate service.
+Yes — Memory Service runs as a standalone process alongside your agent application. For Quarkus users, the Dev Services extension can automatically start it in a Docker container during development. For other frameworks, see the [Getting Started](/docs/getting-started/) guide.
 
 ### Can I run Memory Service without binding a TCP port?
 
@@ -162,7 +163,7 @@ Potentially yes. Summary-of-summary drift is a known LLM behavior; Memory Servic
 
 ### Are Spring Boot users permanently blocked from rich events?
 
-No. Rich event support depends on the agent framework producing those events (for example, `history/lc4j` today with LangChain4j). Spring-based agents can support rich events once their framework stack can emmit event payloads.
+No. Rich event support depends on the agent framework producing those events (for example, `history/lc4j` today with LangChain4j). Spring-based agents can support rich events once their framework stack can emit event payloads.
 
 ## Contributing
 

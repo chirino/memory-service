@@ -7,13 +7,13 @@ description: Run Memory Service locally over a Unix domain socket and point agen
 import TestScenario from "../../../components/TestScenario.astro";
 import CurlTest from "../../../components/CurlTest.astro";
 
-Unix domain sockets are the simplest way to run Memory Service next to an agent on the same machine. The service stays off a TCP port, filesystem permissions become part of the access boundary, and the client packages in this repo can switch transports with one config knob.
+Unix domain sockets are the simplest way to run Memory Service next to an agent on the same machine. The service stays off a TCP port, filesystem permissions become part of the access boundary, and the client packages in this repo can switch transports with one config knob. Both REST and gRPC traffic are multiplexed over the same socket automatically.
 
 ## Local Stack
 
 For a fully local setup, use SQLite for the datastore, SQLite for vector storage, the process-local cache, and a Unix socket listener:
 
-> **Note:** The `memory-service` CLI has not yet been released as a standalone binary. You can install it from source with [Go](https://go.dev/dl/):
+> **Note:** The `memory-service` CLI is not yet published as a pre-built binary. You can install it from source with [Go](https://go.dev/dl/) 1.24+:
 >
 > ```bash
 > go install github.com/chirino/memory-service@latest
@@ -29,6 +29,8 @@ memory-service serve \
 ```
 
 These options keep the local stack self-contained. `db-kind=sqlite` and `vector-kind=sqlite` keep both the primary datastore and vector index in local files instead of requiring Postgres, MongoDB, or Qdrant; `cache-kind=local` keeps caching in-process instead of requiring Redis or Infinispan; `db-url=file:$HOME/.local/share/...` stores persistent data in the user's home directory; and `--unix-socket=$HOME/.local/run/...` keeps the live socket out of `/tmp`, where other local users are more likely to discover and probe it.
+
+The server creates the socket parent directory with `0700` permissions and the socket file with `0600` permissions, so only the owning user can connect by default.
 
 The framework guides reuse that same server shape. They only change the client-side configuration.
 

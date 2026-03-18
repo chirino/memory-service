@@ -34,7 +34,7 @@ Roles can be assigned via OIDC token roles, explicit user lists, or API key clie
 
 ## Justification and Audit Logging
 
-Every admin API call is written to a dedicated audit log at the `io.github.chirino.memory.admin.audit` logger. This provides a tamper-evident record of who accessed what data and why.
+Every admin API call is written to a structured audit log entry. This provides a tamper-evident record of who accessed what data and why.
 
 ### Providing a Justification
 
@@ -54,22 +54,23 @@ curl -X DELETE "http://localhost:8080/v1/admin/conversations/{id}" \
 
 ### Requiring Justification
 
-By default, `justification` is optional. Set `memory-service.admin.require-justification=true` to make it mandatory — any admin call without a justification will receive a `400 Bad Request` response. This is recommended for regulated environments.
+By default, `justification` is optional. Set `--admin-require-justification` (or `MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION=true`) to make it mandatory — any admin call without a justification will receive a `400 Bad Request` response. This is recommended for regulated environments.
 
 ### Audit Log Format
 
-Each audit log entry includes:
+Each audit log entry is emitted as a structured `INFO`-level log message with the prefix `Admin audit` and the following fields:
 
-- The admin's user ID (or API key client ID)
-- The HTTP method and path
-- The justification (if provided)
-- A timestamp
+| Field           | Description                                         |
+| --------------- | --------------------------------------------------- |
+| `caller`        | The admin's user ID (or API key client ID)          |
+| `role`          | The admin role used (`admin`, `auditor`, `indexer`) |
+| `method`        | The HTTP method (GET, POST, DELETE, etc.)           |
+| `path`          | The request path                                    |
+| `status`        | The HTTP response status code                       |
+| `clientIP`      | The client's IP address                             |
+| `justification` | The justification string (if provided)              |
 
-To route admin audit logs to a separate file or system, configure the Quarkus logging category:
-
-```properties
-quarkus.log.category."io.github.chirino.memory.admin.audit".level=INFO
-```
+The log level is controlled via the `MEMORY_SERVICE_LOG_LEVEL` environment variable (default: `info`). To route admin audit entries to a separate sink, filter on the `Admin audit` message prefix in your log aggregation pipeline.
 
 ## Reading Data Across Users
 
