@@ -57,7 +57,7 @@ Minimal free-tier deployment: Go server + Postgres, API key auth.
 
 ### DATABASE_URL Compatibility
 
-Fly.io Postgres sets `DATABASE_URL` automatically via `fly postgres attach`. The serve and migrate commands now accept `DATABASE_URL` as a fallback for `MEMORY_SERVICE_DB_URL`.
+Fly.io Postgres sets `DATABASE_URL` automatically via `fly postgres attach`. The Dockerfile entrypoint maps `DATABASE_URL` to `MEMORY_SERVICE_DB_URL` at container boot (via `MEMORY_SERVICE_DB_URL=${MEMORY_SERVICE_DB_URL:-$DATABASE_URL}`), keeping the application code free of deployment-specific env var fallbacks.
 
 ### Configuration
 
@@ -71,7 +71,7 @@ Developers configure the MCP bridge via `.mcp.json` (checked in) and a local `.e
 - [x] MCP bridge server in Go (`mcp/`) with stdio transport
 - [x] All 5 MCP tools implemented
 - [x] `.mcp.json` project configuration
-- [x] `DATABASE_URL` fallback in serve and migrate commands
+- [x] `DATABASE_URL` → `MEMORY_SERVICE_DB_URL` mapping in Dockerfile entrypoint
 
 ### Phase 2: Enhanced session support
 
@@ -95,8 +95,7 @@ Developers configure the MCP bridge via `.mcp.json` (checked in) and a local `.e
 | `mcp/client.go` | HTTP client for memory-service REST API |
 | `mcp/tools.go` | MCP tool definitions and handlers |
 | `.mcp.json` | Claude Code MCP server configuration |
-| `internal/cmd/serve/serve.go` | Accept `DATABASE_URL` fallback |
-| `internal/cmd/migrate/migrate.go` | Accept `DATABASE_URL` fallback |
+| `Dockerfile` | Entrypoint maps `DATABASE_URL` → `MEMORY_SERVICE_DB_URL` |
 
 ## Testing
 
