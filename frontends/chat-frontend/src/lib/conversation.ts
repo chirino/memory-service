@@ -139,13 +139,9 @@ export function createForkView(entries: Entry[], forks: ConversationForkSummary[
     const parentConvId = forkSummary.forkedAtConversationId;
     if (!forkEntries.some((f) => f.conversationId === parentConvId)) {
       const parentEntries = entriesByConversation.get(parentConvId);
-      const forkPointEntry = parentEntries?.find(
-        (e) => e.id === forkSummary.forkedAtEntryId,
-      );
+      const forkPointEntry = parentEntries?.find((e) => e.id === forkSummary.forkedAtEntryId);
       const labelEntry = forkPointEntry ?? parentEntries?.[0];
-      const parentContent = labelEntry?.content[0] as
-        | { text?: string }
-        | undefined;
+      const parentContent = labelEntry?.content[0] as { text?: string } | undefined;
       forkEntries.push({
         forkedAtConversationId: null,
         forkedAtEntryId: forkSummary.forkedAtEntryId,
@@ -197,27 +193,19 @@ export function createForkView(entries: Entry[], forks: ConversationForkSummary[
       const meta = forksByConversationId.get(conversationId);
       const forkPointEntryId = meta?.forkedAtEntryId;
       const combinedIds = new Set(combinedEntries.map((e) => e.id));
-      const orphanedForkPointId =
-        forkPointEntryId && !combinedIds.has(forkPointEntryId)
-          ? forkPointEntryId
-          : null;
+      const orphanedForkPointId = forkPointEntryId && !combinedIds.has(forkPointEntryId) ? forkPointEntryId : null;
       const orphanTargetIndex = orphanedForkPointId
         ? Math.max(
             0,
-            combinedEntries.findIndex(
-              (e) => e.conversationId === conversationId,
-            ),
+            combinedEntries.findIndex((e) => e.conversationId === conversationId),
           )
         : -1;
 
       return combinedEntries.map((entry, index) => {
         const orphanedForks =
-          orphanedForkPointId && index === orphanTargetIndex
-            ? (forksByEntryId.get(orphanedForkPointId) ?? [])
-            : [];
+          orphanedForkPointId && index === orphanTargetIndex ? (forksByEntryId.get(orphanedForkPointId) ?? []) : [];
         const entryForks = forksByEntryId.get(entry.id) ?? [];
-        const blankSlateForks =
-          index === 0 ? (forksByEntryId.get("") ?? []) : [];
+        const blankSlateForks = index === 0 ? (forksByEntryId.get("") ?? []) : [];
         const allForks = [...blankSlateForks, ...orphanedForks, ...entryForks];
         return {
           entry,
