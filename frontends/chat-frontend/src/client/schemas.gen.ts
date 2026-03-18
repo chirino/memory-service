@@ -101,7 +101,8 @@ export const $Conversation = {
           type: "string",
           format: "uuid",
           nullable: true,
-          description: "Entry ID where this conversation forked from its parent.",
+          description:
+            "First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.",
         },
         forkedAtConversationId: {
           type: "string",
@@ -198,7 +199,9 @@ export const $ConversationForkSummary = {
     forkedAtEntryId: {
       type: "string",
       format: "uuid",
-      description: "Entry ID at which this forked conversation diverged.",
+      nullable: true,
+      description:
+        "First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.",
     },
     forkedAtConversationId: {
       type: "string",

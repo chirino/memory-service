@@ -46,7 +46,7 @@ export type ConversationSummary = {
 
 export type Conversation = ConversationSummary & {
   /**
-   * Entry ID where this conversation forked from its parent.
+   * First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.
    */
   forkedAtEntryId?: string | null;
   /**
@@ -89,9 +89,9 @@ export type ConversationForkSummary = {
    */
   conversationId?: string;
   /**
-   * Entry ID at which this forked conversation diverged.
+   * First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.
    */
-  forkedAtEntryId?: string;
+  forkedAtEntryId?: string | null;
   /**
    * Conversation ID where the fork occurred.
    */

@@ -19,7 +19,7 @@ Feature: Conversation Forking REST API
     {}
     """
     Then the response status should be 200
-    And the response body "forkedAtEntryId" should be "${firstEntryId}"
+    And the response body "forkedAtEntryId" should be "${secondEntryId}"
     And the response body "forkedAtConversationId" should be "${conversationId}"
     And the response body "ownerUserId" should be "alice"
     And the response body "accessLevel" should be "owner"
@@ -32,7 +32,13 @@ Feature: Conversation Forking REST API
     {}
     """
     Then the response status should be 200
+    And the response body "forkedAtEntryId" should be "${firstEntryId}"
     And the response body should contain "forkedAtConversationId"
+    And set "forkedConversationAtFirstEntryId" to "${forkedConversationId}"
+    When I call GET "/v1/conversations/${forkedConversationAtFirstEntryId}/entries"
+    Then the response status should be 200
+    And the response should contain 1 entry
+    And entry at index 0 should have content "Fork message"
 
   Scenario: List forks for a conversation
     When I list entries for the conversation
@@ -237,11 +243,9 @@ Feature: Conversation Forking REST API
     Then the response status should be 200
     And the response should contain 13 entries
 
-  # Regression test: Channel filtering must happen AFTER fork ancestry traversal, not at the DB level.
-  # If the fork point entry (forkedAtEntryId) is in a different channel than the query filter,
-  # the DB-level filter removes it, breaking ancestry chain detection. The algorithm then never
-  # transitions from parent to fork conversation, returning wrong entries entirely.
-  Scenario: Channel filter on forked conversation preserves fork point from different channel
+  # Channel filtering must happen after ancestry traversal so the parent/fork boundary
+  # is computed before channel-specific entries are selected.
+  Scenario: Channel filter on forked conversation preserves ancestry semantics
     Given I am authenticated as user "alice"
     And I have a conversation with title "Channel Fork Test"
     And set "rootConversationId" to "${conversationId}"
@@ -260,7 +264,7 @@ Feature: Conversation Forking REST API
     And entry at index 2 should have content "H2"
     And set "entryH2_Id" to the json response field "data[2].id"
 
-    # Fork at H2 → forkedAtEntryId = M1 (a MEMORY entry)
+    # Fork at H2 → forkedAtEntryId = H2 (the first excluded parent entry)
     When I am authenticated as user "alice"
     And I fork the conversation at entry "${entryH2_Id}" with request:
     """
@@ -288,8 +292,6 @@ Feature: Conversation Forking REST API
     And entry at index 3 should have content "H3"
 
     # KEY TEST: Query fork with channel=HISTORY filter
-    # Fork point M1 is MEMORY. If channel filter is applied at DB level, M1 is excluded,
-    # ancestry traversal breaks, and we get wrong results (H1, H2 from root instead of H1, H3).
     When I call GET "/v1/conversations/${forkConversationId}/entries?channel=HISTORY"
     Then the response status should be 200
     And the response should contain 3 entries

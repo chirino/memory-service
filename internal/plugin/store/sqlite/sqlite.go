@@ -215,24 +215,6 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 			if err := db.Where("id = ? AND conversation_group_id = ?", *forkedAtEntryID, sourceConv.ConversationGroupID).First(&entry).Error; err != nil {
 				return nil, &NotFoundError{Resource: "entry", ID: forkedAtEntryID.String()}
 			}
-			// Java parity: forkedAtEntryId stored is the entry BEFORE the fork point.
-			// Find the entry just before the requested fork point in the same conversation group.
-			var prevEntry model.Entry
-			result := db.
-				Where("conversation_group_id = ? AND created_at < ?", sourceConv.ConversationGroupID, entry.CreatedAt).
-				Order("created_at DESC").
-				Limit(1).
-				Find(&prevEntry)
-			if result.Error != nil {
-				return nil, fmt.Errorf("failed to load previous fork entry: %w", result.Error)
-			}
-			if result.RowsAffected > 0 {
-				prevID := prevEntry.ID
-				forkedAtEntryID = &prevID
-			}
-			// else: no previous entry — fork is at the very first entry.
-			// Keep the original entry ID as the stop point (it is the last
-			// entry to include from the parent).
 		}
 		actualGroupID = sourceConv.ConversationGroupID
 	} else {
@@ -2317,7 +2299,6 @@ func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) 
 			continue
 		}
 
-		result = append(result, entry)
 		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
 			ancestorIndex++
 			if ancestorIndex < len(ancestry) {
@@ -2327,7 +2308,9 @@ func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) 
 					break
 				}
 			}
+			continue
 		}
+		result = append(result, entry)
 	}
 	return result
 }
@@ -2433,6 +2416,18 @@ func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAnces
 			continue
 		}
 
+		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
+			ancestorIndex++
+			if ancestorIndex < len(ancestry) {
+				current = ancestry[ancestorIndex]
+				isTarget = ancestorIndex == len(ancestry)-1
+				if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
+					break
+				}
+			}
+			continue
+		}
+
 		if entry.Channel == model.ChannelMemory && entry.ClientID != nil && *entry.ClientID == clientID {
 			entryEpoch := int64(0)
 			if entry.Epoch != nil {
@@ -2459,16 +2454,6 @@ func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAnces
 			}
 		}
 
-		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
-			ancestorIndex++
-			if ancestorIndex < len(ancestry) {
-				current = ancestry[ancestorIndex]
-				isTarget = ancestorIndex == len(ancestry)-1
-				if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
-					break
-				}
-			}
-		}
 	}
 
 	return result
