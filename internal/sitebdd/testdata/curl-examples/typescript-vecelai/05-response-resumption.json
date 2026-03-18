@@ -2,7 +2,7 @@
   {
     "captureId": "/docs/typescript-vecelai/response-resumption/#2",
     "checkpoint": "typescript/examples/vecelai/doc-checkpoints/05-response-resumption",
-    "scenario": "[typescript-vecelai] Response Resumption Tutorial - 05-response-resumption",
+    "scenario": "[typescript-vecelai] Response Recording and Resumption Tutorial - 05-response-resumption",
     "requestUrl": "http://localhost:10126/chat/a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333",
     "method": "POST",
     "statusCode": 200,
@@ -13,7 +13,7 @@
   {
     "captureId": "/docs/typescript-vecelai/response-resumption/#3",
     "checkpoint": "typescript/examples/vecelai/doc-checkpoints/05-response-resumption",
-    "scenario": "[typescript-vecelai] Response Resumption Tutorial - 05-response-resumption",
+    "scenario": "[typescript-vecelai] Response Recording and Resumption Tutorial - 05-response-resumption",
     "requestUrl": "http://localhost:10126/v1/conversations/resume-check",
     "method": "POST",
     "statusCode": 200,

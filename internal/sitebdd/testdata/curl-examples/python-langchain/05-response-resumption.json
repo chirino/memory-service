@@ -2,7 +2,7 @@
   {
     "captureId": "/docs/python-langchain/response-resumption/#2",
     "checkpoint": "python/examples/langchain/doc-checkpoints/05-response-resumption",
-    "scenario": "[python-langchain] Response Resumption Tutorial - 05-response-resumption",
+    "scenario": "[python-langchain] Response Recording and Resumption Tutorial - 05-response-resumption",
     "requestUrl": "http://localhost:10100/chat/2946ccfc-cf26-43e1-87fc-f71c944895b1",
     "method": "POST",
     "statusCode": 200,
@@ -13,7 +13,7 @@
   {
     "captureId": "/docs/python-langchain/response-resumption/#3",
     "checkpoint": "python/examples/langchain/doc-checkpoints/05-response-resumption",
-    "scenario": "[python-langchain] Response Resumption Tutorial - 05-response-resumption",
+    "scenario": "[python-langchain] Response Recording and Resumption Tutorial - 05-response-resumption",
     "requestUrl": "http://localhost:10100/v1/conversations/resume-check",
     "method": "POST",
     "statusCode": 200,

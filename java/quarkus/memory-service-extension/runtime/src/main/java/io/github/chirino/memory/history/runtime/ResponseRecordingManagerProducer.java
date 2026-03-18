@@ -10,32 +10,33 @@ import org.jboss.logging.Logger;
 
 /**
  * Producer for {@link ResponseRecordingManager} that selects the appropriate implementation.
- * Prefers an enabled non-default resumer (e.g., RedisResponseRecordingManager) over the default
- * NoopResponseRecordingManager.
+ * Prefers an enabled non-default recording manager (e.g., RedisResponseRecordingManager) over the
+ * default NoopResponseRecordingManager.
  */
 @ApplicationScoped
 public class ResponseRecordingManagerProducer {
 
     private static final Logger LOG = Logger.getLogger(ResponseRecordingManagerProducer.class);
 
-    @Inject @Any Instance<ResponseRecordingManager> allResumers;
+    @Inject @Any Instance<ResponseRecordingManager> allRecordingManagers;
 
     @Produces
     @ApplicationScoped
     @Default
     public ResponseRecordingManager produceResponseRecordingManager() {
-        // First, try to find a non-default enabled resumer
-        for (Instance.Handle<ResponseRecordingManager> handle : allResumers.handles()) {
-            ResponseRecordingManager resumer = handle.get();
+        // First, try to find a non-default enabled recording manager.
+        for (Instance.Handle<ResponseRecordingManager> handle : allRecordingManagers.handles()) {
+            ResponseRecordingManager recordingManager = handle.get();
             // Skip the default bean (NoopResponseRecordingManager)
-            if (resumer instanceof NoopResponseRecordingManager) {
+            if (recordingManager instanceof NoopResponseRecordingManager) {
                 continue;
             }
             // If it's enabled, use it
-            if (resumer.enabled()) {
+            if (recordingManager.enabled()) {
                 LOG.debugf(
-                        "Using enabled ResponseRecordingManager: %s", resumer.getClass().getName());
-                return resumer;
+                        "Using enabled ResponseRecordingManager: %s",
+                        recordingManager.getClass().getName());
+                return recordingManager;
             }
         }
         // Fall back to the default (NoopResponseRecordingManager)

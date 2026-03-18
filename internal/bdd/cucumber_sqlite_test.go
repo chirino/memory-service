@@ -69,7 +69,7 @@ func collectSQLiteRESTFeatures(t *testing.T) []string {
 	for _, featurePath := range all {
 		base := filepath.Base(featurePath)
 		switch base {
-		case "memory-cache-rest.feature", "response-resumer-grpc.feature":
+		case "memory-cache-rest.feature", "response-recorder-grpc.feature":
 			continue
 		}
 		if strings.Contains(base, "-grpc") {

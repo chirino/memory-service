@@ -2,7 +2,7 @@
   {
     "captureId": "/docs/typescript-vecelai/response-resumption/#2",
     "checkpoint": "typescript/examples/vecelai/doc-checkpoints/05a-streaming",
-    "scenario": "[typescript-vecelai] Response Resumption Tutorial - 05a-streaming",
+    "scenario": "[typescript-vecelai] Response Recording and Resumption Tutorial - 05a-streaming",
     "requestUrl": "http://localhost:10141/chat/a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333",
     "method": "POST",
     "statusCode": 200,

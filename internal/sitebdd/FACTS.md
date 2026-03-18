@@ -89,6 +89,10 @@ files are written. This keeps docs pages that reuse the same checkpoint
 directory (for example response-resumption + unix-domain-sockets) out of the
 same wave, which avoids checkpoint-path isolation conflicts.
 
+Recorded curl captures under `internal/sitebdd/testdata/curl-examples/` should
+keep the stable `response-resumption` route/checkpoint identifiers but use the
+visible scenario label "Response Recording and Resumption Tutorial".
+
 Strict JSON assertions (`response body should be json`) replay the last GET request
 up to 6 times with short backoff before failing. This stabilizes checks for
 eventually-consistent writes (for example, delayed AI history entry persistence

@@ -242,7 +242,7 @@ No changes required. The `ResponseRecorder.record(String token)` parameter name 
 
 ### 6. Tests
 
-**Feature file**: `memory-service/src/test/resources/features/response-resumer-grpc.feature`
+**Feature file**: `internal/bdd/testdata/features/response-recorder-grpc.feature`
 
 - Rename all RPC references:
   - `ResponseResumerService/StreamResponseTokens` → `ResponseRecorderService/Record`
@@ -307,7 +307,7 @@ No changes required. The `ResponseRecorder.record(String token)` parameter name 
 # Search test.log for failures
 
 # Specifically verify the response resumer tests
-grep -A5 "response-resumer-grpc" test.log
+grep -A5 "response-recorder-grpc" test.log
 
 # Verify client modules compile
 ./mvnw compile -pl quarkus/memory-service-extension/runtime

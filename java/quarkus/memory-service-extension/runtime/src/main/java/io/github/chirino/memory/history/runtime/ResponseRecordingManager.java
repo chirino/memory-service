@@ -32,7 +32,7 @@ public interface ResponseRecordingManager {
 
     /**
      * Check which conversations from the provided list have responses in progress,
-     * optionally propagating a bearer token to downstream resumer implementations.
+     * optionally propagating a bearer token to downstream recording-manager implementations.
      *
      * @param conversationIds list of history IDs to check
      * @param bearerToken token to use for authentication when calling out (may be null)

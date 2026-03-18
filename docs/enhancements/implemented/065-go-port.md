@@ -761,7 +761,7 @@ internal/bdd/                         # Memory-service godog tests (replaces han
   - `steps_attachments.go` — upload, download, delete, token-based download
   - `steps_cache.go` — cache metric recording/assertions
   - `mock_prometheus.go` — configurable Prometheus mock server
-  - Features covered: `attachments-rest`, `forked-attachments-rest`, `fork-attachment-deletion-rest`, `admin-attachments-rest`, `memory-cache-rest`, `response-resumer-grpc`
+  - Features covered: `attachments-rest`, `forked-attachments-rest`, `fork-attachment-deletion-rest`, `admin-attachments-rest`, `memory-cache-rest`, `response-recorder-grpc`
 
 - [x] **Step definitions — Phase D (gRPC, 80 scenarios)**:
   - `steps_grpc.go` — generic proto dispatcher for all gRPC services, UUID↔bytes handling via proto reflection + pipe functions, streaming Record/Replay/Cancel steps, attachment upload/download steps

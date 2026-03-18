@@ -7,7 +7,8 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Transforms a Multi&lt;String&gt; stream of arbitrary chunks into a stream of complete JSON lines.
  *
- * <p>The underlying resumer may emit chunks at arbitrary boundaries. This transformer buffers
+ * <p>The underlying recording manager replay stream may emit chunks at arbitrary boundaries. This
+ * transformer buffers
  * incoming data and emits only complete lines (delimited by newlines).
  *
  * <p>Example:

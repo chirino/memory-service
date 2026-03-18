@@ -43,4 +43,4 @@ curl -sSfX POST http://localhost:9090/v1/conversations/search \
 
 ## Next Step
 
-Continue to [checkpoint 04](../04-conversation-forking/) for conversation forking, or [checkpoint 05](../05-response-resumption/) for streaming and response resumption.
+Continue to [checkpoint 04](../04-conversation-forking/) for conversation forking, or [checkpoint 05](../05-response-resumption/) for response recording and resumption.

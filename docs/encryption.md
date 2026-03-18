@@ -65,7 +65,7 @@ MEMORY_SERVICE_ENCRYPTION_PROVIDERS=plain
 
 Several categories of temporary files are written to disk in plaintext and are **never encrypted**, regardless of the encryption configuration:
 
-### Response Resumption Tokens (highest risk)
+### Response Recording and Resumption Tokens (highest risk)
 
 **Pattern**: `response-resume-*.tokens` in `$MEMORY_SERVICE_TEMP_DIR` (defaults to OS `/tmp`)
 

@@ -242,7 +242,7 @@ export type StreamStartParams = {
 
 ### 11. Test Updates
 
-**Cucumber Feature:** `memory-service/src/test/resources/features/response-resumer-grpc.feature`
+**Cucumber Feature:** `internal/bdd/testdata/features/response-recorder-grpc.feature`
 
 Update or remove scenarios that test specific `resume_position` values:
 
@@ -303,7 +303,7 @@ cd frontends/chat-frontend && npm run lint && npm run build
 | `frontends/chat-frontend/src/hooks/useSseStream.ts` | Update URL |
 | `frontends/chat-frontend/src/hooks/useWebSocketStream.ts` | Update URL |
 | `frontends/chat-frontend/src/components/chat-panel.tsx` | Remove param |
-| `memory-service/src/test/resources/features/response-resumer-grpc.feature` | Update scenarios |
+| `internal/bdd/testdata/features/response-recorder-grpc.feature` | Update scenarios |
 
 ## Notes
 

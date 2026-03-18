@@ -33,7 +33,7 @@ public class ConversationStore {
 
     @Inject SecurityIdentity securityIdentity;
     @Inject SecurityIdentityAssociation identityAssociation;
-    @Inject ResponseRecordingManager resumer;
+    @Inject ResponseRecordingManager recordingManager;
     @Inject Instance<IndexedContentProvider> indexedContentProviderInstance;
     @Inject ObjectMapper objectMapper;
     @Inject Instance<ToolAttachmentExtractor> toolAttachmentExtractorInstance;
@@ -137,7 +137,7 @@ public class ConversationStore {
                 conversationId,
                 stringMulti,
                 this,
-                resumer,
+                recordingManager,
                 resolvedIdentity,
                 identityAssociation,
                 bearerToken);
@@ -172,7 +172,7 @@ public class ConversationStore {
                 conversationId,
                 eventMulti,
                 this,
-                resumer,
+                recordingManager,
                 objectMapper,
                 resolvedIdentity,
                 identityAssociation,

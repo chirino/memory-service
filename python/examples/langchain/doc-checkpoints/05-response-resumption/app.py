@@ -104,7 +104,7 @@ agent = create_agent(
     system_prompt="You are a Python memory-service demo agent.",
 )
 
-app = FastAPI(title="Python LangChain Agent With Response Resumption")
+app = FastAPI(title="Python LangChain Agent With Response Recording and Resumption")
 
 
 @app.get("/ready")

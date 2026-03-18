@@ -45,6 +45,7 @@ When you discover something meaningful about this project during your work—arc
 - Fork creation is implicit on first append to a new conversation ID using `forkedAtConversationId` + `forkedAtEntryId`; `POST /v1/conversations/{conversationId}/entries/{entryId}/fork` is obsolete.
 - Entry listing uses `forks=all` to return entries from all branches in a fork tree (not `allForks=true`).
 - In gRPC `memory/v1/memory_service.proto`, response recorder fields use snake_case (`conversation_id`).
+- Response recording naming is intentionally split by scope: client-side lifecycle APIs use `ResponseRecordingManager` / `RecordingSession`, while record-only server/proto pieces use `ResponseRecorderService` and recorder handles; avoid renaming the umbrella concept back to `ResponseRecorder`.
 - List endpoints may include `"afterCursor": null`; docs-test JSON assertions should tolerate additive pagination fields.
 - Attachment download tokens (`/v1/attachments/download/:token/:filename`) are HMAC-signed with `AttachmentSigningSecret`; keep `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET` non-empty, especially with DB attachment stores where storage keys are guessable. The unauthenticated download route is not registered when this secret is unset.
 - Go cache serialization gotcha: `model.Entry` has custom JSON marshaling for `content`; keep marshal/unmarshal behavior symmetric or cached memory entries lose content and break sync/list semantics.
