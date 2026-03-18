@@ -27,7 +27,7 @@ model = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY", "not-needed-for-tests"),
 )
 
-checkpointer = MemoryServiceCheckpointSaver()
+checkpointer = MemoryServiceCheckpointSaver.from_env()
 
 
 def pass_through_indexed_content(text: str, role: str) -> str:
@@ -35,7 +35,7 @@ def pass_through_indexed_content(text: str, role: str) -> str:
     return text
 
 
-history_middleware = MemoryServiceHistoryMiddleware(
+history_middleware = MemoryServiceHistoryMiddleware.from_env(
     indexed_content_provider=pass_through_indexed_content,
 )
 
@@ -59,7 +59,7 @@ app = FastAPI(title="LangGraph Chatbot with Search")
 async def ready() -> dict[str, str]:
     return {"status": "ok"}
 install_fastapi_authorization_middleware(app)
-proxy = MemoryServiceProxy()
+proxy = MemoryServiceProxy.from_env()
 
 
 @app.post("/chat/{conversation_id}")

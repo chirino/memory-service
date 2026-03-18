@@ -30,7 +30,7 @@ Also complete **Step 2** in [Python Dev Setup](/docs/python-langchain/dev-setup/
 Checkpoint `05` implements the response recording/resumption pattern directly in the tutorial flow:
 
 - `POST /chat/{conversation_id}` streams SSE frames from live LangChain tokens.
-- `MemoryServiceResponseRecordingManager()` records that stream via Memory Service gRPC.
+- `MemoryServiceResponseRecordingManager.from_env()` records that stream via Memory Service gRPC.
 - `GET /v1/conversations/{conversation_id}/resume` replays the same in-progress stream over SSE.
 - `POST /v1/conversations/{conversation_id}/cancel` cancels both the local stream and the Memory Service recording.
 
@@ -54,7 +54,7 @@ Checkpoint `05` implements the response recording/resumption pattern directly in
   lines="107-110"
 />
 
-**What changed**: The `recording_manager` is created with `MemoryServiceResponseRecordingManager()`.
+**What changed**: The `recording_manager` is created with `MemoryServiceResponseRecordingManager.from_env()`.
 
 **Why**: `MemoryServiceResponseRecordingManager` wraps the live response stream, records streamed chunks for the conversation, and provides the shared `resume-check`, `resume`, and `cancel` behavior used by the API endpoints.
 

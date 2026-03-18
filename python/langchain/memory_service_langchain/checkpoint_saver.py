@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import os
 import uuid as _uuid_module
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
@@ -24,7 +23,12 @@ from .request_context import (
     get_request_forked_at_conversation_id,
     get_request_forked_at_entry_id,
 )
-from .transport import httpx_client_kwargs, resolve_rest_base_url, resolve_unix_socket
+from .transport import (
+    httpx_client_kwargs,
+    resolve_env_config,
+    resolve_rest_base_url,
+    resolve_unix_socket,
+)
 
 # Stable namespace UUID for deriving conversation UUIDs from arbitrary thread_ids.
 _CONV_ID_NAMESPACE = _uuid_module.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
@@ -38,23 +42,29 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
     def __init__(
         self,
         *,
-        base_url: str | None = None,
+        base_url: str,
+        api_key: str,
         unix_socket: str | None = None,
-        api_key: str | None = None,
         authorization_getter: Callable[[], str | None] | None = None,
         forked_at_conversation_id_getter: Callable[[], str | None] | None = None,
         forked_at_entry_id_getter: Callable[[], str | None] | None = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
-        self.base_url = resolve_rest_base_url(base_url, unix_socket)
         self.unix_socket = resolve_unix_socket(unix_socket)
-        self.api_key = api_key or os.getenv("MEMORY_SERVICE_API_KEY", "agent-api-key-1")
+        self.base_url = resolve_rest_base_url(base_url, self.unix_socket)
+        self.api_key = api_key
         self.authorization_getter = authorization_getter or get_request_authorization
         self.forked_at_conversation_id_getter = (
             forked_at_conversation_id_getter or get_request_forked_at_conversation_id
         )
         self.forked_at_entry_id_getter = forked_at_entry_id_getter or get_request_forked_at_entry_id
+
+    @classmethod
+    def from_env(cls, **overrides: Any) -> "MemoryServiceCheckpointSaver":
+        config = resolve_env_config()
+        config.update(overrides)
+        return cls(**config)
 
     def _conv_id(self, thread_id: str) -> str:
         """Return a deterministic UUID string for any thread_id.

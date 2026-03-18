@@ -1,7 +1,6 @@
 # TODO List
 
 ## Potentially Backward Compat Breaking
-* python/ts don't configure the lib via ENV vars.
 * should the /sync endpoint take a flatten entries to just a list of content messages?
 * a way to support batch processing of old conversations / memories to create/update/reinforce memories
 * track memory load counts, as a way to track how important/useful a memory is (see [072-memory-load-counts.md](docs/enhancements/implemented/072-memory-load-counts.md)).

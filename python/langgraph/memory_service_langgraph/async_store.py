@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from typing import Any, Iterable
 
 import httpx
@@ -24,6 +23,7 @@ from langgraph.store.base import (
 from .indexing import IndexBuilder, IndexRedactor, build_index_payload
 from .transport import (
     httpx_async_client_kwargs,
+    resolve_env_config,
     resolve_rest_base_url,
     resolve_unix_socket,
 )
@@ -32,24 +32,22 @@ from .transport import (
 class AsyncMemoryServiceStore(BaseStore):
     """Async LangGraph BaseStore backed by the Memory Service episodic API.
 
-    Configure via environment variables or constructor arguments:
-
-        MEMORY_SERVICE_URL   — base URL of the memory service (e.g. http://localhost:8082)
-        MEMORY_SERVICE_TOKEN — Bearer token for authentication
+    Use explicit constructor arguments, or `from_env()` for env-based setup.
     """
 
     def __init__(
         self,
-        base_url: str | None = None,
+        *,
+        base_url: str,
+        token: str,
         unix_socket: str | None = None,
-        token: str | None = None,
         timeout: float = 10.0,
         index_builder: IndexBuilder | None = None,
         index_redactor: IndexRedactor | None = None,
     ) -> None:
-        self._base_url = resolve_rest_base_url(base_url, unix_socket)
         self._unix_socket = resolve_unix_socket(unix_socket)
-        self._token = token or os.environ.get("MEMORY_SERVICE_TOKEN", "")
+        self._base_url = resolve_rest_base_url(base_url, self._unix_socket)
+        self._token = token
         if index_builder is not None and index_redactor is not None:
             raise ValueError("index_builder and index_redactor are mutually exclusive")
         async def _log_request(request: httpx.Request) -> None:
@@ -70,6 +68,12 @@ class AsyncMemoryServiceStore(BaseStore):
             self._index_builder = lambda namespace, key, value, index: build_index_payload(
                 namespace, key, value, index, redactor=index_redactor
             )
+
+    @classmethod
+    def from_env(cls, **overrides: Any) -> "AsyncMemoryServiceStore":
+        config = resolve_env_config()
+        config.update(overrides)
+        return cls(**config)
 
     # ------------------------------------------------------------------
     # BaseStore interface — the only two abstract methods in langgraph 1.x

@@ -22,12 +22,12 @@ This guide adds sharing features to the TypeScript tutorial app.
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/06-sharing/src/app.ts"
   lang="typescript"
-  match='import { withMemoryService, withProxy } from "@chirino/memory-service-vercelai";'
+  match="memoryServiceConfigFromEnv,"
   before={0}
-  after={0}
+  after={6}
 />
 
-**What changed**: Checkpoint `06` adds `withProxy` import used by the sharing endpoints.
+**What changed**: Checkpoint `06` adds `memoryServiceConfigFromEnv(...)`, `withProxy`, and a shared `memoryServiceConfig` used by the sharing endpoints.
 
 **Why needed**: Sharing operations are delegated to Memory Service through a thin authenticated proxy layer.
 

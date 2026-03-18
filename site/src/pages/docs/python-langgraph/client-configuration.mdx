@@ -1,0 +1,66 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Client Configuration
+description: Configure the memory-service-langgraph Python package — explicit config, environment variables, and from_env() convenience.
+---
+
+This page documents how to configure the `memory-service-langgraph` package when connecting to Memory Service.
+
+## Configuration Approaches
+
+The package supports two configuration styles:
+
+### 1. Explicit Configuration (Recommended for Libraries and Tests)
+
+Pass all connection settings directly to the constructor:
+
+```python
+from memory_service_langgraph import MemoryServiceStore, AsyncMemoryServiceStore
+
+store = MemoryServiceStore(
+    base_url="http://memory-service:8082",
+    token="my-bearer-token",
+)
+
+async_store = AsyncMemoryServiceStore(
+    base_url="http://memory-service:8082",
+    token="my-bearer-token",
+)
+```
+
+This approach keeps your code self-contained and testable — no hidden dependencies on the process environment.
+
+### 2. Environment Variables via `from_env()` (Recommended for Apps and Deployment)
+
+Use the `from_env()` class method to read configuration from `MEMORY_SERVICE_*` environment variables:
+
+```python
+store = MemoryServiceStore.from_env()
+async_store = AsyncMemoryServiceStore.from_env()
+```
+
+You can override individual settings while reading the rest from the environment:
+
+```python
+store = MemoryServiceStore.from_env(
+    base_url="http://custom-host:9090",
+)
+```
+
+## Environment Variable Reference
+
+| Variable                     | Description                                                         | Default                 |
+| ---------------------------- | ------------------------------------------------------------------- | ----------------------- |
+| `MEMORY_SERVICE_URL`         | Base URL for REST API calls                                         | `http://localhost:8082` |
+| `MEMORY_SERVICE_UNIX_SOCKET` | Absolute path to a Unix domain socket (overrides URL for transport) | _(none)_                |
+| `MEMORY_SERVICE_TOKEN`       | Bearer token sent in the `Authorization` header                     | _(none)_                |
+
+## Unix Domain Sockets
+
+When `MEMORY_SERVICE_UNIX_SOCKET` is set (or `unix_socket=` is passed), REST calls use the socket transport and the logical base URL becomes `http://localhost`.
+
+See [Unix Domain Sockets](/docs/python-langgraph/unix-domain-sockets/) for a full walkthrough.
+
+## Authorization
+
+The `token` parameter (or `MEMORY_SERVICE_TOKEN` env var) sets a static Bearer token. For per-request token forwarding (e.g., from incoming HTTP request headers), the LangGraph checkpointer and store classes also integrate with the authorization middleware described in [Getting Started](/docs/python-langgraph/getting-started/).

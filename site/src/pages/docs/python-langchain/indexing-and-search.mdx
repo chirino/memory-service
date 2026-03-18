@@ -34,7 +34,7 @@ The simplest provider is pass-through:
 
 <CodeFromFile file="python/examples/langchain/doc-checkpoints/07-with-search/app.py" lang="python" lines="54-61" />
 
-**What changed**: `pass_through_indexed_content(text, role)` is defined and passed to `MemoryServiceHistoryMiddleware(indexed_content_provider=...)`. Without an `indexed_content_provider`, history entries are written with no `indexedContent` field and therefore cannot be searched.
+**What changed**: `pass_through_indexed_content(text, role)` is defined and passed to `MemoryServiceHistoryMiddleware.from_env(indexed_content_provider=...)`. Without an `indexed_content_provider`, history entries are written with no `indexedContent` field and therefore cannot be searched.
 
 **Why**: The `indexed_content_provider` hook is called before each entry is written, and whatever string it returns is stored as the cleartext `indexedContent` field that the search index reads. Returning the message text verbatim (pass-through) makes every message fully searchable. The `del role` line suppresses an unused-argument linting warning; in production code the `role` argument would be used to skip indexing AI responses or to apply different redaction rules per speaker.
 

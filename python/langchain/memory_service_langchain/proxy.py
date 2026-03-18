@@ -7,6 +7,7 @@ from fastapi import Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .request_context import get_request_authorization, memory_service_request
+from .transport import resolve_env_config, resolve_rest_base_url, resolve_unix_socket
 
 
 def to_fastapi_response(response: httpx.Response) -> Response:
@@ -52,13 +53,21 @@ class MemoryServiceProxy:
     def __init__(
         self,
         *,
-        base_url: str | None = None,
-        api_key: str | None = None,
+        base_url: str,
+        api_key: str,
+        unix_socket: str | None = None,
         authorization_getter: Callable[[], str | None] | None = None,
     ):
-        self.base_url = base_url
+        self.unix_socket = resolve_unix_socket(unix_socket)
+        self.base_url = resolve_rest_base_url(base_url, self.unix_socket)
         self.api_key = api_key
         self.authorization_getter = authorization_getter or get_request_authorization
+
+    @classmethod
+    def from_env(cls, **overrides: Any) -> "MemoryServiceProxy":
+        config = resolve_env_config()
+        config.update(overrides)
+        return cls(**config)
 
     @staticmethod
     def _compact_params(params: dict[str, Any]) -> dict[str, Any]:
@@ -87,6 +96,7 @@ class MemoryServiceProxy:
             data=data,
             files=files,
             base_url=self.base_url,
+            unix_socket=self.unix_socket,
             api_key=self.api_key,
             authorization_getter=self.authorization_getter,
             include_api_key=include_api_key,

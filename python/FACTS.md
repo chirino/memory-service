@@ -16,7 +16,7 @@
 
 **Response recording and resumption pattern**: Keep checkpoint `05` route handlers thin by delegating resume-check/replay/cancel state handling to `memory_service_langchain.MemoryServiceResponseRecordingManager`, mirroring the Quarkus `ResumeResource` style.
 
-**Checkpoint `05` tutorial scope**: `python/examples/langchain/doc-checkpoints/05-response-resumption` is intentionally minimal: `/chat` accepts plain text body, emits SSE `PartialResponse` events only, uses `MemoryServiceResponseRecordingManager()`, replays in events mode, and proxies `/cancel` to Memory Service.
+**Checkpoint `05` tutorial scope**: `python/examples/langchain/doc-checkpoints/05-response-resumption` is intentionally minimal: `/chat` accepts plain text body, emits SSE `PartialResponse` events only, uses `MemoryServiceResponseRecordingManager.from_env()`, replays in events mode, and proxies `/cancel` to Memory Service.
 
 **LangGraph checkpoint `05` parity**: `python/examples/langgraph/doc-checkpoints/05-response-resumption` follows the same gRPC-backed pattern as the LangChain checkpoint (`stream_from_source`, `replay_sse(..., stream_mode="events")`, proxied `/cancel`), but uses `graph.astream(..., stream_mode="messages")` as the token source.
 
@@ -62,7 +62,7 @@
 
 **Remote cancel propagation**: The Python recording manager must watch for gRPC recorder `RECORD_STATUS_CANCELLED` and cancel the local producer task, so cancel requests from another client/backend instance stop the original producer.
 
-**chat-langchain response integration**: `python/examples/langchain/chat-langchain/app.py` wires `/chat` through `memory_service_scope(...)` + `MemoryServiceHistoryMiddleware(...)` + `MemoryServiceResponseRecordingManager()`; gRPC recording is only done in `recording_manager.stream_from_source(...)` and records Quarkus-style payloads (event JSON lines or raw token text), not SSE `data:` framing bytes.
+**chat-langchain response integration**: `python/examples/langchain/chat-langchain/app.py` wires `/chat` through `memory_service_scope(...)` + `MemoryServiceHistoryMiddleware.from_env(...)` + `MemoryServiceResponseRecordingManager.from_env()`; gRPC recording is only done in `recording_manager.stream_from_source(...)` and records Quarkus-style payloads (event JSON lines or raw token text), not SSE `data:` framing bytes.
 
 **Cancel/failure partial history parity**: `chat-langchain` now explicitly persists buffered assistant text to `history` on stream cancel/failure (mirroring Quarkus `finishCancel`/`finishFailure` behavior where partial responses are stored).
 

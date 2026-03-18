@@ -30,7 +30,7 @@ To enable that, wire `MemoryServiceHistoryMiddleware` into the agent and bind re
 
 <CodeFromFile file="python/examples/langchain/doc-checkpoints/03-with-history/app.py" lang="python" lines="52-64" />
 
-**What changed**: `MemoryServiceHistoryMiddleware()` is constructed and passed into `create_agent(middleware=[history_middleware])`. The `chat` endpoint wraps the `agent.invoke(...)` call in `with memory_service_scope(conversation_id):` instead of only setting `thread_id` in `configurable`.
+**What changed**: `MemoryServiceHistoryMiddleware.from_env()` is constructed and passed into `create_agent(middleware=[history_middleware])`. The `chat` endpoint wraps the `agent.invoke(...)` call in `with memory_service_scope(conversation_id):` instead of only setting `thread_id` in `configurable`.
 
 **Why**: The middleware intercepts the agent's model call, writing a USER entry to the `history` channel before the call and an AI entry after. `memory_service_scope(conversation_id)` sets a context variable that the middleware reads to know which conversation to write to — without this scope, the middleware has nowhere to record the entries. The checkpointer continues storing LangGraph state in the `context` channel unchanged.
 

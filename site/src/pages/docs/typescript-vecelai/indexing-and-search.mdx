@@ -22,12 +22,12 @@ This guide adds indexed history text and a proxied search endpoint.
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/07-with-search/src/app.ts"
   lang="typescript"
-  match='import { withMemoryService, withProxy } from "@chirino/memory-service-vercelai";'
+  match="memoryServiceConfigFromEnv,"
   before={0}
-  after={0}
+  after={6}
 />
 
-**What changed**: Checkpoint `07` adds `withProxy` import used by the search endpoint.
+**What changed**: Checkpoint `07` adds `memoryServiceConfigFromEnv(...)`, `withProxy`, and a shared `memoryServiceConfig` used by the search endpoint.
 
 **Why needed**: The app can forward search requests to Memory Service while preserving user-scoped auth behavior.
 

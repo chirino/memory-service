@@ -1,0 +1,91 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Client Configuration
+description: Configure the memory-service-langchain Python package — explicit config, environment variables, and from_env() convenience.
+---
+
+This page documents how to configure the `memory-service-langchain` package when connecting to Memory Service.
+
+## Configuration Approaches
+
+The package supports two configuration styles:
+
+### 1. Explicit Configuration (Recommended for Libraries and Tests)
+
+Pass all connection settings directly to the constructor:
+
+```python
+from memory_service_langchain import (
+    MemoryServiceCheckpointSaver,
+    MemoryServiceHistoryMiddleware,
+    MemoryServiceResponseRecordingManager,
+    MemoryServiceProxy,
+)
+
+checkpointer = MemoryServiceCheckpointSaver(
+    base_url="http://memory-service:8082",
+    api_key="my-agent-key",
+)
+
+history = MemoryServiceHistoryMiddleware(
+    base_url="http://memory-service:8082",
+    api_key="my-agent-key",
+)
+
+recording_manager = MemoryServiceResponseRecordingManager(
+    base_url="http://memory-service:8082",
+    api_key="my-agent-key",
+    grpc_target="memory-service:8082",
+)
+
+proxy = MemoryServiceProxy(
+    base_url="http://memory-service:8082",
+    api_key="my-agent-key",
+)
+```
+
+This approach keeps your code self-contained and testable — no hidden dependencies on the process environment.
+
+### 2. Environment Variables via `from_env()` (Recommended for Apps and Deployment)
+
+Use the `from_env()` class method to read configuration from `MEMORY_SERVICE_*` environment variables:
+
+```python
+checkpointer = MemoryServiceCheckpointSaver.from_env()
+history = MemoryServiceHistoryMiddleware.from_env()
+recording_manager = MemoryServiceResponseRecordingManager.from_env()
+proxy = MemoryServiceProxy.from_env()
+```
+
+You can override individual settings while reading the rest from the environment:
+
+```python
+checkpointer = MemoryServiceCheckpointSaver.from_env(
+    base_url="http://custom-host:9090",
+)
+```
+
+## Environment Variable Reference
+
+| Variable                                     | Description                                                         | Default                                               |
+| -------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------- |
+| `MEMORY_SERVICE_URL`                         | Base URL for REST API calls                                         | `http://localhost:8082`                               |
+| `MEMORY_SERVICE_UNIX_SOCKET`                 | Absolute path to a Unix domain socket (overrides URL for transport) | _(none)_                                              |
+| `MEMORY_SERVICE_API_KEY`                     | API key sent in the `x-api-key` header for agent authentication     | _(none — must be set)_                                |
+| `MEMORY_SERVICE_GRPC_TARGET`                 | Explicit gRPC target (e.g. `host:port` or `unix:///path`)           | Derived from `MEMORY_SERVICE_URL`                     |
+| `MEMORY_SERVICE_GRPC_PORT`                   | Override the gRPC port when deriving from the base URL              | Inferred from URL scheme (443 for HTTPS, 80 for HTTP) |
+| `MEMORY_SERVICE_GRPC_TIMEOUT_SECONDS`        | Timeout for gRPC calls                                              | `30`                                                  |
+| `MEMORY_SERVICE_GRPC_REPLAY_TIMEOUT_SECONDS` | Timeout for gRPC replay calls (disabled if unset)                   | _(none)_                                              |
+| `MEMORY_SERVICE_GRPC_MAX_REDIRECTS`          | Maximum number of gRPC redirects to follow                          | `3`                                                   |
+
+## Unix Domain Sockets
+
+When `MEMORY_SERVICE_UNIX_SOCKET` is set (or `unix_socket=` is passed), REST calls use the socket transport and the logical base URL becomes `http://localhost`. gRPC derives a `unix:///...` target automatically.
+
+See [Unix Domain Sockets](/docs/python-langchain/unix-domain-sockets/) for a full walkthrough.
+
+## Authorization
+
+All classes support an `authorization_getter` parameter — a callable that returns a `Bearer <token>` string for each request. This is typically wired up via `install_fastapi_authorization_middleware(app)`, which reads the `Authorization` header from incoming requests and forwards it to Memory Service calls automatically.
+
+See [Getting Started](/docs/python-langchain/getting-started/) for setup details.

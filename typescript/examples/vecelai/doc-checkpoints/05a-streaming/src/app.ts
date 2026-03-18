@@ -1,10 +1,14 @@
 import express from "express";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
-import { withMemoryService } from "@chirino/memory-service-vercelai";
+import {
+  memoryServiceConfigFromEnv,
+  withMemoryService,
+} from "@chirino/memory-service-vercelai";
 
 const app = express();
 app.use(express.text({ type: "*/*" }));
+const memoryServiceConfig = memoryServiceConfigFromEnv();
 
 function openAIBaseUrl(): string | undefined {
   const raw = process.env.OPENAI_BASE_URL;
@@ -42,6 +46,7 @@ app.post("/chat/:conversationId", async (req, res) => {
   try {
     await withMemoryService(
       {
+        ...memoryServiceConfig,
         conversationId,
         authorization,
         userText: userMessage,

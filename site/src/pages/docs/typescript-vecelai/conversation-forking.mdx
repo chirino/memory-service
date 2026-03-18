@@ -40,6 +40,7 @@ Checkpoint `04` adds fork query parsing:
   lang="typescript"
   match={`const result = await withMemoryService(
     {
+      ...memoryServiceConfig,
       conversationId,
       authorization,
       memoryContentType: "vercelai",
@@ -61,14 +62,14 @@ Checkpoint `04` adds fork query parsing:
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
   lang="typescript"
-  match='import { withMemoryService, withProxy } from "@chirino/memory-service-vercelai";'
+  match="memoryServiceConfigFromEnv,"
   before={0}
-  after={0}
+  after={6}
 />
 
-**What changed**: Adds `withProxy` to the imports.
+**What changed**: Adds `memoryServiceConfigFromEnv(...)`, `withProxy`, and a shared `memoryServiceConfig`.
 
-**Why needed**: Fork-listing routes proxy Memory Service APIs through the app layer.
+**Why needed**: Fork-listing routes proxy Memory Service APIs through the app layer, and the proxy now receives explicit SDK config instead of reading env vars implicitly.
 
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"

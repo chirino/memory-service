@@ -1,0 +1,83 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Client Configuration
+description: Configure the @chirino/memory-service-vercelai TypeScript package — explicit config, environment variables, and factory helpers.
+---
+
+This page documents how to configure the `@chirino/memory-service-vercelai` package when connecting to Memory Service.
+
+## Configuration Approaches
+
+The package supports two configuration styles:
+
+### 1. Explicit Configuration (Recommended for Libraries and Tests)
+
+Pass a `MemoryServiceConfig` object with all connection settings:
+
+```typescript
+import {
+  createMemoryServiceProxy,
+  withMemoryService,
+  type MemoryServiceConfig,
+} from "@chirino/memory-service-vercelai";
+
+const config: MemoryServiceConfig = {
+  baseUrl: "http://memory-service:8082",
+  apiKey: "my-agent-key",
+};
+
+const proxy = createMemoryServiceProxy(config);
+
+await withMemoryService(
+  {
+    ...config,
+    conversationId: "conv-1",
+    memoryContentType: "text/plain",
+  },
+  async (contextMemory, responseRecorder) => {
+    // ...
+  },
+);
+```
+
+This approach keeps your code self-contained and testable — no hidden dependencies on `process.env`.
+
+### 2. Environment Variables via `memoryServiceConfigFromEnv()` (Recommended for Apps and Deployment)
+
+Use the factory function to read configuration from `MEMORY_SERVICE_*` environment variables:
+
+```typescript
+import { memoryServiceConfigFromEnv } from "@chirino/memory-service-vercelai";
+
+const config = memoryServiceConfigFromEnv();
+const proxy = createMemoryServiceProxy(config);
+```
+
+You can override individual settings while reading the rest from the environment:
+
+```typescript
+const config = memoryServiceConfigFromEnv({
+  baseUrl: "http://custom-host:9090",
+});
+```
+
+## Environment Variable Reference
+
+| Variable                     | Description                                                         | Default                           |
+| ---------------------------- | ------------------------------------------------------------------- | --------------------------------- |
+| `MEMORY_SERVICE_URL`         | Base URL for REST API calls                                         | `http://localhost:8082`           |
+| `MEMORY_SERVICE_UNIX_SOCKET` | Absolute path to a Unix domain socket (overrides URL for transport) | _(none)_                          |
+| `MEMORY_SERVICE_API_KEY`     | API key sent in the `x-api-key` header for agent authentication     | _(none — must be set)_            |
+| `MEMORY_SERVICE_GRPC_TARGET` | Explicit gRPC target (e.g. `host:port` or `unix:///path`)           | Derived from `MEMORY_SERVICE_URL` |
+
+## Unix Domain Sockets
+
+When `MEMORY_SERVICE_UNIX_SOCKET` is set (or `unixSocket` is passed in config), REST calls use an `undici` socket dispatcher and gRPC derives a `unix:///...` target automatically.
+
+See [Unix Domain Sockets](/docs/typescript-vecelai/unix-domain-sockets/) for a full walkthrough.
+
+## Authorization
+
+The `authorization` field in `MemoryServiceConfig` sets a static `Authorization` header value. For per-request token forwarding (reading from incoming HTTP request headers), use the `withProxy()` helper which automatically extracts the `Authorization` header from each request.
+
+See [Getting Started](/docs/typescript-vecelai/getting-started/) for setup details.

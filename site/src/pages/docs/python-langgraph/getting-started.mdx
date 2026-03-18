@@ -70,7 +70,7 @@ Checkpoint `02` adds `MemoryServiceCheckpointSaver` so the LangGraph graph persi
   lines="1-15"
 />
 
-**What changed**: `MemoryServiceCheckpointSaver` and `install_fastapi_authorization_middleware` are imported from `memory_service_langchain`, and a `checkpointer = MemoryServiceCheckpointSaver()` instance is created at module level.
+**What changed**: `MemoryServiceCheckpointSaver` and `install_fastapi_authorization_middleware` are imported from `memory_service_langchain`, and a `checkpointer = MemoryServiceCheckpointSaver.from_env()` instance is created at module level.
 
 **Why**: `MemoryServiceCheckpointSaver` is a LangGraph `BaseCheckpointSaver` that stores and loads graph state in the Memory Service `context` channel. `install_fastapi_authorization_middleware` reads the `Authorization: Bearer <token>` header from every incoming request and stores it in a request-scoped context variable so the checkpointer can forward it to Memory Service without you passing it explicitly.
 
