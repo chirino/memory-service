@@ -538,7 +538,7 @@ type Conversation struct {
 	UpdatedAt          string      `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	LastMessagePreview string      `protobuf:"bytes,6,opt,name=last_message_preview,json=lastMessagePreview,proto3" json:"last_message_preview,omitempty"`
 	AccessLevel        AccessLevel `protobuf:"varint,7,opt,name=access_level,json=accessLevel,proto3,enum=memory.v1.AccessLevel" json:"access_level,omitempty"`
-	// Entry ID where this conversation forked (empty if root)
+	// First parent entry excluded by this fork (empty if root or blank-slate fork)
 	ForkedAtEntryId []byte `protobuf:"bytes,9,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3" json:"forked_at_entry_id,omitempty"`
 	// Conversation ID from which this was forked (empty if root)
 	ForkedAtConversationId []byte `protobuf:"bytes,10,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
@@ -712,7 +712,7 @@ type ConversationForkSummary struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Forked conversation identifier (UUID as 16-byte big-endian binary)
 	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	// Entry ID at which this conversation forked
+	// First parent entry excluded by this fork
 	ForkedAtEntryId []byte `protobuf:"bytes,3,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3" json:"forked_at_entry_id,omitempty"`
 	// Conversation ID from which this was forked
 	ForkedAtConversationId []byte `protobuf:"bytes,4,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
