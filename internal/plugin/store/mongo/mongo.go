@@ -418,18 +418,6 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, conv
 			if model.Channel(entry.Channel) != model.ChannelHistory {
 				return nil, &registrystore.ValidationError{Field: "forkedAtEntryId", Message: "can only fork at HISTORY entries"}
 			}
-			// Java parity: forkedAtEntryId stored is the entry BEFORE the fork point.
-			var prevEntry entryDoc
-			err = s.entries().FindOne(ctx, bson.M{
-				"conversation_group_id": sourceConv.ConversationGroupID,
-				"created_at":            bson.M{"$lt": entry.CreatedAt},
-			}, options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}})).Decode(&prevEntry)
-			if err == nil {
-				prevID := strToUUID(prevEntry.ID)
-				forkedAtEntryID = &prevID
-			}
-			// else: no previous entry — fork is at the very first entry.
-			// Keep the original entry ID as the stop point.
 		}
 		actualGroupID = sourceConv.ConversationGroupID
 	} else {
@@ -2869,7 +2857,6 @@ func filterEntriesByAncestryDocs(allEntries []entryDoc, ancestry []forkAncestorD
 		if entry.ConversationID != current.ConversationID {
 			continue
 		}
-		result = append(result, entry)
 		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
 			ancestorIndex++
 			if ancestorIndex < len(ancestry) {
@@ -2879,7 +2866,9 @@ func filterEntriesByAncestryDocs(allEntries []entryDoc, ancestry []forkAncestorD
 					break
 				}
 			}
+			continue
 		}
+		result = append(result, entry)
 	}
 	return result
 }
@@ -2985,6 +2974,18 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 			continue
 		}
 
+		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
+			ancestorIndex++
+			if ancestorIndex < len(ancestry) {
+				current = ancestry[ancestorIndex]
+				isTarget = ancestorIndex == len(ancestry)-1
+				if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
+					break
+				}
+			}
+			continue
+		}
+
 		if strings.EqualFold(entry.Channel, string(model.ChannelMemory)) && entry.ClientID != nil && *entry.ClientID == clientID {
 			entryEpoch := int64(0)
 			if entry.Epoch != nil {
@@ -3011,16 +3012,6 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 			}
 		}
 
-		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
-			ancestorIndex++
-			if ancestorIndex < len(ancestry) {
-				current = ancestry[ancestorIndex]
-				isTarget = ancestorIndex == len(ancestry)-1
-				if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
-					break
-				}
-			}
-		}
 	}
 
 	return result

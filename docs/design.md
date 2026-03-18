@@ -135,7 +135,7 @@ The HTTP API is defined in `openapi.yml` (OpenAPI 3.1) for the main API and `ope
     - "Fork at entry X" means the fork includes all parent entries up to but NOT including X.
     - A new conversation is created with:
       - `forkedAtConversationId`: the original conversation id.
-      - `forkedAtEntryId`: the entry id immediately before the fork point (or `null` if forking at the first entry).
+      - `forkedAtEntryId`: the fork point entry id itself (the first parent entry excluded from the fork). When omitted, the fork inherits no parent entries.
     - No entries are copied; fork creation is O(1) writes.
   - Response: new `Conversation` with fork metadata.
   - Access control is enforced at the fork tree level; all forks share the same permissions.
@@ -366,4 +366,3 @@ UUID fields are represented as 16-byte big-endian binary values in protobuf mess
 
 - `entry-data-model.md`
   - Detailed documentation of how entries are stored and retrieved, including channels, memory epochs, conversation forking, and multi-agent support.
-

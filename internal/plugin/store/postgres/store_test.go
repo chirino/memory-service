@@ -218,7 +218,7 @@ func TestAdminGetEntriesForkModes(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rootEntry2, 1)
 
-	fork, err := store.CreateConversation(ctx, "owner", "Fork", nil, &root.ID, &rootEntry1[0].ID)
+	fork, err := store.CreateConversation(ctx, "owner", "Fork", nil, &root.ID, &rootEntry2[0].ID)
 	require.NoError(t, err)
 	forkEntries, err := store.AppendEntries(ctx, "owner", fork.ID, []registrystore.CreateEntryRequest{
 		{Content: json.RawMessage(`"fork-1"`), ContentType: "text/plain", Channel: "history"},

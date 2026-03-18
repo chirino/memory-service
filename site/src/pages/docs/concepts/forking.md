@@ -27,6 +27,8 @@ The forked conversation:
 
 A fork is created implicitly when you append the first entry to a new conversation with fork metadata. Include `forkedAtConversationId` and `forkedAtEntryId` in the entry request body — if the target conversation doesn't exist yet, the service auto-creates it as a fork.
 
+`forkedAtEntryId` is the first parent entry to exclude from the new branch. If you omit it, the fork is a blank slate that inherits no parent entries.
+
 ### Using the REST API
 
 ```bash

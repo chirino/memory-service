@@ -18,7 +18,7 @@ export interface ForkOption {
   conversationId: string;
   /** The conversation ID from which this fork originated */
   forkedAtConversationId?: string | null;
-  /** The entry ID where the fork branches (the last entry included before the fork) */
+  /** The entry ID where the fork branches (the first parent entry excluded by the fork) */
   forkedAtEntryId?: string | null;
   /** When the fork was created */
   createdAt?: string | null;
@@ -59,9 +59,10 @@ export interface ForkView {
  * fork branch points annotated.
  *
  * Fork semantics: When a fork has `forkedAtEntryId = X`, it means the fork
- * includes all entries up to and including X, but excludes entries after X.
- * Therefore, the entry immediately after X in the original conversation is
- * where the fork "branches" - this is the entry that gets the fork annotation.
+ * excludes X and everything after it from the parent conversation.
+ * Therefore, X itself is where the fork "branches" and gets the fork annotation.
+ * Blank-slate forks use `forkedAtEntryId = null` and are rendered before
+ * the first visible entry.
  *
  * @param entries - Array of entries (typically from `/entries?forks=all`)
  * @param forks - Array of fork summaries (from `/forks`)
@@ -104,31 +105,57 @@ export function createForkView(entries: Entry[], forks: ConversationForkSummary[
     if (!entriesByConversation.has(convId)) {
       entriesByConversation.set(convId, []);
     }
-    const entries = entriesByConversation.get(convId)!;
+    entriesByConversation.get(convId)!.push(entry);
+  }
 
-    const forkSummary = forksByConversationId.get(entry.conversationId);
-    const forkPointId = entries.length === 0 ? forkSummary?.forkedAtEntryId || "" : entries[entries.length - 1].id;
-
-    const fork = forksByEntryId.get(forkPointId);
-
-    if (fork) {
-      const content = entry.content[0] as { text?: string } | undefined;
-      fork.push({
-        forkedAtConversationId: forkSummary?.forkedAtConversationId,
-        forkedAtEntryId: forkSummary?.forkedAtEntryId,
-        conversationId: entry.conversationId,
-        createdAt: entry.createdAt,
-        label: content?.text,
-      });
+  for (const [conversationId, forkSummary] of forksByConversationId) {
+    // Skip root conversations — they are not forks
+    if (!forkSummary.forkedAtConversationId) {
+      continue;
     }
 
-    entries.push(entry);
+    const convEntries = entriesByConversation.get(conversationId);
+    if (!convEntries || convEntries.length === 0) {
+      continue;
+    }
+
+    const forkEntries = forksByEntryId.get(forkSummary.forkedAtEntryId || "");
+    if (!forkEntries) {
+      continue;
+    }
+
+    // Add child fork as an option at the fork point
+    const firstEntry = convEntries[0];
+    const content = firstEntry.content[0] as { text?: string } | undefined;
+    forkEntries.push({
+      forkedAtConversationId: forkSummary.forkedAtConversationId,
+      forkedAtEntryId: forkSummary.forkedAtEntryId,
+      conversationId,
+      createdAt: firstEntry.createdAt,
+      label: content?.text,
+    });
+
+    // Add parent conversation as a sibling option so the user can switch back
+    const parentConvId = forkSummary.forkedAtConversationId;
+    if (!forkEntries.some((f) => f.conversationId === parentConvId)) {
+      const parentEntries = entriesByConversation.get(parentConvId);
+      const forkPointEntry = parentEntries?.find((e) => e.id === forkSummary.forkedAtEntryId);
+      const labelEntry = forkPointEntry ?? parentEntries?.[0];
+      const parentContent = labelEntry?.content[0] as { text?: string } | undefined;
+      forkEntries.push({
+        forkedAtConversationId: null,
+        forkedAtEntryId: forkSummary.forkedAtEntryId,
+        conversationId: parentConvId,
+        createdAt: labelEntry?.createdAt,
+        label: parentContent?.text,
+      });
+    }
   }
 
   /**
    * Recursively get entries for a conversation, including ancestor entries.
    * @param conversationId - The conversation to get entries for
-   * @param untilEntryId - If provided, only include entries up to and including this entry ID.
+   * @param untilEntryId - If provided, include entries before this entry ID.
    *                       If null/undefined, include all entries from this conversation.
    */
   function getEntries(conversationId: string, untilEntryId?: string | null): Entry[] {
@@ -136,17 +163,17 @@ export function createForkView(entries: Entry[], forks: ConversationForkSummary[
 
     // First, recursively get parent entries if this conversation is a fork
     const meta = forksByConversationId.get(conversationId);
-    if (meta?.forkedAtConversationId && meta.forkedAtEntryId) {
+    if (meta?.forkedAtConversationId) {
       result.push(...getEntries(meta.forkedAtConversationId, meta.forkedAtEntryId));
     }
 
     // Then add entries from this conversation
     const convEntries = entriesByConversation.get(conversationId) ?? [];
     for (const entry of convEntries) {
-      result.push(entry);
       if (entry.id === untilEntryId) {
         break;
       }
+      result.push(entry);
     }
 
     return result;
@@ -160,14 +187,30 @@ export function createForkView(entries: Entry[], forks: ConversationForkSummary[
     entries(conversationId: string): EntryAndForkInfo[] {
       const combinedEntries = getEntries(conversationId);
 
-      let prevId = "";
-      return combinedEntries.map((entry) => {
-        const result: EntryAndForkInfo = {
+      // When the fork point entry is excluded from combinedEntries (exclusive-stop
+      // semantics), its fork annotations are orphaned. Attach them to the first
+      // entry owned by this conversation (the divergence point).
+      const meta = forksByConversationId.get(conversationId);
+      const forkPointEntryId = meta?.forkedAtEntryId;
+      const combinedIds = new Set(combinedEntries.map((e) => e.id));
+      const orphanedForkPointId = forkPointEntryId && !combinedIds.has(forkPointEntryId) ? forkPointEntryId : null;
+      const orphanTargetIndex = orphanedForkPointId
+        ? Math.max(
+            0,
+            combinedEntries.findIndex((e) => e.conversationId === conversationId),
+          )
+        : -1;
+
+      return combinedEntries.map((entry, index) => {
+        const orphanedForks =
+          orphanedForkPointId && index === orphanTargetIndex ? (forksByEntryId.get(orphanedForkPointId) ?? []) : [];
+        const entryForks = forksByEntryId.get(entry.id) ?? [];
+        const blankSlateForks = index === 0 ? (forksByEntryId.get("") ?? []) : [];
+        const allForks = [...blankSlateForks, ...orphanedForks, ...entryForks];
+        return {
           entry,
-          forks: forksByEntryId.get(prevId),
+          forks: allForks.length > 0 ? allForks : undefined,
         };
-        prevId = entry.id;
-        return result;
       });
     },
   };

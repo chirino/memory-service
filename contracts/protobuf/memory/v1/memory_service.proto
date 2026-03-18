@@ -77,7 +77,7 @@ message Conversation {
   string last_message_preview = 6;
   AccessLevel access_level = 7;
   reserved 8; // conversation_group_id removed
-  // Entry ID where this conversation forked (empty if root)
+  // First parent entry excluded by this fork (empty if root or blank-slate fork)
   bytes forked_at_entry_id = 9;
   // Conversation ID from which this was forked (empty if root)
   bytes forked_at_conversation_id = 10;
@@ -96,7 +96,7 @@ message ConversationForkSummary {
   // Forked conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
   reserved 2; // conversation_group_id removed
-  // Entry ID at which this conversation forked
+  // First parent entry excluded by this fork
   bytes forked_at_entry_id = 3;
   // Conversation ID from which this was forked
   bytes forked_at_conversation_id = 4;

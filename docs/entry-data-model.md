@@ -228,17 +228,17 @@ erDiagram
         UUID id PK
         UUID conversationGroupId FK
         UUID forkedAtConversationId FK "parent conversation"
-        UUID forkedAtEntryId FK "last visible entry of parent"
+        UUID forkedAtEntryId FK "first excluded entry of parent"
     }
 ```
 
 - **`conversationGroupId`**: All forks share the same group (for access control)
 - **`forkedAtConversationId`**: The parent conversation this was forked from
-- **`forkedAtEntryId`**: The last visible entry of the parent conversation
+- **`forkedAtEntryId`**: The first excluded entry of the parent conversation (`null` for blank-slate forks)
 
 ### Fork Semantics: "Fork at Entry X"
 
-When we say "fork at entry X", it means **branch before X**. The fork sees all parent entries up to and including `forkedAtEntryId`, but **not** entry X itself.
+When we say "fork at entry X", it means **branch before X**. The fork sees all parent entries before `forkedAtEntryId`, but **not** entry X itself.
 
 A typical chat interaction follows this pattern:
 1. **User HISTORY message** - User asks a question
@@ -266,7 +266,7 @@ flowchart TB
         FK[Entry K - HISTORY Agent]
     end
 
-    C -.->|forkedAtEntryId=C| FA
+    D -.->|forkedAtEntryId=D| FA
 
     style D fill:#ff9999
     style E fill:#ff9999
@@ -275,7 +275,7 @@ flowchart TB
 
 When the user calls the fork API at entry D (a User HISTORY message):
 - The API call: `POST /v1/conversations/{id}/entries/D/fork`
-- The system calculates `forkedAtEntryId = C` (the entry immediately before D)
+- The system stores `forkedAtEntryId = D` (the first parent entry to exclude)
 - Fork sees: A, B, C (from parent), then its own entries I, J, K
 - Fork does **NOT** see: D, E, F (the requested entry and everything after)
 
@@ -361,8 +361,8 @@ flowchart TB
 
 **Important**: The fork point stored on a conversation indicates where it was forked **FROM** in its parent. When building the ancestry stack, this fork point is "shifted" to apply to the parent conversation:
 
-| Conversation | Fork Point (stop after this entry) |
-|--------------|-----------------------------------|
+| Conversation | Fork Point (stop before this entry) |
+|--------------|------------------------------------|
 | Root         | B (from Fork1's `forkedAtEntryId`) |
 | Fork1        | E (from Fork2's `forkedAtEntryId`) |
 | Fork2        | null (include all its entries)     |
@@ -443,10 +443,10 @@ flowchart LR
         F_C[C]
         F_D[D]
     end
-    R_A -.->|fork before A| F_C
+    R_A -.->|forkedAtEntryId=A| F_C
 ```
 
-- `forkedAtEntryId = null` (no previous entry exists)
+- `forkedAtEntryId = A` (the first parent entry to exclude)
 - Fork sees none of the parent's entries
 - Fork has its own independent entry sequence
 
@@ -510,9 +510,9 @@ flowchart TB
 ```
 
 - Fork1 and Fork2 both have `forkedAtEntryId = A`
-- They share entry A from the root
+- They exclude entry A from the root
 - They are independent and don't see each other's entries
-- The `allForks=true` query option returns entries from all forks
+- The `forks=all` query option returns entries from all forks
 
 ### 5. Deleted Parent Entry at Fork Point
 
@@ -556,7 +556,7 @@ GET /v1/conversations/{id}/entries?channel=history
 GET /v1/conversations/{id}/entries?channel=memory&epoch=latest
 
 # Get all entries across all forks (admin/debug)
-GET /v1/conversations/{id}/entries?allForks=true
+GET /v1/conversations/{id}/entries?forks=all
 
 # Paginated retrieval
 GET /v1/conversations/{id}/entries?afterEntryId={lastSeenId}&limit=50

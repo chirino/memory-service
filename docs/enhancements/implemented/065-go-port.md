@@ -790,7 +790,7 @@ Bug fixes to `internal/plugin/store/mongo/mongo.go` to align with Postgres/Java 
 
 - **403 vs 404 access checks**: `requireAccess` errors were wrapped as `NotFoundError` instead of propagating `ForbiddenError` — fixed in 8 methods
 - **Sync/epoch logic**: `SyncAgentEntry` fully rewritten to match Postgres epoch tracking, auto-create conversation, content diffing, and no-op detection
-- **Fork entry resolution**: `forkedAtEntryId` now resolves to the entry BEFORE the fork point (Java parity)
+- **Fork entry resolution**: `forkedAtEntryId` now stores the fork point entry itself (the first excluded parent entry)
 - **ListForks**: Removed incorrect `forked_at_conversation_id $exists` filter — lists all conversations in the group
 - **latest-fork list mode**: Implemented `ListModeLatestFork` for both agent and admin list endpoints
 - **Delete cascade**: `DeleteConversation` now hard-deletes memberships/entries/transfers (Java/Postgres parity)

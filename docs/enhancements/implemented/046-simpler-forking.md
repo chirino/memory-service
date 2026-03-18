@@ -66,11 +66,11 @@ forkEntity.setOwnerUserId(originalEntity.getOwnerUserId());
 forkEntity.setTitle(encryptTitle(title));
 forkEntity.setConversationGroup(originalEntity.getConversationGroup()); // shares parent's group
 forkEntity.setForkedAtConversationId(originalEntity.getId());
-forkEntity.setForkedAtEntryId(previousId);  // entry BEFORE the fork point
+forkEntity.setForkedAtEntryId(targetEntryId);  // first parent entry excluded by the fork
 conversationRepository.persist(forkEntity);
 ```
 
-Key difference from root creation: forks join the parent's `ConversationGroup` and set `forkedAtConversationId`/`forkedAtEntryId`. The fork point entry ID is resolved to the **previous** entry (so "fork at entry X" means "include entries before X, exclude X and after").
+Key difference from root creation: forks join the parent's `ConversationGroup` and set `forkedAtConversationId`/`forkedAtEntryId`. `forkedAtEntryId` is stored as the fork point entry itself, so "fork at entry X" means "include entries before X, exclude X and after".
 
 ### Frontend Fork Flow (Current)
 
@@ -230,7 +230,7 @@ Also update `conversations-grpc.feature` scenario "Deleting a conversation delet
 Modify the auto-creation block in `appendUserEntry()` and `appendAgentEntries()`: when fork metadata is present on the request, create the conversation as a fork instead of a root:
 
 1. Look up the parent conversation, validate it exists and user has WRITER access
-2. Find the "previous entry" before `forkedAtEntryId` (reuse existing logic from `forkConversationAtEntry`)
+2. Validate the requested `forkedAtEntryId` exists when it is provided
 3. Use the parent's `ConversationGroup` instead of creating a new one
 4. Set `forkedAtConversationId` and `forkedAtEntryId` on the new entity
 

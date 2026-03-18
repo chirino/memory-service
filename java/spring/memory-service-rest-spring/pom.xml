@@ -144,7 +144,7 @@
                 <serializationLibrary>jackson</serializationLibrary>
               </configOptions>
               <additionalProperties>
-                <useBeanValidation>true</useBeanValidation>
+                <useBeanValidation>false</useBeanValidation>
               </additionalProperties>
               <output>${generated.sources.dir}</output>
             </configuration>

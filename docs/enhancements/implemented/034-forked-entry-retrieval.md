@@ -30,7 +30,7 @@ Root Conversation (508e46da-750b-4992-98b7-16f91478056e)
 - For `channel=HISTORY`: A, J, K
 - For `channel=MEMORY`: B, C, I, L
 
-**Important**: "Fork at entry D" means "branch before D" — the fork includes all parent entries up to but NOT including D. The `forkedAtEntryId` stored on the fork is the entry immediately before D (entry C in this case), and entries up to and including `forkedAtEntryId` are visible to the fork.
+**Important**: "Fork at entry D" means "branch before D" — the fork includes all parent entries up to but NOT including D. The `forkedAtEntryId` stored on the fork is D itself (the first parent entry excluded by the fork).
 
 **Actual behavior**: Only entries from the forked conversation are returned (I, J, K, L or subset based on channel filter).
 
@@ -246,15 +246,15 @@ for entry in entries (following fork ancestry path):
 
 This means a fork can have multiple "memory updates" (new epochs) without affecting the parent conversation's epoch state, and vice versa.
 
-### The `allForks` Option
+### The `forks=all` Option
 
-A new `allForks` boolean parameter (default: `false`) will be added to both user-facing and admin entry retrieval APIs (REST and gRPC).
+The entry retrieval APIs support `forks=all` to return entries from every branch in the conversation group.
 
-**When `allForks=false` (default)**:
+**When `forks=none` (default)**:
 - Follow the fork ancestry path as described above
 - Return entries from the target conversation and its ancestors up to fork points
 
-**When `allForks=true`**:
+**When `forks=all`**:
 - Bypass fork tree traversal entirely
 - Return all entries in the conversation group (all forks, all branches)
 - Useful for debugging, admin views, or getting a complete picture of all activity
@@ -263,8 +263,8 @@ A new `allForks` boolean parameter (default: `false`) will be added to both user
 
 REST:
 ```
-GET /conversations/{id}/entries?allForks=true
-GET /admin/conversations/{id}/entries?allForks=true
+GET /conversations/{id}/entries?forks=all
+GET /admin/conversations/{id}/entries?forks=all
 ```
 
 gRPC:
@@ -566,7 +566,7 @@ The existing index `entries(conversation_group_id, created_at)` mentioned in the
 void getEntries_forkedConversation_includesParentEntries() {
     // Given: root conversation with mixed HISTORY and MEMORY entries
     // Root: A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY) --fork at D--> Fork: I(MEMORY), J(HISTORY), K(HISTORY), L(MEMORY)
-    // Note: "fork at D" means D is NOT included; forkedAtEntryId = C (previous entry)
+    // Note: "fork at D" means D is NOT included; forkedAtEntryId = D (first excluded entry)
     var root = createConversation();
     createEntry(root, "A", Channel.HISTORY);
     createEntry(root, "B", Channel.MEMORY);
@@ -871,24 +871,24 @@ Feature: Forked conversation entry retrieval
 
   # ============== allForks Option Scenarios (Phase 3.5) ==============
 
-  Scenario: allForks returns entries from all branches
+  Scenario: forks=all returns entries from all branches
     Given a root conversation with entries "A", "B", "C"
     And a fork at entry "B" with entries "D", "E"
-    When I fetch entries with allForks=true
+    When I fetch entries with forks=all
     Then I should see entries "A", "B", "C", "D", "E" in order
 
-  Scenario: allForks includes sibling forks
+  Scenario: forks=all includes sibling forks
     Given a root conversation with entries "A", "B"
     And fork1 at entry "A" with entries "C", "D"
     And fork2 at entry "A" with entries "E", "F"
-    When I fetch entries for fork1 with allForks=true
+    When I fetch entries for fork1 with forks=all
     Then I should see entries from root, fork1, and fork2
 
-  Scenario: allForks=false (default) follows single ancestry path
+  Scenario: forks=none (default) follows single ancestry path
     Given a root conversation with entries "A", "B"
     And fork1 at entry "A" with entries "C", "D"
     And fork2 at entry "A" with entries "E", "F"
-    When I fetch entries for fork1 with allForks=false
+    When I fetch entries for fork1 with forks=none
     Then I should see entries "A", "C", "D" in order
     And I should NOT see entries "E", "F" from fork2
 ```
@@ -957,33 +957,15 @@ private List<ForkAncestor> buildAncestryStack(ConversationEntity targetConversat
 - `Fork2.forkedAtEntryId = G` (forked from Fork1 at entry G)
 
 The resulting ancestry stack for Fork2 should be:
-| Conversation | Fork Point (stop after this entry) |
-|--------------|-----------------------------------|
+| Conversation | Fork Point (stop before this entry) |
+|--------------|------------------------------------|
 | Root         | D (from Fork1's `forkedAtEntryId`) |
 | Fork1        | G (from Fork2's `forkedAtEntryId`) |
 | Fork2        | null (include all entries)         |
 
 ### Fork Point Entry Calculation (Critical)
 
-When creating a fork, the `forkedAtEntryId` must be calculated by finding the entry immediately before the target entry, considering **ALL channels** (not just HISTORY).
-
-**Bug fixed**: The original implementation only looked at HISTORY entries:
-```java
-// WRONG: Only considers HISTORY entries
-"... and m.channel = ?2 and (m.createdAt < ?3 ..."
-```
-
-This caused MEMORY entries between HISTORY entries to be skipped. For example:
-- Entries: A(HISTORY), B(MEMORY), C(MEMORY), D(HISTORY)
-- Fork at D
-- **Bug**: forkedAtEntryId = A (previous HISTORY), fork sees only A
-- **Fix**: forkedAtEntryId = C (previous entry of any channel), fork sees A, B, C
-
-The corrected query considers all channels:
-```java
-// CORRECT: Considers any channel
-"... and (m.createdAt < ?2 or (m.createdAt = ?2 and m.id < ?3)) ..."
-```
+When creating a fork, the `forkedAtEntryId` should be stored as the target entry itself. No "previous entry" lookup is needed.
 
 ### MongoDB Query Syntax
 
