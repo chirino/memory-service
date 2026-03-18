@@ -62,7 +62,7 @@ Implemented test coverage:
 2. Unit tests for the memory locator store cover lifecycle and TTL expiry.
 3. Added a dedicated SQLite BDD runner, `internal/bdd/cucumber_sqlite_memory_test.go`, that exercises:
    - `memory-cache-rest.feature`
-   - `response-resumer-grpc.feature`
+   - `response-recorder-grpc.feature`
 
 ## Tasks
 

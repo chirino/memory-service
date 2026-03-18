@@ -17,15 +17,15 @@ public final class ConversationStreamAdapter {
             String conversationId,
             Multi<String> upstream,
             ConversationStore store,
-            ResponseRecordingManager resumer,
+            ResponseRecordingManager recordingManager,
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
             String bearerToken) {
 
         ResponseRecordingManager.RecordingSession recorder =
-                resumer == null
+                recordingManager == null
                         ? ResponseRecordingManager.noop().recorder(conversationId, bearerToken)
-                        : resumer.recorder(conversationId, bearerToken);
+                        : recordingManager.recorder(conversationId, bearerToken);
         StringBuilder buffer = new StringBuilder();
         Multi<ResponseCancelSignal> cancelStream =
                 recorder.cancelStream().emitOn(Infrastructure.getDefaultExecutor());

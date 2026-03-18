@@ -6,6 +6,8 @@ description: How streaming response recording, replay/resumption, and cancellati
 
 Response recording and resumption let users reconnect after a disconnect and pick up a streaming response where it left off. The Memory Service acts as a buffer between the agent producing tokens and clients consuming them, so a page reload or network blip doesn't lose the response.
 
+The docs keep the `/response-resumption/` URL for link stability, but the feature name used throughout the project is "Response Recording and Resumption."
+
 ## How It Works
 
 When an agent generates a streaming response, it sends each token to the Memory Service via the `ResponseRecorderService` gRPC API. The Memory Service buffers these tokens. Frontend clients consume the stream through the agent app's REST/SSE endpoints. If a client disconnects and reconnects, the agent app asks the Memory Service to replay the buffered tokens from the beginning, and the client catches up.

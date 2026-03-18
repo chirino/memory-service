@@ -46,7 +46,7 @@ public final class ConversationEventStreamAdapter {
      * @param conversationId the conversation ID
      * @param upstream the upstream ChatEvent stream from the AI service
      * @param store the conversation store for persisting history
-     * @param resumer the response recording manager for streaming replay
+     * @param recordingManager the response recording manager for streaming replay
      * @param objectMapper Jackson ObjectMapper for JSON serialization
      * @param identity the security identity
      * @param identityAssociation the security identity association
@@ -57,7 +57,7 @@ public final class ConversationEventStreamAdapter {
             String conversationId,
             Multi<ChatEvent> upstream,
             ConversationStore store,
-            ResponseRecordingManager resumer,
+            ResponseRecordingManager recordingManager,
             ObjectMapper objectMapper,
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
@@ -66,7 +66,7 @@ public final class ConversationEventStreamAdapter {
                 conversationId,
                 upstream,
                 store,
-                resumer,
+                recordingManager,
                 objectMapper,
                 identity,
                 identityAssociation,
@@ -82,7 +82,7 @@ public final class ConversationEventStreamAdapter {
             String conversationId,
             Multi<ChatEvent> upstream,
             ConversationStore store,
-            ResponseRecordingManager resumer,
+            ResponseRecordingManager recordingManager,
             ObjectMapper objectMapper,
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
@@ -90,9 +90,9 @@ public final class ConversationEventStreamAdapter {
             ToolAttachmentExtractor toolAttachmentExtractor) {
 
         ResponseRecordingManager.RecordingSession recorder =
-                resumer == null
+                recordingManager == null
                         ? ResponseRecordingManager.noop().recorder(conversationId, bearerToken)
-                        : resumer.recorder(conversationId, bearerToken);
+                        : recordingManager.recorder(conversationId, bearerToken);
 
         EventCoalescer coalescer = new EventCoalescer(objectMapper);
         List<Map<String, Object>> collectedAttachments = new CopyOnWriteArrayList<>();
@@ -295,7 +295,7 @@ public final class ConversationEventStreamAdapter {
         // types (Supplier, AtomicReference). Build JSON manually for all event types.
         String eventJson = buildEventJson(event, objectMapper);
 
-        // Record to resumer as JSON line (for resumption)
+        // Record to the recording manager as JSON lines for replay/resumption.
         recorder.record(eventJson + "\n");
 
         // Add to coalescer (for history storage)

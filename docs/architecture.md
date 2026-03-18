@@ -50,7 +50,7 @@ block-beta
         Entries["Entries"]
         Search["Search &amp; Indexing"]
         Attach["Attachments"]
-        Resumer["Response Resumption"]
+        Resumer["Response Recording and Resumption"]
         Admin["Admin &amp; Eviction"]
     end
 

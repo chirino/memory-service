@@ -1,4 +1,4 @@
-# Checkpoint 05: Response Resumption
+# Checkpoint 05: Response Recording and Resumption
 
 This checkpoint adds streaming responses with resume and cancel support — so users can reconnect after a disconnect and pick up where they left off.
 
@@ -15,7 +15,7 @@ This checkpoint adds streaming responses with resume and cancel support — so u
 
 ## Tutorial Reference
 
-This checkpoint corresponds to the [Response Resumption](https://github.com/chirino/memory-service/blob/main/site/src/pages/docs/quarkus/response-resumption.mdx) guide.
+This checkpoint corresponds to the [Response Recording and Resumption](https://github.com/chirino/memory-service/blob/main/site/src/pages/docs/quarkus/response-resumption.mdx) guide.
 
 ## Prerequisites
 

@@ -12,4 +12,4 @@
 
 **UDS client knob**: Quarkus now uses `memory-service.client.url=unix:///absolute/path.sock` for both REST and gRPC. REST uses the extension's custom UDS HTTP client/proxy path, and gRPC uses `grpc-netty-shaded` with `NioDomainSocketChannel` + `UnixDomainSocketAddress`.
 
-**Checkpoint `05` parity**: `java/quarkus/examples/doc-checkpoints/05-response-resumption` now restores proxied conversation REST routes via `ConversationsResource`, so the UDS docs can verify one explicit REST proxy call in addition to response resumption.
+**Checkpoint `05` parity**: `java/quarkus/examples/doc-checkpoints/05-response-resumption` now restores proxied conversation REST routes via `ConversationsResource`, so the UDS docs can verify one explicit REST proxy call in addition to response recording and resumption.

@@ -51,4 +51,4 @@ curl -sSfX POST http://localhost:9090/v1/conversations/3579aac5-c86e-4b67-bbea-6
 
 ## Next Step
 
-Continue to [checkpoint 05](../05-response-resumption/) for streaming and response resumption, or [checkpoint 06](../06-sharing/) for conversation sharing.
+Continue to [checkpoint 05](../05-response-resumption/) for response recording and resumption, or [checkpoint 06](../06-sharing/) for conversation sharing.

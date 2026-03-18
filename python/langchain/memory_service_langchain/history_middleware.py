@@ -21,7 +21,7 @@ LOG = logging.getLogger(__name__)
 
 
 class MemoryServiceHistoryMiddleware(AgentMiddleware):
-    """Records USER/AI history entries. Response recording is handled by the resumer stream path."""
+    """Records USER/AI history entries. Response recording is handled by the recording-manager stream path."""
 
     def __init__(
         self,

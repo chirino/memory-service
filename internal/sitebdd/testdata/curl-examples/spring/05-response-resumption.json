@@ -2,7 +2,7 @@
   {
     "captureId": "/docs/spring/response-resumption/#1",
     "checkpoint": "spring/examples/doc-checkpoints/05-response-resumption",
-    "scenario": "[spring] Response Resumption Tutorial - 05-response-resumption",
+    "scenario": "[spring] Response Recording and Resumption Tutorial - 05-response-resumption",
     "requestUrl": "http://localhost:10134/chat/8337ca02-62de-43e1-b69b-c663cb50acc4",
     "method": "POST",
     "statusCode": 200,

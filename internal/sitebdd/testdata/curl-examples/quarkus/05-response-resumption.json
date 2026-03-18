@@ -2,7 +2,7 @@
   {
     "captureId": "/docs/quarkus/response-resumption/#1",
     "checkpoint": "quarkus/examples/doc-checkpoints/05-response-resumption",
-    "scenario": "[quarkus] Response Resumption Tutorial - 05-response-resumption",
+    "scenario": "[quarkus] Response Recording and Resumption Tutorial - 05-response-resumption",
     "requestUrl": "http://localhost:10126/chat/bafd53b0-ee0d-4d5f-83e3-406fbc3506cb",
     "method": "POST",
     "statusCode": 200,

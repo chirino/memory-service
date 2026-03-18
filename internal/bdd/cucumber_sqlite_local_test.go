@@ -45,7 +45,7 @@ func TestFeaturesSQLiteLocal(t *testing.T) {
 
 	featureFiles := []string{
 		filepath.Join("testdata", "features", "memory-cache-rest.feature"),
-		filepath.Join("testdata", "features", "response-resumer-grpc.feature"),
+		filepath.Join("testdata", "features", "response-recorder-grpc.feature"),
 	}
 	runBDDFeatures(t, "sqlite-local", featureFiles, apiURL, grpcAddr, &cfg, &SQLiteTestDB{DBURL: dbURL}, map[string]interface{}{
 		"mockPrometheus": prom,

@@ -14,7 +14,7 @@
 
 **Fork metadata ordering gotcha**: In LangChain integrations, checkpoint writes can happen before history middleware writes. `MemoryServiceCheckpointSaver.put(...)` must include fork metadata on the initial append payload (not only 404 retry paths), otherwise a new fork conversation can be created as a root before USER history is written.
 
-**Response resumption pattern**: Keep checkpoint `05` route handlers thin by delegating resume-check/replay/cancel state handling to `memory_service_langchain.MemoryServiceResponseRecordingManager`, mirroring the Quarkus `ResumeResource` style.
+**Response recording and resumption pattern**: Keep checkpoint `05` route handlers thin by delegating resume-check/replay/cancel state handling to `memory_service_langchain.MemoryServiceResponseRecordingManager`, mirroring the Quarkus `ResumeResource` style.
 
 **Checkpoint `05` tutorial scope**: `python/examples/langchain/doc-checkpoints/05-response-resumption` is intentionally minimal: `/chat` accepts plain text body, emits SSE `PartialResponse` events only, uses `MemoryServiceResponseRecordingManager()`, replays in events mode, and proxies `/cancel` to Memory Service.
 
@@ -24,7 +24,7 @@
 
 **SSE delimiter gotcha**: SSE chunks must end with real newlines (`\n\n`), not escaped backslash sequences (`\\n\\n`), or frontend incremental parsing buffers until stream end.
 
-**gRPC-backed resumer support**: `MemoryServiceResponseRecordingManager` now supports gRPC `CheckRecordings`/`Replay`/`Cancel` (including `redirect_address` follow-up) and provides `replay_sse(...)` to emit SSE-compatible chunks from recorded gRPC content.
+**gRPC-backed recording-manager support**: `MemoryServiceResponseRecordingManager` now supports gRPC `CheckRecordings`/`Replay`/`Cancel` (including `redirect_address` follow-up) and provides `replay_sse(...)` to emit SSE-compatible chunks from recorded gRPC content.
 
 **Devcontainer Python tooling**: `uv` is installed in `.devcontainer/Dockerfile` (not via `devcontainer.json` features), so Python checkpoint workflows can run immediately after `wt up`.
 
@@ -60,9 +60,9 @@
 
 **Local cancel behavior**: `MemoryServiceResponseRecordingManager.cancel(...)` must cancel the local producer task (not just flip a state flag) so `finally` runs promptly and closes the recorder stream when users click Stop.
 
-**Remote cancel propagation**: The Python resumer must watch for gRPC recorder `RECORD_STATUS_CANCELLED` and cancel the local producer task, so cancel requests from another client/backend instance stop the original producer.
+**Remote cancel propagation**: The Python recording manager must watch for gRPC recorder `RECORD_STATUS_CANCELLED` and cancel the local producer task, so cancel requests from another client/backend instance stop the original producer.
 
-**chat-langchain response integration**: `python/examples/langchain/chat-langchain/app.py` wires `/chat` through `memory_service_scope(...)` + `MemoryServiceHistoryMiddleware(...)` + `MemoryServiceResponseRecordingManager()`; gRPC recording is only done in `resumer.stream_from_source(...)` and records Quarkus-style payloads (event JSON lines or raw token text), not SSE `data:` framing bytes.
+**chat-langchain response integration**: `python/examples/langchain/chat-langchain/app.py` wires `/chat` through `memory_service_scope(...)` + `MemoryServiceHistoryMiddleware(...)` + `MemoryServiceResponseRecordingManager()`; gRPC recording is only done in `recording_manager.stream_from_source(...)` and records Quarkus-style payloads (event JSON lines or raw token text), not SSE `data:` framing bytes.
 
 **Cancel/failure partial history parity**: `chat-langchain` now explicitly persists buffered assistant text to `history` on stream cancel/failure (mirroring Quarkus `finishCancel`/`finishFailure` behavior where partial responses are stored).
 

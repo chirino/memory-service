@@ -51,14 +51,14 @@ Spring Boot
   - Getting Started
   - Basic Setup
   - Conversation Forking
-  - Response Resumption
+  - Response Recording and Resumption
   - Conversation Sharing ← NEW
 
 Quarkus
   - Getting Started
   - Basic Setup
   - Conversation Forking
-  - Response Resumption
+  - Response Recording and Resumption
   - Conversation Sharing ← NEW
 ```
 
@@ -73,14 +73,14 @@ The sharing guides reference these prerequisite guides that need to be created:
 - `site/src/pages/docs/spring/getting-started.mdx`
 - `site/src/pages/docs/quarkus/getting-started.mdx`
 
-### 4. Update Conversation Forking and Response Resumption Guides
+### 4. Update Conversation Forking and Response Recording and Resumption Guides
 
 When creating the conversation-forking.mdx and response-resumption.mdx pages, add a "Next Steps" section pointing to the sharing guide:
 
 ```markdown
 ## Next Steps
 
-Now that you've learned about conversation forking and response resumption, continue to [Conversation Sharing](./sharing) to learn how to:
+Now that you've learned about conversation forking and response recording and resumption, continue to [Conversation Sharing](./sharing) to learn how to:
 - Share conversations with other users
 - Manage access control with different permission levels
 - Transfer conversation ownership

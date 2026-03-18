@@ -111,7 +111,7 @@ builder.add_node("call_model", call_model)
 builder.add_edge(START, "call_model")
 graph = builder.compile(checkpointer=checkpointer)
 
-app = FastAPI(title="LangGraph Chatbot with Response Resumption")
+app = FastAPI(title="LangGraph Chatbot with Response Recording and Resumption")
 
 
 @app.get("/ready")

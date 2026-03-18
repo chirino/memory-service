@@ -15,7 +15,7 @@
 `Unexpected SocketAddress implementation ...`. The Spring REST client must use
 Netty's `io.netty.channel.unix.DomainSocketAddress` for `remoteAddress(...)`.
 
-**Checkpoint `05` parity**: `java/spring/examples/doc-checkpoints/05-response-resumption` now restores the proxied conversation REST routes (`GET /v1/conversations`, `GET /v1/conversations/{id}`, `GET /v1/conversations/{id}/entries`) so the UDS docs can verify one explicit REST proxy call in addition to response resumption.
+**Checkpoint `05` parity**: `java/spring/examples/doc-checkpoints/05-response-resumption` now restores the proxied conversation REST routes (`GET /v1/conversations`, `GET /v1/conversations/{id}`, `GET /v1/conversations/{id}/entries`) so the UDS docs can verify one explicit REST proxy call in addition to response recording and resumption.
 
 **Checkpoint `05` SSE hardening**: `java/spring/examples/doc-checkpoints/05-response-resumption` now serves `/chat/{conversationId}` and `/v1/conversations/{conversationId}/resume` as explicit `text/event-stream` endpoints with framed `{"text":...}` SSE events. The chat stream subscribes on a worker scheduler so an immediate upstream failure is less likely to surface as an initial HTTP 500 before the SSE response is committed.
 
