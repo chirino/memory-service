@@ -109,7 +109,7 @@ export type ShareConversationRequest = {
 /**
  * Logical channel of the entry within the conversation.
  */
-export type Channel = "history" | "memory";
+export type Channel = "history" | "context";
 
 export type PutMemoryRequest = {
   namespace: Array<string>;
@@ -334,9 +334,9 @@ export type Entry = {
   userId?: string | null;
   channel: Channel;
   /**
-   * Logical memory epoch this entry belongs to.
-   * For history entries this is typically null. For memory entries,
-   * the agent increments the epoch when starting a new memory version.
+   * Logical context epoch this entry belongs to.
+   * For history entries this is typically null. For context entries,
+   * the agent increments the epoch when starting a new context version.
    */
   epoch?: number | null;
   /**
@@ -360,7 +360,7 @@ export type Entry = {
    * - `attachments` (array, optional): Array of `Attachment` objects referencing external resources (images, audio, video, documents).
    *
    * Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
-   * agent memory entries.
+   * agent context entries.
    */
   contentType: string;
   /**
@@ -404,7 +404,7 @@ export type CreateEntryRequest = {
    * - `attachments` (array, optional): Array of `Attachment` objects referencing external resources (images, audio, video, documents).
    *
    * Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
-   * agent memory entries.
+   * agent context entries.
    */
   contentType: string;
   /**
@@ -430,7 +430,7 @@ export type CreateEntryRequest = {
 
 export type SyncEntryResponse = {
   /**
-   * The epoch number that now reflects the stored memory state.
+   * The epoch number that now reflects the stored context state.
    */
   epoch?: number | null;
   /**
@@ -720,7 +720,7 @@ export type $OpenApiTs = {
         afterCursor?: string | null;
         /**
          * Channel of entries to return. Defaults to `history` for the
-         * user-visible conversation; `memory` returns agent memory entries
+         * user-visible conversation; `context` returns agent-managed context entries
          * scoped to the calling client id.
          */
         channel?: Channel;
@@ -729,7 +729,7 @@ export type $OpenApiTs = {
          */
         conversationId: string;
         /**
-         * Optional epoch filter when listing the `memory` channel. Valid values
+         * Optional epoch filter when listing the `context` channel. Valid values
          * are `latest`, `all`, or a numeric epoch identifier. Defaults to
          * `latest` when not provided. The epoch selection is scoped to the
          * calling client id.

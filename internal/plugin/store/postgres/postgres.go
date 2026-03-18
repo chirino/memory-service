@@ -874,7 +874,7 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		effectiveChannel = *channel
 	}
 
-	if effectiveChannel == model.ChannelMemory && clientID == nil {
+	if effectiveChannel == model.ChannelContext && clientID == nil {
 		return nil, &ForbiddenError{}
 	}
 
@@ -895,8 +895,8 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 	}
 
 	var filtered []model.Entry
-	if effectiveChannel == model.ChannelMemory {
-		// Memory-only: filter memory entries by epoch/clientID.
+	if effectiveChannel == model.ChannelContext {
+		// Context-only: filter context entries by epoch/clientID.
 		// Use the cache for the common latest-epoch case.
 		if epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest {
 			filtered, err = s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID)
@@ -1029,9 +1029,9 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			ch = model.ChannelHistory
 		}
 
-		// Auto-assign epoch=1 for memory entries when no epoch specified.
+		// Auto-assign epoch=1 for context entries when no epoch specified.
 		entryEpoch := epoch
-		if ch == model.ChannelMemory && entryEpoch == nil {
+		if ch == model.ChannelContext && entryEpoch == nil {
 			var one int64 = 1
 			entryEpoch = &one
 		}
@@ -1079,7 +1079,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 	// Keep memory latest-epoch cache warm after memory appends.
 	if clientID != nil {
 		for _, e := range result {
-			if e.Channel == model.ChannelMemory {
+			if e.Channel == model.ChannelContext {
 				if ancestry, err := s.buildAncestryStack(ctx, conv); err == nil {
 					s.warmEntriesCache(ctx, conv, ancestry, *clientID)
 				}
@@ -1143,6 +1143,11 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 		return nil, err
+	}
+	if autoCreated && s.entriesCache != nil {
+		if err := s.entriesCache.Remove(ctx, conversationID, clientID); err != nil {
+			return nil, err
+		}
 	}
 
 	ancestry, err := s.buildAncestryStack(ctx, conv)
@@ -1223,7 +1228,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		ConversationGroupID: conv.ConversationGroupID,
 		UserID:              &userID,
 		ClientID:            &clientID,
-		Channel:             model.ChannelMemory,
+		Channel:             model.ChannelContext,
 		Epoch:               &epochToUse,
 		ContentType:         entry.ContentType,
 		Content:             encContent,
@@ -2152,7 +2157,7 @@ type forkAncestor struct {
 	StopAtEntryID  *uuid.UUID
 }
 
-// fetchLatestMemoryEntries returns the latest-epoch memory entries for the given
+// fetchLatestMemoryEntries returns the latest-epoch context entries for the given
 // conversation and clientID, using MemoryEntriesCache as a read-through layer.
 func (s *PostgresStore) fetchLatestMemoryEntries(ctx context.Context, conv model.Conversation, ancestry []forkAncestor, clientID string) ([]model.Entry, error) {
 	if s.entriesCache != nil && s.entriesCache.Available() {
@@ -2191,7 +2196,7 @@ func (s *PostgresStore) fetchLatestMemoryEntries(ctx context.Context, conv model
 	return entries, nil
 }
 
-// warmEntriesCache re-fetches the latest memory entries from the DB and updates the cache.
+// warmEntriesCache re-fetches the latest context entries from the DB and updates the cache.
 // Called after a successful SyncAgentEntry write to keep the cache warm.
 func (s *PostgresStore) warmEntriesCache(ctx context.Context, conv model.Conversation, ancestry []forkAncestor, clientID string) {
 	if s.entriesCache == nil || !s.entriesCache.Available() {
@@ -2336,7 +2341,7 @@ func filterEntriesForAllForks(entries []model.Entry, channel model.Channel, clie
 		if entry.Channel != channel {
 			continue
 		}
-		if channel == model.ChannelMemory && clientID != nil {
+		if channel == model.ChannelContext && clientID != nil {
 			if entry.ClientID == nil || *entry.ClientID != *clientID {
 				continue
 			}
@@ -2344,7 +2349,7 @@ func filterEntriesForAllForks(entries []model.Entry, channel model.Channel, clie
 		filtered = append(filtered, entry)
 	}
 
-	if channel != model.ChannelMemory {
+	if channel != model.ChannelContext {
 		return filtered
 	}
 
@@ -2432,7 +2437,7 @@ func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAnces
 			continue
 		}
 
-		if entry.Channel == model.ChannelMemory && entry.ClientID != nil && *entry.ClientID == clientID {
+		if entry.Channel == model.ChannelContext && entry.ClientID != nil && *entry.ClientID == clientID {
 			entryEpoch := int64(0)
 			if entry.Epoch != nil {
 				entryEpoch = *entry.Epoch

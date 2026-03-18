@@ -71,7 +71,7 @@ func (a *apiServerAdapter) ListConversationEntries(c *gin.Context, _ openapi_typ
 func (a *apiServerAdapter) AppendConversationEntry(c *gin.Context, _ openapi_types.UUID) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) SyncConversationMemory(c *gin.Context, _ openapi_types.UUID) {
+func (a *apiServerAdapter) SyncConversationContext(c *gin.Context, _ openapi_types.UUID) {
 	notImplemented(c)
 }
 func (a *apiServerAdapter) ListConversationForks(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationForksParams) {

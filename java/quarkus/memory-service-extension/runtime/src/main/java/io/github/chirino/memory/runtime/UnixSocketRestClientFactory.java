@@ -119,7 +119,7 @@ final class UnixSocketRestClientFactory {
                                         "query", args[3]),
                                 null,
                                 method);
-                case "syncConversationMemory" ->
+                case "syncConversationContext" ->
                         json(
                                 "POST",
                                 path("/v1/conversations/%s/entries/sync", args[0]),

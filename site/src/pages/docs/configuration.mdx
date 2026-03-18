@@ -142,18 +142,18 @@ MEMORY_SERVICE_ATTACHMENTS_FS_DIR=/tmp/memory-service-attachments`}/>
 
 ## Cache Configuration
 
-Memory Service uses a unified cache configuration for all cache-dependent features, including the response recording manager and memory entries cache. Configure the cache backend once, and all features will use it automatically.
+Memory Service uses a unified cache configuration for all cache-dependent features, including the response recording manager and the context entries cache. Configure the cache backend once, and all features will use it automatically.
 
-| Flag                                                   | Values                                 | Default | Description                                             |
-| ------------------------------------------------------ | -------------------------------------- | ------- | ------------------------------------------------------- |
-| <Cfg p="--cache-kind" e="MEMORY_SERVICE_CACHE_KIND" /> | `none`, `local`, `redis`, `infinispan` | `none`  | Cache backend for memory entries and response recording |
-| `MEMORY_SERVICE_CACHE_EPOCH_TTL`                       | duration                               | `PT10M` | TTL for cached memory entries                           |
+| Flag                                                   | Values                                 | Default | Description                                              |
+| ------------------------------------------------------ | -------------------------------------- | ------- | -------------------------------------------------------- |
+| <Cfg p="--cache-kind" e="MEMORY_SERVICE_CACHE_KIND" /> | `none`, `local`, `redis`, `infinispan` | `none`  | Cache backend for context entries and response recording |
+| `MEMORY_SERVICE_CACHE_EPOCH_TTL`                       | duration                               | `PT10M` | TTL for cached context entries                           |
 
 ### Memory Entries Cache
 
-When a cache backend is configured, Memory Service caches memory entries to reduce database load and improve GET/sync latency. The cache stores the complete list of memory entries at the latest epoch for each conversation/client pair.
+When a cache backend is configured, Memory Service caches context entries to reduce database load and improve GET/sync latency. The cache stores the complete list of context entries at the latest epoch for each conversation/client pair.
 
-Features of the memory entries cache:
+Features of the context entries cache:
 
 - **Automatic population**: Cache is populated on first read and updated after sync operations
 - **Write-refreshed TTL**: TTL is refreshed when entries are written back into cache
@@ -170,7 +170,7 @@ Response Recording and Resumption lets clients reconnect to in-progress streamin
 
 ### Cache: Redis Configuration
 
-Redis provides a fast, distributed cache with full support for the memory entries cache and response recording manager.
+Redis provides a fast, distributed cache with full support for the context entries cache and response recording manager.
 
 | Flag                                                     | Values      | Default                  | Description                            |
 | -------------------------------------------------------- | ----------- | ------------------------ | -------------------------------------- |
@@ -216,7 +216,7 @@ MEMORY_SERVICE_CACHE_LOCAL_MAX_BYTES=64M`}/>
 
 ### Cache: Infinispan Configuration
 
-Infinispan provides a distributed cache with configurable cache names for memory entries and response recordings.
+Infinispan provides a distributed cache with configurable cache names for context entries and response recordings.
 
 | Flag                                                                     | Values      | Default               | Description                                   |
 | ------------------------------------------------------------------------ | ----------- | --------------------- | --------------------------------------------- |
@@ -224,7 +224,7 @@ Infinispan provides a distributed cache with configurable cache names for memory
 | <Cfg p="--infinispan-username" e="MEMORY_SERVICE_INFINISPAN_USERNAME" /> | string      | _(none)_              | Infinispan username                           |
 | <Cfg p="--infinispan-password" e="MEMORY_SERVICE_INFINISPAN_PASSWORD" /> | string      | _(none)_              | Infinispan password                           |
 | `MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT`                        | duration    | `PT30S`               | Startup timeout for Infinispan connection     |
-| `MEMORY_SERVICE_CACHE_INFINISPAN_MEMORY_ENTRIES_CACHE_NAME`              | string      | `memory-entries`      | Infinispan cache name for memory entries      |
+| `MEMORY_SERVICE_CACHE_INFINISPAN_MEMORY_ENTRIES_CACHE_NAME`              | string      | `memory-entries`      | Infinispan cache name for context entries     |
 | `MEMORY_SERVICE_CACHE_INFINISPAN_RESPONSE_RECORDINGS_CACHE_NAME`         | string      | `response-recordings` | Infinispan cache name for response recordings |
 
 <ConfigBlock property={`# Enable Infinispan cache (response recording manager will automatically use it)
@@ -446,7 +446,7 @@ New data is encrypted with Vault; existing `dek`-encrypted data is still readabl
 
 ## Vector Store Configuration
 
-For semantic search capabilities, configure a vector store backend. The vector store holds embeddings alongside the metadata needed to map them back to memory entries.
+For semantic search capabilities, configure a vector store backend. The vector store holds embeddings alongside the metadata needed to map them back to context entries.
 
 > **Note:** A vector store requires an embedding provider. When a vector store is enabled, configure <Cfg p="--embedding-kind" e="MEMORY_SERVICE_EMBEDDING_KIND" /> to a value other than `none`. See [Embedding Configuration](#embedding-configuration).
 

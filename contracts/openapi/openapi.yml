@@ -218,8 +218,8 @@ paths:
 
         - `history` (default) returns the user-visible conversation between
           users and the agent.
-        - `memory` returns agent memory entries which are typically not
-          shown directly to end users. Memory entries are scoped to the
+        - `context` returns agent-managed context entries which are typically not
+          shown directly to end users. Context entries are scoped to the
           calling client id derived from the API key.
       operationId: listConversationEntries
       parameters:
@@ -254,7 +254,7 @@ paths:
             default: history
           description: |-
             Channel of entries to return. Defaults to `history` for the
-            user-visible conversation; `memory` returns agent memory entries
+            user-visible conversation; `context` returns agent-managed context entries
             scoped to the calling client id.
         - name: epoch
           in: query
@@ -264,7 +264,7 @@ paths:
             nullable: true
             default: latest
           description: |-
-            Optional epoch filter when listing the `memory` channel. Valid values
+            Optional epoch filter when listing the `context` channel. Valid values
             are `latest`, `all`, or a numeric epoch identifier. Defaults to
             `latest` when not provided. The epoch selection is scoped to the
             calling client id.
@@ -344,21 +344,21 @@ paths:
   /v1/conversations/{conversationId}/entries/sync:
     post:
       tags: [Conversations]
-      summary: Synchronize the agent memory epoch
+      summary: Synchronize the agent context epoch
       description: |-
-        Synchronizes the in-memory context for the conversation. The request body
+        Synchronizes the agent-managed context for the conversation. The request body
         is a single entry whose `content` array contains all messages in the agent's
-        memory. The service compares this content against the flattened content of
-        all entries in the latest memory epoch.
+        current context. The service compares this content against the flattened content of
+        all entries in the latest context epoch.
 
         If the content matches exactly, it's a no-op. If the incoming content is a
         prefix extension (starts with existing content plus new items), only the
         delta is appended to the current epoch. Otherwise, a new epoch is created
         with the delta content.
 
-        The entry must target the `memory` channel. Memory sync is scoped to the
+        The entry must target the `context` channel. Context sync is scoped to the
         calling client id (from the API key). Requires a valid agent API key.
-      operationId: syncConversationMemory
+      operationId: syncConversationContext
       parameters:
         - name: conversationId
           in: path
@@ -1663,7 +1663,7 @@ components:
       description: Logical channel of the entry within the conversation.
       enum:
         - history
-        - memory
+        - context
 
     PutMemoryRequest:
       type: object
@@ -2000,9 +2000,9 @@ components:
           format: int64
           nullable: true
           description: |-
-            Logical memory epoch this entry belongs to.
-            For history entries this is typically null. For memory entries,
-            the agent increments the epoch when starting a new memory version.
+            Logical context epoch this entry belongs to.
+            For history entries this is typically null. For context entries,
+            the agent increments the epoch when starting a new context version.
         contentType:
           type: string
           description: |-
@@ -2026,7 +2026,7 @@ components:
             - `attachments` (array, optional): Array of `Attachment` objects referencing external resources (images, audio, video, documents).
 
             Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
-            agent memory entries.
+            agent context entries.
         content:
           type: array
           description: |-
@@ -2096,7 +2096,7 @@ components:
             - `attachments` (array, optional): Array of `Attachment` objects referencing external resources (images, audio, video, documents).
 
             Other contentTypes (e.g., `"LC4J"`, `"SpringAI"`) may be used for
-            agent memory entries.
+            agent context entries.
         content:
           type: array
           maxItems: 1000
@@ -2154,7 +2154,7 @@ components:
           type: integer
           format: int64
           nullable: true
-          description: The epoch number that now reflects the stored memory state.
+          description: The epoch number that now reflects the stored context state.
         noOp:
           type: boolean
           description: True when the request resulted in no stored changes.
@@ -2173,12 +2173,12 @@ components:
           id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
           conversationId: "550e8400-e29b-41d4-a716-446655440000"
           userId: "agent_memory"
-          channel: "memory"
+          channel: "context"
           epoch: 5
           contentType: "LC4J"
           content:
             - type: "text"
-              text: "First message in memory."
+              text: "First message in context."
             - type: "text"
               text: "Second message added during sync."
           createdAt: "2025-01-10T14:40:12Z"

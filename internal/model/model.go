@@ -14,7 +14,7 @@ type Channel string
 
 const (
 	ChannelHistory Channel = "history"
-	ChannelMemory  Channel = "memory"
+	ChannelContext Channel = "context"
 )
 
 // AccessLevel represents the level of access a user has to a conversation group.
@@ -93,7 +93,7 @@ type ConversationMembership struct {
 
 func (ConversationMembership) TableName() string { return "conversation_memberships" }
 
-// Entry represents a message or memory entry in a conversation.
+// Entry represents a message or context entry in a conversation.
 type Entry struct {
 	ID                  uuid.UUID  `json:"id"                       gorm:"primaryKey;type:uuid"`
 	ConversationID      uuid.UUID  `json:"conversationId"           gorm:"not null;type:uuid"`

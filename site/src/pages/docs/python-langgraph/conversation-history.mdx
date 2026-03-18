@@ -77,7 +77,7 @@ Checkpoint `03` exposes conversation endpoints for frontend apps:
 
 **What changed**: `GET /v1/conversations/{conversation_id}` and `GET /v1/conversations/{conversation_id}/entries` are added, both implemented by forwarding to `MemoryServiceProxy`. The entries endpoint hard-codes `channel="history"` so callers always receive recorded conversation turns.
 
-**Why**: Frontend apps need these endpoints to display conversation metadata and message history. `MemoryServiceProxy` forwards the request — along with the user's bearer token — to Memory Service, then translates the response into a FastAPI-compatible format via `to_fastapi_response`. Hard-coding `channel="history"` prevents frontend apps from accidentally reading low-level `memory` channel entries written by the checkpointer.
+**Why**: Frontend apps need these endpoints to display conversation metadata and message history. `MemoryServiceProxy` forwards the request — along with the user's bearer token — to Memory Service, then translates the response into a FastAPI-compatible format via `to_fastapi_response`. Hard-coding `channel="history"` prevents frontend apps from accidentally reading low-level `context` channel entries written by the checkpointer.
 
 <TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/03-with-history">
 

@@ -26,7 +26,7 @@ Make sure you've completed the [Getting Started](/docs/quarkus/getting-started/)
 
 In the [previous guide](/docs/quarkus/getting-started/), you added conversation memory, but messages don't appear in the UI yet. That's because we're only storing _agent memory_, not the _conversation history_ that users see.
 
-To display conversation history in a frontend UI, wrap your agent with the `@RecordConversation` interceptor. This records both user messages and agent responses to the `history` channel (separate from the `memory` channel used by agents).
+To display conversation history in a frontend UI, wrap your agent with the `@RecordConversation` interceptor. This records both user messages and agent responses to the `history` channel (separate from the `context` channel used by agents).
 
 Create a wrapper class:
 
@@ -111,7 +111,7 @@ Then create a REST resource that proxies requests to Memory Service:
 
 **What changed**: Created `ConversationsResource` with `getConversation` and `listConversationEntries` endpoints that delegate to an injected `MemoryServiceProxy`. **Why**: Agent apps should expose a subset of the Memory Service API to their frontends rather than giving clients direct access. The `MemoryServiceProxy` adds the service account API key for Memory Service authentication and passes through the caller's Bearer token so the Memory Service can enforce per-user access control.
 
-The `Channel.HISTORY` parameter ensures you get entries from the history channel (recorded by `@RecordConversation`) rather than the memory channel (used by agents internally).
+The `Channel.HISTORY` parameter ensures you get entries from the history channel (recorded by `@RecordConversation`) rather than the context channel (used by agents internally).
 
 <TestScenario checkpoint="java/quarkus/examples/doc-checkpoints/03-with-history">
 

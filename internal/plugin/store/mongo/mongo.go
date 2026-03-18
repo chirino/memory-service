@@ -1150,7 +1150,7 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	if channel != nil {
 		effectiveChannel = *channel
 	}
-	if effectiveChannel == model.ChannelMemory && clientID == nil {
+	if effectiveChannel == model.ChannelContext && clientID == nil {
 		return nil, &registrystore.ForbiddenError{}
 	}
 
@@ -1175,7 +1175,7 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		return nil, err
 	}
 
-	if effectiveChannel == model.ChannelMemory {
+	if effectiveChannel == model.ChannelContext {
 		if epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest {
 			// Use cache for the common latest-epoch case.
 			cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID)
@@ -1280,9 +1280,9 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			ch = string(model.ChannelHistory)
 		}
 
-		// Auto-assign epoch=1 for memory entries when no epoch specified.
+		// Auto-assign epoch=1 for context entries when no epoch specified.
 		entryEpoch := epoch
-		if model.Channel(ch) == model.ChannelMemory && entryEpoch == nil {
+		if model.Channel(ch) == model.ChannelContext && entryEpoch == nil {
 			var one int64 = 1
 			entryEpoch = &one
 		}
@@ -1340,10 +1340,10 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 
 	s.conversations().UpdateByID(ctx, uuidToStr(conversationID), bson.M{"$set": bson.M{"updated_at": now}})
 
-	// Warm entries cache if any memory channel entries were appended.
+	// Warm entries cache if any context channel entries were appended.
 	if clientID != nil {
 		for _, e := range result {
-			if e.Channel == model.ChannelMemory {
+			if e.Channel == model.ChannelContext {
 				if ancestry, err := s.buildAncestryStack(ctx, conv); err == nil {
 					s.warmEntriesCache(ctx, conv, ancestry, *clientID)
 				}
@@ -1390,6 +1390,11 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 		return nil, err
+	}
+	if autoCreated && s.entriesCache != nil {
+		if err := s.entriesCache.Remove(ctx, conversationID, clientID); err != nil {
+			return nil, err
+		}
 	}
 
 	ancestry, err := s.buildAncestryStack(ctx, conv)
@@ -1470,7 +1475,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		ConversationGroupID: conv.ConversationGroupID,
 		UserID:              &userID,
 		ClientID:            &clientID,
-		Channel:             string(model.ChannelMemory),
+		Channel:             string(model.ChannelContext),
 		Epoch:               &epochToUse,
 		ContentType:         entry.ContentType,
 		Content:             encContent,
@@ -2890,7 +2895,7 @@ func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, cli
 		if !strings.EqualFold(entry.Channel, string(channel)) {
 			continue
 		}
-		if channel == model.ChannelMemory && clientID != nil {
+		if channel == model.ChannelContext && clientID != nil {
 			if entry.ClientID == nil || *entry.ClientID != *clientID {
 				continue
 			}
@@ -2898,7 +2903,7 @@ func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, cli
 		filtered = append(filtered, entry)
 	}
 
-	if channel != model.ChannelMemory {
+	if channel != model.ChannelContext {
 		return filtered
 	}
 
@@ -2986,7 +2991,7 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 			continue
 		}
 
-		if strings.EqualFold(entry.Channel, string(model.ChannelMemory)) && entry.ClientID != nil && *entry.ClientID == clientID {
+		if strings.EqualFold(entry.Channel, string(model.ChannelContext)) && entry.ClientID != nil && *entry.ClientID == clientID {
 			entryEpoch := int64(0)
 			if entry.Epoch != nil {
 				entryEpoch = *entry.Epoch
@@ -3030,7 +3035,7 @@ func (s *MongoStore) loadEntriesForGroup(ctx context.Context, groupID string) ([
 	return docs, nil
 }
 
-// fetchLatestMemoryEntries returns the latest-epoch memory entries for the given
+// fetchLatestMemoryEntries returns the latest-epoch context entries for the given
 // conversation and clientID, using MemoryEntriesCache as a read-through layer.
 func (s *MongoStore) fetchLatestMemoryEntries(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID string) ([]model.Entry, error) {
 	convID := strToUUID(conv.ID)
@@ -3075,7 +3080,7 @@ func (s *MongoStore) fetchLatestMemoryEntries(ctx context.Context, conv convDoc,
 	return entries, nil
 }
 
-// warmEntriesCache re-fetches the latest memory entries from the DB and updates the cache.
+// warmEntriesCache re-fetches the latest context entries from the DB and updates the cache.
 // Called after a successful SyncAgentEntry write to keep the cache warm.
 func (s *MongoStore) warmEntriesCache(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID string) {
 	if s.entriesCache == nil || !s.entriesCache.Available() {

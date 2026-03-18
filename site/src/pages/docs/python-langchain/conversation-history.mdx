@@ -32,7 +32,7 @@ To enable that, wire `MemoryServiceHistoryMiddleware` into the agent and bind re
 
 **What changed**: `MemoryServiceHistoryMiddleware()` is constructed and passed into `create_agent(middleware=[history_middleware])`. The `chat` endpoint wraps the `agent.invoke(...)` call in `with memory_service_scope(conversation_id):` instead of only setting `thread_id` in `configurable`.
 
-**Why**: The middleware intercepts the agent's model call, writing a USER entry to the `history` channel before the call and an AI entry after. `memory_service_scope(conversation_id)` sets a context variable that the middleware reads to know which conversation to write to — without this scope, the middleware has nowhere to record the entries. The checkpointer continues storing LangGraph state in the `memory` channel unchanged.
+**Why**: The middleware intercepts the agent's model call, writing a USER entry to the `history` channel before the call and an AI entry after. `memory_service_scope(conversation_id)` sets a context variable that the middleware reads to know which conversation to write to — without this scope, the middleware has nowhere to record the entries. The checkpointer continues storing LangGraph state in the `context` channel unchanged.
 
 <TestScenario checkpoint="python/examples/langchain/doc-checkpoints/03-with-history">
 
@@ -82,7 +82,7 @@ The entries endpoint forces `channel=history` so frontend clients always receive
 
 **What changed**: `proxy.list_conversation_entries(...)` is called with the hardcoded `channel="history"` parameter. The `get_conversation` endpoint delegates entirely to the proxy without modification.
 
-**Why**: The Memory Service stores two kinds of data per conversation — raw LangGraph checkpoint state in the `memory` channel and human-readable turns in the `history` channel. Forcing `channel="history"` here ensures frontend clients always receive the readable turn-by-turn view and never accidentally see internal LangGraph state blobs. The `MemoryServiceProxy` handles forwarding the user's Bearer token automatically, so no manual header construction is needed.
+**Why**: The Memory Service stores two kinds of data per conversation — raw LangGraph checkpoint state in the `context` channel and human-readable turns in the `history` channel. Forcing `channel="history"` here ensures frontend clients always receive the readable turn-by-turn view and never accidentally see internal LangGraph state blobs. The `MemoryServiceProxy` handles forwarding the user's Bearer token automatically, so no manual header construction is needed.
 
 <TestScenario checkpoint="python/examples/langchain/doc-checkpoints/03-with-history">
 

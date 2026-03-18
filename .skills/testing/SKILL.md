@@ -6,14 +6,15 @@ description: Use when writing or debugging tests for memory-service. Covers Cucu
 # Testing Guidelines
 
 ## Prefer Cucumber for API Testing
-For REST and gRPC tests, use Cucumber feature files in `memory-service/src/test/resources/features/` instead of unit tests with mocks.
+For REST and gRPC tests, use the Go BDD suite under `internal/bdd/testdata/features*/` instead of unit tests with mocks.
 
 Reserve unit tests with mocks for internal implementation details and infrastructure testing.
 
 ## Cucumber Failure Reporting
 When tests fail:
 ```bash
-memory-service/src/test/resources/extract-failures.sh
+go test ./internal/bdd -run TestFeatures... > test.log 2>&1
+rg -n "FAIL|ERROR|panic|--- FAIL:" test.log
 ```
 
-Check `memory-service/target/cucumber/failures.txt` for structured failure summary with error messages and stack traces.
+Prefer searching the redirected log for the failing scenario and stack trace context.

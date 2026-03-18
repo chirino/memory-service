@@ -84,8 +84,8 @@ func mapChannel(ch model.Channel) pb.Channel {
 	switch ch {
 	case model.ChannelHistory:
 		return pb.Channel_HISTORY
-	case model.ChannelMemory:
-		return pb.Channel_MEMORY
+	case model.ChannelContext:
+		return pb.Channel_CONTEXT
 	default:
 		return pb.Channel_CHANNEL_UNSPECIFIED
 	}
@@ -470,8 +470,8 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 
 	channel := model.ChannelHistory
 	switch req.GetChannel() {
-	case pb.Channel_MEMORY:
-		channel = model.ChannelMemory
+	case pb.Channel_CONTEXT:
+		channel = model.ChannelContext
 	case pb.Channel_HISTORY, pb.Channel_CHANNEL_UNSPECIFIED:
 		channel = model.ChannelHistory
 	default:
@@ -485,14 +485,14 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	}
 
 	var epochFilter *registrystore.MemoryEpochFilter
-	if channel == model.ChannelMemory {
-		// Keep parity with REST list behavior: memory reads without a client id
-		// degrade to history channel to avoid cross-agent memory visibility.
+	if channel == model.ChannelContext {
+		// Keep parity with REST list behavior: context reads without a client id
+		// degrade to history channel to avoid cross-agent context visibility.
 		if clientIDPtr == nil {
 			channel = model.ChannelHistory
 		}
 	}
-	if channel == model.ChannelMemory {
+	if channel == model.ChannelContext {
 		filter, err := registrystore.ParseMemoryEpochFilter(req.GetEpochFilter())
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -537,8 +537,8 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 
 	entry := req.GetEntry()
 	ch := "history"
-	if entry.GetChannel() == pb.Channel_MEMORY {
-		ch = "memory"
+	if entry.GetChannel() == pb.Channel_CONTEXT {
+		ch = string(model.ChannelContext)
 	}
 
 	// Validate history channel entries
@@ -623,8 +623,8 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 	}
 
 	entry := req.GetEntry()
-	if entry.GetChannel() != pb.Channel_MEMORY {
-		return nil, status.Error(codes.InvalidArgument, "sync entry must target memory channel")
+	if entry.GetChannel() != pb.Channel_CONTEXT {
+		return nil, status.Error(codes.InvalidArgument, "sync entry must target context channel")
 	}
 	var syncContent json.RawMessage
 	if len(entry.GetContent()) > 0 {
@@ -639,7 +639,7 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 		return s.Store.SyncAgentEntry(txCtx, userID, convID, registrystore.CreateEntryRequest{
 			Content:     syncContent,
 			ContentType: entry.GetContentType(),
-			Channel:     "memory",
+			Channel:     string(model.ChannelContext),
 		}, clientID)
 	})
 	if err != nil {

@@ -93,7 +93,7 @@ The endpoint also forwards `Authorization: Bearer ...` to Memory Service calls s
 
 **What changed**: The route changes from `POST /chat` to `POST /chat/{conversationId}`.
 
-**Why**: The conversation ID in the URL becomes the storage key for memory entries. Calls to the same ID reuse context; a new ID starts fresh context.
+**Why**: The conversation ID in the URL becomes the storage key for context entries. Calls to the same ID reuse context; a new ID starts fresh context.
 
 ### Use context memory in the chat flow
 

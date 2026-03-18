@@ -29,8 +29,8 @@ import org.jboss.logging.Logger;
 /**
  * ChatMemoryStore implementation backed by the Memory Service HTTP API.
  *
- * This implementation stores messages using the memory channel and uses the
- * sync API to replace the persisted memory epoch when updates are required.
+ * This implementation stores messages using the context channel and uses the
+ * sync API to replace the persisted context epoch when updates are required.
  */
 @Singleton
 public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
@@ -64,14 +64,14 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                                     UUID.fromString(memoryId.toString()),
                                     null,
                                     50,
-                                    Channel.MEMORY,
+                                    Channel.CONTEXT,
                                     null,
                                     null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
             if (status == 404) {
                 LOG.debugf(
-                        "Treating status %d for conversationId=%s as empty memory",
+                        "Treating status %d for conversationId=%s as empty context",
                         status, memoryId);
                 return new ArrayList<>();
             }
@@ -112,7 +112,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
         Objects.requireNonNull(memoryId, "memoryId");
         if (messages == null || messages.isEmpty()) {
-            LOG.debugf("Skipping sync for empty memory update on conversationId=%s", memoryId);
+            LOG.debugf("Skipping sync for empty context update on conversationId=%s", memoryId);
             return;
         }
 
@@ -124,20 +124,20 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         // Build a single entry with all messages in the content array
         CreateEntryRequest syncEntry = toSyncEntryRequest(messages);
         if (syncEntry.getContent() == null || syncEntry.getContent().isEmpty()) {
-            LOG.debugf("Skipping sync for empty memory update on conversationId=%s", memoryId);
+            LOG.debugf("Skipping sync for empty context update on conversationId=%s", memoryId);
             return;
         }
         try {
             conversationsApi()
-                    .syncConversationMemory(UUID.fromString(memoryId.toString()), syncEntry);
+                    .syncConversationContext(UUID.fromString(memoryId.toString()), syncEntry);
         } catch (WebApplicationException e) {
             String body = readResponseBody(e);
             LOG.warnf(
-                    "Failed to sync memory for conversationId=%s: %d %s",
+                    "Failed to sync context for conversationId=%s: %d %s",
                     memoryId, e.getResponse() != null ? e.getResponse().getStatus() : -1, body);
             throw e;
         } catch (Exception e) {
-            LOG.warnf(e, "Failed to sync memory for conversationId=%s", memoryId);
+            LOG.warnf(e, "Failed to sync context for conversationId=%s", memoryId);
             throw e;
         }
     }
@@ -147,27 +147,27 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         Objects.requireNonNull(memoryId, "memoryId");
         LOG.debugf("deleteMessages(%s)", memoryId);
 
-        // Sync with empty content to clear memory by creating an empty epoch
+        // Sync with empty content to clear context by creating an empty epoch
         CreateEntryRequest syncEntry = new CreateEntryRequest();
         SecurityIdentity identity = resolveSecurityIdentity();
         String userId = principalName(identity);
         if (userId != null) {
             syncEntry.setUserId(userId);
         }
-        syncEntry.setChannel(ChannelEnum.MEMORY);
+        syncEntry.setChannel(ChannelEnum.CONTEXT);
         syncEntry.setContentType("LC4J");
         syncEntry.setContent(new ArrayList<>());
         try {
             conversationsApi()
-                    .syncConversationMemory(UUID.fromString(memoryId.toString()), syncEntry);
+                    .syncConversationContext(UUID.fromString(memoryId.toString()), syncEntry);
         } catch (WebApplicationException e) {
             String body = readResponseBody(e);
             LOG.warnf(
-                    "Failed to clear memory for conversationId=%s: %d %s",
+                    "Failed to clear context for conversationId=%s: %d %s",
                     memoryId, e.getResponse() != null ? e.getResponse().getStatus() : -1, body);
             throw e;
         } catch (Exception e) {
-            LOG.warnf(e, "Failed to clear memory for conversationId=%s", memoryId);
+            LOG.warnf(e, "Failed to clear context for conversationId=%s", memoryId);
             throw e;
         }
     }
@@ -183,7 +183,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         if (userId != null) {
             request.setUserId(userId);
         }
-        request.setChannel(ChannelEnum.MEMORY);
+        request.setChannel(ChannelEnum.CONTEXT);
         request.setContentType("LC4J");
 
         List<Object> contentBlocks = new ArrayList<>();

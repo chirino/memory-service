@@ -117,7 +117,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodPatch, "/v1/conversations/:conversationId", apiWrapper.UpdateConversation)
 	register(http.MethodGet, "/v1/conversations/:conversationId/entries", apiWrapper.ListConversationEntries)
 	register(http.MethodPost, "/v1/conversations/:conversationId/entries", apiWrapper.AppendConversationEntry)
-	register(http.MethodPost, "/v1/conversations/:conversationId/entries/sync", apiWrapper.SyncConversationMemory)
+	register(http.MethodPost, "/v1/conversations/:conversationId/entries/sync", apiWrapper.SyncConversationContext)
 	register(http.MethodGet, "/v1/conversations/:conversationId/forks", apiWrapper.ListConversationForks)
 	register(http.MethodGet, "/v1/conversations/:conversationId/memberships", apiWrapper.ListConversationMemberships)
 	register(http.MethodPost, "/v1/conversations/:conversationId/memberships", apiWrapper.ShareConversation)
@@ -232,7 +232,7 @@ func (p *proxyAPIServer) ListConversationEntries(c *gin.Context, _ openapi_types
 func (p *proxyAPIServer) AppendConversationEntry(c *gin.Context, _ openapi_types.UUID) {
 	routeentries.HandleAppendEntry(c, p.store)
 }
-func (p *proxyAPIServer) SyncConversationMemory(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, _ openapi_types.UUID) {
 	routeentries.HandleSyncMemory(c, p.store)
 }
 func (p *proxyAPIServer) ListConversationForks(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationForksParams) {

@@ -9,7 +9,7 @@ description: Use when making changes to the OpenAPI contract. Workflow for updat
 
 2. **Regenerate Java client**:
    ```bash
-   ./mvnw -pl quarkus/memory-service-rest-quarkus clean compile
+   ./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus clean compile -am
    ```
 
 3. **Regenerate TypeScript client**:
@@ -19,6 +19,6 @@ description: Use when making changes to the OpenAPI contract. Workflow for updat
 
 4. **Verify**:
    ```bash
-   ./mvnw compile
+   ./java/mvnw -f java/pom.xml compile
    cd frontends/chat-frontend && npm run lint && npm run build
    ```
