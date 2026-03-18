@@ -35,6 +35,14 @@ func (m *migrator) Migrate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("sqlite vector migrate: %w", err)
 	}
+	caps, err := sqlitestore.SharedCapabilities(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlite vector migrate: %w", err)
+	}
+	if !caps.VecEnabled {
+		log.Warn("Skipping sqlite vector migration because the sqlite vector extension is unavailable")
+		return nil
+	}
 	log.Info("Running migration", "name", m.Name())
 	if _, err := sqlDB.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("sqlite vector migrate: %w", err)
@@ -59,17 +67,28 @@ func load(ctx context.Context) (registryvector.VectorStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sqlite vector: %w", err)
 	}
-	return &Store{db: db}, nil
+	caps, err := sqlitestore.SharedCapabilities(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite vector: %w", err)
+	}
+	if !caps.VecEnabled {
+		log.Warn("SQLite vector store unavailable; semantic search disabled")
+	}
+	return &Store{db: db, enabled: caps.VecEnabled}, nil
 }
 
 type Store struct {
-	db *gorm.DB
+	db      *gorm.DB
+	enabled bool
 }
 
-func (s *Store) IsEnabled() bool { return true }
+func (s *Store) IsEnabled() bool { return s != nil && s.enabled }
 func (s *Store) Name() string    { return "sqlite" }
 
 func (s *Store) Search(ctx context.Context, embedding []float32, conversationGroupIDs []uuid.UUID, limit int) ([]registryvector.VectorSearchResult, error) {
+	if !s.IsEnabled() {
+		return []registryvector.VectorSearchResult{}, nil
+	}
 	if len(conversationGroupIDs) == 0 || limit <= 0 {
 		return []registryvector.VectorSearchResult{}, nil
 	}
@@ -131,6 +150,9 @@ func (s *Store) Search(ctx context.Context, embedding []float32, conversationGro
 }
 
 func (s *Store) Upsert(ctx context.Context, entries []registryvector.UpsertRequest) error {
+	if !s.IsEnabled() || len(entries) == 0 {
+		return nil
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, entry := range entries {
 			vectorBlob, err := vec.SerializeFloat32(entry.Embedding)
@@ -154,6 +176,9 @@ func (s *Store) Upsert(ctx context.Context, entries []registryvector.UpsertReque
 }
 
 func (s *Store) DeleteByConversationGroupID(ctx context.Context, conversationGroupID uuid.UUID) error {
+	if !s.IsEnabled() {
+		return nil
+	}
 	return s.db.WithContext(ctx).
 		Exec("DELETE FROM entry_embeddings WHERE conversation_group_id = ?", conversationGroupID.String()).
 		Error

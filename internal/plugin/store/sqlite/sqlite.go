@@ -75,7 +75,12 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 	if _, err := handle.sqlDB.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("migration: failed to execute schema: %w", err)
 	}
-	log.Info("SQLite schema migration complete")
+	if handle.fts5Enabled {
+		if _, err := handle.sqlDB.ExecContext(ctx, ftsSchemaSQL); err != nil {
+			return fmt.Errorf("migration: failed to execute fts schema: %w", err)
+		}
+	}
+	log.Info("SQLite schema migration complete", "fts5Enabled", handle.fts5Enabled)
 	return nil
 }
 
@@ -1508,6 +1513,9 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, userID string, query st
 	if prefixQuery == "" {
 		return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
 	}
+	if s.handle == nil || !s.handle.fts5Enabled {
+		return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
+	}
 	// Full-text search using the external-content FTS5 table.
 	sql := `
 		SELECT e.id as entry_id, e.conversation_id, e.conversation_group_id, c.title as conversation_title,
@@ -1841,6 +1849,9 @@ func (s *SQLiteStore) AdminListForks(ctx context.Context, conversationID uuid.UU
 func (s *SQLiteStore) AdminSearchEntries(ctx context.Context, query registrystore.AdminSearchQuery) (*registrystore.SearchResults, error) {
 	prefixQuery := toPrefixTsQuery(query.Query)
 	if prefixQuery == "" {
+		return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
+	}
+	if s.handle == nil || !s.handle.fts5Enabled {
 		return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
 	}
 	sql := `
