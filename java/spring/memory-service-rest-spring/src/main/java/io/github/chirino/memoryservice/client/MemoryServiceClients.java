@@ -30,6 +30,13 @@ public final class MemoryServiceClients {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MemoryServiceClients.class);
 
+    /**
+     * Whether native Netty transport handles {@link DomainSocketAddress} natively.
+     * When true (epoll/kqueue on classpath), no address adapter is needed.
+     * When false (JDK NIO fallback), we must convert to {@link UnixDomainSocketAddress}.
+     */
+    private static final boolean NATIVE_UDS_TRANSPORT = probeNativeUdsTransport();
+
     private MemoryServiceClients() {}
 
     public static ApiClient createApiClient(
@@ -110,22 +117,48 @@ public final class MemoryServiceClients {
             httpClient =
                     httpClient
                             .remoteAddress(() -> socketAddress(endpoint))
-                            // Reactor Netty selects NioDomainSocketChannel when native
-                            // transport is absent, but NioDomainSocketChannel.doConnect()
-                            // passes the address straight to the JDK SocketChannel which
-                            // only accepts java.net.UnixDomainSocketAddress. Intercept the
-                            // connect call to convert the Netty DomainSocketAddress.
-                            .doOnChannelInit(
-                                    (observer, channel, remoteAddress) ->
-                                            channel.pipeline()
-                                                    .addFirst(new DomainSocketAddressAdapter()))
                             .protocol(HttpProtocol.HTTP11);
+            if (!NATIVE_UDS_TRANSPORT) {
+                // Reactor Netty selects NioDomainSocketChannel when native
+                // transport is absent, but NioDomainSocketChannel.doConnect()
+                // passes the address straight to the JDK SocketChannel which
+                // only accepts java.net.UnixDomainSocketAddress. Intercept the
+                // connect call to convert the Netty DomainSocketAddress.
+                httpClient =
+                        httpClient.doOnChannelInit(
+                                (observer, channel, remoteAddress) ->
+                                        channel.pipeline()
+                                                .addFirst(new DomainSocketAddressAdapter()));
+            }
         }
         Duration timeout = properties.getTimeout();
         if (timeout != null) {
             httpClient = httpClient.responseTimeout(timeout);
         }
         return httpClient;
+    }
+
+    /**
+     * Probes whether Netty's native domain-socket transport (epoll or kqueue) is available.
+     * When it is, {@link DomainSocketAddress} works end-to-end without conversion.
+     */
+    private static boolean probeNativeUdsTransport() {
+        for (String className :
+                new String[] {"io.netty.channel.epoll.Epoll", "io.netty.channel.kqueue.KQueue"}) {
+            try {
+                Class<?> cls = Class.forName(className);
+                Boolean available = (Boolean) cls.getMethod("isAvailable").invoke(null);
+                if (Boolean.TRUE.equals(available)) {
+                    LOGGER.debug("Native UDS transport detected: {}", className);
+                    return true;
+                }
+            } catch (ReflectiveOperationException ignored) {
+                // class not on classpath — try next
+            }
+        }
+        LOGGER.debug(
+                "No native UDS transport found; DomainSocketAddress adapter will be installed");
+        return false;
     }
 
     static SocketAddress socketAddress(MemoryServiceEndpoint endpoint) {
