@@ -11,7 +11,6 @@
 * add includeDeleted=true admin
 * fix: python request streaming is broken.
 * rename: ResponseResumer to ResponseRecorder
-* rename: memory channel to the context channel.
 * should the /sync endpoint take a flatten entries to just a list of content messages?
 * python/ts don't configure the lib via ENV vars.
 * support using github.com/99designs/keyring to store the DEK (local usecases)

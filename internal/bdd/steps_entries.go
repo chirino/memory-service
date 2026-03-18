@@ -17,18 +17,18 @@ func init() {
 		ctx.Step(`^the conversation has (\d+) entries$`, e.theConversationHasEntries)
 		ctx.Step(`^the conversation has an entry "([^"]*)" in channel "([^"]*)"$`, e.theConversationHasAnEntryInChannel)
 		ctx.Step(`^the conversation has an entry "([^"]*)" in channel "([^"]*)" with contentType "([^"]*)"$`, e.theConversationHasAnEntryInChannelWithContentType)
-		ctx.Step(`^the conversation has a memory entry "([^"]*)" with epoch (\d+) and contentType "([^"]*)"$`, e.theConversationHasAMemoryEntryWithEpochAndContentType)
+		ctx.Step(`^the conversation has a context entry "([^"]*)" with epoch (\d+) and contentType "([^"]*)"$`, e.theConversationHasAMemoryEntryWithEpochAndContentType)
 
 		// When steps - entry operations
 		ctx.Step(`^I list entries for the conversation$`, e.iListEntriesForTheConversation)
 		ctx.Step(`^I list entries with limit (\d+)$`, e.iListEntriesWithLimit)
 		ctx.Step(`^I list entries for the conversation with channel "([^"]*)"$`, e.iListEntriesForTheConversationWithChannel)
-		ctx.Step(`^I list memory entries for the conversation with epoch "([^"]*)"$`, e.iListMemoryEntriesWithEpoch)
+		ctx.Step(`^I list context entries for the conversation with epoch "([^"]*)"$`, e.iListMemoryEntriesWithEpoch)
 		ctx.Step(`^I list entries for conversation "([^"]*)"$`, e.iListEntriesForConversation)
 		ctx.Step(`^I list entries for that conversation$`, e.iListEntriesForTheConversation)
 		ctx.Step(`^I append an entry with content "([^"]*)" and channel "([^"]*)" and contentType "([^"]*)"$`, e.iAppendAnEntry)
 		ctx.Step(`^I append an entry to the conversation:$`, e.iAppendAnEntryToTheConversation)
-		ctx.Step(`^I sync memory entries with request:$`, e.iSyncMemoryEntries)
+		ctx.Step(`^I sync context entries with request:$`, e.iSyncMemoryEntries)
 		ctx.Step(`^I create a summary with request:$`, e.iCreateASummary)
 		ctx.Step(`^I index a transcript with request:$`, e.iIndexATranscript)
 		ctx.Step(`^I search entries with request:$`, e.iSearchEntries)
@@ -83,7 +83,7 @@ func (e *entrySteps) theConversationHasAnEntryInChannelWithContentType(content, 
 			"contentType": %q,
 			"content": [{"type": "text", "text": %q}]
 		}`, channel, contentType, content)
-		if channel == "MEMORY" || channel == "memory" {
+		if channel == "CONTEXT" || channel == "context" {
 			body = fmt.Sprintf(`{
 				"channel": %q,
 				"contentType": %q,
@@ -126,14 +126,14 @@ func (e *entrySteps) theConversationHasAMemoryEntryWithEpochAndContentType(conte
 	}
 
 	body := fmt.Sprintf(`{
-		"channel": "MEMORY",
+		"channel": "CONTEXT",
 		"contentType": %q,
 		"epoch": %d,
 		"content": [{"type": "text", "text": %q}]
 	}`, contentType, epoch, content)
 
 	// If already authenticated as an agent (has X-Client-ID), use current auth.
-	// Otherwise, temporarily switch to agent auth for memory entry creation.
+	// Otherwise, temporarily switch to agent auth for context entry creation.
 	currentClientID := e.s.Session().Header.Get("X-Client-ID")
 	needsAgentSwitch := currentClientID == ""
 
@@ -187,7 +187,7 @@ func (e *entrySteps) iListMemoryEntriesWithEpoch(epoch string) error {
 	if err != nil {
 		return err
 	}
-	return e.s.SendHTTPRequestWithJSONBodyAndStyle("GET", fmt.Sprintf("/v1/conversations/%s/entries?channel=MEMORY&epoch=%s", convID, epoch), nil, false, true)
+	return e.s.SendHTTPRequestWithJSONBodyAndStyle("GET", fmt.Sprintf("/v1/conversations/%s/entries?channel=CONTEXT&epoch=%s", convID, epoch), nil, false, true)
 }
 
 func (e *entrySteps) iListEntriesForConversation(convID string) error {
@@ -206,7 +206,7 @@ func (e *entrySteps) iAppendAnEntry(content, channel, contentType string) error 
 	}
 
 	var body string
-	if channel == "MEMORY" || channel == "memory" {
+	if channel == "CONTEXT" || channel == "context" {
 		body = fmt.Sprintf(`{
 			"channel": %q,
 			"contentType": %q,

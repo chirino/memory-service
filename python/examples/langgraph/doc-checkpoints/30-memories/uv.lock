@@ -566,7 +566,7 @@ wheels = [
 [[package]]
 name = "memory-service-langchain"
 version = "0.1.0"
-source = { registry = "/workspaces/memory-service/python/dist" }
+source = { registry = "../../../../dist" }
 dependencies = [
     { name = "fastapi" },
     { name = "grpcio" },
@@ -576,22 +576,22 @@ dependencies = [
     { name = "langgraph" },
     { name = "protobuf" },
 ]
-sdist = { path = "/workspaces/memory-service/python/dist/memory_service_langchain-0.1.0.tar.gz" }
+sdist = { path = "memory_service_langchain-0.1.0.tar.gz" }
 wheels = [
-    { path = "/workspaces/memory-service/python/dist/memory_service_langchain-0.1.0-py3-none-any.whl" },
+    { path = "memory_service_langchain-0.1.0-py3-none-any.whl" },
 ]
 
 [[package]]
 name = "memory-service-langgraph"
 version = "0.1.0"
-source = { registry = "/workspaces/memory-service/python/dist" }
+source = { registry = "../../../../dist" }
 dependencies = [
     { name = "httpx" },
     { name = "langgraph" },
 ]
-sdist = { path = "/workspaces/memory-service/python/dist/memory_service_langgraph-0.1.0.tar.gz" }
+sdist = { path = "memory_service_langgraph-0.1.0.tar.gz" }
 wheels = [
-    { path = "/workspaces/memory-service/python/dist/memory_service_langgraph-0.1.0-py3-none-any.whl" },
+    { path = "memory_service_langgraph-0.1.0-py3-none-any.whl" },
 ]
 
 [[package]]

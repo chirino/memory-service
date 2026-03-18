@@ -65,7 +65,7 @@ type ConversationDetail struct {
 	HasResponseInProgress bool `json:"hasResponseInProgress,omitempty"`
 }
 
-// MemoryEpochFilter filters memory entries by epoch.
+// MemoryEpochFilter filters context entries by epoch.
 type MemoryEpochFilter struct {
 	Mode  string // "latest", "all", "epoch"
 	Epoch *int64

@@ -79,7 +79,7 @@ Response response = proxy.listConversationForks(conversationId);
 
 ```java
 // List conversation entries
-// channel: Channel.HISTORY for user-visible messages, Channel.MEMORY for agent memory
+// channel: Channel.HISTORY for user-visible messages, Channel.CONTEXT for agent context
 // epoch: "latest", "all", or a numeric epoch identifier
 // forks: "none" or "all"
 Response response = proxy.listConversationEntries(

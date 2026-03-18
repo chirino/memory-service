@@ -228,7 +228,7 @@ SyncEntriesResponse response = entriesClient.syncEntries(
     SyncEntriesRequest.newBuilder()
         .setConversationId(UuidHelper.toBytes(conversationId))
         .setEntry(CreateEntryRequest.newBuilder()
-            .setChannel(Channel.MEMORY)
+            .setChannel(Channel.CONTEXT)
             .setContentType("LC4J")
             .addAllContent(memoryContent)
             .build())

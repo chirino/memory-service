@@ -31,7 +31,7 @@ _CONV_ID_NAMESPACE = _uuid_module.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 
 class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
-    """LangGraph checkpoint saver backed by Memory Service MEMORY channel."""
+    """LangGraph checkpoint saver backed by Memory Service context channel."""
 
     CHECKPOINT_CONTENT_TYPE = "LangGraph/checkpoint"
 
@@ -229,7 +229,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             "GET",
             f"/v1/conversations/{conv_id}/entries",
             thread_id=thread_id,
-            params={"channel": "memory"},
+            params={"channel": "context"},
         )
         if response.status_code == 404:
             return None
@@ -269,7 +269,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             "GET",
             f"/v1/conversations/{conv_id}/entries",
             thread_id=thread_id,
-            params={"channel": "memory"},
+            params={"channel": "context"},
         )
         if response.status_code >= 400:
             return iter(())
@@ -311,7 +311,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
         parent_checkpoint_id = get_checkpoint_id(config)
 
         payload = {
-            "channel": "memory",
+            "channel": "context",
             "contentType": self.CHECKPOINT_CONTENT_TYPE,
             "content": [
                 {

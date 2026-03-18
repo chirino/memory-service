@@ -1,5 +1,7 @@
 # Quarkus Module Facts
 
+**Conversation channel naming**: Quarkus integrations should use `Channel.CONTEXT` for agent-managed conversation state and reserve `Channel.HISTORY` for user-visible turns.
+
 **Forking curl gotcha**: Checkpoint `04-conversation-forking` chat routes are `text/plain`; to demo fork creation with curl, create root turns via `/chat/{id}` then append forked entries via Memory Service `/v1/conversations/{forkId}/entries` with `forkedAtConversationId`/`forkedAtEntryId`.
 
 **Chat attachment request parity**: `chat-quarkus` now accepts optional `href` in `RequestAttachmentRef`; the extension `AttachmentRef` supports `href` while keeping a 3-arg constructor for compatibility.

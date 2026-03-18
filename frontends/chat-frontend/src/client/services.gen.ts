@@ -162,17 +162,17 @@ export class ConversationsService {
    *
    * - `history` (default) returns the user-visible conversation between
    * users and the agent.
-   * - `memory` returns agent memory entries which are typically not
-   * shown directly to end users. Memory entries are scoped to the
+   * - `context` returns agent-managed context entries which are typically not
+   * shown directly to end users. Context entries are scoped to the
    * calling client id derived from the API key.
    * @param data The data for the request.
    * @param data.conversationId Conversation identifier (UUID format).
    * @param data.afterCursor Cursor for pagination; returns entries after this entry id (UUID format).
    * @param data.limit
    * @param data.channel Channel of entries to return. Defaults to `history` for the
-   * user-visible conversation; `memory` returns agent memory entries
+   * user-visible conversation; `context` returns agent-managed context entries
    * scoped to the calling client id.
-   * @param data.epoch Optional epoch filter when listing the `memory` channel. Valid values
+   * @param data.epoch Optional epoch filter when listing the `context` channel. Valid values
    * are `latest`, `all`, or a numeric epoch identifier. Defaults to
    * `latest` when not provided. The epoch selection is scoped to the
    * calling client id.
@@ -246,18 +246,18 @@ export class ConversationsService {
   }
 
   /**
-   * Synchronize the agent memory epoch
-   * Synchronizes the in-memory context for the conversation. The request body
+   * Synchronize the agent context epoch
+   * Synchronizes the agent-managed context for the conversation. The request body
    * is a single entry whose `content` array contains all messages in the agent's
-   * memory. The service compares this content against the flattened content of
-   * all entries in the latest memory epoch.
+   * current context. The service compares this content against the flattened content of
+   * all entries in the latest context epoch.
    *
    * If the content matches exactly, it's a no-op. If the incoming content is a
    * prefix extension (starts with existing content plus new items), only the
    * delta is appended to the current epoch. Otherwise, a new epoch is created
    * with the delta content.
    *
-   * The entry must target the `memory` channel. Memory sync is scoped to the
+   * The entry must target the `context` channel. Context sync is scoped to the
    * calling client id (from the API key). Requires a valid agent API key.
    * @param data The data for the request.
    * @param data.conversationId Conversation identifier (UUID format).
@@ -266,7 +266,7 @@ export class ConversationsService {
    * @returns ErrorResponse Error response
    * @throws ApiError
    */
-  public static syncConversationMemory(
+  public static syncConversationContext(
     data: $OpenApiTs["/v1/conversations/{conversationId}/entries/sync"]["post"]["req"],
   ): CancelablePromise<
     | $OpenApiTs["/v1/conversations/{conversationId}/entries/sync"]["post"]["res"][200]

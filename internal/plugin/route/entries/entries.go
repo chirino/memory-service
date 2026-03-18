@@ -45,7 +45,7 @@ func HandleAppendEntry(c *gin.Context, store registrystore.MemoryStore) {
 	appendEntry(c, store)
 }
 
-// HandleSyncMemory exposes sync-memory handling for wrapper-native adapters.
+// HandleSyncMemory exposes sync-context handling for wrapper-native adapters.
 func HandleSyncMemory(c *gin.Context, store registrystore.MemoryStore) {
 	syncMemory(c, store)
 }
@@ -73,7 +73,7 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	channelQueryRaw := strings.TrimSpace(strings.ToLower(c.Query("channel")))
 	if channelQueryRaw != "" {
 		switch model.Channel(channelQueryRaw) {
-		case model.ChannelHistory, model.ChannelMemory:
+		case model.ChannelHistory, model.ChannelContext:
 			ch := model.Channel(channelQueryRaw)
 			channelPtr = &ch
 		default:
@@ -89,8 +89,8 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 		channelPtr = &ch
 	}
 
-	// Memory channel access is client-scoped; without a client id, force to history.
-	if channelPtr != nil && *channelPtr == model.ChannelMemory && clientIDParam == nil {
+	// Context channel access is client-scoped; without a client id, force to history.
+	if channelPtr != nil && *channelPtr == model.ChannelContext && clientIDParam == nil {
 		ch := model.ChannelHistory
 		channelPtr = &ch
 	}
@@ -98,7 +98,7 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	allForks := strings.EqualFold(c.DefaultQuery("forks", "none"), "all")
 
 	var epochFilter *registrystore.MemoryEpochFilter
-	if channelPtr != nil && *channelPtr == model.ChannelMemory {
+	if channelPtr != nil && *channelPtr == model.ChannelContext {
 		filter, err := registrystore.ParseMemoryEpochFilter(c.Query("epoch"))
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -204,18 +204,18 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore) {
 			return
 		}
 
-		// Memory channel requires clientID.
-		if ch == model.ChannelMemory && clientID == nil {
+		// Context channel requires clientID.
+		if ch == model.ChannelContext && clientID == nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    "forbidden",
-				"error":   "client id is required for memory channel",
-				"details": gin.H{"message": "client id is required for memory channel"},
+				"error":   "client id is required for context channel",
+				"details": gin.H{"message": "client id is required for context channel"},
 			})
 			return
 		}
 
-		// Memory channel cannot have indexedContent.
-		if ch == model.ChannelMemory && entry.IndexedContent != nil {
+		// Context channel cannot have indexedContent.
+		if ch == model.ChannelContext && entry.IndexedContent != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "validation_error",
 				"details": gin.H{"message": "indexedContent is only allowed on history channel"},

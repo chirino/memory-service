@@ -143,11 +143,11 @@ Feature: Conversation Forking REST API
     And set "rootConversationId" to "${conversationId}"
     # Create initial entries in root (before fork point)
     And the conversation has an entry "A" in channel "HISTORY"
-    And the conversation has an entry "B" in channel "MEMORY"
-    And the conversation has an entry "C" in channel "MEMORY"
+    And the conversation has an entry "B" in channel "CONTEXT"
+    And the conversation has an entry "C" in channel "CONTEXT"
     And the conversation has an entry "D" in channel "HISTORY"
 
-    # Capture entry D as the fork point (need agent auth to see MEMORY entries)
+    # Capture entry D as the fork point (need agent auth to see CONTEXT entries)
     When I am authenticated as agent with API key "test-agent-key"
     And I list entries for the conversation
     And set "entryD_Id" to the json response field "data[3].id"
@@ -162,7 +162,7 @@ Feature: Conversation Forking REST API
     Then the response status should be 200
     And set "forkConversationId" to "${forkedConversationId}"
 
-    # Switch to agent to add entries (users can't add MEMORY entries)
+    # Switch to agent to add entries (users can't add CONTEXT entries)
     When I am authenticated as agent with API key "test-agent-key"
 
     # Add entries to the fork
@@ -173,12 +173,12 @@ Feature: Conversation Forking REST API
     Then the response status should be 201
     When I call POST "/v1/conversations/${forkConversationId}/entries" with body:
     """
-    {"channel": "MEMORY", "contentType": "test.v1", "content": [{"type": "text", "text": "F"}]}
+    {"channel": "CONTEXT", "contentType": "test.v1", "content": [{"type": "text", "text": "F"}]}
     """
     Then the response status should be 201
     When I call POST "/v1/conversations/${forkConversationId}/entries" with body:
     """
-    {"channel": "MEMORY", "contentType": "test.v1", "content": [{"type": "text", "text": "G"}]}
+    {"channel": "CONTEXT", "contentType": "test.v1", "content": [{"type": "text", "text": "G"}]}
     """
     Then the response status should be 201
     When I call POST "/v1/conversations/${forkConversationId}/entries" with body:
@@ -195,12 +195,12 @@ Feature: Conversation Forking REST API
     Then the response status should be 201
     When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
     """
-    {"channel": "MEMORY", "contentType": "test.v1", "content": [{"type": "text", "text": "J"}]}
+    {"channel": "CONTEXT", "contentType": "test.v1", "content": [{"type": "text", "text": "J"}]}
     """
     Then the response status should be 201
     When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
     """
-    {"channel": "MEMORY", "contentType": "test.v1", "content": [{"type": "text", "text": "K"}]}
+    {"channel": "CONTEXT", "contentType": "test.v1", "content": [{"type": "text", "text": "K"}]}
     """
     Then the response status should be 201
     When I call POST "/v1/conversations/${rootConversationId}/entries" with body:
@@ -250,9 +250,9 @@ Feature: Conversation Forking REST API
     And I have a conversation with title "Channel Fork Test"
     And set "rootConversationId" to "${conversationId}"
 
-    # Create entries with mixed channels: HISTORY, MEMORY, HISTORY
+    # Create entries with mixed channels: HISTORY, CONTEXT, HISTORY
     And the conversation has an entry "H1" in channel "HISTORY"
-    And the conversation has an entry "M1" in channel "MEMORY"
+    And the conversation has an entry "M1" in channel "CONTEXT"
     And the conversation has an entry "H2" in channel "HISTORY"
 
     # Get entry IDs (agent auth can see all channels)
@@ -304,7 +304,7 @@ Feature: Conversation Forking REST API
   # This reproduces the bug where syncAgentEntry() only checks the fork's own entries when
   # comparing content (ignoring inherited parent entries), causing it to treat ALL incoming
   # messages as new content and bundle them into one entry.
-  Scenario: Sync memory entries on forked conversation appends delta like parent
+  Scenario: Sync context entries on forked conversation appends delta like parent
     Given I am authenticated as agent with API key "test-agent-key"
     And I have a conversation with title "Root Conversation"
     And set "rootConversationId" to "${conversationId}"
@@ -322,7 +322,7 @@ Feature: Conversation Forking REST API
     When I call POST "/v1/conversations/${rootConversationId}/entries/sync" with body:
     """
     {
-      "channel": "MEMORY",
+      "channel": "CONTEXT",
       "contentType": "LC4J",
       "content": [{"type": "USER", "contents": [{"text": "Pick a number", "type": "TEXT"}]}]
     }
@@ -334,7 +334,7 @@ Feature: Conversation Forking REST API
     When I call POST "/v1/conversations/${rootConversationId}/entries/sync" with body:
     """
     {
-      "channel": "MEMORY",
+      "channel": "CONTEXT",
       "contentType": "LC4J",
       "content": [
         {"type": "USER", "contents": [{"text": "Pick a number", "type": "TEXT"}]},
@@ -352,8 +352,8 @@ Feature: Conversation Forking REST API
     """
     Then the response status should be 201
 
-    # Verify parent has 2 individual memory entries at epoch 1
-    When I call GET "/v1/conversations/${rootConversationId}/entries?channel=MEMORY&epoch=latest"
+    # Verify parent has 2 individual context entries at epoch 1
+    When I call GET "/v1/conversations/${rootConversationId}/entries?channel=CONTEXT&epoch=latest"
     Then the response status should be 200
     And the response should contain 2 entries
 
@@ -391,7 +391,7 @@ Feature: Conversation Forking REST API
     When I call POST "/v1/conversations/${forkConversationId}/entries/sync" with body:
     """
     {
-      "channel": "MEMORY",
+      "channel": "CONTEXT",
       "contentType": "LC4J",
       "content": [
         {"type": "USER", "contents": [{"text": "Pick a number", "type": "TEXT"}]},
@@ -404,7 +404,7 @@ Feature: Conversation Forking REST API
     And the response body field "epochIncremented" should be "false"
 
     # Verify: fork memory should have 3 entries (2 inherited + 1 new delta)
-    When I call GET "/v1/conversations/${forkConversationId}/entries?channel=MEMORY&epoch=latest"
+    When I call GET "/v1/conversations/${forkConversationId}/entries?channel=CONTEXT&epoch=latest"
     Then the response status should be 200
     And the response should contain 3 entries
     # The 3rd entry (index 2) is the fork's new entry — it should contain ONLY the delta
@@ -418,7 +418,7 @@ Feature: Conversation Forking REST API
     When I call POST "/v1/conversations/${forkConversationId}/entries/sync" with body:
     """
     {
-      "channel": "MEMORY",
+      "channel": "CONTEXT",
       "contentType": "LC4J",
       "content": [
         {"type": "USER", "contents": [{"text": "Pick a number", "type": "TEXT"}]},
@@ -432,7 +432,7 @@ Feature: Conversation Forking REST API
     And the response body field "epochIncremented" should be "false"
 
     # Final: fork memory should have 4 entries (2 inherited + 2 new deltas), all at epoch 1
-    When I call GET "/v1/conversations/${forkConversationId}/entries?channel=MEMORY&epoch=latest"
+    When I call GET "/v1/conversations/${forkConversationId}/entries?channel=CONTEXT&epoch=latest"
     Then the response status should be 200
     And the response should contain 4 entries
     # Verify each entry has exactly 1 content item (individual messages, not bundled)

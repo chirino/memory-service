@@ -88,7 +88,7 @@ Conversation forking allows you to create a new conversation branch from any poi
 - If you think that correcting or adding more context to a previous message would improve the response, you can fork the conversation at that message and add the new context to continue from that point instead of starting a fresh conversation.
 - Exploring alternative conversation paths
 
-### Can old memory epochs be safely deleted without breaking forks?
+### Can old context epochs be safely deleted without breaking forks?
 
 Not currently. Fork safety requires preserving fork ancestry, so per-entry/per-epoch eviction is not supported. Memory Service currently avoids this by keeping history and only allowing deletion at the conversation fork-tree level (delete one conversation in the tree, and the whole tree is deleted).
 
@@ -110,7 +110,7 @@ Memory Service uses vector embeddings to enable semantic search across all store
 
 ### Can multiple agents share conversations?
 
-Yes. Multiple agents can access the same conversation history, and agent memory is isolated per agent client identity (API key/client id).
+Yes. Multiple agents can access the same conversation history, and agent context is isolated per agent client identity (API key/client id).
 
 ### Can multiple agents overwrite each other's summaries?
 

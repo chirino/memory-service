@@ -242,7 +242,7 @@ export const $ShareConversationRequest = {
 export const $Channel = {
   type: "string",
   description: "Logical channel of the entry within the conversation.",
-  enum: ["history", "memory"],
+  enum: ["history", "context"],
 } as const;
 
 export const $PutMemoryRequest = {
@@ -669,9 +669,9 @@ For agent entries, this is the user the agent is responding to.`,
       type: "integer",
       format: "int64",
       nullable: true,
-      description: `Logical memory epoch this entry belongs to.
-For history entries this is typically null. For memory entries,
-the agent increments the epoch when starting a new memory version.`,
+      description: `Logical context epoch this entry belongs to.
+For history entries this is typically null. For context entries,
+the agent increments the epoch when starting a new context version.`,
     },
     contentType: {
       type: "string",
@@ -695,7 +695,7 @@ The content array for history entries contains objects with:
 - \`attachments\` (array, optional): Array of \`Attachment\` objects referencing external resources (images, audio, video, documents).
 
 Other contentTypes (e.g., \`"LC4J"\`, \`"SpringAI"\`) may be used for
-agent memory entries.`,
+agent context entries.`,
     },
     content: {
       type: "array",
@@ -774,7 +774,7 @@ The content array for history entries must contain exactly 1 object with:
 - \`attachments\` (array, optional): Array of \`Attachment\` objects referencing external resources (images, audio, video, documents).
 
 Other contentTypes (e.g., \`"LC4J"\`, \`"SpringAI"\`) may be used for
-agent memory entries.`,
+agent context entries.`,
     },
     content: {
       type: "array",
@@ -848,7 +848,7 @@ export const $SyncEntryResponse = {
       type: "integer",
       format: "int64",
       nullable: true,
-      description: "The epoch number that now reflects the stored memory state.",
+      description: "The epoch number that now reflects the stored context state.",
     },
     noOp: {
       type: "boolean",
@@ -872,13 +872,13 @@ export const $SyncEntryResponse = {
       id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
       conversationId: "550e8400-e29b-41d4-a716-446655440000",
       userId: "agent_memory",
-      channel: "memory",
+      channel: "context",
       epoch: 5,
       contentType: "LC4J",
       content: [
         {
           type: "text",
-          text: "First message in memory.",
+          text: "First message in context.",
         },
         {
           type: "text",

@@ -29,7 +29,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 /**
  * ChatMemoryRepository implementation backed by the Memory Service HTTP API.
  *
- * <p>This implementation stores Spring AI messages in the memory-service using the MEMORY channel.
+ * <p>This implementation stores Spring AI messages in the memory-service using the CONTEXT channel.
  * Messages are serialized to JSON with role and text fields for storage and deserialized back
  * to Spring AI Message objects on retrieval.
  */
@@ -54,7 +54,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
     @Override
     public List<String> findConversationIds() {
         // The memory-service API doesn't have a direct way to list all conversation IDs
-        // that have memory messages. This method is typically used for administrative purposes.
+        // that have context entries. This method is typically used for administrative purposes.
         // Return empty list as this is not directly supported.
         LOG.debug(
                 "findConversationIds called - returning empty list (not supported by"
@@ -75,7 +75,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
                                     UUID.fromString(conversationId),
                                     null,
                                     LIST_ENTRIES_LIMIT,
-                                    Channel.MEMORY,
+                                    Channel.CONTEXT,
                                     null,
                                     null)
                             .block();
@@ -135,7 +135,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
 
         try {
             conversationsApi()
-                    .syncConversationMemory(UUID.fromString(conversationId), syncEntry)
+                    .syncConversationContext(UUID.fromString(conversationId), syncEntry)
                     .block();
             LOG.debug(
                     "Successfully synced {} messages for conversationId={}",
@@ -159,26 +159,26 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         Objects.requireNonNull(conversationId, "conversationId");
         LOG.debug("deleteByConversationId called for conversationId={}", conversationId);
 
-        // Sync with empty content to clear memory by creating an empty epoch
+        // Sync with empty content to clear context by creating an empty epoch
         CreateEntryRequest syncEntry = new CreateEntryRequest();
-        syncEntry.setChannel(Channel.MEMORY);
+        syncEntry.setChannel(Channel.CONTEXT);
         syncEntry.setContentType("SpringAI");
         syncEntry.setContent(new ArrayList<>());
 
         try {
             conversationsApi()
-                    .syncConversationMemory(UUID.fromString(conversationId), syncEntry)
+                    .syncConversationContext(UUID.fromString(conversationId), syncEntry)
                     .block();
-            LOG.debug("Successfully cleared memory for conversationId={}", conversationId);
+            LOG.debug("Successfully cleared context for conversationId={}", conversationId);
         } catch (WebClientResponseException e) {
             LOG.warn(
-                    "Failed to clear memory for conversationId={}: {} {}",
+                    "Failed to clear context for conversationId={}: {} {}",
                     conversationId,
                     e.getStatusCode(),
                     e.getResponseBodyAsString());
             throw e;
         } catch (Exception e) {
-            LOG.warn("Failed to clear memory for conversationId={}", conversationId, e);
+            LOG.warn("Failed to clear context for conversationId={}", conversationId, e);
             throw e;
         }
     }
@@ -193,7 +193,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
      */
     private CreateEntryRequest toSyncEntryRequest(List<Message> messages) {
         CreateEntryRequest request = new CreateEntryRequest();
-        request.setChannel(Channel.MEMORY);
+        request.setChannel(Channel.CONTEXT);
         request.setContentType("SpringAI");
         // Don't send userId — the server resolves it from the Bearer token.
 

@@ -145,7 +145,7 @@ type Channel int32
 const (
 	Channel_CHANNEL_UNSPECIFIED Channel = 0
 	Channel_HISTORY             Channel = 1
-	Channel_MEMORY              Channel = 2
+	Channel_CONTEXT             Channel = 2
 )
 
 // Enum value maps for Channel.
@@ -153,12 +153,12 @@ var (
 	Channel_name = map[int32]string{
 		0: "CHANNEL_UNSPECIFIED",
 		1: "HISTORY",
-		2: "MEMORY",
+		2: "CONTEXT",
 	}
 	Channel_value = map[string]int32{
 		"CHANNEL_UNSPECIFIED": 0,
 		"HISTORY":             1,
-		"MEMORY":              2,
+		"CONTEXT":             2,
 	}
 )
 
@@ -1213,7 +1213,7 @@ type CreateEntryRequest struct {
 	//   - role (string): Either "USER" or "AI".
 	//
 	// Other content_types (e.g., "LC4J", "SpringAI") may be used for
-	// agent memory entries.
+	// agent context entries.
 	ContentType string `protobuf:"bytes,4,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
 	// For history channel entries (content_type: "history"), each block
 	// contains text and role fields.
@@ -1313,7 +1313,7 @@ type SyncEntriesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Conversation identifier (UUID as 16-byte big-endian binary)
 	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	// Single entry containing all messages in the agent's memory.
+	// Single entry containing all messages in the agent's context.
 	// The content array holds all messages; comparison is done against
 	// the flattened content of existing entries in the latest epoch.
 	Entry         *CreateEntryRequest `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
@@ -1634,7 +1634,7 @@ type Entry struct {
 	//   - role (string): Either "USER" or "AI".
 	//
 	// Other content_types (e.g., "LC4J", "SpringAI") may be used for
-	// agent memory entries.
+	// agent context entries.
 	ContentType string `protobuf:"bytes,6,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
 	// For history channel entries (content_type: "history"), each block
 	// contains text and role fields.
@@ -5237,12 +5237,11 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\n" +
 	"\x06WRITER\x10\x03\x12\n" +
 	"\n" +
-	"\x06READER\x10\x04*;\n" +
+	"\x06READER\x10\x04*<\n" +
 	"\aChannel\x12\x17\n" +
 	"\x13CHANNEL_UNSPECIFIED\x10\x00\x12\v\n" +
-	"\aHISTORY\x10\x01\x12\n" +
-	"\n" +
-	"\x06MEMORY\x10\x02*H\n" +
+	"\aHISTORY\x10\x01\x12\v\n" +
+	"\aCONTEXT\x10\x02*H\n" +
 	"\fTransferRole\x12\x1d\n" +
 	"\x19TRANSFER_ROLE_UNSPECIFIED\x10\x00\x12\n" +
 	"\n" +

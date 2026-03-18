@@ -57,12 +57,12 @@ Feature: Entries gRPC API
 
   Scenario: List entries with channel filter via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has an entry "Memory entry" in channel "MEMORY" with contentType "test.v1"
+    And the conversation has an entry "Memory entry" in channel "CONTEXT" with contentType "test.v1"
     And the conversation has an entry "History entry" in channel "HISTORY"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
     conversation_id: "${conversationId | uuid_to_hex_string}"
-    channel: MEMORY
+    channel: CONTEXT
     page {
       page_size: 10
     }
@@ -73,19 +73,19 @@ Feature: Entries gRPC API
     """
     entries {
       conversation_id: "${conversationId | uuid_to_hex_string}"
-      channel: MEMORY
+      channel: CONTEXT
       content_type: "test.v1"
     }
     """
 
-  Scenario: Agent can filter memory entries by epoch via gRPC
+  Scenario: Agent can filter context entries by epoch via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has a memory entry "Epoch One" with epoch 1 and contentType "test.v1"
-    And the conversation has a memory entry "Epoch Two" with epoch 2 and contentType "test.v1"
+    And the conversation has a context entry "Epoch One" with epoch 1 and contentType "test.v1"
+    And the conversation has a context entry "Epoch Two" with epoch 2 and contentType "test.v1"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
     conversation_id: "${conversationId | uuid_to_hex_string}"
-    channel: MEMORY
+    channel: CONTEXT
     epoch_filter: "1"
     page {
       page_size: 10
@@ -95,14 +95,14 @@ Feature: Entries gRPC API
     And the gRPC response should contain 1 entry
     And the gRPC response field "entries[0].content[0].text" should be "Epoch One"
 
-  Scenario: Sync memory entries via gRPC is no-op when there are no changes
+  Scenario: Sync context entries via gRPC is no-op when there are no changes
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has a memory entry "Stable gRPC epoch" with epoch 1 and contentType "test.v1"
+    And the conversation has a context entry "Stable gRPC epoch" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
     conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
-      channel: MEMORY
+      channel: CONTEXT
       content_type: "test.v1"
       content {
         struct_value {
@@ -128,14 +128,14 @@ Feature: Entries gRPC API
     And the gRPC response field "epochIncremented" should be false
     And the gRPC response should not have entry
 
-  Scenario: Sync memory entries via gRPC creates a new epoch when history diverges
+  Scenario: Sync context entries via gRPC creates a new epoch when history diverges
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has a memory entry "Original epoch entry" with epoch 1 and contentType "test.v1"
+    And the conversation has a context entry "Original epoch entry" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
     conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
-      channel: MEMORY
+      channel: CONTEXT
       content_type: "test.v1"
       content {
         string_value: "Updated epoch entry"
@@ -149,14 +149,14 @@ Feature: Entries gRPC API
     And the gRPC response should have entry
     And the gRPC response field "entry.content[0]" should be "Updated epoch entry"
 
-  Scenario: Sync memory entries via gRPC with empty content clears memory
+  Scenario: Sync context entries via gRPC with empty content clears memory
     Given I am authenticated as agent with API key "test-agent-key"
-    And the conversation has a memory entry "Memory to clear" with epoch 1 and contentType "test.v1"
+    And the conversation has a context entry "Memory to clear" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
     conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
-      channel: MEMORY
+      channel: CONTEXT
       content_type: "test.v1"
     }
     """
@@ -167,14 +167,14 @@ Feature: Entries gRPC API
     And the gRPC response should have entry
     And the gRPC response entry content should be empty
 
-  Scenario: Sync memory entries via gRPC with empty content is no-op when no existing memory
+  Scenario: Sync context entries via gRPC with empty content is no-op when no existing memory
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
     conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
-      channel: MEMORY
+      channel: CONTEXT
       content_type: "test.v1"
     }
     """
@@ -207,7 +207,7 @@ Feature: Entries gRPC API
     conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       user_id: "alice"
-      channel: MEMORY
+      channel: CONTEXT
       content_type: "test.v1"
       content {
         string_value: "Agent entry via gRPC"
@@ -217,14 +217,14 @@ Feature: Entries gRPC API
     Then the gRPC response should not have an error
     And the gRPC response field "id" should not be null
     And the gRPC response field "conversationId" should be "${conversationId}"
-    And the gRPC response field "channel" should be "MEMORY"
+    And the gRPC response field "channel" should be "CONTEXT"
     And the gRPC response field "contentType" should be "test.v1"
     And the gRPC response text should match text proto:
     """
     id: "${response.body.id | base64_to_hex_string}"
     conversation_id: "${conversationId | uuid_to_hex_string}"
     user_id: "alice"
-    channel: MEMORY
+    channel: CONTEXT
     content_type: "test.v1"
     content {
       string_value: "Agent entry via gRPC"
@@ -239,7 +239,7 @@ Feature: Entries gRPC API
     conversation_id: "${conversationId | uuid_to_hex_string}"
     entry {
       user_id: "alice"
-      channel: MEMORY
+      channel: CONTEXT
       content_type: "test.v1"
       content {
         string_value: "First part"
@@ -251,7 +251,7 @@ Feature: Entries gRPC API
     """
     Then the gRPC response should not have an error
     And the gRPC response field "id" should not be null
-    And the gRPC response field "channel" should be "MEMORY"
+    And the gRPC response field "channel" should be "CONTEXT"
     And the gRPC response field "contentType" should be "test.v1"
 
   Scenario: gRPC history channel entries must use 'history' or 'history/*' contentType

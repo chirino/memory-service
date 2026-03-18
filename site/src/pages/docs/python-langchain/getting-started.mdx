@@ -70,7 +70,7 @@ Checkpoint `02` is built from checkpoint `01` with three additions.
 
 **What changed**: `MemoryServiceCheckpointSaver()` is created and passed to `create_agent()` as `checkpointer=`.
 
-**Why**: Without a checkpointer, the LangChain agent is stateless — each call starts with an empty message list. The `MemoryServiceCheckpointSaver` persists the full message thread after every agent step to the Memory Service `memory` channel, keyed by `thread_id`. On the next call with the same `thread_id`, the agent loads that thread and continues the conversation where it left off.
+**Why**: Without a checkpointer, the LangChain agent is stateless — each call starts with an empty message list. The `MemoryServiceCheckpointSaver` persists the full message thread after every agent step to the Memory Service `context` channel, keyed by `thread_id`. On the next call with the same `thread_id`, the agent loads that thread and continues the conversation where it left off.
 
 `install_fastapi_authorization_middleware(app)` is also added. It reads the `Authorization: Bearer <token>` header from every request and stores it in a request-scoped context variable. The checkpointer automatically reads this token when making Memory Service API calls — you don't need to pass it explicitly.
 

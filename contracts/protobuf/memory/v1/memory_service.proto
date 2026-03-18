@@ -53,7 +53,7 @@ enum AccessLevel {
 enum Channel {
   CHANNEL_UNSPECIFIED = 0;
   HISTORY = 1;
-  MEMORY = 2;
+  CONTEXT = 2;
 }
 
 message ConversationSummary {
@@ -153,14 +153,14 @@ message ListForksResponse {
 message CreateEntryRequest {
   string user_id = 1;
   Channel channel = 2;
-  reserved 3; // epoch removed - server auto-calculates epoch for memory channel entries
+  reserved 3; // epoch removed - server auto-calculates epoch for context channel entries
   // Describes the schema/format of the content array.
   // History channel entries must use "history" as the content_type.
   // The content array for history entries must contain exactly 1 object with:
   //   - text (string): The message text.
   //   - role (string): Either "USER" or "AI".
   // Other content_types (e.g., "LC4J", "SpringAI") may be used for
-  // agent memory entries.
+  // agent context entries.
   string content_type = 4;
   // For history channel entries (content_type: "history"), each block
   // contains text and role fields.
@@ -178,7 +178,7 @@ message CreateEntryRequest {
 message SyncEntriesRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
-  // Single entry containing all messages in the agent's memory.
+  // Single entry containing all messages in the agent's context.
   // The content array holds all messages; comparison is done against
   // the flattened content of existing entries in the latest epoch.
   CreateEntryRequest entry = 2;
@@ -228,7 +228,7 @@ message Entry {
   //   - text (string): The message text.
   //   - role (string): Either "USER" or "AI".
   // Other content_types (e.g., "LC4J", "SpringAI") may be used for
-  // agent memory entries.
+  // agent context entries.
   string content_type = 6;
   // For history channel entries (content_type: "history"), each block
   // contains text and role fields.

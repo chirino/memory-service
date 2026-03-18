@@ -23,13 +23,13 @@ func EntriesCacheFromContext(ctx context.Context) MemoryEntriesCache {
 	return c
 }
 
-// CachedMemoryEntries holds cached memory entries for a conversation/client pair.
+// CachedMemoryEntries holds cached context entries for a conversation/client pair.
 type CachedMemoryEntries struct {
 	Entries []model.Entry
 	Epoch   *int64
 }
 
-// MemoryEntriesCache caches memory entries for sync operations.
+// MemoryEntriesCache caches context entries for sync operations.
 type MemoryEntriesCache interface {
 	Available() bool
 	Get(ctx context.Context, conversationID uuid.UUID, clientID string) (*CachedMemoryEntries, error)

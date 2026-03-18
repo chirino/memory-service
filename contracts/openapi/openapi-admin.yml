@@ -1448,7 +1448,7 @@ components:
       description: Logical channel of the entry within the conversation.
       enum:
         - history
-        - memory
+        - context
 
     Entry:
       type: object

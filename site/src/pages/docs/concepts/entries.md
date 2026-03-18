@@ -13,7 +13,7 @@ Entries are organized into logical channels within a conversation:
 | Channel      | Description                                               |
 | ------------ | --------------------------------------------------------- |
 | `history`    | User-visible conversation between users and agents        |
-| `memory`     | Agent memory entries, scoped to the calling client ID     |
+| `context`    | Agent context entries, scoped to the calling client ID    |
 | `transcript` | Transcript index entries (not visible in agent API lists) |
 
 ## Entry Structure
@@ -38,16 +38,16 @@ Each entry contains:
 }
 ```
 
-| Property         | Description                                         |
-| ---------------- | --------------------------------------------------- |
-| `id`             | Unique entry identifier                             |
-| `conversationId` | ID of the parent conversation                       |
-| `userId`         | Human user associated with the entry                |
-| `channel`        | Logical channel (`history`, `memory`, `transcript`) |
-| `contentType`    | Type of content (e.g., `history`, `history/lc4j`)   |
-| `epoch`          | Memory epoch number (for `memory` channel entries)  |
-| `content`        | Array of content blocks (opaque, agent-defined)     |
-| `createdAt`      | Creation timestamp                                  |
+| Property         | Description                                          |
+| ---------------- | ---------------------------------------------------- |
+| `id`             | Unique entry identifier                              |
+| `conversationId` | ID of the parent conversation                        |
+| `userId`         | Human user associated with the entry                 |
+| `channel`        | Logical channel (`history`, `context`, `transcript`) |
+| `contentType`    | Type of content (e.g., `history`, `history/lc4j`)    |
+| `epoch`          | Memory epoch number (for `context` channel entries)  |
+| `content`        | Array of content blocks (opaque, agent-defined)      |
+| `createdAt`      | Creation timestamp                                   |
 
 ## Adding Entries
 
@@ -111,15 +111,15 @@ Query parameters:
 - `limit` - Maximum entries to return (default: 50)
 - `after` - Cursor for pagination (entry ID)
 - `channel` - Filter by channel: `history` (default), `memory`, or `transcript`
-- `epoch` - For `memory` channel: `latest`, `all`, or a specific epoch number
+- `epoch` - For `context` channel: `latest`, `all`, or a specific epoch number
 
-## Memory Epochs
+## Context Epochs
 
-Memory epochs provide a versioning mechanism for agent memory that enables auditability and historical inspection of the agent's state at any point in time.
+Context epochs provide a versioning mechanism for agent context that enables auditability and historical inspection of the agent's state at any point in time.
 
 ### How Epochs Work
 
-When an agent stores entries in the `memory` channel, each entry is tagged with an epoch number. Most updates to agent memory simply add new entries to the current epoch. However, when an agent performs a **compaction** operation—where it resets or summarizes previous entries to reduce context size—the new entries are stored in the next epoch.
+When an agent stores entries in the `context` channel, each entry is tagged with an epoch number. Most updates to agent context simply add new entries to the current epoch. However, when an agent performs a **compaction** operation, where it resets or summarizes previous entries to reduce context size, the new entries are stored in the next epoch.
 
 ```
 Epoch 0: [entry1, entry2, entry3, entry4, entry5]
@@ -141,13 +141,13 @@ You can query entries from different epochs using the `epoch` parameter:
 
 ```bash
 # Get latest epoch only (what the agent currently uses)
-curl "http://localhost:8080/v1/conversations/{id}/entries?channel=memory&epoch=latest"
+curl "http://localhost:8080/v1/conversations/{id}/entries?channel=context&epoch=latest"
 
 # Get all entries across all epochs (full audit trail)
-curl "http://localhost:8080/v1/conversations/{id}/entries?channel=memory&epoch=all"
+curl "http://localhost:8080/v1/conversations/{id}/entries?channel=context&epoch=all"
 
 # Get entries from a specific epoch
-curl "http://localhost:8080/v1/conversations/{id}/entries?channel=memory&epoch=0"
+curl "http://localhost:8080/v1/conversations/{id}/entries?channel=context&epoch=0"
 ```
 
 ### Auditability and Time Travel
@@ -156,25 +156,25 @@ The epoch system provides important benefits for observability and compliance:
 
 - **Full Audit Trail**: By querying with `epoch=all`, you can see every entry the agent ever stored, including those that were later compacted or summarized. Nothing is ever deleted.
 
-- **Point-in-Time Inspection**: You can inspect exactly what the agent's memory looked like at any historical epoch. This is valuable for debugging agent behavior or understanding why the agent made certain decisions.
+- **Point-in-Time Inspection**: You can inspect exactly what the agent's context looked like at any historical epoch. This is valuable for debugging agent behavior or understanding why the agent made certain decisions.
 
-- **Compaction Transparency**: When an agent summarizes or compacts its memory, both the original detailed entries (in earlier epochs) and the summarized version (in the new epoch) are preserved. You can compare them to verify that compaction preserved essential information.
+- **Compaction Transparency**: When an agent summarizes or compacts its context, both the original detailed entries (in earlier epochs) and the summarized version (in the new epoch) are preserved. You can compare them to verify that compaction preserved essential information.
 
 - **Compliance Requirements**: For applications requiring audit trails, epochs ensure that even after memory optimizations, the complete history remains accessible for review.
 
-### Example: Inspecting Agent Memory Evolution
+### Example: Inspecting Agent Context Evolution
 
 ```bash
-# See the agent's current working memory
-curl "...?channel=memory&epoch=latest"
+# See the agent's current working context
+curl "...?channel=context&epoch=latest"
 # Returns: [summary_of_early_conversation, recent_entry1, recent_entry2]
 
-# Investigate what was in the original detailed memory
-curl "...?channel=memory&epoch=0"
+# Investigate what was in the original detailed context
+curl "...?channel=context&epoch=0"
 # Returns: [detailed_entry1, detailed_entry2, ..., detailed_entry50]
 
 # Get the complete picture across all compactions
-curl "...?channel=memory&epoch=all"
+curl "...?channel=context&epoch=all"
 # Returns: [detailed_entry1, ..., detailed_entry50, summary, recent_entry1, recent_entry2]
 ```
 

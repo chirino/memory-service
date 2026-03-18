@@ -98,7 +98,7 @@ func TestOversizedEntryIsSkipped(t *testing.T) {
 		Entries: []model.Entry{{
 			ID:             uuid.New(),
 			ConversationID: conversationID,
-			Channel:        model.ChannelMemory,
+			Channel:        model.ChannelContext,
 			ContentType:    "test.v1",
 			Content:        []byte(`["this payload is intentionally much larger than sixty four bytes"]`),
 		}},
@@ -117,7 +117,7 @@ func sampleEntries() registrycache.CachedMemoryEntries {
 		Entries: []model.Entry{{
 			ID:             uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 			ConversationID: uuid.MustParse("22222222-2222-2222-2222-222222222222"),
-			Channel:        model.ChannelMemory,
+			Channel:        model.ChannelContext,
 			ContentType:    "test.v1",
 			Content:        []byte(`[{"type":"text","text":"hello"}]`),
 		}},

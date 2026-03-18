@@ -37,7 +37,7 @@ Feature: API Field Validation
     """
     {
       "contentType": "memory",
-      "channel": "MEMORY",
+      "channel": "CONTEXT",
       "content": ${bigContent}
     }
     """
