@@ -56,6 +56,10 @@ type sqliteEpisodicStore struct {
 	qdrant *episodicqdrant.Client
 }
 
+func (e *sqliteEpisodicStore) localVectorEnabled() bool {
+	return e != nil && e.handle != nil && e.handle.vecEnabled
+}
+
 func (e *sqliteEpisodicStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
 	return e.handle.InReadTx(ctx, fn)
 }
@@ -476,6 +480,9 @@ func (e *sqliteEpisodicStore) UpsertMemoryVectors(ctx context.Context, items []r
 	if e.qdrant != nil {
 		return e.qdrant.UpsertMemoryVectors(ctx, items)
 	}
+	if !e.localVectorEnabled() {
+		return nil
+	}
 	tx := e.writeDBFor(ctx, "sqlite episodic store upsert memory vectors")
 	for _, item := range items {
 		vectorBlob, err := vec.SerializeFloat32(item.Embedding)
@@ -507,6 +514,9 @@ func (e *sqliteEpisodicStore) DeleteMemoryVectors(ctx context.Context, memoryID 
 	if e.qdrant != nil {
 		return e.qdrant.DeleteMemoryVectors(ctx, memoryID)
 	}
+	if !e.localVectorEnabled() {
+		return nil
+	}
 	return e.writeDBFor(ctx, "sqlite episodic store delete memory vectors").Exec(
 		"DELETE FROM memory_vectors WHERE memory_id = ?", memoryID,
 	).Error
@@ -518,7 +528,7 @@ func (e *sqliteEpisodicStore) SearchMemoryVectors(ctx context.Context, namespace
 	if e.qdrant != nil {
 		return e.qdrant.SearchMemoryVectors(ctx, namespacePrefix, embedding, filter, limit)
 	}
-	if limit <= 0 {
+	if !e.localVectorEnabled() || limit <= 0 {
 		return nil, nil
 	}
 	queryVector, err := vec.SerializeFloat32(embedding)

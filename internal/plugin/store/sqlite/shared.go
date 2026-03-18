@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	sqlitevec "github.com/asg017/sqlite-vec-go-bindings/cgo"
+	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/txscope"
 	gormsqlite "gorm.io/driver/sqlite"
@@ -17,9 +20,16 @@ import (
 )
 
 type sharedHandle struct {
-	db      *gorm.DB
-	sqlDB   *sql.DB
-	writeMu sync.Mutex
+	db          *gorm.DB
+	sqlDB       *sql.DB
+	writeMu     sync.Mutex
+	fts5Enabled bool
+	vecEnabled  bool
+}
+
+type Capabilities struct {
+	FTS5Enabled bool
+	VecEnabled  bool
 }
 
 type scope struct {
@@ -71,7 +81,22 @@ func SharedDB(ctx context.Context) (*gorm.DB, *sql.DB, error) {
 	return handle.db, handle.sqlDB, nil
 }
 
+func SharedCapabilities(ctx context.Context) (Capabilities, error) {
+	handle, err := getSharedHandle(ctx)
+	if err != nil {
+		return Capabilities{}, err
+	}
+	return Capabilities{
+		FTS5Enabled: handle.fts5Enabled,
+		VecEnabled:  handle.vecEnabled,
+	}, nil
+}
+
 func openSharedHandle(cfg *config.Config) (*sharedHandle, error) {
+	if err := ensureSQLiteDBParentDir(cfg); err != nil {
+		return nil, err
+	}
+
 	sqlitevec.Auto()
 
 	db, err := gorm.Open(gormsqlite.Dialector{
@@ -91,7 +116,28 @@ func openSharedHandle(cfg *config.Config) (*sharedHandle, error) {
 	sqlDB.SetMaxOpenConns(8)
 	sqlDB.SetMaxIdleConns(4)
 
-	return &sharedHandle{db: db, sqlDB: sqlDB}, nil
+	fts5Enabled, err := detectFTS5Support(context.Background(), sqlDB)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: detect fts5 support: %w", err)
+	}
+	if !fts5Enabled {
+		log.Warn("SQLite FTS5 extension unavailable; full-text search disabled")
+	}
+
+	vecEnabled, err := detectVecSupport(context.Background(), sqlDB)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: detect vector support: %w", err)
+	}
+	if !vecEnabled && strings.EqualFold(strings.TrimSpace(cfg.VectorType), "sqlite") {
+		log.Warn("SQLite vector extension unavailable; semantic/vector search disabled")
+	}
+
+	return &sharedHandle{
+		db:          db,
+		sqlDB:       sqlDB,
+		fts5Enabled: fts5Enabled,
+		vecEnabled:  vecEnabled,
+	}, nil
 }
 
 func sqliteRuntimeDSN(dsn string) string {
@@ -123,6 +169,71 @@ func setDefaultSQLiteParam(values url.Values, key, value string) {
 		return
 	}
 	values.Set(key, value)
+}
+
+func ensureSQLiteDBParentDir(cfg *config.Config) error {
+	if cfg == nil {
+		return nil
+	}
+
+	dbPath, err := cfg.SQLiteFilePath()
+	if err != nil {
+		if strings.Contains(err.Error(), "not file-backed") {
+			return nil
+		}
+		return fmt.Errorf("sqlite: resolve database path: %w", err)
+	}
+
+	parentDir := filepath.Dir(dbPath)
+	if parentDir == "" || parentDir == "." {
+		return nil
+	}
+	if err := os.MkdirAll(parentDir, 0o700); err != nil {
+		return fmt.Errorf("sqlite: create database directory %q: %w", parentDir, err)
+	}
+	return nil
+}
+
+type sqliteExecContexter interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+}
+
+func detectFTS5Support(ctx context.Context, db sqliteExecContexter) (bool, error) {
+	const probeTable = "__memory_service_fts5_probe"
+	if _, err := db.ExecContext(ctx, "CREATE VIRTUAL TABLE temp."+probeTable+" USING fts5(content)"); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such module: fts5") {
+			return false, nil
+		}
+		return false, err
+	}
+	if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS temp."+probeTable); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func detectVecSupport(ctx context.Context, db sqliteExecContexter) (bool, error) {
+	const probeTable = "__memory_service_vec_probe"
+	probeVector, err := sqlitevec.SerializeFloat32([]float32{0})
+	if err != nil {
+		return false, err
+	}
+	if _, err := db.ExecContext(ctx, "CREATE TEMP TABLE IF NOT EXISTS "+probeTable+" (score REAL)"); err != nil {
+		return false, err
+	}
+	defer func() {
+		_, _ = db.ExecContext(ctx, "DROP TABLE IF EXISTS temp."+probeTable)
+	}()
+	if _, err := db.ExecContext(ctx, "DELETE FROM temp."+probeTable); err != nil {
+		return false, err
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO temp."+probeTable+"(score) VALUES (vec_distance_cosine(?, ?))", probeVector, probeVector); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such function: vec_distance_cosine") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func withScope(ctx context.Context, db *gorm.DB, intent txscope.Intent) context.Context {

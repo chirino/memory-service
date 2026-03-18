@@ -30,6 +30,9 @@ func TestSQLiteVectorStoreRoundTrip(t *testing.T) {
 
 	store, err := load(ctx)
 	require.NoError(t, err)
+	if !store.IsEnabled() {
+		t.Skip("sqlite vector extension unavailable in this build")
+	}
 
 	groupID := uuid.New()
 	conversationID := uuid.New()
@@ -62,4 +65,22 @@ func TestSQLiteVectorStoreRoundTrip(t *testing.T) {
 	results, err = store.Search(ctx, []float32{1, 0, 0}, []uuid.UUID{groupID}, 2)
 	require.NoError(t, err)
 	require.Len(t, results, 0)
+}
+
+func TestDisabledSQLiteVectorStoreNoOps(t *testing.T) {
+	t.Parallel()
+
+	store := &Store{enabled: false}
+
+	results, err := store.Search(context.Background(), []float32{1, 0}, []uuid.UUID{uuid.New()}, 10)
+	require.NoError(t, err)
+	require.Empty(t, results)
+	require.NoError(t, store.Upsert(context.Background(), []registryvector.UpsertRequest{{
+		ConversationGroupID: uuid.New(),
+		ConversationID:      uuid.New(),
+		EntryID:             uuid.New(),
+		Embedding:           []float32{1, 0},
+		ModelName:           "test",
+	}}))
+	require.NoError(t, store.DeleteByConversationGroupID(context.Background(), uuid.New()))
 }
