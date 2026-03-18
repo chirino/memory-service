@@ -7,12 +7,14 @@ import { fileURLToPath } from "node:url";
 type HistoryRole = "USER" | "AI";
 const MAX_MESSAGES_PER_MEMORY_ENTRY = 100;
 
-type MemoryServiceProxyOptions = {
-  baseUrl?: string;
+export type MemoryServiceConfig = {
+  baseUrl: string;
+  apiKey: string;
   unixSocket?: string;
-  apiKey?: string;
   authorization?: string | null;
+  grpcTarget?: string;
 };
+type MemoryServiceProxyOptions = MemoryServiceConfig;
 
 type ListEntriesOptions = {
   afterCursor?: string | null;
@@ -27,11 +29,7 @@ const memoryServiceDispatchers = new Map<string, Dispatcher>();
 function resolveMemoryServiceUnixSocket(
   unixSocket?: string,
 ): string | undefined {
-  const candidate = (
-    unixSocket ??
-    process.env.MEMORY_SERVICE_UNIX_SOCKET ??
-    ""
-  ).trim();
+  const candidate = (unixSocket ?? "").trim();
   if (!candidate) {
     return undefined;
   }
@@ -41,15 +39,14 @@ function resolveMemoryServiceUnixSocket(
   return candidate;
 }
 
-function memoryServiceBaseUrl(baseUrl?: string, unixSocket?: string): string {
-  if (resolveMemoryServiceUnixSocket(unixSocket)) {
+function resolveMemoryServiceBaseUrl(
+  baseUrl: string,
+  unixSocket?: string,
+): string {
+  if (unixSocket) {
     return "http://localhost";
   }
-  return (
-    baseUrl ??
-    process.env.MEMORY_SERVICE_URL ??
-    "http://localhost:8082"
-  ).replace(/\/$/, "");
+  return baseUrl.replace(/\/$/, "");
 }
 
 function memoryServiceDispatcher(unixSocket?: string): Dispatcher | undefined {
@@ -70,8 +67,69 @@ function memoryServiceDispatcher(unixSocket?: string): Dispatcher | undefined {
   return created;
 }
 
-function memoryServiceApiKey(apiKey?: string): string {
-  return apiKey ?? process.env.MEMORY_SERVICE_API_KEY ?? "agent-api-key-1";
+function resolveMemoryServiceGrpcTarget(
+  config: Pick<MemoryServiceConfig, "baseUrl" | "unixSocket" | "grpcTarget">,
+): string {
+  if (config.grpcTarget?.trim()) {
+    return config.grpcTarget.trim();
+  }
+  const unixSocket = resolveMemoryServiceUnixSocket(config.unixSocket);
+  if (unixSocket) {
+    return `unix://${unixSocket}`;
+  }
+  const baseUrl = resolveMemoryServiceBaseUrl(config.baseUrl, unixSocket);
+  try {
+    const parsed = new URL(baseUrl);
+    const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+    return `${parsed.hostname}:${port}`;
+  } catch {
+    return baseUrl;
+  }
+}
+
+function normalizeMemoryServiceConfig(
+  config: MemoryServiceConfig,
+): MemoryServiceConfig & { unixSocket?: string; grpcTarget: string } {
+  const unixSocket = resolveMemoryServiceUnixSocket(config.unixSocket);
+  const baseUrl = resolveMemoryServiceBaseUrl(config.baseUrl, unixSocket);
+  return {
+    ...config,
+    baseUrl,
+    unixSocket,
+    grpcTarget: resolveMemoryServiceGrpcTarget({
+      baseUrl,
+      unixSocket,
+      grpcTarget: config.grpcTarget,
+    }),
+  };
+}
+
+export function memoryServiceConfigFromEnv(
+  overrides: Partial<MemoryServiceConfig> = {},
+): MemoryServiceConfig {
+  const unixSocket = resolveMemoryServiceUnixSocket(
+    overrides.unixSocket ?? process.env.MEMORY_SERVICE_UNIX_SOCKET,
+  );
+  const baseUrl = resolveMemoryServiceBaseUrl(
+    overrides.baseUrl ??
+      process.env.MEMORY_SERVICE_URL ??
+      "http://localhost:8082",
+    unixSocket,
+  );
+  const grpcTarget =
+    overrides.grpcTarget ??
+    process.env.MEMORY_SERVICE_GRPC_TARGET ??
+    resolveMemoryServiceGrpcTarget({
+      baseUrl,
+      unixSocket,
+    });
+  return {
+    baseUrl,
+    apiKey: overrides.apiKey ?? process.env.MEMORY_SERVICE_API_KEY ?? "",
+    unixSocket,
+    authorization: overrides.authorization,
+    grpcTarget,
+  };
 }
 
 function compactQuery(
@@ -89,11 +147,12 @@ function compactQuery(
 function memoryServiceHeaders(
   options: MemoryServiceProxyOptions,
 ): Record<string, string> {
+  const config = normalizeMemoryServiceConfig(options);
   const headers: Record<string, string> = {
-    "X-API-Key": memoryServiceApiKey(options.apiKey),
+    "X-API-Key": config.apiKey,
   };
-  if (options.authorization) {
-    headers.Authorization = options.authorization;
+  if (config.authorization) {
+    headers.Authorization = config.authorization;
   }
   return headers;
 }
@@ -106,8 +165,9 @@ async function memoryServiceRequest(
     contentType?: string;
   },
 ): Promise<Response> {
-  const url = `${memoryServiceBaseUrl(options.baseUrl, options.unixSocket)}${path}`;
-  const headers = memoryServiceHeaders(options);
+  const config = normalizeMemoryServiceConfig(options);
+  const url = `${config.baseUrl}${path}`;
+  const headers = memoryServiceHeaders(config);
   if (options.contentType) {
     headers["Content-Type"] = options.contentType;
   }
@@ -121,7 +181,7 @@ async function memoryServiceRequest(
           ? options.body
           : JSON.stringify(options.body),
   };
-  const dispatcher = memoryServiceDispatcher(options.unixSocket);
+  const dispatcher = memoryServiceDispatcher(config.unixSocket);
   if (dispatcher) {
     init.dispatcher = dispatcher;
   }
@@ -169,17 +229,19 @@ export async function withProxy(
     setHeader: (n: string, v: string) => any;
     send: (b: any) => any;
   },
+  config: MemoryServiceConfig,
   call: (
     proxy: ReturnType<typeof createMemoryServiceProxy>,
   ) => Promise<Response>,
 ): Promise<void> {
   const proxy = createMemoryServiceProxy({
+    ...config,
     authorization: req.header("authorization") ?? null,
   });
   await relayResponse(res, await call(proxy));
 }
 
-function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
+export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
   return {
     getConversation(conversationId: string): Promise<Response> {
       return memoryServiceRequest(
@@ -565,25 +627,6 @@ async function hasGrpcDependencies(): Promise<boolean> {
   return grpcDependenciesAvailable;
 }
 
-function resolveGrpcTarget(): string {
-  const explicit = process.env.MEMORY_SERVICE_GRPC_TARGET;
-  if (explicit) {
-    return explicit;
-  }
-  const unixSocket = resolveMemoryServiceUnixSocket();
-  if (unixSocket) {
-    return `unix://${unixSocket}`;
-  }
-  const base = process.env.MEMORY_SERVICE_URL ?? "http://localhost:8082";
-  try {
-    const parsed = new URL(base);
-    const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
-    return `${parsed.hostname}:${port}`;
-  } catch {
-    return base;
-  }
-}
-
 function uuidToBytes(uuid: string): Buffer {
   const hex = uuid.replace(/-/g, "");
   if (!/^[0-9a-fA-F]{32}$/.test(hex)) {
@@ -629,10 +672,19 @@ async function loadResponseRecorderService(): Promise<{
   return responseRecorderServicePromise;
 }
 
-async function createResponseRecorderClient(target?: string): Promise<any> {
+async function createResponseRecorderClient(
+  config: Pick<MemoryServiceConfig, "baseUrl" | "unixSocket" | "grpcTarget">,
+  target?: string,
+): Promise<any> {
   const { grpc, ResponseRecorderService } = await loadResponseRecorderService();
+  const normalized = normalizeMemoryServiceConfig({
+    baseUrl: config.baseUrl,
+    apiKey: "",
+    unixSocket: config.unixSocket,
+    grpcTarget: config.grpcTarget,
+  });
   return new ResponseRecorderService(
-    target ?? resolveGrpcTarget(),
+    target ?? normalized.grpcTarget,
     grpc.credentials.createInsecure(),
   );
 }
@@ -1059,7 +1111,7 @@ export async function withMemoryService<T>(
     ? await (async () => {
         try {
           return new GrpcConversationRecorder(
-            await createResponseRecorderClient(),
+            await createResponseRecorderClient(options),
             options.conversationId,
           );
         } catch {
@@ -1321,6 +1373,7 @@ async function loadMessagesFromChannel(
 const MAX_RESPONSE_RECORDER_REDIRECTS = 5;
 
 async function replayFromTarget(
+  config: Pick<MemoryServiceConfig, "baseUrl" | "unixSocket" | "grpcTarget">,
   conversationId: string,
   target?: string,
   redirects = 0,
@@ -1328,7 +1381,7 @@ async function replayFromTarget(
   if (redirects > MAX_RESPONSE_RECORDER_REDIRECTS) {
     throw new Error("too many response recorder redirects");
   }
-  const client = await createResponseRecorderClient(target);
+  const client = await createResponseRecorderClient(config, target);
   return new Promise<string[]>((resolve, reject) => {
     const chunks: string[] = [];
     let redirectAddress: string | null = null;
@@ -1353,6 +1406,7 @@ async function replayFromTarget(
         try {
           resolve(
             await replayFromTarget(
+              config,
               conversationId,
               redirectAddress,
               redirects + 1,
@@ -1400,6 +1454,7 @@ async function* replayChunksAsEvents(chunks: string[]): AsyncIterable<unknown> {
 }
 
 async function cancelFromTarget(
+  config: Pick<MemoryServiceConfig, "baseUrl" | "unixSocket" | "grpcTarget">,
   conversationId: string,
   target?: string,
   redirects = 0,
@@ -1407,7 +1462,7 @@ async function cancelFromTarget(
   if (redirects > MAX_RESPONSE_RECORDER_REDIRECTS) {
     throw new Error("too many response recorder redirects");
   }
-  const client = await createResponseRecorderClient(target);
+  const client = await createResponseRecorderClient(config, target);
   const response = await grpcUnary<any>(client, "Cancel", {
     conversation_id: uuidToBytes(conversationId),
   });
@@ -1416,6 +1471,7 @@ async function cancelFromTarget(
     response.redirect_address
   ) {
     await cancelFromTarget(
+      config,
       conversationId,
       response.redirect_address,
       redirects + 1,
@@ -1424,12 +1480,13 @@ async function cancelFromTarget(
 }
 
 export async function memoryServiceResumeCheck(
+  config: MemoryServiceConfig,
   conversationIds: string[],
 ): Promise<string[]> {
   if (!(await hasGrpcDependencies())) {
     return [];
   }
-  const client = await createResponseRecorderClient();
+  const client = await createResponseRecorderClient(config);
   const response = await grpcUnary<any>(client, "CheckRecordings", {
     conversation_ids: conversationIds.map(uuidToBytes),
   });
@@ -1439,16 +1496,18 @@ export async function memoryServiceResumeCheck(
 }
 
 export async function* memoryServiceReplay(
+  config: MemoryServiceConfig,
   conversationId: string,
 ): AsyncIterable<unknown> {
   if (!(await hasGrpcDependencies())) {
     return;
   }
-  const chunks = await replayFromTarget(conversationId);
+  const chunks = await replayFromTarget(config, conversationId);
   yield* replayChunksAsEvents(chunks);
 }
 
 export async function memoryServiceCancel(
+  config: MemoryServiceConfig,
   conversationId: string,
 ): Promise<void> {
   const active = activeResponseStates.get(conversationId);
@@ -1458,5 +1517,5 @@ export async function memoryServiceCancel(
   if (!(await hasGrpcDependencies())) {
     return;
   }
-  await cancelFromTarget(conversationId);
+  await cancelFromTarget(config, conversationId);
 }

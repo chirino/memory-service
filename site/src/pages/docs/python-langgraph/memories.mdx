@@ -73,7 +73,7 @@ The bearer token is forwarded from each incoming `Authorization` header — no s
 
 <CodeFromFile file="python/examples/langgraph/doc-checkpoints/30-memories/app.py" lang="python" lines="36-68" />
 
-**What changed**: `call_model` becomes `async` and accepts a second `config: RunnableConfig` argument. It extracts `user_id` and `token` from `config["configurable"]`, builds a namespace `("user", user_id, "memories")`, then uses `AsyncMemoryServiceStore(token=token)` as an async context manager to recall memories before the model call and save the user's message as a new memory afterward.
+**What changed**: `call_model` becomes `async` and accepts a second `config: RunnableConfig` argument. It extracts `user_id` and `token` from `config["configurable"]`, builds a namespace `("user", user_id, "memories")`, then uses `AsyncMemoryServiceStore.from_env(token=token)` as an async context manager to recall memories before the model call and save the user's message as a new memory afterward.
 
 **Why**: Making the node `async` allows `await store.asearch(...)` and `await store.aput(...)` without blocking the event loop. The namespace isolates each user's memories from every other user's. Recalling memories before building the `messages` list lets the system prompt include personalized context that carries across conversations.
 

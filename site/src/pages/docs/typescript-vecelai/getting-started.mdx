@@ -70,14 +70,14 @@ Checkpoint `02` is built from checkpoint `01` with three additions.
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/02-with-memory/src/app.ts"
   lang="typescript"
-  match='import { withMemoryService } from "@chirino/memory-service-vercelai";'
+  match="memoryServiceConfigFromEnv,"
   before={0}
-  after={0}
+  after={5}
 />
 
-**What changed**: The checkpoint imports `withMemoryService(...)` from `@chirino/memory-service-vercelai`.
+**What changed**: The checkpoint imports `memoryServiceConfigFromEnv(...)` and `withMemoryService(...)` from `@chirino/memory-service-vercelai`, then creates a shared `memoryServiceConfig`.
 
-**Why needed**: This helper manages memory/history persistence around your model call so app code stays focused on chat behavior.
+**Why needed**: `memoryServiceConfigFromEnv(...)` keeps env lookups in one explicit place, while `withMemoryService(...)` manages memory/history persistence around your model call so app code stays focused on chat behavior.
 
 The endpoint also forwards `Authorization: Bearer ...` to Memory Service calls so access control remains user-scoped.
 

@@ -66,8 +66,8 @@ model = ChatOpenAI(
     streaming=True,
 )
 
-checkpointer = MemoryServiceCheckpointSaver()
-history_middleware = MemoryServiceHistoryMiddleware(
+checkpointer = MemoryServiceCheckpointSaver.from_env()
+history_middleware = MemoryServiceHistoryMiddleware.from_env(
     indexed_content_provider=pass_through_indexed_content,
 )
 
@@ -91,8 +91,8 @@ app = FastAPI(title="Python LangGraph Chat Example")
 async def ready() -> dict[str, str]:
     return {"status": "ok"}
 install_fastapi_authorization_middleware(app, validate_jwt=False)
-proxy = MemoryServiceProxy()
-recording_manager = MemoryServiceResponseRecordingManager()
+proxy = MemoryServiceProxy.from_env()
+recording_manager = MemoryServiceResponseRecordingManager.from_env()
 LOG.info("chat response memory-service integration enabled")
 
 def find_repo_root(start: Path) -> Path:

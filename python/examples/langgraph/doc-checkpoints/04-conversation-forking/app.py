@@ -27,8 +27,8 @@ model = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY", "not-needed-for-tests"),
 )
 
-checkpointer = MemoryServiceCheckpointSaver()
-history_middleware = MemoryServiceHistoryMiddleware()
+checkpointer = MemoryServiceCheckpointSaver.from_env()
+history_middleware = MemoryServiceHistoryMiddleware.from_env()
 
 
 def call_model(state: MessagesState) -> dict:
@@ -50,7 +50,7 @@ app = FastAPI(title="LangGraph Chatbot with Conversation Forking")
 async def ready() -> dict[str, str]:
     return {"status": "ok"}
 install_fastapi_authorization_middleware(app)
-proxy = MemoryServiceProxy()
+proxy = MemoryServiceProxy.from_env()
 
 
 @app.post("/chat/{conversation_id}")

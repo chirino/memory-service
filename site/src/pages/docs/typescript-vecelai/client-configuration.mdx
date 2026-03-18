@@ -63,12 +63,12 @@ const config = memoryServiceConfigFromEnv({
 
 ## Environment Variable Reference
 
-| Variable | Description | Default |
-|---|---|---|
-| `MEMORY_SERVICE_URL` | Base URL for REST API calls | `http://localhost:8082` |
-| `MEMORY_SERVICE_UNIX_SOCKET` | Absolute path to a Unix domain socket (overrides URL for transport) | _(none)_ |
-| `MEMORY_SERVICE_API_KEY` | API key sent in the `x-api-key` header for agent authentication | _(none — must be set)_ |
-| `MEMORY_SERVICE_GRPC_TARGET` | Explicit gRPC target (e.g. `host:port` or `unix:///path`) | Derived from `MEMORY_SERVICE_URL` |
+| Variable                     | Description                                                         | Default                           |
+| ---------------------------- | ------------------------------------------------------------------- | --------------------------------- |
+| `MEMORY_SERVICE_URL`         | Base URL for REST API calls                                         | `http://localhost:8082`           |
+| `MEMORY_SERVICE_UNIX_SOCKET` | Absolute path to a Unix domain socket (overrides URL for transport) | _(none)_                          |
+| `MEMORY_SERVICE_API_KEY`     | API key sent in the `x-api-key` header for agent authentication     | _(none — must be set)_            |
+| `MEMORY_SERVICE_GRPC_TARGET` | Explicit gRPC target (e.g. `host:port` or `unix:///path`)           | Derived from `MEMORY_SERVICE_URL` |
 
 ## Unix Domain Sockets
 

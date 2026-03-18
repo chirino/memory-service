@@ -43,7 +43,7 @@ model = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY", "not-needed-for-tests"),
 )
 
-checkpointer = MemoryServiceCheckpointSaver()
+checkpointer = MemoryServiceCheckpointSaver.from_env()
 
 agent = create_agent(
     model=model,

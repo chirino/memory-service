@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Callable
 
 import httpx
@@ -14,7 +13,12 @@ from .request_context import (
     get_request_forked_at_conversation_id,
     get_request_forked_at_entry_id,
 )
-from .transport import httpx_client_kwargs, resolve_rest_base_url, resolve_unix_socket
+from .transport import (
+    httpx_client_kwargs,
+    resolve_env_config,
+    resolve_rest_base_url,
+    resolve_unix_socket,
+)
 
 
 LOG = logging.getLogger(__name__)
@@ -26,9 +30,9 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
     def __init__(
         self,
         *,
-        base_url: str | None = None,
+        base_url: str,
+        api_key: str,
         unix_socket: str | None = None,
-        api_key: str | None = None,
         authorization_getter: Callable[[], str | None] | None = None,
         conversation_id_getter: Callable[[], str | None] | None = None,
         forked_at_conversation_id_getter: Callable[[], str | None] | None = None,
@@ -36,9 +40,9 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
         indexed_content_provider: Callable[[str, str], str | None] | None = None,
     ):
         super().__init__()
-        self.base_url = resolve_rest_base_url(base_url, unix_socket)
         self.unix_socket = resolve_unix_socket(unix_socket)
-        self.api_key = api_key or os.getenv("MEMORY_SERVICE_API_KEY", "agent-api-key-1")
+        self.base_url = resolve_rest_base_url(base_url, self.unix_socket)
+        self.api_key = api_key
         self.authorization_getter = authorization_getter or get_request_authorization
         self.conversation_id_getter = conversation_id_getter or get_request_conversation_id
         self.forked_at_conversation_id_getter = (
@@ -46,6 +50,12 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
         )
         self.forked_at_entry_id_getter = forked_at_entry_id_getter or get_request_forked_at_entry_id
         self.indexed_content_provider = indexed_content_provider
+
+    @classmethod
+    def from_env(cls, **overrides: Any) -> "MemoryServiceHistoryMiddleware":
+        config = resolve_env_config()
+        config.update(overrides)
+        return cls(**config)
 
     def _authorization(self) -> str | None:
         if not self.authorization_getter:

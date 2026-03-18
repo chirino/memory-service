@@ -12,7 +12,7 @@ from typing import Any, Callable, Mapping, overload
 import httpx
 from fastapi.responses import JSONResponse
 
-from .transport import httpx_async_client_kwargs
+from .transport import httpx_async_client_kwargs, resolve_env_config
 
 
 _request_authorization: ContextVar[str | None] = ContextVar(
@@ -240,10 +240,9 @@ def memory_service_headers(
     extra_headers: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     headers: dict[str, str] = {}
-    resolved_api_key = api_key or os.getenv("MEMORY_SERVICE_API_KEY", "agent-api-key-1")
     getter = authorization_getter or get_request_authorization
-    if include_api_key:
-        headers["X-API-Key"] = resolved_api_key
+    if include_api_key and api_key is not None:
+        headers["X-API-Key"] = api_key
     if include_authorization:
         authorization = getter()
         if authorization:
@@ -263,6 +262,7 @@ async def memory_service_request(
     data: Mapping[str, Any] | None = None,
     files: Mapping[str, Any] | None = None,
     base_url: str | None = None,
+    unix_socket: str | None = None,
     api_key: str | None = None,
     authorization_getter: Callable[[], str | None] | None = None,
     timeout_seconds: float = 30.0,
@@ -270,8 +270,18 @@ async def memory_service_request(
     include_authorization: bool = True,
     extra_headers: Mapping[str, str] | None = None,
 ) -> httpx.Response:
+    env_config: dict[str, str | None] = {}
+    if base_url is None or unix_socket is None or api_key is None:
+        env_config = resolve_env_config()
+    resolved_base_url = base_url or str(env_config["base_url"])
+    resolved_unix_socket = unix_socket if unix_socket is not None else env_config["unix_socket"]
+    resolved_api_key = api_key if api_key is not None else str(env_config["api_key"])
     async with httpx.AsyncClient(
-        **httpx_async_client_kwargs(base_url=base_url, timeout=timeout_seconds)
+        **httpx_async_client_kwargs(
+            base_url=resolved_base_url,
+            unix_socket=resolved_unix_socket,
+            timeout=timeout_seconds,
+        )
     ) as client:
         return await client.request(
             method=method,
@@ -282,7 +292,7 @@ async def memory_service_request(
             data=data,
             files=files,
             headers=memory_service_headers(
-                api_key=api_key,
+                api_key=resolved_api_key,
                 authorization_getter=authorization_getter,
                 include_api_key=include_api_key,
                 include_authorization=include_authorization,

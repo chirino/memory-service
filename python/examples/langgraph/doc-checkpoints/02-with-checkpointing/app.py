@@ -20,7 +20,7 @@ model = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY", "not-needed-for-tests"),
 )
 
-checkpointer = MemoryServiceCheckpointSaver()
+checkpointer = MemoryServiceCheckpointSaver.from_env()
 
 
 def call_model(state: MessagesState) -> dict:

@@ -1,10 +1,15 @@
 import express from "express";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
-import { withMemoryService, withProxy } from "@chirino/memory-service-vercelai";
+import {
+  memoryServiceConfigFromEnv,
+  withMemoryService,
+  withProxy,
+} from "@chirino/memory-service-vercelai";
 
 const app = express();
 app.use(express.text({ type: "*/*" }));
+const memoryServiceConfig = memoryServiceConfigFromEnv();
 
 function openAIBaseUrl(): string | undefined {
   const raw = process.env.OPENAI_BASE_URL;
@@ -50,6 +55,7 @@ app.post("/chat/:conversationId", async (req, res) => {
 
   const result = await withMemoryService(
     {
+      ...memoryServiceConfig,
       conversationId,
       authorization,
       memoryContentType: "vercelai",
@@ -79,7 +85,7 @@ app.post("/chat/:conversationId", async (req, res) => {
 });
 
 app.get("/v1/conversations/:conversationId/forks", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.listConversationForks(req.params.conversationId, {
       afterCursor: (req.query.afterCursor as string | undefined) ?? null,
       limit: asNumber(req.query.limit),

@@ -2,6 +2,7 @@ import express from "express";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 import {
+  memoryServiceConfigFromEnv,
   memoryServiceCancel,
   memoryServiceReplay,
   memoryServiceResumeCheck,
@@ -12,6 +13,7 @@ import {
 const app = express();
 app.use(express.text({ type: "*/*" }));
 app.use(express.json());
+const memoryServiceConfig = memoryServiceConfigFromEnv();
 
 function openAIBaseUrl(): string | undefined {
   const raw = process.env.OPENAI_BASE_URL;
@@ -60,6 +62,7 @@ app.post("/chat/:conversationId", async (req, res) => {
   try {
     await withMemoryService(
       {
+        ...memoryServiceConfig,
         conversationId,
         authorization,
         memoryContentType: "vercelai",
@@ -102,13 +105,13 @@ app.post("/chat/:conversationId", async (req, res) => {
 });
 
 app.get("/v1/conversations/:conversationId", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.getConversation(req.params.conversationId),
   );
 });
 
 app.get("/v1/conversations/:conversationId/entries", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.listConversationEntries(req.params.conversationId, {
       afterCursor: (req.query.afterCursor as string | undefined) ?? null,
       limit: asNumber(req.query.limit),
@@ -119,7 +122,7 @@ app.get("/v1/conversations/:conversationId/entries", async (req, res) => {
 });
 
 app.get("/v1/conversations", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.listConversations({
       mode: (req.query.mode as string | undefined) ?? null,
       afterCursor: (req.query.afterCursor as string | undefined) ?? null,
@@ -130,7 +133,7 @@ app.get("/v1/conversations", async (req, res) => {
 });
 
 app.get("/v1/conversations/:conversationId/forks", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.listConversationForks(req.params.conversationId, {
       afterCursor: (req.query.afterCursor as string | undefined) ?? null,
       limit: asNumber(req.query.limit),
@@ -139,7 +142,7 @@ app.get("/v1/conversations/:conversationId/forks", async (req, res) => {
 });
 
 app.post("/v1/conversations/search", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.searchConversations(req.body ?? {}),
   );
 });
@@ -148,13 +151,18 @@ app.post("/v1/conversations/resume-check", async (req, res) => {
   const ids = Array.isArray(req.body)
     ? req.body.filter((v) => typeof v === "string")
     : [];
-  res.status(200).json(await memoryServiceResumeCheck(ids));
+  res
+    .status(200)
+    .json(await memoryServiceResumeCheck(memoryServiceConfig, ids));
 });
 
 app.get("/v1/conversations/:conversationId/resume", async (req, res) => {
   let streamed = false;
   try {
-    const eventStream = memoryServiceReplay(req.params.conversationId);
+    const eventStream = memoryServiceReplay(
+      memoryServiceConfig,
+      req.params.conversationId,
+    );
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -172,18 +180,18 @@ app.get("/v1/conversations/:conversationId/resume", async (req, res) => {
 });
 
 app.post("/v1/conversations/:conversationId/cancel", async (req, res) => {
-  await memoryServiceCancel(req.params.conversationId);
+  await memoryServiceCancel(memoryServiceConfig, req.params.conversationId);
   res.status(204).send();
 });
 
 app.get("/v1/conversations/:conversationId/memberships", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.listMemberships(req.params.conversationId),
   );
 });
 
 app.post("/v1/conversations/:conversationId/memberships", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.createMembership(req.params.conversationId, req.body ?? {}),
   );
 });
@@ -191,7 +199,7 @@ app.post("/v1/conversations/:conversationId/memberships", async (req, res) => {
 app.patch(
   "/v1/conversations/:conversationId/memberships/:userId",
   async (req, res) => {
-    await withProxy(req, res, (proxy) =>
+    await withProxy(req, res, memoryServiceConfig, (proxy) =>
       proxy.updateMembership(
         req.params.conversationId,
         req.params.userId,
@@ -204,14 +212,14 @@ app.patch(
 app.delete(
   "/v1/conversations/:conversationId/memberships/:userId",
   async (req, res) => {
-    await withProxy(req, res, (proxy) =>
+    await withProxy(req, res, memoryServiceConfig, (proxy) =>
       proxy.deleteMembership(req.params.conversationId, req.params.userId),
     );
   },
 );
 
 app.get("/v1/ownership-transfers", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.listOwnershipTransfers({
       role: (req.query.role as string | undefined) ?? null,
       afterCursor: (req.query.afterCursor as string | undefined) ?? null,
@@ -221,19 +229,19 @@ app.get("/v1/ownership-transfers", async (req, res) => {
 });
 
 app.post("/v1/ownership-transfers", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.createOwnershipTransfer(req.body ?? {}),
   );
 });
 
 app.post("/v1/ownership-transfers/:transferId/accept", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.acceptOwnershipTransfer(req.params.transferId),
   );
 });
 
 app.delete("/v1/ownership-transfers/:transferId", async (req, res) => {
-  await withProxy(req, res, (proxy) =>
+  await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.deleteOwnershipTransfer(req.params.transferId),
   );
 });

@@ -67,16 +67,16 @@ checkpointer = MemoryServiceCheckpointSaver.from_env(
 
 ## Environment Variable Reference
 
-| Variable | Description | Default |
-|---|---|---|
-| `MEMORY_SERVICE_URL` | Base URL for REST API calls | `http://localhost:8082` |
-| `MEMORY_SERVICE_UNIX_SOCKET` | Absolute path to a Unix domain socket (overrides URL for transport) | _(none)_ |
-| `MEMORY_SERVICE_API_KEY` | API key sent in the `x-api-key` header for agent authentication | _(none — must be set)_ |
-| `MEMORY_SERVICE_GRPC_TARGET` | Explicit gRPC target (e.g. `host:port` or `unix:///path`) | Derived from `MEMORY_SERVICE_URL` |
-| `MEMORY_SERVICE_GRPC_PORT` | Override the gRPC port when deriving from the base URL | Inferred from URL scheme (443 for HTTPS, 80 for HTTP) |
-| `MEMORY_SERVICE_GRPC_TIMEOUT_SECONDS` | Timeout for gRPC calls | `30` |
-| `MEMORY_SERVICE_GRPC_REPLAY_TIMEOUT_SECONDS` | Timeout for gRPC replay calls (disabled if unset) | _(none)_ |
-| `MEMORY_SERVICE_GRPC_MAX_REDIRECTS` | Maximum number of gRPC redirects to follow | `3` |
+| Variable                                     | Description                                                         | Default                                               |
+| -------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------- |
+| `MEMORY_SERVICE_URL`                         | Base URL for REST API calls                                         | `http://localhost:8082`                               |
+| `MEMORY_SERVICE_UNIX_SOCKET`                 | Absolute path to a Unix domain socket (overrides URL for transport) | _(none)_                                              |
+| `MEMORY_SERVICE_API_KEY`                     | API key sent in the `x-api-key` header for agent authentication     | _(none — must be set)_                                |
+| `MEMORY_SERVICE_GRPC_TARGET`                 | Explicit gRPC target (e.g. `host:port` or `unix:///path`)           | Derived from `MEMORY_SERVICE_URL`                     |
+| `MEMORY_SERVICE_GRPC_PORT`                   | Override the gRPC port when deriving from the base URL              | Inferred from URL scheme (443 for HTTPS, 80 for HTTP) |
+| `MEMORY_SERVICE_GRPC_TIMEOUT_SECONDS`        | Timeout for gRPC calls                                              | `30`                                                  |
+| `MEMORY_SERVICE_GRPC_REPLAY_TIMEOUT_SECONDS` | Timeout for gRPC replay calls (disabled if unset)                   | _(none)_                                              |
+| `MEMORY_SERVICE_GRPC_MAX_REDIRECTS`          | Maximum number of gRPC redirects to follow                          | `3`                                                   |
 
 ## Unix Domain Sockets
 

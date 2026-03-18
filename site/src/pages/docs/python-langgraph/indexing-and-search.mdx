@@ -34,7 +34,7 @@ The simplest provider is pass-through:
 
 <CodeFromFile file="python/examples/langgraph/doc-checkpoints/07-with-search/app.py" lang="python" lines="30-40" />
 
-**What changed**: A `pass_through_indexed_content(text, role)` function is defined and passed to `MemoryServiceHistoryMiddleware(indexed_content_provider=pass_through_indexed_content)`.
+**What changed**: A `pass_through_indexed_content(text, role)` function is defined and passed to `MemoryServiceHistoryMiddleware.from_env(indexed_content_provider=pass_through_indexed_content)`.
 
 **Why**: Passing `indexed_content_provider` to `MemoryServiceHistoryMiddleware` activates indexing: the function is called for every message before the history entry is written, and its return value becomes `indexedContent`. A pass-through provider indexes everything as-is. You can swap it for a redaction function to strip sensitive data from the search index while keeping the full encrypted message in storage.
 

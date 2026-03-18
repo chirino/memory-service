@@ -15,7 +15,7 @@ import grpc
 from .grpc.memory.v1 import memory_service_pb2, memory_service_pb2_grpc
 from .request_context import get_request_authorization
 from .response_recorder import BaseResponseRecorder, create_grpc_response_recorder
-from .transport import resolve_grpc_target
+from .transport import resolve_env_config, resolve_grpc_target
 
 
 LOG = logging.getLogger("uvicorn.error")
@@ -30,6 +30,22 @@ _GRPC_REPLAY_TERMINAL_CODES = {
     grpc.StatusCode.DEADLINE_EXCEEDED,
     grpc.StatusCode.CANCELLED,
 }
+
+
+def _env_optional_positive_float(name: str) -> float | None:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return None
+    try:
+        parsed = float(raw)
+    except ValueError:
+        LOG.warning("invalid %s=%s; value ignored", name, raw)
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+
 @dataclass
 class _ResumeState:
     tokens: list[str]
@@ -47,45 +63,32 @@ class MemoryServiceResponseRecordingManager:
         self,
         *,
         token_delay_seconds: float = 0.01,
-        base_url: str | None = None,
+        base_url: str,
+        api_key: str,
         unix_socket: str | None = None,
-        api_key: str | None = None,
         authorization_getter: Callable[[], str | None] | None = None,
         grpc_target: str | None = None,
         grpc_timeout_seconds: float | None = None,
+        grpc_replay_timeout_seconds: float | None = None,
         grpc_max_redirects: int | None = None,
     ):
         self._token_delay_seconds = token_delay_seconds
         self._states: dict[str, _ResumeState] = {}
         self._lock = threading.Lock()
 
-        self._api_key = api_key or os.getenv("MEMORY_SERVICE_API_KEY", "agent-api-key-1")
+        self._api_key = api_key
         self._authorization_getter = authorization_getter or get_request_authorization
 
         self._grpc_target = resolve_grpc_target(
             base_url=base_url,
             grpc_target=grpc_target,
             unix_socket=unix_socket,
+            grpc_port=None,
         )
 
-        self._grpc_timeout_seconds = grpc_timeout_seconds or float(
-            os.getenv("MEMORY_SERVICE_GRPC_TIMEOUT_SECONDS", "30")
-        )
-        replay_timeout_raw = os.getenv("MEMORY_SERVICE_GRPC_REPLAY_TIMEOUT_SECONDS")
-        self._grpc_replay_timeout_seconds: float | None = None
-        if replay_timeout_raw is not None and replay_timeout_raw.strip() != "":
-            try:
-                parsed_timeout = float(replay_timeout_raw)
-                if parsed_timeout > 0:
-                    self._grpc_replay_timeout_seconds = parsed_timeout
-            except ValueError:
-                LOG.warning(
-                    "invalid MEMORY_SERVICE_GRPC_REPLAY_TIMEOUT_SECONDS=%s; replay timeout disabled",
-                    replay_timeout_raw,
-                )
-        self._grpc_max_redirects = grpc_max_redirects or int(
-            os.getenv("MEMORY_SERVICE_GRPC_MAX_REDIRECTS", "3")
-        )
+        self._grpc_timeout_seconds = grpc_timeout_seconds or 30.0
+        self._grpc_replay_timeout_seconds = grpc_replay_timeout_seconds
+        self._grpc_max_redirects = grpc_max_redirects or 3
 
         LOG.info(
             "response recording manager gRPC enabled target=%s timeout=%ss replay_timeout=%s",
@@ -93,6 +96,38 @@ class MemoryServiceResponseRecordingManager:
             self._grpc_timeout_seconds,
             self._grpc_replay_timeout_seconds,
         )
+
+    @classmethod
+    def from_env(cls, **overrides: Any) -> "MemoryServiceResponseRecordingManager":
+        config = resolve_env_config()
+        config.update(overrides)
+        grpc_target = overrides.get("grpc_target")
+        grpc_port = os.getenv("MEMORY_SERVICE_GRPC_PORT")
+        if grpc_target is None:
+            env_grpc_target = os.getenv("MEMORY_SERVICE_GRPC_TARGET")
+            if env_grpc_target:
+                grpc_target = env_grpc_target
+            else:
+                grpc_target = resolve_grpc_target(
+                    base_url=str(config["base_url"]),
+                    grpc_target=None,
+                    unix_socket=config["unix_socket"],
+                    grpc_port=grpc_port,
+                )
+        config["grpc_target"] = grpc_target
+        if "grpc_timeout_seconds" not in overrides:
+            config["grpc_timeout_seconds"] = float(
+                os.getenv("MEMORY_SERVICE_GRPC_TIMEOUT_SECONDS", "30")
+            )
+        if "grpc_replay_timeout_seconds" not in overrides:
+            config["grpc_replay_timeout_seconds"] = _env_optional_positive_float(
+                "MEMORY_SERVICE_GRPC_REPLAY_TIMEOUT_SECONDS"
+            )
+        if "grpc_max_redirects" not in overrides:
+            config["grpc_max_redirects"] = int(
+                os.getenv("MEMORY_SERVICE_GRPC_MAX_REDIRECTS", "3")
+            )
+        return cls(**config)
 
     async def stream(self, conversation_id: str, text: str) -> AsyncIterator[str]:
         async def source() -> AsyncIterator[str]:
