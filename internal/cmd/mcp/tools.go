@@ -1,4 +1,4 @@
-package main
+package mcp
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chirino/memory-service/internal/generated/apiclient"
+	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -93,7 +95,7 @@ func appendNoteTool() mcp.Tool {
 
 // ── Tool handlers ──────────────────────────────────────────
 
-func (s *mcpServer) handleSaveSessionNotes(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *mcpServer) handleSaveSessionNotes(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	title := request.GetArguments()["title"].(string)
 	notes := request.GetArguments()["notes"].(string)
 	tags, _ := request.GetArguments()["tags"].(string)
@@ -102,10 +104,16 @@ func (s *mcpServer) handleSaveSessionNotes(_ context.Context, request mcp.CallTo
 	sessionTitle := fmt.Sprintf("[claude-code] %s - %s", time.Now().Format("2006-01-02"), title)
 
 	// Create conversation
-	conv, err := s.client.CreateConversation(sessionTitle)
+	convResp, err := s.client.CreateConversationWithResponse(ctx, apiclient.CreateConversationJSONRequestBody{
+		Title: &sessionTitle,
+	})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to create conversation: %v", err)), nil
 	}
+	if convResp.JSON201 == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to create conversation: %s", convResp.Status())), nil
+	}
+	conv := convResp.JSON201
 
 	// Build entry content
 	var content strings.Builder
@@ -115,43 +123,64 @@ func (s *mcpServer) handleSaveSessionNotes(_ context.Context, request mcp.CallTo
 	}
 
 	// Append the notes as an entry
-	entryContent := []map[string]any{
-		{
+	entryContent := []interface{}{
+		map[string]any{
 			"role": "USER",
 			"text": content.String(),
 		},
 	}
 
-	_, err = s.client.AppendEntry(conv.ID, "history", entryContent)
+	contentType := "history"
+	_, err = s.client.AppendConversationEntryWithResponse(ctx, *conv.Id, apiclient.AppendConversationEntryJSONRequestBody{
+		ContentType: contentType,
+		Content:     entryContent,
+	})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to save notes: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Session notes saved.\nConversation ID: %s\nTitle: %s", conv.ID, sessionTitle)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Session notes saved.\nConversation ID: %s\nTitle: %s", conv.Id, sessionTitle)), nil
 }
 
-func (s *mcpServer) handleSearchSessions(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *mcpServer) handleSearchSessions(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query := request.GetArguments()["query"].(string)
 	limit := 5
 	if l, ok := request.GetArguments()["limit"].(float64); ok && l > 0 {
 		limit = int(l)
 	}
 
-	results, err := s.client.SearchConversations(query, limit)
+	includeEntry := true
+	resp, err := s.client.SearchConversationsWithResponse(ctx, apiclient.SearchConversationsJSONRequestBody{
+		Query:        query,
+		Limit:        &limit,
+		IncludeEntry: &includeEntry,
+	})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 	}
+	if resp.JSON200 == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Search failed: %s", resp.Status())), nil
+	}
 
-	if len(results.Data) == 0 {
+	results := resp.JSON200.Data
+	if results == nil || len(*results) == 0 {
 		return mcp.NewToolResultText("No matching sessions found."), nil
 	}
 
 	var out strings.Builder
-	out.WriteString(fmt.Sprintf("Found %d result(s):\n\n", len(results.Data)))
-	for i, r := range results.Data {
-		out.WriteString(fmt.Sprintf("### %d. %s\n", i+1, r.ConversationTitle))
-		out.WriteString(fmt.Sprintf("- Conversation ID: `%s`\n", r.ConversationID))
-		out.WriteString(fmt.Sprintf("- Score: %.2f\n", r.Score))
+	out.WriteString(fmt.Sprintf("Found %d result(s):\n\n", len(*results)))
+	for i, r := range *results {
+		convTitle := ""
+		if r.ConversationTitle != nil {
+			convTitle = *r.ConversationTitle
+		}
+		out.WriteString(fmt.Sprintf("### %d. %s\n", i+1, convTitle))
+		if r.ConversationId != nil {
+			out.WriteString(fmt.Sprintf("- Conversation ID: `%s`\n", r.ConversationId))
+		}
+		if r.Score != nil {
+			out.WriteString(fmt.Sprintf("- Score: %.2f\n", *r.Score))
+		}
 		if r.Highlights != nil && *r.Highlights != "" {
 			out.WriteString(fmt.Sprintf("- Highlights: %s\n", *r.Highlights))
 		}
@@ -165,24 +194,30 @@ func (s *mcpServer) handleSearchSessions(_ context.Context, request mcp.CallTool
 	return mcp.NewToolResultText(out.String()), nil
 }
 
-func (s *mcpServer) handleListSessions(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *mcpServer) handleListSessions(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := 10
 	if l, ok := request.GetArguments()["limit"].(float64); ok && l > 0 {
 		limit = int(l)
 	}
 
-	conversations, err := s.client.ListConversations(limit)
+	resp, err := s.client.ListConversationsWithResponse(ctx, &apiclient.ListConversationsParams{
+		Limit: &limit,
+	})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to list sessions: %v", err)), nil
 	}
+	if resp.JSON200 == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to list sessions: %s", resp.Status())), nil
+	}
 
-	if len(conversations.Data) == 0 {
+	conversations := resp.JSON200.Data
+	if conversations == nil || len(*conversations) == 0 {
 		return mcp.NewToolResultText("No sessions found."), nil
 	}
 
 	var out strings.Builder
-	out.WriteString(fmt.Sprintf("Recent sessions (%d):\n\n", len(conversations.Data)))
-	for i, c := range conversations.Data {
+	out.WriteString(fmt.Sprintf("Recent sessions (%d):\n\n", len(*conversations)))
+	for i, c := range *conversations {
 		title := "(untitled)"
 		if c.Title != nil && *c.Title != "" {
 			title = *c.Title
@@ -191,26 +226,41 @@ func (s *mcpServer) handleListSessions(_ context.Context, request mcp.CallToolRe
 		if c.LastMessagePreview != nil && *c.LastMessagePreview != "" {
 			preview = " - " + truncate(*c.LastMessagePreview, 100)
 		}
+		updatedAt := ""
+		if c.UpdatedAt != nil {
+			updatedAt = c.UpdatedAt.Format(time.RFC3339)
+		}
 		out.WriteString(fmt.Sprintf("%d. **%s**%s\n", i+1, title, preview))
-		out.WriteString(fmt.Sprintf("   ID: `%s` | Updated: %s\n\n", c.ID, c.UpdatedAt))
+		out.WriteString(fmt.Sprintf("   ID: `%s` | Updated: %s\n\n", c.Id, updatedAt))
 	}
 
 	return mcp.NewToolResultText(out.String()), nil
 }
 
-func (s *mcpServer) handleGetSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *mcpServer) handleGetSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	convID := request.GetArguments()["conversation_id"].(string)
+	convUUID := uuid.MustParse(convID)
 
 	// Get conversation metadata
-	conv, err := s.client.GetConversation(convID)
+	convResp, err := s.client.GetConversationWithResponse(ctx, convUUID)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to get conversation: %v", err)), nil
 	}
+	if convResp.JSON200 == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get conversation: %s", convResp.Status())), nil
+	}
+	conv := convResp.JSON200
 
 	// Get entries
-	entries, err := s.client.ListEntries(convID, 100)
+	entryLimit := 100
+	entriesResp, err := s.client.ListConversationEntriesWithResponse(ctx, convUUID, &apiclient.ListConversationEntriesParams{
+		Limit: &entryLimit,
+	})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to get entries: %v", err)), nil
+	}
+	if entriesResp.JSON200 == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get entries: %s", entriesResp.Status())), nil
 	}
 
 	var out strings.Builder
@@ -219,31 +269,47 @@ func (s *mcpServer) handleGetSession(_ context.Context, request mcp.CallToolRequ
 		title = *conv.Title
 	}
 	out.WriteString(fmt.Sprintf("# %s\n\n", title))
-	out.WriteString(fmt.Sprintf("Created: %s | Updated: %s\n\n", conv.CreatedAt, conv.UpdatedAt))
-
-	if len(entries.Data) == 0 {
-		out.WriteString("(no entries)")
+	createdAt := ""
+	if conv.CreatedAt != nil {
+		createdAt = conv.CreatedAt.Format(time.RFC3339)
 	}
-	for _, e := range entries.Data {
-		contentJSON, _ := json.MarshalIndent(e.Content, "", "  ")
-		out.WriteString(fmt.Sprintf("---\n**Entry** (%s)\n%s\n\n", e.CreatedAt, string(contentJSON)))
+	updatedAt := ""
+	if conv.UpdatedAt != nil {
+		updatedAt = conv.UpdatedAt.Format(time.RFC3339)
+	}
+	out.WriteString(fmt.Sprintf("Created: %s | Updated: %s\n\n", createdAt, updatedAt))
+
+	entries := entriesResp.JSON200.Data
+	if entries == nil || len(*entries) == 0 {
+		out.WriteString("(no entries)")
+	} else {
+		for _, e := range *entries {
+			entryCreatedAt := e.CreatedAt.Format(time.RFC3339)
+			contentJSON, _ := json.MarshalIndent(e.Content, "", "  ")
+			out.WriteString(fmt.Sprintf("---\n**Entry** (%s)\n%s\n\n", entryCreatedAt, string(contentJSON)))
+		}
 	}
 
 	return mcp.NewToolResultText(out.String()), nil
 }
 
-func (s *mcpServer) handleAppendNote(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *mcpServer) handleAppendNote(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	convID := request.GetArguments()["conversation_id"].(string)
 	notes := request.GetArguments()["notes"].(string)
+	convUUID := uuid.MustParse(convID)
 
-	entryContent := []map[string]any{
-		{
+	entryContent := []interface{}{
+		map[string]any{
 			"role": "USER",
 			"text": notes,
 		},
 	}
 
-	_, err := s.client.AppendEntry(convID, "history", entryContent)
+	contentType := "history"
+	_, err := s.client.AppendConversationEntryWithResponse(ctx, convUUID, apiclient.AppendConversationEntryJSONRequestBody{
+		ContentType: contentType,
+		Content:     entryContent,
+	})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to append note: %v", err)), nil
 	}

@@ -94,23 +94,24 @@ fi
 info "Setting secrets..."
 
 # Generate a random API key if not provided
-AGENT_API_KEY="${AGENT_API_KEY:-$(openssl rand -hex 24)}"
+MEMORY_SERVICE_API_KEYS_AGENT="${MEMORY_SERVICE_API_KEYS_AGENT:-$(openssl rand -hex 24)}"
 
 # Generate a random encryption key (32 bytes = 64 hex chars)
-ENCRYPTION_KEY="${ENCRYPTION_KEY:-$(openssl rand -hex 32)}"
+MEMORY_SERVICE_ENCRYPTION_DEK_KEY="${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-$(openssl rand -hex 32)}"
 
 # Generate attachment signing secret
-ATTACHMENT_SECRET="${ATTACHMENT_SECRET:-$(openssl rand -hex 32)}"
+MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET="${MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET:-$(openssl rand -hex 32)}"
 
-fly secrets set --app "$APP_NAME" \
-    MEMORY_SERVICE_API_KEYS_AGENT="$AGENT_API_KEY" \
-    MEMORY_SERVICE_ENCRYPTION_DEK_KEY="$ENCRYPTION_KEY" \
-    MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET="$ATTACHMENT_SECRET"
+SECRETS=()
+while IFS='=' read -r key value; do
+    SECRETS+=("$key=$value")
+done < <(env | grep '^MEMORY_SERVICE_')
+fly secrets set --app "$APP_NAME" "${SECRETS[@]}"
 
 info "Secrets set."
 echo ""
 warn "Save your agent API key (you won't see it again):"
-echo -e "  ${GREEN}AGENT_API_KEY=${AGENT_API_KEY}${NC}"
+echo -e "  ${GREEN}MEMORY_SERVICE_API_KEYS_AGENT=${MEMORY_SERVICE_API_KEYS_AGENT}${NC}"
 echo ""
 
 # ── Step 5: Deploy ──────────────────────────────────────────
@@ -121,11 +122,11 @@ echo ""
 info "Deployment complete!"
 echo ""
 echo "  URL:     https://${APP_NAME}.fly.dev"
-echo "  API Key: $AGENT_API_KEY"
+echo "  API Key: $MEMORY_SERVICE_API_KEYS_AGENT"
 echo ""
 echo "  Test it:"
 echo "    curl -s https://${APP_NAME}.fly.dev/ready"
-echo "    curl -s -H 'Authorization: Bearer $AGENT_API_KEY' \\"
+echo "    curl -s -H 'Authorization: Bearer $MEMORY_SERVICE_API_KEYS_AGENT' \\"
 echo "      https://${APP_NAME}.fly.dev/v1/conversations | jq ."
 echo ""
 echo "  Redeploy after code changes:"

@@ -29,19 +29,35 @@ Save the **agent API key** printed at the end — you'll need it to authenticate
 
 ## Customization
 
-Set environment variables before running the script:
+### Script variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FLY_APP_NAME` | `memory-service-poc` | Fly app name |
 | `FLY_REGION` | `lhr` | Fly region (London) |
-| `AGENT_API_KEY` | random | Use a specific API key |
-| `ENCRYPTION_KEY` | random | 32-byte hex encryption key |
-| `ATTACHMENT_SECRET` | random | Attachment signing secret |
+
+### Memory Service configuration
+
+The deploy script forwards **all `MEMORY_SERVICE_*` environment variables** as Fly secrets. See the [Configuration docs](../../site/src/pages/docs/configuration.mdx) for the full list.
+
+The following keys are generated automatically if not provided:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEMORY_SERVICE_API_KEYS_AGENT` | random | Agent API key for authentication |
+| `MEMORY_SERVICE_ENCRYPTION_DEK_KEY` | random | 32-byte hex encryption key |
+| `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET` | random | Attachment signing secret |
 
 Example:
 ```bash
 FLY_APP_NAME=my-team-memory FLY_REGION=lhr ./deploy/fly/deploy.sh
+```
+
+Example with extra configuration:
+```bash
+MEMORY_SERVICE_API_KEYS_AGENT=my-key \
+MEMORY_SERVICE_CACHE_KIND=local \
+  ./deploy/fly/deploy.sh
 ```
 
 ## What's included
