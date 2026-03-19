@@ -1,3 +1,5 @@
+//go:build !noredis || !noinfinispan
+
 package redis
 
 import (
@@ -6,32 +8,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chirino/memory-service/internal/config"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 )
 
 const defaultTTL = 10 * time.Minute
-
-func init() {
-	registrycache.Register(registrycache.Plugin{
-		Name:   "redis",
-		Loader: load,
-	})
-}
-
-func load(ctx context.Context) (registrycache.MemoryEntriesCache, error) {
-	cfg := config.FromContext(ctx)
-	if cfg == nil || cfg.RedisURL == "" {
-		return nil, fmt.Errorf("redis cache: MEMORY_SERVICE_REDIS_URL is required")
-	}
-	ttl := cfg.CacheEpochTTL
-	if ttl <= 0 {
-		ttl = defaultTTL
-	}
-	return LoadFromURLWithTTL(ctx, cfg.RedisURL, ttl)
-}
 
 // LoadFromURL creates a MemoryEntriesCache from a Redis-compatible URL.
 // This is exported so other plugins (e.g. Infinispan RESP) can reuse the implementation.

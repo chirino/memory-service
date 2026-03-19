@@ -1,3 +1,5 @@
+//go:build !nopostgresql
+
 package postgres
 
 import registrystore "github.com/chirino/memory-service/internal/registry/store"

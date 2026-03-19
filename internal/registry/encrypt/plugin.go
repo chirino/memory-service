@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/urfave/cli/v3"
 )
 
 // Provider is the SPI for pluggable encryption providers.
@@ -47,6 +48,8 @@ type Header struct {
 type Plugin struct {
 	Name   string
 	Loader func(ctx context.Context, cfg *config.Config) (Provider, error)
+	Flags  func(cfg *config.Config) []cli.Flag
+	Apply  func(cfg *config.Config, cmd *cli.Command)
 }
 
 var plugins []Plugin
@@ -73,4 +76,24 @@ func Select(name string) (Plugin, error) {
 		}
 	}
 	return Plugin{}, fmt.Errorf("unknown encryption provider %q; registered: %v", name, Names())
+}
+
+// PluginFlags returns CLI flags contributed by all registered encryption plugins.
+func PluginFlags(cfg *config.Config) []cli.Flag {
+	var flags []cli.Flag
+	for _, p := range plugins {
+		if p.Flags != nil {
+			flags = append(flags, p.Flags(cfg)...)
+		}
+	}
+	return flags
+}
+
+// ApplyAll calls Apply on all registered plugins that define one.
+func ApplyAll(cfg *config.Config, cmd *cli.Command) {
+	for _, p := range plugins {
+		if p.Apply != nil {
+			p.Apply(cfg, cmd)
+		}
+	}
 }

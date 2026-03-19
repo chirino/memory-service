@@ -1,4 +1,4 @@
-//go:build sqlite_fts5
+//go:build !nosqlite && sqlite_fts5
 
 package sqlite
 

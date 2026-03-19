@@ -1,3 +1,5 @@
+//go:build !noqdrant
+
 package qdrant
 
 import (
@@ -11,6 +13,7 @@ import (
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
 	"github.com/google/uuid"
 	pb "github.com/qdrant/go-client/qdrant"
+	"github.com/urfave/cli/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -74,6 +77,18 @@ func init() {
 	registryvector.Register(registryvector.Plugin{
 		Name:   "qdrant",
 		Loader: load,
+		Flags: func(cfg *config.Config) []cli.Flag {
+			return []cli.Flag{
+				&cli.StringFlag{
+					Name:        "vector-qdrant-host",
+					Category:    "Vector Store:",
+					Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_QDRANT_HOST", "MEMORY_SERVICE_QDRANT_HOST"),
+					Destination: &cfg.QdrantHost,
+					Value:       cfg.QdrantAddress(),
+					Usage:       "Qdrant host or host:port",
+				},
+			}
+		},
 	})
 	registrymigrate.Register(registrymigrate.Plugin{Order: 200, Migrator: &qdrantMigrator{}})
 }

@@ -7,13 +7,6 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	"github.com/urfave/cli/v3"
-
-	// Import plugins to trigger init() registration of their migrators.
-	// Store plugins register their own migrators alongside their primary interface.
-	_ "github.com/chirino/memory-service/internal/plugin/store/mongo"
-	_ "github.com/chirino/memory-service/internal/plugin/store/postgres"
-	_ "github.com/chirino/memory-service/internal/plugin/vector/pgvector"
-	_ "github.com/chirino/memory-service/internal/plugin/vector/qdrant"
 )
 
 // Command returns the migrate sub-command.

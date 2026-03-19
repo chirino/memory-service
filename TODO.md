@@ -1,7 +1,6 @@
 # TODO List
 
 ## Potentially Backward Compat Breaking
-* should the /sync endpoint take a flatten entries to just a list of content messages?
 * a way to support batch processing of old conversations / memories to create/update/reinforce memories
 * track memory load counts, as a way to track how important/useful a memory is (see [072-memory-load-counts.md](docs/enhancements/implemented/072-memory-load-counts.md)).
 
@@ -22,7 +21,6 @@
 
 ## Hardening Work
 
-* add go build tags that can disable features such as UDS, libsql etc..
 * protect against large syncs that create new epochs
 * limit the size of memory entries.
 * update clients to split large contexts into multiple entries to aovid hitting size limits

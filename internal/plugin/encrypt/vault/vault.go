@@ -1,3 +1,5 @@
+//go:build !novault
+
 // Package vault registers the "vault" encryption provider backed by HashiCorp Vault Transit.
 // DEKs are loaded from the application database (encryption_deks table) at startup.
 // Vault Transit is used only to wrap/unwrap DEKs at load time — never per-request.
@@ -12,6 +14,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 
 	vaultapi "github.com/hashicorp/vault/api"
@@ -21,6 +24,7 @@ import (
 	dekpkg "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
 	"github.com/chirino/memory-service/internal/plugin/encrypt/dekstore"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
+	"github.com/urfave/cli/v3"
 )
 
 func init() {
@@ -39,6 +43,39 @@ func init() {
 				transitKey: cfg.EncryptionVaultTransitKey,
 				cfg:        cfg,
 			}, nil
+		},
+		Flags: func(cfg *config.Config) []cli.Flag {
+			return []cli.Flag{
+				&cli.StringFlag{
+					Name:        "encryption-vault-transit-key",
+					Category:    "Encryption: Vault:",
+					Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY"),
+					Destination: &cfg.EncryptionVaultTransitKey,
+					Usage:       "Vault Transit key name for the 'vault' provider",
+				},
+				&cli.StringFlag{
+					Name:     "encryption-vault-addr",
+					Category: "Encryption: Vault:",
+					Sources:  cli.EnvVars("VAULT_ADDR"),
+					Usage:    "Vault server URL (e.g. https://vault.example.com)",
+				},
+				&cli.StringFlag{
+					Name:     "encryption-vault-token",
+					Category: "Encryption: Vault:",
+					Sources:  cli.EnvVars("VAULT_TOKEN"),
+					Usage:    "Vault token for authentication",
+				},
+			}
+		},
+		Apply: func(cfg *config.Config, cmd *cli.Command) {
+			for flagName, envVar := range map[string]string{
+				"encryption-vault-addr":  "VAULT_ADDR",
+				"encryption-vault-token": "VAULT_TOKEN",
+			} {
+				if v := cmd.String(flagName); v != "" {
+					os.Setenv(envVar, v)
+				}
+			}
 		},
 	})
 }

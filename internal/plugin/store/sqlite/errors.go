@@ -1,3 +1,5 @@
+//go:build !nosqlite
+
 package sqlite
 
 import registrystore "github.com/chirino/memory-service/internal/registry/store"
