@@ -117,6 +117,7 @@ jobs:
 
       - name: Add JUnit summary to job
         if: always() && contains('test-java', matrix.job)
+        continue-on-error: true
         uses: mikepenz/action-junit-report@v5
         with:
           report_paths: '**/target/surefire-reports/TEST-*.xml'
@@ -142,6 +143,7 @@ jobs:
 
       - name: Add Cucumber summary to job
         if: always() && contains('test-go test-site', matrix.job)
+        continue-on-error: true
         uses: deblockt/cucumber-report-annotations-action@v1.20
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}
