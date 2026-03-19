@@ -182,6 +182,7 @@ func unmarshalTextProto(body string, s *cucumber.TestScenario, msg proto.Message
 	if err != nil {
 		return err
 	}
+	expanded = s.RewriteQuotedUsers(expanded)
 	return prototext.Unmarshal([]byte(expanded), msg)
 }
 
@@ -283,6 +284,11 @@ func (g *grpcSteps) invokeUnary(conn *grpc.ClientConn, ctx context.Context, body
 	if err == nil && resp != nil {
 		g.grpcRespRaw = resp
 		g.grpcResp, _ = protoToMap(resp)
+		if g.grpcResp != nil {
+			if normalized, ok := g.s.NormalizeValue(g.grpcResp).(map[string]any); ok {
+				g.grpcResp = normalized
+			}
+		}
 	}
 	return nil
 }
@@ -539,6 +545,9 @@ func (g *grpcSteps) handleRecord(conn *grpc.ClientConn, ctx context.Context, con
 	if err == nil {
 		g.grpcRespRaw = resp
 		g.grpcResp, _ = protoToMap(resp)
+		if normalized, ok := g.s.NormalizeValue(g.grpcResp).(map[string]any); ok {
+			g.grpcResp = normalized
+		}
 	}
 	return nil
 }
@@ -585,6 +594,9 @@ func (g *grpcSteps) handleCancel(conn *grpc.ClientConn, ctx context.Context, con
 	if err == nil {
 		g.grpcRespRaw = resp
 		g.grpcResp, _ = protoToMap(resp)
+		if normalized, ok := g.s.NormalizeValue(g.grpcResp).(map[string]any); ok {
+			g.grpcResp = normalized
+		}
 		// Signal the background stream to stop
 		if g.streamCancel != nil {
 			select {
@@ -938,6 +950,9 @@ func (g *grpcSteps) iUploadFileViaGRPC(filename, contentType, content string) er
 	if err == nil {
 		g.grpcRespRaw = resp
 		g.grpcResp, _ = protoToMap(resp)
+		if normalized, ok := g.s.NormalizeValue(g.grpcResp).(map[string]any); ok {
+			g.grpcResp = normalized
+		}
 	}
 	return nil
 }
@@ -976,6 +991,9 @@ func (g *grpcSteps) iDownloadAttachmentViaGRPC(attachID string) error {
 		switch p := resp.Payload.(type) {
 		case *pb.DownloadAttachmentResponse_Metadata:
 			g.downloadMeta, _ = protoToMap(p.Metadata)
+			if normalized, ok := g.s.NormalizeValue(g.downloadMeta).(map[string]any); ok {
+				g.downloadMeta = normalized
+			}
 		case *pb.DownloadAttachmentResponse_Chunk:
 			buf.Write(p.Chunk)
 		}
@@ -1003,6 +1021,9 @@ func (g *grpcSteps) iGetAttachmentMetadataViaGRPC(attachID string) error {
 	if err == nil {
 		g.grpcRespRaw = resp
 		g.grpcResp, _ = protoToMap(resp)
+		if normalized, ok := g.s.NormalizeValue(g.grpcResp).(map[string]any); ok {
+			g.grpcResp = normalized
+		}
 	}
 	return nil
 }

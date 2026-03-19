@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // PostgresTestDB implements cucumber.TestDB for Postgres.
@@ -93,6 +95,16 @@ func (p *PostgresTestDB) ExecSQL(ctx context.Context, query string) ([]map[strin
 			v := values[i]
 			if t, ok := v.(time.Time); ok {
 				row[string(fd.Name)] = t.Format(time.RFC3339Nano)
+			} else if id, ok := v.(pgtype.UUID); ok && id.Valid {
+				row[string(fd.Name)] = uuid.UUID(id.Bytes).String()
+			} else if id, ok := v.([16]byte); ok {
+				row[string(fd.Name)] = uuid.UUID(id).String()
+			} else if id, ok := v.([]byte); ok && len(id) == 16 {
+				if parsed, err := uuid.FromBytes(id); err == nil {
+					row[string(fd.Name)] = parsed.String()
+				} else {
+					row[string(fd.Name)] = v
+				}
 			} else {
 				row[string(fd.Name)] = v
 			}

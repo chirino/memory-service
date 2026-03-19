@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFeaturesSQLiteEncrypted(t *testing.T) {
+func TestFeaturesSQLiteSerial(t *testing.T) {
 	prom := NewMockPrometheus(t)
 	dbURL := filepath.Join(t.TempDir(), "memory.db")
 
@@ -27,6 +27,8 @@ func TestFeaturesSQLiteEncrypted(t *testing.T) {
 	cfg.VectorType = "none"
 	cfg.SearchSemanticEnabled = false
 	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()
 	cfg.AuditorUsers = bddAuditorUsers()
 	cfg.IndexerUsers = bddIndexerUsers()
@@ -42,16 +44,18 @@ func TestFeaturesSQLiteEncrypted(t *testing.T) {
 	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
-	encryptedDir := filepath.Join("testdata", "features-encrypted")
-	if _, err := os.Stat(encryptedDir); os.IsNotExist(err) {
-		t.Skipf("Encrypted feature files directory not found: %s", encryptedDir)
+	featuresDir := filepath.Join("testdata", "features")
+	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
+		t.Skipf("Feature files directory not found: %s", featuresDir)
 	}
-	featureFiles, err := filepath.Glob(filepath.Join(encryptedDir, "*.feature"))
-	require.NoError(t, err)
-	require.NotEmpty(t, featureFiles, "No encrypted feature files found in %s", encryptedDir)
 
-	runBDDFeatures(t, "sqlite-encrypted", featureFiles, apiURL, grpcAddr, &cfg, &SQLiteTestDB{DBURL: dbURL}, map[string]interface{}{
+	featureFiles, err := filepath.Glob(filepath.Join(featuresDir, "*.feature"))
+	require.NoError(t, err)
+	featureFiles = filterSerialFeatures(featureFiles, true)
+	require.NotEmpty(t, featureFiles, "No serial SQLite feature files found in %s", featuresDir)
+
+	runBDDFeaturesWithConcurrency(t, "sqlite-serial", featureFiles, apiURL, grpcAddr, &cfg, &SQLiteTestDB{DBURL: dbURL}, map[string]interface{}{
 		"mockPrometheus": prom,
 		"grpcAddr":       grpcAddr,
-	})
+	}, 1)
 }

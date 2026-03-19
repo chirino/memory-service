@@ -12,32 +12,35 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/plugin/store/postgres"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
+	"github.com/chirino/memory-service/internal/testutil/testinfinispan"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
 	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
 
-	// Import plugins to trigger init() registration
 	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/noop"
+	_ "github.com/chirino/memory-service/internal/plugin/cache/infinispan"
 	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
 	_ "github.com/chirino/memory-service/internal/plugin/route/system"
+	_ "github.com/chirino/memory-service/internal/plugin/vector/pgvector"
 )
 
-// testEncryptionKey is a 64-hex-char (32-byte) AES-256 key for testing.
-const testEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-func TestFeaturesPgEncrypted(t *testing.T) {
+func TestFeaturesSerial(t *testing.T) {
 	_ = postgres.ForceImport
 
 	dbURL := testpg.StartPostgres(t)
 	prom := NewMockPrometheus(t)
+	infinispan := testinfinispan.StartInfinispan(t)
 
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DBURL = dbURL
-	cfg.CacheType = "none"
-	cfg.AttachType = "db"
+	cfg.CacheType = "infinispan"
+	cfg.InfinispanHost = infinispan.Host
+	cfg.InfinispanUsername = infinispan.Username
+	cfg.InfinispanPassword = infinispan.Password
 	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()
 	cfg.AuditorUsers = bddAuditorUsers()
 	cfg.IndexerUsers = bddIndexerUsers()
@@ -53,19 +56,18 @@ func TestFeaturesPgEncrypted(t *testing.T) {
 	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
-	// Run only features-encrypted/ feature files
-	resourcesDir := "testdata"
-	encryptedDir := filepath.Join(resourcesDir, "features-encrypted")
-	if _, err := os.Stat(encryptedDir); os.IsNotExist(err) {
-		t.Skipf("Encrypted feature files directory not found: %s", encryptedDir)
+	featuresDir := filepath.Join("testdata", "features")
+	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
+		t.Skipf("Feature files directory not found: %s", featuresDir)
 	}
 
-	featureFiles, err := filepath.Glob(filepath.Join(encryptedDir, "*.feature"))
+	featureFiles, err := filepath.Glob(filepath.Join(featuresDir, "*.feature"))
 	require.NoError(t, err)
-	require.NotEmpty(t, featureFiles, "No encrypted feature files found in %s", encryptedDir)
+	featureFiles = filterSerialFeatures(featureFiles, true)
+	require.NotEmpty(t, featureFiles, "No serial feature files found in %s", featuresDir)
 
 	opts := cucumber.DefaultOptions()
-	opts.Concurrency = bddScenarioConcurrency()
+	opts.Concurrency = 1
 	for _, arg := range os.Args[1:] {
 		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
 			opts.Format = "pretty"
@@ -91,7 +93,7 @@ func TestFeaturesPgEncrypted(t *testing.T) {
 			suite.Extra["grpcAddr"] = grpcAddr
 
 			status := godog.TestSuite{
-				Name:                name,
+				Name:                "serial-" + name,
 				Options:             &o,
 				ScenarioInitializer: suite.InitializeScenario,
 			}.Run()

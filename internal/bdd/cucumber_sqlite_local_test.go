@@ -28,9 +28,9 @@ func TestFeaturesSQLiteLocal(t *testing.T) {
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
-	cfg.AdminUsers = "alice"
-	cfg.AuditorUsers = "alice,charlie"
-	cfg.IndexerUsers = "dave,alice"
+	cfg.AdminUsers = bddAdminUsers()
+	cfg.AuditorUsers = bddAuditorUsers()
+	cfg.IndexerUsers = bddIndexerUsers()
 	cfg.PrometheusURL = prom.Server.URL
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false

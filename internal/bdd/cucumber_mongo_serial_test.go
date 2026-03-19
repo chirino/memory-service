@@ -10,34 +10,41 @@ import (
 
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/plugin/store/postgres"
+	mongoplugin "github.com/chirino/memory-service/internal/plugin/store/mongo"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
-	"github.com/chirino/memory-service/internal/testutil/testpg"
+	"github.com/chirino/memory-service/internal/testutil/testmongo"
+	"github.com/chirino/memory-service/internal/testutil/testqdrant"
+	"github.com/chirino/memory-service/internal/testutil/testredis"
 	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
 
-	// Import plugins to trigger init() registration
-	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/noop"
+	_ "github.com/chirino/memory-service/internal/plugin/attach/mongostore"
+	_ "github.com/chirino/memory-service/internal/plugin/cache/redis"
 	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
 	_ "github.com/chirino/memory-service/internal/plugin/route/system"
+	_ "github.com/chirino/memory-service/internal/plugin/vector/qdrant"
 )
 
-// testEncryptionKey is a 64-hex-char (32-byte) AES-256 key for testing.
-const testEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+func TestFeaturesMongoSerial(t *testing.T) {
+	_ = mongoplugin.ForceImport
 
-func TestFeaturesPgEncrypted(t *testing.T) {
-	_ = postgres.ForceImport
-
-	dbURL := testpg.StartPostgres(t)
+	mongoURL := testmongo.StartMongo(t)
+	redisURL := testredis.StartRedis(t)
+	qdrantHost := testqdrant.StartQdrant(t)
 	prom := NewMockPrometheus(t)
 
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting
-	cfg.DBURL = dbURL
-	cfg.CacheType = "none"
-	cfg.AttachType = "db"
+	cfg.DatastoreType = "mongo"
+	cfg.AttachType = "mongo"
+	cfg.DBURL = mongoURL
+	cfg.CacheType = "redis"
+	cfg.RedisURL = redisURL
+	cfg.VectorType = "qdrant"
+	cfg.QdrantHost = qdrantHost
 	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()
 	cfg.AuditorUsers = bddAuditorUsers()
 	cfg.IndexerUsers = bddIndexerUsers()
@@ -53,19 +60,18 @@ func TestFeaturesPgEncrypted(t *testing.T) {
 	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
-	// Run only features-encrypted/ feature files
-	resourcesDir := "testdata"
-	encryptedDir := filepath.Join(resourcesDir, "features-encrypted")
-	if _, err := os.Stat(encryptedDir); os.IsNotExist(err) {
-		t.Skipf("Encrypted feature files directory not found: %s", encryptedDir)
+	featuresDir := filepath.Join("testdata", "features")
+	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
+		t.Skipf("Feature files directory not found: %s", featuresDir)
 	}
 
-	featureFiles, err := filepath.Glob(filepath.Join(encryptedDir, "*.feature"))
+	featureFiles, err := filepath.Glob(filepath.Join(featuresDir, "*.feature"))
 	require.NoError(t, err)
-	require.NotEmpty(t, featureFiles, "No encrypted feature files found in %s", encryptedDir)
+	featureFiles = filterSerialFeatures(featureFiles, true)
+	require.NotEmpty(t, featureFiles, "No serial Mongo feature files found")
 
 	opts := cucumber.DefaultOptions()
-	opts.Concurrency = bddScenarioConcurrency()
+	opts.Concurrency = 1
 	for _, arg := range os.Args[1:] {
 		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
 			opts.Format = "pretty"
@@ -75,7 +81,7 @@ func TestFeaturesPgEncrypted(t *testing.T) {
 	for _, featurePath := range featureFiles {
 		name := strings.TrimSuffix(filepath.Base(featurePath), ".feature")
 		t.Run(name, func(t *testing.T) {
-			clearFeatureDB(t, &PostgresTestDB{DBURL: dbURL})
+			clearFeatureDB(t, &MongoTestDB{DBURL: mongoURL})
 
 			o := opts
 			o.TestingT = t
@@ -86,12 +92,12 @@ func TestFeaturesPgEncrypted(t *testing.T) {
 			suite.APIURL = apiURL
 			suite.TestingT = t
 			suite.Context = &cfg
-			suite.DB = &PostgresTestDB{DBURL: dbURL}
+			suite.DB = &MongoTestDB{DBURL: mongoURL}
 			suite.Extra["mockPrometheus"] = prom
 			suite.Extra["grpcAddr"] = grpcAddr
 
 			status := godog.TestSuite{
-				Name:                name,
+				Name:                "mongo-serial-" + name,
 				Options:             &o,
 				ScenarioInitializer: suite.InitializeScenario,
 			}.Run()

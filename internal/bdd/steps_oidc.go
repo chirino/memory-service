@@ -12,6 +12,7 @@ const OIDCTokenProviderExtraKey = "oidcTokenProvider"
 
 type oidcTokenProvider interface {
 	AccessToken(ctx context.Context, username, password string) (string, error)
+	EnsureUser(ctx context.Context, username, password string, realmRoles []string) error
 }
 
 func init() {
@@ -34,7 +35,13 @@ func (o *oidcAuthSteps) iLoginViaOIDCAsUserWithPassword(userID, password string)
 		return err
 	}
 
-	token, err := provider.AccessToken(context.Background(), userID, password)
+	o.s.RegisterCanonicalUsers(userID)
+	isolatedUserID := o.s.IsolatedUser(userID)
+	if err := provider.EnsureUser(context.Background(), isolatedUserID, password, oidcRealmRoles(userID)); err != nil {
+		return fmt.Errorf("OIDC provision failed for user %q: %w", isolatedUserID, err)
+	}
+
+	token, err := provider.AccessToken(context.Background(), isolatedUserID, password)
 	if err != nil {
 		return fmt.Errorf("OIDC login failed for user %q: %w", userID, err)
 	}
@@ -53,7 +60,9 @@ func (o *oidcAuthSteps) iAttemptOIDCLoginAsUserWithPassword(userID, password str
 		return err
 	}
 
-	token, loginErr := provider.AccessToken(context.Background(), userID, password)
+	o.s.RegisterCanonicalUsers(userID)
+	isolatedUserID := o.s.IsolatedUser(userID)
+	token, loginErr := provider.AccessToken(context.Background(), isolatedUserID, password)
 	o.lastLoginErr = loginErr
 	if loginErr == nil && token != "" {
 		o.setUserToken(userID, token)
@@ -90,4 +99,15 @@ func (o *oidcAuthSteps) setUserToken(userID, token string) {
 	user.Subject = token
 	o.s.Suite.Mu.Unlock()
 	o.s.CurrentUser = userID
+}
+
+func oidcRealmRoles(userID string) []string {
+	switch userID {
+	case "alice":
+		return []string{"user", "admin"}
+	case "charlie":
+		return []string{"user", "auditor"}
+	default:
+		return []string{"user"}
+	}
 }

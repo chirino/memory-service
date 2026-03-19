@@ -1001,12 +1001,20 @@ func (s *SearchServer) isIndexer(userID string) bool {
 		return false
 	}
 	for _, u := range strings.Split(s.Config.AdminUsers, ",") {
-		if strings.TrimSpace(u) == userID {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if u == userID || (strings.HasSuffix(u, "*") && strings.HasPrefix(userID, strings.TrimSuffix(u, "*"))) {
 			return true // admin implies indexer
 		}
 	}
 	for _, u := range strings.Split(s.Config.IndexerUsers, ",") {
-		if strings.TrimSpace(u) == userID {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if u == userID || (strings.HasSuffix(u, "*") && strings.HasPrefix(userID, strings.TrimSuffix(u, "*"))) {
 			return true
 		}
 	}

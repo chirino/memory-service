@@ -91,21 +91,21 @@ func (c *conversationSteps) theConversationIdIs(id string) error {
 
 func (c *conversationSteps) thereIsAConversationOwnedBy(ownerId string) error {
 	// Temporarily switch user to create conversation as owner
-	savedUser := c.s.CurrentUser
+	savedAuth := snapshotAuthState(c.s)
 	a := &authSteps{s: c.s}
 	_ = a.iAmAuthenticatedAsUser(ownerId)
 
 	body := fmt.Sprintf(`{"title": "Owned by %s"}`, ownerId)
 	err := c.s.SendHTTPRequestWithJSONBodyAndStyle("POST", "/v1/conversations", &godog.DocString{Content: body}, false, false)
 	if err != nil {
-		c.s.CurrentUser = savedUser
+		restoreAuthState(c.s, savedAuth)
 		return err
 	}
 	session := c.s.Session()
 	if session.Resp != nil && session.Resp.StatusCode == 201 {
 		respJSON, err := session.RespJSON()
 		if err != nil {
-			c.s.CurrentUser = savedUser
+			restoreAuthState(c.s, savedAuth)
 			return err
 		}
 		if m, ok := respJSON.(map[string]interface{}); ok {
@@ -116,7 +116,7 @@ func (c *conversationSteps) thereIsAConversationOwnedBy(ownerId string) error {
 		}
 	}
 	// Restore original user
-	c.s.CurrentUser = savedUser
+	restoreAuthState(c.s, savedAuth)
 	return nil
 }
 

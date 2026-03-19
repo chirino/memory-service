@@ -120,14 +120,14 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Category:    "Server:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_TLS_CERT_FILE"),
 			Destination: &cfg.Listener.TLSCertFile,
-			Usage:       "TLS certificate file for single-port TLS mode",
+			Usage:       "TLS certificate file for listener TLS mode",
 		},
 		&cli.StringFlag{
 			Name:        "tls-key-file",
 			Category:    "Server:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_TLS_KEY_FILE"),
 			Destination: &cfg.Listener.TLSKeyFile,
-			Usage:       "TLS private key file for single-port TLS mode",
+			Usage:       "TLS private key file for listener TLS mode",
 		},
 		&cli.StringFlag{
 			Name:        "advertised-address",
