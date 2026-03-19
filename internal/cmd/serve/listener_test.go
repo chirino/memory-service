@@ -1,3 +1,5 @@
+//go:build !nouds
+
 package serve
 
 import (

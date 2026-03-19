@@ -1,3 +1,5 @@
+//go:build !nopostgresql
+
 package pgstore
 
 import (

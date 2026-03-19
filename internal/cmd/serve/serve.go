@@ -3,7 +3,6 @@ package serve
 import (
 	"context"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -18,29 +17,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/urfave/cli/v3"
 
-	// Import all plugins to trigger init() registration
+	// Import core (non-excludable) plugins to trigger init() registration.
+	// Excludable plugins are imported via plugin_*.go files with build constraints.
 	_ "github.com/chirino/memory-service/internal/plugin/attach/filesystem"
-	_ "github.com/chirino/memory-service/internal/plugin/attach/mongostore"
-	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
-	_ "github.com/chirino/memory-service/internal/plugin/attach/s3store"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/infinispan"
 	_ "github.com/chirino/memory-service/internal/plugin/cache/local"
 	_ "github.com/chirino/memory-service/internal/plugin/cache/noop"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/redis"
 	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
 	_ "github.com/chirino/memory-service/internal/plugin/embed/local"
-	_ "github.com/chirino/memory-service/internal/plugin/embed/openai"
-	_ "github.com/chirino/memory-service/internal/plugin/encrypt/awskms"
 	_ "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
 	_ "github.com/chirino/memory-service/internal/plugin/encrypt/plain"
-	_ "github.com/chirino/memory-service/internal/plugin/encrypt/vault"
 	_ "github.com/chirino/memory-service/internal/plugin/route/system"
-	_ "github.com/chirino/memory-service/internal/plugin/store/mongo"
-	_ "github.com/chirino/memory-service/internal/plugin/store/postgres"
-	_ "github.com/chirino/memory-service/internal/plugin/store/sqlite"
-	_ "github.com/chirino/memory-service/internal/plugin/vector/pgvector"
-	_ "github.com/chirino/memory-service/internal/plugin/vector/qdrant"
-	_ "github.com/chirino/memory-service/internal/plugin/vector/sqlitevec"
 )
 
 // Command returns the serve sub-command.
@@ -66,18 +52,13 @@ func Command() *cli.Command {
 			if err := cfg.ApplyJavaCompatFromEnv(); err != nil {
 				return err
 			}
-			// Forward Vault/AWS CLI flags to env vars so the SDKs pick them up.
-			for flagName, envVar := range map[string]string{
-				"encryption-vault-addr":                "VAULT_ADDR",
-				"encryption-vault-token":               "VAULT_TOKEN",
-				"encryption-kms-aws-region":            "AWS_REGION",
-				"encryption-kms-aws-access-key-id":     "AWS_ACCESS_KEY_ID",
-				"encryption-kms-aws-secret-access-key": "AWS_SECRET_ACCESS_KEY",
-			} {
-				if v := cmd.String(flagName); v != "" {
-					os.Setenv(envVar, v)
-				}
-			}
+			// Let plugins apply post-parse transformations (e.g. env var forwarding).
+			registrystore.ApplyAll(&cfg, cmd)
+			registrycache.ApplyAll(&cfg, cmd)
+			registryvector.ApplyAll(&cfg, cmd)
+			registryembed.ApplyAll(&cfg, cmd)
+			registryattach.ApplyAll(&cfg, cmd)
+			encrypt.ApplyAll(&cfg, cmd)
 			if strings.TrimSpace(cacheLocalMaxBytes) != "" {
 				size, err := config.ParseMemorySize(cacheLocalMaxBytes)
 				if err != nil {
@@ -112,7 +93,7 @@ func Command() *cli.Command {
 func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *string, cacheLocalNumCounters *int, cacheLocalBufferItems *int) []cli.Flag {
 	*cacheLocalNumCounters = int(cfg.CacheLocalNumCounters)
 	*cacheLocalBufferItems = int(cfg.CacheLocalBufferItems)
-	return []cli.Flag{
+	coreFlags := []cli.Flag{
 
 		// ── Server ────────────────────────────────────────────────
 		&cli.StringFlag{
@@ -167,21 +148,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 		},
 
 		// ── Network Listener ──────────────────────────────────────
-		&cli.IntFlag{
-			Name:        "port",
-			Category:    "Network Listener:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_PORT"),
-			Destination: &cfg.Listener.Port,
-			Value:       cfg.Listener.Port,
-			Usage:       "HTTP server port",
-		},
-		&cli.StringFlag{
-			Name:        "unix-socket",
-			Category:    "Network Listener:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_UNIX_SOCKET"),
-			Destination: &cfg.Listener.UnixSocket,
-			Usage:       "Absolute path to a Unix socket for the HTTP/gRPC server",
-		},
 		&cli.BoolFlag{
 			Name:        "plain-text",
 			Category:    "Network Listener:",
@@ -200,21 +166,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 		},
 
 		// ── Network Listener: Management ─────────────────────────
-		&cli.IntFlag{
-			Name:        "management-port",
-			Category:    "Network Listener: Management:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_PORT"),
-			Destination: &cfg.ManagementListener.Port,
-			Value:       cfg.ManagementListener.Port,
-			Usage:       "Dedicated port for health and metrics (0 = OS-assigned random port); when unset, served on the main port",
-		},
-		&cli.StringFlag{
-			Name:        "management-unix-socket",
-			Category:    "Network Listener: Management:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET"),
-			Destination: &cfg.ManagementListener.UnixSocket,
-			Usage:       "Absolute path to a Unix socket for the management server",
-		},
 		&cli.BoolFlag{
 			Name:        "management-plain-text",
 			Category:    "Network Listener: Management:",
@@ -276,34 +227,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Usage:       "Cache backend (" + strings.Join(registrycache.Names(), "|") + ")",
 		},
 		&cli.StringFlag{
-			Name:        "redis-hosts",
-			Category:    "Cache:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_REDIS_HOSTS"),
-			Destination: &cfg.RedisURL,
-			Usage:       "Redis connection URL",
-		},
-		&cli.StringFlag{
-			Name:        "infinispan-host",
-			Category:    "Cache:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_INFINISPAN_HOST"),
-			Destination: &cfg.InfinispanHost,
-			Usage:       "Infinispan RESP host:port (e.g. localhost:11222)",
-		},
-		&cli.StringFlag{
-			Name:        "infinispan-username",
-			Category:    "Cache:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_INFINISPAN_USERNAME"),
-			Destination: &cfg.InfinispanUsername,
-			Usage:       "Infinispan username",
-		},
-		&cli.StringFlag{
-			Name:        "infinispan-password",
-			Category:    "Cache:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_INFINISPAN_PASSWORD"),
-			Destination: &cfg.InfinispanPassword,
-			Usage:       "Infinispan password",
-		},
-		&cli.StringFlag{
 			Name:        "cache-local-max-bytes",
 			Category:    "Cache:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_CACHE_LOCAL_MAX_BYTES"),
@@ -337,25 +260,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Usage:       "Attachment store (db|" + strings.Join(registryattach.Names(), "|") + ")",
 		},
 		&cli.StringFlag{
-			Name:        "attachments-s3-bucket",
-			Category:    "Attachment Storage:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET"),
-			Destination: &cfg.S3Bucket,
-			Usage:       "S3 bucket for attachments",
-		},
-		&cli.StringFlag{
 			Name:        "attachments-fs-dir",
 			Category:    "Attachment Storage:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_FS_DIR"),
 			Destination: &cfg.AttachFSDir,
 			Usage:       "Filesystem directory for local attachment storage",
-		},
-		&cli.BoolFlag{
-			Name:        "attachments-s3-use-path-style",
-			Category:    "Attachment Storage:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE"),
-			Destination: &cfg.S3UsePathStyle,
-			Usage:       "Use path-style S3 addressing (required for LocalStack/MinIO)",
 		},
 		&cli.BoolFlag{
 			Name:        "attachments-allow-private-source-urls",
@@ -397,54 +306,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Usage:       "Comma-separated AES keys for the 'dek' provider (hex or base64, 32 bytes). First is primary; additional keys are legacy (decryption-only key rotation). Also derives attachment URL signing keys.",
 		},
 
-		// ── Encryption: Vault ─────────────────────────────────────
-		&cli.StringFlag{
-			Name:        "encryption-vault-transit-key",
-			Category:    "Encryption: Vault:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY"),
-			Destination: &cfg.EncryptionVaultTransitKey,
-			Usage:       "Vault Transit key name for the 'vault' provider",
-		},
-		&cli.StringFlag{
-			Name:     "encryption-vault-addr",
-			Category: "Encryption: Vault:",
-			Sources:  cli.EnvVars("VAULT_ADDR"),
-			Usage:    "Vault server URL (e.g. https://vault.example.com)",
-		},
-		&cli.StringFlag{
-			Name:     "encryption-vault-token",
-			Category: "Encryption: Vault:",
-			Sources:  cli.EnvVars("VAULT_TOKEN"),
-			Usage:    "Vault token for authentication",
-		},
-
-		// ── Encryption: KMS ───────────────────────────────────────
-		&cli.StringFlag{
-			Name:        "encryption-kms-key-id",
-			Category:    "Encryption: KMS:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID"),
-			Destination: &cfg.EncryptionKMSKeyID,
-			Usage:       "AWS KMS key ID or ARN for the 'kms' provider",
-		},
-		&cli.StringFlag{
-			Name:     "encryption-kms-aws-region",
-			Category: "Encryption: KMS:",
-			Sources:  cli.EnvVars("AWS_REGION"),
-			Usage:    "AWS region (e.g. us-east-1)",
-		},
-		&cli.StringFlag{
-			Name:     "encryption-kms-aws-access-key-id",
-			Category: "Encryption: KMS:",
-			Sources:  cli.EnvVars("AWS_ACCESS_KEY_ID"),
-			Usage:    "AWS access key ID",
-		},
-		&cli.StringFlag{
-			Name:     "encryption-kms-aws-secret-access-key",
-			Category: "Encryption: KMS:",
-			Sources:  cli.EnvVars("AWS_SECRET_ACCESS_KEY"),
-			Usage:    "AWS secret access key",
-		},
-
 		// ── Vector Store ──────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "vector-kind",
@@ -462,15 +323,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.VectorIndexerBatchSize,
 			Usage:       "Number of entries to embed and index per background indexer tick",
 		},
-		&cli.StringFlag{
-			Name:        "vector-qdrant-host",
-			Category:    "Vector Store:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_QDRANT_HOST", "MEMORY_SERVICE_QDRANT_HOST"),
-			Destination: &cfg.QdrantHost,
-			Value:       cfg.QdrantAddress(),
-			Usage:       "Qdrant host or host:port",
-		},
-
 		// ── Embedding ─────────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "embedding-kind",
@@ -480,14 +332,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.EmbedType,
 			Usage:       "Embedding provider (" + strings.Join(registryembed.Names(), "|") + ")",
 		},
-		&cli.StringFlag{
-			Name:        "embedding-openai-api-key",
-			Category:    "Embedding:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY", "MEMORY_SERVICE_OPENAI_API_KEY", "OPENAI_API_KEY"),
-			Destination: &cfg.OpenAIAPIKey,
-			Usage:       "OpenAI API key",
-		},
-
 		// ── Authorization ─────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "oidc-issuer",
@@ -626,6 +470,20 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Usage:       "Comma-separated key=value pairs added as constant labels to all Prometheus metrics. Supports ${VAR} expansion.",
 		},
 	}
+
+	// Append flags contributed by registered plugins.
+	// Append listener flags contributed by conditional build-tag files.
+	coreFlags = append(coreFlags, tcpListenerFlags(cfg)...)
+	coreFlags = append(coreFlags, udsListenerFlags(cfg)...)
+
+	// Append flags contributed by registered plugins.
+	coreFlags = append(coreFlags, registrystore.PluginFlags(cfg)...)
+	coreFlags = append(coreFlags, registrycache.PluginFlags(cfg)...)
+	coreFlags = append(coreFlags, registryvector.PluginFlags(cfg)...)
+	coreFlags = append(coreFlags, registryembed.PluginFlags(cfg)...)
+	coreFlags = append(coreFlags, registryattach.PluginFlags(cfg)...)
+	coreFlags = append(coreFlags, encrypt.PluginFlags(cfg)...)
+	return coreFlags
 }
 
 func run(ctx context.Context, cfg config.Config) error {

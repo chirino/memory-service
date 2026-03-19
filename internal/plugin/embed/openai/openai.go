@@ -1,3 +1,5 @@
+//go:build !noopenai
+
 package openai
 
 import (
@@ -11,12 +13,24 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
+	"github.com/urfave/cli/v3"
 )
 
 func init() {
 	registryembed.Register(registryembed.Plugin{
 		Name:   "openai",
 		Loader: load,
+		Flags: func(cfg *config.Config) []cli.Flag {
+			return []cli.Flag{
+				&cli.StringFlag{
+					Name:        "embedding-openai-api-key",
+					Category:    "Embedding:",
+					Sources:     cli.EnvVars("MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY", "MEMORY_SERVICE_OPENAI_API_KEY", "OPENAI_API_KEY"),
+					Destination: &cfg.OpenAIAPIKey,
+					Usage:       "OpenAI API key",
+				},
+			}
+		},
 	})
 }
 
