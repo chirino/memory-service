@@ -85,6 +85,7 @@ func (s *TestScenario) SendHTTPRequestWithJSONBodyAndStyle(method, path string, 
 				return err
 			}
 		}
+		expanded = s.RewriteRequestBody(expanded)
 		body.WriteString(expanded)
 	}
 
@@ -92,6 +93,7 @@ func (s *TestScenario) SendHTTPRequestWithJSONBodyAndStyle(method, path string, 
 	if err != nil {
 		return err
 	}
+	expandedPath = s.RewriteRequestPath(expandedPath)
 
 	fullURL := ""
 	expandedPathURL, err := url.Parse(expandedPath)
@@ -150,6 +152,11 @@ func (s *TestScenario) SendHTTPRequestWithJSONBodyAndStyle(method, path string, 
 		if err != nil {
 			return err
 		}
+		normalized, err := s.NormalizeResponseBody(fullURL, resp.Header.Get("Content-Type"), session.RespBytes)
+		if err != nil {
+			return err
+		}
+		session.SetRespBytes(normalized)
 	} else {
 		c := make(chan interface{})
 		session.EventStreamEvents = c
@@ -205,6 +212,7 @@ func (s *TestScenario) iCallExpectingBinaryWithHeader(method, path, headerName, 
 		return err
 	}
 	expanded = strings.ReplaceAll(expanded, `\"`, `"`)
+	expanded = s.RewriteQuotedUsers(expanded)
 	session.Header.Set(headerName, expanded)
 	session.Header.Set("Accept", "*/*")
 	return s.sendHTTPRequest(method, path)
@@ -229,6 +237,7 @@ func (s *TestScenario) iCallExpectingBinaryNoAuthWithHeader(method, path, header
 		return err
 	}
 	expanded = strings.ReplaceAll(expanded, `\"`, `"`)
+	expanded = s.RewriteQuotedUsers(expanded)
 	session.Header.Set(headerName, expanded)
 	session.Header.Del("Authorization")
 	session.Header.Set("Accept", "*/*")
@@ -244,6 +253,7 @@ func (s *TestScenario) iSetTheHeaderTo(name, value string) error {
 	if err != nil {
 		return err
 	}
+	expanded = s.RewriteQuotedUsers(expanded)
 	s.Session().Header.Set(name, expanded)
 	return nil
 }
@@ -262,9 +272,9 @@ func (s *TestScenario) iWaitUpToSecondsForAResponseJSONEvent(timeout float64) er
 
 	select {
 	case event := <-session.EventStreamEvents:
-		session.respJSON = event
+		session.respJSON = s.NormalizeValue(event)
 		var err error
-		session.RespBytes, err = json.Marshal(event)
+		session.RespBytes, err = json.Marshal(session.respJSON)
 		if err != nil {
 			return err
 		}

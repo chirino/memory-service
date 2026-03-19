@@ -142,11 +142,13 @@ type TestUser struct {
 // TestScenario holds state for a single scenario. Not accessed concurrently.
 type TestScenario struct {
 	Suite           *TestSuite
+	ScenarioUID     string
 	CurrentUser     string
 	PathPrefix      string
 	sessions        map[string]*TestSession
 	Variables       map[string]interface{}
 	Users           map[string]*TestUser
+	userAliases     map[string]string
 	hasTestCaseLock bool
 }
 
@@ -603,11 +605,14 @@ var StepModules []func(ctx *godog.ScenarioContext, s *TestScenario)
 
 func (suite *TestSuite) InitializeScenario(ctx *godog.ScenarioContext) {
 	s := &TestScenario{
-		Suite:     suite,
-		Users:     map[string]*TestUser{},
-		sessions:  map[string]*TestSession{},
-		Variables: map[string]interface{}{},
+		Suite:       suite,
+		ScenarioUID: strings.Split(uuid.NewString(), "-")[0],
+		Users:       map[string]*TestUser{},
+		sessions:    map[string]*TestSession{},
+		Variables:   map[string]interface{}{},
+		userAliases: map[string]string{},
 	}
+	s.RegisterCanonicalUsers("alice", "bob", "charlie", "dave", "stranger")
 
 	for _, module := range StepModules {
 		module(ctx, s)

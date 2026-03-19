@@ -42,9 +42,9 @@ func TestFeatures(t *testing.T) {
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
-	cfg.AdminUsers = "alice"
-	cfg.AuditorUsers = "alice,charlie"
-	cfg.IndexerUsers = "dave,alice"
+	cfg.AdminUsers = bddAdminUsers()
+	cfg.AuditorUsers = bddAuditorUsers()
+	cfg.IndexerUsers = bddIndexerUsers()
 	cfg.PrometheusURL = prom.Server.URL
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false
@@ -72,11 +72,12 @@ func TestFeatures(t *testing.T) {
 		subFiles, _ := filepath.Glob(filepath.Join(parentDir, subdir, "*.feature"))
 		featureFiles = append(featureFiles, subFiles...)
 	}
+	featureFiles = filterSerialFeatures(featureFiles, false)
 	require.NotEmpty(t, featureFiles, "No feature files found in %s", featuresDir)
 
 	// Configure godog options
 	opts := cucumber.DefaultOptions()
-	opts.Concurrency = 1
+	opts.Concurrency = bddScenarioConcurrency()
 	for _, arg := range os.Args[1:] {
 		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
 			opts.Format = "pretty"
@@ -86,6 +87,8 @@ func TestFeatures(t *testing.T) {
 	for _, featurePath := range featureFiles {
 		name := strings.TrimSuffix(filepath.Base(featurePath), ".feature")
 		t.Run(name, func(t *testing.T) {
+			clearFeatureDB(t, &PostgresTestDB{DBURL: dbURL})
+
 			o := opts
 			o.TestingT = t
 			o.Paths = []string{featurePath}

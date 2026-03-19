@@ -33,10 +33,15 @@ func (sq *sqlSteps) iExecuteSQLQuery(query *godog.DocString) error {
 	if err != nil {
 		return err
 	}
+	expanded = sq.s.RewriteQuotedUsers(expanded)
 
 	sq.lastRows, err = sq.s.Suite.DB.ExecSQL(context.Background(), expanded)
 	if err != nil {
 		return err
+	}
+	sq.lastRows = sq.s.FilterQueryRows(sq.lastRows)
+	if normalized, ok := sq.s.NormalizeValue(sq.lastRows).([]map[string]interface{}); ok {
+		sq.lastRows = normalized
 	}
 
 	// nil lastRows means "skip SQL" (MongoDB backend) — don't store response

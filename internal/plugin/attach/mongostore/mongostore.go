@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/chirino/memory-service/internal/config"
@@ -59,6 +60,7 @@ type MongoAttachmentStore struct {
 	bucket  *mongo.GridFSBucket
 	chunks  *mongo.Collection
 	tempDir string
+	storeMu sync.Mutex
 }
 
 // fileChunkDoc is kept only for backward-compat reads of attachments written by older Go versions.
@@ -72,6 +74,9 @@ type fileChunkDoc struct {
 // Store uploads data to GridFS, matching Java's DatabaseFileStore behaviour.
 // Returns the ObjectId hex string as the storage key.
 func (s *MongoAttachmentStore) Store(ctx context.Context, data io.Reader, maxSize int64, contentType string) (*registryattach.FileStoreResult, error) {
+	s.storeMu.Lock()
+	defer s.storeMu.Unlock()
+
 	hasher := sha256.New()
 	limited := io.LimitReader(data, maxSize+1)
 

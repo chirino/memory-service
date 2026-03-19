@@ -56,7 +56,7 @@ func TestFeaturesPgKeycloak(t *testing.T) {
 	}
 
 	opts := cucumber.DefaultOptions()
-	opts.Concurrency = 1
+	opts.Concurrency = bddScenarioConcurrency()
 	for _, arg := range os.Args[1:] {
 		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
 			opts.Format = "pretty"

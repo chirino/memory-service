@@ -29,6 +29,15 @@
         { "type": "password", "value": "alice", "temporary": false }
       ],
       "realmRoles": ["user", "admin"],
+      "clientRoles": {
+        "realm-management": [
+          "realm-admin",
+          "manage-users",
+          "query-users",
+          "view-realm",
+          "view-users"
+        ]
+      },
       "groups": [],
       "requiredActions": []
     },

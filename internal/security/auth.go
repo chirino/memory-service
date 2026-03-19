@@ -217,24 +217,24 @@ func (r *TokenResolver) Resolve(ctx context.Context, bearerToken, apiKey, client
 	}
 
 	// User-based role assignment.
-	if r.adminUsers[userID] {
+	if matchesConfiguredValue(r.adminUsers, userID) {
 		roles[RoleAdmin] = true
 	}
-	if r.auditorUsers[userID] {
+	if matchesConfiguredValue(r.auditorUsers, userID) {
 		roles[RoleAuditor] = true
 	}
-	if r.indexerUsers[userID] {
+	if matchesConfiguredValue(r.indexerUsers, userID) {
 		roles[RoleIndexer] = true
 	}
 	// API-key client based role assignment parity with Java.
 	if apiKeyAuth && clientID != "" {
-		if r.adminClients[clientID] {
+		if matchesConfiguredValue(r.adminClients, clientID) {
 			roles[RoleAdmin] = true
 		}
-		if r.auditorClients[clientID] {
+		if matchesConfiguredValue(r.auditorClients, clientID) {
 			roles[RoleAuditor] = true
 		}
-		if r.indexerClients[clientID] {
+		if matchesConfiguredValue(r.indexerClients, clientID) {
 			roles[RoleIndexer] = true
 		}
 	}
@@ -458,6 +458,18 @@ func splitCSV(raw string) map[string]bool {
 		result[item] = true
 	}
 	return result
+}
+
+func matchesConfiguredValue(values map[string]bool, actual string) bool {
+	if values[actual] {
+		return true
+	}
+	for value := range values {
+		if strings.HasSuffix(value, "*") && strings.HasPrefix(actual, strings.TrimSuffix(value, "*")) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractTokenRoles(claims map[string]any) map[string]bool {

@@ -31,7 +31,7 @@ func StartSinglePortHTTPAndGRPC(
 	grpcServer *grpc.Server,
 ) (*RunningServers, error) {
 	if !cfg.EnablePlainText && !cfg.EnableTLS {
-		return nil, fmt.Errorf("single-port configuration requires plaintext and/or tls enabled")
+		return nil, fmt.Errorf("listener configuration requires plaintext and/or tls enabled")
 	}
 	if cfg.ReadHeaderTimeout == 0 {
 		cfg.ReadHeaderTimeout = 5 * time.Second
@@ -39,7 +39,7 @@ func StartSinglePortHTTPAndGRPC(
 
 	prepared, err := prepareListener(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("single-port listen failed: %w", err)
+		return nil, fmt.Errorf("listener listen failed: %w", err)
 	}
 	baseLis := prepared.Listener
 
@@ -63,7 +63,7 @@ func StartSinglePortHTTPAndGRPC(
 		}
 		go func() {
 			if err := plainServer.Serve(plainLis); err != nil && err != http.ErrServerClosed {
-				log.Error("single-port plaintext server failed", "err", err)
+				log.Error("listener plaintext server failed", "err", err)
 			}
 		}()
 	}
@@ -88,14 +88,14 @@ func StartSinglePortHTTPAndGRPC(
 		}
 		go func() {
 			if err := tlsServer.Serve(tlsWrapped); err != nil && err != http.ErrServerClosed {
-				log.Error("single-port tls server failed", "err", err)
+				log.Error("listener tls server failed", "err", err)
 			}
 		}()
 	}
 
 	go func() {
 		if err := muxer.Serve(); err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
-			log.Error("single-port mux failed", "err", err)
+			log.Error("listener mux failed", "err", err)
 		}
 	}()
 

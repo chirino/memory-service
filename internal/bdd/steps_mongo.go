@@ -34,10 +34,15 @@ func (mq *mongoSteps) iExecuteMongoDBQuery(query *godog.DocString) error {
 	if err != nil {
 		return err
 	}
+	expanded = mq.s.RewriteQuotedUsers(expanded)
 
 	mq.lastRows, err = mq.s.Suite.DB.ExecMongoQuery(context.Background(), expanded)
 	if err != nil {
 		return err
+	}
+	mq.lastRows = mq.s.FilterQueryRows(mq.lastRows)
+	if normalized, ok := mq.s.NormalizeValue(mq.lastRows).([]map[string]interface{}); ok {
+		mq.lastRows = normalized
 	}
 
 	return storeQueryRowsAsResponse(mq.s, mq.lastRows)

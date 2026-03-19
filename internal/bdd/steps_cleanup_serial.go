@@ -9,12 +9,14 @@ import (
 
 func init() {
 	cucumber.StepModules = append(cucumber.StepModules, func(ctx *godog.ScenarioContext, s *cucumber.TestScenario) {
-		if s.Suite.DB == nil {
-			return
-		}
-		// Clear database before each scenario (matches Java @Before clearDatabase)
-		ctx.Before(func(ctx context.Context, sc *godog.Scenario) (context.Context, error) {
-			return ctx, s.Suite.DB.ClearAll(ctx)
+		ctx.Before(func(ctx2 context.Context, sc *godog.Scenario) (context.Context, error) {
+			if s.Suite.DB == nil || !isSerialFeature(sc.Uri) {
+				return ctx2, nil
+			}
+			if err := s.Suite.DB.ClearAll(ctx2); err != nil {
+				return ctx2, err
+			}
+			return ctx2, nil
 		})
 	})
 }

@@ -54,7 +54,7 @@ func (m *membershipSteps) iShareTheConversationWithUserAndAccessLevel(userID, ac
 
 func (m *membershipSteps) theConversationIsSharedWithUserWithAccessLevel(userID, accessLevel string) error {
 	// Use the conversation owner to share (they have manager access)
-	savedUser := m.s.CurrentUser
+	savedAuth := snapshotAuthState(m.s)
 	if owner, ok := m.s.Variables["conversationOwner"].(string); ok {
 		a := &authSteps{s: m.s}
 		_ = a.iAmAuthenticatedAsUser(owner)
@@ -63,7 +63,7 @@ func (m *membershipSteps) theConversationIsSharedWithUserWithAccessLevel(userID,
 	err := m.iShareTheConversationWithUserAndAccessLevel(userID, accessLevel)
 
 	// Restore user
-	m.s.CurrentUser = savedUser
+	restoreAuthState(m.s, savedAuth)
 	return err
 }
 

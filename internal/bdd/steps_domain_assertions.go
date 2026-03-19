@@ -35,6 +35,7 @@ func init() {
 		ctx.Step(`^the response should contain at least (\d+) conversations?$`, d.theResponseShouldContainAtLeastItems)
 		ctx.Step(`^the response should contain at least (\d+) memberships?$`, d.theResponseShouldContainAtLeastItems)
 		ctx.Step(`^the response should contain at least (\d+) items?$`, d.theResponseShouldContainAtLeastItems)
+		ctx.Step(`^the response should contain (\d+) items?$`, d.theResponseShouldContainItems)
 		ctx.Step(`^the response should contain (\d+) conversations?$`, d.theResponseShouldContainItems)
 		ctx.Step(`^the response should contain (\d+) entries$`, d.theResponseShouldContainItems)
 		ctx.Step(`^the response should contain (\d+) entry$`, d.theResponseShouldContainItems)

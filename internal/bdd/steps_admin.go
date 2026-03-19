@@ -43,14 +43,14 @@ type adminSteps struct {
 }
 
 func (a *adminSteps) thereIsAConversationOwnedByWithTitle(owner, title string) error {
-	savedUser := a.s.CurrentUser
+	savedAuth := snapshotAuthState(a.s)
 	auth := &authSteps{s: a.s}
 	_ = auth.iAmAuthenticatedAsUser(owner)
 
 	body := fmt.Sprintf(`{"title": %q}`, title)
 	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("POST", "/v1/conversations", &godog.DocString{Content: body}, false, false)
 	if err != nil {
-		a.s.CurrentUser = savedUser
+		restoreAuthState(a.s, savedAuth)
 		return err
 	}
 	session := a.s.Session()
@@ -66,12 +66,12 @@ func (a *adminSteps) thereIsAConversationOwnedByWithTitle(owner, title string) e
 			}
 		}
 	}
-	a.s.CurrentUser = savedUser
+	restoreAuthState(a.s, savedAuth)
 	return nil
 }
 
 func (a *adminSteps) theConversationOwnedByHasAnEntry(owner, content string) error {
-	savedUser := a.s.CurrentUser
+	savedAuth := snapshotAuthState(a.s)
 
 	// Switch to agent mode for the owner
 	auth := &authSteps{s: a.s}
@@ -88,12 +88,12 @@ func (a *adminSteps) theConversationOwnedByHasAnEntry(owner, content string) err
 	}`, content, content)
 
 	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("POST", "/v1/conversations/"+convID+"/entries", &godog.DocString{Content: body}, false, false)
-	a.s.CurrentUser = savedUser
+	restoreAuthState(a.s, savedAuth)
 	return err
 }
 
 func (a *adminSteps) theConversationOwnedByIsDeleted(owner string) error {
-	savedUser := a.s.CurrentUser
+	savedAuth := snapshotAuthState(a.s)
 	auth := &authSteps{s: a.s}
 	// Use an admin user to do the admin delete (soft-delete only, preserves entries/memberships)
 	_ = auth.iAmAuthenticatedAsAdminUser("alice")
@@ -102,7 +102,7 @@ func (a *adminSteps) theConversationOwnedByIsDeleted(owner string) error {
 	convID := fmt.Sprintf("%v", a.s.Variables[owner+"ConversationId"])
 	body := `{"justification": "test setup deletion"}`
 	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("DELETE", "/v1/admin/conversations/"+convID, &godog.DocString{Content: body}, false, true)
-	a.s.CurrentUser = savedUser
+	restoreAuthState(a.s, savedAuth)
 	return err
 }
 
@@ -167,12 +167,12 @@ func (a *adminSteps) allConversationsShouldHaveDeletedAtSet() error {
 func (a *adminSteps) theConversationShouldBeSoftDeleted() error {
 	// After a DELETE 204 there is no response body, so we need to GET the conversation
 	convID := fmt.Sprintf("%v", a.s.Variables["conversationId"])
-	savedUser := a.s.CurrentUser
+	savedAuth := snapshotAuthState(a.s)
 	auth := &authSteps{s: a.s}
 	_ = auth.iAmAuthenticatedAsAdminUser("alice")
 
 	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("GET", "/v1/admin/conversations/"+convID+"?includeDeleted=true", nil, false, true)
-	a.s.CurrentUser = savedUser
+	restoreAuthState(a.s, savedAuth)
 	if err != nil {
 		return err
 	}
@@ -192,12 +192,12 @@ func (a *adminSteps) theConversationShouldBeSoftDeleted() error {
 func (a *adminSteps) theConversationShouldNotBeDeleted() error {
 	// GET the conversation via admin API to check delete status
 	convID := fmt.Sprintf("%v", a.s.Variables["conversationId"])
-	savedUser := a.s.CurrentUser
+	savedAuth := snapshotAuthState(a.s)
 	auth := &authSteps{s: a.s}
 	_ = auth.iAmAuthenticatedAsAdminUser("alice")
 
 	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("GET", "/v1/admin/conversations/"+convID, nil, false, true)
-	a.s.CurrentUser = savedUser
+	restoreAuthState(a.s, savedAuth)
 	if err != nil {
 		return err
 	}
@@ -268,9 +268,9 @@ func (a *adminSteps) theConversationTitleShouldBe(expected string) error {
 	convID := fmt.Sprintf("%v", a.s.Variables["conversationId"])
 
 	// Titles may be encrypted, so we check via the API instead of querying the DB directly.
-	savedUser := a.s.CurrentUser
+	savedAuth := snapshotAuthState(a.s)
 	err = a.s.SendHTTPRequestWithJSONBodyAndStyle("GET", "/v1/conversations/"+convID, nil, false, true)
-	a.s.CurrentUser = savedUser
+	restoreAuthState(a.s, savedAuth)
 	if err != nil {
 		return err
 	}

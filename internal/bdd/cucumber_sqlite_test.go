@@ -32,9 +32,9 @@ func TestFeaturesSQLite(t *testing.T) {
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
-	cfg.AdminUsers = "alice"
-	cfg.AuditorUsers = "alice,charlie"
-	cfg.IndexerUsers = "dave,alice"
+	cfg.AdminUsers = bddAdminUsers()
+	cfg.AuditorUsers = bddAuditorUsers()
+	cfg.IndexerUsers = bddIndexerUsers()
 	cfg.PrometheusURL = prom.Server.URL
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false
@@ -67,6 +67,9 @@ func collectSQLiteRESTFeatures(t *testing.T) []string {
 
 	var filtered []string
 	for _, featurePath := range all {
+		if isSerialFeature(featurePath) {
+			continue
+		}
 		base := filepath.Base(featurePath)
 		switch base {
 		case "memory-cache-rest.feature", "response-recorder-grpc.feature":
@@ -82,10 +85,14 @@ func collectSQLiteRESTFeatures(t *testing.T) []string {
 }
 
 func runBDDFeatures(t *testing.T, suiteName string, featureFiles []string, apiURL, grpcAddr string, cfg *config.Config, db cucumber.TestDB, extra map[string]interface{}) {
+	runBDDFeaturesWithConcurrency(t, suiteName, featureFiles, apiURL, grpcAddr, cfg, db, extra, bddScenarioConcurrency())
+}
+
+func runBDDFeaturesWithConcurrency(t *testing.T, suiteName string, featureFiles []string, apiURL, grpcAddr string, cfg *config.Config, db cucumber.TestDB, extra map[string]interface{}, concurrency int) {
 	t.Helper()
 
 	opts := cucumber.DefaultOptions()
-	opts.Concurrency = 1
+	opts.Concurrency = concurrency
 	for _, arg := range os.Args[1:] {
 		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
 			opts.Format = "pretty"
@@ -95,6 +102,8 @@ func runBDDFeatures(t *testing.T, suiteName string, featureFiles []string, apiUR
 	for _, featurePath := range featureFiles {
 		name := strings.TrimSuffix(filepath.Base(featurePath), ".feature")
 		t.Run(name, func(t *testing.T) {
+			clearFeatureDB(t, db)
+
 			o := opts
 			o.TestingT = t
 			o.Paths = []string{featurePath}

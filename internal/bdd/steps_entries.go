@@ -95,20 +95,14 @@ func (e *entrySteps) theConversationHasAnEntryInChannelWithContentType(content, 
 
 	// Use agent auth to append entries (agents can append to any channel).
 	// Save and restore the full auth state so we don't clobber explicit agent auth.
-	savedUser := e.s.CurrentUser
-	savedClientID := e.s.Session().Header.Get("X-Client-ID")
+	savedAuth := snapshotAuthState(e.s)
 	a := &authSteps{s: e.s}
 	_ = a.iAmAuthenticatedAsAgentWithAPIKey("test-agent-key")
 
 	err = e.s.SendHTTPRequestWithJSONBodyAndStyle("POST", "/v1/conversations/"+convID+"/entries", &godog.DocString{Content: body}, false, false)
 
 	// Restore user and X-Client-ID header to previous state.
-	e.s.CurrentUser = savedUser
-	if savedClientID != "" {
-		e.s.Session().Header.Set("X-Client-ID", savedClientID)
-	} else {
-		e.s.Session().Header.Del("X-Client-ID")
-	}
+	restoreAuthState(e.s, savedAuth)
 
 	if err != nil {
 		return err
@@ -137,9 +131,9 @@ func (e *entrySteps) theConversationHasAMemoryEntryWithEpochAndContentType(conte
 	currentClientID := e.s.Session().Header.Get("X-Client-ID")
 	needsAgentSwitch := currentClientID == ""
 
-	var savedUser string
+	var savedAuth authSnapshot
 	if needsAgentSwitch {
-		savedUser = e.s.CurrentUser
+		savedAuth = snapshotAuthState(e.s)
 		a := &authSteps{s: e.s}
 		_ = a.iAmAuthenticatedAsAgentWithAPIKey("test-agent-key")
 	}
@@ -147,8 +141,7 @@ func (e *entrySteps) theConversationHasAMemoryEntryWithEpochAndContentType(conte
 	err = e.s.SendHTTPRequestWithJSONBodyAndStyle("POST", "/v1/conversations/"+convID+"/entries", &godog.DocString{Content: body}, false, false)
 
 	if needsAgentSwitch {
-		e.s.CurrentUser = savedUser
-		e.s.Session().Header.Del("X-Client-ID")
+		restoreAuthState(e.s, savedAuth)
 	}
 
 	if err != nil {

@@ -90,18 +90,12 @@ func (e *evictionSteps) theConversationHasEntries() error {
 			"contentType": "history",
 			"content": [{"role": "USER", "text": "Entry %d"}]
 		}`, i)
-		savedUser := e.s.CurrentUser
-		savedClientID := e.s.Session().Header.Get("X-Client-ID")
+		savedAuth := snapshotAuthState(e.s)
 		a := &authSteps{s: e.s}
 		_ = a.iAmAuthenticatedAsAgentWithAPIKey("test-agent-key")
 
 		err := e.s.SendHTTPRequestWithJSONBodyAndStyle("POST", "/v1/conversations/"+convID+"/entries", &godog.DocString{Content: body}, false, false)
-		e.s.CurrentUser = savedUser
-		if savedClientID != "" {
-			e.s.Session().Header.Set("X-Client-ID", savedClientID)
-		} else {
-			e.s.Session().Header.Del("X-Client-ID")
-		}
+		restoreAuthState(e.s, savedAuth)
 		if err != nil {
 			return err
 		}

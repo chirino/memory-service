@@ -35,16 +35,7 @@ tasks:
   generate:
     desc: "generate and format source files"
     deps: # these seem safe to run concurrently.
-      - generate:typescript:vercelai
-      - generate:typescript:chat-vecelai-ts
-      - generate:typescript:doc-checkpoints:01-basic-chat
-      - generate:typescript:doc-checkpoints:02-with-memory
-      - generate:typescript:doc-checkpoints:03-with-history
-      - generate:typescript:doc-checkpoints:04-conversation-forking
-      - generate:typescript:doc-checkpoints:05a-streaming
-      - generate:typescript:doc-checkpoints:05b-response-resumption
-      - generate:typescript:doc-checkpoints:06-sharing
-      - generate:typescript:doc-checkpoints:07-with-search
+      - generate:typescript
       - generate:python
       - generate:site
       - generate:spotless
@@ -86,65 +77,13 @@ tasks:
       - npm ci
       - npm run prettier
 
-  generate:typescript:vercelai:
-    dir: typescript/vercelai
+  generate:typescript:
     cmds:
-      - npm ci
-      - npm run prettier
-
-  generate:typescript:chat-vecelai-ts:
-    dir: typescript/examples/vecelai/chat-vecelai-ts
-    cmds:
-      - npm ci
-      - npm run prettier
-
-  generate:typescript:doc-checkpoints:01-basic-chat:
-    dir: typescript/examples/vecelai/doc-checkpoints/01-basic-chat
-    cmds:
-      - npm ci
-      - npm run prettier
-
-  generate:typescript:doc-checkpoints:02-with-memory:
-    dir: typescript/examples/vecelai/doc-checkpoints/02-with-memory
-    cmds:
-      - npm ci
-      - npm run prettier
-
-  generate:typescript:doc-checkpoints:03-with-history:
-    dir: typescript/examples/vecelai/doc-checkpoints/03-with-history
-    cmds:
-      - npm ci
-      - npm run prettier
-
-  generate:typescript:doc-checkpoints:04-conversation-forking:
-    dir: typescript/examples/vecelai/doc-checkpoints/04-conversation-forking
-    cmds:
-      - npm ci
-      - npm run prettier
-
-  generate:typescript:doc-checkpoints:05a-streaming:
-    dir: typescript/examples/vecelai/doc-checkpoints/05a-streaming
-    cmds:
-      - npm ci
-      - npm run prettier
-
-  generate:typescript:doc-checkpoints:05b-response-resumption:
-    dir: typescript/examples/vecelai/doc-checkpoints/05b-response-resumption
-    cmds:
-      - npm ci
-      - npm run prettier
-
-  generate:typescript:doc-checkpoints:06-sharing:
-    dir: typescript/examples/vecelai/doc-checkpoints/06-sharing
-    cmds:
-      - npm ci
-      - npm run prettier
-
-  generate:typescript:doc-checkpoints:07-with-search:
-    dir: typescript/examples/vecelai/doc-checkpoints/07-with-search
-    cmds:
-      - npm ci
-      - npm run prettier
+      - |
+        npx prettier -w \
+          "typescript/vercelai/src/**/*.{ts,tsx,js}" \
+          "typescript/examples/vecelai/chat-vecelai-ts/src/**/*.{ts,tsx,js}" \
+          "typescript/examples/vecelai/doc-checkpoints/*/src/**/*.{ts,tsx,js}"
 
   generate:spotless:
     internal: true

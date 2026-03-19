@@ -46,9 +46,9 @@ func TestFeaturesPgS3(t *testing.T) {
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
-	cfg.AdminUsers = "alice"
-	cfg.AuditorUsers = "alice,charlie"
-	cfg.IndexerUsers = "dave,alice"
+	cfg.AdminUsers = bddAdminUsers()
+	cfg.AuditorUsers = bddAuditorUsers()
+	cfg.IndexerUsers = bddIndexerUsers()
 	cfg.PrometheusURL = prom.Server.URL
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false
@@ -70,7 +70,7 @@ func TestFeaturesPgS3(t *testing.T) {
 	}
 
 	opts := cucumber.DefaultOptions()
-	opts.Concurrency = 1
+	opts.Concurrency = bddScenarioConcurrency()
 	opts.Tags = "~@direct-stream-only"
 	for _, arg := range os.Args[1:] {
 		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
@@ -79,6 +79,8 @@ func TestFeaturesPgS3(t *testing.T) {
 	}
 
 	t.Run("attachments-rest", func(t *testing.T) {
+		clearFeatureDB(t, &PostgresTestDB{DBURL: dbURL})
+
 		o := opts
 		o.TestingT = t
 		o.Paths = []string{featurePath}

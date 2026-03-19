@@ -72,7 +72,11 @@ func (a *attachmentSteps) iUploadAFile(filename, contentType, content string) er
 	if err != nil {
 		return err
 	}
-	session.SetRespBytes(session.RespBytes)
+	normalized, err := a.s.NormalizeResponseBody(fullURL, resp.Header.Get("Content-Type"), session.RespBytes)
+	if err != nil {
+		return err
+	}
+	session.SetRespBytes(normalized)
 
 	return nil
 }

@@ -49,9 +49,9 @@ func TestFeaturesMongo(t *testing.T) {
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
-	cfg.AdminUsers = "alice"
-	cfg.AuditorUsers = "alice,charlie"
-	cfg.IndexerUsers = "dave,alice"
+	cfg.AdminUsers = bddAdminUsers()
+	cfg.AuditorUsers = bddAuditorUsers()
+	cfg.IndexerUsers = bddIndexerUsers()
 	cfg.PrometheusURL = prom.Server.URL
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false
@@ -80,11 +80,12 @@ func TestFeaturesMongo(t *testing.T) {
 		subFiles, _ := filepath.Glob(filepath.Join(resourcesDir, subdir, "*.feature"))
 		featureFiles = append(featureFiles, subFiles...)
 	}
+	featureFiles = filterSerialFeatures(featureFiles, false)
 	require.NotEmpty(t, featureFiles, "No feature files found")
 
 	// Configure godog options
 	opts := cucumber.DefaultOptions()
-	opts.Concurrency = 1
+	opts.Concurrency = bddScenarioConcurrency()
 	for _, arg := range os.Args[1:] {
 		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
 			opts.Format = "pretty"
@@ -100,6 +101,8 @@ func TestFeaturesMongo(t *testing.T) {
 			continue
 		}
 		t.Run(name, func(t *testing.T) {
+			clearFeatureDB(t, &MongoTestDB{DBURL: mongoURL})
+
 			o := opts
 			o.TestingT = t
 			o.Paths = []string{featurePath}
