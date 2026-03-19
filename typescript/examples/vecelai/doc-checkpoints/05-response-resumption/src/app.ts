@@ -101,7 +101,9 @@ app.post("/v1/conversations/resume-check", async (req, res) => {
   const ids = Array.isArray(req.body)
     ? req.body.filter((v) => typeof v === "string")
     : [];
-  res.status(200).json(await memoryServiceResumeCheck(memoryServiceConfig, ids));
+  res
+    .status(200)
+    .json(await memoryServiceResumeCheck(memoryServiceConfig, ids));
 });
 
 app.get("/v1/conversations/:conversationId/resume", async (req, res) => {
