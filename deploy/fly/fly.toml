@@ -5,19 +5,20 @@ app = "memory-service-poc"
 primary_region = "lhr"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "../../Dockerfile"
 
 [env]
   # ── Datastore ──────────────────────────────────────────────
-  MEMORY_SERVICE_DB_KIND = "postgres"
+  MEMORY_SERVICE_DB_KIND = "sqlite"
+  MEMORY_SERVICE_DB_URL = "file:memory-service.db"
   MEMORY_SERVICE_DB_MIGRATE_AT_START = "true"
 
-  # ── Cache (disabled — no Redis on free tier) ──────────────
-  MEMORY_SERVICE_CACHE_KIND = "none"
+  # ── Cache (use an in memory cache) ──────────────
+  MEMORY_SERVICE_CACHE_KIND = "local"
 
   # ── Vector search (disabled — no Qdrant on free tier) ─────
-  MEMORY_SERVICE_VECTOR_KIND = "none"
-  MEMORY_SERVICE_EMBEDDING_KIND = "none"
+  MEMORY_SERVICE_VECTOR_KIND = "sqlite"
+  MEMORY_SERVICE_EMBEDDING_KIND = "local"
 
   # ── Auth (API keys only — no OIDC on free tier) ──────────
   MEMORY_SERVICE_MODE = "prod"
@@ -28,8 +29,8 @@ primary_region = "lhr"
   MEMORY_SERVICE_PLAIN_TEXT = "true"
   MEMORY_SERVICE_TLS = "false"
 
-  # ── Attachments ───────────────────────────────────────────
-  MEMORY_SERVICE_ATTACHMENTS_KIND = "db"
+  # ── Attachments (store attachments on the fs)─────────────
+  MEMORY_SERVICE_ATTACHMENTS_KIND = "fs"
 
 [http_service]
   internal_port = 8080
