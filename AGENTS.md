@@ -29,6 +29,7 @@ When you discover something meaningful about this project during your work—arc
 - `task verify:python` - regenerate Python gRPC stubs and validate the LangChain package build/install (runs in Docker)
 - `task dev:memory-service` - backend dev mode (:8082)
 - `go test ./internal/bdd -run TestFeaturesPgKeycloak -count=1` - Go BDD runner for Postgres + Keycloak OIDC integration
+- `cd mcp && go build -o mcp-server .` - build the MCP server binary (required after cloning)
 
 **Key paths**:
 - `contracts/` - OpenAPI (`contracts/openapi/`) and protobuf (`contracts/protobuf/`) sources of truth
@@ -39,6 +40,7 @@ When you discover something meaningful about this project during your work—arc
 - `java/spring/examples/chat-spring/` - Demo chat app (Spring)
 - `frontends/chat-frontend/` - Demo chat app frontend (React)
 - `internal/sitebdd/` - Documentation test module (MDX `<TestScenario>/<CurlTest>` to Go/Cucumber pipeline)
+- `mcp/` - MCP server for Claude Code integration (build with `go build -o mcp-server .`; `.mcp.json` uses `${PWD}` for portable paths)
 
 **API gotchas**:
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).

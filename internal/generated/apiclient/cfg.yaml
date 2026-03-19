@@ -1,0 +1,8 @@
+package: apiclient
+generate:
+  client: true
+  models: true
+output: internal/generated/apiclient/apiclient.gen.go
+output-options:
+  skip-prune: true
+  response-type-suffix: Resp

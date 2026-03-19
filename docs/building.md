@@ -32,6 +32,7 @@ go build -tags '<tag1>,<tag2>,…' -o memory-service .
 | `novault` | `encrypt/vault` | Vault SDK |
 | `noawskms` | `encrypt/awskms` | AWS KMS SDK |
 | `noopenai` | `embed/openai` | OpenAI client |
+| `nomcp` | `mcp` subcommand | MCP server, generated OpenAPI client |
 | `notcp` | TCP listener | TCP networking code |
 | `nouds` | Unix domain socket listener | UDS networking code |
 
@@ -85,4 +86,4 @@ Excludable plugins register themselves via `init()` functions. Each plugin's Go 
 3. CLI flags contributed by the plugin are not added to `--help`.
 4. Selector flags (e.g., `--db-kind`) automatically reflect only available backends.
 
-Blank imports for excludable plugins live in per-plugin files under `internal/cmd/serve/plugin_*.go` and `internal/cmd/migrate/plugin_*.go`, each with the corresponding build constraint.
+Blank imports for excludable plugins live in per-plugin files under `internal/cmd/serve/plugin_*.go` and `internal/cmd/migrate/plugin_*.go`, each with the corresponding build constraint. Top-level subcommands (serve, migrate, mcp) register via `internal/cmd/commands/`, with optional commands guarded by build tags.

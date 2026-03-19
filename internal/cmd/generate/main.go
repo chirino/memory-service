@@ -216,6 +216,13 @@ func generateOpenAPI(root string) {
 	fmt.Println("Generating Agent API types + server interfaces...")
 	run("go", "run", "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen", "--config="+agentCfg, agentSpec)
 
+	// Agent API Client
+	agentClientCfg := filepath.Join(root, "internal", "generated", "apiclient", "cfg.yaml")
+	agentClientOut := filepath.Join(root, "internal", "generated", "apiclient")
+	os.MkdirAll(agentClientOut, 0o755)
+	fmt.Println("Generating Agent API client...")
+	run("go", "run", "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen", "--config="+agentClientCfg, agentSpec)
+
 	// Admin API
 	adminSpec := filepath.Join(contractsDir, "openapi", "openapi-admin.yml")
 	adminCfg := filepath.Join(root, "internal", "generated", "admin", "cfg.yaml")
