@@ -29,7 +29,7 @@ When you discover something meaningful about this project during your work—arc
 - `task verify:python` - regenerate Python gRPC stubs and validate the LangChain package build/install (runs in Docker)
 - `task dev:memory-service` - backend dev mode (:8082)
 - `go test ./internal/bdd -run TestFeaturesPgKeycloak -count=1` - Go BDD runner for Postgres + Keycloak OIDC integration
-- `cd mcp && go build -o mcp-server .` - build the MCP server binary (required after cloning)
+- `cd memory-service-mcp && go build -o mcp-server .` - build the standalone MCP server binary
 
 **Key paths**:
 - `contracts/` - OpenAPI (`contracts/openapi/`) and protobuf (`contracts/protobuf/`) sources of truth
@@ -40,7 +40,8 @@ When you discover something meaningful about this project during your work—arc
 - `java/spring/examples/chat-spring/` - Demo chat app (Spring)
 - `frontends/chat-frontend/` - Demo chat app frontend (React)
 - `internal/sitebdd/` - Documentation test module (MDX `<TestScenario>/<CurlTest>` to Go/Cucumber pipeline)
-- `mcp/` - MCP server for Claude Code integration (build with `go build -o mcp-server .`; `.mcp.json` uses `${PWD}` for portable paths)
+- `internal/cmd/mcp/` - MCP server integrated into main binary (`./memory-service mcp`)
+- `memory-service-mcp/` - Standalone MCP binary wrapper (build with `cd memory-service-mcp && go build -o mcp-server .`; `.mcp.json` uses `${PWD}` for portable paths)
 
 **API gotchas**:
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).
@@ -59,6 +60,45 @@ When you discover something meaningful about this project during your work—arc
 - The demo Quarkus image Dockerfile lives at `./java/quarkus/examples/chat-quarkus/Dockerfile`; repo-root compose/task commands should use that path.
 - Contract specs live in repo-root `contracts/`; Java modules should resolve them from `${maven.multiModuleProjectDirectory}/../contracts`, and the `java/memory-service-contracts` module publishes them via `../../contracts`.
 - The Maven wrapper and reactor root live under `java/`; repo-root Maven commands must use `./java/mvnw -f java/pom.xml ...`.
+
+## Build Tags
+
+Use Go build tags to exclude plugins at compile time. Default `go build` includes everything.
+
+| Tag | Excludes |
+|-----|----------|
+| `nosqlite` | SQLite store + sqlitevec (removes CGO dependency) |
+| `nomongo` | MongoDB store + mongostore attachments |
+| `nopostgresql` | PostgreSQL store + pgvector + pgstore attachments |
+| `noredis` | Redis cache registration (impl kept if infinispan enabled) |
+| `noinfinispan` | Infinispan cache |
+| `noqdrant` | Qdrant vector plugin |
+| `nos3` | S3 attachment store |
+| `novault` | Vault encryption |
+| `noawskms` | AWS KMS encryption |
+| `noopenai` | OpenAI embeddings |
+| `notcp` | TCP listener |
+| `nouds` | Unix domain socket listener |
+| `nomcp` | MCP subcommand |
+
+At least one store backend must remain enabled (compile-time guard).
+
+**Examples**:
+```bash
+# Default (all plugins)
+go build ./...
+
+# CGO-free PostgreSQL-only build
+CGO_ENABLED=0 go build -tags 'nosqlite,nomongo' .
+
+# Minimal PostgreSQL build
+go build -tags 'nosqlite,nomongo,noqdrant,nos3,novault,noawskms,noinfinispan,noredis,noopenai' .
+
+# Docker build with custom tags
+docker build --build-arg GO_BUILD_TAGS="sqlite_fts5 sqlite_json nosqlite" .
+```
+
+Plugins contribute their own CLI flags via the registry. Excluded plugins' flags are automatically removed from `--help`.
 
 ## Development Guidelines
 
