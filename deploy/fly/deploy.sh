@@ -47,7 +47,7 @@ info "Authenticated as: $(fly auth whoami)"
 # ── Deploy-only mode (skip infra creation) ──────────────────
 if [ "${1:-}" = "deploy-only" ]; then
     info "Deploying $APP_NAME (skip infra setup)..."
-    fly deploy --app "$APP_NAME"
+    fly deploy --config ./deploy/fly/fly.toml --app "$APP_NAME"
     info "Deployed! URL: https://${APP_NAME}.fly.dev"
     exit 0
 fi
@@ -60,47 +60,18 @@ else
     fly apps create "$APP_NAME" --machines
 fi
 
-# ── Step 2: Create Fly Postgres ─────────────────────────────
-if fly apps list | grep -q "^$PG_APP_NAME "; then
-    info "Postgres app '$PG_APP_NAME' already exists, skipping creation."
-else
-    info "Creating Postgres cluster '$PG_APP_NAME' (free tier)..."
-    fly postgres create \
-        --name "$PG_APP_NAME" \
-        --region "$REGION" \
-        --vm-size shared-cpu-1x \
-        --initial-cluster-size 1 \
-        --volume-size 1
-    info "Postgres cluster created."
-fi
-
-# ── Step 3: Attach Postgres to the app ──────────────────────
-info "Attaching Postgres to app (sets DATABASE_URL secret)..."
-fly postgres attach "$PG_APP_NAME" --app "$APP_NAME" 2>/dev/null || {
-    warn "Postgres already attached or attach failed — checking if DATABASE_URL is set..."
-}
-
-# Verify DATABASE_URL is set (Fly sets it via `postgres attach`)
-# The Dockerfile entrypoint maps DATABASE_URL → MEMORY_SERVICE_DB_URL at boot
-if fly secrets list --app "$APP_NAME" | grep -q "DATABASE_URL"; then
-    info "DATABASE_URL is set (mapped to MEMORY_SERVICE_DB_URL at container boot)."
-else
-    error "DATABASE_URL not found. Manually attach Postgres or set MEMORY_SERVICE_DB_URL."
-    error "  fly postgres attach $PG_APP_NAME --app $APP_NAME"
-    exit 1
-fi
-
 # ── Step 4: Generate and set secrets ────────────────────────
 info "Setting secrets..."
+set -ex
 
 # Generate a random API key if not provided
-MEMORY_SERVICE_API_KEYS_AGENT="${MEMORY_SERVICE_API_KEYS_AGENT:-$(openssl rand -hex 24)}"
+export MEMORY_SERVICE_API_KEYS_AGENT="${MEMORY_SERVICE_API_KEYS_AGENT:-$(openssl rand -hex 24)}"
 
 # Generate a random encryption key (32 bytes = 64 hex chars)
-MEMORY_SERVICE_ENCRYPTION_DEK_KEY="${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-$(openssl rand -hex 32)}"
+export MEMORY_SERVICE_ENCRYPTION_DEK_KEY="${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-$(openssl rand -hex 32)}"
 
 # Generate attachment signing secret
-MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET="${MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET:-$(openssl rand -hex 32)}"
+export MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET="${MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET:-$(openssl rand -hex 32)}"
 
 SECRETS=()
 while IFS='=' read -r key value; do
@@ -114,9 +85,9 @@ warn "Save your agent API key (you won't see it again):"
 echo -e "  ${GREEN}MEMORY_SERVICE_API_KEYS_AGENT=${MEMORY_SERVICE_API_KEYS_AGENT}${NC}"
 echo ""
 
-# ── Step 5: Deploy ──────────────────────────────────────────
+# # ── Step 5: Deploy ──────────────────────────────────────────
 info "Deploying $APP_NAME..."
-fly deploy --app "$APP_NAME"
+fly deploy --app "$APP_NAME" --config ./deploy/fly/fly.toml
 
 echo ""
 info "Deployment complete!"

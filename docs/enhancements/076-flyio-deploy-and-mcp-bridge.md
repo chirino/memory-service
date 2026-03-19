@@ -25,9 +25,9 @@ A lightweight cloud deployment (Fly.io free tier) combined with an MCP bridge ma
 ### Architecture
 
 ```
-Claude Code  --stdio-->  MCP Server (local Go binary)  --HTTPS-->  Memory Service (Fly.io)
-                              |                                        |
-                         JSON-RPC / MCP protocol               REST API + Bearer auth
+Claude Code  --stdio-->  memory-service mcp (subcommand)  --HTTPS-->  Memory Service (Fly.io)
+                              |                                          |
+                         JSON-RPC / MCP protocol                 REST API + Bearer auth
 ```
 
 ### MCP Tools
@@ -91,9 +91,9 @@ Developers configure the MCP bridge via `.mcp.json` (checked in) and a local `.e
 | `fly.toml` | Fly.io app configuration |
 | `deploy/fly/deploy.sh` | First-time and redeploy script |
 | `deploy/fly/README.md` | Deployment documentation |
-| `mcp/main.go` | MCP server entry point |
-| `mcp/client.go` | HTTP client for memory-service REST API |
-| `mcp/tools.go` | MCP tool definitions and handlers |
+| `internal/cmd/mcp/cmd.go` | MCP server entry point (integrated into main binary) |
+| `internal/cmd/mcp/tools.go` | MCP tool definitions and handlers |
+| `memory-service-mcp/main.go` | Standalone MCP binary wrapper |
 | `.mcp.json` | Claude Code MCP server configuration |
 | `Dockerfile` | Entrypoint maps `DATABASE_URL` → `MEMORY_SERVICE_DB_URL` |
 

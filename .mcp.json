@@ -2,10 +2,10 @@
   "mcpServers": {
     "memory-service": {
       "command": "sh",
-      "args": ["-c", "exec $PWD/mcp/mcp-server"],
+      "args": ["-c", "exec go run ./memory-service-mcp"],
       "env": {
-        "MEMORY_SERVICE_CLIENT_URL": "${MEMORY_SERVICE_CLIENT_URL}",
-        "MEMORY_SERVICE_CLIENT_API_KEY": "${MEMORY_SERVICE_CLIENT_API_KEY}"
+        "MEMORY_SERVICE_URL": "${MEMORY_SERVICE_URL}",
+        "MEMORY_SERVICE_API_KEY": "${MEMORY_SERVICE_API_KEY}"
       }
     }
   }

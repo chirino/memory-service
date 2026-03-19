@@ -348,8 +348,8 @@ func TestNamesReflectsRegisteredPlugins(t *testing.T) {
 - [x] Verify `go build -tags 'nopostgresql,nosqlite,nomongo' .` fails at compile time
 - [x] Verify all individual exclusion tags build successfully
 - [x] Verify minimal build (`nomongo,noredis,noinfinispan,noqdrant,nos3,novault,noawskms,noopenai`) succeeds
-- [ ] Update `Dockerfile` to accept a `GO_BUILD_TAGS` build arg
-- [ ] Update `CLAUDE.md` with build tag documentation
+- [x] Update `Dockerfile` to accept a `GO_BUILD_TAGS` build arg
+- [x] Update `CLAUDE.md` with build tag documentation
 
 ## Files to Modify
 
