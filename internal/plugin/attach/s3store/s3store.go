@@ -1,3 +1,5 @@
+//go:build !nos3
+
 package s3store
 
 import (
@@ -19,12 +21,31 @@ import (
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	"github.com/chirino/memory-service/internal/tempfiles"
 	"github.com/google/uuid"
+	"github.com/urfave/cli/v3"
 )
 
 func init() {
 	registryattach.Register(registryattach.Plugin{
 		Name:   "s3",
 		Loader: load,
+		Flags: func(cfg *config.Config) []cli.Flag {
+			return []cli.Flag{
+				&cli.StringFlag{
+					Name:        "attachments-s3-bucket",
+					Category:    "Attachment Storage:",
+					Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET"),
+					Destination: &cfg.S3Bucket,
+					Usage:       "S3 bucket for attachments",
+				},
+				&cli.BoolFlag{
+					Name:        "attachments-s3-use-path-style",
+					Category:    "Attachment Storage:",
+					Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE"),
+					Destination: &cfg.S3UsePathStyle,
+					Usage:       "Use path-style S3 addressing (required for LocalStack/MinIO)",
+				},
+			}
+		},
 	})
 }
 

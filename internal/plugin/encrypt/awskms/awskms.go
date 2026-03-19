@@ -1,3 +1,5 @@
+//go:build !noawskms
+
 // Package awskms registers the "kms" encryption provider backed by AWS KMS.
 // DEKs are loaded from the application database (encryption_deks table) at startup.
 // AWS KMS is used only to wrap/unwrap DEKs at load time — never per-request.
@@ -11,6 +13,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -22,6 +25,7 @@ import (
 	dekpkg "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
 	"github.com/chirino/memory-service/internal/plugin/encrypt/dekstore"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
+	"github.com/urfave/cli/v3"
 )
 
 func init() {
@@ -40,6 +44,46 @@ func init() {
 				keyID:     cfg.EncryptionKMSKeyID,
 				cfg:       cfg,
 			}, nil
+		},
+		Flags: func(cfg *config.Config) []cli.Flag {
+			return []cli.Flag{
+				&cli.StringFlag{
+					Name:        "encryption-kms-key-id",
+					Category:    "Encryption: KMS:",
+					Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID"),
+					Destination: &cfg.EncryptionKMSKeyID,
+					Usage:       "AWS KMS key ID or ARN for the 'kms' provider",
+				},
+				&cli.StringFlag{
+					Name:     "encryption-kms-aws-region",
+					Category: "Encryption: KMS:",
+					Sources:  cli.EnvVars("AWS_REGION"),
+					Usage:    "AWS region (e.g. us-east-1)",
+				},
+				&cli.StringFlag{
+					Name:     "encryption-kms-aws-access-key-id",
+					Category: "Encryption: KMS:",
+					Sources:  cli.EnvVars("AWS_ACCESS_KEY_ID"),
+					Usage:    "AWS access key ID",
+				},
+				&cli.StringFlag{
+					Name:     "encryption-kms-aws-secret-access-key",
+					Category: "Encryption: KMS:",
+					Sources:  cli.EnvVars("AWS_SECRET_ACCESS_KEY"),
+					Usage:    "AWS secret access key",
+				},
+			}
+		},
+		Apply: func(cfg *config.Config, cmd *cli.Command) {
+			for flagName, envVar := range map[string]string{
+				"encryption-kms-aws-region":            "AWS_REGION",
+				"encryption-kms-aws-access-key-id":     "AWS_ACCESS_KEY_ID",
+				"encryption-kms-aws-secret-access-key": "AWS_SECRET_ACCESS_KEY",
+			} {
+				if v := cmd.String(flagName); v != "" {
+					os.Setenv(envVar, v)
+				}
+			}
 		},
 	})
 }

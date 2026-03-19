@@ -1,3 +1,5 @@
+//go:build !nomongo
+
 package mongostore
 
 import (

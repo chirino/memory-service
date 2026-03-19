@@ -3,6 +3,9 @@ package embed
 import (
 	"context"
 	"fmt"
+
+	"github.com/chirino/memory-service/internal/config"
+	"github.com/urfave/cli/v3"
 )
 
 // Embedder produces vector embeddings from text.
@@ -22,6 +25,8 @@ type Loader func(ctx context.Context) (Embedder, error)
 type Plugin struct {
 	Name   string
 	Loader Loader
+	Flags  func(cfg *config.Config) []cli.Flag
+	Apply  func(cfg *config.Config, cmd *cli.Command)
 }
 
 var plugins []Plugin
@@ -48,4 +53,24 @@ func Select(name string) (Loader, error) {
 		}
 	}
 	return nil, fmt.Errorf("unknown embedder %q; valid: %v", name, Names())
+}
+
+// PluginFlags returns CLI flags contributed by all registered embedder plugins.
+func PluginFlags(cfg *config.Config) []cli.Flag {
+	var flags []cli.Flag
+	for _, p := range plugins {
+		if p.Flags != nil {
+			flags = append(flags, p.Flags(cfg)...)
+		}
+	}
+	return flags
+}
+
+// ApplyAll calls Apply on all registered plugins that define one.
+func ApplyAll(cfg *config.Config, cmd *cli.Command) {
+	for _, p := range plugins {
+		if p.Apply != nil {
+			p.Apply(cfg, cmd)
+		}
+	}
 }
