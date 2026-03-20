@@ -117,13 +117,10 @@ func fromWire(w wireEvent) registryeventbus.Event {
 	}
 }
 
-// Publish sends an event to local subscribers and queues it for cross-node delivery.
+// Publish queues an event for cross-node delivery via pg_notify. Local
+// subscribers receive the event when it arrives back via the LISTEN
+// subscription, avoiding double-delivery.
 func (p *postgresBus) Publish(ctx context.Context, event registryeventbus.Event) error {
-	// Deliver locally first.
-	if err := p.local.Publish(ctx, event); err != nil {
-		return err
-	}
-	// Queue for cross-node fan-out (non-blocking).
 	select {
 	case p.outbound <- event:
 	default:

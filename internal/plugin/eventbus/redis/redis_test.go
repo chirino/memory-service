@@ -72,16 +72,14 @@ func TestRedisBusPublishesRecoveryInvalidateAfterSubscriptionLoss(t *testing.T) 
 	peerEvents, err := busA.Subscribe(subCtx)
 	require.NoError(t, err)
 
-	require.NoError(t, busB.currentClient().Close())
+	// Cancel the active subscription context to simulate subscription loss.
+	busB.breakSubscription()
 	localInvalidate := waitForRedisEvent(t, localEvents, 10*time.Second, func(event registryeventbus.Event) bool {
 		return event.Kind == "stream" && event.Event == "invalidate"
 	})
 	require.Equal(t, "pubsub recovery", redisEventReason(localInvalidate))
 	require.Eventually(t, busB.isDegraded, 5*time.Second, 50*time.Millisecond)
 
-	replacement := redis.NewClient(opts)
-	require.NoError(t, replacement.Ping(context.Background()).Err())
-	busB.setClient(replacement)
 	require.NoError(t, busB.Publish(context.Background(), registryeventbus.Event{
 		Event: "updated",
 		Kind:  "conversation",

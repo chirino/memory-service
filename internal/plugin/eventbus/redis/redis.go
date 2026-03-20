@@ -90,6 +90,7 @@ func LoadFromOptions(ctx context.Context, opts *goredis.Options) (registryeventb
 		outbound: make(chan registryeventbus.Event, outboundCap),
 		cancel:   cancel,
 		cfg:      cfg,
+		subReady: make(chan struct{}),
 	}
 
 	r.wg.Add(2)
@@ -109,6 +110,10 @@ type redisBus struct {
 	cfg      *config.Config
 	healthMu sync.Mutex
 	degraded bool
+	// breakSub, if non-nil, is called to force the current subscription to exit.
+	// Protected by clientMu. Used by tests to simulate subscription loss.
+	breakSub context.CancelFunc
+	subReady chan struct{} // closed when breakSub is set and subscription is active
 }
 
 // wireEvent is used for Redis serialization, including ConversationGroupID
@@ -141,12 +146,10 @@ func fromWire(w wireEvent) registryeventbus.Event {
 	}
 }
 
-// Publish sends an event to all local subscribers and queues it for Redis publication.
+// Publish queues an event for Redis publication. Local subscribers receive
+// the event when it arrives back via the Redis subscription, avoiding
+// double-delivery.
 func (r *redisBus) Publish(ctx context.Context, event registryeventbus.Event) error {
-	// Always fan out locally first.
-	_ = r.local.Publish(ctx, event)
-
-	// Queue for cross-node publish (non-blocking).
 	select {
 	case r.outbound <- event:
 	default:
@@ -308,9 +311,34 @@ func (r *redisBus) runSubscription(ctx context.Context, onReady func()) error {
 	}
 	pubsub := client.Subscribe(ctx, redisChannel)
 	defer pubsub.Close()
-	if _, err := pubsub.Receive(ctx); err != nil {
+
+	// Create a sub-context so tests can force this subscription to exit
+	// by calling breakSubscription().
+	subCtx, subCancel := context.WithCancel(ctx)
+	defer subCancel()
+	if _, err := pubsub.Receive(subCtx); err != nil {
 		return err
 	}
+
+	r.clientMu.Lock()
+	r.breakSub = subCancel
+	// Signal that breakSub is now set and subscription is active.
+	select {
+	case <-r.subReady:
+		// already closed from a previous subscription; make a new one for next time
+		r.subReady = make(chan struct{})
+	default:
+	}
+	ready := r.subReady
+	r.clientMu.Unlock()
+	defer func() {
+		r.clientMu.Lock()
+		r.breakSub = nil
+		r.clientMu.Unlock()
+	}()
+
+	close(ready)
+
 	if onReady != nil {
 		onReady()
 	}
@@ -318,8 +346,8 @@ func (r *redisBus) runSubscription(ctx context.Context, onReady func()) error {
 	ch := pubsub.Channel()
 	for {
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-subCtx.Done():
+			return subCtx.Err()
 		case msg, ok := <-ch:
 			if !ok {
 				return fmt.Errorf("redis subscription channel closed")
@@ -372,6 +400,23 @@ func (r *redisBus) isDegraded() bool {
 	r.healthMu.Lock()
 	defer r.healthMu.Unlock()
 	return r.degraded
+}
+
+// breakSubscription waits for the subscription to be active, then cancels its
+// context, causing subscribeLoop to detect subscription loss. Used by tests
+// to simulate Redis disconnection.
+func (r *redisBus) breakSubscription() {
+	r.clientMu.RLock()
+	ready := r.subReady
+	r.clientMu.RUnlock()
+	<-ready
+
+	r.clientMu.RLock()
+	cancel := r.breakSub
+	r.clientMu.RUnlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (r *redisBus) publishRecoveryInvalidate(ctx context.Context) error {

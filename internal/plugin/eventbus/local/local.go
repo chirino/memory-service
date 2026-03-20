@@ -7,7 +7,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	"github.com/chirino/memory-service/internal/security"
@@ -57,26 +56,28 @@ func New(bufferSize int) *Bus {
 
 // Publish fans out an event to all local subscribers.
 // If a subscriber's buffer is full, its channel is closed (slow-consumer eviction).
+//
+// Sends are performed under RLock so multiple publishers can fan out concurrently
+// without blocking each other. The RLock also prevents the Subscribe cleanup
+// goroutine from closing a channel while a send is in progress.
+//
+// Eviction (which mutates the subs map) is deferred: the RLock is released,
+// a write Lock is acquired, and each evicted subscriber is removed only if it
+// is still present in the map (guarding against double-close by the cleanup
+// goroutine).
 func (b *Bus) Publish(_ context.Context, event registryeventbus.Event) error {
 	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()
 		return nil
 	}
-	// Snapshot subscribers under read lock for fast iteration.
-	subs := make([]*subscriber, 0, len(b.subs))
-	for s := range b.subs {
-		subs = append(subs, s)
-	}
-	b.mu.RUnlock()
 
 	if security.EventBusPublishedTotal != nil {
 		security.EventBusPublishedTotal.Inc()
 	}
 
 	var evicted []*subscriber
-	for _, s := range subs {
-		// Skip subscribers whose context is done.
+	for s := range b.subs {
 		if s.ctx.Err() != nil {
 			evicted = append(evicted, s)
 			continue
@@ -85,11 +86,11 @@ func (b *Bus) Publish(_ context.Context, event registryeventbus.Event) error {
 		case s.ch <- event:
 			// delivered
 		default:
-			// Buffer full — evict slow consumer.
-			log.Warn("Evicting slow event bus subscriber")
+			// Buffer full — mark for eviction.
 			evicted = append(evicted, s)
 		}
 	}
+	b.mu.RUnlock()
 
 	if len(evicted) > 0 {
 		b.mu.Lock()
@@ -97,11 +98,14 @@ func (b *Bus) Publish(_ context.Context, event registryeventbus.Event) error {
 			if _, ok := b.subs[s]; ok {
 				delete(b.subs, s)
 				close(s.ch)
-				if security.EventBusDroppedTotal != nil {
-					security.EventBusDroppedTotal.Inc()
-				}
-				if security.EventBusSubscriberEvictionsTotal != nil {
-					security.EventBusSubscriberEvictionsTotal.Inc()
+				if s.ctx.Err() == nil {
+					// Only count as dropped/evicted if it wasn't a context cancellation.
+					if security.EventBusDroppedTotal != nil {
+						security.EventBusDroppedTotal.Inc()
+					}
+					if security.EventBusSubscriberEvictionsTotal != nil {
+						security.EventBusSubscriberEvictionsTotal.Inc()
+					}
 				}
 			}
 		}
