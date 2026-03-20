@@ -88,7 +88,8 @@ func TestEncryptStreamRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
-	require.True(t, dataencryption.HasMagic(encBuf.Bytes()))
+	encrypted := append([]byte(nil), encBuf.Bytes()...)
+	require.True(t, dataencryption.HasMagic(encrypted))
 
 	// DecryptStream via the service (which parses the MSEH header and routes back to dek).
 	cfg := makeCfg(testKeyHex)
@@ -96,7 +97,37 @@ func TestEncryptStreamRoundTrip(t *testing.T) {
 	svc, err := dataencryption.New(context.Background(), cfg)
 	require.NoError(t, err)
 
-	reader, err := svc.DecryptStream(&encBuf)
+	reader, err := svc.DecryptStream(bytes.NewReader(encrypted))
+	require.NoError(t, err)
+	var plainBuf bytes.Buffer
+	_, err = plainBuf.ReadFrom(reader)
+	require.NoError(t, err)
+	require.Equal(t, plaintext, plainBuf.Bytes())
+
+	h, hasMagic, err := dataencryption.ReadHeader(bytes.NewReader(encrypted))
+	require.NoError(t, err)
+	require.True(t, hasMagic)
+	require.Equal(t, uint32(dataencryption.VersionAESCTR), h.Version)
+	require.Len(t, h.Nonce, 16)
+}
+
+func TestDecryptStreamWithKeyRotation(t *testing.T) {
+	legacyProvider := newProvider(t, legacyKeyHex)
+	plaintext := []byte("streaming key rotation payload")
+
+	var encBuf bytes.Buffer
+	w, err := legacyProvider.EncryptStream(&encBuf)
+	require.NoError(t, err)
+	_, err = w.Write(plaintext)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	cfg := makeCfg(testKeyHex, legacyKeyHex)
+	cfg.EncryptionProviders = "dek"
+	svc, err := dataencryption.New(context.Background(), cfg)
+	require.NoError(t, err)
+
+	reader, err := svc.DecryptStream(bytes.NewReader(encBuf.Bytes()))
 	require.NoError(t, err)
 	var plainBuf bytes.Buffer
 	_, err = plainBuf.ReadFrom(reader)
@@ -114,6 +145,6 @@ func TestMSEHProviderIDField(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, hasMagic)
 	require.Equal(t, "dek", h.ProviderID)
-	require.Equal(t, uint32(1), h.Version)
+	require.Equal(t, uint32(dataencryption.VersionAESGCM), h.Version)
 	require.Len(t, h.Nonce, 12)
 }

@@ -4,7 +4,7 @@ status: partial
 
 # Enhancement 068: Namespaced Episodic Memory
 
-> **Status**: Partial. Core CRUD, encryption, OPA policy enforcement, TTL/eviction, OpenAPI/proto contract parity, generated REST model adoption, gRPC handlers/tests, vector indexing (Postgres + MongoDB + Qdrant), admin policy bundle endpoints, and manual index-trigger endpoint are implemented. Remaining: LangGraph integration tests (Phase 6).
+> **Status**: Partial. Core CRUD, encryption, OPA policy enforcement, TTL/eviction, OpenAPI/proto contract parity, generated REST model adoption, gRPC handlers/tests, vector indexing (Postgres + MongoDB + Qdrant), admin policy bundle endpoints, and manual index-trigger endpoint are implemented. Remaining: LangGraph integration tests (Phase 6) and the event-timeline work in Phase 9.
 
 ## Summary
 

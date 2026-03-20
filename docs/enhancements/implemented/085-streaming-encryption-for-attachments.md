@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 085: Streaming Encryption for Attachments
 
-> **Status**: Proposed.
+> **Status**: Implemented.
 
 ## Summary
 
@@ -43,6 +43,8 @@ Switch from AES-GCM to AES-CTR for attachment encryption, enabling true single-p
 ```
 
 No trailing HMAC or authentication tag. The ciphertext length equals the plaintext length (no padding).
+The v2 nonce reserves a prefix for a stable key ID derived from the DEK, allowing
+rotated providers to select the right key before CTR decryption starts.
 
 **Encryption (Store):**
 
@@ -89,9 +91,13 @@ func (s *EncryptStore) Store(ctx context.Context, data io.Reader, maxSize int64,
 
 **Decryption (Retrieve):** Already streaming — `DecryptStream` reads the MSEH header, then returns an `io.Reader` that decrypts AES-CTR on the fly. No buffering needed.
 
-**Dual-version decryption:** The MSEH header `Version` field distinguishes v1 (AES-GCM, existing) from v2 (AES-CTR). Decryption reads the version and routes accordingly, so existing encrypted attachments continue to work.
+**Attachment stream versioning:** Streamed attachments now require MSEH v2 (AES-CTR).
+This change is intentionally not backward compatible for old streamed attachment
+payloads because pre-release environments reset the backing data.
 
-**Provider changes:** Each encryption provider (`dek`, `vault`, `awskms`) needs an `EncryptStreamV2` / updated `EncryptStream` that uses AES-CTR instead of AES-GCM, and `DecryptStream` needs to handle both versions based on the header.
+**Provider changes:** The existing `EncryptStream`/`DecryptStream` methods now carry v2.
+Regular `Encrypt`/`Decrypt` stay on v1 AES-GCM for non-streamed payloads, while stream
+methods write v2 AES-CTR envelopes and reject non-v2 stream payloads.
 
 ## Testing
 
@@ -106,11 +112,6 @@ Feature: Streaming encrypted attachment store (AES-CTR v2)
     Then the attachment is stored successfully
     And the stored data starts with an MSEH v2 header
     And the attachment can be retrieved and decrypted to the original content
-
-  Scenario: Decrypt v1 (AES-GCM) attachment after upgrade
-    Given an attachment was previously encrypted with MSEH v1
-    When I retrieve the attachment
-    Then the attachment is decrypted successfully using the v1 code path
 
   Scenario: Attachment exceeding max size is rejected
     Given the max attachment size is 10MB
@@ -129,28 +130,28 @@ The existing encrypted attachment BDD tests (`cucumber_pg_encrypted_test.go`, `c
 
 ## Tasks
 
-- [ ] Add MSEH v2 (AES-CTR) support to `encrypt.Provider` interface
-- [ ] Implement AES-CTR `EncryptStream`/`DecryptStream` in `dek` provider
-- [ ] Implement AES-CTR `EncryptStream`/`DecryptStream` in `vault` provider
-- [ ] Implement AES-CTR `EncryptStream`/`DecryptStream` in `awskms` provider
-- [ ] Update `dataencryption.Service` to route v1 vs v2 on decryption
-- [ ] Rewrite `EncryptStore.Store()` to use streaming (no buffering)
-- [ ] Add unit tests for v2 encrypt/decrypt round-trip
-- [ ] Verify existing v1 encrypted attachments still decrypt (backward compat)
-- [ ] Verify existing encrypted attachment BDD tests still pass
+- [x] Add MSEH v2 (AES-CTR) constants and provider stream support
+- [x] Implement AES-CTR `EncryptStream`/`DecryptStream` in `dek` provider
+- [x] Implement AES-CTR `EncryptStream`/`DecryptStream` in `vault` provider
+- [x] Implement AES-CTR `EncryptStream`/`DecryptStream` in `awskms` provider
+- [x] Pass parsed MSEH version info through decryption so providers can enforce v2 stream payloads
+- [x] Rewrite `EncryptStore.Store()` to use streaming (no buffering)
+- [x] Add unit tests for v2 encrypt/decrypt round-trip
+- [x] Verify encrypted attachment BDD coverage on SQLite; Postgres verification remains Docker-dependent
 
 ## Files to Modify
 
 | File | Change |
 |------|--------|
 | `internal/plugin/attach/encrypt/encrypt.go` | Replace buffered Store with streaming AES-CTR via pipe |
-| `internal/registry/encrypt/plugin.go` | Update `Provider` interface if needed for v2 stream methods |
+| `internal/plugin/attach/encrypt/encrypt_test.go` | Add wrapper tests for v2 streaming and oversize rejection |
 | `internal/plugin/encrypt/dek/dek.go` | Add AES-CTR encrypt/decrypt stream support |
+| `internal/plugin/encrypt/dek/stream.go` | Add shared AES-CTR helpers and key-ID nonce handling |
+| `internal/plugin/encrypt/dek/dek_test.go` | Add v2 round-trip and stream key-rotation tests |
 | `internal/plugin/encrypt/vault/vault.go` | Add AES-CTR encrypt/decrypt stream support |
 | `internal/plugin/encrypt/awskms/awskms.go` | Add AES-CTR encrypt/decrypt stream support |
-| `internal/dataencryption/service.go` | Route v1/v2 in `DecryptStream` based on header version |
-| `internal/dataencryption/mseh.go` | Document v2 format constants if needed |
-| `internal/plugin/attach/encrypt/encrypt_test.go` | Add v2 round-trip and backward compat tests |
+| `internal/dataencryption/mseh.go` | Add v2 format constants and document v1/v2 nonce expectations |
+| `internal/plugin/attach/{filesystem,mongostore,pgstore,s3store}` | Treat `maxSize < 0` as "no inner limit" for encrypted streaming writes |
 
 ## Verification
 
@@ -158,16 +159,25 @@ The existing encrypted attachment BDD tests (`cucumber_pg_encrypted_test.go`, `c
 # Compile
 go build ./...
 
-# Run encrypted attachment tests
-go test ./internal/plugin/attach/encrypt/ -v -count=1
+# Run focused unit tests
+go test ./internal/plugin/encrypt/dek -count=1
+go test ./internal/plugin/attach/encrypt/ -count=1
 
 # Run BDD tests with encryption
 go test ./internal/bdd -run TestFeaturesPgEncrypted -count=1
-go test ./internal/bdd -run TestFeaturesSqliteEncrypted -count=1
+go test -tags=sqlite_fts5 ./internal/bdd -run TestFeaturesSQLiteEncrypted -count=1
 ```
+
+Verification status at implementation time:
+- `go build ./...` passed
+- `go test ./internal/plugin/encrypt/dek -count=1` passed
+- `go test ./internal/plugin/attach/encrypt -count=1` passed
+- `go test -tags=sqlite_fts5 ./internal/bdd -run TestFeaturesSQLiteEncrypted -count=1` passed
+- `go test ./internal/bdd -run TestFeaturesPgEncrypted -count=1` could not run in this environment because Docker/Testcontainers could not connect to a Docker daemon
 
 ## Design Decisions
 
 - **AES-CTR over AES-GCM**: AES-CTR eliminates buffering entirely — no temp files, no memory spikes, true streaming on both encrypt and decrypt paths.
 - **No authentication tag (no HMAC)**: The threat model is at-rest protection. An attacker with write access to the backing store can delete data just as easily as tampering with ciphertext. AEAD adds complexity (chunking or deferred verification) without meaningful security benefit in this context.
-- **Dual-version support**: The MSEH header already has a `Version` field. V1 (AES-GCM) continues to work for existing data. New attachments use v2 (AES-CTR). No migration required.
+- **No stream backward compatibility**: Streamed attachment decryption now accepts only v2 AES-CTR envelopes. Existing stored data is expected to be reset in pre-release environments, so carrying v1 stream compatibility would add complexity without value.
+- **Key rotation on CTR streams**: Because AES-CTR does not authenticate ciphertext, v2 encodes a compact key ID inside the 16-byte nonce so rotated providers can pick the correct DEK before decryption.

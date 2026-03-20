@@ -18,6 +18,8 @@ Check the highest existing number before creating a new one:
 find docs/enhancements -maxdepth 2 -name '*.md' | sort -n | tail -3
 ```
 
+Current backlog gotcha: `docs/enhancements/` already contains two distinct proposed `085-*.md` files. When discussing or editing those, refer to them by filename/title, not number alone, until they are renumbered.
+
 ## Required Structure
 
 Every enhancement doc must include:

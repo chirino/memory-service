@@ -63,12 +63,15 @@ func (s *AttachmentStore) Store(_ context.Context, data io.Reader, maxSize int64
 	}()
 
 	hasher := sha256.New()
-	limited := io.LimitReader(data, maxSize+1)
+	limited := data
+	if maxSize >= 0 {
+		limited = io.LimitReader(data, maxSize+1)
+	}
 	counting := &countingWriter{h: hasher}
 	if _, err := io.Copy(tmp, io.TeeReader(limited, counting)); err != nil {
 		return nil, fmt.Errorf("fsstore: write temp file: %w", err)
 	}
-	if counting.n > maxSize {
+	if maxSize >= 0 && counting.n > maxSize {
 		return nil, fmt.Errorf("file exceeds maximum size of %d bytes", maxSize)
 	}
 	if err := tmp.Close(); err != nil {

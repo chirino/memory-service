@@ -1,5 +1,5 @@
-// Package dek registers the "dek" AES-256-GCM encryption provider.
-// Ciphertext is wrapped in an MSEH envelope for Java interoperability.
+// Package dek registers the "dek" encryption provider.
+// Byte-slice encryption uses AES-256-GCM; streamed attachment encryption uses AES-CTR.
 package dek
 
 import (
@@ -48,7 +48,7 @@ func (p *dekProvider) ID() string { return "dek" }
 
 // Encrypt encrypts plaintext with AES-256-GCM and wraps it in an MSEH envelope.
 func (p *dekProvider) Encrypt(plaintext []byte) ([]byte, error) {
-	iv, err := randomIV()
+	iv, err := randomBytes(gcmNonceSize)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (p *dekProvider) Encrypt(plaintext []byte) ([]byte, error) {
 
 	var buf bytes.Buffer
 	if err := dataencryption.WriteHeader(&buf, dataencryption.Header{
-		Version:    1,
+		Version:    dataencryption.VersionAESGCM,
 		ProviderID: "dek",
 		Nonce:      iv,
 	}); err != nil {
@@ -110,28 +110,21 @@ func (p *dekProvider) gcmOpen(iv, payload []byte) ([]byte, error) {
 	return nil, fmt.Errorf("dek: decryption failed with all keys: %w", lastErr)
 }
 
-// EncryptStream writes the MSEH header immediately (IV is pre-generated), then
-// returns a WriteCloser that buffers plaintext and seals it on Close.
-// AES-GCM requires all plaintext before computing the auth tag, so buffering is
-// unavoidable — this matches Java's CipherOutputStream behaviour.
+// EncryptStream writes the MSEH v2 header immediately, then returns a WriteCloser
+// that encrypts bytes directly to dst using AES-CTR.
 func (p *dekProvider) EncryptStream(dst io.Writer) (io.WriteCloser, error) {
-	iv, err := randomIV()
+	nonce, err := NewCTRNonce(p.primaryKey)
 	if err != nil {
 		return nil, err
 	}
-	// Write MSEH header up-front so the receiver can start streaming.
 	if err := dataencryption.WriteHeader(dst, dataencryption.Header{
-		Version:    1,
+		Version:    dataencryption.VersionAESCTR,
 		ProviderID: "dek",
-		Nonce:      iv,
+		Nonce:      nonce,
 	}); err != nil {
 		return nil, err
 	}
-	return &gcmEncryptWriter{
-		dst: dst,
-		key: p.primaryKey,
-		iv:  iv,
-	}, nil
+	return NewCTREncryptWriter(dst, p.primaryKey, nonce)
 }
 
 // DecryptStream reads ciphertext from src (already positioned after the MSEH header)
@@ -140,15 +133,14 @@ func (p *dekProvider) DecryptStream(src io.Reader, header *encrypt.Header) (io.R
 	if header == nil {
 		return nil, fmt.Errorf("dek: DecryptStream requires a parsed MSEH header")
 	}
-	data, err := io.ReadAll(src)
-	if err != nil {
-		return nil, fmt.Errorf("dek: reading ciphertext stream: %w", err)
+	if header.Version != dataencryption.VersionAESCTR {
+		return nil, fmt.Errorf("dek: unsupported MSEH stream version %d", header.Version)
 	}
-	plain, err := p.gcmOpen(header.Nonce, data)
+	key, err := SelectCTRKey(append([][]byte{p.primaryKey}, p.legacyKeys...), header.Nonce)
 	if err != nil {
 		return nil, err
 	}
-	return bytes.NewReader(plain), nil
+	return NewCTRDecryptReader(src, key, header.Nonce)
 }
 
 // AttachmentSigningKeys returns HKDF-derived signing keys for attachment download
@@ -159,12 +151,12 @@ func (p *dekProvider) AttachmentSigningKeys(_ context.Context) ([][]byte, error)
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func randomIV() ([]byte, error) {
-	iv := make([]byte, 12)
-	if _, err := rand.Read(iv); err != nil {
+func randomBytes(size int) ([]byte, error) {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
 		return nil, fmt.Errorf("dek: generating nonce: %w", err)
 	}
-	return iv, nil
+	return buf, nil
 }
 
 func newGCM(key []byte) (cipher.AEAD, error) {
@@ -182,7 +174,7 @@ func newGCM(key []byte) (cipher.AEAD, error) {
 // AESGCMSeal encrypts plaintext with AES-256-GCM using key and a random IV.
 // Returns (iv, ciphertext, error). Exported for use by KEK-backed providers.
 func AESGCMSeal(key, plaintext []byte) (iv, ciphertext []byte, err error) {
-	iv, err = randomIV()
+	iv, err = randomBytes(gcmNonceSize)
 	if err != nil {
 		return nil, nil, err
 	}

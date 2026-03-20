@@ -215,7 +215,7 @@ func (p *kmsProvider) Encrypt(plaintext []byte) ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	if err := dataencryption.WriteHeader(&buf, dataencryption.Header{
-		Version:    1,
+		Version:    dataencryption.VersionAESGCM,
 		ProviderID: "kms",
 		Nonce:      iv,
 	}); err != nil {
@@ -245,8 +245,8 @@ func (p *kmsProvider) Decrypt(ciphertext []byte) ([]byte, error) {
 	return p.gcmOpen(h.Nonce, payload)
 }
 
-// EncryptStream writes the MSEH header then returns a WriteCloser that buffers
-// and seals the plaintext with the primary DEK on Close.
+// EncryptStream writes the MSEH v2 header then returns a WriteCloser that encrypts
+// bytes directly to dst using AES-CTR.
 func (p *kmsProvider) EncryptStream(dst io.Writer) (io.WriteCloser, error) {
 	if err := p.ensureLoaded(); err != nil {
 		return nil, err
@@ -255,18 +255,18 @@ func (p *kmsProvider) EncryptStream(dst io.Writer) (io.WriteCloser, error) {
 	pk := p.keys[0]
 	p.mu.RUnlock()
 
-	iv := make([]byte, 12)
-	if _, err := rand.Read(iv); err != nil {
-		return nil, fmt.Errorf("kms: generating nonce: %w", err)
+	nonce, err := dekpkg.NewCTRNonce(pk)
+	if err != nil {
+		return nil, err
 	}
 	if err := dataencryption.WriteHeader(dst, dataencryption.Header{
-		Version:    1,
+		Version:    dataencryption.VersionAESCTR,
 		ProviderID: "kms",
-		Nonce:      iv,
+		Nonce:      nonce,
 	}); err != nil {
 		return nil, err
 	}
-	return dekpkg.NewGCMEncryptWriter(dst, pk, iv), nil
+	return dekpkg.NewCTREncryptWriter(dst, pk, nonce)
 }
 
 // DecryptStream decrypts a ciphertext stream (already past the MSEH header).
@@ -277,15 +277,14 @@ func (p *kmsProvider) DecryptStream(src io.Reader, header *encrypt.Header) (io.R
 	if header == nil {
 		return nil, fmt.Errorf("kms: DecryptStream requires a parsed MSEH header")
 	}
-	data, err := io.ReadAll(src)
-	if err != nil {
-		return nil, fmt.Errorf("kms: reading ciphertext stream: %w", err)
+	if header.Version != dataencryption.VersionAESCTR {
+		return nil, fmt.Errorf("kms: unsupported MSEH stream version %d", header.Version)
 	}
-	plain, err := p.gcmOpen(header.Nonce, data)
+	key, err := dekpkg.SelectCTRKey(p.currentKeys(), header.Nonce)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kms: %w", err)
 	}
-	return bytes.NewReader(plain), nil
+	return dekpkg.NewCTRDecryptReader(src, key, header.Nonce)
 }
 
 // AttachmentSigningKeys derives HKDF-SHA256 signing keys from all loaded plaintext DEKs.
