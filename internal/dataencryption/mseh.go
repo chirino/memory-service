@@ -19,6 +19,13 @@ import (
 
 var magic = [4]byte{0x4D, 0x53, 0x45, 0x48} // "MSEH"
 
+const (
+	// VersionAESGCM is the legacy MSEH format used by byte-slice encryption APIs.
+	VersionAESGCM uint32 = 1
+	// VersionAESCTR is the streaming MSEH format used for attachment streams.
+	VersionAESCTR uint32 = 2
+)
+
 // Header is the decoded MSEH envelope header.
 type Header struct {
 	Version    uint32
@@ -66,8 +73,9 @@ func ReadHeader(r io.Reader) (*Header, bool, error) {
 		return nil, true, fmt.Errorf("mseh: reading proto length: %w", err)
 	}
 	// Guard against a crafted header advertising a huge proto length.
-	// Current providers write: version uint32 + provider-ID string + 12-byte AES-GCM IV,
-	// which is well under 64 bytes. 4 KiB is orders of magnitude above any legitimate value.
+	// Current providers write: version uint32 + provider-ID string + 12-byte GCM or
+	// 16-byte CTR nonce, which is well under 64 bytes. 4 KiB is orders of magnitude
+	// above any legitimate value.
 	const maxProtoLen = 4096
 	if protoLen > maxProtoLen {
 		return nil, true, fmt.Errorf("mseh: proto length %d exceeds maximum %d", protoLen, maxProtoLen)

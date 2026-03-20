@@ -1,10 +1,10 @@
 package encrypt
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"hash"
 	"io"
 	"net/url"
 	"time"
@@ -13,7 +13,7 @@ import (
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 )
 
-// Wrap wraps an AttachmentStore with MSEH-based AES-GCM encryption via svc.
+// Wrap wraps an AttachmentStore with MSEH-based attachment encryption via svc.
 func Wrap(inner registryattach.AttachmentStore, svc *dataencryption.Service) (registryattach.AttachmentStore, error) {
 	return &EncryptStore{inner: inner, svc: svc}, nil
 }
@@ -27,43 +27,52 @@ type EncryptStore struct {
 
 var _ registryattach.AttachmentStore = (*EncryptStore)(nil)
 
-// Store buffers the full plaintext (required for AES-GCM), computes SHA-256 and
-// size on the plaintext, encrypts with MSEH, then writes to the inner store.
+// Store streams plaintext through AES-CTR encryption into the inner store while
+// hashing and enforcing the plaintext max size.
 func (s *EncryptStore) Store(ctx context.Context, data io.Reader, maxSize int64, contentType string) (*registryattach.FileStoreResult, error) {
-	limited := io.LimitReader(data, maxSize+1)
 	hasher := sha256.New()
+	plaintext := &hashLimitReader{
+		src:     data,
+		maxSize: maxSize,
+		hasher:  hasher,
+	}
+	pr, pw := io.Pipe()
+	errCh := make(chan error, 1)
 
-	// Read all plaintext so we can compute hash and encrypt in one pass.
-	var plainBuf bytes.Buffer
-	n, err := io.Copy(io.MultiWriter(&plainBuf, hasher), limited)
-	if err != nil {
-		return nil, err
-	}
-	if n > maxSize {
-		return nil, fmt.Errorf("file exceeds maximum size of %d bytes", maxSize)
-	}
+	go func() {
+		enc, err := s.svc.EncryptStream(pw)
+		if err != nil {
+			_ = pw.CloseWithError(err)
+			errCh <- err
+			return
+		}
+		if _, err := io.Copy(enc, plaintext); err != nil {
+			_ = pw.CloseWithError(err)
+			errCh <- err
+			return
+		}
+		if err := enc.Close(); err != nil {
+			_ = pw.CloseWithError(err)
+			errCh <- err
+			return
+		}
+		errCh <- pw.Close()
+	}()
 
-	// Encrypt into a buffer. EncryptStream writes the MSEH header immediately;
-	// Close() seals and flushes the GCM ciphertext + tag.
-	var encBuf bytes.Buffer
-	enc, err := s.svc.EncryptStream(&encBuf)
+	result, err := s.inner.Store(ctx, pr, -1, contentType)
 	if err != nil {
+		_ = pr.CloseWithError(err)
+		<-errCh
 		return nil, err
 	}
-	if _, err := enc.Write(plainBuf.Bytes()); err != nil {
-		return nil, err
-	}
-	if err := enc.Close(); err != nil {
-		return nil, err
-	}
-
-	encSize := int64(encBuf.Len())
-	result, err := s.inner.Store(ctx, &encBuf, encSize, contentType)
-	if err != nil {
+	if err := <-errCh; err != nil {
+		if result != nil && result.StorageKey != "" {
+			_ = s.inner.Delete(ctx, result.StorageKey)
+		}
 		return nil, err
 	}
 	// Callers receive the logical (plaintext) size and SHA-256.
-	result.Size = n
+	result.Size = plaintext.count
 	result.SHA256 = fmt.Sprintf("%x", hasher.Sum(nil))
 	return result, nil
 }
@@ -99,3 +108,36 @@ type readCloser struct {
 }
 
 func (r *readCloser) Close() error { return r.close() }
+
+type hashLimitReader struct {
+	src     io.Reader
+	maxSize int64
+	hasher  hash.Hash
+	count   int64
+}
+
+func (r *hashLimitReader) Read(p []byte) (int, error) {
+	if r.maxSize >= 0 {
+		remaining := r.maxSize - r.count
+		if remaining == 0 {
+			var probe [1]byte
+			n, err := r.src.Read(probe[:])
+			if n > 0 {
+				return 0, fmt.Errorf("file exceeds maximum size of %d bytes", r.maxSize)
+			}
+			return 0, err
+		}
+		if int64(len(p)) > remaining {
+			p = p[:remaining]
+		}
+	}
+
+	n, err := r.src.Read(p)
+	if n > 0 {
+		r.count += int64(n)
+		if _, writeErr := r.hasher.Write(p[:n]); writeErr != nil {
+			return n, writeErr
+		}
+	}
+	return n, err
+}

@@ -99,7 +99,10 @@ func (s *S3AttachmentStore) Store(ctx context.Context, data io.Reader, maxSize i
 	storageKey := uuid.New().String()
 	s3Key := s.s3Key(storageKey)
 	hasher := sha256.New()
-	limited := io.LimitReader(data, maxSize+1)
+	limited := data
+	if maxSize >= 0 {
+		limited = io.LimitReader(data, maxSize+1)
+	}
 	counting := &countingWriter{h: hasher}
 
 	tmp, err := tempfiles.Create(s.tempDir, "memory-service-s3-upload-*")
@@ -114,7 +117,7 @@ func (s *S3AttachmentStore) Store(ctx context.Context, data io.Reader, maxSize i
 	if _, err := io.Copy(tmp, io.TeeReader(limited, counting)); err != nil {
 		return nil, fmt.Errorf("s3store: buffer upload stream: %w", err)
 	}
-	if counting.n > maxSize {
+	if maxSize >= 0 && counting.n > maxSize {
 		return nil, fmt.Errorf("file exceeds maximum size of %d bytes", maxSize)
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {

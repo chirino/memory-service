@@ -73,12 +73,15 @@ func (s *PgAttachmentStore) Store(ctx context.Context, data io.Reader, maxSize i
 	}()
 
 	hasher := sha256.New()
-	limited := io.LimitReader(data, maxSize+1)
-	total, err := io.Copy(io.MultiWriter(tmp, hasher), limited)
+	source := data
+	if maxSize >= 0 {
+		source = io.LimitReader(data, maxSize+1)
+	}
+	total, err := io.Copy(io.MultiWriter(tmp, hasher), source)
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: buffer upload: %w", err)
 	}
-	if total > maxSize {
+	if maxSize >= 0 && total > maxSize {
 		return nil, fmt.Errorf("file exceeds maximum size of %d bytes", maxSize)
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {

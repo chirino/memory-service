@@ -23,7 +23,7 @@ type Provider interface {
 	Decrypt(ciphertext []byte) ([]byte, error)
 
 	// EncryptStream writes the MSEH header to dst then returns a WriteCloser that
-	// encrypts written bytes and flushes the GCM tag on Close.
+	// encrypts written bytes for streaming storage.
 	EncryptStream(dst io.Writer) (io.WriteCloser, error)
 
 	// DecryptStream returns a Reader that decrypts bytes from src.

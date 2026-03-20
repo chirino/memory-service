@@ -80,7 +80,10 @@ func (s *MongoAttachmentStore) Store(ctx context.Context, data io.Reader, maxSiz
 	defer s.storeMu.Unlock()
 
 	hasher := sha256.New()
-	limited := io.LimitReader(data, maxSize+1)
+	limited := data
+	if maxSize >= 0 {
+		limited = io.LimitReader(data, maxSize+1)
+	}
 
 	// Wrap reader to track size and compute hash while uploading.
 	counted := &countingReader{r: io.TeeReader(limited, hasher)}
@@ -90,7 +93,7 @@ func (s *MongoAttachmentStore) Store(ctx context.Context, data io.Reader, maxSiz
 		return nil, fmt.Errorf("mongostore: gridfs upload: %w", err)
 	}
 
-	if counted.n > maxSize {
+	if maxSize >= 0 && counted.n > maxSize {
 		// Delete the oversized upload.
 		_ = s.bucket.Delete(ctx, fileID)
 		return nil, fmt.Errorf("file exceeds maximum size of %d bytes", maxSize)
