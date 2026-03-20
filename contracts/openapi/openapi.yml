@@ -20,6 +20,10 @@ tags:
     description: APIs for managing conversation ownership and sharing.
   - name: Memories
     description: Namespaced episodic memory APIs.
+  - name: Events
+    description: Real-time event stream for cache invalidation.
+  - name: Admin
+    description: Administrative operations and system management.
 paths:
 
   ############################################################
@@ -1439,6 +1443,88 @@ paths:
           $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
+
+  ############################################################
+  # Events
+  ############################################################
+
+  /v1/events:
+    get:
+      operationId: subscribeEvents
+      summary: Subscribe to real-time events (SSE)
+      description: |-
+        Opens a Server-Sent Events stream delivering real-time notifications
+        for conversations the caller has access to. Events are cache-invalidation
+        hints — clients should refetch the affected resource on receipt.
+
+        The response is `text/event-stream`. Each message is a JSON object:
+        `{"event":"<action>","kind":"<resource>","data":{...}}`
+      tags:
+        - Events
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: kinds
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated event kinds to filter (conversation, entry, response, membership).
+      responses:
+        '200':
+          description: SSE event stream opened successfully.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Newline-delimited SSE events.
+        '401':
+          description: Authentication required.
+        '429':
+          description: Too many SSE connections for this user.
+
+  ############################################################
+  # Admin
+  ############################################################
+
+  /v1/admin/events:
+    get:
+      operationId: adminSubscribeEvents
+      summary: Subscribe to all real-time events (admin SSE)
+      description: |-
+        Admin-only SSE stream that delivers all events from all users,
+        bypassing membership filtering. Requires admin role and a
+        justification query parameter for audit logging.
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: justification
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Non-empty reason for subscribing (logged for audit).
+        - name: kinds
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated event kinds to filter.
+      responses:
+        '200':
+          description: SSE event stream opened successfully.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Missing or empty justification.
+        '401':
+          description: Authentication required.
+        '403':
+          description: Admin role required.
 
 components:
   securitySchemes:

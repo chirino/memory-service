@@ -19,6 +19,7 @@ import (
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registryroute "github.com/chirino/memory-service/internal/registry/route"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -92,6 +93,16 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		log.Warn("Failed to initialize cache", "cache", cfg.CacheType, "err", err)
 	} else {
 		ctx = registrycache.WithEntriesCacheContext(ctx, entriesCache)
+	}
+
+	// Initialize event bus
+	eventBusLoader, err := registryeventbus.Select(cfg.EventBusType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select event bus: %w", err)
+	}
+	eventBus, err := eventBusLoader(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize event bus: %w", err)
 	}
 
 	// Initialize store
@@ -235,7 +246,7 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	memoriesAdapter := routememories.NewAPIServerAdapter(episodicStore, episodicPolicy, cfg, embedder)
 
 	// Register generated wrappers on the public router.
-	registerAPIRoutes(router, auth, cfg, store, attachStore, attachSigningKeys, embedder, vectorStore, resumer, resumerEnabled, episodicStore, episodicPolicy, episodicIdx, memoriesAdapter)
+	registerAPIRoutes(router, auth, cfg, store, attachStore, attachSigningKeys, embedder, vectorStore, resumer, resumerEnabled, episodicStore, episodicPolicy, episodicIdx, memoriesAdapter, eventBus)
 
 	// Start background services
 	indexer := service.NewBackgroundIndexer(store, embedder, vectorStore, cfg.VectorIndexerBatchSize)
@@ -278,10 +289,16 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		Config:      cfg,
 	})
 	pb.RegisterResponseRecorderServiceServer(grpcServer, &grpcserver.ResponseRecorderServer{
-		Resumer: resumer,
-		Store:   store,
-		Config:  cfg,
-		Enabled: resumerEnabled,
+		Resumer:  resumer,
+		Store:    store,
+		Config:   cfg,
+		Enabled:  resumerEnabled,
+		EventBus: eventBus,
+	})
+	pb.RegisterEventStreamServiceServer(grpcServer, &grpcserver.EventStreamServer{
+		Store:    store,
+		EventBus: eventBus,
+		Config:   cfg,
 	})
 
 	// Mount management route plugins. If a dedicated management port is configured,

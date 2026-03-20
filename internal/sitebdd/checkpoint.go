@@ -47,13 +47,19 @@ func (r *checkpointProcessRegistry) Track(cmd *exec.Cmd) {
 	r.mu.Unlock()
 }
 
-func (r *checkpointProcessRegistry) Untrack(cmd *exec.Cmd) {
+// Untrack removes a cmd from the registry. Returns true if it was present
+// (meaning the caller is responsible for killing it). Returns false if the
+// cmd was already removed (e.g., by KillAll), so the caller should skip
+// killing to avoid a data race on cmd.Wait().
+func (r *checkpointProcessRegistry) Untrack(cmd *exec.Cmd) bool {
 	if cmd == nil {
-		return
+		return false
 	}
 	r.mu.Lock()
+	_, found := r.cmds[cmd]
 	delete(r.cmds, cmd)
 	r.mu.Unlock()
+	return found
 }
 
 func (r *checkpointProcessRegistry) KillAll() int {
@@ -403,8 +409,10 @@ func (s *SiteScenario) killCheckpoint() error {
 	pid := s.checkpointCmd.Process.Pid
 	port := s.CheckpointPort
 
-	globalCheckpointProcessRegistry.Untrack(s.checkpointCmd)
-	killCheckpointProcess(s.checkpointCmd)
+	wasTracked := globalCheckpointProcessRegistry.Untrack(s.checkpointCmd)
+	if wasTracked {
+		killCheckpointProcess(s.checkpointCmd)
+	}
 	s.checkpointCmd = nil
 
 	// Wait for the port to be released (up to 10s)

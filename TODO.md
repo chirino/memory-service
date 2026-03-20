@@ -6,11 +6,11 @@
 
 ## General
 * Support getting getting the clientID from the bearer token - Delegates more config to KeyCloak
-* Go: Avoid using in-memory buffer for the encryption store (see [085-streaming-encryption-for-attachments.md](docs/enhancements/085-streaming-encryption-for-attachments.md)).
 * support using github.com/99designs/keyring to store the DEK (local usecases)
 * investigate/test/support more async conversation messaging styles.. sending additional user messages to an agent while it's stil streamming a reponse.  Do the messages queue? do they interrupt? 
 * Allow the MCP interface to the namespaced memeories via embdded local server.
 * MCP should focus more on memories than conversations.
+* The MCP sub command should support using an embedded memory-server
 * Provide a way to designate stable vs unstable features/apis.
 
 ## Better Demo / Usecases

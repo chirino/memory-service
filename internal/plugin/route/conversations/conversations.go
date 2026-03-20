@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registryroute "github.com/chirino/memory-service/internal/registry/route"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
@@ -39,16 +41,16 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, cfg *config.Con
 		listConversations(c, store)
 	})
 	g.POST("/conversations", func(c *gin.Context) {
-		createConversation(c, store)
+		createConversation(c, store, nil)
 	})
 	g.GET("/conversations/:conversationId", func(c *gin.Context) {
 		getConversation(c, store)
 	})
 	g.PATCH("/conversations/:conversationId", func(c *gin.Context) {
-		updateConversation(c, store)
+		updateConversation(c, store, nil)
 	})
 	g.DELETE("/conversations/:conversationId", func(c *gin.Context) {
-		deleteConversation(c, store)
+		deleteConversation(c, store, nil)
 	})
 	g.GET("/conversations/:conversationId/forks", func(c *gin.Context) {
 		listForks(c, store)
@@ -64,8 +66,8 @@ func HandleListConversations(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 // HandleCreateConversation exposes create conversation handling for wrapper-native adapters.
-func HandleCreateConversation(c *gin.Context, store registrystore.MemoryStore) {
-	createConversation(c, store)
+func HandleCreateConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
+	createConversation(c, store, eventBus)
 }
 
 // HandleGetConversation exposes get conversation handling for wrapper-native adapters.
@@ -74,13 +76,13 @@ func HandleGetConversation(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 // HandleUpdateConversation exposes update conversation handling for wrapper-native adapters.
-func HandleUpdateConversation(c *gin.Context, store registrystore.MemoryStore) {
-	updateConversation(c, store)
+func HandleUpdateConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
+	updateConversation(c, store, eventBus)
 }
 
 // HandleDeleteConversation exposes delete conversation handling for wrapper-native adapters.
-func HandleDeleteConversation(c *gin.Context, store registrystore.MemoryStore) {
-	deleteConversation(c, store)
+func HandleDeleteConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
+	deleteConversation(c, store, eventBus)
 }
 
 // HandleListForks exposes list forks handling for wrapper-native adapters.
@@ -112,7 +114,7 @@ func listConversations(c *gin.Context, store registrystore.MemoryStore) {
 	}
 }
 
-func createConversation(c *gin.Context, store registrystore.MemoryStore) {
+func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
 	var req struct {
 		ID                     *string                `json:"id"`
@@ -158,6 +160,7 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore) {
 		forkEntryID = &id
 	}
 
+	var createdConv *registrystore.ConversationDetail
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		var (
 			conv *registrystore.ConversationDetail
@@ -171,6 +174,7 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore) {
 		if err != nil {
 			return err
 		}
+		createdConv = conv
 		// Java parity: fork creation returns 200, regular creation returns 201.
 		if forkConvID != nil {
 			c.JSON(http.StatusOK, conv)
@@ -180,6 +184,20 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore) {
 		return nil
 	}); err != nil {
 		handleError(c, err)
+		return
+	}
+	if eventBus != nil && createdConv != nil {
+		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+			Event: "created",
+			Kind:  "conversation",
+			Data: map[string]any{
+				"conversation":       createdConv.ID,
+				"conversation_group": createdConv.ConversationGroupID,
+			},
+			ConversationGroupID: createdConv.ConversationGroupID,
+		}); err != nil {
+			log.Warn("Failed to publish event", "err", err)
+		}
 	}
 }
 
@@ -203,7 +221,7 @@ func getConversation(c *gin.Context, store registrystore.MemoryStore) {
 	}
 }
 
-func updateConversation(c *gin.Context, store registrystore.MemoryStore) {
+func updateConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
 	convID, err := uuid.Parse(c.Param("conversationId"))
 	if err != nil {
@@ -243,19 +261,35 @@ func updateConversation(c *gin.Context, store registrystore.MemoryStore) {
 		}
 	}
 
+	var updatedConv *registrystore.ConversationDetail
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		conv, err := store.UpdateConversation(ctx, userID, convID, title, metadata)
 		if err != nil {
 			return err
 		}
+		updatedConv = conv
 		c.JSON(http.StatusOK, conv)
 		return nil
 	}); err != nil {
 		handleError(c, err)
+		return
+	}
+	if eventBus != nil && updatedConv != nil {
+		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+			Event: "updated",
+			Kind:  "conversation",
+			Data: map[string]any{
+				"conversation":       updatedConv.ID,
+				"conversation_group": updatedConv.ConversationGroupID,
+			},
+			ConversationGroupID: updatedConv.ConversationGroupID,
+		}); err != nil {
+			log.Warn("Failed to publish event", "err", err)
+		}
 	}
 }
 
-func deleteConversation(c *gin.Context, store registrystore.MemoryStore) {
+func deleteConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
 	convID, err := uuid.Parse(c.Param("conversationId"))
 	if err != nil {
@@ -263,7 +297,17 @@ func deleteConversation(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
+	var groupID uuid.UUID
+	var memberUserIDs []string
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		// Fetch conversation and members before deletion — memberships are
+		// hard-deleted in the same transaction, so we must capture them first.
+		conv, err := store.GetConversation(ctx, userID, convID)
+		if err != nil {
+			return err
+		}
+		groupID = conv.ConversationGroupID
+		memberUserIDs, _ = store.GetGroupMemberUserIDs(ctx, groupID)
 		if err := store.DeleteConversation(ctx, userID, convID); err != nil {
 			return err
 		}
@@ -271,6 +315,21 @@ func deleteConversation(c *gin.Context, store registrystore.MemoryStore) {
 		return nil
 	}); err != nil {
 		handleError(c, err)
+		return
+	}
+	if eventBus != nil {
+		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+			Event: "deleted",
+			Kind:  "conversation",
+			Data: map[string]any{
+				"conversation":       convID,
+				"conversation_group": groupID,
+				"members":            memberUserIDs,
+			},
+			ConversationGroupID: groupID,
+		}); err != nil {
+			log.Warn("Failed to publish event", "err", err)
+		}
 	}
 }
 

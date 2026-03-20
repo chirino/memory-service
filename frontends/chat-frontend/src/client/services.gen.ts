@@ -1082,3 +1082,65 @@ export class AttachmentsService {
     });
   }
 }
+
+export class EventsService {
+  /**
+   * Subscribe to real-time events (SSE)
+   * Opens a Server-Sent Events stream delivering real-time notifications
+   * for conversations the caller has access to. Events are cache-invalidation
+   * hints — clients should refetch the affected resource on receipt.
+   *
+   * The response is `text/event-stream`. Each message is a JSON object:
+   * `{"event":"<action>","kind":"<resource>","data":{...}}`
+   * @param data The data for the request.
+   * @param data.kinds Comma-separated event kinds to filter (conversation, entry, response, membership).
+   * @returns string SSE event stream opened successfully.
+   * @throws ApiError
+   */
+  public static subscribeEvents(
+    data: $OpenApiTs["/v1/events"]["get"]["req"] = {},
+  ): CancelablePromise<$OpenApiTs["/v1/events"]["get"]["res"][200]> {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/events",
+      query: {
+        kinds: data.kinds,
+      },
+      errors: {
+        401: "Authentication required.",
+        429: "Too many SSE connections for this user.",
+      },
+    });
+  }
+}
+
+export class AdminService {
+  /**
+   * Subscribe to all real-time events (admin SSE)
+   * Admin-only SSE stream that delivers all events from all users,
+   * bypassing membership filtering. Requires admin role and a
+   * justification query parameter for audit logging.
+   * @param data The data for the request.
+   * @param data.justification Non-empty reason for subscribing (logged for audit).
+   * @param data.kinds Comma-separated event kinds to filter.
+   * @returns string SSE event stream opened successfully.
+   * @throws ApiError
+   */
+  public static adminSubscribeEvents(
+    data: $OpenApiTs["/v1/admin/events"]["get"]["req"],
+  ): CancelablePromise<$OpenApiTs["/v1/admin/events"]["get"]["res"][200]> {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/admin/events",
+      query: {
+        justification: data.justification,
+        kinds: data.kinds,
+      },
+      errors: {
+        400: "Missing or empty justification.",
+        401: "Authentication required.",
+        403: "Admin role required.",
+      },
+    });
+  }
+}

@@ -42,22 +42,18 @@ Claude Code  --stdio-->  memory-service mcp (subcommand)  --HTTPS-->  Memory Ser
 
 ### Fly.io Deployment
 
-Minimal free-tier deployment: Go server + Postgres, API key auth.
+Minimal free-tier deployment: Go server + SQLite, API key auth. SQLite simplifies the deployment by eliminating the need for a separate Postgres database — the data is stored in a persistent volume on the Fly.io machine.
 
 | Feature | Status |
 |---------|--------|
 | Conversations API | Enabled |
 | API key auth | Enabled |
-| Postgres datastore | Enabled (auto-migrates) |
+| SQLite datastore | Enabled (persistent volume) |
 | Attachment storage | Enabled (in DB) |
 | Redis caching | Disabled |
 | Vector search (Qdrant) | Disabled |
 | Embeddings (OpenAI) | Disabled |
 | OIDC (Keycloak) | Disabled |
-
-### DATABASE_URL Compatibility
-
-Fly.io Postgres sets `DATABASE_URL` automatically via `fly postgres attach`. The Dockerfile entrypoint maps `DATABASE_URL` to `MEMORY_SERVICE_DB_URL` at container boot (via `MEMORY_SERVICE_DB_URL=${MEMORY_SERVICE_DB_URL:-$DATABASE_URL}`), keeping the application code free of deployment-specific env var fallbacks.
 
 ### Configuration
 
@@ -95,12 +91,12 @@ Developers configure the MCP bridge via `.mcp.json` (checked in) and a local `.e
 | `internal/cmd/mcp/tools.go` | MCP tool definitions and handlers |
 | `memory-service-mcp/main.go` | Standalone MCP binary wrapper |
 | `.mcp.json` | Claude Code MCP server configuration |
-| `Dockerfile` | Entrypoint maps `DATABASE_URL` → `MEMORY_SERVICE_DB_URL` |
+| `Dockerfile` | Builds Go binary with SQLite support |
 
 ## Testing
 
 - [ ] Manual end-to-end: deploy to Fly.io, connect MCP bridge, save/search/list sessions
-- [ ] Verify `DATABASE_URL` fallback works with Fly.io Postgres attach
+- [ ] Verify SQLite persistent volume works across Fly.io machine restarts
 
 ## Open Questions
 

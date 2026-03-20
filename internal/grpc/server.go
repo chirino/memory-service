@@ -21,6 +21,7 @@ import (
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
@@ -2048,10 +2049,39 @@ func parseGRPCExpiresIn(raw string, cfg *config.Config) (time.Duration, error) {
 
 type ResponseRecorderServer struct {
 	pb.UnimplementedResponseRecorderServiceServer
-	Resumer *internalresumer.Store
-	Store   registrystore.MemoryStore
-	Config  *config.Config
-	Enabled bool
+	Resumer  *internalresumer.Store
+	Store    registrystore.MemoryStore
+	Config   *config.Config
+	Enabled  bool
+	EventBus registryeventbus.EventBus
+}
+
+func (s *ResponseRecorderServer) publishResponseEvent(ctx context.Context, eventName string, convUUID uuid.UUID, recordingID string) {
+	if s.EventBus == nil {
+		return
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return
+	}
+	conv, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+		return s.Store.GetConversation(txCtx, userID, convUUID)
+	})
+	if err != nil {
+		log.Warn("Failed to get conversation for response event", "err", err)
+		return
+	}
+	if err := s.EventBus.Publish(ctx, registryeventbus.Event{
+		Event: eventName,
+		Kind:  "response",
+		Data: map[string]any{
+			"conversation": convUUID,
+			"recording":    recordingID,
+		},
+		ConversationGroupID: conv.ConversationGroupID,
+	}); err != nil {
+		log.Warn("Failed to publish response event", "err", err)
+	}
 }
 
 func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_RecordServer) (retErr error) {
@@ -2072,6 +2102,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 		if err := recorder.Complete(); err != nil {
 			log.Warn("failed to clean up response recorder after stream error", "conversation_id", convID, "error", err)
 		}
+		s.publishResponseEvent(stream.Context(), "failed", convUUID, convID)
 	}()
 
 	type recvResult struct {
@@ -2104,6 +2135,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 					return status.Error(codes.Internal, err.Error())
 				}
 			}
+			s.publishResponseEvent(stream.Context(), "failed", convUUID, convID)
 			return stream.SendAndClose(&pb.RecordResponse{
 				Status: pb.RecordStatus_RECORD_STATUS_CANCELLED,
 			})
@@ -2116,6 +2148,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 						return status.Error(codes.Internal, err.Error())
 					}
 				}
+				s.publishResponseEvent(stream.Context(), "completed", convUUID, convID)
 				return stream.SendAndClose(&pb.RecordResponse{
 					Status: pb.RecordStatus_RECORD_STATUS_SUCCESS,
 				})
@@ -2145,6 +2178,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 					log.Warn("record stream: failed to subscribe to cancel channel", "conversation_id", convID, "error", err)
 					return status.Error(codes.Internal, err.Error())
 				}
+				s.publishResponseEvent(stream.Context(), "started", convUUID, convID)
 			}
 			if convID == "" {
 				return status.Error(codes.InvalidArgument, "conversation_id is required in first record chunk")
@@ -2165,6 +2199,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 					log.Warn("record stream: complete failed", "conversation_id", convID, "error", err)
 					return status.Error(codes.Internal, err.Error())
 				}
+				s.publishResponseEvent(stream.Context(), "completed", convUUID, convID)
 				return stream.SendAndClose(&pb.RecordResponse{
 					Status: pb.RecordStatus_RECORD_STATUS_SUCCESS,
 				})
@@ -2303,4 +2338,161 @@ func (s *ResponseRecorderServer) resolveAdvertisedAddress(ctx context.Context) s
 		port = s.Config.Listener.Port
 	}
 	return fmt.Sprintf("%s:%d", host, port)
+}
+
+// --- Event Stream Service ---
+
+type EventStreamServer struct {
+	pb.UnimplementedEventStreamServiceServer
+	Store    registrystore.MemoryStore
+	EventBus registryeventbus.EventBus
+	Config   *config.Config
+}
+
+func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stream pb.EventStreamService_SubscribeEventsServer) error {
+	if s.EventBus == nil {
+		return status.Error(codes.Unavailable, "event bus not available")
+	}
+
+	userID := getUserID(stream.Context())
+
+	// Parse kinds filter from request.
+	kindsFilter := make(map[string]bool)
+	for _, k := range req.GetKinds() {
+		if k != "" {
+			kindsFilter[k] = true
+		}
+	}
+
+	// Subscribe to event bus.
+	sub, err := s.EventBus.Subscribe(stream.Context())
+	if err != nil {
+		return status.Error(codes.Internal, "failed to subscribe to event bus")
+	}
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case event, ok := <-sub:
+			if !ok {
+				// Evicted — send final event and close.
+				evictData, _ := json.Marshal(map[string]string{"reason": "slow consumer"})
+				_ = stream.Send(&pb.EventNotification{
+					Event: "evicted",
+					Kind:  "stream",
+					Data:  evictData,
+				})
+				return nil
+			}
+
+			if event.Internal {
+				continue
+			}
+			if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
+				continue
+			}
+
+			// Stream events bypass membership filtering.
+			if event.Kind == "stream" {
+				data, _ := json.Marshal(event.Data)
+				if err := stream.Send(&pb.EventNotification{
+					Event: event.Event,
+					Kind:  event.Kind,
+					Data:  data,
+				}); err != nil {
+					return err
+				}
+				continue
+			}
+
+			// Membership events: deliver only to target user.
+			if event.Kind == "membership" {
+				if data, ok := event.Data.(map[string]any); ok {
+					if targetUserID, ok := data["user"].(string); ok && targetUserID == userID {
+						jsonData, _ := json.Marshal(event.Data)
+						if err := stream.Send(&pb.EventNotification{
+							Event: event.Event,
+							Kind:  event.Kind,
+							Data:  jsonData,
+						}); err != nil {
+							return err
+						}
+					}
+				}
+				continue
+			}
+
+			// Conversation delete events must use the pre-captured member list.
+			if event.Kind == "conversation" && event.Event == "deleted" {
+				delivered := false
+				if data, ok := event.Data.(map[string]any); ok {
+					switch memberList := data["members"].(type) {
+					case []string:
+						for _, mid := range memberList {
+							if mid == userID {
+								delivered = true
+								break
+							}
+						}
+					case []any:
+						for _, m := range memberList {
+							if mid, ok := m.(string); ok && mid == userID {
+								delivered = true
+								break
+							}
+						}
+					}
+					cleaned := make(map[string]any, len(data))
+					for k, v := range data {
+						if k != "members" {
+							cleaned[k] = v
+						}
+					}
+					event.Data = cleaned
+				}
+				if !delivered {
+					continue
+				}
+				jsonData, _ := json.Marshal(event.Data)
+				if err := stream.Send(&pb.EventNotification{
+					Event: event.Event,
+					Kind:  event.Kind,
+					Data:  jsonData,
+				}); err != nil {
+					return err
+				}
+				continue
+			}
+
+			// Other events: check group membership.
+			if event.ConversationGroupID == uuid.Nil {
+				continue
+			}
+			members, err := s.Store.GetGroupMemberUserIDs(stream.Context(), event.ConversationGroupID)
+			if err != nil {
+				log.Error("gRPC event membership lookup failed", "err", err)
+				continue
+			}
+			isMember := false
+			for _, uid := range members {
+				if uid == userID {
+					isMember = true
+					break
+				}
+			}
+			if !isMember {
+				continue
+			}
+
+			jsonData, _ := json.Marshal(event.Data)
+			if err := stream.Send(&pb.EventNotification{
+				Event: event.Event,
+				Kind:  event.Kind,
+				Data:  jsonData,
+			}); err != nil {
+				return err
+			}
+		}
+	}
 }

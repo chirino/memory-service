@@ -610,6 +610,15 @@ func (s *PostgresStore) DeleteMembership(ctx context.Context, userID string, con
 	return nil
 }
 
+func (s *PostgresStore) GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error) {
+	var userIDs []string
+	err := s.db.WithContext(ctx).
+		Model(&model.ConversationMembership{}).
+		Where("conversation_group_id = ?", conversationGroupID).
+		Pluck("user_id", &userIDs).Error
+	return userIDs, err
+}
+
 // --- Forks ---
 
 func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {

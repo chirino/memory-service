@@ -83,6 +83,11 @@ func (m *metricsStore) DeleteMembership(ctx context.Context, userID string, conv
 	return m.inner.DeleteMembership(ctx, userID, conversationID, memberUserID)
 }
 
+func (m *metricsStore) GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error) {
+	defer observe("get_group_member_user_ids", time.Now())
+	return m.inner.GetGroupMemberUserIDs(ctx, conversationGroupID)
+}
+
 func (m *metricsStore) ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]store.ConversationForkSummary, *string, error) {
 	defer observe("list_forks", time.Now())
 	return m.inner.ListForks(ctx, userID, conversationID, afterCursor, limit)

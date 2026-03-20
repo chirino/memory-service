@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import os
 from pathlib import Path
@@ -313,6 +314,18 @@ async def delete_ownership_transfer(transfer_id: str):
 async def accept_ownership_transfer(transfer_id: str):
     response = await proxy.accept_ownership_transfer(transfer_id)
     return to_fastapi_response(response)
+
+
+# SSE events proxy — streams real-time events from Memory Service
+@app.get("/v1/events")
+async def events(request: Request):
+    kinds = request.query_params.get("kinds")
+
+    async def generate():
+        async for event in proxy.stream_events(kinds=kinds):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.post("/v1/attachments")

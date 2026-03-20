@@ -80,7 +80,7 @@ type grpcSteps struct {
 	streamCancel chan struct{}  // signals the background stream to stop
 	tokensSent   atomic.Int64   // count of tokens sent in background stream
 	replayStart  time.Time      // when replay started
-	streamEnd    time.Time      // when background stream ended
+	streamEnd    atomic.Int64   // when background stream ended (unix nano, 0 = unset)
 	streamResp   *pb.RecordResponse
 	streamErr    error
 }
@@ -1163,7 +1163,7 @@ func (g *grpcSteps) startBackgroundStream(tokensStr string, delayMs, keepOpenMs 
 		if err == nil {
 			g.streamResp = resp
 		}
-		g.streamEnd = time.Now()
+		g.streamEnd.Store(time.Now().UnixNano())
 	}()
 
 	wg.Wait()
@@ -1254,8 +1254,9 @@ func (g *grpcSteps) theReplayShouldStartBeforeTheStreamCompletes() error {
 	if g.replayStart.IsZero() {
 		return fmt.Errorf("replay was never started")
 	}
-	if !g.streamEnd.IsZero() && !g.replayStart.Before(g.streamEnd) {
-		return fmt.Errorf("replay started at %v but stream ended at %v", g.replayStart, g.streamEnd)
+	endNano := g.streamEnd.Load()
+	if endNano != 0 && !g.replayStart.Before(time.Unix(0, endNano)) {
+		return fmt.Errorf("replay started at %v but stream ended at %v", g.replayStart, time.Unix(0, endNano))
 	}
 	return nil
 }

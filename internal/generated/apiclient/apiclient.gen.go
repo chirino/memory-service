@@ -648,6 +648,15 @@ type NotFound = ErrorResponse
 // SearchTypeUnavailable Error response when the requested search type is not available on the server.
 type SearchTypeUnavailable = SearchTypeUnavailableError
 
+// AdminSubscribeEventsParams defines parameters for AdminSubscribeEvents.
+type AdminSubscribeEventsParams struct {
+	// Justification Non-empty reason for subscribing (logged for audit).
+	Justification string `form:"justification" json:"justification"`
+
+	// Kinds Comma-separated event kinds to filter.
+	Kinds *string `form:"kinds,omitempty" json:"kinds,omitempty"`
+}
+
 // UploadAttachmentMultipartBody defines parameters for UploadAttachment.
 type UploadAttachmentMultipartBody struct {
 	// File The file to upload.
@@ -746,6 +755,12 @@ type ListConversationMembershipsParams struct {
 type UpdateConversationMembershipJSONBody struct {
 	// AccessLevel Access level of a user for a conversation.
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
+}
+
+// SubscribeEventsParams defines parameters for SubscribeEvents.
+type SubscribeEventsParams struct {
+	// Kinds Comma-separated event kinds to filter (conversation, entry, response, membership).
+	Kinds *string `form:"kinds,omitempty" json:"kinds,omitempty"`
 }
 
 // DeleteMemoryParams defines parameters for DeleteMemory.
@@ -986,6 +1001,9 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// AdminSubscribeEvents request
+	AdminSubscribeEvents(ctx context.Context, params *AdminSubscribeEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// UploadAttachmentWithBody request with any body
 	UploadAttachmentWithBody(ctx context.Context, params *UploadAttachmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1070,6 +1088,9 @@ type ClientInterface interface {
 	// DeleteConversationResponse request
 	DeleteConversationResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// SubscribeEvents request
+	SubscribeEvents(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeleteMemory request
 	DeleteMemory(ctx context.Context, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1108,6 +1129,18 @@ type ClientInterface interface {
 
 	// AcceptTransfer request
 	AcceptTransfer(ctx context.Context, transferId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) AdminSubscribeEvents(ctx context.Context, params *AdminSubscribeEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAdminSubscribeEventsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) UploadAttachmentWithBody(ctx context.Context, params *UploadAttachmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1482,6 +1515,18 @@ func (c *Client) DeleteConversationResponse(ctx context.Context, conversationId 
 	return c.Client.Do(req)
 }
 
+func (c *Client) SubscribeEvents(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubscribeEventsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) DeleteMemory(ctx context.Context, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteMemoryRequest(c.Server, params)
 	if err != nil {
@@ -1648,6 +1693,67 @@ func (c *Client) AcceptTransfer(ctx context.Context, transferId openapi_types.UU
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewAdminSubscribeEventsRequest generates requests for AdminSubscribeEvents
+func NewAdminSubscribeEventsRequest(server string, params *AdminSubscribeEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "justification", runtime.ParamLocationQuery, params.Justification); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.Kinds != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "kinds", runtime.ParamLocationQuery, *params.Kinds); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewUploadAttachmentRequest calls the generic UploadAttachment builder with application/json body
@@ -2786,6 +2892,55 @@ func NewDeleteConversationResponseRequest(server string, conversationId openapi_
 	return req, nil
 }
 
+// NewSubscribeEventsRequest generates requests for SubscribeEvents
+func NewSubscribeEventsRequest(server string, params *SubscribeEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Kinds != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "kinds", runtime.ParamLocationQuery, *params.Kinds); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewDeleteMemoryRequest generates requests for DeleteMemory
 func NewDeleteMemoryRequest(server string, params *DeleteMemoryParams) (*http.Request, error) {
 	var err error
@@ -3472,6 +3627,9 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// AdminSubscribeEventsWithResponse request
+	AdminSubscribeEventsWithResponse(ctx context.Context, params *AdminSubscribeEventsParams, reqEditors ...RequestEditorFn) (*AdminSubscribeEventsResp, error)
+
 	// UploadAttachmentWithBodyWithResponse request with any body
 	UploadAttachmentWithBodyWithResponse(ctx context.Context, params *UploadAttachmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UploadAttachmentResp, error)
 
@@ -3556,6 +3714,9 @@ type ClientWithResponsesInterface interface {
 	// DeleteConversationResponseWithResponse request
 	DeleteConversationResponseWithResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteConversationResponseResp, error)
 
+	// SubscribeEventsWithResponse request
+	SubscribeEventsWithResponse(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*SubscribeEventsResp, error)
+
 	// DeleteMemoryWithResponse request
 	DeleteMemoryWithResponse(ctx context.Context, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*DeleteMemoryResp, error)
 
@@ -3594,6 +3755,27 @@ type ClientWithResponsesInterface interface {
 
 	// AcceptTransferWithResponse request
 	AcceptTransferWithResponse(ctx context.Context, transferId openapi_types.UUID, reqEditors ...RequestEditorFn) (*AcceptTransferResp, error)
+}
+
+type AdminSubscribeEventsResp struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r AdminSubscribeEventsResp) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AdminSubscribeEventsResp) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type UploadAttachmentResp struct {
@@ -4138,6 +4320,27 @@ func (r DeleteConversationResponseResp) StatusCode() int {
 	return 0
 }
 
+type SubscribeEventsResp struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r SubscribeEventsResp) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubscribeEventsResp) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type DeleteMemoryResp struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4405,6 +4608,15 @@ func (r AcceptTransferResp) StatusCode() int {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
+}
+
+// AdminSubscribeEventsWithResponse request returning *AdminSubscribeEventsResp
+func (c *ClientWithResponses) AdminSubscribeEventsWithResponse(ctx context.Context, params *AdminSubscribeEventsParams, reqEditors ...RequestEditorFn) (*AdminSubscribeEventsResp, error) {
+	rsp, err := c.AdminSubscribeEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAdminSubscribeEventsResp(rsp)
 }
 
 // UploadAttachmentWithBodyWithResponse request with arbitrary body returning *UploadAttachmentResp
@@ -4677,6 +4889,15 @@ func (c *ClientWithResponses) DeleteConversationResponseWithResponse(ctx context
 	return ParseDeleteConversationResponseResp(rsp)
 }
 
+// SubscribeEventsWithResponse request returning *SubscribeEventsResp
+func (c *ClientWithResponses) SubscribeEventsWithResponse(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*SubscribeEventsResp, error) {
+	rsp, err := c.SubscribeEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubscribeEventsResp(rsp)
+}
+
 // DeleteMemoryWithResponse request returning *DeleteMemoryResp
 func (c *ClientWithResponses) DeleteMemoryWithResponse(ctx context.Context, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*DeleteMemoryResp, error) {
 	rsp, err := c.DeleteMemory(ctx, params, reqEditors...)
@@ -4798,6 +5019,22 @@ func (c *ClientWithResponses) AcceptTransferWithResponse(ctx context.Context, tr
 		return nil, err
 	}
 	return ParseAcceptTransferResp(rsp)
+}
+
+// ParseAdminSubscribeEventsResp parses an HTTP response from a AdminSubscribeEventsWithResponse call
+func ParseAdminSubscribeEventsResp(rsp *http.Response) (*AdminSubscribeEventsResp, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AdminSubscribeEventsResp{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
 }
 
 // ParseUploadAttachmentResp parses an HTTP response from a UploadAttachmentWithResponse call
@@ -5683,6 +5920,22 @@ func ParseDeleteConversationResponseResp(rsp *http.Response) (*DeleteConversatio
 		}
 		response.JSONDefault = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseSubscribeEventsResp parses an HTTP response from a SubscribeEventsWithResponse call
+func ParseSubscribeEventsResp(rsp *http.Response) (*SubscribeEventsResp, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubscribeEventsResp{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
 	}
 
 	return response, nil

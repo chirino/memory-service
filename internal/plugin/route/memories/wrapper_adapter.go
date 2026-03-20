@@ -130,6 +130,12 @@ func (a *apiServerAdapter) GetTransfer(c *gin.Context, _ openapi_types.UUID) {
 func (a *apiServerAdapter) AcceptTransfer(c *gin.Context, _ openapi_types.UUID) {
 	notImplemented(c)
 }
+func (a *apiServerAdapter) SubscribeEvents(c *gin.Context, _ generatedapi.SubscribeEventsParams) {
+	notImplemented(c)
+}
+func (a *apiServerAdapter) AdminSubscribeEvents(c *gin.Context, _ generatedapi.AdminSubscribeEventsParams) {
+	notImplemented(c)
+}
 
 func notImplemented(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, gin.H{"error": "endpoint is not implemented in this wrapper adapter"})

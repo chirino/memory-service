@@ -4877,6 +4877,123 @@ func (*DownloadAttachmentResponse_Metadata) isDownloadAttachmentResponse_Payload
 
 func (*DownloadAttachmentResponse_Chunk) isDownloadAttachmentResponse_Payload() {}
 
+type SubscribeEventsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Optional: subscribe to specific conversation IDs only.
+	ConversationIds [][]byte `protobuf:"bytes,1,rep,name=conversation_ids,json=conversationIds,proto3" json:"conversation_ids,omitempty"`
+	// Optional: filter by event kinds (conversation, entry, response, membership).
+	Kinds         []string `protobuf:"bytes,2,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscribeEventsRequest) Reset() {
+	*x = SubscribeEventsRequest{}
+	mi := &file_memory_v1_memory_service_proto_msgTypes[75]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribeEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribeEventsRequest) ProtoMessage() {}
+
+func (x *SubscribeEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_memory_v1_memory_service_proto_msgTypes[75]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribeEventsRequest.ProtoReflect.Descriptor instead.
+func (*SubscribeEventsRequest) Descriptor() ([]byte, []int) {
+	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{75}
+}
+
+func (x *SubscribeEventsRequest) GetConversationIds() [][]byte {
+	if x != nil {
+		return x.ConversationIds
+	}
+	return nil
+}
+
+func (x *SubscribeEventsRequest) GetKinds() []string {
+	if x != nil {
+		return x.Kinds
+	}
+	return nil
+}
+
+type EventNotification struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Action: created, updated, deleted, appended, started, completed, failed, added, removed, evicted, invalidate
+	Event string `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
+	// Resource type: conversation, entry, response, membership, stream
+	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Kind-specific payload as JSON-encoded bytes.
+	Data          []byte `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EventNotification) Reset() {
+	*x = EventNotification{}
+	mi := &file_memory_v1_memory_service_proto_msgTypes[76]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EventNotification) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventNotification) ProtoMessage() {}
+
+func (x *EventNotification) ProtoReflect() protoreflect.Message {
+	mi := &file_memory_v1_memory_service_proto_msgTypes[76]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EventNotification.ProtoReflect.Descriptor instead.
+func (*EventNotification) Descriptor() ([]byte, []int) {
+	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{76}
+}
+
+func (x *EventNotification) GetEvent() string {
+	if x != nil {
+		return x.Event
+	}
+	return ""
+}
+
+func (x *EventNotification) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *EventNotification) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 var File_memory_v1_memory_service_proto protoreflect.FileDescriptor
 
 const file_memory_v1_memory_service_proto_rawDesc = "" +
@@ -5224,7 +5341,14 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x1aDownloadAttachmentResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x19.memory.v1.AttachmentInfoH\x00R\bmetadata\x12\x16\n" +
 	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\t\n" +
-	"\apayload*c\n" +
+	"\apayload\"Y\n" +
+	"\x16SubscribeEventsRequest\x12)\n" +
+	"\x10conversation_ids\x18\x01 \x03(\fR\x0fconversationIds\x12\x14\n" +
+	"\x05kinds\x18\x02 \x03(\tR\x05kinds\"Q\n" +
+	"\x11EventNotification\x12\x14\n" +
+	"\x05event\x18\x01 \x01(\tR\x05event\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data*c\n" +
 	"\x14ConversationListMode\x12&\n" +
 	"\"CONVERSATION_LIST_MODE_UNSPECIFIED\x10\x00\x12\a\n" +
 	"\x03ALL\x10\x01\x12\t\n" +
@@ -5302,7 +5426,9 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x12AttachmentsService\x12]\n" +
 	"\x10UploadAttachment\x12\".memory.v1.UploadAttachmentRequest\x1a#.memory.v1.UploadAttachmentResponse(\x01\x12K\n" +
 	"\rGetAttachment\x12\x1f.memory.v1.GetAttachmentRequest\x1a\x19.memory.v1.AttachmentInfo\x12c\n" +
-	"\x12DownloadAttachment\x12$.memory.v1.DownloadAttachmentRequest\x1a%.memory.v1.DownloadAttachmentResponse0\x01B]\n" +
+	"\x12DownloadAttachment\x12$.memory.v1.DownloadAttachmentRequest\x1a%.memory.v1.DownloadAttachmentResponse0\x012j\n" +
+	"\x12EventStreamService\x12T\n" +
+	"\x0fSubscribeEvents\x12!.memory.v1.SubscribeEventsRequest\x1a\x1c.memory.v1.EventNotification0\x01B]\n" +
 	" io.github.chirino.memory.grpc.v1P\x01Z7github.com/chirino/memory-service/internal/generated/pbb\x06proto3"
 
 var (
@@ -5318,7 +5444,7 @@ func file_memory_v1_memory_service_proto_rawDescGZIP() []byte {
 }
 
 var file_memory_v1_memory_service_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_memory_v1_memory_service_proto_msgTypes = make([]protoimpl.MessageInfo, 76)
+var file_memory_v1_memory_service_proto_msgTypes = make([]protoimpl.MessageInfo, 78)
 var file_memory_v1_memory_service_proto_goTypes = []any{
 	(ConversationListMode)(0),              // 0: memory.v1.ConversationListMode
 	(AccessLevel)(0),                       // 1: memory.v1.AccessLevel
@@ -5401,17 +5527,19 @@ var file_memory_v1_memory_service_proto_goTypes = []any{
 	(*AttachmentInfo)(nil),                 // 78: memory.v1.AttachmentInfo
 	(*DownloadAttachmentRequest)(nil),      // 79: memory.v1.DownloadAttachmentRequest
 	(*DownloadAttachmentResponse)(nil),     // 80: memory.v1.DownloadAttachmentResponse
-	nil,                                    // 81: memory.v1.PutMemoryRequest.IndexEntry
-	(*structpb.Struct)(nil),                // 82: google.protobuf.Struct
-	(*structpb.Value)(nil),                 // 83: google.protobuf.Value
-	(*timestamppb.Timestamp)(nil),          // 84: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                  // 85: google.protobuf.Empty
+	(*SubscribeEventsRequest)(nil),         // 81: memory.v1.SubscribeEventsRequest
+	(*EventNotification)(nil),              // 82: memory.v1.EventNotification
+	nil,                                    // 83: memory.v1.PutMemoryRequest.IndexEntry
+	(*structpb.Struct)(nil),                // 84: google.protobuf.Struct
+	(*structpb.Value)(nil),                 // 85: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),          // 86: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),                  // 87: google.protobuf.Empty
 }
 var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	1,  // 0: memory.v1.ConversationSummary.access_level:type_name -> memory.v1.AccessLevel
 	1,  // 1: memory.v1.Conversation.access_level:type_name -> memory.v1.AccessLevel
 	1,  // 2: memory.v1.ConversationMembership.access_level:type_name -> memory.v1.AccessLevel
-	82, // 3: memory.v1.CreateConversationRequest.metadata:type_name -> google.protobuf.Struct
+	84, // 3: memory.v1.CreateConversationRequest.metadata:type_name -> google.protobuf.Struct
 	0,  // 4: memory.v1.ListConversationsRequest.mode:type_name -> memory.v1.ConversationListMode
 	6,  // 5: memory.v1.ListConversationsRequest.page:type_name -> memory.v1.PageRequest
 	8,  // 6: memory.v1.ListConversationsResponse.conversations:type_name -> memory.v1.ConversationSummary
@@ -5420,7 +5548,7 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	11, // 9: memory.v1.ListForksResponse.forks:type_name -> memory.v1.ConversationForkSummary
 	7,  // 10: memory.v1.ListForksResponse.page_info:type_name -> memory.v1.PageInfo
 	2,  // 11: memory.v1.CreateEntryRequest.channel:type_name -> memory.v1.Channel
-	83, // 12: memory.v1.CreateEntryRequest.content:type_name -> google.protobuf.Value
+	85, // 12: memory.v1.CreateEntryRequest.content:type_name -> google.protobuf.Value
 	20, // 13: memory.v1.SyncEntriesRequest.entry:type_name -> memory.v1.CreateEntryRequest
 	26, // 14: memory.v1.SyncEntriesResponse.entry:type_name -> memory.v1.Entry
 	20, // 15: memory.v1.AppendEntryRequest.entry:type_name -> memory.v1.CreateEntryRequest
@@ -5429,7 +5557,7 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	26, // 18: memory.v1.ListEntriesResponse.entries:type_name -> memory.v1.Entry
 	7,  // 19: memory.v1.ListEntriesResponse.page_info:type_name -> memory.v1.PageInfo
 	2,  // 20: memory.v1.Entry.channel:type_name -> memory.v1.Channel
-	83, // 21: memory.v1.Entry.content:type_name -> google.protobuf.Value
+	85, // 21: memory.v1.Entry.content:type_name -> google.protobuf.Value
 	6,  // 22: memory.v1.ListMembershipsRequest.page:type_name -> memory.v1.PageRequest
 	10, // 23: memory.v1.ListMembershipsResponse.memberships:type_name -> memory.v1.ConversationMembership
 	7,  // 24: memory.v1.ListMembershipsResponse.page_info:type_name -> memory.v1.PageInfo
@@ -5444,23 +5572,23 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	43, // 33: memory.v1.IndexConversationsRequest.entries:type_name -> memory.v1.IndexEntryRequest
 	47, // 34: memory.v1.ListUnindexedEntriesResponse.entries:type_name -> memory.v1.UnindexedEntry
 	26, // 35: memory.v1.UnindexedEntry.entry:type_name -> memory.v1.Entry
-	82, // 36: memory.v1.PutMemoryRequest.value:type_name -> google.protobuf.Struct
-	81, // 37: memory.v1.PutMemoryRequest.index:type_name -> memory.v1.PutMemoryRequest.IndexEntry
-	82, // 38: memory.v1.MemoryWriteResult.attributes:type_name -> google.protobuf.Struct
-	82, // 39: memory.v1.MemoryItem.value:type_name -> google.protobuf.Struct
-	82, // 40: memory.v1.MemoryItem.attributes:type_name -> google.protobuf.Struct
+	84, // 36: memory.v1.PutMemoryRequest.value:type_name -> google.protobuf.Struct
+	83, // 37: memory.v1.PutMemoryRequest.index:type_name -> memory.v1.PutMemoryRequest.IndexEntry
+	84, // 38: memory.v1.MemoryWriteResult.attributes:type_name -> google.protobuf.Struct
+	84, // 39: memory.v1.MemoryItem.value:type_name -> google.protobuf.Struct
+	84, // 40: memory.v1.MemoryItem.attributes:type_name -> google.protobuf.Struct
 	59, // 41: memory.v1.MemoryItem.usage:type_name -> memory.v1.MemoryUsage
-	82, // 42: memory.v1.SearchMemoriesRequest.filter:type_name -> google.protobuf.Struct
+	84, // 42: memory.v1.SearchMemoriesRequest.filter:type_name -> google.protobuf.Struct
 	52, // 43: memory.v1.SearchMemoriesResponse.items:type_name -> memory.v1.MemoryItem
 	56, // 44: memory.v1.ListMemoryNamespacesResponse.namespaces:type_name -> memory.v1.MemoryNamespace
-	84, // 45: memory.v1.MemoryUsage.last_fetched_at:type_name -> google.protobuf.Timestamp
+	86, // 45: memory.v1.MemoryUsage.last_fetched_at:type_name -> google.protobuf.Timestamp
 	4,  // 46: memory.v1.ListTopMemoryUsageRequest.sort:type_name -> memory.v1.MemoryUsageSort
 	59, // 47: memory.v1.TopMemoryUsageItem.usage:type_name -> memory.v1.MemoryUsage
 	62, // 48: memory.v1.ListTopMemoryUsageResponse.items:type_name -> memory.v1.TopMemoryUsageItem
 	5,  // 49: memory.v1.RecordResponse.status:type_name -> memory.v1.RecordStatus
 	75, // 50: memory.v1.UploadAttachmentRequest.metadata:type_name -> memory.v1.UploadMetadata
 	78, // 51: memory.v1.DownloadAttachmentResponse.metadata:type_name -> memory.v1.AttachmentInfo
-	85, // 52: memory.v1.SystemService.GetHealth:input_type -> google.protobuf.Empty
+	87, // 52: memory.v1.SystemService.GetHealth:input_type -> google.protobuf.Empty
 	13, // 53: memory.v1.ConversationsService.ListConversations:input_type -> memory.v1.ListConversationsRequest
 	12, // 54: memory.v1.ConversationsService.CreateConversation:input_type -> memory.v1.CreateConversationRequest
 	15, // 55: memory.v1.ConversationsService.GetConversation:input_type -> memory.v1.GetConversationRequest
@@ -5487,57 +5615,59 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	51, // 76: memory.v1.MemoriesService.DeleteMemory:input_type -> memory.v1.DeleteMemoryRequest
 	53, // 77: memory.v1.MemoriesService.SearchMemories:input_type -> memory.v1.SearchMemoriesRequest
 	55, // 78: memory.v1.MemoriesService.ListMemoryNamespaces:input_type -> memory.v1.ListMemoryNamespacesRequest
-	85, // 79: memory.v1.MemoriesService.GetMemoryIndexStatus:input_type -> google.protobuf.Empty
+	87, // 79: memory.v1.MemoriesService.GetMemoryIndexStatus:input_type -> google.protobuf.Empty
 	60, // 80: memory.v1.MemoriesService.GetMemoryUsage:input_type -> memory.v1.GetMemoryUsageRequest
 	61, // 81: memory.v1.MemoriesService.ListTopMemoryUsage:input_type -> memory.v1.ListTopMemoryUsageRequest
 	65, // 82: memory.v1.ResponseRecorderService.Record:input_type -> memory.v1.RecordRequest
 	67, // 83: memory.v1.ResponseRecorderService.Replay:input_type -> memory.v1.ReplayRequest
 	69, // 84: memory.v1.ResponseRecorderService.Cancel:input_type -> memory.v1.CancelRecordRequest
-	85, // 85: memory.v1.ResponseRecorderService.IsEnabled:input_type -> google.protobuf.Empty
+	87, // 85: memory.v1.ResponseRecorderService.IsEnabled:input_type -> google.protobuf.Empty
 	72, // 86: memory.v1.ResponseRecorderService.CheckRecordings:input_type -> memory.v1.CheckRecordingsRequest
 	74, // 87: memory.v1.AttachmentsService.UploadAttachment:input_type -> memory.v1.UploadAttachmentRequest
 	77, // 88: memory.v1.AttachmentsService.GetAttachment:input_type -> memory.v1.GetAttachmentRequest
 	79, // 89: memory.v1.AttachmentsService.DownloadAttachment:input_type -> memory.v1.DownloadAttachmentRequest
-	64, // 90: memory.v1.SystemService.GetHealth:output_type -> memory.v1.HealthResponse
-	14, // 91: memory.v1.ConversationsService.ListConversations:output_type -> memory.v1.ListConversationsResponse
-	9,  // 92: memory.v1.ConversationsService.CreateConversation:output_type -> memory.v1.Conversation
-	9,  // 93: memory.v1.ConversationsService.GetConversation:output_type -> memory.v1.Conversation
-	9,  // 94: memory.v1.ConversationsService.UpdateConversation:output_type -> memory.v1.Conversation
-	85, // 95: memory.v1.ConversationsService.DeleteConversation:output_type -> google.protobuf.Empty
-	19, // 96: memory.v1.ConversationsService.ListForks:output_type -> memory.v1.ListForksResponse
-	28, // 97: memory.v1.ConversationMembershipsService.ListMemberships:output_type -> memory.v1.ListMembershipsResponse
-	10, // 98: memory.v1.ConversationMembershipsService.ShareConversation:output_type -> memory.v1.ConversationMembership
-	10, // 99: memory.v1.ConversationMembershipsService.UpdateMembership:output_type -> memory.v1.ConversationMembership
-	85, // 100: memory.v1.ConversationMembershipsService.DeleteMembership:output_type -> google.protobuf.Empty
-	34, // 101: memory.v1.OwnershipTransfersService.ListOwnershipTransfers:output_type -> memory.v1.ListOwnershipTransfersResponse
-	32, // 102: memory.v1.OwnershipTransfersService.GetOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
-	32, // 103: memory.v1.OwnershipTransfersService.CreateOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
-	85, // 104: memory.v1.OwnershipTransfersService.AcceptOwnershipTransfer:output_type -> google.protobuf.Empty
-	85, // 105: memory.v1.OwnershipTransfersService.DeleteOwnershipTransfer:output_type -> google.protobuf.Empty
-	25, // 106: memory.v1.EntriesService.ListEntries:output_type -> memory.v1.ListEntriesResponse
-	26, // 107: memory.v1.EntriesService.AppendEntry:output_type -> memory.v1.Entry
-	22, // 108: memory.v1.EntriesService.SyncEntries:output_type -> memory.v1.SyncEntriesResponse
-	40, // 109: memory.v1.SearchService.SearchConversations:output_type -> memory.v1.SearchEntriesResponse
-	44, // 110: memory.v1.SearchService.IndexConversations:output_type -> memory.v1.IndexConversationsResponse
-	46, // 111: memory.v1.SearchService.ListUnindexedEntries:output_type -> memory.v1.ListUnindexedEntriesResponse
-	49, // 112: memory.v1.MemoriesService.PutMemory:output_type -> memory.v1.MemoryWriteResult
-	52, // 113: memory.v1.MemoriesService.GetMemory:output_type -> memory.v1.MemoryItem
-	85, // 114: memory.v1.MemoriesService.DeleteMemory:output_type -> google.protobuf.Empty
-	54, // 115: memory.v1.MemoriesService.SearchMemories:output_type -> memory.v1.SearchMemoriesResponse
-	57, // 116: memory.v1.MemoriesService.ListMemoryNamespaces:output_type -> memory.v1.ListMemoryNamespacesResponse
-	58, // 117: memory.v1.MemoriesService.GetMemoryIndexStatus:output_type -> memory.v1.MemoryIndexStatusResponse
-	59, // 118: memory.v1.MemoriesService.GetMemoryUsage:output_type -> memory.v1.MemoryUsage
-	63, // 119: memory.v1.MemoriesService.ListTopMemoryUsage:output_type -> memory.v1.ListTopMemoryUsageResponse
-	66, // 120: memory.v1.ResponseRecorderService.Record:output_type -> memory.v1.RecordResponse
-	68, // 121: memory.v1.ResponseRecorderService.Replay:output_type -> memory.v1.ReplayResponse
-	70, // 122: memory.v1.ResponseRecorderService.Cancel:output_type -> memory.v1.CancelRecordResponse
-	71, // 123: memory.v1.ResponseRecorderService.IsEnabled:output_type -> memory.v1.IsEnabledResponse
-	73, // 124: memory.v1.ResponseRecorderService.CheckRecordings:output_type -> memory.v1.CheckRecordingsResponse
-	76, // 125: memory.v1.AttachmentsService.UploadAttachment:output_type -> memory.v1.UploadAttachmentResponse
-	78, // 126: memory.v1.AttachmentsService.GetAttachment:output_type -> memory.v1.AttachmentInfo
-	80, // 127: memory.v1.AttachmentsService.DownloadAttachment:output_type -> memory.v1.DownloadAttachmentResponse
-	90, // [90:128] is the sub-list for method output_type
-	52, // [52:90] is the sub-list for method input_type
+	81, // 90: memory.v1.EventStreamService.SubscribeEvents:input_type -> memory.v1.SubscribeEventsRequest
+	64, // 91: memory.v1.SystemService.GetHealth:output_type -> memory.v1.HealthResponse
+	14, // 92: memory.v1.ConversationsService.ListConversations:output_type -> memory.v1.ListConversationsResponse
+	9,  // 93: memory.v1.ConversationsService.CreateConversation:output_type -> memory.v1.Conversation
+	9,  // 94: memory.v1.ConversationsService.GetConversation:output_type -> memory.v1.Conversation
+	9,  // 95: memory.v1.ConversationsService.UpdateConversation:output_type -> memory.v1.Conversation
+	87, // 96: memory.v1.ConversationsService.DeleteConversation:output_type -> google.protobuf.Empty
+	19, // 97: memory.v1.ConversationsService.ListForks:output_type -> memory.v1.ListForksResponse
+	28, // 98: memory.v1.ConversationMembershipsService.ListMemberships:output_type -> memory.v1.ListMembershipsResponse
+	10, // 99: memory.v1.ConversationMembershipsService.ShareConversation:output_type -> memory.v1.ConversationMembership
+	10, // 100: memory.v1.ConversationMembershipsService.UpdateMembership:output_type -> memory.v1.ConversationMembership
+	87, // 101: memory.v1.ConversationMembershipsService.DeleteMembership:output_type -> google.protobuf.Empty
+	34, // 102: memory.v1.OwnershipTransfersService.ListOwnershipTransfers:output_type -> memory.v1.ListOwnershipTransfersResponse
+	32, // 103: memory.v1.OwnershipTransfersService.GetOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
+	32, // 104: memory.v1.OwnershipTransfersService.CreateOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
+	87, // 105: memory.v1.OwnershipTransfersService.AcceptOwnershipTransfer:output_type -> google.protobuf.Empty
+	87, // 106: memory.v1.OwnershipTransfersService.DeleteOwnershipTransfer:output_type -> google.protobuf.Empty
+	25, // 107: memory.v1.EntriesService.ListEntries:output_type -> memory.v1.ListEntriesResponse
+	26, // 108: memory.v1.EntriesService.AppendEntry:output_type -> memory.v1.Entry
+	22, // 109: memory.v1.EntriesService.SyncEntries:output_type -> memory.v1.SyncEntriesResponse
+	40, // 110: memory.v1.SearchService.SearchConversations:output_type -> memory.v1.SearchEntriesResponse
+	44, // 111: memory.v1.SearchService.IndexConversations:output_type -> memory.v1.IndexConversationsResponse
+	46, // 112: memory.v1.SearchService.ListUnindexedEntries:output_type -> memory.v1.ListUnindexedEntriesResponse
+	49, // 113: memory.v1.MemoriesService.PutMemory:output_type -> memory.v1.MemoryWriteResult
+	52, // 114: memory.v1.MemoriesService.GetMemory:output_type -> memory.v1.MemoryItem
+	87, // 115: memory.v1.MemoriesService.DeleteMemory:output_type -> google.protobuf.Empty
+	54, // 116: memory.v1.MemoriesService.SearchMemories:output_type -> memory.v1.SearchMemoriesResponse
+	57, // 117: memory.v1.MemoriesService.ListMemoryNamespaces:output_type -> memory.v1.ListMemoryNamespacesResponse
+	58, // 118: memory.v1.MemoriesService.GetMemoryIndexStatus:output_type -> memory.v1.MemoryIndexStatusResponse
+	59, // 119: memory.v1.MemoriesService.GetMemoryUsage:output_type -> memory.v1.MemoryUsage
+	63, // 120: memory.v1.MemoriesService.ListTopMemoryUsage:output_type -> memory.v1.ListTopMemoryUsageResponse
+	66, // 121: memory.v1.ResponseRecorderService.Record:output_type -> memory.v1.RecordResponse
+	68, // 122: memory.v1.ResponseRecorderService.Replay:output_type -> memory.v1.ReplayResponse
+	70, // 123: memory.v1.ResponseRecorderService.Cancel:output_type -> memory.v1.CancelRecordResponse
+	71, // 124: memory.v1.ResponseRecorderService.IsEnabled:output_type -> memory.v1.IsEnabledResponse
+	73, // 125: memory.v1.ResponseRecorderService.CheckRecordings:output_type -> memory.v1.CheckRecordingsResponse
+	76, // 126: memory.v1.AttachmentsService.UploadAttachment:output_type -> memory.v1.UploadAttachmentResponse
+	78, // 127: memory.v1.AttachmentsService.GetAttachment:output_type -> memory.v1.AttachmentInfo
+	80, // 128: memory.v1.AttachmentsService.DownloadAttachment:output_type -> memory.v1.DownloadAttachmentResponse
+	82, // 129: memory.v1.EventStreamService.SubscribeEvents:output_type -> memory.v1.EventNotification
+	91, // [91:130] is the sub-list for method output_type
+	52, // [52:91] is the sub-list for method input_type
 	52, // [52:52] is the sub-list for extension type_name
 	52, // [52:52] is the sub-list for extension extendee
 	0,  // [0:52] is the sub-list for field type_name
@@ -5571,9 +5701,9 @@ func file_memory_v1_memory_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_memory_v1_memory_service_proto_rawDesc), len(file_memory_v1_memory_service_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   76,
+			NumMessages:   78,
 			NumExtensions: 0,
-			NumServices:   9,
+			NumServices:   10,
 		},
 		GoTypes:           file_memory_v1_memory_service_proto_goTypes,
 		DependencyIndexes: file_memory_v1_memory_service_proto_depIdxs,
