@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncGenerator
 from typing import Any, Callable
 
 import httpx
 from fastapi import Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from .request_context import get_request_authorization, memory_service_request
-from .transport import resolve_env_config, resolve_rest_base_url, resolve_unix_socket
+from .request_context import get_request_authorization, memory_service_headers, memory_service_request
+from .transport import httpx_async_client_kwargs, resolve_env_config, resolve_rest_base_url, resolve_unix_socket
 
 
 def to_fastapi_response(response: httpx.Response) -> Response:
@@ -334,3 +336,33 @@ class MemoryServiceProxy:
             include_api_key=False,
             include_authorization=False,
         )
+
+    async def stream_events(
+        self, *, kinds: str | None = None
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stream real-time event notifications from the memory service.
+
+        Yields parsed event dicts with ``event``, ``kind``, and ``data`` keys.
+        """
+        params = self._compact_params({"kinds": kinds}) if kinds else None
+        headers = memory_service_headers(
+            api_key=self.api_key,
+            authorization_getter=self.authorization_getter,
+            extra_headers={"Accept": "text/event-stream"},
+        )
+        async with httpx.AsyncClient(
+            **httpx_async_client_kwargs(
+                base_url=self.base_url,
+                unix_socket=self.unix_socket,
+                timeout=None,
+            )
+        ) as client:
+            async with client.stream(
+                "GET", "/v1/events", params=params, headers=headers
+            ) as response:
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        try:
+                            yield json.loads(line[6:])
+                        except json.JSONDecodeError:
+                            pass

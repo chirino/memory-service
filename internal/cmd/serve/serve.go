@@ -12,6 +12,7 @@ import (
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
 	"github.com/gin-gonic/gin"
@@ -58,6 +59,7 @@ func Command() *cli.Command {
 			registryvector.ApplyAll(&cfg, cmd)
 			registryembed.ApplyAll(&cfg, cmd)
 			registryattach.ApplyAll(&cfg, cmd)
+			registryeventbus.ApplyAll(&cfg, cmd)
 			encrypt.ApplyAll(&cfg, cmd)
 			if strings.TrimSpace(cacheLocalMaxBytes) != "" {
 				size, err := config.ParseMemorySize(cacheLocalMaxBytes)
@@ -248,6 +250,64 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Destination: cacheLocalBufferItems,
 			Value:       *cacheLocalBufferItems,
 			Usage:       "Ristretto buffer size for the process-local cache",
+		},
+
+		// ── Event Bus ─────────────────────────────────────────────
+		&cli.StringFlag{
+			Name:        "eventbus-kind",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EVENTBUS_KIND"),
+			Destination: &cfg.EventBusType,
+			Value:       cfg.EventBusType,
+			Usage:       "Event bus backend (" + strings.Join(registryeventbus.Names(), "|") + ")",
+		},
+		&cli.IntFlag{
+			Name:        "eventbus-outbound-buffer",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EVENTBUS_OUTBOUND_BUFFER"),
+			Destination: &cfg.EventBusOutboundBuffer,
+			Value:       cfg.EventBusOutboundBuffer,
+			Usage:       "Outbound channel capacity for cross-node publish pipeline",
+		},
+		&cli.IntFlag{
+			Name:        "eventbus-batch-size",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_EVENTBUS_BATCH_SIZE"),
+			Destination: &cfg.EventBusBatchSize,
+			Value:       cfg.EventBusBatchSize,
+			Usage:       "Max events per cross-node publish batch",
+		},
+		&cli.DurationFlag{
+			Name:        "sse-keepalive-interval",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_SSE_KEEPALIVE_INTERVAL"),
+			Destination: &cfg.SSEKeepaliveInterval,
+			Value:       cfg.SSEKeepaliveInterval,
+			Usage:       "Interval between SSE keepalive comments",
+		},
+		&cli.DurationFlag{
+			Name:        "sse-membership-cache-ttl",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_SSE_MEMBERSHIP_CACHE_TTL"),
+			Destination: &cfg.SSEMembershipCacheTTL,
+			Value:       cfg.SSEMembershipCacheTTL,
+			Usage:       "TTL for local conversation-group to members cache entries",
+		},
+		&cli.IntFlag{
+			Name:        "sse-max-connections-per-user",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_SSE_MAX_CONNECTIONS_PER_USER"),
+			Destination: &cfg.SSEMaxConnectionsPerUser,
+			Value:       cfg.SSEMaxConnectionsPerUser,
+			Usage:       "Max concurrent SSE connections per user (429 if exceeded)",
+		},
+		&cli.IntFlag{
+			Name:        "sse-subscriber-buffer-size",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_SSE_SUBSCRIBER_BUFFER_SIZE"),
+			Destination: &cfg.SSESubscriberBufferSize,
+			Value:       cfg.SSESubscriberBufferSize,
+			Usage:       "Per-subscriber channel buffer; full buffer triggers eviction",
 		},
 
 		// ── Attachment Storage ────────────────────────────────────
@@ -479,6 +539,7 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 	// Append flags contributed by registered plugins.
 	coreFlags = append(coreFlags, registrystore.PluginFlags(cfg)...)
 	coreFlags = append(coreFlags, registrycache.PluginFlags(cfg)...)
+	coreFlags = append(coreFlags, registryeventbus.PluginFlags(cfg)...)
 	coreFlags = append(coreFlags, registryvector.PluginFlags(cfg)...)
 	coreFlags = append(coreFlags, registryembed.PluginFlags(cfg)...)
 	coreFlags = append(coreFlags, registryattach.PluginFlags(cfg)...)

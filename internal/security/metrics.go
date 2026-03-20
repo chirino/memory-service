@@ -29,6 +29,21 @@ var (
 
 	// DBPoolMaxConnections tracks the configured maximum database connections.
 	DBPoolMaxConnections prometheus.Gauge
+
+	// SSEConnectionsActive tracks the number of currently active SSE connections.
+	SSEConnectionsActive prometheus.Gauge
+
+	// EventBusPublishedTotal counts total events published to the event bus.
+	EventBusPublishedTotal prometheus.Counter
+
+	// EventBusDeliveredTotal counts total events delivered to SSE clients.
+	EventBusDeliveredTotal prometheus.Counter
+
+	// EventBusDroppedTotal counts total events dropped (slow consumers or publish failures).
+	EventBusDroppedTotal prometheus.Counter
+
+	// EventBusSubscriberEvictionsTotal counts total slow subscribers evicted.
+	EventBusSubscriberEvictionsTotal prometheus.Counter
 )
 
 var validLabelKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -115,6 +130,31 @@ func initMetricsInner(constLabels prometheus.Labels) {
 	DBPoolMaxConnections = f.NewGauge(prometheus.GaugeOpts{
 		Name: "memory_service_db_pool_max_connections",
 		Help: "Maximum number of database connections",
+	})
+
+	SSEConnectionsActive = f.NewGauge(prometheus.GaugeOpts{
+		Name: "memory_service_sse_connections_active",
+		Help: "Number of currently active SSE connections",
+	})
+
+	EventBusPublishedTotal = f.NewCounter(prometheus.CounterOpts{
+		Name: "memory_service_eventbus_events_published_total",
+		Help: "Total number of events published to the event bus",
+	})
+
+	EventBusDeliveredTotal = f.NewCounter(prometheus.CounterOpts{
+		Name: "memory_service_eventbus_events_delivered_total",
+		Help: "Total number of events delivered to SSE clients",
+	})
+
+	EventBusDroppedTotal = f.NewCounter(prometheus.CounterOpts{
+		Name: "memory_service_eventbus_events_dropped_total",
+		Help: "Total number of events dropped (slow consumers or publish failures)",
+	})
+
+	EventBusSubscriberEvictionsTotal = f.NewCounter(prometheus.CounterOpts{
+		Name: "memory_service_eventbus_subscriber_evictions_total",
+		Help: "Total number of slow subscribers evicted",
 	})
 }
 

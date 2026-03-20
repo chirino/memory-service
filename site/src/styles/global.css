@@ -172,10 +172,13 @@
     color: #fff;
   }
 
-  /* Plain text blocks should use a higher-contrast neutral gray */
+  /* Plain text blocks use a light gray foreground */
   pre[data-language="text"] code,
   pre[data-language="text"] .line,
-  pre[data-language="text"] code span {
+  pre[data-language="text"] code span,
+  pre[data-language="plaintext"] code,
+  pre[data-language="plaintext"] .line,
+  pre[data-language="plaintext"] code span {
     color: #d1d5db !important;
   }
 

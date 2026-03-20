@@ -876,6 +876,27 @@ func (s *MongoStore) DeleteMembership(ctx context.Context, userID string, conver
 	return nil
 }
 
+func (s *MongoStore) GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error) {
+	filter := bson.M{"conversation_group_id": conversationGroupID.String()}
+	opts := options.Find().SetProjection(bson.M{"user_id": 1, "_id": 0})
+	cursor, err := s.memberships().Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query group member user IDs: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var docs []memberDoc
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("failed to decode group member user IDs: %w", err)
+	}
+
+	userIDs := make([]string, len(docs))
+	for i, d := range docs {
+		userIDs[i] = d.UserID
+	}
+	return userIDs, nil
+}
+
 // --- Forks ---
 
 func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {

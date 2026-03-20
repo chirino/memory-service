@@ -20,14 +20,18 @@ import io.github.chirino.memory.client.model.UpdateConversationMembershipRequest
 import io.github.chirino.memory.client.model.UpdateConversationRequest;
 import io.github.chirino.memory.history.runtime.AttachmentResolver;
 import io.quarkus.security.identity.SecurityIdentity;
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.infrastructure.Infrastructure;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -705,6 +709,101 @@ public class MemoryServiceProxy {
         } finally {
             client.close();
         }
+    }
+
+    // ---- SSE event streaming ----
+
+    /** A parsed SSE event notification from the memory service. */
+    public record EventNotification(String event, String kind, Map<String, Object> data) {
+        @Override
+        public String toString() {
+            try {
+                return OBJECT_MAPPER.writeValueAsString(this);
+            } catch (Exception e) {
+                return "{\"error\":\"serialization failed\"}";
+            }
+        }
+    }
+
+    /**
+     * Streams real-time event notifications from the memory service.
+     *
+     * @param kinds optional comma-separated event kinds filter (e.g. "conversation,entry")
+     * @return a Multi of parsed event notifications
+     */
+    @SuppressWarnings("unchecked")
+    public Multi<EventNotification> streamEvents(String kinds) {
+        return Multi.createFrom()
+                .<EventNotification>emitter(
+                        emitter -> {
+                            HttpURLConnection conn = null;
+                            try {
+                                StringBuilder url =
+                                        new StringBuilder(memoryServiceApiBuilder.getBaseUrl())
+                                                .append("/v1/events");
+                                if (kinds != null && !kinds.isBlank()) {
+                                    url.append("?kinds=").append(kinds);
+                                }
+
+                                conn =
+                                        (HttpURLConnection)
+                                                URI.create(url.toString()).toURL().openConnection();
+                                conn.setRequestMethod("GET");
+                                conn.setRequestProperty("Accept", "text/event-stream");
+                                applyAuthHeaders(conn);
+                                conn.setDoInput(true);
+                                conn.connect();
+
+                                int status = conn.getResponseCode();
+                                if (status != 200) {
+                                    emitter.fail(
+                                            new RuntimeException(
+                                                    "SSE connection failed with status " + status));
+                                    return;
+                                }
+
+                                try (BufferedReader reader =
+                                        new BufferedReader(
+                                                new InputStreamReader(
+                                                        conn.getInputStream(),
+                                                        StandardCharsets.UTF_8))) {
+                                    String line;
+                                    while ((line = reader.readLine()) != null) {
+                                        if (emitter.isCancelled()) {
+                                            break;
+                                        }
+                                        if (line.startsWith("data: ")) {
+                                            String json = line.substring(6);
+                                            Map<String, Object> envelope =
+                                                    OBJECT_MAPPER.readValue(json, Map.class);
+                                            emitter.emit(
+                                                    new EventNotification(
+                                                            (String) envelope.get("event"),
+                                                            (String) envelope.get("kind"),
+                                                            (Map<String, Object>)
+                                                                    envelope.get("data")));
+                                        }
+                                    }
+                                } catch (java.io.IOException ignored) {
+                                    // Upstream closed the SSE connection (eviction, restart, etc.)
+                                    // — treat as normal stream end.
+                                }
+                                emitter.complete();
+                            } catch (java.net.ConnectException ignored) {
+                                // Memory service is unavailable (restart, etc.)
+                                // — complete gracefully so the client can reconnect.
+                                emitter.complete();
+                            } catch (Exception e) {
+                                if (!emitter.isCancelled()) {
+                                    emitter.fail(e);
+                                }
+                            } finally {
+                                if (conn != null) {
+                                    conn.disconnect();
+                                }
+                            }
+                        })
+                .runSubscriptionOn(Infrastructure.getDefaultWorkerPool());
     }
 
     // ---- Auth header helpers ----

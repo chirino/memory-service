@@ -9,6 +9,7 @@ import (
 	generatedadmin "github.com/chirino/memory-service/internal/generated/admin"
 	generatedapi "github.com/chirino/memory-service/internal/generated/api"
 	routeadmin "github.com/chirino/memory-service/internal/plugin/route/admin"
+	routeagentevents "github.com/chirino/memory-service/internal/plugin/route/agent"
 	routeattachments "github.com/chirino/memory-service/internal/plugin/route/attachments"
 	routeconversations "github.com/chirino/memory-service/internal/plugin/route/conversations"
 	routeentries "github.com/chirino/memory-service/internal/plugin/route/entries"
@@ -19,6 +20,7 @@ import (
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
@@ -28,7 +30,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Config, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte, embedder registryembed.Embedder, vectorStore registryvector.VectorStore, resumer *internalresumer.Store, resumerEnabled bool, episodicStore registryepisodic.EpisodicStore, episodicPolicy *episodic.PolicyEngine, episodicIndexer *service.EpisodicIndexer, memoriesAdapter generatedapi.ServerInterface) {
+func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Config, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte, embedder registryembed.Embedder, vectorStore registryvector.VectorStore, resumer *internalresumer.Store, resumerEnabled bool, episodicStore registryepisodic.EpisodicStore, episodicPolicy *episodic.PolicyEngine, episodicIndexer *service.EpisodicIndexer, memoriesAdapter generatedapi.ServerInterface, eventBus registryeventbus.EventBus) {
 	authMiddleware := func(c *gin.Context) { auth(c) }
 
 	apiWrapper := &generatedapi.ServerInterfaceWrapper{
@@ -41,6 +43,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 			vectorStore:    vectorStore,
 			resumer:        resumer,
 			resumerEnabled: resumerEnabled,
+			eventBus:       eventBus,
 		},
 		ErrorHandler: func(c *gin.Context, err error, statusCode int) {
 			// Keep legacy parity for invalid UUID conversation ids on entry listing.
@@ -135,6 +138,8 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodDelete, "/v1/ownership-transfers/:transferId", apiWrapper.DeleteTransfer)
 	register(http.MethodGet, "/v1/ownership-transfers/:transferId", apiWrapper.GetTransfer)
 	register(http.MethodPost, "/v1/ownership-transfers/:transferId/accept", apiWrapper.AcceptTransfer)
+	register(http.MethodGet, "/v1/admin/events", apiWrapper.AdminSubscribeEvents)
+	register(http.MethodGet, "/v1/events", apiWrapper.SubscribeEvents)
 
 	register(http.MethodGet, "/admin/v1/memories/index/status", adminWrapper.AdminGetMemoryIndexStatus)
 	register(http.MethodPost, "/admin/v1/memories/index/trigger", adminWrapper.AdminTriggerMemoryIndex)
@@ -165,6 +170,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodGet, "/v1/admin/stats/store-latency-p95", adminWrapper.GetStoreLatencyP95)
 	register(http.MethodGet, "/v1/admin/stats/store-throughput", adminWrapper.GetStoreThroughput)
 	register(http.MethodGet, "/v1/health", adminWrapper.GetHealth)
+
 }
 
 type proxyAPIServer struct {
@@ -176,6 +182,7 @@ type proxyAPIServer struct {
 	vectorStore    registryvector.VectorStore
 	resumer        *internalresumer.Store
 	resumerEnabled bool
+	eventBus       registryeventbus.EventBus
 }
 
 func (p *proxyAPIServer) UploadAttachment(c *gin.Context, _ generatedapi.UploadAttachmentParams) {
@@ -206,7 +213,7 @@ func (p *proxyAPIServer) ListConversations(c *gin.Context, _ generatedapi.ListCo
 	routeconversations.HandleListConversations(c, p.store)
 }
 func (p *proxyAPIServer) CreateConversation(c *gin.Context) {
-	routeconversations.HandleCreateConversation(c, p.store)
+	routeconversations.HandleCreateConversation(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) IndexConversations(c *gin.Context) {
 	routesearch.HandleIndexConversations(c, p.store)
@@ -218,19 +225,19 @@ func (p *proxyAPIServer) ListUnindexedEntries(c *gin.Context, _ generatedapi.Lis
 	routesearch.HandleListUnindexed(c, p.store)
 }
 func (p *proxyAPIServer) DeleteConversation(c *gin.Context, _ openapi_types.UUID) {
-	routeconversations.HandleDeleteConversation(c, p.store)
+	routeconversations.HandleDeleteConversation(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) GetConversation(c *gin.Context, _ openapi_types.UUID) {
 	routeconversations.HandleGetConversation(c, p.store)
 }
 func (p *proxyAPIServer) UpdateConversation(c *gin.Context, _ openapi_types.UUID) {
-	routeconversations.HandleUpdateConversation(c, p.store)
+	routeconversations.HandleUpdateConversation(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) ListConversationEntries(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationEntriesParams) {
 	routeentries.HandleListEntries(c, p.store)
 }
 func (p *proxyAPIServer) AppendConversationEntry(c *gin.Context, _ openapi_types.UUID) {
-	routeentries.HandleAppendEntry(c, p.store)
+	routeentries.HandleAppendEntry(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, _ openapi_types.UUID) {
 	routeentries.HandleSyncMemory(c, p.store)
@@ -242,13 +249,13 @@ func (p *proxyAPIServer) ListConversationMemberships(c *gin.Context, _ openapi_t
 	routememberships.HandleListMemberships(c, p.store)
 }
 func (p *proxyAPIServer) ShareConversation(c *gin.Context, _ openapi_types.UUID) {
-	routememberships.HandleShareConversation(c, p.store)
+	routememberships.HandleShareConversation(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) DeleteConversationMembership(c *gin.Context, _ openapi_types.UUID, _ string) {
-	routememberships.HandleDeleteMembership(c, p.store)
+	routememberships.HandleDeleteMembership(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) UpdateConversationMembership(c *gin.Context, _ openapi_types.UUID, _ string) {
-	routememberships.HandleUpdateMembership(c, p.store)
+	routememberships.HandleUpdateMembership(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) DeleteConversationResponse(c *gin.Context, _ openapi_types.UUID) {
 	routeconversations.HandleCancelResponse(c, p.store, p.resumer, p.resumerEnabled)
@@ -285,6 +292,16 @@ func (p *proxyAPIServer) GetTransfer(c *gin.Context, _ openapi_types.UUID) {
 }
 func (p *proxyAPIServer) AcceptTransfer(c *gin.Context, _ openapi_types.UUID) {
 	routetransfers.HandleAcceptTransfer(c, p.store)
+}
+func (p *proxyAPIServer) SubscribeEvents(c *gin.Context, _ generatedapi.SubscribeEventsParams) {
+	routeagentevents.HandleSSEEvents(c, p.store, p.eventBus, p.cfg)
+}
+func (p *proxyAPIServer) AdminSubscribeEvents(c *gin.Context, _ generatedapi.AdminSubscribeEventsParams) {
+	if !security.IsAdmin(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin role required"})
+		return
+	}
+	routeadmin.HandleAdminSSEEvents(c, p.eventBus, p.cfg)
 }
 
 type proxyAdminServer struct {

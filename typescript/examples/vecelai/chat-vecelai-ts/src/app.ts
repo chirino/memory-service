@@ -2,6 +2,7 @@ import express from "express";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 import {
+  createMemoryServiceProxy,
   memoryServiceConfigFromEnv,
   memoryServiceCancel,
   memoryServiceReplay,
@@ -244,6 +245,27 @@ app.delete("/v1/ownership-transfers/:transferId", async (req, res) => {
   await withProxy(req, res, memoryServiceConfig, (proxy) =>
     proxy.deleteOwnershipTransfer(req.params.transferId),
   );
+});
+
+// SSE events proxy — streams real-time events from Memory Service
+const eventsProxy = createMemoryServiceProxy(memoryServiceConfig);
+app.get("/v1/events", async (req, res) => {
+  const kinds = req.query.kinds as string | undefined;
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  try {
+    for await (const event of eventsProxy.streamEvents(kinds)) {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
+  } catch {
+    // Client disconnected or upstream closed
+  } finally {
+    res.end();
+  }
 });
 
 const port = Number(process.env.PORT ?? 9090);

@@ -8,6 +8,7 @@ import { ChatSidebar } from "@/components/chat-sidebar";
 import { SearchModal } from "@/components/search-modal";
 import { PendingTransfersPanel } from "@/components/sharing";
 import { useResumeCheck } from "@/hooks/useResumeCheck";
+import { useEventStream, useStreamingConversations } from "@/hooks/useEventStream";
 import { useAuth } from "@/lib/auth";
 
 type ListUserConversationsResponse = {
@@ -105,6 +106,10 @@ function App() {
   const [resolvedConversationIds, setResolvedConversationIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
 
+  // Subscribe to server-sent events for live cache invalidation
+  useEventStream();
+  const streamingConversations = useStreamingConversations();
+
   const conversationsQuery = useQuery<ConversationSummary[], ApiError, ConversationSummary[]>({
     queryKey: ["conversations"],
     queryFn: async (): Promise<ConversationSummary[]> => {
@@ -119,7 +124,7 @@ function App() {
   const conversations = conversationsQuery.data ?? [];
   const conversationIds = conversations.map((conv) => conv.id).filter((id): id is string => !!id);
   const resumeCheckQuery = useResumeCheck(conversationIds);
-  const resumableConversationIds = new Set(resumeCheckQuery.data ?? []);
+  const resumableConversationIds = new Set([...(resumeCheckQuery.data ?? []), ...streamingConversations]);
 
   // Get current user info from auth context (frontend OIDC)
   const auth = useAuth();

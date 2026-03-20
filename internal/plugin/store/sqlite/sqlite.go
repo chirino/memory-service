@@ -604,6 +604,15 @@ func (s *SQLiteStore) DeleteMembership(ctx context.Context, userID string, conve
 	return nil
 }
 
+func (s *SQLiteStore) GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error) {
+	var userIDs []string
+	err := s.dbFor(ctx).
+		Model(&model.ConversationMembership{}).
+		Where("conversation_group_id = ?", conversationGroupID).
+		Pluck("user_id", &userIDs).Error
+	return userIDs, err
+}
+
 // --- Forks ---
 
 func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {

@@ -245,6 +245,62 @@ MEMORY_SERVICE_INFINISPAN_USERNAME=admin
 MEMORY_SERVICE_INFINISPAN_PASSWORD=password`}
 />
 
+## Event Bus Configuration
+
+The event bus enables real-time Server-Sent Events (SSE) for frontend cache invalidation. Connected clients receive lightweight notifications when conversations, entries, or memberships change. Single-node deployments use the default `local` bus; multi-node deployments use `redis` or `postgres` for cross-node fan-out.
+
+| Flag / Env Var                                                                     | Values                       | Default | Description                                               |
+| ---------------------------------------------------------------------------------- | ---------------------------- | ------- | --------------------------------------------------------- |
+| <Cfg p="--eventbus-kind" e="MEMORY_SERVICE_EVENTBUS_KIND" />                       | `local`, `redis`, `postgres` | `local` | Event bus backend                                         |
+| <Cfg p="--eventbus-outbound-buffer" e="MEMORY_SERVICE_EVENTBUS_OUTBOUND_BUFFER" /> | integer                      | `200`   | Outbound channel capacity for cross-node publish pipeline |
+| <Cfg p="--eventbus-batch-size" e="MEMORY_SERVICE_EVENTBUS_BATCH_SIZE" />           | integer                      | `100`   | Max events per cross-node publish batch                   |
+
+### SSE Stream Settings
+
+| Flag / Env Var                                                                             | Values   | Default | Description                                                                            |
+| ------------------------------------------------------------------------------------------ | -------- | ------- | -------------------------------------------------------------------------------------- |
+| <Cfg p="--sse-keepalive-interval" e="MEMORY_SERVICE_SSE_KEEPALIVE_INTERVAL" />             | duration | `30s`   | Interval between SSE keepalive comments                                                |
+| <Cfg p="--sse-membership-cache-ttl" e="MEMORY_SERVICE_SSE_MEMBERSHIP_CACHE_TTL" />         | duration | `5m`    | TTL for local conversation-group membership cache                                      |
+| <Cfg p="--sse-max-connections-per-user" e="MEMORY_SERVICE_SSE_MAX_CONNECTIONS_PER_USER" /> | integer  | `5`     | Max concurrent SSE connections per user; older local streams are evicted when exceeded |
+| <Cfg p="--sse-subscriber-buffer-size" e="MEMORY_SERVICE_SSE_SUBSCRIBER_BUFFER_SIZE" />     | integer  | `64`    | Per-subscriber channel buffer; full buffer triggers eviction                           |
+
+### Event Bus: Local
+
+The default `local` backend uses in-process channels. Suitable for single-node deployments and development.
+
+<ConfigBlock
+  property={`# Local event bus (default, no configuration needed)
+--eventbus-kind=local`}
+  env={`# Local event bus (default, no configuration needed)
+MEMORY_SERVICE_EVENTBUS_KIND=local`}
+/>
+
+### Event Bus: Redis
+
+The `redis` backend uses Redis Pub/Sub for cross-node event fan-out. It reuses the same Redis connection configured for caching.
+
+<ConfigBlock
+  property={`# Redis event bus (reuses cache Redis connection)
+--eventbus-kind=redis
+--cache-kind=redis
+--redis-hosts=redis://localhost:6379`}
+  env={`# Redis event bus (reuses cache Redis connection)
+MEMORY_SERVICE_EVENTBUS_KIND=redis
+MEMORY_SERVICE_CACHE_KIND=redis
+MEMORY_SERVICE_REDIS_HOSTS=redis://localhost:6379`}
+/>
+
+### Event Bus: PostgreSQL
+
+The `postgres` backend uses PostgreSQL LISTEN/NOTIFY for cross-node fan-out. It reuses the configured database connection.
+
+<ConfigBlock
+  property={`# PostgreSQL event bus (reuses database connection)
+--eventbus-kind=postgres`}
+  env={`# PostgreSQL event bus (reuses database connection)
+MEMORY_SERVICE_EVENTBUS_KIND=postgres`}
+/>
+
 ## Attachment Storage
 
 Configure file attachment storage, size limits, and lifecycle.
@@ -760,6 +816,9 @@ services:
       # Cache with Redis (response recording manager automatically enabled)
       MEMORY_SERVICE_CACHE_KIND: redis
       MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
+
+      # Event bus (cross-node SSE fan-out via Redis)
+      MEMORY_SERVICE_EVENTBUS_KIND: redis
 
       # Authentication
       MEMORY_SERVICE_OIDC_ISSUER: http://keycloak:8180/realms/memory-service

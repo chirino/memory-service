@@ -210,6 +210,17 @@ curl -X DELETE "http://localhost:8080/v1/admin/attachments/{id}" \
 
 Attachment deletion uses reference-counting: the stored file blob is only removed when the last attachment record sharing it is deleted.
 
+## Admin Events Endpoint
+
+The admin events endpoint streams all [real-time events](/docs/concepts/events/) from all users, regardless of conversation membership:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-admin-token)" \
+  "http://localhost:8080/v1/admin/events?justification=Investigating+issue+%231234"
+```
+
+The `justification` query parameter is required. It is logged for audit purposes so administrators can explain why they accessed the global event stream. See [Real-Time Events](/docs/concepts/events/) for event format, kinds, and connection lifecycle details.
+
 ## Next Steps
 
 - Configure admin roles and audit logging in [Service Configuration](/docs/configuration/#admin-access-configuration)

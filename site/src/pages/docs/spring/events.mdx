@@ -1,0 +1,45 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Spring Real-Time Events
+description: Proxy real-time SSE events from Memory Service through your Spring application.
+---
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+
+This guide adds an SSE events proxy endpoint to the Spring tutorial app. For full details on event kinds, format, and connection lifecycle, see [Real-Time Events](/docs/concepts/events/).
+
+## Prerequisites
+
+**Starting checkpoint**: [java/spring/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/spring/examples/doc-checkpoints/03-with-history)
+
+## SSE Events Proxy
+
+Checkpoint `03b` adds an events proxy endpoint that forwards SSE from Memory Service to the frontend:
+
+<CodeFromFile
+  file="java/spring/examples/doc-checkpoints/03b-with-events/src/main/java/com/example/demo/EventsController.java"
+  lang="java"
+/>
+
+**Why proxy?** The agent app sits between the frontend and Memory Service. Proxying the SSE stream lets the app forward the caller's Bearer token for authorization while injecting the agent's API key for service authentication. Frontends never talk directly to Memory Service.
+
+## Connecting
+
+Subscribe to events through the agent app:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-token)" \
+  http://localhost:9090/v1/events
+```
+
+Filter to specific event kinds:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-token)" \
+  "http://localhost:9090/v1/events?kinds=conversation,entry"
+```
+
+## Next Steps
+
+- [Real-Time Events](/docs/concepts/events/) — full reference for event kinds, format, and connection lifecycle
+- [Service Configuration](/docs/configuration/) — event bus settings

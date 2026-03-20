@@ -692,3 +692,25 @@ message DownloadAttachmentResponse {
     bytes chunk = 2;
   }
 }
+
+service EventStreamService {
+  // Subscribe to real-time events (server streaming).
+  // Events are filtered by the caller's conversation group membership.
+  rpc SubscribeEvents(SubscribeEventsRequest) returns (stream EventNotification);
+}
+
+message SubscribeEventsRequest {
+  // Optional: subscribe to specific conversation IDs only.
+  repeated bytes conversation_ids = 1;
+  // Optional: filter by event kinds (conversation, entry, response, membership).
+  repeated string kinds = 2;
+}
+
+message EventNotification {
+  // Action: created, updated, deleted, appended, started, completed, failed, added, removed, evicted, invalidate
+  string event = 1;
+  // Resource type: conversation, entry, response, membership, stream
+  string kind = 2;
+  // Kind-specific payload as JSON-encoded bytes.
+  bytes data = 3;
+}

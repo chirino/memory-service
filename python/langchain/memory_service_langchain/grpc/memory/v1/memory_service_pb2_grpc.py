@@ -1943,3 +1943,77 @@ class AttachmentsService(object):
             timeout,
             metadata,
             _registered_method=True)
+
+
+class EventStreamServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.SubscribeEvents = channel.unary_stream(
+                '/memory.v1.EventStreamService/SubscribeEvents',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.SubscribeEventsRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.EventNotification.FromString,
+                _registered_method=True)
+
+
+class EventStreamServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def SubscribeEvents(self, request, context):
+        """Subscribe to real-time events (server streaming).
+        Events are filtered by the caller's conversation group membership.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_EventStreamServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'SubscribeEvents': grpc.unary_stream_rpc_method_handler(
+                    servicer.SubscribeEvents,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.SubscribeEventsRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.EventNotification.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'memory.v1.EventStreamService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('memory.v1.EventStreamService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class EventStreamService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def SubscribeEvents(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/memory.v1.EventStreamService/SubscribeEvents',
+            memory_dot_v1_dot_memory__service__pb2.SubscribeEventsRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.EventNotification.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

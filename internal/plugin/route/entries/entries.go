@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/model"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/gin-gonic/gin"
@@ -28,7 +29,7 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.Handle
 		listEntries(c, store)
 	})
 	g.POST("/conversations/:conversationId/entries", func(c *gin.Context) {
-		appendEntry(c, store)
+		appendEntry(c, store, nil)
 	})
 	g.POST("/conversations/:conversationId/entries/sync", func(c *gin.Context) {
 		syncMemory(c, store)
@@ -41,8 +42,8 @@ func HandleListEntries(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 // HandleAppendEntry exposes append entries handling for wrapper-native adapters.
-func HandleAppendEntry(c *gin.Context, store registrystore.MemoryStore) {
-	appendEntry(c, store)
+func HandleAppendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
+	appendEntry(c, store, eventBus)
 }
 
 // HandleSyncMemory exposes sync-context handling for wrapper-native adapters.
@@ -119,7 +120,7 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	}
 }
 
-func appendEntry(c *gin.Context, store registrystore.MemoryStore) {
+func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
 	convID, err := uuid.Parse(c.Param("conversationId"))
 	if err != nil {
@@ -246,6 +247,12 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore) {
 		}
 	}
 
+	// Check if conversation exists before append — if not, AppendEntries will auto-create it
+	// and we need to publish a conversation/created event.
+	existingConv, _ := store.GetConversation(c.Request.Context(), userID, convID)
+	convExistedBefore := existingConv != nil
+
+	var result []model.Entry
 	if err := routetx.MemoryWrite(c, store, func(context.Context) error {
 		// Resolve attachmentId references inside the write scope so SQLite
 		// attachment lookups and cross-link record creation see the required tx context.
@@ -271,7 +278,8 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore) {
 			}
 		}
 
-		result, err := store.AppendEntries(c.Request.Context(), userID, convID, entries, clientID, req.Epoch)
+		var err error
+		result, err = store.AppendEntries(c.Request.Context(), userID, convID, entries, clientID, req.Epoch)
 		if err != nil {
 			return err
 		}
@@ -301,6 +309,42 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore) {
 			return
 		}
 		handleError(c, err)
+		return
+	}
+	// Publish events after successful transaction.
+	if eventBus != nil && len(result) > 0 {
+		groupID, gErr := store.GetEntryGroupID(c.Request.Context(), result[0].ID)
+		if gErr != nil {
+			log.Warn("Failed to resolve group ID for entry event", "err", gErr)
+		} else {
+			// If conversation was auto-created by this append, publish conversation/created.
+			if !convExistedBefore {
+				if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+					Event: "created",
+					Kind:  "conversation",
+					Data: map[string]any{
+						"conversation":       convID,
+						"conversation_group": groupID,
+					},
+					ConversationGroupID: groupID,
+				}); err != nil {
+					log.Warn("Failed to publish conversation.created event", "err", err)
+				}
+			}
+			for _, entry := range result {
+				if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+					Event: "appended",
+					Kind:  "entry",
+					Data: map[string]any{
+						"conversation": entry.ConversationID,
+						"entry":        entry.ID,
+					},
+					ConversationGroupID: groupID,
+				}); err != nil {
+					log.Warn("Failed to publish entry.appended event", "err", err)
+				}
+			}
+		}
 	}
 }
 

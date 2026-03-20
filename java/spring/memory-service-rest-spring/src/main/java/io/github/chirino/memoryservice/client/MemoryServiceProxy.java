@@ -718,6 +718,57 @@ public class MemoryServiceProxy {
                 .body(upstream.getBody());
     }
 
+    // ---- SSE event streaming ----
+
+    /** A parsed SSE event notification from the memory service. */
+    public record EventNotification(String event, String kind, Map<String, Object> data) {}
+
+    /**
+     * Streams real-time event notifications from the memory service.
+     *
+     * @param kinds optional comma-separated event kinds filter (e.g. "conversation,entry")
+     * @return a Flux of parsed event notifications
+     */
+    @SuppressWarnings("unchecked")
+    public Flux<EventNotification> streamEvents(@Nullable String kinds) {
+        WebClient client = createWebClient();
+        String bearer = resolveBearerToken(null);
+
+        return client.get()
+                .uri(
+                        uriBuilder -> {
+                            uriBuilder.path("/v1/events");
+                            if (kinds != null && !kinds.isBlank()) {
+                                uriBuilder.queryParam("kinds", kinds);
+                            }
+                            return uriBuilder.build();
+                        })
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .headers(
+                        headers -> {
+                            if (bearer != null) {
+                                headers.setBearerAuth(bearer);
+                            }
+                        })
+                .retrieve()
+                .bodyToFlux(String.class)
+                .filter(line -> line.startsWith("data: "))
+                .mapNotNull(
+                        line -> {
+                            try {
+                                Map<String, Object> envelope =
+                                        OBJECT_MAPPER.readValue(line.substring(6), Map.class);
+                                return new EventNotification(
+                                        (String) envelope.get("event"),
+                                        (String) envelope.get("kind"),
+                                        (Map<String, Object>) envelope.get("data"));
+                            } catch (Exception e) {
+                                LOG.warn("Failed to parse SSE event: {}", line, e);
+                                return null;
+                            }
+                        });
+    }
+
     private Duration resolveTimeout() {
         Duration configured = properties.getTimeout();
         return (configured != null) ? configured : Duration.ofSeconds(30);

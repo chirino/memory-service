@@ -1416,4 +1416,60 @@ export type $OpenApiTs = {
       };
     };
   };
+  "/v1/events": {
+    get: {
+      req: {
+        /**
+         * Comma-separated event kinds to filter (conversation, entry, response, membership).
+         */
+        kinds?: string;
+      };
+      res: {
+        /**
+         * SSE event stream opened successfully.
+         */
+        200: string;
+        /**
+         * Authentication required.
+         */
+        401: unknown;
+        /**
+         * Too many SSE connections for this user.
+         */
+        429: unknown;
+      };
+    };
+  };
+  "/v1/admin/events": {
+    get: {
+      req: {
+        /**
+         * Non-empty reason for subscribing (logged for audit).
+         */
+        justification: string;
+        /**
+         * Comma-separated event kinds to filter.
+         */
+        kinds?: string;
+      };
+      res: {
+        /**
+         * SSE event stream opened successfully.
+         */
+        200: string;
+        /**
+         * Missing or empty justification.
+         */
+        400: unknown;
+        /**
+         * Authentication required.
+         */
+        401: unknown;
+        /**
+         * Admin role required.
+         */
+        403: unknown;
+      };
+    };
+  };
 };

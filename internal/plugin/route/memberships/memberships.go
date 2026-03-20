@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/model"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/gin-gonic/gin"
@@ -39,13 +41,13 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.Handle
 		listMemberships(c, store)
 	})
 	g.POST("/conversations/:conversationId/memberships", func(c *gin.Context) {
-		shareConversation(c, store)
+		shareConversation(c, store, nil)
 	})
 	g.PATCH("/conversations/:conversationId/memberships/:userId", func(c *gin.Context) {
-		updateMembership(c, store)
+		updateMembership(c, store, nil)
 	})
 	g.DELETE("/conversations/:conversationId/memberships/:userId", func(c *gin.Context) {
-		deleteMembership(c, store)
+		deleteMembership(c, store, nil)
 	})
 }
 
@@ -55,18 +57,18 @@ func HandleListMemberships(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 // HandleShareConversation exposes the share conversation handler for wrapper-native adapters.
-func HandleShareConversation(c *gin.Context, store registrystore.MemoryStore) {
-	shareConversation(c, store)
+func HandleShareConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
+	shareConversation(c, store, eventBus)
 }
 
 // HandleUpdateMembership exposes the membership update handler for wrapper-native adapters.
-func HandleUpdateMembership(c *gin.Context, store registrystore.MemoryStore) {
-	updateMembership(c, store)
+func HandleUpdateMembership(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
+	updateMembership(c, store, eventBus)
 }
 
 // HandleDeleteMembership exposes the membership delete handler for wrapper-native adapters.
-func HandleDeleteMembership(c *gin.Context, store registrystore.MemoryStore) {
-	deleteMembership(c, store)
+func HandleDeleteMembership(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
+	deleteMembership(c, store, eventBus)
 }
 
 func listMemberships(c *gin.Context, store registrystore.MemoryStore) {
@@ -96,7 +98,7 @@ func listMemberships(c *gin.Context, store registrystore.MemoryStore) {
 	}
 }
 
-func shareConversation(c *gin.Context, store registrystore.MemoryStore) {
+func shareConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
 	convID, err := uuid.Parse(c.Param("conversationId"))
 	if err != nil {
@@ -113,19 +115,36 @@ func shareConversation(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
+	var createdMembership *model.ConversationMembership
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		membership, err := store.ShareConversation(ctx, userID, convID, req.UserID, req.AccessLevel)
 		if err != nil {
 			return err
 		}
+		createdMembership = membership
 		c.JSON(http.StatusCreated, toMembershipResponse(convID, *membership))
 		return nil
 	}); err != nil {
 		handleError(c, err)
+		return
+	}
+	if eventBus != nil && createdMembership != nil {
+		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+			Event: "added",
+			Kind:  "membership",
+			Data: map[string]any{
+				"conversation_group": createdMembership.ConversationGroupID,
+				"user":               createdMembership.UserID,
+				"role":               createdMembership.AccessLevel,
+			},
+			ConversationGroupID: createdMembership.ConversationGroupID,
+		}); err != nil {
+			log.Warn("Failed to publish event", "err", err)
+		}
 	}
 }
 
-func updateMembership(c *gin.Context, store registrystore.MemoryStore) {
+func updateMembership(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
 	convID, err := uuid.Parse(c.Param("conversationId"))
 	if err != nil {
@@ -142,19 +161,36 @@ func updateMembership(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
+	var updatedMembership *model.ConversationMembership
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		membership, err := store.UpdateMembership(ctx, userID, convID, memberUserID, req.AccessLevel)
 		if err != nil {
 			return err
 		}
+		updatedMembership = membership
 		c.JSON(http.StatusOK, toMembershipResponse(convID, *membership))
 		return nil
 	}); err != nil {
 		handleError(c, err)
+		return
+	}
+	if eventBus != nil && updatedMembership != nil {
+		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+			Event: "updated",
+			Kind:  "membership",
+			Data: map[string]any{
+				"conversation_group": updatedMembership.ConversationGroupID,
+				"user":               updatedMembership.UserID,
+				"role":               updatedMembership.AccessLevel,
+			},
+			ConversationGroupID: updatedMembership.ConversationGroupID,
+		}); err != nil {
+			log.Warn("Failed to publish event", "err", err)
+		}
 	}
 }
 
-func deleteMembership(c *gin.Context, store registrystore.MemoryStore) {
+func deleteMembership(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
 	convID, err := uuid.Parse(c.Param("conversationId"))
 	if err != nil {
@@ -163,7 +199,14 @@ func deleteMembership(c *gin.Context, store registrystore.MemoryStore) {
 	}
 	memberUserID := c.Param("userId")
 
+	// Fetch conversation before deletion to capture the group ID for the event.
+	var groupID uuid.UUID
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		conv, err := store.GetConversation(ctx, userID, convID)
+		if err != nil {
+			return err
+		}
+		groupID = conv.ConversationGroupID
 		if err := store.DeleteMembership(ctx, userID, convID, memberUserID); err != nil {
 			return err
 		}
@@ -171,6 +214,20 @@ func deleteMembership(c *gin.Context, store registrystore.MemoryStore) {
 		return nil
 	}); err != nil {
 		handleError(c, err)
+		return
+	}
+	if eventBus != nil {
+		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+			Event: "removed",
+			Kind:  "membership",
+			Data: map[string]any{
+				"conversation_group": groupID,
+				"user":               memberUserID,
+			},
+			ConversationGroupID: groupID,
+		}); err != nil {
+			log.Warn("Failed to publish event", "err", err)
+		}
 	}
 }
 

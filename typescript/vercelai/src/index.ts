@@ -370,8 +370,51 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
         options,
       );
     },
+    async *streamEvents(
+      kinds?: string,
+    ): AsyncGenerator<EventNotification, void, undefined> {
+      const qs = kinds ? compactQuery({ kinds }) : "";
+      const response = await memoryServiceRequest(
+        "GET",
+        `/v1/events${qs}`,
+        options,
+      );
+      if (!response.ok || !response.body) {
+        throw new Error(`SSE connection failed with status ${response.status}`);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                yield JSON.parse(line.slice(6)) as EventNotification;
+              } catch {
+                // skip malformed events
+              }
+            }
+          }
+        }
+      } finally {
+        reader.cancel();
+      }
+    },
   };
 }
+
+/** A parsed SSE event notification from the memory service. */
+export type EventNotification = {
+  event: string;
+  kind: string;
+  data: Record<string, unknown>;
+};
 
 type HistoryEntry = {
   role: HistoryRole;

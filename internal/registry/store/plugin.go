@@ -188,6 +188,8 @@ type MemoryStore interface {
 	ShareConversation(ctx context.Context, userID string, conversationID uuid.UUID, targetUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error)
 	UpdateMembership(ctx context.Context, userID string, conversationID uuid.UUID, memberUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error)
 	DeleteMembership(ctx context.Context, userID string, conversationID uuid.UUID, memberUserID string) error
+	// GetGroupMemberUserIDs returns all user IDs with membership (any access level) in the given conversation group.
+	GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error)
 
 	// Forks
 	ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]ConversationForkSummary, *string, error)

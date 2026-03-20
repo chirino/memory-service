@@ -217,6 +217,17 @@ type Config struct {
 	// Admin
 	RequireJustification bool
 
+	// Event bus
+	EventBusType           string // "local", "redis", "postgres"
+	EventBusOutboundBuffer int    // outbound channel capacity for cross-node publish pipeline
+	EventBusBatchSize      int    // max events per cross-node publish batch
+
+	// SSE event stream
+	SSEKeepaliveInterval     time.Duration
+	SSEMembershipCacheTTL    time.Duration
+	SSEMaxConnectionsPerUser int
+	SSESubscriberBufferSize  int
+
 	// Episodic memory settings
 	EpisodicMaxDepth           int           // Maximum namespace depth (default 5)
 	EpisodicIndexingBatchSize  int           // Items processed per indexer cycle (default 100)
@@ -283,6 +294,15 @@ func DefaultConfig() Config {
 		EncryptionProviders:          "plain",
 		EncryptionProviderDEKType:    "dek",
 		EncryptionProviderDEKEnabled: true,
+
+		// Event bus defaults
+		EventBusType:             "local",
+		EventBusOutboundBuffer:   200,
+		EventBusBatchSize:        100,
+		SSEKeepaliveInterval:     30 * time.Second,
+		SSEMembershipCacheTTL:    5 * time.Minute,
+		SSEMaxConnectionsPerUser: 5,
+		SSESubscriberBufferSize:  64,
 
 		// Episodic memory defaults
 		EpisodicMaxDepth:           5,

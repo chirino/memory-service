@@ -1,0 +1,203 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Real-Time Events
+description: Subscribe to server-sent events for real-time cache invalidation — conversation changes, entry appends, response recording lifecycle, and sharing updates.
+---
+
+import TestScenario from "../../../components/TestScenario.astro";
+import CurlTest from "../../../components/CurlTest.astro";
+
+Events provide real-time notifications for cache invalidation. Frontends subscribe to an SSE stream and receive lightweight JSON events when resources change. Events are best-effort cache invalidation hints — on receiving an event, refetch the affected resource. Never rely on events as a source of record.
+
+## Event Format
+
+Each SSE message contains a JSON envelope on a single `data:` line:
+
+```
+data: {"event":"created","kind":"conversation","data":{"conversation":"<uuid>","conversation_group":"<uuid>"}}
+```
+
+The envelope has three fields:
+
+- **`event`** — the action that occurred (e.g. `created`, `updated`, `deleted`, `appended`)
+- **`kind`** — the resource type (e.g. `conversation`, `entry`, `response`, `membership`, `stream`)
+- **`data`** — kind-specific payload with identifiers for the affected resource
+
+A keepalive comment `: keepalive` is sent every 30 seconds to keep the connection alive.
+
+## Event Kinds and Actions
+
+| Kind           | Event        | Trigger                                             | `data` Fields                        |
+| -------------- | ------------ | --------------------------------------------------- | ------------------------------------ |
+| `conversation` | `created`    | New conversation created                            | `conversation`, `conversation_group` |
+| `conversation` | `updated`    | Title, metadata, or other conversation-level change | `conversation`, `conversation_group` |
+| `conversation` | `deleted`    | Conversation soft-deleted                           | `conversation`, `conversation_group` |
+| `entry`        | `appended`   | New entry added to a conversation                   | `conversation`, `entry`              |
+| `response`     | `started`    | Response recording session begins                   | `conversation`, `recording`          |
+| `response`     | `completed`  | Response recording session ends successfully        | `conversation`, `recording`          |
+| `response`     | `failed`     | Response recording session fails                    | `conversation`, `recording`          |
+| `membership`   | `added`      | Access granted to a user                            | `conversation_group`, `user`, `role` |
+| `membership`   | `updated`    | Access level changed                                | `conversation_group`, `user`, `role` |
+| `membership`   | `removed`    | Access revoked from a user                          | `conversation_group`, `user`         |
+| `stream`       | `evicted`    | Server closing connection (slow consumer)           | `reason`                             |
+| `stream`       | `invalidate` | Events may have been missed (pub/sub disruption)    | `reason`                             |
+
+## Subscribing with curl
+
+The SSE endpoint:
+
+```
+GET /v1/events
+Accept: text/event-stream
+Authorization: Bearer <token>
+```
+
+An optional `kinds` query parameter (comma-separated) filters which event kinds are delivered:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-token)" \
+  http://localhost:8080/v1/events
+```
+
+With a filter to receive only conversation and entry events:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-token)" \
+  "http://localhost:8080/v1/events?kinds=conversation,entry"
+```
+
+## Walkthrough
+
+Open two terminals side by side to see events in real time.
+
+**Terminal 1** — subscribe to the event stream:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-token)" \
+  http://localhost:9090/v1/events
+```
+
+**Terminal 2** — create a conversation and add an entry:
+
+```bash
+# Create a conversation
+curl -sSfX POST http://localhost:9090/chat/e2c9a1b0-0001-4000-8000-000000000001 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Hello, this is a test."
+```
+
+Terminal 1 output shows a `conversation`/`created` event followed by `entry`/`appended` events:
+
+```
+data: {"event":"created","kind":"conversation","data":{"conversation":"e2c9a1b0-0001-4000-8000-000000000001","conversation_group":"..."}}
+data: {"event":"appended","kind":"entry","data":{"conversation":"e2c9a1b0-0001-4000-8000-000000000001","entry":"..."}}
+```
+
+Update the conversation title:
+
+```bash
+curl -sSfX PATCH http://localhost:9090/v1/conversations/e2c9a1b0-0001-4000-8000-000000000001 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d '{"title":"Events demo"}'
+```
+
+Terminal 1 receives a `conversation`/`updated` event:
+
+```
+data: {"event":"updated","kind":"conversation","data":{"conversation":"e2c9a1b0-0001-4000-8000-000000000001","conversation_group":"..."}}
+```
+
+## Testing Events
+
+<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/03b-with-events">
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Chat to create a conversation and trigger events:
+
+<CurlTest steps={`
+Then the response status should be 200
+`} exampleOutputLang="text" exampleOutput={`I am a Python memory-service demo agent.`}>
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/e2c9a1b0-0001-4000-8000-000000000001 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Hello, this is a test."
+```
+
+</CurlTest>
+
+Verify the conversation was created:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "e2c9a1b0-0001-4000-8000-000000000001"
+`} exampleOutputLang="json" exampleOutput={`{"id":"e2c9a1b0-0001-4000-8000-000000000001"}`}>
+
+```bash
+curl -sSf http://localhost:9090/v1/conversations/e2c9a1b0-0001-4000-8000-000000000001 \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+Verify entries exist:
+
+<CurlTest steps={`
+Then the response status should be 200
+And the response should contain "entries"
+`} exampleOutputLang="json" exampleOutput={`{"entries":[...]}`}>
+
+```bash
+curl -sSf http://localhost:9090/v1/conversations/e2c9a1b0-0001-4000-8000-000000000001/entries \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+</CurlTest>
+
+</TestScenario>
+
+## Access Control
+
+Events are filtered by conversation membership. Users only receive events for conversations they have at least reader access to. Stream-level events (`stream` kind) bypass membership filtering because they describe the health of the SSE connection itself, not a specific resource.
+
+## Connection Lifecycle
+
+**Keepalive**: A `: keepalive` comment is sent every 30 seconds to prevent proxies and load balancers from closing idle connections.
+
+**Slow consumer eviction**: If a client falls too far behind processing events, the server sends a `stream`/`evicted` event with a `reason` field, then closes the connection. The client should reconnect and do a broad cache refresh.
+
+**Pub/sub recovery**: In multi-node deployments, if the event bus (Redis or PostgreSQL) experiences a disruption, clients receive a `stream`/`invalidate` event. This means events may have been missed during the gap. The client should refresh all cached data.
+
+**Disconnection**: On any disconnection, reconnect and do a broad cache refresh. The event stream does not support `Last-Event-ID` replay.
+
+## Frontend Integration Tips
+
+- On event receive, invalidate cache entries for the affected resource and refetch.
+- On `stream`/`invalidate`, do a broad cache invalidation across all cached resources.
+- On reconnect after a disconnection, refetch all active data.
+- Never assume the event stream replaces normal REST reads — events are hints, not data.
+
+## Next Steps
+
+- See the framework-specific guides for proxying events through your agent app:
+  - [LangGraph Events](/docs/python-langgraph/events/)
+  - [LangChain Events](/docs/python-langchain/events/)
+  - [TypeScript Vercel AI Events](/docs/typescript-vecelai/events/)
+  - [Quarkus Events](/docs/quarkus/events/)
+  - [Spring Events](/docs/spring/events/)
+- Review [Service Configuration](/docs/configuration/) for event bus settings.
