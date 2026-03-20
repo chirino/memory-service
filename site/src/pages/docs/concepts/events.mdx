@@ -159,8 +159,8 @@ Verify entries exist:
 
 <CurlTest steps={`
 Then the response status should be 200
-And the response should contain "entries"
-`} exampleOutputLang="json" exampleOutput={`{"entries":[...]}`}>
+And the response should contain "data"
+`} exampleOutputLang="json" exampleOutput={`{"data":[...]}`}>
 
 ```bash
 curl -sSf http://localhost:9090/v1/conversations/e2c9a1b0-0001-4000-8000-000000000001/entries \

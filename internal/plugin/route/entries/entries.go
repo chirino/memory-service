@@ -247,13 +247,15 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		}
 	}
 
-	// Check if conversation exists before append — if not, AppendEntries will auto-create it
-	// and we need to publish a conversation/created event.
-	existingConv, _ := store.GetConversation(c.Request.Context(), userID, convID)
-	convExistedBefore := existingConv != nil
-
+	var convExistedBefore bool
+	var groupID uuid.UUID
 	var result []model.Entry
 	if err := routetx.MemoryWrite(c, store, func(context.Context) error {
+		// Check if conversation exists before append — if not, AppendEntries will auto-create it
+		// and we need to publish a conversation/created event. Must be inside the transaction
+		// scope for SQLite which requires InReadTx/InWriteTx.
+		existingConv, _ := store.GetConversation(c.Request.Context(), userID, convID)
+		convExistedBefore = existingConv != nil
 		// Resolve attachmentId references inside the write scope so SQLite
 		// attachment lookups and cross-link record creation see the required tx context.
 		type pendingLink struct {
@@ -296,6 +298,16 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 			}
 		}
 
+		// Resolve group ID inside the transaction for SQLite compatibility.
+		if eventBus != nil && len(result) > 0 {
+			gid, gErr := store.GetEntryGroupID(c.Request.Context(), result[0].ID)
+			if gErr != nil {
+				log.Warn("Failed to resolve group ID for entry event", "err", gErr)
+			} else {
+				groupID = gid
+			}
+		}
+
 		if len(result) == 1 {
 			c.JSON(http.StatusCreated, result[0])
 		} else {
@@ -312,37 +324,32 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		return
 	}
 	// Publish events after successful transaction.
-	if eventBus != nil && len(result) > 0 {
-		groupID, gErr := store.GetEntryGroupID(c.Request.Context(), result[0].ID)
-		if gErr != nil {
-			log.Warn("Failed to resolve group ID for entry event", "err", gErr)
-		} else {
-			// If conversation was auto-created by this append, publish conversation/created.
-			if !convExistedBefore {
-				if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
-					Event: "created",
-					Kind:  "conversation",
-					Data: map[string]any{
-						"conversation":       convID,
-						"conversation_group": groupID,
-					},
-					ConversationGroupID: groupID,
-				}); err != nil {
-					log.Warn("Failed to publish conversation.created event", "err", err)
-				}
+	if eventBus != nil && len(result) > 0 && groupID != uuid.Nil {
+		// If conversation was auto-created by this append, publish conversation/created.
+		if !convExistedBefore {
+			if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+				Event: "created",
+				Kind:  "conversation",
+				Data: map[string]any{
+					"conversation":       convID,
+					"conversation_group": groupID,
+				},
+				ConversationGroupID: groupID,
+			}); err != nil {
+				log.Warn("Failed to publish conversation.created event", "err", err)
 			}
-			for _, entry := range result {
-				if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
-					Event: "appended",
-					Kind:  "entry",
-					Data: map[string]any{
-						"conversation": entry.ConversationID,
-						"entry":        entry.ID,
-					},
-					ConversationGroupID: groupID,
-				}); err != nil {
-					log.Warn("Failed to publish entry.appended event", "err", err)
-				}
+		}
+		for _, entry := range result {
+			if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+				Event: "appended",
+				Kind:  "entry",
+				Data: map[string]any{
+					"conversation": entry.ConversationID,
+					"entry":        entry.ID,
+				},
+				ConversationGroupID: groupID,
+			}); err != nil {
+				log.Warn("Failed to publish entry.appended event", "err", err)
 			}
 		}
 	}
