@@ -68,15 +68,13 @@ func TestPostgresBusPublishesRecoveryInvalidateAfterSubscriptionLoss(t *testing.
 	peerEvents, err := busA.Subscribe(subCtx, "")
 	require.NoError(t, err)
 
-	require.NoError(t, busB.currentDB().Close())
+	busB.breakSubscription()
 	localInvalidate := waitForPostgresEvent(t, localEvents, 10*time.Second, func(event registryeventbus.Event) bool {
 		return event.Kind == "stream" && event.Event == "invalidate"
 	})
 	require.Equal(t, "pubsub recovery", postgresEventReason(localInvalidate))
 	require.Eventually(t, busB.isDegraded, 5*time.Second, 50*time.Millisecond)
 
-	replacement := openPostgresDB(t, dsn)
-	busB.setDB(replacement)
 	require.NoError(t, busB.Publish(context.Background(), registryeventbus.Event{
 		Event: "updated",
 		Kind:  "conversation",

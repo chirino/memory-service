@@ -74,6 +74,7 @@ func load(ctx context.Context) (registryeventbus.EventBus, error) {
 		batchSize:  batchSize,
 		userRefs:   make(map[string]int),
 		refreshSub: make(chan struct{}, 1),
+		subReady:   make(chan struct{}),
 	}
 
 	bus.wg.Add(2)
@@ -100,6 +101,8 @@ type postgresBus struct {
 	userRefs   map[string]int
 	globalRefs int
 	refreshSub chan struct{}
+	breakSub   context.CancelFunc
+	subReady   chan struct{}
 }
 
 type wireEvent struct {
@@ -338,6 +341,21 @@ func (p *postgresBus) runSubscription(ctx context.Context, channels []string, on
 
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	p.subMu.Lock()
+	p.breakSub = cancel
+	select {
+	case <-p.subReady:
+		p.subReady = make(chan struct{})
+	default:
+	}
+	ready := p.subReady
+	p.subMu.Unlock()
+	defer func() {
+		p.subMu.Lock()
+		p.breakSub = nil
+		p.subMu.Unlock()
+	}()
+	close(ready)
 
 	done := make(chan error, 1)
 	go func() {
@@ -473,6 +491,22 @@ func (p *postgresBus) drainRefresh() {
 		default:
 			return
 		}
+	}
+}
+
+// breakSubscription waits for the active LISTEN loop, then cancels it.
+// Used by tests to simulate subscription loss deterministically.
+func (p *postgresBus) breakSubscription() {
+	p.subMu.Lock()
+	ready := p.subReady
+	p.subMu.Unlock()
+	<-ready
+
+	p.subMu.Lock()
+	cancel := p.breakSub
+	p.subMu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 
