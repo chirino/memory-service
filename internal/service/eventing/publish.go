@@ -12,8 +12,12 @@ import (
 // PublishToGroup resolves the current member set for a conversation group and
 // publishes the event to those users.
 func PublishToGroup(ctx context.Context, store registrystore.MemoryStore, bus registryeventbus.EventBus, groupID uuid.UUID, event registryeventbus.Event) error {
-	userIDs, err := store.GetGroupMemberUserIDs(ctx, groupID)
-	if err != nil {
+	var userIDs []string
+	if err := store.InReadTx(ctx, func(txCtx context.Context) error {
+		var err error
+		userIDs, err = store.GetGroupMemberUserIDs(txCtx, groupID)
+		return err
+	}); err != nil {
 		return err
 	}
 	event.UserIDs = dedupeUsers(userIDs)
