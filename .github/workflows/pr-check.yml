@@ -134,6 +134,7 @@ jobs:
 
       - name: Create Cucumber report files
         if: always() && contains('test-go test-site', matrix.job)
+        continue-on-error: true
         run: |
           go run ./internal/cmd/create-cucumber-reports \
             --input-dir . \

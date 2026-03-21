@@ -247,13 +247,18 @@ MEMORY_SERVICE_INFINISPAN_PASSWORD=password`}
 
 ## Event Bus Configuration
 
-The event bus enables real-time Server-Sent Events (SSE) for frontend cache invalidation. Connected clients receive lightweight notifications when conversations, entries, or memberships change. Single-node deployments use the default `local` bus; multi-node deployments use `redis` or `postgres` for cross-node fan-out.
+The event bus enables real-time Server-Sent Events (SSE) for frontend cache invalidation. Connected clients receive lightweight notifications when
+conversations, entries, or memberships change. Single-node deployments use the default `local` bus; multi-node deployments use one of the other types for
+cross-node fan-out.
 
-| Flag / Env Var                                                                     | Values                       | Default | Description                                               |
-| ---------------------------------------------------------------------------------- | ---------------------------- | ------- | --------------------------------------------------------- |
-| <Cfg p="--eventbus-kind" e="MEMORY_SERVICE_EVENTBUS_KIND" />                       | `local`, `redis`, `postgres` | `local` | Event bus backend                                         |
-| <Cfg p="--eventbus-outbound-buffer" e="MEMORY_SERVICE_EVENTBUS_OUTBOUND_BUFFER" /> | integer                      | `200`   | Outbound channel capacity for cross-node publish pipeline |
-| <Cfg p="--eventbus-batch-size" e="MEMORY_SERVICE_EVENTBUS_BATCH_SIZE" />           | integer                      | `100`   | Max events per cross-node publish batch                   |
+For higher-scale multi-node deployments, prefer `redis` or `infinispan`. The current event routing model is user-scoped, and PostgreSQL LISTEN/NOTIFY does not scale as well with the resulting
+per-user channel fan-out. PostgreSQL remains supported, but it is better suited to smaller clustered installs.
+
+| Flag / Env Var                                                                     | Values                                     | Default | Description                                               |
+| ---------------------------------------------------------------------------------- | ------------------------------------------ | ------- | --------------------------------------------------------- |
+| <Cfg p="--eventbus-kind" e="MEMORY_SERVICE_EVENTBUS_KIND" />                       | `local`, `redis`, `infinispan`, `postgres` | `local` | Event bus backend                                         |
+| <Cfg p="--eventbus-outbound-buffer" e="MEMORY_SERVICE_EVENTBUS_OUTBOUND_BUFFER" /> | integer                                    | `200`   | Outbound channel capacity for cross-node publish pipeline |
+| <Cfg p="--eventbus-batch-size" e="MEMORY_SERVICE_EVENTBUS_BATCH_SIZE" />           | integer                                    | `100`   | Max events per cross-node publish batch                   |
 
 ### SSE Stream Settings
 
@@ -277,7 +282,7 @@ MEMORY_SERVICE_EVENTBUS_KIND=local`}
 
 ### Event Bus: Redis
 
-The `redis` backend uses Redis Pub/Sub for cross-node event fan-out. It reuses the same Redis connection configured for caching.
+The `redis` backend uses Redis Pub/Sub for cross-node event fan-out. It reuses the same Redis connection configured for caching and is the recommended choice for better event-stream scaling.
 
 <ConfigBlock
   property={`# Redis event bus (reuses cache Redis connection)
@@ -290,9 +295,28 @@ MEMORY_SERVICE_CACHE_KIND=redis
 MEMORY_SERVICE_REDIS_HOSTS=redis://localhost:6379`}
 />
 
+### Event Bus: Infinispan
+
+The `infinispan` backend uses Infinispan's RESP-compatible Pub/Sub endpoint through the same implementation as the Redis event bus. If you already run Infinispan for caching, it is a good choice for higher-scale event delivery.
+
+<ConfigBlock
+  property={`# Infinispan event bus (reuses Infinispan RESP endpoint)
+--eventbus-kind=infinispan
+--cache-kind=infinispan
+--infinispan-host=localhost:11222
+--infinispan-username=admin
+--infinispan-password=password`}
+  env={`# Infinispan event bus (reuses Infinispan RESP endpoint)
+MEMORY_SERVICE_EVENTBUS_KIND=infinispan
+MEMORY_SERVICE_CACHE_KIND=infinispan
+MEMORY_SERVICE_INFINISPAN_HOST=localhost:11222
+MEMORY_SERVICE_INFINISPAN_USERNAME=admin
+MEMORY_SERVICE_INFINISPAN_PASSWORD=password`}
+/>
+
 ### Event Bus: PostgreSQL
 
-The `postgres` backend uses PostgreSQL LISTEN/NOTIFY for cross-node fan-out. It reuses the configured database connection.
+The `postgres` backend uses PostgreSQL LISTEN/NOTIFY for cross-node fan-out. It reuses the configured database connection, but it is not the preferred choice for larger multi-node deployments because Redis/Infinispan scale better with user-scoped event routing.
 
 <ConfigBlock
   property={`# PostgreSQL event bus (reuses database connection)

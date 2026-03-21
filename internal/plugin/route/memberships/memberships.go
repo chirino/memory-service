@@ -13,6 +13,7 @@ import (
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
+	"github.com/chirino/memory-service/internal/service/eventing"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -129,7 +130,7 @@ func shareConversation(c *gin.Context, store registrystore.MemoryStore, eventBus
 		return
 	}
 	if eventBus != nil && createdMembership != nil {
-		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+		if err := eventing.PublishToUsers(c.Request.Context(), eventBus, []string{createdMembership.UserID}, registryeventbus.Event{
 			Event: "added",
 			Kind:  "membership",
 			Data: map[string]any{
@@ -175,7 +176,7 @@ func updateMembership(c *gin.Context, store registrystore.MemoryStore, eventBus 
 		return
 	}
 	if eventBus != nil && updatedMembership != nil {
-		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+		if err := eventing.PublishToUsers(c.Request.Context(), eventBus, []string{updatedMembership.UserID}, registryeventbus.Event{
 			Event: "updated",
 			Kind:  "membership",
 			Data: map[string]any{
@@ -217,7 +218,7 @@ func deleteMembership(c *gin.Context, store registrystore.MemoryStore, eventBus 
 		return
 	}
 	if eventBus != nil {
-		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+		if err := eventing.PublishToUsers(c.Request.Context(), eventBus, []string{memberUserID}, registryeventbus.Event{
 			Event: "removed",
 			Kind:  "membership",
 			Data: map[string]any{

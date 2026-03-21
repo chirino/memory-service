@@ -16,49 +16,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// ---- Membership cache ----
-
-// membershipCacheEntry holds a set of user IDs with an expiry time.
-type membershipCacheEntry struct {
-	members map[string]bool
-	expires time.Time
-}
-
-// membershipCache is a node-local cache mapping conversation group IDs to member sets.
-var membershipCache sync.Map // uuid.UUID -> *membershipCacheEntry
-
-// lookupMembers returns the set of member user IDs for a conversation group,
-// using the node-local cache when possible.
-func lookupMembers(c *gin.Context, store registrystore.MemoryStore, groupID uuid.UUID, ttl time.Duration) (map[string]bool, error) {
-	if entry, ok := membershipCache.Load(groupID); ok {
-		ce := entry.(*membershipCacheEntry)
-		if time.Now().Before(ce.expires) {
-			return ce.members, nil
-		}
-	}
-
-	userIDs, err := store.GetGroupMemberUserIDs(c.Request.Context(), groupID)
-	if err != nil {
-		return nil, err
-	}
-
-	members := make(map[string]bool, len(userIDs))
-	for _, uid := range userIDs {
-		members[uid] = true
-	}
-
-	membershipCache.Store(groupID, &membershipCacheEntry{
-		members: members,
-		expires: time.Now().Add(ttl),
-	})
-	return members, nil
-}
-
-// invalidateMembershipCache removes the cached entry for the given group.
-func invalidateMembershipCache(groupID uuid.UUID) {
-	membershipCache.Delete(groupID)
-}
-
 // ---- SSE session tracking ----
 
 // nodeID uniquely identifies this server instance. Generated once at startup.
@@ -193,7 +150,7 @@ func writeSSEEvent(c *gin.Context, event registryeventbus.Event) {
 // ---- SSE handler ----
 
 // HandleSSEEvents streams real-time events to an authenticated agent user via SSE.
-func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus registryeventbus.EventBus, cfg *config.Config) {
+func HandleSSEEvents(c *gin.Context, _ registrystore.MemoryStore, bus registryeventbus.EventBus, cfg *config.Config) {
 	userID := security.GetUserID(c)
 
 	// Register this session.
@@ -214,9 +171,10 @@ func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus regist
 	// Publish session created event (internal — not forwarded to clients).
 	if bus != nil {
 		_ = bus.Publish(c.Request.Context(), registryeventbus.Event{
-			Event:    "created",
-			Kind:     "session",
-			Internal: true,
+			Event:     "created",
+			Kind:      "session",
+			Internal:  true,
+			Broadcast: true,
 			Data: map[string]any{
 				"connection": session.ConnectionID,
 				"user":       session.UserID,
@@ -230,9 +188,10 @@ func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus regist
 	defer func() {
 		if bus != nil {
 			_ = bus.Publish(c.Request.Context(), registryeventbus.Event{
-				Event:    "shutdown",
-				Kind:     "session",
-				Internal: true,
+				Event:     "shutdown",
+				Kind:      "session",
+				Internal:  true,
+				Broadcast: true,
 				Data: map[string]any{
 					"connection": session.ConnectionID,
 					"user":       session.UserID,
@@ -274,7 +233,7 @@ func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus regist
 	c.Writer.Flush()
 
 	// Subscribe to the event bus.
-	sub, err := bus.Subscribe(c.Request.Context())
+	sub, err := bus.Subscribe(c.Request.Context(), userID)
 	if err != nil {
 		log.Error("SSE subscribe failed", "err", err, "userID", userID)
 		return
@@ -330,80 +289,6 @@ func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus regist
 
 			// Apply kinds filter.
 			if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
-				continue
-			}
-
-			// Stream events (evicted, invalidate) bypass membership filtering —
-			// they are connection-level, not resource-level.
-			if event.Kind == "stream" {
-				writeSSEEvent(c, event)
-				continue
-			}
-
-			// Membership events: invalidate cache and deliver only to the target user.
-			if event.Kind == "membership" {
-				if event.ConversationGroupID != uuid.Nil {
-					invalidateMembershipCache(event.ConversationGroupID)
-				}
-				if data, ok := event.Data.(map[string]any); ok {
-					if targetUserID, ok := data["user"].(string); ok && targetUserID == userID {
-						writeSSEEvent(c, event)
-					}
-				}
-				continue
-			}
-
-			// Conversation delete events: deliver to all cached members, then
-			// invalidate the cache. After soft-delete the membership lookup
-			// would return empty, so we must check the cache *before* it's gone.
-			if event.Kind == "conversation" && event.Event == "deleted" {
-				// Memberships are hard-deleted in the same transaction as the
-				// soft-delete, so the event carries a pre-captured member list.
-				// Check that list instead of the DB/cache.
-				delivered := false
-				if data, ok := event.Data.(map[string]any); ok {
-					// members may be []string (local bus) or []any (cross-node JSON decode).
-					switch memberList := data["members"].(type) {
-					case []string:
-						for _, mid := range memberList {
-							if mid == userID {
-								delivered = true
-								break
-							}
-						}
-					case []any:
-						for _, m := range memberList {
-							if mid, ok := m.(string); ok && mid == userID {
-								delivered = true
-								break
-							}
-						}
-					}
-					// Build a copy without members for the client-facing payload.
-					cleaned := make(map[string]any, len(data))
-					for k, v := range data {
-						if k != "members" {
-							cleaned[k] = v
-						}
-					}
-					event.Data = cleaned
-				}
-				if delivered {
-					writeSSEEvent(c, event)
-				}
-				continue
-			}
-
-			// All other events: check group membership.
-			if event.ConversationGroupID == uuid.Nil {
-				continue
-			}
-			members, err := lookupMembers(c, store, event.ConversationGroupID, cfg.SSEMembershipCacheTTL)
-			if err != nil {
-				log.Error("SSE membership lookup failed", "err", err, "groupID", event.ConversationGroupID)
-				continue
-			}
-			if !members[userID] {
 				continue
 			}
 

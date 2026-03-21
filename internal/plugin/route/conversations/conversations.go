@@ -17,6 +17,7 @@ import (
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
+	"github.com/chirino/memory-service/internal/service/eventing"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -187,7 +188,7 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 		return
 	}
 	if eventBus != nil && createdConv != nil {
-		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+		if err := eventing.PublishToGroup(c.Request.Context(), store, eventBus, createdConv.ConversationGroupID, registryeventbus.Event{
 			Event: "created",
 			Kind:  "conversation",
 			Data: map[string]any{
@@ -275,7 +276,7 @@ func updateConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 		return
 	}
 	if eventBus != nil && updatedConv != nil {
-		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+		if err := eventing.PublishToGroup(c.Request.Context(), store, eventBus, updatedConv.ConversationGroupID, registryeventbus.Event{
 			Event: "updated",
 			Kind:  "conversation",
 			Data: map[string]any{
@@ -318,13 +319,12 @@ func deleteConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 		return
 	}
 	if eventBus != nil {
-		if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+		if err := eventing.PublishToUsers(c.Request.Context(), eventBus, memberUserIDs, registryeventbus.Event{
 			Event: "deleted",
 			Kind:  "conversation",
 			Data: map[string]any{
 				"conversation":       convID,
 				"conversation_group": groupID,
-				"members":            memberUserIDs,
 			},
 			ConversationGroupID: groupID,
 		}); err != nil {

@@ -26,7 +26,7 @@ func TestPostgresBusPublishesRecoveryInvalidateAfterPublishFailure(t *testing.T)
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	peerEvents, err := busB.Subscribe(subCtx)
+	peerEvents, err := busB.Subscribe(subCtx, "")
 	require.NoError(t, err)
 
 	require.NoError(t, busA.currentDB().Close())
@@ -63,20 +63,18 @@ func TestPostgresBusPublishesRecoveryInvalidateAfterSubscriptionLoss(t *testing.
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	localEvents, err := busB.Subscribe(subCtx)
+	localEvents, err := busB.Subscribe(subCtx, "")
 	require.NoError(t, err)
-	peerEvents, err := busA.Subscribe(subCtx)
+	peerEvents, err := busA.Subscribe(subCtx, "")
 	require.NoError(t, err)
 
-	require.NoError(t, busB.currentDB().Close())
+	busB.breakSubscription()
 	localInvalidate := waitForPostgresEvent(t, localEvents, 10*time.Second, func(event registryeventbus.Event) bool {
 		return event.Kind == "stream" && event.Event == "invalidate"
 	})
 	require.Equal(t, "pubsub recovery", postgresEventReason(localInvalidate))
 	require.Eventually(t, busB.isDegraded, 5*time.Second, 50*time.Millisecond)
 
-	replacement := openPostgresDB(t, dsn)
-	busB.setDB(replacement)
 	require.NoError(t, busB.Publish(context.Background(), registryeventbus.Event{
 		Event: "updated",
 		Kind:  "conversation",

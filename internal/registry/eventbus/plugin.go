@@ -13,12 +13,16 @@ import (
 
 // Event represents a notification published through the event bus.
 // The JSON envelope sent to SSE clients contains Event, Kind, and Data.
-// ConversationGroupID is used for server-side access control filtering and is not serialized.
+// ConversationGroupID, UserIDs, Broadcast, and AdminOnly are routing metadata
+// and are not serialized to public SSE clients.
 type Event struct {
 	Event               string    `json:"event"` // action: created, updated, deleted, appended, started, completed, failed, added, removed, evicted
 	Kind                string    `json:"kind"`  // resource type: conversation, entry, response, membership, stream
 	Data                any       `json:"data"`  // kind-specific payload
 	ConversationGroupID uuid.UUID `json:"-"`     // used for access control filtering, not serialized
+	UserIDs             []string  `json:"-"`     // explicit user delivery targets
+	Broadcast           bool      `json:"-"`     // deliver to all user/admin subscribers
+	AdminOnly           bool      `json:"-"`     // deliver only to admin/all subscribers
 	Internal            bool      `json:"-"`     // internal control events (e.g. resync.required), never forwarded to clients
 }
 
@@ -27,10 +31,11 @@ type EventBus interface {
 	// Publish sends an event to all subscribers across all nodes.
 	Publish(ctx context.Context, event Event) error
 
-	// Subscribe returns a channel that receives events.
+	// Subscribe returns a channel that receives events for the given user.
+	// Pass an empty userID to subscribe to admin/all-events traffic only.
 	// The channel is closed when the subscription is evicted (slow consumer)
 	// or when the context is cancelled.
-	Subscribe(ctx context.Context) (<-chan Event, error)
+	Subscribe(ctx context.Context, userID string) (<-chan Event, error)
 
 	// Close shuts down the event bus and releases resources.
 	Close() error

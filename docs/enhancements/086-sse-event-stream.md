@@ -4,11 +4,11 @@ status: implemented
 
 # Enhancement 086: SSE Event Stream for Frontend Cache Invalidation
 
-> **Status**: Implemented — all tasks complete including Cucumber BDD feature tests. Backend infrastructure (local/Redis/PostgreSQL event buses with batching and health recovery), SSE endpoints, gRPC streaming, event publishing, metrics, OpenAPI/proto contracts, configuration docs, and frontend integration are complete.
+> **Status**: Implemented — all tasks complete including Cucumber BDD feature tests. Backend infrastructure (local/Redis/PostgreSQL event buses with batching and health recovery), SSE endpoints, gRPC streaming, event publishing, metrics, OpenAPI/proto contracts, configuration docs, and frontend integration are complete. The original broadcast-plus-subscriber-filtering routing model described here was later replaced by user-scoped routing in [087](implemented/087-user-scoped-event-routing.md).
 
 ## Summary
 
-Add a Server-Sent Events (SSE) endpoint that streams real-time notification events to frontends for cache invalidation — conversation CRUD, entry appends, response recording lifecycle, and sharing changes. Events are filtered per-connection so users only receive events for resources they have at least read access to. A pluggable event bus enables fan-out across multi-node deployments.
+Add a Server-Sent Events (SSE) endpoint that streams real-time notification events to frontends for cache invalidation — conversation CRUD, entry appends, response recording lifecycle, and sharing changes. A pluggable event bus enables fan-out across multi-node deployments. The first implementation filtered events per connection after broadcast; that routing model was later superseded by user-scoped routing in [087](implemented/087-user-scoped-event-routing.md).
 
 ## Motivation
 
@@ -24,6 +24,8 @@ Add a Server-Sent Events (SSE) endpoint that streams real-time notification even
 - **WebSocket support**: SSE is sufficient for server-to-client notifications. WebSocket adds complexity without benefit here.
 
 ## Design
+
+This document captures the original SSE/event-bus implementation. The current implementation keeps the same public endpoints and event semantics, but publish routing now happens at user scope as described in [087](implemented/087-user-scoped-event-routing.md).
 
 ### Delivery Semantics
 

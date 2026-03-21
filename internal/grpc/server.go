@@ -25,6 +25,7 @@ import (
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
+	"github.com/chirino/memory-service/internal/service/eventing"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -2071,7 +2072,7 @@ func (s *ResponseRecorderServer) publishResponseEvent(ctx context.Context, event
 		log.Warn("Failed to get conversation for response event", "err", err)
 		return
 	}
-	if err := s.EventBus.Publish(ctx, registryeventbus.Event{
+	if err := eventing.PublishToGroup(ctx, s.Store, s.EventBus, conv.ConversationGroupID, registryeventbus.Event{
 		Event: eventName,
 		Kind:  "response",
 		Data: map[string]any{
@@ -2365,7 +2366,7 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	}
 
 	// Subscribe to event bus.
-	sub, err := s.EventBus.Subscribe(stream.Context())
+	sub, err := s.EventBus.Subscribe(stream.Context(), userID)
 	if err != nil {
 		return status.Error(codes.Internal, "failed to subscribe to event bus")
 	}
@@ -2403,85 +2404,6 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 				}); err != nil {
 					return err
 				}
-				continue
-			}
-
-			// Membership events: deliver only to target user.
-			if event.Kind == "membership" {
-				if data, ok := event.Data.(map[string]any); ok {
-					if targetUserID, ok := data["user"].(string); ok && targetUserID == userID {
-						jsonData, _ := json.Marshal(event.Data)
-						if err := stream.Send(&pb.EventNotification{
-							Event: event.Event,
-							Kind:  event.Kind,
-							Data:  jsonData,
-						}); err != nil {
-							return err
-						}
-					}
-				}
-				continue
-			}
-
-			// Conversation delete events must use the pre-captured member list.
-			if event.Kind == "conversation" && event.Event == "deleted" {
-				delivered := false
-				if data, ok := event.Data.(map[string]any); ok {
-					switch memberList := data["members"].(type) {
-					case []string:
-						for _, mid := range memberList {
-							if mid == userID {
-								delivered = true
-								break
-							}
-						}
-					case []any:
-						for _, m := range memberList {
-							if mid, ok := m.(string); ok && mid == userID {
-								delivered = true
-								break
-							}
-						}
-					}
-					cleaned := make(map[string]any, len(data))
-					for k, v := range data {
-						if k != "members" {
-							cleaned[k] = v
-						}
-					}
-					event.Data = cleaned
-				}
-				if !delivered {
-					continue
-				}
-				jsonData, _ := json.Marshal(event.Data)
-				if err := stream.Send(&pb.EventNotification{
-					Event: event.Event,
-					Kind:  event.Kind,
-					Data:  jsonData,
-				}); err != nil {
-					return err
-				}
-				continue
-			}
-
-			// Other events: check group membership.
-			if event.ConversationGroupID == uuid.Nil {
-				continue
-			}
-			members, err := s.Store.GetGroupMemberUserIDs(stream.Context(), event.ConversationGroupID)
-			if err != nil {
-				log.Error("gRPC event membership lookup failed", "err", err)
-				continue
-			}
-			isMember := false
-			for _, uid := range members {
-				if uid == userID {
-					isMember = true
-					break
-				}
-			}
-			if !isMember {
 				continue
 			}
 
