@@ -16,7 +16,7 @@ func TestPublishSubscribe(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := bus.Subscribe(ctx)
+	ch, err := bus.Subscribe(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,11 +50,11 @@ func TestMultipleSubscribers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch1, err := bus.Subscribe(ctx)
+	ch1, err := bus.Subscribe(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ch2, err := bus.Subscribe(ctx)
+	ch2, err := bus.Subscribe(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestAllKindsDelivered(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := bus.Subscribe(ctx)
+	ch, err := bus.Subscribe(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,6 +122,90 @@ func TestAllKindsDelivered(t *testing.T) {
 	}
 }
 
+func TestTargetedUserDelivery(t *testing.T) {
+	bus := New(64)
+	defer bus.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	aliceCh, err := bus.Subscribe(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobCh, err := bus.Subscribe(ctx, "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminCh, err := bus.Subscribe(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	event := registryeventbus.Event{
+		Event:   "appended",
+		Kind:    "entry",
+		Data:    map[string]any{"id": uuid.New()},
+		UserIDs: []string{"alice"},
+	}
+	if err := bus.Publish(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-aliceCh:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for alice event")
+	}
+
+	select {
+	case <-adminCh:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for admin event")
+	}
+
+	select {
+	case got := <-bobCh:
+		t.Fatalf("bob should not have received event: %+v", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestBroadcastDelivery(t *testing.T) {
+	bus := New(64)
+	defer bus.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	aliceCh, err := bus.Subscribe(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminCh, err := bus.Subscribe(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	event := registryeventbus.Event{
+		Event:     "invalidate",
+		Kind:      "stream",
+		Data:      map[string]any{"reason": "test"},
+		Broadcast: true,
+	}
+	if err := bus.Publish(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, ch := range []<-chan registryeventbus.Event{aliceCh, adminCh} {
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("subscriber %d: timeout waiting for broadcast", i)
+		}
+	}
+}
+
 func TestSlowConsumerEviction(t *testing.T) {
 	bus := New(2)
 	defer bus.Close()
@@ -129,7 +213,7 @@ func TestSlowConsumerEviction(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := bus.Subscribe(ctx)
+	ch, err := bus.Subscribe(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +249,7 @@ func TestContextCancellation(t *testing.T) {
 	defer bus.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	ch, err := bus.Subscribe(ctx)
+	ch, err := bus.Subscribe(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +276,7 @@ func TestClose(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := bus.Subscribe(ctx)
+	ch, err := bus.Subscribe(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +315,7 @@ func TestSubscribeAfterClose(t *testing.T) {
 	bus := New(64)
 	bus.Close()
 
-	ch, err := bus.Subscribe(context.Background())
+	ch, err := bus.Subscribe(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,14 +1,18 @@
 //go:build !nopostgresql
 
 // Package postgres implements a cross-node event bus using PostgreSQL LISTEN/NOTIFY.
-// It wraps the local bus for per-node fan-out and uses pg_notify for cross-node delivery.
+// It wraps the local bus for per-node fan-out and uses user-scoped channels for
+// cross-node delivery.
 package postgres
 
 import (
 	"context"
+	"crypto/sha1"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,10 +27,11 @@ import (
 )
 
 const (
-	channel       = "memory_service_events"
-	maxBatchSize  = 128
-	maxPayload    = 7500 // pg_notify has an 8KB limit; leave margin
-	outboundQueue = 256
+	maxBatchSize       = 128
+	maxPayload         = 7500 // pg_notify has an 8KB limit; leave margin
+	outboundQueue      = 256
+	pgBroadcastChannel = "memory_service_events_broadcast"
+	pgAdminChannel     = "memory_service_events_admin"
 )
 
 func init() {
@@ -61,12 +66,14 @@ func load(ctx context.Context) (registryeventbus.EventBus, error) {
 		batchSize = maxBatchSize
 	}
 	bus := &postgresBus{
-		db:        db,
-		local:     localbus.New(cfg.SSESubscriberBufferSize),
-		outbound:  make(chan registryeventbus.Event, outboundCap),
-		cancel:    cancel,
-		cfg:       cfg,
-		batchSize: batchSize,
+		db:         db,
+		local:      localbus.New(cfg.SSESubscriberBufferSize),
+		outbound:   make(chan registryeventbus.Event, outboundCap),
+		cancel:     cancel,
+		cfg:        cfg,
+		batchSize:  batchSize,
+		userRefs:   make(map[string]int),
+		refreshSub: make(chan struct{}, 1),
 	}
 
 	bus.wg.Add(2)
@@ -77,16 +84,22 @@ func load(ctx context.Context) (registryeventbus.EventBus, error) {
 }
 
 type postgresBus struct {
-	db        *sql.DB
-	dbMu      sync.RWMutex
-	local     *localbus.Bus
-	outbound  chan registryeventbus.Event
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	cfg       *config.Config
+	db       *sql.DB
+	dbMu     sync.RWMutex
+	local    *localbus.Bus
+	outbound chan registryeventbus.Event
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	cfg      *config.Config
+
 	healthMu  sync.Mutex
 	degraded  bool
 	batchSize int
+
+	subMu      sync.Mutex
+	userRefs   map[string]int
+	globalRefs int
+	refreshSub chan struct{}
 }
 
 type wireEvent struct {
@@ -94,6 +107,9 @@ type wireEvent struct {
 	Kind                string    `json:"kind"`
 	Data                any       `json:"data"`
 	ConversationGroupID uuid.UUID `json:"conversationGroupId,omitempty"`
+	UserIDs             []string  `json:"userIds,omitempty"`
+	Broadcast           bool      `json:"broadcast,omitempty"`
+	AdminOnly           bool      `json:"adminOnly,omitempty"`
 	Internal            bool      `json:"internal,omitempty"`
 }
 
@@ -103,6 +119,9 @@ func toWire(e registryeventbus.Event) wireEvent {
 		Kind:                e.Kind,
 		Data:                e.Data,
 		ConversationGroupID: e.ConversationGroupID,
+		UserIDs:             e.UserIDs,
+		Broadcast:           e.Broadcast,
+		AdminOnly:           e.AdminOnly,
 		Internal:            e.Internal,
 	}
 }
@@ -113,13 +132,14 @@ func fromWire(w wireEvent) registryeventbus.Event {
 		Kind:                w.Kind,
 		Data:                w.Data,
 		ConversationGroupID: w.ConversationGroupID,
+		UserIDs:             w.UserIDs,
+		Broadcast:           w.Broadcast,
+		AdminOnly:           w.AdminOnly,
 		Internal:            w.Internal,
 	}
 }
 
-// Publish queues an event for cross-node delivery via pg_notify. Local
-// subscribers receive the event when it arrives back via the LISTEN
-// subscription, avoiding double-delivery.
+// Publish queues an event for cross-node delivery via pg_notify.
 func (p *postgresBus) Publish(ctx context.Context, event registryeventbus.Event) error {
 	select {
 	case p.outbound <- event:
@@ -133,9 +153,18 @@ func (p *postgresBus) Publish(ctx context.Context, event registryeventbus.Event)
 	return nil
 }
 
-// Subscribe delegates to the local bus.
-func (p *postgresBus) Subscribe(ctx context.Context) (<-chan registryeventbus.Event, error) {
-	return p.local.Subscribe(ctx)
+// Subscribe delegates to the local bus and tracks user-scoped interest.
+func (p *postgresBus) Subscribe(ctx context.Context, userID string) (<-chan registryeventbus.Event, error) {
+	ch, err := p.local.Subscribe(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	p.trackSubscription(userID)
+	go func() {
+		<-ctx.Done()
+		p.untrackSubscription(userID)
+	}()
+	return ch, nil
 }
 
 // Close cancels background goroutines, waits for them to finish, and closes resources.
@@ -161,7 +190,6 @@ func (p *postgresBus) publishLoop(ctx context.Context) {
 		batchSize = maxBatchSize
 	}
 	for {
-		// Block for the first event.
 		var batch []registryeventbus.Event
 		select {
 		case <-ctx.Done():
@@ -172,7 +200,6 @@ func (p *postgresBus) publishLoop(ctx context.Context) {
 			}
 			batch = append(batch, e)
 		}
-		// Non-blocking drain up to batch size.
 		for len(batch) < batchSize {
 			select {
 			case e, ok := <-p.outbound:
@@ -204,56 +231,63 @@ func (p *postgresBus) publishLoop(ctx context.Context) {
 }
 
 func (p *postgresBus) publishBatch(ctx context.Context, batch []registryeventbus.Event) error {
-	var lines []string
-	for _, e := range batch {
-		data, err := json.Marshal(toWire(e))
-		if err != nil {
-			log.Warn("Failed to marshal event for pg_notify", "err", err)
-			continue
+	channelEvents := make(map[string][]registryeventbus.Event)
+	for _, event := range batch {
+		for _, channel := range postgresChannelsForEvent(event) {
+			channelEvents[channel] = append(channelEvents[channel], postgresEventForChannel(event, channel))
 		}
-		lines = append(lines, string(data))
 	}
 
-	// Split into chunks that fit within the payload limit.
-	var chunk []string
-	var chunkSize int
 	var publishErr error
-	for _, line := range lines {
-		if chunkSize+len(line)+1 > maxPayload && len(chunk) > 0 {
-			if err := p.notify(ctx, strings.Join(chunk, "\n")); err != nil {
+	for channel, events := range channelEvents {
+		var lines []string
+		for _, e := range events {
+			data, err := json.Marshal(toWire(e))
+			if err != nil {
+				log.Warn("Failed to marshal event for pg_notify", "err", err)
+				continue
+			}
+			lines = append(lines, string(data))
+		}
+
+		var chunk []string
+		var chunkSize int
+		for _, line := range lines {
+			if chunkSize+len(line)+1 > maxPayload && len(chunk) > 0 {
+				if err := p.notify(ctx, channel, strings.Join(chunk, "\n")); err != nil {
+					publishErr = err
+				}
+				chunk = chunk[:0]
+				chunkSize = 0
+			}
+			chunk = append(chunk, line)
+			chunkSize += len(line) + 1
+		}
+		if len(chunk) > 0 {
+			if err := p.notify(ctx, channel, strings.Join(chunk, "\n")); err != nil {
 				publishErr = err
 			}
-			chunk = chunk[:0]
-			chunkSize = 0
-		}
-		chunk = append(chunk, line)
-		chunkSize += len(line) + 1
-	}
-	if len(chunk) > 0 {
-		if err := p.notify(ctx, strings.Join(chunk, "\n")); err != nil {
-			publishErr = err
 		}
 	}
 	return publishErr
 }
 
-func (p *postgresBus) notify(ctx context.Context, payload string) error {
+func (p *postgresBus) notify(ctx context.Context, channel, payload string) error {
 	db := p.currentDB()
 	if db == nil {
 		return fmt.Errorf("postgres event bus database is not available")
 	}
 	_, err := db.ExecContext(ctx, "SELECT pg_notify($1, $2)", channel, payload)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
-// subscribeLoop maintains a LISTEN subscription and reconnects on failure.
+// subscribeLoop maintains LISTEN subscriptions and reconnects on failure or channel-set changes.
 func (p *postgresBus) subscribeLoop(ctx context.Context) {
 	defer p.wg.Done()
 	for ctx.Err() == nil {
-		err := p.runSubscription(ctx, func() {
+		channels := p.subscriptionChannels()
+		p.drainRefresh()
+		err := p.runSubscription(ctx, channels, func() {
 			if p.clearDegraded() {
 				log.Info("PostgreSQL event bus: subscription recovered, sending invalidate")
 				if err := p.publishRecoveryInvalidate(ctx); err != nil {
@@ -265,19 +299,24 @@ func (p *postgresBus) subscribeLoop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		// Subscription lost - publish invalidate to local bus so clients resync.
+		if err == errPostgresRefresh {
+			continue
+		}
 		p.markDegraded()
 		_ = p.local.Publish(ctx, registryeventbus.Event{
-			Event: "invalidate",
-			Kind:  "stream",
-			Data:  map[string]string{"reason": "pubsub recovery"},
+			Event:     "invalidate",
+			Kind:      "stream",
+			Data:      map[string]string{"reason": "pubsub recovery"},
+			Broadcast: true,
 		})
 		log.Warn("PostgreSQL LISTEN lost, reconnecting", "err", err)
 		time.Sleep(time.Second)
 	}
 }
 
-func (p *postgresBus) runSubscription(ctx context.Context, onReady func()) error {
+var errPostgresRefresh = fmt.Errorf("postgres subscription refresh")
+
+func (p *postgresBus) runSubscription(ctx context.Context, channels []string, onReady func()) error {
 	db := p.currentDB()
 	if db == nil {
 		return fmt.Errorf("postgres event bus database is not available")
@@ -288,34 +327,153 @@ func (p *postgresBus) runSubscription(ctx context.Context, onReady func()) error
 	}
 	defer conn.Close()
 
-	if _, err := conn.ExecContext(ctx, "LISTEN "+channel); err != nil {
-		return fmt.Errorf("LISTEN failed: %w", err)
+	for _, channel := range channels {
+		if _, err := conn.ExecContext(ctx, "LISTEN "+channel); err != nil {
+			return fmt.Errorf("LISTEN %s failed: %w", channel, err)
+		}
 	}
 	if onReady != nil {
 		onReady()
 	}
 
-	return conn.Raw(func(driverConn any) error {
-		pgxConn := driverConn.(*stdlib.Conn).Conn()
-		for {
-			notification, err := pgxConn.WaitForNotification(ctx)
-			if err != nil {
-				return err
-			}
-			for _, line := range strings.Split(notification.Payload, "\n") {
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- conn.Raw(func(driverConn any) error {
+			pgxConn := driverConn.(*stdlib.Conn).Conn()
+			for {
+				notification, err := pgxConn.WaitForNotification(subCtx)
+				if err != nil {
+					return err
 				}
-				var w wireEvent
-				if err := json.Unmarshal([]byte(line), &w); err != nil {
-					log.Warn("Failed to unmarshal event from pg_notify", "err", err)
-					continue
+				for _, line := range strings.Split(notification.Payload, "\n") {
+					line = strings.TrimSpace(line)
+					if line == "" {
+						continue
+					}
+					var w wireEvent
+					if err := json.Unmarshal([]byte(line), &w); err != nil {
+						log.Warn("Failed to unmarshal event from pg_notify", "err", err)
+						continue
+					}
+					_ = p.local.Publish(ctx, fromWire(w))
 				}
-				_ = p.local.Publish(ctx, fromWire(w))
 			}
+		})
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-p.refreshSub:
+		cancel()
+		<-done
+		return errPostgresRefresh
+	}
+}
+
+func postgresChannelsForEvent(event registryeventbus.Event) []string {
+	if event.Broadcast {
+		return []string{pgBroadcastChannel}
+	}
+
+	channels := make([]string, 0, len(event.UserIDs)+1)
+	seen := make(map[string]struct{}, len(event.UserIDs))
+	for _, userID := range event.UserIDs {
+		if userID == "" {
+			continue
 		}
-	})
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		channels = append(channels, postgresUserChannel(userID))
+	}
+	if !event.Internal && !event.AdminOnly {
+		channels = append(channels, pgAdminChannel)
+	}
+	if len(channels) == 0 {
+		channels = append(channels, pgAdminChannel)
+	}
+	return channels
+}
+
+func postgresEventForChannel(event registryeventbus.Event, channel string) registryeventbus.Event {
+	if channel == pgAdminChannel {
+		copyEvent := event
+		copyEvent.AdminOnly = true
+		copyEvent.UserIDs = nil
+		copyEvent.Broadcast = false
+		return copyEvent
+	}
+	return event
+}
+
+func postgresUserChannel(userID string) string {
+	sum := sha1.Sum([]byte(userID))
+	return "memory_service_events_user_" + hex.EncodeToString(sum[:])
+}
+
+func (p *postgresBus) subscriptionChannels() []string {
+	p.subMu.Lock()
+	defer p.subMu.Unlock()
+
+	channels := []string{pgBroadcastChannel}
+	if p.globalRefs > 0 {
+		channels = append(channels, pgAdminChannel)
+	}
+	for userID := range p.userRefs {
+		channels = append(channels, postgresUserChannel(userID))
+	}
+	sort.Strings(channels)
+	return channels
+}
+
+func (p *postgresBus) trackSubscription(userID string) {
+	p.subMu.Lock()
+	if userID == "" {
+		p.globalRefs++
+	} else {
+		p.userRefs[userID]++
+	}
+	p.subMu.Unlock()
+	p.requestRefresh()
+}
+
+func (p *postgresBus) untrackSubscription(userID string) {
+	p.subMu.Lock()
+	if userID == "" {
+		if p.globalRefs > 0 {
+			p.globalRefs--
+		}
+	} else if count := p.userRefs[userID]; count > 1 {
+		p.userRefs[userID] = count - 1
+	} else {
+		delete(p.userRefs, userID)
+	}
+	p.subMu.Unlock()
+	p.requestRefresh()
+}
+
+func (p *postgresBus) requestRefresh() {
+	select {
+	case p.refreshSub <- struct{}{}:
+	default:
+	}
+}
+
+func (p *postgresBus) drainRefresh() {
+	for {
+		select {
+		case <-p.refreshSub:
+		default:
+			return
+		}
+	}
 }
 
 func (p *postgresBus) currentDB() *sql.DB {
@@ -354,8 +512,9 @@ func (p *postgresBus) isDegraded() bool {
 
 func (p *postgresBus) publishRecoveryInvalidate(ctx context.Context) error {
 	return p.publishBatch(ctx, []registryeventbus.Event{{
-		Event: "invalidate",
-		Kind:  "stream",
-		Data:  map[string]string{"reason": "pubsub recovery"},
+		Event:     "invalidate",
+		Kind:      "stream",
+		Data:      map[string]string{"reason": "pubsub recovery"},
+		Broadcast: true,
 	}})
 }

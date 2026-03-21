@@ -33,14 +33,16 @@ func load(ctx context.Context) (registryeventbus.EventBus, error) {
 // Bus is an in-process event bus with bounded subscriber channels.
 type Bus struct {
 	mu         sync.RWMutex
-	subs       map[*subscriber]struct{}
+	globalSubs map[*subscriber]struct{}
+	userSubs   map[string]map[*subscriber]struct{}
 	closed     bool
 	bufferSize int
 }
 
 type subscriber struct {
-	ch  chan registryeventbus.Event
-	ctx context.Context
+	ch     chan registryeventbus.Event
+	ctx    context.Context
+	userID string
 }
 
 // New creates a local event bus with the given per-subscriber buffer size.
@@ -49,22 +51,14 @@ func New(bufferSize int) *Bus {
 		bufferSize = defaultBufferSize
 	}
 	return &Bus{
-		subs:       make(map[*subscriber]struct{}),
+		globalSubs: make(map[*subscriber]struct{}),
+		userSubs:   make(map[string]map[*subscriber]struct{}),
 		bufferSize: bufferSize,
 	}
 }
 
-// Publish fans out an event to all local subscribers.
+// Publish fans out an event to matching local subscribers.
 // If a subscriber's buffer is full, its channel is closed (slow-consumer eviction).
-//
-// Sends are performed under RLock so multiple publishers can fan out concurrently
-// without blocking each other. The RLock also prevents the Subscribe cleanup
-// goroutine from closing a channel while a send is in progress.
-//
-// Eviction (which mutates the subs map) is deferred: the RLock is released,
-// a write Lock is acquired, and each evicted subscriber is removed only if it
-// is still present in the map (guarding against double-close by the cleanup
-// goroutine).
 func (b *Bus) Publish(_ context.Context, event registryeventbus.Event) error {
 	b.mu.RLock()
 	if b.closed {
@@ -76,17 +70,36 @@ func (b *Bus) Publish(_ context.Context, event registryeventbus.Event) error {
 		security.EventBusPublishedTotal.Inc()
 	}
 
+	recipients := make(map[*subscriber]struct{})
+	for s := range b.globalSubs {
+		recipients[s] = struct{}{}
+	}
+	switch {
+	case event.Broadcast:
+		for _, subs := range b.userSubs {
+			for s := range subs {
+				recipients[s] = struct{}{}
+			}
+		}
+	case event.AdminOnly:
+		// already handled by globalSubs
+	default:
+		for _, userID := range event.UserIDs {
+			for s := range b.userSubs[userID] {
+				recipients[s] = struct{}{}
+			}
+		}
+	}
+
 	var evicted []*subscriber
-	for s := range b.subs {
+	for s := range recipients {
 		if s.ctx.Err() != nil {
 			evicted = append(evicted, s)
 			continue
 		}
 		select {
 		case s.ch <- event:
-			// delivered
 		default:
-			// Buffer full — mark for eviction.
 			evicted = append(evicted, s)
 		}
 	}
@@ -95,17 +108,12 @@ func (b *Bus) Publish(_ context.Context, event registryeventbus.Event) error {
 	if len(evicted) > 0 {
 		b.mu.Lock()
 		for _, s := range evicted {
-			if _, ok := b.subs[s]; ok {
-				delete(b.subs, s)
-				close(s.ch)
-				if s.ctx.Err() == nil {
-					// Only count as dropped/evicted if it wasn't a context cancellation.
-					if security.EventBusDroppedTotal != nil {
-						security.EventBusDroppedTotal.Inc()
-					}
-					if security.EventBusSubscriberEvictionsTotal != nil {
-						security.EventBusSubscriberEvictionsTotal.Inc()
-					}
+			if b.removeLocked(s) && s.ctx.Err() == nil {
+				if security.EventBusDroppedTotal != nil {
+					security.EventBusDroppedTotal.Inc()
+				}
+				if security.EventBusSubscriberEvictionsTotal != nil {
+					security.EventBusSubscriberEvictionsTotal.Inc()
 				}
 			}
 		}
@@ -114,9 +122,9 @@ func (b *Bus) Publish(_ context.Context, event registryeventbus.Event) error {
 	return nil
 }
 
-// Subscribe returns a channel that receives events. The channel is closed
-// when the context is cancelled or when the subscriber is evicted for being slow.
-func (b *Bus) Subscribe(ctx context.Context) (<-chan registryeventbus.Event, error) {
+// Subscribe returns a channel that receives matching events.
+// Pass an empty userID to receive admin/all-events traffic only.
+func (b *Bus) Subscribe(ctx context.Context, userID string) (<-chan registryeventbus.Event, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
@@ -125,23 +133,49 @@ func (b *Bus) Subscribe(ctx context.Context) (<-chan registryeventbus.Event, err
 		return ch, nil
 	}
 	s := &subscriber{
-		ch:  make(chan registryeventbus.Event, b.bufferSize),
-		ctx: ctx,
+		ch:     make(chan registryeventbus.Event, b.bufferSize),
+		ctx:    ctx,
+		userID: userID,
 	}
-	b.subs[s] = struct{}{}
+	if userID == "" {
+		b.globalSubs[s] = struct{}{}
+	} else {
+		if b.userSubs[userID] == nil {
+			b.userSubs[userID] = make(map[*subscriber]struct{})
+		}
+		b.userSubs[userID][s] = struct{}{}
+	}
 
-	// Clean up when context is cancelled.
 	go func() {
 		<-ctx.Done()
 		b.mu.Lock()
 		defer b.mu.Unlock()
-		if _, ok := b.subs[s]; ok {
-			delete(b.subs, s)
-			close(s.ch)
-		}
+		b.removeLocked(s)
 	}()
 
 	return s.ch, nil
+}
+
+func (b *Bus) removeLocked(s *subscriber) bool {
+	if s.userID == "" {
+		if _, ok := b.globalSubs[s]; !ok {
+			return false
+		}
+		delete(b.globalSubs, s)
+		close(s.ch)
+		return true
+	}
+
+	subs := b.userSubs[s.userID]
+	if _, ok := subs[s]; !ok {
+		return false
+	}
+	delete(subs, s)
+	if len(subs) == 0 {
+		delete(b.userSubs, s.userID)
+	}
+	close(s.ch)
+	return true
 }
 
 // Close shuts down the bus and closes all subscriber channels.
@@ -152,9 +186,16 @@ func (b *Bus) Close() error {
 		return nil
 	}
 	b.closed = true
-	for s := range b.subs {
+	for s := range b.globalSubs {
 		close(s.ch)
-		delete(b.subs, s)
+		delete(b.globalSubs, s)
+	}
+	for userID, subs := range b.userSubs {
+		for s := range subs {
+			close(s.ch)
+			delete(subs, s)
+		}
+		delete(b.userSubs, userID)
 	}
 	return nil
 }

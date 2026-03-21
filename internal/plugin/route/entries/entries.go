@@ -15,6 +15,7 @@ import (
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
+	"github.com/chirino/memory-service/internal/service/eventing"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -327,7 +328,7 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 	if eventBus != nil && len(result) > 0 && groupID != uuid.Nil {
 		// If conversation was auto-created by this append, publish conversation/created.
 		if !convExistedBefore {
-			if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+			if err := eventing.PublishToGroup(c.Request.Context(), store, eventBus, groupID, registryeventbus.Event{
 				Event: "created",
 				Kind:  "conversation",
 				Data: map[string]any{
@@ -340,7 +341,7 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 			}
 		}
 		for _, entry := range result {
-			if err := eventBus.Publish(c.Request.Context(), registryeventbus.Event{
+			if err := eventing.PublishToGroup(c.Request.Context(), store, eventBus, groupID, registryeventbus.Event{
 				Event: "appended",
 				Kind:  "entry",
 				Data: map[string]any{

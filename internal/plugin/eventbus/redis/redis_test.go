@@ -27,7 +27,7 @@ func TestRedisBusPublishesRecoveryInvalidateAfterPublishFailure(t *testing.T) {
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	peerEvents, err := busB.Subscribe(subCtx)
+	peerEvents, err := busB.Subscribe(subCtx, "")
 	require.NoError(t, err)
 
 	require.NoError(t, busA.currentClient().Close())
@@ -67,9 +67,9 @@ func TestRedisBusPublishesRecoveryInvalidateAfterSubscriptionLoss(t *testing.T) 
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	localEvents, err := busB.Subscribe(subCtx)
+	localEvents, err := busB.Subscribe(subCtx, "")
 	require.NoError(t, err)
-	peerEvents, err := busA.Subscribe(subCtx)
+	peerEvents, err := busA.Subscribe(subCtx, "")
 	require.NoError(t, err)
 
 	// Cancel the active subscription context to simulate subscription loss.

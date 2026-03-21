@@ -1,15 +1,16 @@
 //go:build !noredis || !noinfinispan
 
 // Package redis implements a cross-node event bus backed by Redis Pub/Sub.
-// It wraps a local bus for in-process fan-out and publishes batched events
-// to Redis for cross-node delivery. The "infinispan" event bus variant uses
-// the same implementation since Infinispan speaks the RESP protocol.
+// It wraps a local bus for in-process fan-out and publishes user-targeted
+// events to Redis channels for cross-node delivery. The "infinispan" event bus
+// variant uses the same implementation since Infinispan speaks the RESP protocol.
 package redis
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,11 @@ import (
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
+)
+
+const (
+	redisBroadcastChannel = "memory-service:events:broadcast"
+	redisAdminChannel     = "memory-service:events:admin"
 )
 
 func init() {
@@ -66,7 +72,6 @@ func LoadFromOptions(ctx context.Context, opts *goredis.Options) (registryeventb
 	cfg := config.FromContext(ctx)
 
 	client := goredis.NewClient(opts)
-
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("redis event bus: ping failed: %w", err)
@@ -85,12 +90,14 @@ func LoadFromOptions(ctx context.Context, opts *goredis.Options) (registryeventb
 	loopCtx, cancel := context.WithCancel(context.Background())
 
 	r := &redisBus{
-		client:   client,
-		local:    localbus.New(bufSize),
-		outbound: make(chan registryeventbus.Event, outboundCap),
-		cancel:   cancel,
-		cfg:      cfg,
-		subReady: make(chan struct{}),
+		client:     client,
+		local:      localbus.New(bufSize),
+		outbound:   make(chan registryeventbus.Event, outboundCap),
+		cancel:     cancel,
+		cfg:        cfg,
+		userRefs:   make(map[string]int),
+		refreshSub: make(chan struct{}, 1),
+		subReady:   make(chan struct{}),
 	}
 
 	r.wg.Add(2)
@@ -103,26 +110,36 @@ func LoadFromOptions(ctx context.Context, opts *goredis.Options) (registryeventb
 type redisBus struct {
 	client   *goredis.Client
 	clientMu sync.RWMutex
+
 	local    *localbus.Bus
 	outbound chan registryeventbus.Event
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	cfg      *config.Config
+
 	healthMu sync.Mutex
 	degraded bool
-	// breakSub, if non-nil, is called to force the current subscription to exit.
-	// Protected by clientMu. Used by tests to simulate subscription loss.
-	breakSub context.CancelFunc
-	subReady chan struct{} // closed when breakSub is set and subscription is active
+
+	subMu      sync.Mutex
+	userRefs   map[string]int
+	globalRefs int
+	wantVer    int64
+	activeVer  int64
+	refreshSub chan struct{}
+	breakSub   context.CancelFunc
+	subReady   chan struct{}
 }
 
-// wireEvent is used for Redis serialization, including ConversationGroupID
-// which is excluded from the standard Event JSON tags.
+// wireEvent is used for Redis serialization, including routing metadata that is
+// excluded from the public Event JSON tags.
 type wireEvent struct {
 	Event               string    `json:"event"`
 	Kind                string    `json:"kind"`
 	Data                any       `json:"data"`
 	ConversationGroupID uuid.UUID `json:"conversationGroupId,omitempty"`
+	UserIDs             []string  `json:"userIds,omitempty"`
+	Broadcast           bool      `json:"broadcast,omitempty"`
+	AdminOnly           bool      `json:"adminOnly,omitempty"`
 	Internal            bool      `json:"internal,omitempty"`
 }
 
@@ -132,6 +149,9 @@ func toWire(e registryeventbus.Event) wireEvent {
 		Kind:                e.Kind,
 		Data:                e.Data,
 		ConversationGroupID: e.ConversationGroupID,
+		UserIDs:             e.UserIDs,
+		Broadcast:           e.Broadcast,
+		AdminOnly:           e.AdminOnly,
 		Internal:            e.Internal,
 	}
 }
@@ -142,13 +162,14 @@ func fromWire(w wireEvent) registryeventbus.Event {
 		Kind:                w.Kind,
 		Data:                w.Data,
 		ConversationGroupID: w.ConversationGroupID,
+		UserIDs:             w.UserIDs,
+		Broadcast:           w.Broadcast,
+		AdminOnly:           w.AdminOnly,
 		Internal:            w.Internal,
 	}
 }
 
-// Publish queues an event for Redis publication. Local subscribers receive
-// the event when it arrives back via the Redis subscription, avoiding
-// double-delivery.
+// Publish queues an event for Redis publication.
 func (r *redisBus) Publish(ctx context.Context, event registryeventbus.Event) error {
 	select {
 	case r.outbound <- event:
@@ -162,9 +183,22 @@ func (r *redisBus) Publish(ctx context.Context, event registryeventbus.Event) er
 	return nil
 }
 
-// Subscribe returns a channel that receives events from the local bus.
-func (r *redisBus) Subscribe(ctx context.Context) (<-chan registryeventbus.Event, error) {
-	return r.local.Subscribe(ctx)
+// Subscribe returns a channel that receives routed events.
+// Pass an empty userID for admin/all-events traffic only.
+func (r *redisBus) Subscribe(ctx context.Context, userID string) (<-chan registryeventbus.Event, error) {
+	ch, err := r.local.Subscribe(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	version := r.trackSubscription(userID)
+	if err := r.waitForSubscription(ctx, version); err != nil {
+		return nil, err
+	}
+	go func() {
+		<-ctx.Done()
+		r.untrackSubscription(userID)
+	}()
+	return ch, nil
 }
 
 // Close shuts down background goroutines, the local bus, and the Redis client.
@@ -179,8 +213,6 @@ func (r *redisBus) Close() error {
 	return client.Close()
 }
 
-const redisChannel = "memory-service:events"
-
 // publishLoop drains the outbound channel with batching.
 func (r *redisBus) publishLoop(ctx context.Context) {
 	defer r.wg.Done()
@@ -193,7 +225,6 @@ func (r *redisBus) publishLoop(ctx context.Context) {
 	hadError := false
 
 	for {
-		// Block for first event.
 		select {
 		case <-ctx.Done():
 			return
@@ -204,7 +235,6 @@ func (r *redisBus) publishLoop(ctx context.Context) {
 			batch = append(batch, event)
 		}
 
-		// Non-blocking drain up to batch size.
 		for len(batch) < batchSize {
 			select {
 			case event, ok := <-r.outbound:
@@ -244,42 +274,60 @@ func (r *redisBus) publishLoop(ctx context.Context) {
 	}
 }
 
-// publishBatch encodes and publishes a batch of events to Redis.
 func (r *redisBus) publishBatch(ctx context.Context, events []registryeventbus.Event) error {
-	if len(events) == 0 {
-		return nil
+	channelEvents := make(map[string][]registryeventbus.Event)
+	for _, event := range events {
+		for _, channel := range redisChannelsForEvent(event) {
+			channelEvents[channel] = append(channelEvents[channel], eventForChannel(event, channel))
+		}
 	}
-	payload := r.encodeEvents(events)
-	client := r.currentClient()
-	if client == nil {
-		return fmt.Errorf("redis event bus client is not available")
+
+	var publishErr error
+	for channel, bucket := range channelEvents {
+		if len(bucket) == 0 {
+			continue
+		}
+		payload := r.encodeEvents(bucket)
+		client := r.currentClient()
+		if client == nil {
+			publishErr = fmt.Errorf("redis event bus client is not available")
+			continue
+		}
+		if err := client.Publish(ctx, channel, payload).Err(); err != nil {
+			publishErr = err
+		}
 	}
-	return client.Publish(ctx, redisChannel, payload).Err()
+	return publishErr
 }
 
-// encodeEvents encodes events as newline-delimited JSON.
 func (r *redisBus) encodeEvents(events []registryeventbus.Event) string {
 	var sb strings.Builder
-	for i, e := range events {
+	written := 0
+	for _, e := range events {
 		data, err := json.Marshal(toWire(e))
 		if err != nil {
 			log.Warn("Redis event bus: failed to marshal event", "err", err)
 			continue
 		}
-		if i > 0 {
+		if written > 0 {
 			sb.WriteByte('\n')
 		}
 		sb.Write(data)
+		written++
 	}
 	return sb.String()
 }
 
-// subscribeLoop reconnects to Redis Pub/Sub on failure.
+// subscribeLoop reconnects to Redis Pub/Sub on failure or channel-set changes.
 func (r *redisBus) subscribeLoop(ctx context.Context) {
 	defer r.wg.Done()
 
 	for ctx.Err() == nil {
-		err := r.runSubscription(ctx, func() {
+		channels := r.subscriptionChannels()
+		r.drainRefresh()
+		version := r.subscriptionVersion()
+		err := r.runSubscription(ctx, channels, func() {
+			r.markSubscriptionActive(version)
 			if r.clearDegraded() {
 				log.Info("Redis event bus: subscription recovered, sending invalidate")
 				if err := r.publishRecoveryInvalidate(ctx); err != nil {
@@ -291,29 +339,31 @@ func (r *redisBus) subscribeLoop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		// Subscription lost — notify local subscribers to invalidate.
+		if err == errRedisRefresh {
+			continue
+		}
 		r.markDegraded()
 		_ = r.local.Publish(ctx, registryeventbus.Event{
-			Event: "invalidate",
-			Kind:  "stream",
-			Data:  map[string]string{"reason": "pubsub recovery"},
+			Event:     "invalidate",
+			Kind:      "stream",
+			Data:      map[string]string{"reason": "pubsub recovery"},
+			Broadcast: true,
 		})
 		log.Warn("Redis subscription lost, reconnecting", "err", err)
 		time.Sleep(time.Second)
 	}
 }
 
-// runSubscription subscribes to the Redis channel and feeds events into the local bus.
-func (r *redisBus) runSubscription(ctx context.Context, onReady func()) error {
+var errRedisRefresh = fmt.Errorf("redis subscription refresh")
+
+func (r *redisBus) runSubscription(ctx context.Context, channels []string, onReady func()) error {
 	client := r.currentClient()
 	if client == nil {
 		return fmt.Errorf("redis event bus client is not available")
 	}
-	pubsub := client.Subscribe(ctx, redisChannel)
+	pubsub := client.Subscribe(ctx, channels...)
 	defer pubsub.Close()
 
-	// Create a sub-context so tests can force this subscription to exit
-	// by calling breakSubscription().
 	subCtx, subCancel := context.WithCancel(ctx)
 	defer subCancel()
 	if _, err := pubsub.Receive(subCtx); err != nil {
@@ -322,10 +372,8 @@ func (r *redisBus) runSubscription(ctx context.Context, onReady func()) error {
 
 	r.clientMu.Lock()
 	r.breakSub = subCancel
-	// Signal that breakSub is now set and subscription is active.
 	select {
 	case <-r.subReady:
-		// already closed from a previous subscription; make a new one for next time
 		r.subReady = make(chan struct{})
 	default:
 	}
@@ -336,7 +384,6 @@ func (r *redisBus) runSubscription(ctx context.Context, onReady func()) error {
 		r.breakSub = nil
 		r.clientMu.Unlock()
 	}()
-
 	close(ready)
 
 	if onReady != nil {
@@ -348,6 +395,8 @@ func (r *redisBus) runSubscription(ctx context.Context, onReady func()) error {
 		select {
 		case <-subCtx.Done():
 			return subCtx.Err()
+		case <-r.refreshSub:
+			return errRedisRefresh
 		case msg, ok := <-ch:
 			if !ok {
 				return fmt.Errorf("redis subscription channel closed")
@@ -364,6 +413,139 @@ func (r *redisBus) runSubscription(ctx context.Context, onReady func()) error {
 				}
 				_ = r.local.Publish(ctx, fromWire(w))
 			}
+		}
+	}
+}
+
+func redisChannelsForEvent(event registryeventbus.Event) []string {
+	if event.Broadcast {
+		return []string{redisBroadcastChannel}
+	}
+
+	channels := make([]string, 0, len(event.UserIDs)+1)
+	seen := make(map[string]struct{}, len(event.UserIDs))
+	for _, userID := range event.UserIDs {
+		if userID == "" {
+			continue
+		}
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		channels = append(channels, redisUserChannel(userID))
+	}
+	if !event.Internal && !event.AdminOnly {
+		channels = append(channels, redisAdminChannel)
+	}
+	if len(channels) == 0 {
+		channels = append(channels, redisAdminChannel)
+	}
+	return channels
+}
+
+func eventForChannel(event registryeventbus.Event, channel string) registryeventbus.Event {
+	if channel == redisAdminChannel {
+		copyEvent := event
+		copyEvent.AdminOnly = true
+		copyEvent.UserIDs = nil
+		copyEvent.Broadcast = false
+		return copyEvent
+	}
+	return event
+}
+
+func redisUserChannel(userID string) string {
+	return "memory-service:events:user:" + userID
+}
+
+func (r *redisBus) subscriptionChannels() []string {
+	r.subMu.Lock()
+	defer r.subMu.Unlock()
+
+	channels := []string{redisBroadcastChannel}
+	if r.globalRefs > 0 {
+		channels = append(channels, redisAdminChannel)
+	}
+	for userID := range r.userRefs {
+		channels = append(channels, redisUserChannel(userID))
+	}
+	sort.Strings(channels)
+	return channels
+}
+
+func (r *redisBus) trackSubscription(userID string) int64 {
+	r.subMu.Lock()
+	if userID == "" {
+		r.globalRefs++
+	} else {
+		r.userRefs[userID]++
+	}
+	r.wantVer++
+	version := r.wantVer
+	r.subMu.Unlock()
+	r.requestRefresh()
+	return version
+}
+
+func (r *redisBus) untrackSubscription(userID string) {
+	r.subMu.Lock()
+	if userID == "" {
+		if r.globalRefs > 0 {
+			r.globalRefs--
+		}
+	} else if count := r.userRefs[userID]; count > 1 {
+		r.userRefs[userID] = count - 1
+	} else {
+		delete(r.userRefs, userID)
+	}
+	r.wantVer++
+	r.subMu.Unlock()
+	r.requestRefresh()
+}
+
+func (r *redisBus) requestRefresh() {
+	select {
+	case r.refreshSub <- struct{}{}:
+	default:
+	}
+}
+
+func (r *redisBus) drainRefresh() {
+	for {
+		select {
+		case <-r.refreshSub:
+		default:
+			return
+		}
+	}
+}
+
+func (r *redisBus) subscriptionVersion() int64 {
+	r.subMu.Lock()
+	defer r.subMu.Unlock()
+	return r.wantVer
+}
+
+func (r *redisBus) markSubscriptionActive(version int64) {
+	r.subMu.Lock()
+	defer r.subMu.Unlock()
+	if version > r.activeVer {
+		r.activeVer = version
+	}
+}
+
+func (r *redisBus) waitForSubscription(ctx context.Context, version int64) error {
+	for {
+		r.subMu.Lock()
+		active := r.activeVer
+		r.subMu.Unlock()
+		if active >= version {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Millisecond):
 		}
 	}
 }
@@ -403,8 +585,7 @@ func (r *redisBus) isDegraded() bool {
 }
 
 // breakSubscription waits for the subscription to be active, then cancels its
-// context, causing subscribeLoop to detect subscription loss. Used by tests
-// to simulate Redis disconnection.
+// context, causing subscribeLoop to detect subscription loss. Used by tests.
 func (r *redisBus) breakSubscription() {
 	r.clientMu.RLock()
 	ready := r.subReady
@@ -421,8 +602,9 @@ func (r *redisBus) breakSubscription() {
 
 func (r *redisBus) publishRecoveryInvalidate(ctx context.Context) error {
 	return r.publishBatch(ctx, []registryeventbus.Event{{
-		Event: "invalidate",
-		Kind:  "stream",
-		Data:  map[string]string{"reason": "pubsub recovery"},
+		Event:     "invalidate",
+		Kind:      "stream",
+		Data:      map[string]string{"reason": "pubsub recovery"},
+		Broadcast: true,
 	}})
 }

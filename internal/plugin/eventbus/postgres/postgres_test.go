@@ -26,7 +26,7 @@ func TestPostgresBusPublishesRecoveryInvalidateAfterPublishFailure(t *testing.T)
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	peerEvents, err := busB.Subscribe(subCtx)
+	peerEvents, err := busB.Subscribe(subCtx, "")
 	require.NoError(t, err)
 
 	require.NoError(t, busA.currentDB().Close())
@@ -63,9 +63,9 @@ func TestPostgresBusPublishesRecoveryInvalidateAfterSubscriptionLoss(t *testing.
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	localEvents, err := busB.Subscribe(subCtx)
+	localEvents, err := busB.Subscribe(subCtx, "")
 	require.NoError(t, err)
-	peerEvents, err := busA.Subscribe(subCtx)
+	peerEvents, err := busA.Subscribe(subCtx, "")
 	require.NoError(t, err)
 
 	require.NoError(t, busB.currentDB().Close())

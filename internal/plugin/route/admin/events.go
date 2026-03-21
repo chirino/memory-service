@@ -44,7 +44,7 @@ func HandleAdminSSEEvents(c *gin.Context, bus registryeventbus.EventBus, cfg *co
 	c.Writer.Flush()
 
 	// Subscribe to the event bus.
-	sub, err := bus.Subscribe(c.Request.Context())
+	sub, err := bus.Subscribe(c.Request.Context(), "")
 	if err != nil {
 		log.Error("Admin SSE subscribe failed", "err", err, "adminID", adminID)
 		return
