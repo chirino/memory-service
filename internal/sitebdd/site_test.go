@@ -54,8 +54,8 @@ func TestSiteDocs(t *testing.T) {
 	// once up front so parallel scenario builds can resolve dependencies reliably.
 	ensureJavaCheckpointArtifacts(t, projectRoot, scenarios)
 
-	// Python checkpoint docs depend on locally-built wheels (memory-service-langchain,
-	// memory-service-langgraph). Build them once up front so uv sync can find them.
+	// Python checkpoint docs depend on locally-built wheels (memory-service-langchain).
+	// Build them once up front so uv sync can find them.
 	ensurePythonPackages(t, projectRoot, scenarios)
 
 	if len(scenarios) == 0 {
@@ -285,31 +285,23 @@ func ensureJavaCheckpointArtifacts(t *testing.T, projectRoot string, scenarios [
 
 func ensurePythonPackages(t *testing.T, projectRoot string, scenarios []ScenarioData) {
 	t.Helper()
-	needsLangchain := false
-	needsLanggraph := false
+	needsPython := false
 	for _, s := range scenarios {
-		if strings.HasPrefix(s.Checkpoint, "python/examples/langchain/") {
-			needsLangchain = true
-		}
-		if strings.HasPrefix(s.Checkpoint, "python/examples/langgraph/") {
-			needsLanggraph = true
-		}
-	}
-	runBuild := func(dir string) {
-		t.Helper()
-		cmd := exec.Command("uv", "--directory="+dir, "build")
-		cmd.Dir = projectRoot
-		cmd.Env = append(os.Environ(), "VIRTUAL_ENV=")
-		t.Logf("Building Python package in %s", dir)
-		if err := runBuildCommand(t, cmd, "[uv-build] "); err != nil {
-			t.Fatalf("failed to build Python package in %s: %v", dir, err)
+		if strings.HasPrefix(s.Checkpoint, "python/examples/langchain/") ||
+			strings.HasPrefix(s.Checkpoint, "python/examples/langgraph/") {
+			needsPython = true
+			break
 		}
 	}
-	if needsLangchain {
-		runBuild("python/langchain")
+	if !needsPython {
+		return
 	}
-	if needsLanggraph {
-		runBuild("python/langgraph")
+	cmd := exec.Command("uv", "--directory=python/langchain", "build")
+	cmd.Dir = projectRoot
+	cmd.Env = append(os.Environ(), "VIRTUAL_ENV=")
+	t.Logf("Building Python package in python/langchain")
+	if err := runBuildCommand(t, cmd, "[uv-build] "); err != nil {
+		t.Fatalf("failed to build Python package in python/langchain: %v", err)
 	}
 }
 

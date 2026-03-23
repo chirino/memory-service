@@ -651,7 +651,7 @@ New endpoints in `openapi-admin.yml`:
 
 ### 9. LangGraph Compatibility Layer
 
-A Python package `memory-service-langgraph` in `python/langgraph/` implements `BaseStore`
+The `memory_service_langchain.langgraph` sub-package implements `BaseStore`
 by calling the memory-service Agent API. Namespace tuples are converted to dot-encoded
 query parameters.
 
@@ -794,7 +794,7 @@ Feature: Namespaced Episodic Memory
 
 ### Phase 6 — LangGraph Python Client
 
-- [x] Create `python/langgraph/` package skeleton (`memory-service-langgraph`)
+- [x] Create `memory_service_langchain.langgraph` sub-package
 - [x] Implement sync `MemoryServiceStore(BaseStore)` wrapping the REST API
 - [x] Implement async `AsyncMemoryServiceStore(BaseStore)` variant
 - [ ] Add integration tests against a running memory-service

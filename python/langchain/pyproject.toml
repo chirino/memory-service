@@ -1,8 +1,12 @@
 [project]
 name = "memory-service-langchain"
 version = "0.1.0"
-description = "Memory Service compatibility helpers for LangChain-based Python agents"
+description = "Memory Service integration for LangChain and LangGraph Python agents"
 requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+  {name = "Hiram Chirino"},
+]
 dependencies = [
   "fastapi>=0.115.0,<1.0.0",
   "grpcio>=1.74.0,<2.0.0",
@@ -12,6 +16,11 @@ dependencies = [
   "langchain-core>=1.0.0,<2.0.0",
   "protobuf>=6.31.1,<7.0.0"
 ]
+
+[project.urls]
+Homepage = "https://chirino.github.io/memory-service/"
+Repository = "https://github.com/chirino/memory-service"
+Documentation = "https://chirino.github.io/memory-service/docs/python-langchain/getting-started/"
 
 [build-system]
 requires = ["hatchling>=1.27.0"]

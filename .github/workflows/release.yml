@@ -1,0 +1,22 @@
+name: Release Python packages
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish-python:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - name: Build wheel
+        run: uv build
+        working-directory: python/langchain
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist/
