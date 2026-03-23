@@ -98,7 +98,15 @@ final class UnixSocketRestClientFactory {
                                         "limit", args[2],
                                         "channel", args[3],
                                         "epoch", args[4],
-                                        "forks", args[5]),
+                                        "agentId", args[5],
+                                        "forks", args[6]),
+                                null,
+                                method);
+                case "listConversationChildren" ->
+                        json(
+                                "GET",
+                                path("/v1/conversations/%s/children", args[0]),
+                                query("afterCursor", args[1], "limit", args[2]),
                                 null,
                                 method);
                 case "listConversationForks" ->
@@ -114,9 +122,10 @@ final class UnixSocketRestClientFactory {
                                 "/v1/conversations",
                                 query(
                                         "mode", args[0],
-                                        "afterCursor", args[1],
-                                        "limit", args[2],
-                                        "query", args[3]),
+                                        "ancestry", args[1],
+                                        "afterCursor", args[2],
+                                        "limit", args[3],
+                                        "query", args[4]),
                                 null,
                                 method);
                 case "syncConversationContext" ->

@@ -1,0 +1,152 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Agent and Sub-Agent Workflows
+description: Start async sub-agent tasks from Quarkus and expose the child-conversation endpoints.
+---
+
+import CodeFromFile from "../../../components/CodeFromFile.astro";
+
+This guide branches from [Conversation History](/docs/quarkus/conversation-history/) and shows how to start async sub-agent work from a Quarkus app while exposing the child-conversation endpoints.
+
+> **New to the concept?**
+> Read [Agent and Sub-Agent Workflows](/docs/concepts/agent-subagent-workflows/) first. This page focuses on the Quarkus integration.
+
+## Prerequisites
+
+**Starting checkpoint**: This guide starts from [java/quarkus/examples/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/03-with-history)
+
+You should already have:
+
+- the conversation history checkpoint working,
+- Memory Service running,
+- OIDC configured, and
+- the Quarkus extension available from the local Maven build.
+
+## What the Quarkus Extension Adds
+
+The Quarkus integration now supports sub-agent orchestration in two places:
+
+- `SubAgentTaskTool` is a reusable base class for app-specific tools such as `FactFindingSubAgentTool`.
+- `StreamingSubAgentTaskTool` is the companion base class for app-specific streaming child tools such as `FeedbackSubAgentTool`.
+- your app-specific tool binds a concrete child AI service while the extension owns joined execution, history appends, and task tracking.
+- `SubAgentTurnRunner` keeps the parent turn open until joined child results have been added back into context and the LLM has had a chance to continue.
+- `MemoryServiceProxy` exposes `GET /v1/conversations/{conversationId}/children`.
+
+This keeps the user code narrow: the app supplies the parent AI service and the child AI service. The extension handles the joined task lifecycle.
+
+## Add the Parent Agent Tool
+
+Update the parent AI service to expose the concrete app tool:
+
+<CodeFromFile
+  file="java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows/src/main/java/org/acme/Agent.java"
+  lang="java"
+/>
+
+**What changed**: Added `FactFindingSubAgentTool` and `FeedbackSubAgentTool` to the parent AI service. **Why**: The model now gets two distinct sub-agent capabilities with different strengths while the extension still provides the shared orchestration behavior.
+
+## Add the Child AI Services
+
+Show the fact-finding child AI service:
+
+<CodeFromFile
+  file="java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows/src/main/java/org/acme/FactFindingSubAgent.java"
+  lang="java"
+/>
+
+**What changed**: Added a `FactFindingSubAgent` AI service. **Why**: This child handles delegated research work and can stream progress while it gathers evidence.
+
+Show the feedback child AI service:
+
+<CodeFromFile
+  file="java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows/src/main/java/org/acme/FeedbackSubAgent.java"
+  lang="java"
+/>
+
+**What changed**: Added a `FeedbackSubAgent` AI service. **Why**: This child reviews the combined findings and decides whether more research is needed before the parent answers.
+
+## Expose the Child Endpoint
+
+Update `ConversationsResource.java` so the frontend can list direct child conversations:
+
+<CodeFromFile
+  file="java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows/src/main/java/org/acme/ConversationsResource.java"
+  lang="java"
+  lines="52-60"
+/>
+
+**What changed**: Added `GET /v1/conversations/{conversationId}/children`. **Why**: Orchestration UIs need a direct way to inspect delegated child conversations from a known parent.
+
+## Try It With Curl
+
+Define a helper to get a bearer token for `bob`:
+
+```bash
+function get-token() {
+  curl -sSfX POST http://localhost:8081/realms/memory-service/protocol/openid-connect/token \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=memory-service-client" \
+    -d "client_secret=change-me" \
+    -d "grant_type=password" \
+    -d "username=bob" \
+    -d "password=bob" \
+    | jq -r '.access_token'
+}
+```
+
+Create a parent conversation and ask the agent to split the work into child tasks. This prompt is written to strongly encourage the model to start one fact-finding child per CRM and then use the feedback child to evaluate the full set of findings:
+
+```bash
+curl -NsSfX POST http://localhost:9090/chat/5a7129d8-0a9f-4688-b650-c085d3f30c13 \
+  -H "Content-Type: text/plain" \
+  -H "Authorization: Bearer $(get-token)" \
+  -d "Evaluate Salesforce, HubSpot, and Zoho CRM for a mid-sized B2B sales team. Start a fact-finding sub-agent for each CRM to gather pricing, security, API integration, and customization facts. Run those fact-finding tasks in parallel if possible. Then start a feedback sub-agent to review the findings across all three CRMs together, identify gaps or weak comparisons, and produce follow-up research questions for the fact-finding sub-agents before giving a final recommendation."
+```
+
+If the model decides to use `messageSubAgent`, the extension will create child conversations when needed, wait for those joined tasks before finalizing the parent turn, add the child results back into the parent context, and then let the parent LLM continue.
+
+List the direct children that were created for the parent conversation:
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/5a7129d8-0a9f-4688-b650-c085d3f30c13/children \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+You should see one item per child conversation. Each child ID is the conversation ID returned by `messageSubAgent`.
+
+Capture one of the child IDs so you can inspect its activity:
+
+```bash
+CHILD_ID=$(
+  curl -sSfX GET http://localhost:9090/v1/conversations/5a7129d8-0a9f-4688-b650-c085d3f30c13/children \
+    -H "Authorization: Bearer $(get-token)" \
+  | jq -r '.data[0].id'
+)
+```
+
+Inspect the child entries and their agent attribution:
+
+```bash
+curl -sSfX GET "http://localhost:9090/v1/conversations/${CHILD_ID}/entries" \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+In the child history you should see the delegated user task followed by the sub-agent response. If your application sets `agentId` values, those show up here as well.
+
+Inspect the parent conversation again to see how the joined results were folded back into the same user turn:
+
+```bash
+curl -sSfX GET http://localhost:9090/v1/conversations/5a7129d8-0a9f-4688-b650-c085d3f30c13/entries \
+  -H "Authorization: Bearer $(get-token)" | jq
+```
+
+The parent conversation should now include the original user request, one or more internal join-result prompts added by the runtime, and the final AI response that was only returned after the joined child tasks had completed.
+
+## Completed Checkpoint
+
+**Completed code**: View the full implementation at [java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows](https://github.com/chirino/memory-service/tree/main/java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows)
+
+## Next Steps
+
+- [Conversation Forking](/docs/quarkus/conversation-forking/) for alternate history branches
+- [Response Recording and Resumption](/docs/quarkus/response-resumption/) for resumable streaming responses

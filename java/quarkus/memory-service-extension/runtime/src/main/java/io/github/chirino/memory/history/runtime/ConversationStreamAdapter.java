@@ -200,7 +200,8 @@ public final class ConversationStreamAdapter {
         // Persist partial response if any content was buffered
         if (buffer.length() > 0) {
             try {
-                store.appendAgentMessage(conversationId, buffer.toString(), bearerToken);
+                store.appendAgentMessageWithBearerToken(
+                        conversationId, buffer.toString(), bearerToken);
                 store.markCompleted(conversationId);
             } catch (RuntimeException e) {
                 // Ignore persistence failures to avoid masking the original error
@@ -220,7 +221,7 @@ public final class ConversationStreamAdapter {
             MultiEmitter<? super String> emitter,
             String bearerToken) {
         try {
-            store.appendAgentMessage(conversationId, buffer.toString(), bearerToken);
+            store.appendAgentMessageWithBearerToken(conversationId, buffer.toString(), bearerToken);
             store.markCompleted(conversationId);
         } catch (RuntimeException e) {
             // Ignore failures when recording final message to avoid breaking the primary response
@@ -239,7 +240,7 @@ public final class ConversationStreamAdapter {
             ResponseRecordingManager.RecordingSession recorder,
             String bearerToken) {
         try {
-            store.appendAgentMessage(conversationId, buffer.toString(), bearerToken);
+            store.appendAgentMessageWithBearerToken(conversationId, buffer.toString(), bearerToken);
             store.markCompleted(conversationId);
         } catch (RuntimeException e) {
             // Ignore failures when recording final message to avoid breaking the primary response

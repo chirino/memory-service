@@ -74,6 +74,13 @@ const (
 	ListConversationsParamsModeRoots      ListConversationsParamsMode = "roots"
 )
 
+// Defines values for ListConversationsParamsAncestry.
+const (
+	ListConversationsParamsAncestryAll      ListConversationsParamsAncestry = "all"
+	ListConversationsParamsAncestryChildren ListConversationsParamsAncestry = "children"
+	ListConversationsParamsAncestryRoots    ListConversationsParamsAncestry = "roots"
+)
+
 // Defines values for ListConversationEntriesParamsForks.
 const (
 	ListConversationEntriesParamsForksAll  ListConversationEntriesParamsForks = "all"
@@ -90,9 +97,9 @@ const (
 
 // Defines values for ListPendingTransfersParamsRole.
 const (
-	All       ListPendingTransfersParamsRole = "all"
-	Recipient ListPendingTransfersParamsRole = "recipient"
-	Sender    ListPendingTransfersParamsRole = "sender"
+	ListPendingTransfersParamsRoleAll       ListPendingTransfersParamsRole = "all"
+	ListPendingTransfersParamsRoleRecipient ListPendingTransfersParamsRole = "recipient"
+	ListPendingTransfersParamsRoleSender    ListPendingTransfersParamsRole = "sender"
 )
 
 // AccessLevel Access level of a user for a conversation.
@@ -186,6 +193,21 @@ type AttachmentUploadResponseStatus string
 // Channel Logical channel of the entry within the conversation.
 type Channel string
 
+// ChildConversationSummary defines model for ChildConversationSummary.
+type ChildConversationSummary struct {
+	// AccessLevel Access level of a user for a conversation.
+	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
+	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
+
+	// Id Unique identifier for the child conversation.
+	Id                 *openapi_types.UUID `json:"id,omitempty"`
+	LastMessagePreview *string             `json:"lastMessagePreview"`
+	OwnerUserId        *string             `json:"ownerUserId,omitempty"`
+	StartedByEntryId   *openapi_types.UUID `json:"startedByEntryId"`
+	Title              *string             `json:"title"`
+	UpdatedAt          *time.Time          `json:"updatedAt,omitempty"`
+}
+
 // Conversation defines model for Conversation.
 type Conversation struct {
 	// AccessLevel Access level of a user for a conversation.
@@ -202,8 +224,14 @@ type Conversation struct {
 	Id                 *openapi_types.UUID `json:"id,omitempty"`
 	LastMessagePreview *string             `json:"lastMessagePreview"`
 	OwnerUserId        *string             `json:"ownerUserId,omitempty"`
-	Title              *string             `json:"title"`
-	UpdatedAt          *time.Time          `json:"updatedAt,omitempty"`
+
+	// StartedByConversationId Parent conversation that started this child conversation.
+	StartedByConversationId *openapi_types.UUID `json:"startedByConversationId"`
+
+	// StartedByEntryId Parent entry that started this child conversation.
+	StartedByEntryId *openapi_types.UUID `json:"startedByEntryId"`
+	Title            *string             `json:"title"`
+	UpdatedAt        *time.Time          `json:"updatedAt,omitempty"`
 }
 
 // ConversationForkSummary Summary of a forked conversation originating at a given entry.
@@ -238,11 +266,13 @@ type ConversationSummary struct {
 	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
 
 	// Id Unique identifier for the conversation.
-	Id                 *openapi_types.UUID `json:"id,omitempty"`
-	LastMessagePreview *string             `json:"lastMessagePreview"`
-	OwnerUserId        *string             `json:"ownerUserId,omitempty"`
-	Title              *string             `json:"title"`
-	UpdatedAt          *time.Time          `json:"updatedAt,omitempty"`
+	Id                      *openapi_types.UUID `json:"id,omitempty"`
+	LastMessagePreview      *string             `json:"lastMessagePreview"`
+	OwnerUserId             *string             `json:"ownerUserId,omitempty"`
+	StartedByConversationId *openapi_types.UUID `json:"startedByConversationId"`
+	StartedByEntryId        *openapi_types.UUID `json:"startedByEntryId"`
+	Title                   *string             `json:"title"`
+	UpdatedAt               *time.Time          `json:"updatedAt,omitempty"`
 }
 
 // CreateConversationRequest defines model for CreateConversationRequest.
@@ -255,6 +285,9 @@ type CreateConversationRequest struct {
 
 // CreateEntryRequest defines model for CreateEntryRequest.
 type CreateEntryRequest struct {
+	// AgentId Logical agent identifier for agent-authored entries.
+	AgentId *string `json:"agentId"`
+
 	// Channel Logical channel of the entry within the conversation.
 	Channel *Channel `json:"channel,omitempty"`
 
@@ -296,6 +329,12 @@ type CreateEntryRequest struct {
 	// after creation. Returns 400 Bad Request if specified for non-history channels.
 	IndexedContent *string `json:"indexedContent"`
 
+	// StartedByConversationId If the target conversation does not exist yet, auto-create it as a child conversation started from this parent conversation.
+	StartedByConversationId *openapi_types.UUID `json:"startedByConversationId,omitempty"`
+
+	// StartedByEntryId Optional parent entry that caused this child conversation to be started.
+	StartedByEntryId *openapi_types.UUID `json:"startedByEntryId,omitempty"`
+
 	// UserId Human user this entry is associated with.
 	// For history entries authored by a user, this is the sender.
 	// For agent entries, this is the user the agent is responding to.
@@ -325,6 +364,9 @@ type CreateOwnershipTransferRequest struct {
 
 // Entry defines model for Entry.
 type Entry struct {
+	// AgentId Logical agent identifier for agent-authored entries.
+	AgentId *string `json:"agentId"`
+
 	// Channel Logical channel of the entry within the conversation.
 	Channel Channel `json:"channel"`
 
@@ -680,6 +722,12 @@ type ListConversationsParams struct {
 	//   This is useful for showing a single representative conversation from each tree.
 	Mode *ListConversationsParamsMode `form:"mode,omitempty" json:"mode,omitempty"`
 
+	// Ancestry Started-conversation ancestry filter.
+	// - `roots`: include only top-level conversations not started from another conversation.
+	// - `children`: include only conversations started from another conversation.
+	// - `all`: include both root and child conversations.
+	Ancestry *ListConversationsParamsAncestry `form:"ancestry,omitempty" json:"ancestry,omitempty"`
+
 	// AfterCursor Cursor for pagination; returns items after this conversation id (UUID format).
 	AfterCursor *openapi_types.UUID `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
 
@@ -693,6 +741,9 @@ type ListConversationsParams struct {
 // ListConversationsParamsMode defines parameters for ListConversations.
 type ListConversationsParamsMode string
 
+// ListConversationsParamsAncestry defines parameters for ListConversations.
+type ListConversationsParamsAncestry string
+
 // IndexConversationsJSONBody defines parameters for IndexConversations.
 type IndexConversationsJSONBody = []IndexEntryRequest
 
@@ -703,6 +754,12 @@ type ListUnindexedEntriesParams struct {
 
 	// AfterCursor Pagination cursor from previous response.
 	AfterCursor *string `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
+}
+
+// ListConversationChildrenParams defines parameters for ListConversationChildren.
+type ListConversationChildrenParams struct {
+	AfterCursor *openapi_types.UUID `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
+	Limit       *int                `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListConversationEntriesParams defines parameters for ListConversationEntries.
@@ -721,6 +778,10 @@ type ListConversationEntriesParams struct {
 	// `latest` when not provided. The epoch selection is scoped to the
 	// calling client id.
 	Epoch *string `form:"epoch,omitempty" json:"epoch,omitempty"`
+
+	// AgentId Logical agent identifier. Required when listing the `context`
+	// channel as an authenticated client.
+	AgentId *string `form:"agentId,omitempty" json:"agentId,omitempty"`
 
 	// Forks Controls which fork entries to include. `none` (default) follows the
 	// fork ancestry path, returning entries from the target conversation
@@ -1053,6 +1114,9 @@ type ClientInterface interface {
 
 	UpdateConversation(ctx context.Context, conversationId openapi_types.UUID, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListConversationChildren request
+	ListConversationChildren(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListConversationEntries request
 	ListConversationEntries(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1349,6 +1413,18 @@ func (c *Client) UpdateConversationWithBody(ctx context.Context, conversationId 
 
 func (c *Client) UpdateConversation(ctx context.Context, conversationId openapi_types.UUID, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateConversationRequest(c.Server, conversationId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListConversationChildren(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListConversationChildrenRequest(c.Server, conversationId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1999,6 +2075,22 @@ func NewListConversationsRequest(server string, params *ListConversationsParams)
 
 		}
 
+		if params.Ancestry != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "ancestry", runtime.ParamLocationQuery, *params.Ancestry); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
 		if params.AfterCursor != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "afterCursor", runtime.ParamLocationQuery, *params.AfterCursor); err != nil {
@@ -2358,6 +2450,78 @@ func NewUpdateConversationRequestWithBody(server string, conversationId openapi_
 	return req, nil
 }
 
+// NewListConversationChildrenRequest generates requests for ListConversationChildren
+func NewListConversationChildrenRequest(server string, conversationId openapi_types.UUID, params *ListConversationChildrenParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "conversationId", runtime.ParamLocationPath, conversationId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/conversations/%s/children", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.AfterCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "afterCursor", runtime.ParamLocationQuery, *params.AfterCursor); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "limit", runtime.ParamLocationQuery, *params.Limit); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListConversationEntriesRequest generates requests for ListConversationEntries
 func NewListConversationEntriesRequest(server string, conversationId openapi_types.UUID, params *ListConversationEntriesParams) (*http.Request, error) {
 	var err error
@@ -2438,6 +2602,22 @@ func NewListConversationEntriesRequest(server string, conversationId openapi_typ
 		if params.Epoch != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "epoch", runtime.ParamLocationQuery, *params.Epoch); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.AgentId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "agentId", runtime.ParamLocationQuery, *params.AgentId); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -3679,6 +3859,9 @@ type ClientWithResponsesInterface interface {
 
 	UpdateConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateConversationResp, error)
 
+	// ListConversationChildrenWithResponse request
+	ListConversationChildrenWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*ListConversationChildrenResp, error)
+
 	// ListConversationEntriesWithResponse request
 	ListConversationEntriesWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*ListConversationEntriesResp, error)
 
@@ -4090,6 +4273,32 @@ func (r UpdateConversationResp) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r UpdateConversationResp) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListConversationChildrenResp struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *struct {
+		AfterCursor *string                     `json:"afterCursor"`
+		Data        *[]ChildConversationSummary `json:"data,omitempty"`
+	}
+	JSONDefault *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListConversationChildrenResp) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListConversationChildrenResp) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -4774,6 +4983,15 @@ func (c *ClientWithResponses) UpdateConversationWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseUpdateConversationResp(rsp)
+}
+
+// ListConversationChildrenWithResponse request returning *ListConversationChildrenResp
+func (c *ClientWithResponses) ListConversationChildrenWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*ListConversationChildrenResp, error) {
+	rsp, err := c.ListConversationChildren(ctx, conversationId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListConversationChildrenResp(rsp)
 }
 
 // ListConversationEntriesWithResponse request returning *ListConversationEntriesResp
@@ -5550,6 +5768,42 @@ func ParseUpdateConversationResp(rsp *http.Response) (*UpdateConversationResp, e
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListConversationChildrenResp parses an HTTP response from a ListConversationChildrenWithResponse call
+func ParseListConversationChildrenResp(rsp *http.Response) (*ListConversationChildrenResp, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListConversationChildrenResp{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			AfterCursor *string                     `json:"afterCursor"`
+			Data        *[]ChildConversationSummary `json:"data,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

@@ -32,6 +32,7 @@ from .transport import (
 
 # Stable namespace UUID for deriving conversation UUIDs from arbitrary thread_ids.
 _CONV_ID_NAMESPACE = _uuid_module.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+_CONTEXT_AGENT_ID = "python-checkpointer"
 
 
 class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
@@ -239,7 +240,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             "GET",
             f"/v1/conversations/{conv_id}/entries",
             thread_id=thread_id,
-            params={"channel": "context"},
+            params={"channel": "context", "agentId": _CONTEXT_AGENT_ID},
         )
         if response.status_code == 404:
             return None
@@ -279,7 +280,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             "GET",
             f"/v1/conversations/{conv_id}/entries",
             thread_id=thread_id,
-            params={"channel": "context"},
+            params={"channel": "context", "agentId": _CONTEXT_AGENT_ID},
         )
         if response.status_code >= 400:
             return iter(())
@@ -322,6 +323,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
 
         payload = {
             "channel": "context",
+            "agentId": _CONTEXT_AGENT_ID,
             "contentType": self.CHECKPOINT_CONTENT_TYPE,
             "content": [
                 {

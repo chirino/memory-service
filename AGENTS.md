@@ -47,6 +47,9 @@ When you discover something meaningful about this project during your work—arc
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).
 - Fork creation is implicit on first append to a new conversation ID using `forkedAtConversationId` + `forkedAtEntryId`; `POST /v1/conversations/{conversationId}/entries/{entryId}/fork` is obsolete.
 - Entry listing uses `forks=all` to return entries from all branches in a fork tree (not `allForks=true`).
+- Enhancement doc `implemented/007-multi-agent-support.md` is older agent-scoped memory work; do not treat it as the design for parent/child agent conversations or conversation-lineage APIs.
+- Current `clientId` semantics are app/system identity, not logical agent identity; multi-agent apps may need multiple `agentId` values under one authenticated client.
+- Async sub-agent orchestration is join-based by default: framework runtimes should let child-task tools return promptly, then wait at the parent turn's final-response boundary, append completed child results into parent context, and re-invoke the parent model until no joined child tasks remain. Do not model waiting as `wait_*` tools.
 - In gRPC `memory/v1/memory_service.proto`, response recorder fields use snake_case (`conversation_id`).
 - In gRPC `EventStreamService.SubscribeEvents`, `SubscribeEventsRequest.conversation_ids` exists in the proto but is not currently applied by the server implementation; only `kinds` filtering is enforced today.
 - Response recording naming is intentionally split by scope: client-side lifecycle APIs use `ResponseRecordingManager` / `RecordingSession`, while record-only server/proto pieces use `ResponseRecorderService` and recorder handles; avoid renaming the umbrella concept back to `ResponseRecorder`.
@@ -59,6 +62,7 @@ When you discover something meaningful about this project during your work—arc
 - Devcontainer site-test gotcha: `.devcontainer/Dockerfile` needs `libsqlite3-dev` installed or `task test:site` / `go build -tags='site_tests sqlite_fts5' ./internal/sitebdd/` fails while compiling `github.com/asg017/sqlite-vec-go-bindings` with `fatal error: sqlite3.h: No such file or directory`.
 - Memory usage counters increment only on direct fetch reads (`GET /v1/memories`, gRPC `GetMemory`); search endpoints can return usage metadata with `include_usage` but do not increment counters.
 - Quarkus REST client module builds can require `-am` (`./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus -am ...`) so `memory-service-contracts` is built in the same reactor.
+- Site-doc checkpoint builds run as standalone Maven apps; after changing shared Java snapshot modules they depend on, use `./java/mvnw -f java/pom.xml -pl <module> -am install -DskipTests` rather than only `compile`, or site tests may keep using stale artifacts from `~/.m2`.
 - The demo Quarkus image Dockerfile lives at `./java/quarkus/examples/chat-quarkus/Dockerfile`; repo-root compose/task commands should use that path.
 - Contract specs live in repo-root `contracts/`; Java modules should resolve them from `${maven.multiModuleProjectDirectory}/../contracts`, and the `java/memory-service-contracts` module publishes them via `../../contracts`.
 - The Maven wrapper and reactor root live under `java/`; repo-root Maven commands must use `./java/mvnw -f java/pom.xml ...`.

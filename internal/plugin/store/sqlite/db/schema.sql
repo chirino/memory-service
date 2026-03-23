@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
     forked_at_entry_id TEXT,
     forked_at_conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    started_by_conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    started_by_entry_id TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     vectorized_at DATETIME,
@@ -24,6 +26,8 @@ CREATE INDEX IF NOT EXISTS idx_conversations_group ON conversations(conversation
 CREATE INDEX IF NOT EXISTS idx_conversations_not_deleted ON conversations(deleted_at) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_conversation ON conversations(forked_at_conversation_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_entry ON conversations(forked_at_entry_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_started_by_conversation ON conversations(started_by_conversation_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_conversations_started_by_entry ON conversations(started_by_entry_id);
 
 CREATE TABLE IF NOT EXISTS conversation_memberships (
     conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
@@ -48,6 +52,7 @@ CREATE TABLE IF NOT EXISTS entries (
     conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
     user_id TEXT,
     client_id TEXT,
+    agent_id TEXT,
     channel TEXT NOT NULL,
     epoch INTEGER,
     content_type TEXT NOT NULL,
@@ -68,6 +73,8 @@ CREATE INDEX IF NOT EXISTS idx_entries_group_created_at
     ON entries(conversation_group_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_epoch_created_at
     ON entries(conversation_id, channel, client_id, epoch, created_at);
+CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_agent_epoch_created_at
+    ON entries(conversation_id, channel, client_id, agent_id, epoch, created_at);
 
 CREATE TABLE IF NOT EXISTS conversation_ownership_transfers (
     id TEXT PRIMARY KEY,

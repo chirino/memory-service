@@ -53,6 +53,24 @@ func bytesToUUID(b []byte) (uuid.UUID, error) {
 	return id, nil
 }
 
+func uuidFromBytesPtr(b []byte) *uuid.UUID {
+	if len(b) == 0 {
+		return nil
+	}
+	id, err := bytesToUUID(b)
+	if err != nil {
+		return nil
+	}
+	return &id
+}
+
+func stringPtrIfNotEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 func getUserID(ctx context.Context) string {
 	if id := security.IdentityFromContext(ctx); id != nil {
 		return id.UserID
@@ -226,6 +244,13 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 	case pb.ConversationListMode_ROOTS:
 		mode = model.ListModeRoots
 	}
+	ancestry := model.ConversationAncestryRoots
+	switch req.GetAncestry() {
+	case pb.ConversationAncestryFilter_CONVERSATION_ANCESTRY_FILTER_CHILDREN:
+		ancestry = model.ConversationAncestryChildren
+	case pb.ConversationAncestryFilter_CONVERSATION_ANCESTRY_FILTER_ALL:
+		ancestry = model.ConversationAncestryAll
+	}
 
 	var afterCursor *string
 	var query *string
@@ -250,7 +275,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 			cursor    *string
 		}
 		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
-			summaries, cursor, err := s.Store.ListConversations(txCtx, userID, query, afterCursor, limit, mode)
+			summaries, cursor, err := s.Store.ListConversations(txCtx, userID, query, afterCursor, limit, mode, ancestry)
 			return result{summaries: summaries, cursor: cursor}, err
 		})
 		return out.summaries, out.cursor, err
@@ -271,6 +296,12 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 			UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 			AccessLevel: mapAccessLevel(cs.AccessLevel),
 		})
+		if cs.StartedByConversationID != nil {
+			resp.Conversations[len(resp.Conversations)-1].StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
+		}
+		if cs.StartedByEntryID != nil {
+			resp.Conversations[len(resp.Conversations)-1].StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
+		}
 	}
 	if cursor != nil {
 		resp.PageInfo.NextPageToken = *cursor
@@ -422,6 +453,61 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 	return resp, nil
 }
 
+func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *pb.ListChildConversationsRequest) (*pb.ListChildConversationsResponse, error) {
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	convID, err := bytesToUUID(req.GetConversationId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+	}
+	var afterCursor *string
+	limit := 20
+	if req.GetPage() != nil {
+		if req.GetPage().GetPageToken() != "" {
+			t := req.GetPage().GetPageToken()
+			afterCursor = &t
+		}
+		if req.GetPage().GetPageSize() > 0 {
+			limit = int(req.GetPage().GetPageSize())
+		}
+	}
+	children, cursor, err := func() ([]registrystore.ConversationSummary, *string, error) {
+		type result struct {
+			items  []registrystore.ConversationSummary
+			cursor *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			items, cursor, err := s.Store.ListChildConversations(txCtx, userID, convID, afterCursor, limit)
+			return result{items: items, cursor: cursor}, err
+		})
+		return out.items, out.cursor, err
+	}()
+	if err != nil {
+		return nil, mapError(err)
+	}
+	resp := &pb.ListChildConversationsResponse{PageInfo: &pb.PageInfo{}}
+	for _, cs := range children {
+		item := &pb.ChildConversationSummary{
+			Id:          uuidToBytes(cs.ID),
+			Title:       cs.Title,
+			OwnerUserId: cs.OwnerUserID,
+			CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+			AccessLevel: mapAccessLevel(cs.AccessLevel),
+		}
+		if cs.StartedByEntryID != nil {
+			item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
+		}
+		resp.Conversations = append(resp.Conversations, item)
+	}
+	if cursor != nil {
+		resp.PageInfo.NextPageToken = *cursor
+	}
+	return resp, nil
+}
+
 func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversation {
 	c := &pb.Conversation{
 		Id:          uuidToBytes(conv.ID),
@@ -436,6 +522,12 @@ func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversatio
 	}
 	if conv.ForkedAtConversationID != nil {
 		c.ForkedAtConversationId = uuidToBytes(*conv.ForkedAtConversationID)
+	}
+	if conv.StartedByConversationID != nil {
+		c.StartedByConversationId = uuidToBytes(*conv.StartedByConversationID)
+	}
+	if conv.StartedByEntryID != nil {
+		c.StartedByEntryId = uuidToBytes(*conv.StartedByEntryID)
 	}
 	return c
 }
@@ -485,6 +577,11 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	if clientID != "" {
 		clientIDPtr = &clientID
 	}
+	var agentIDPtr *string
+	if req.GetAgentId() != "" {
+		value := req.GetAgentId()
+		agentIDPtr = &value
+	}
 
 	var epochFilter *registrystore.MemoryEpochFilter
 	if channel == model.ChannelContext {
@@ -505,7 +602,7 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	allForks := req.GetForks() == "all"
 
 	result, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
-		return s.Store.GetEntries(txCtx, userID, convID, afterCursor, limit, &channel, epochFilter, clientIDPtr, allForks)
+		return s.Store.GetEntries(txCtx, userID, convID, afterCursor, limit, &channel, epochFilter, clientIDPtr, agentIDPtr, allForks)
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -538,6 +635,11 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 	}
 
 	entry := req.GetEntry()
+	var agentIDPtr *string
+	if entry.GetAgentId() != "" {
+		value := entry.GetAgentId()
+		agentIDPtr = &value
+	}
 	ch := "history"
 	if entry.GetChannel() == pb.Channel_CONTEXT {
 		ch = string(model.ChannelContext)
@@ -594,10 +696,13 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 
 	entries, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) ([]model.Entry, error) {
 		return s.Store.AppendEntries(txCtx, userID, convID, []registrystore.CreateEntryRequest{{
-			Content:     content,
-			ContentType: entry.GetContentType(),
-			Channel:     ch,
-		}}, &clientID, nil)
+			Content:                 content,
+			ContentType:             entry.GetContentType(),
+			Channel:                 ch,
+			AgentID:                 agentIDPtr,
+			StartedByConversationID: uuidFromBytesPtr(entry.GetStartedByConversationId()),
+			StartedByEntryID:        uuidFromBytesPtr(entry.GetStartedByEntryId()),
+		}}, &clientID, agentIDPtr, nil)
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -642,7 +747,8 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 			Content:     syncContent,
 			ContentType: entry.GetContentType(),
 			Channel:     string(model.ChannelContext),
-		}, clientID)
+			AgentID:     stringPtrIfNotEmpty(entry.GetAgentId()),
+		}, clientID, entry.GetAgentId())
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -671,6 +777,12 @@ func entryToProto(e *model.Entry) *pb.Entry {
 	}
 	if e.UserID != nil {
 		entry.UserId = *e.UserID
+	}
+	if e.ClientID != nil {
+		entry.ClientId = *e.ClientID
+	}
+	if e.AgentID != nil {
+		entry.AgentId = *e.AgentID
 	}
 	if e.Epoch != nil {
 		entry.Epoch = *e.Epoch

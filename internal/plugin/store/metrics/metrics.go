@@ -43,9 +43,9 @@ func (m *metricsStore) CreateConversationWithID(ctx context.Context, userID stri
 	return m.inner.CreateConversationWithID(ctx, userID, convID, title, metadata, forkedAtConversationID, forkedAtEntryID)
 }
 
-func (m *metricsStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode) ([]store.ConversationSummary, *string, error) {
+func (m *metricsStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter) ([]store.ConversationSummary, *string, error) {
 	defer observe("list_conversations", time.Now())
-	return m.inner.ListConversations(ctx, userID, query, afterCursor, limit, mode)
+	return m.inner.ListConversations(ctx, userID, query, afterCursor, limit, mode, ancestry)
 }
 
 func (m *metricsStore) GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*store.ConversationDetail, error) {
@@ -93,6 +93,11 @@ func (m *metricsStore) ListForks(ctx context.Context, userID string, conversatio
 	return m.inner.ListForks(ctx, userID, conversationID, afterCursor, limit)
 }
 
+func (m *metricsStore) ListChildConversations(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]store.ConversationSummary, *string, error) {
+	defer observe("list_child_conversations", time.Now())
+	return m.inner.ListChildConversations(ctx, userID, conversationID, afterCursor, limit)
+}
+
 func (m *metricsStore) ListPendingTransfers(ctx context.Context, userID string, role string, afterCursor *string, limit int) ([]store.OwnershipTransferDto, *string, error) {
 	defer observe("list_pending_transfers", time.Now())
 	return m.inner.ListPendingTransfers(ctx, userID, role, afterCursor, limit)
@@ -118,14 +123,14 @@ func (m *metricsStore) DeleteTransfer(ctx context.Context, userID string, transf
 	return m.inner.DeleteTransfer(ctx, userID, transferID)
 }
 
-func (m *metricsStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *store.MemoryEpochFilter, clientID *string, allForks bool) (*store.PagedEntries, error) {
+func (m *metricsStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *store.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*store.PagedEntries, error) {
 	defer observe("get_entries", time.Now())
-	return m.inner.GetEntries(ctx, userID, conversationID, afterEntryID, limit, channel, epochFilter, clientID, allForks)
+	return m.inner.GetEntries(ctx, userID, conversationID, afterEntryID, limit, channel, epochFilter, clientID, agentID, allForks)
 }
 
-func (m *metricsStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []store.CreateEntryRequest, clientID *string, epoch *int64) ([]model.Entry, error) {
+func (m *metricsStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []store.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
 	defer observe("append_entries", time.Now())
-	return m.inner.AppendEntries(ctx, userID, conversationID, entries, clientID, epoch)
+	return m.inner.AppendEntries(ctx, userID, conversationID, entries, clientID, agentID, epoch)
 }
 
 func (m *metricsStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error) {
@@ -133,9 +138,9 @@ func (m *metricsStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (
 	return m.inner.GetEntryGroupID(ctx, entryID)
 }
 
-func (m *metricsStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry store.CreateEntryRequest, clientID string) (*store.SyncResult, error) {
+func (m *metricsStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry store.CreateEntryRequest, clientID string, agentID string) (*store.SyncResult, error) {
 	defer observe("sync_agent_entry", time.Now())
-	return m.inner.SyncAgentEntry(ctx, userID, conversationID, entry, clientID)
+	return m.inner.SyncAgentEntry(ctx, userID, conversationID, entry, clientID, agentID)
 }
 
 func (m *metricsStore) IndexEntries(ctx context.Context, entries []store.IndexEntryRequest) (*store.IndexConversationsResponse, error) {
@@ -206,6 +211,11 @@ func (m *metricsStore) AdminListMemberships(ctx context.Context, conversationID 
 func (m *metricsStore) AdminListForks(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]store.ConversationForkSummary, *string, error) {
 	defer observe("admin_list_forks", time.Now())
 	return m.inner.AdminListForks(ctx, conversationID, afterCursor, limit)
+}
+
+func (m *metricsStore) AdminListChildConversations(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]store.ConversationSummary, *string, error) {
+	defer observe("admin_list_child_conversations", time.Now())
+	return m.inner.AdminListChildConversations(ctx, conversationID, afterCursor, limit)
 }
 
 func (m *metricsStore) AdminSearchEntries(ctx context.Context, query store.AdminSearchQuery) (*store.SearchResults, error) {

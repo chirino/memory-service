@@ -2,6 +2,8 @@
 
 **Conversation channel naming**: `MemoryServiceCheckpointSaver` stores checkpoint state in the conversation `context` channel; frontend-safe reads should continue forcing `channel="history"` unless internal agent state is explicitly desired.
 
+**Context agent ID requirement**: `MemoryServiceCheckpointSaver` must send a stable `agentId` (currently `python-checkpointer`) on both `context` reads and writes; otherwise Memory Service rejects context-channel access with `agentId is required for context channel`.
+
 **Checkpoint lineage**: Python docs checkpoints `04-conversation-forking`, `05-response-resumption`, `06-sharing`, and `07-with-search` are intentionally rebased from `03-with-history` (not chained from each other), mirroring the Quarkus tutorial branching model.
 
 **Proxy pattern**: Use `memory_service_langchain.MemoryServiceProxy` plus `to_fastapi_response(...)` in checkpoint apps for API-like Memory Service passthrough methods (`list_conversation_entries`, `list_memberships`, etc.) instead of ad-hoc `memory_service_request(...)` calls.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
@@ -56,6 +57,9 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, cfg *config.Con
 	g.GET("/conversations/:conversationId/forks", func(c *gin.Context) {
 		listForks(c, store)
 	})
+	g.GET("/conversations/:conversationId/children", func(c *gin.Context) {
+		listChildConversations(c, store)
+	})
 	g.DELETE("/conversations/:conversationId/response", func(c *gin.Context) {
 		cancelResponse(c, store, resumer, resumerEnabled)
 	})
@@ -91,6 +95,11 @@ func HandleListForks(c *gin.Context, store registrystore.MemoryStore) {
 	listForks(c, store)
 }
 
+// HandleListChildConversations exposes list child conversations handling for wrapper-native adapters.
+func HandleListChildConversations(c *gin.Context, store registrystore.MemoryStore) {
+	listChildConversations(c, store)
+}
+
 // HandleCancelResponse exposes cancel response handling for wrapper-native adapters.
 func HandleCancelResponse(c *gin.Context, store registrystore.MemoryStore, resumer *internalresumer.Store, resumerEnabled bool) {
 	cancelResponse(c, store, resumer, resumerEnabled)
@@ -99,12 +108,13 @@ func HandleCancelResponse(c *gin.Context, store registrystore.MemoryStore, resum
 func listConversations(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
 	mode := model.ConversationListMode(c.DefaultQuery("mode", "latest-fork"))
+	ancestry := model.ConversationAncestryFilter(c.DefaultQuery("ancestry", "roots"))
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 	query := queryPtr(c, "query")
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		summaries, cursor, err := store.ListConversations(ctx, userID, query, afterCursor, limit, mode)
+		summaries, cursor, err := store.ListConversations(ctx, userID, query, afterCursor, limit, mode, ancestry)
 		if err != nil {
 			return err
 		}
@@ -354,6 +364,57 @@ func listForks(c *gin.Context, store registrystore.MemoryStore) {
 	}); err != nil {
 		handleError(c, err)
 	}
+}
+
+func listChildConversations(c *gin.Context, store registrystore.MemoryStore) {
+	userID := security.GetUserID(c)
+	convID, err := uuid.Parse(c.Param("conversationId"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
+		return
+	}
+
+	afterCursor := queryPtr(c, "afterCursor")
+	limit := queryInt(c, "limit", 20)
+
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		children, cursor, err := store.ListChildConversations(ctx, userID, convID, afterCursor, limit)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": toChildConversationSummaries(children), "afterCursor": cursor})
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
+}
+
+type childConversationSummaryResponse struct {
+	ID               uuid.UUID         `json:"id"`
+	Title            string            `json:"title"`
+	OwnerUserID      string            `json:"ownerUserId"`
+	CreatedAt        time.Time         `json:"createdAt"`
+	UpdatedAt        time.Time         `json:"updatedAt"`
+	DeletedAt        *time.Time        `json:"deletedAt,omitempty"`
+	AccessLevel      model.AccessLevel `json:"accessLevel"`
+	StartedByEntryID *uuid.UUID        `json:"startedByEntryId,omitempty"`
+}
+
+func toChildConversationSummaries(items []registrystore.ConversationSummary) []childConversationSummaryResponse {
+	result := make([]childConversationSummaryResponse, 0, len(items))
+	for _, item := range items {
+		result = append(result, childConversationSummaryResponse{
+			ID:               item.ID,
+			Title:            item.Title,
+			OwnerUserID:      item.OwnerUserID,
+			CreatedAt:        item.CreatedAt,
+			UpdatedAt:        item.UpdatedAt,
+			DeletedAt:        item.DeletedAt,
+			AccessLevel:      item.AccessLevel,
+			StartedByEntryID: item.StartedByEntryID,
+		})
+	}
+	return result
 }
 
 func cancelResponse(c *gin.Context, store registrystore.MemoryStore, resumer *internalresumer.Store, resumerEnabled bool) {

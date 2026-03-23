@@ -39,6 +39,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
             LoggerFactory.getLogger(MemoryServiceChatMemoryRepository.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int LIST_ENTRIES_LIMIT = 200;
+    private static final String CONTEXT_AGENT_ID = "spring-ai";
 
     private final ConversationsApiFactory apiFactory;
     private final String bearerToken;
@@ -77,6 +78,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
                                     LIST_ENTRIES_LIMIT,
                                     Channel.CONTEXT,
                                     null,
+                                    CONTEXT_AGENT_ID,
                                     null)
                             .block();
         } catch (WebClientResponseException e) {
@@ -163,6 +165,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         CreateEntryRequest syncEntry = new CreateEntryRequest();
         syncEntry.setChannel(Channel.CONTEXT);
         syncEntry.setContentType("SpringAI");
+        syncEntry.setAgentId(CONTEXT_AGENT_ID);
         syncEntry.setContent(new ArrayList<>());
 
         try {
@@ -195,6 +198,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(Channel.CONTEXT);
         request.setContentType("SpringAI");
+        request.setAgentId(CONTEXT_AGENT_ID);
         // Don't send userId — the server resolves it from the Bearer token.
 
         List<Object> contentBlocks = new ArrayList<>();

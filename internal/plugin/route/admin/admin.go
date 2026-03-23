@@ -50,6 +50,9 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 	g.GET("/conversations/:id/forks", func(c *gin.Context) {
 		adminListForks(c, store)
 	})
+	g.GET("/conversations/:id/children", func(c *gin.Context) {
+		adminListChildConversations(c, store)
+	})
 
 	// Search
 	g.POST("/conversations/search", func(c *gin.Context) {
@@ -153,6 +156,14 @@ func HandleAdminListForks(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 	adminListForks(c, store)
+}
+
+// HandleAdminListChildConversations exposes admin list children for wrapper-native adapters.
+func HandleAdminListChildConversations(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminListChildConversations(c, store)
 }
 
 // HandleAdminSearchConversations exposes admin search for wrapper-native adapters.
@@ -277,6 +288,7 @@ func HandleAdminStatsStoreThroughput(c *gin.Context, cfg *config.Config) {
 func adminListConversations(c *gin.Context, store registrystore.MemoryStore) {
 	query := registrystore.AdminConversationQuery{
 		Mode:           model.ConversationListMode(c.DefaultQuery("mode", "latest-fork")),
+		Ancestry:       model.ConversationAncestryFilter(c.DefaultQuery("ancestry", "roots")),
 		IncludeDeleted: c.Query("includeDeleted") == "true",
 		OnlyDeleted:    c.Query("onlyDeleted") == "true",
 		Limit:          queryInt(c, "limit", 20),
@@ -457,6 +469,55 @@ func adminListForks(c *gin.Context, store registrystore.MemoryStore) {
 	}); err != nil {
 		handleError(c, err)
 	}
+}
+
+func adminListChildConversations(c *gin.Context, store registrystore.MemoryStore) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
+		return
+	}
+	afterCursor := queryPtr(c, "afterCursor")
+	limit := queryInt(c, "limit", 20)
+
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		children, cursor, err := store.AdminListChildConversations(ctx, id, afterCursor, limit)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": toAdminChildConversationSummaries(children), "afterCursor": cursor})
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
+}
+
+type adminChildConversationSummaryResponse struct {
+	ID               uuid.UUID         `json:"id"`
+	Title            string            `json:"title"`
+	OwnerUserID      string            `json:"ownerUserId"`
+	CreatedAt        time.Time         `json:"createdAt"`
+	UpdatedAt        time.Time         `json:"updatedAt"`
+	DeletedAt        *time.Time        `json:"deletedAt,omitempty"`
+	AccessLevel      model.AccessLevel `json:"accessLevel"`
+	StartedByEntryID *uuid.UUID        `json:"startedByEntryId,omitempty"`
+}
+
+func toAdminChildConversationSummaries(items []registrystore.ConversationSummary) []adminChildConversationSummaryResponse {
+	result := make([]adminChildConversationSummaryResponse, 0, len(items))
+	for _, item := range items {
+		result = append(result, adminChildConversationSummaryResponse{
+			ID:               item.ID,
+			Title:            item.Title,
+			OwnerUserID:      item.OwnerUserID,
+			CreatedAt:        item.CreatedAt,
+			UpdatedAt:        item.UpdatedAt,
+			DeletedAt:        item.DeletedAt,
+			AccessLevel:      item.AccessLevel,
+			StartedByEntryID: item.StartedByEntryID,
+		})
+	}
+	return result
 }
 
 func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {

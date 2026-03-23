@@ -245,6 +245,9 @@ func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, _ openapi_types
 func (p *proxyAPIServer) ListConversationForks(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationForksParams) {
 	routeconversations.HandleListForks(c, p.store)
 }
+func (p *proxyAPIServer) ListConversationChildren(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationChildrenParams) {
+	routeconversations.HandleListChildConversations(c, p.store)
+}
 func (p *proxyAPIServer) ListConversationMemberships(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationMembershipsParams) {
 	routememberships.HandleListMemberships(c, p.store)
 }
@@ -429,6 +432,12 @@ func (p *proxyAdminServer) AdminListForks(c *gin.Context, _ openapi_types.UUID, 
 		return
 	}
 	routeadmin.HandleAdminListForks(c, p.store)
+}
+func (p *proxyAdminServer) AdminListChildConversations(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminListChildConversationsParams) {
+	if !p.authorize(c) {
+		return
+	}
+	routeadmin.HandleAdminListChildConversations(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetMembershipsParams) {
 	if !p.authorize(c) {

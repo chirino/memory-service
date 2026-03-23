@@ -40,6 +40,11 @@
       <version>${quarkus-langchain4j.version}</version>
     </dependency>
     <dependency>
+      <groupId>io.quarkiverse.langchain4j</groupId>
+      <artifactId>quarkus-langchain4j-tavily</artifactId>
+      <version>${quarkus-langchain4j.version}</version>
+    </dependency>
+    <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-arc</artifactId>
     </dependency>

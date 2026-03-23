@@ -69,6 +69,7 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 			clientIDParam = &clientID
 		}
 	}
+	agentIDParam := queryPtr(c, "agentId")
 
 	// Determine channel filter.
 	var channelPtr *model.Channel
@@ -96,6 +97,13 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 		ch := model.ChannelHistory
 		channelPtr = &ch
 	}
+	if channelPtr != nil && *channelPtr == model.ChannelContext && clientIDParam != nil && agentIDParam == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_error",
+			"details": gin.H{"message": "agentId is required for context channel"},
+		})
+		return
+	}
 
 	allForks := strings.EqualFold(c.DefaultQuery("forks", "none"), "all")
 
@@ -110,7 +118,7 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	if err := routetx.MemoryRead(c, store, func(context.Context) error {
-		result, err := store.GetEntries(c.Request.Context(), userID, convID, afterCursor, limit, channelPtr, epochFilter, clientIDParam, allForks)
+		result, err := store.GetEntries(c.Request.Context(), userID, convID, afterCursor, limit, channelPtr, epochFilter, clientIDParam, agentIDParam, allForks)
 		if err != nil {
 			return err
 		}
@@ -132,15 +140,18 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 	var req struct {
 		Entries []registrystore.CreateEntryRequest `json:"entries"`
 		// Single entry mode
-		Content                json.RawMessage `json:"content"`
-		ContentType            string          `json:"contentType"`
-		Channel                string          `json:"channel"`
-		Epoch                  *int64          `json:"epoch"`
-		IndexedContent         *string         `json:"indexedContent,omitempty"`
-		Role                   *string         `json:"role,omitempty"`
-		UserID                 *string         `json:"userId,omitempty"`
-		ForkedAtConversationID *uuid.UUID      `json:"forkedAtConversationId,omitempty"`
-		ForkedAtEntryID        *uuid.UUID      `json:"forkedAtEntryId,omitempty"`
+		Content                 json.RawMessage `json:"content"`
+		ContentType             string          `json:"contentType"`
+		Channel                 string          `json:"channel"`
+		Epoch                   *int64          `json:"epoch"`
+		IndexedContent          *string         `json:"indexedContent,omitempty"`
+		Role                    *string         `json:"role,omitempty"`
+		UserID                  *string         `json:"userId,omitempty"`
+		AgentID                 *string         `json:"agentId,omitempty"`
+		ForkedAtConversationID  *uuid.UUID      `json:"forkedAtConversationId,omitempty"`
+		ForkedAtEntryID         *uuid.UUID      `json:"forkedAtEntryId,omitempty"`
+		StartedByConversationID *uuid.UUID      `json:"startedByConversationId,omitempty"`
+		StartedByEntryID        *uuid.UUID      `json:"startedByEntryId,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -150,14 +161,17 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 	entries := req.Entries
 	if len(entries) == 0 && len(req.Content) > 0 {
 		entries = []registrystore.CreateEntryRequest{{
-			Content:                req.Content,
-			ContentType:            req.ContentType,
-			Channel:                req.Channel,
-			IndexedContent:         req.IndexedContent,
-			Role:                   req.Role,
-			UserID:                 req.UserID,
-			ForkedAtConversationID: req.ForkedAtConversationID,
-			ForkedAtEntryID:        req.ForkedAtEntryID,
+			Content:                 req.Content,
+			ContentType:             req.ContentType,
+			Channel:                 req.Channel,
+			IndexedContent:          req.IndexedContent,
+			Role:                    req.Role,
+			UserID:                  req.UserID,
+			AgentID:                 req.AgentID,
+			ForkedAtConversationID:  req.ForkedAtConversationID,
+			ForkedAtEntryID:         req.ForkedAtEntryID,
+			StartedByConversationID: req.StartedByConversationID,
+			StartedByEntryID:        req.StartedByEntryID,
 		}}
 	}
 	if len(entries) == 0 {
@@ -181,6 +195,7 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 			clientID = &cid
 		}
 	}
+	agentID := queryPtr(c, "agentId")
 
 	// Validate each entry before calling store.
 	for i, entry := range entries {
@@ -205,6 +220,9 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 			})
 			return
 		}
+		if entry.AgentID != nil {
+			agentID = entry.AgentID
+		}
 
 		// Context channel requires clientID.
 		if ch == model.ChannelContext && clientID == nil {
@@ -212,6 +230,27 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 				"code":    "forbidden",
 				"error":   "client id is required for context channel",
 				"details": gin.H{"message": "client id is required for context channel"},
+			})
+			return
+		}
+		if ch == model.ChannelContext && agentID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "validation_error",
+				"details": gin.H{"message": "agentId is required for context channel"},
+			})
+			return
+		}
+		if agentID != nil && clientID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "validation_error",
+				"details": gin.H{"message": "agentId requires an authenticated client"},
+			})
+			return
+		}
+		if entry.AgentID != nil && agentID != nil && *entry.AgentID != *agentID {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "validation_error",
+				"details": gin.H{"message": "all entries in a batch must use the same agentId"},
 			})
 			return
 		}
@@ -282,7 +321,7 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		}
 
 		var err error
-		result, err = store.AppendEntries(c.Request.Context(), userID, convID, entries, clientID, req.Epoch)
+		result, err = store.AppendEntries(c.Request.Context(), userID, convID, entries, clientID, agentID, req.Epoch)
 		if err != nil {
 			return err
 		}
@@ -599,6 +638,14 @@ func syncMemory(c *gin.Context, store registrystore.MemoryStore) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Client-ID header required for sync"})
 		return
 	}
+	agentID := req.AgentID
+	if agentID == nil || strings.TrimSpace(*agentID) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "validation_error",
+			"details": gin.H{"message": "agentId is required for sync"},
+		})
+		return
+	}
 
 	// userId validation for sync.
 	if req.UserID != nil && *req.UserID != "" && *req.UserID != userID {
@@ -610,7 +657,7 @@ func syncMemory(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	if err := routetx.MemoryWrite(c, store, func(context.Context) error {
-		result, err := store.SyncAgentEntry(c.Request.Context(), userID, convID, req, clientID)
+		result, err := store.SyncAgentEntry(c.Request.Context(), userID, convID, req, clientID, *agentID)
 		if err != nil {
 			return err
 		}

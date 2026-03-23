@@ -61,9 +61,12 @@ public class MemoryServiceProxy {
     @Inject SecurityIdentity securityIdentity;
 
     public Response listConversations(
-            String mode, String afterCursor, Integer limit, String query) {
+            String mode, String ancestry, String afterCursor, Integer limit, String query) {
         return execute(
-                () -> conversationsApi().listConversations(mode, toUuid(afterCursor), limit, query),
+                () ->
+                        conversationsApi()
+                                .listConversations(
+                                        mode, ancestry, toUuid(afterCursor), limit, query),
                 OK,
                 "Error listing conversations");
     }
@@ -106,6 +109,18 @@ public class MemoryServiceProxy {
             Channel channel,
             String epoch,
             String forks) {
+        return listConversationEntries(
+                conversationId, afterCursor, limit, channel, epoch, null, forks);
+    }
+
+    public Response listConversationEntries(
+            String conversationId,
+            String afterCursor,
+            Integer limit,
+            Channel channel,
+            String epoch,
+            String agentId,
+            String forks) {
         return execute(
                 () ->
                         conversationsApi()
@@ -115,6 +130,7 @@ public class MemoryServiceProxy {
                                         limit,
                                         channel,
                                         epoch,
+                                        agentId,
                                         forks),
                 OK,
                 "Error listing entries for history %s",
@@ -130,6 +146,18 @@ public class MemoryServiceProxy {
                                         toUuid(conversationId), toUuid(afterCursor), limit),
                 OK,
                 "Error listing forks for history %s",
+                conversationId);
+    }
+
+    public Response listConversationChildren(
+            String conversationId, String afterCursor, Integer limit) {
+        return execute(
+                () ->
+                        conversationsApi()
+                                .listConversationChildren(
+                                        toUuid(conversationId), toUuid(afterCursor), limit),
+                OK,
+                "Error listing child conversations for history %s",
                 conversationId);
     }
 
@@ -182,6 +210,22 @@ public class MemoryServiceProxy {
                     conversationId);
         } catch (Exception e) {
             LOG.errorf(e, "Error parsing append entry request body");
+            return handleException(e);
+        }
+    }
+
+    public Response syncConversationContext(String conversationId, String body) {
+        try {
+            CreateEntryRequest request = OBJECT_MAPPER.readValue(body, CreateEntryRequest.class);
+            return execute(
+                    () ->
+                            conversationsApi()
+                                    .syncConversationContext(toUuid(conversationId), request),
+                    OK,
+                    "Error synchronizing conversation context for history %s",
+                    conversationId);
+        } catch (Exception e) {
+            LOG.errorf(e, "Error parsing sync conversation context request body");
             return handleException(e);
         }
     }

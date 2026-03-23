@@ -79,7 +79,7 @@ func TestListConversations(t *testing.T) {
 	require.NoError(t, err)
 
 	// List conversations
-	summaries, cursor, err := store.ListConversations(ctx, "user2", nil, nil, 10, model.ListModeAll)
+	summaries, cursor, err := store.ListConversations(ctx, "user2", nil, nil, 10, model.ListModeAll, model.ConversationAncestryAll)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(summaries), 2)
 	_ = cursor
@@ -109,12 +109,12 @@ func TestAppendAndGetEntries(t *testing.T) {
 	entries, err := store.AppendEntries(ctx, "user4", conv.ID, []registrystore.CreateEntryRequest{
 		{Content: json.RawMessage(`[{"type":"text","text":"Hello"}]`), ContentType: "application/json", Channel: "history"},
 		{Content: json.RawMessage(`[{"type":"text","text":"World"}]`), ContentType: "application/json", Channel: "history"},
-	}, nil, nil)
+	}, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, entries, 2)
 
 	// Get entries
-	result, err := store.GetEntries(ctx, "user4", conv.ID, nil, 10, nil, nil, nil, false)
+	result, err := store.GetEntries(ctx, "user4", conv.ID, nil, 10, nil, nil, nil, nil, false)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(result.Data), 2)
 }
@@ -210,13 +210,13 @@ func TestAdminGetEntriesForkModes(t *testing.T) {
 
 	rootEntry1, err := store.AppendEntries(ctx, "owner", root.ID, []registrystore.CreateEntryRequest{
 		{Content: json.RawMessage(`"root-1"`), ContentType: "text/plain", Channel: "history"},
-	}, nil, nil)
+	}, nil, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, rootEntry1, 1)
 	time.Sleep(5 * time.Millisecond)
 	rootEntry2, err := store.AppendEntries(ctx, "owner", root.ID, []registrystore.CreateEntryRequest{
 		{Content: json.RawMessage(`"root-2"`), ContentType: "text/plain", Channel: "history"},
-	}, nil, nil)
+	}, nil, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, rootEntry2, 1)
 
@@ -224,7 +224,7 @@ func TestAdminGetEntriesForkModes(t *testing.T) {
 	require.NoError(t, err)
 	forkEntries, err := store.AppendEntries(ctx, "owner", fork.ID, []registrystore.CreateEntryRequest{
 		{Content: json.RawMessage(`"fork-1"`), ContentType: "text/plain", Channel: "history"},
-	}, nil, nil)
+	}, nil, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, forkEntries, 1)
 
@@ -269,7 +269,7 @@ func TestSearchEntriesGroupByConversation(t *testing.T) {
 			Channel:        "history",
 			IndexedContent: strPtr("design document for service"),
 		},
-	}, nil, nil)
+	}, nil, nil, nil)
 	require.NoError(t, err)
 
 	_, err = store.AppendEntries(ctx, "search-user", convB.ID, []registrystore.CreateEntryRequest{
@@ -279,7 +279,7 @@ func TestSearchEntriesGroupByConversation(t *testing.T) {
 			Channel:        "history",
 			IndexedContent: strPtr("design review meeting"),
 		},
-	}, nil, nil)
+	}, nil, nil, nil)
 	require.NoError(t, err)
 
 	allResults, err := store.SearchEntries(ctx, "search-user", "design", nil, 20, false, false)
@@ -318,7 +318,7 @@ func TestAdminSearchEntriesIncludeDeletedAndAfterCursor(t *testing.T) {
 			Channel:        "history",
 			IndexedContent: strPtr("admin-search-token two"),
 		},
-	}, nil, nil)
+	}, nil, nil, nil)
 	require.NoError(t, err)
 
 	_, err = store.AppendEntries(ctx, "admin-search-user", deletedConv.ID, []registrystore.CreateEntryRequest{
@@ -328,7 +328,7 @@ func TestAdminSearchEntriesIncludeDeletedAndAfterCursor(t *testing.T) {
 			Channel:        "history",
 			IndexedContent: strPtr("admin-search-token deleted"),
 		},
-	}, nil, nil)
+	}, nil, nil, nil)
 	require.NoError(t, err)
 
 	err = store.AdminDeleteConversation(ctx, deletedConv.ID)

@@ -122,12 +122,13 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	ConversationsService_ListConversations_FullMethodName  = "/memory.v1.ConversationsService/ListConversations"
-	ConversationsService_CreateConversation_FullMethodName = "/memory.v1.ConversationsService/CreateConversation"
-	ConversationsService_GetConversation_FullMethodName    = "/memory.v1.ConversationsService/GetConversation"
-	ConversationsService_UpdateConversation_FullMethodName = "/memory.v1.ConversationsService/UpdateConversation"
-	ConversationsService_DeleteConversation_FullMethodName = "/memory.v1.ConversationsService/DeleteConversation"
-	ConversationsService_ListForks_FullMethodName          = "/memory.v1.ConversationsService/ListForks"
+	ConversationsService_ListConversations_FullMethodName      = "/memory.v1.ConversationsService/ListConversations"
+	ConversationsService_CreateConversation_FullMethodName     = "/memory.v1.ConversationsService/CreateConversation"
+	ConversationsService_GetConversation_FullMethodName        = "/memory.v1.ConversationsService/GetConversation"
+	ConversationsService_UpdateConversation_FullMethodName     = "/memory.v1.ConversationsService/UpdateConversation"
+	ConversationsService_DeleteConversation_FullMethodName     = "/memory.v1.ConversationsService/DeleteConversation"
+	ConversationsService_ListForks_FullMethodName              = "/memory.v1.ConversationsService/ListForks"
+	ConversationsService_ListChildConversations_FullMethodName = "/memory.v1.ConversationsService/ListChildConversations"
 )
 
 // ConversationsServiceClient is the client API for ConversationsService service.
@@ -144,6 +145,7 @@ type ConversationsServiceClient interface {
 	// DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
 	DeleteConversation(ctx context.Context, in *DeleteConversationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListForks(ctx context.Context, in *ListForksRequest, opts ...grpc.CallOption) (*ListForksResponse, error)
+	ListChildConversations(ctx context.Context, in *ListChildConversationsRequest, opts ...grpc.CallOption) (*ListChildConversationsResponse, error)
 }
 
 type conversationsServiceClient struct {
@@ -214,6 +216,16 @@ func (c *conversationsServiceClient) ListForks(ctx context.Context, in *ListFork
 	return out, nil
 }
 
+func (c *conversationsServiceClient) ListChildConversations(ctx context.Context, in *ListChildConversationsRequest, opts ...grpc.CallOption) (*ListChildConversationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListChildConversationsResponse)
+	err := c.cc.Invoke(ctx, ConversationsService_ListChildConversations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ConversationsServiceServer is the server API for ConversationsService service.
 // All implementations must embed UnimplementedConversationsServiceServer
 // for forward compatibility.
@@ -228,6 +240,7 @@ type ConversationsServiceServer interface {
 	// DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
 	DeleteConversation(context.Context, *DeleteConversationRequest) (*emptypb.Empty, error)
 	ListForks(context.Context, *ListForksRequest) (*ListForksResponse, error)
+	ListChildConversations(context.Context, *ListChildConversationsRequest) (*ListChildConversationsResponse, error)
 	mustEmbedUnimplementedConversationsServiceServer()
 }
 
@@ -255,6 +268,9 @@ func (UnimplementedConversationsServiceServer) DeleteConversation(context.Contex
 }
 func (UnimplementedConversationsServiceServer) ListForks(context.Context, *ListForksRequest) (*ListForksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListForks not implemented")
+}
+func (UnimplementedConversationsServiceServer) ListChildConversations(context.Context, *ListChildConversationsRequest) (*ListChildConversationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListChildConversations not implemented")
 }
 func (UnimplementedConversationsServiceServer) mustEmbedUnimplementedConversationsServiceServer() {}
 func (UnimplementedConversationsServiceServer) testEmbeddedByValue()                              {}
@@ -385,6 +401,24 @@ func _ConversationsService_ListForks_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ConversationsService_ListChildConversations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListChildConversationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConversationsServiceServer).ListChildConversations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConversationsService_ListChildConversations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConversationsServiceServer).ListChildConversations(ctx, req.(*ListChildConversationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ConversationsService_ServiceDesc is the grpc.ServiceDesc for ConversationsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -415,6 +449,10 @@ var ConversationsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListForks",
 			Handler:    _ConversationsService_ListForks_Handler,
+		},
+		{
+			MethodName: "ListChildConversations",
+			Handler:    _ConversationsService_ListChildConversations_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

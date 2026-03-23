@@ -56,6 +56,15 @@ const (
 	ListModeLatestFork ConversationListMode = "latest-fork"
 )
 
+// ConversationAncestryFilter controls whether list operations return top-level or child conversations.
+type ConversationAncestryFilter string
+
+const (
+	ConversationAncestryRoots    ConversationAncestryFilter = "roots"
+	ConversationAncestryChildren ConversationAncestryFilter = "children"
+	ConversationAncestryAll      ConversationAncestryFilter = "all"
+)
+
 // ConversationGroup is the root of a fork tree.
 type ConversationGroup struct {
 	ID        uuid.UUID  `json:"id"                  gorm:"primaryKey;type:uuid"`
@@ -67,18 +76,20 @@ func (ConversationGroup) TableName() string { return "conversation_groups" }
 
 // Conversation represents a single conversation within a group.
 type Conversation struct {
-	ID                     uuid.UUID              `json:"id"                               gorm:"primaryKey;type:uuid"`
-	Title                  []byte                 `json:"-"                                gorm:"type:bytea"` // encrypted
-	OwnerUserID            string                 `json:"ownerUserId"                      gorm:"not null"`
-	Metadata               map[string]interface{} `json:"metadata"                         gorm:"type:jsonb;serializer:json;not null;default:'{}'"` // JSONB
-	ConversationGroupID    uuid.UUID              `json:"-"                                gorm:"not null;type:uuid"`
-	ConversationGroup      *ConversationGroup     `json:"-"                                gorm:"foreignKey:ConversationGroupID"`
-	ForkedAtEntryID        *uuid.UUID             `json:"forkedAtEntryId,omitempty"        gorm:"type:uuid"`
-	ForkedAtConversationID *uuid.UUID             `json:"forkedAtConversationId,omitempty" gorm:"type:uuid"`
-	CreatedAt              time.Time              `json:"createdAt"                        gorm:"not null;default:now()"`
-	UpdatedAt              time.Time              `json:"updatedAt"                        gorm:"not null;default:now()"`
-	VectorizedAt           *time.Time             `json:"vectorizedAt,omitempty"`
-	DeletedAt              *time.Time             `json:"deletedAt,omitempty"`
+	ID                      uuid.UUID              `json:"id"                                gorm:"primaryKey;type:uuid"`
+	Title                   []byte                 `json:"-"                                 gorm:"type:bytea"` // encrypted
+	OwnerUserID             string                 `json:"ownerUserId"                       gorm:"not null"`
+	Metadata                map[string]interface{} `json:"metadata"                          gorm:"type:jsonb;serializer:json;not null;default:'{}'"` // JSONB
+	ConversationGroupID     uuid.UUID              `json:"-"                                 gorm:"not null;type:uuid"`
+	ConversationGroup       *ConversationGroup     `json:"-"                                 gorm:"foreignKey:ConversationGroupID"`
+	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"         gorm:"type:uuid"`
+	ForkedAtConversationID  *uuid.UUID             `json:"forkedAtConversationId,omitempty"  gorm:"type:uuid"`
+	StartedByConversationID *uuid.UUID             `json:"startedByConversationId,omitempty" gorm:"type:uuid"`
+	StartedByEntryID        *uuid.UUID             `json:"startedByEntryId,omitempty"        gorm:"type:uuid"`
+	CreatedAt               time.Time              `json:"createdAt"                         gorm:"not null;default:now()"`
+	UpdatedAt               time.Time              `json:"updatedAt"                         gorm:"not null;default:now()"`
+	VectorizedAt            *time.Time             `json:"vectorizedAt,omitempty"`
+	DeletedAt               *time.Time             `json:"deletedAt,omitempty"`
 }
 
 func (Conversation) TableName() string { return "conversations" }
@@ -100,6 +111,7 @@ type Entry struct {
 	ConversationGroupID uuid.UUID  `json:"-"                        gorm:"primaryKey;type:uuid"`
 	UserID              *string    `json:"userId,omitempty"`
 	ClientID            *string    `json:"clientId,omitempty"`
+	AgentID             *string    `json:"agentId,omitempty"`
 	Channel             Channel    `json:"channel"                  gorm:"not null"`
 	Epoch               *int64     `json:"epoch,omitempty"`
 	ContentType         string     `json:"contentType"              gorm:"not null"`

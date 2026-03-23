@@ -15,6 +15,7 @@ import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ListConversationEntries200Response;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
+import io.github.chirino.memory.subagent.runtime.SubAgentExecutionContext;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -38,6 +39,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     private static final Logger LOG = Logger.getLogger(MemoryServiceChatMemoryStore.class);
     private static final JacksonChatMessageJsonCodec CODEC = new JacksonChatMessageJsonCodec();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final String CONTEXT_AGENT_ID = "langchain4j";
 
     private final MemoryServiceApiBuilder conversationsApiBuilder;
     private final Instance<SecurityIdentity> securityIdentityInstance;
@@ -66,6 +68,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                                     50,
                                     Channel.CONTEXT,
                                     null,
+                                    CONTEXT_AGENT_ID,
                                     null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
@@ -149,13 +152,13 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
 
         // Sync with empty content to clear context by creating an empty epoch
         CreateEntryRequest syncEntry = new CreateEntryRequest();
-        SecurityIdentity identity = resolveSecurityIdentity();
-        String userId = principalName(identity);
+        String userId = resolveUserId();
         if (userId != null) {
             syncEntry.setUserId(userId);
         }
         syncEntry.setChannel(ChannelEnum.CONTEXT);
         syncEntry.setContentType("LC4J");
+        syncEntry.setAgentId(CONTEXT_AGENT_ID);
         syncEntry.setContent(new ArrayList<>());
         try {
             conversationsApi()
@@ -178,13 +181,13 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
      */
     private CreateEntryRequest toSyncEntryRequest(List<ChatMessage> messages) {
         CreateEntryRequest request = new CreateEntryRequest();
-        SecurityIdentity identity = resolveSecurityIdentity();
-        String userId = principalName(identity);
+        String userId = resolveUserId();
         if (userId != null) {
             request.setUserId(userId);
         }
         request.setChannel(ChannelEnum.CONTEXT);
         request.setContentType("LC4J");
+        request.setAgentId(CONTEXT_AGENT_ID);
 
         List<Object> contentBlocks = new ArrayList<>();
         for (ChatMessage chatMessage : messages) {
@@ -208,12 +211,28 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     }
 
     private ConversationsApi conversationsApi() {
-        String bearerToken = bearerToken(resolveSecurityIdentity());
+        String bearerToken = resolveBearerToken();
         return conversationsApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
     }
 
     private SecurityIdentity resolveSecurityIdentity() {
         return securityIdentityInstance.isResolvable() ? securityIdentityInstance.get() : null;
+    }
+
+    private String resolveUserId() {
+        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
+        if (state != null && state.userId() != null && !state.userId().isBlank()) {
+            return state.userId();
+        }
+        return principalName(resolveSecurityIdentity());
+    }
+
+    private String resolveBearerToken() {
+        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
+        if (state != null && state.bearerToken() != null && !state.bearerToken().isBlank()) {
+            return state.bearerToken();
+        }
+        return bearerToken(resolveSecurityIdentity());
     }
 
     private List<ChatMessage> decodeContentBlock(

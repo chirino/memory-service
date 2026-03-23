@@ -1,6 +1,7 @@
 # Internal Module Facts
 
 **Conversation channel naming**: The canonical agent-state conversation channel is `context` (OpenAPI string / gRPC enum `CONTEXT`); `/v1/memories` remains the separate episodic memory API surface.
+**Conversation context API boundary**: Per-conversation `context` sync/list behavior lives under `/v1/conversations/:conversationId/entries` and `/entries/sync` plus the corresponding store methods in `internal/plugin/route/entries` and `MemoryStore`; `internal/plugin/route/memories` is only for the separate episodic `/v1/memories` APIs.
 
 **Go cache plugin architecture**: The Go service selects cache backends through `internal/registry/cache` and currently injects a `MemoryEntriesCache` into store loaders before datastore initialization. `cfg.CacheType` is shared by both the memory-entries cache plugins (`internal/plugin/cache/*`) and the response-recording locator-store selection in `internal/resumer/locator_store.go`, so new cache kinds usually need both an entries-cache implementation and locator-store behavior.
 

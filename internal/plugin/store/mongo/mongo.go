@@ -204,16 +204,18 @@ type groupDoc struct {
 }
 
 type convDoc struct {
-	ID                     string         `bson:"_id"`
-	Title                  []byte         `bson:"title"`
-	OwnerUserID            string         `bson:"owner_user_id"`
-	Metadata               map[string]any `bson:"metadata"`
-	ConversationGroupID    string         `bson:"conversation_group_id"`
-	ForkedAtConversationID *string        `bson:"forked_at_conversation_id,omitempty"`
-	ForkedAtEntryID        *string        `bson:"forked_at_entry_id,omitempty"`
-	CreatedAt              time.Time      `bson:"created_at"`
-	UpdatedAt              time.Time      `bson:"updated_at"`
-	DeletedAt              *time.Time     `bson:"deleted_at,omitempty"`
+	ID                      string         `bson:"_id"`
+	Title                   []byte         `bson:"title"`
+	OwnerUserID             string         `bson:"owner_user_id"`
+	Metadata                map[string]any `bson:"metadata"`
+	ConversationGroupID     string         `bson:"conversation_group_id"`
+	ForkedAtConversationID  *string        `bson:"forked_at_conversation_id,omitempty"`
+	ForkedAtEntryID         *string        `bson:"forked_at_entry_id,omitempty"`
+	StartedByConversationID *string        `bson:"started_by_conversation_id,omitempty"`
+	StartedByEntryID        *string        `bson:"started_by_entry_id,omitempty"`
+	CreatedAt               time.Time      `bson:"created_at"`
+	UpdatedAt               time.Time      `bson:"updated_at"`
+	DeletedAt               *time.Time     `bson:"deleted_at,omitempty"`
 }
 
 type memberDoc struct {
@@ -229,6 +231,7 @@ type entryDoc struct {
 	ConversationGroupID string     `bson:"conversation_group_id"`
 	UserID              *string    `bson:"user_id,omitempty"`
 	ClientID            *string    `bson:"client_id,omitempty"`
+	AgentID             *string    `bson:"agent_id,omitempty"`
 	Channel             string     `bson:"channel"`
 	Epoch               *int64     `bson:"epoch,omitempty"`
 	ContentType         string     `bson:"content_type"`
@@ -247,6 +250,7 @@ type entrySearchDoc struct {
 	ConversationGroupID string     `bson:"conversation_group_id"`
 	UserID              *string    `bson:"user_id,omitempty"`
 	ClientID            *string    `bson:"client_id,omitempty"`
+	AgentID             *string    `bson:"agent_id,omitempty"`
 	Channel             string     `bson:"channel"`
 	Epoch               *int64     `bson:"epoch,omitempty"`
 	ContentType         string     `bson:"content_type"`
@@ -265,6 +269,7 @@ func (d entrySearchDoc) asEntryDoc() entryDoc {
 		ConversationGroupID: d.ConversationGroupID,
 		UserID:              d.UserID,
 		ClientID:            d.ClientID,
+		AgentID:             d.AgentID,
 		Channel:             d.Channel,
 		Epoch:               d.Epoch,
 		ContentType:         d.ContentType,
@@ -330,6 +335,17 @@ func ptrStrToUUID(s *string) *uuid.UUID {
 	}
 	u := strToUUID(*s)
 	return &u
+}
+
+func scopedAgentCacheKey(clientID, agentID string) string {
+	return clientID + "\x00" + agentID
+}
+
+func valueOrEmpty(ptr *string) string {
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
 }
 
 // --- Access control ---
@@ -480,7 +496,7 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, conv
 	}, nil
 }
 
-func (s *MongoStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode) ([]registrystore.ConversationSummary, *string, error) {
+func (s *MongoStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter) ([]registrystore.ConversationSummary, *string, error) {
 	// Find all groups the user has membership in
 	cursor, err := s.memberships().Find(ctx, bson.M{"user_id": userID})
 	if err != nil {
@@ -505,6 +521,13 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 	filter := bson.M{
 		"conversation_group_id": bson.M{"$in": groupIDs},
 		"deleted_at":            bson.M{"$exists": false},
+	}
+	switch ancestry {
+	case model.ConversationAncestryChildren:
+		filter["started_by_conversation_id"] = bson.M{"$exists": true}
+	case model.ConversationAncestryAll:
+	default:
+		filter["started_by_conversation_id"] = bson.M{"$exists": false}
 	}
 
 	switch mode {
@@ -541,20 +564,98 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 	for i, d := range docs {
 		al := accessMap[d.ConversationGroupID]
 		summaries[i] = registrystore.ConversationSummary{
-			ID:                     strToUUID(d.ID),
-			Title:                  s.decryptString(d.Title),
-			OwnerUserID:            d.OwnerUserID,
-			Metadata:               d.Metadata,
-			ConversationGroupID:    strToUUID(d.ConversationGroupID),
-			ForkedAtConversationID: ptrStrToUUID(d.ForkedAtConversationID),
-			ForkedAtEntryID:        ptrStrToUUID(d.ForkedAtEntryID),
-			CreatedAt:              d.CreatedAt,
-			UpdatedAt:              d.UpdatedAt,
-			DeletedAt:              d.DeletedAt,
-			AccessLevel:            al,
+			ID:                      strToUUID(d.ID),
+			Title:                   s.decryptString(d.Title),
+			OwnerUserID:             d.OwnerUserID,
+			Metadata:                d.Metadata,
+			ConversationGroupID:     strToUUID(d.ConversationGroupID),
+			ForkedAtConversationID:  ptrStrToUUID(d.ForkedAtConversationID),
+			ForkedAtEntryID:         ptrStrToUUID(d.ForkedAtEntryID),
+			StartedByConversationID: ptrStrToUUID(d.StartedByConversationID),
+			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
+			CreatedAt:               d.CreatedAt,
+			UpdatedAt:               d.UpdatedAt,
+			DeletedAt:               d.DeletedAt,
+			AccessLevel:             al,
 		}
 	}
 
+	var nextCursor *string
+	if hasMore && len(summaries) > 0 {
+		c := summaries[len(summaries)-1].ID.String()
+		nextCursor = &c
+	}
+	return summaries, nextCursor, nil
+}
+
+func (s *MongoStore) ListChildConversations(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
+	var parent convDoc
+	if err := s.conversations().FindOne(ctx, bson.M{"_id": uuidToStr(conversationID), "deleted_at": bson.M{"$exists": false}}).Decode(&parent); err != nil {
+		return nil, nil, &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
+	}
+	if _, err := s.requireAccess(ctx, userID, parent.ConversationGroupID, model.AccessLevelReader); err != nil {
+		return nil, nil, err
+	}
+
+	cursor, err := s.memberships().Find(ctx, bson.M{"user_id": userID})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to find memberships: %w", err)
+	}
+	var mems []memberDoc
+	if err := cursor.All(ctx, &mems); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode memberships: %w", err)
+	}
+	accessMap := map[string]model.AccessLevel{}
+	groupIDs := make([]string, 0, len(mems))
+	for _, m := range mems {
+		groupIDs = append(groupIDs, m.ConversationGroupID)
+		accessMap[m.ConversationGroupID] = m.AccessLevel
+	}
+	filter := bson.M{
+		"conversation_group_id":      bson.M{"$in": groupIDs},
+		"deleted_at":                 bson.M{"$exists": false},
+		"started_by_conversation_id": uuidToStr(conversationID),
+	}
+	if afterCursor != nil {
+		var cursorDoc convDoc
+		if err := s.conversations().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc); err == nil {
+			filter["$or"] = bson.A{
+				bson.M{"created_at": bson.M{"$gt": cursorDoc.CreatedAt}},
+				bson.M{"created_at": cursorDoc.CreatedAt, "_id": bson.M{"$gt": cursorDoc.ID}},
+			}
+		}
+	}
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}).SetLimit(int64(limit + 1))
+	cur, err := s.conversations().Find(ctx, filter, opts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to list child conversations: %w", err)
+	}
+	var docs []convDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode child conversations: %w", err)
+	}
+	hasMore := len(docs) > limit
+	if hasMore {
+		docs = docs[:limit]
+	}
+	summaries := make([]registrystore.ConversationSummary, len(docs))
+	for i, d := range docs {
+		summaries[i] = registrystore.ConversationSummary{
+			ID:                      strToUUID(d.ID),
+			Title:                   s.decryptString(d.Title),
+			OwnerUserID:             d.OwnerUserID,
+			Metadata:                d.Metadata,
+			ConversationGroupID:     strToUUID(d.ConversationGroupID),
+			ForkedAtConversationID:  ptrStrToUUID(d.ForkedAtConversationID),
+			ForkedAtEntryID:         ptrStrToUUID(d.ForkedAtEntryID),
+			StartedByConversationID: ptrStrToUUID(d.StartedByConversationID),
+			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
+			CreatedAt:               d.CreatedAt,
+			UpdatedAt:               d.UpdatedAt,
+			DeletedAt:               d.DeletedAt,
+			AccessLevel:             accessMap[d.ConversationGroupID],
+		}
+	}
 	var nextCursor *string
 	if hasMore && len(summaries) > 0 {
 		c := summaries[len(summaries)-1].ID.String()
@@ -1151,7 +1252,7 @@ func (s *MongoStore) DeleteTransfer(ctx context.Context, userID string, transfer
 
 // --- Entries ---
 
-func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, allForks bool) (*registrystore.PagedEntries, error) {
+func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
 		"_id":        uuidToStr(conversationID),
@@ -1173,7 +1274,7 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	if channel != nil {
 		effectiveChannel = *channel
 	}
-	if effectiveChannel == model.ChannelContext && clientID == nil {
+	if effectiveChannel == model.ChannelContext && (clientID == nil || agentID == nil) {
 		return nil, &registrystore.ForbiddenError{}
 	}
 
@@ -1182,7 +1283,7 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		filtered := filterEntriesForAllForksDocs(docs, effectiveChannel, clientID, epochFilter)
+		filtered := filterEntriesForAllForksDocs(docs, effectiveChannel, clientID, agentID, epochFilter)
 		filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
 		entries := make([]model.Entry, len(filtered))
 		for i, d := range filtered {
@@ -1201,7 +1302,7 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	if effectiveChannel == model.ChannelContext {
 		if epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest {
 			// Use cache for the common latest-epoch case.
-			cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID)
+			cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, *agentID)
 			if err != nil {
 				return nil, err
 			}
@@ -1217,7 +1318,7 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		filtered := filterMemoryEntriesWithEpochDocs(docs, ancestry, *clientID, epochFilter)
+		filtered := filterMemoryEntriesWithEpochDocs(docs, ancestry, *clientID, *agentID, epochFilter)
 		filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
 		entries := make([]model.Entry, len(filtered))
 		for i, d := range filtered {
@@ -1266,7 +1367,7 @@ func (s *MongoStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uu
 	return strToUUID(entry.ConversationGroupID), nil
 }
 
-func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []registrystore.CreateEntryRequest, clientID *string, epoch *int64) ([]model.Entry, error) {
+func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
 		"_id":        uuidToStr(conversationID),
@@ -1320,6 +1421,7 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			ConversationGroupID: conv.ConversationGroupID,
 			UserID:              &userID,
 			ClientID:            clientID,
+			AgentID:             agentID,
 			Channel:             ch,
 			Epoch:               entryEpoch,
 			ContentType:         req.ContentType,
@@ -1337,6 +1439,7 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			ConversationGroupID: strToUUID(conv.ConversationGroupID),
 			UserID:              &userID,
 			ClientID:            clientID,
+			AgentID:             agentID,
 			Channel:             model.Channel(ch),
 			Epoch:               entryEpoch,
 			ContentType:         req.ContentType,
@@ -1368,7 +1471,7 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 		for _, e := range result {
 			if e.Channel == model.ChannelContext {
 				if ancestry, err := s.buildAncestryStack(ctx, conv); err == nil {
-					s.warmEntriesCache(ctx, conv, ancestry, *clientID)
+					s.warmEntriesCache(ctx, conv, ancestry, *clientID, valueOrEmpty(agentID))
 				}
 				break
 			}
@@ -1391,7 +1494,7 @@ func deriveTitleFromContent(content string) string {
 	return ""
 }
 
-func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry registrystore.CreateEntryRequest, clientID string) (*registrystore.SyncResult, error) {
+func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry registrystore.CreateEntryRequest, clientID string, agentID string) (*registrystore.SyncResult, error) {
 	incomingContent := parseContentArray(entry.Content)
 
 	autoCreated := false
@@ -1415,7 +1518,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		return nil, err
 	}
 	if autoCreated && s.entriesCache != nil {
-		if err := s.entriesCache.Remove(ctx, conversationID, clientID); err != nil {
+		if err := s.entriesCache.Remove(ctx, conversationID, scopedAgentCacheKey(clientID, agentID)); err != nil {
 			return nil, err
 		}
 	}
@@ -1425,7 +1528,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		return nil, err
 	}
 
-	latestEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, clientID)
+	latestEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, clientID, agentID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load entries for sync: %w", err)
 	}
@@ -1498,6 +1601,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		ConversationGroupID: conv.ConversationGroupID,
 		UserID:              &userID,
 		ClientID:            &clientID,
+		AgentID:             &agentID,
 		Channel:             string(model.ChannelContext),
 		Epoch:               &epochToUse,
 		ContentType:         entry.ContentType,
@@ -1508,7 +1612,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 	if _, err := s.entries().InsertOne(ctx, doc); err != nil {
 		return nil, fmt.Errorf("failed to sync entry: %w", err)
 	}
-	s.warmEntriesCache(ctx, conv, ancestry, clientID)
+	s.warmEntriesCache(ctx, conv, ancestry, clientID, agentID)
 	e := s.entryDocToModel(doc)
 	e.Content = appendContent
 	return &registrystore.SyncResult{Entry: &e, Epoch: &epochToUse, NoOp: false, EpochIncremented: epochIncremented}, nil
@@ -1868,6 +1972,13 @@ func (s *MongoStore) AdminListConversations(ctx context.Context, query registrys
 	if query.UserID != nil {
 		filter["owner_user_id"] = *query.UserID
 	}
+	switch query.Ancestry {
+	case model.ConversationAncestryChildren:
+		filter["started_by_conversation_id"] = bson.M{"$exists": true}
+	case model.ConversationAncestryAll:
+	default:
+		filter["started_by_conversation_id"] = bson.M{"$exists": false}
+	}
 	if query.DeletedAfter != nil {
 		if existing, ok := filter["deleted_at"]; ok {
 			if m, ok := existing.(bson.M); ok {
@@ -1920,20 +2031,74 @@ func (s *MongoStore) AdminListConversations(ctx context.Context, query registrys
 	summaries := make([]registrystore.ConversationSummary, len(docs))
 	for i, d := range docs {
 		summaries[i] = registrystore.ConversationSummary{
-			ID:                     strToUUID(d.ID),
-			Title:                  s.decryptString(d.Title),
-			OwnerUserID:            d.OwnerUserID,
-			Metadata:               d.Metadata,
-			ConversationGroupID:    strToUUID(d.ConversationGroupID),
-			ForkedAtConversationID: ptrStrToUUID(d.ForkedAtConversationID),
-			ForkedAtEntryID:        ptrStrToUUID(d.ForkedAtEntryID),
-			CreatedAt:              d.CreatedAt,
-			UpdatedAt:              d.UpdatedAt,
-			DeletedAt:              d.DeletedAt,
-			AccessLevel:            model.AccessLevelOwner,
+			ID:                      strToUUID(d.ID),
+			Title:                   s.decryptString(d.Title),
+			OwnerUserID:             d.OwnerUserID,
+			Metadata:                d.Metadata,
+			ConversationGroupID:     strToUUID(d.ConversationGroupID),
+			ForkedAtConversationID:  ptrStrToUUID(d.ForkedAtConversationID),
+			ForkedAtEntryID:         ptrStrToUUID(d.ForkedAtEntryID),
+			StartedByConversationID: ptrStrToUUID(d.StartedByConversationID),
+			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
+			CreatedAt:               d.CreatedAt,
+			UpdatedAt:               d.UpdatedAt,
+			DeletedAt:               d.DeletedAt,
+			AccessLevel:             model.AccessLevelOwner,
 		}
 	}
 
+	var nextCursor *string
+	if hasMore && len(summaries) > 0 {
+		c := summaries[len(summaries)-1].ID.String()
+		nextCursor = &c
+	}
+	return summaries, nextCursor, nil
+}
+
+func (s *MongoStore) AdminListChildConversations(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
+	filter := bson.M{
+		"started_by_conversation_id": uuidToStr(conversationID),
+	}
+	if afterCursor != nil {
+		var cursorDoc convDoc
+		if err := s.conversations().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc); err == nil {
+			filter["$or"] = bson.A{
+				bson.M{"created_at": bson.M{"$gt": cursorDoc.CreatedAt}},
+				bson.M{"created_at": cursorDoc.CreatedAt, "_id": bson.M{"$gt": cursorDoc.ID}},
+			}
+		}
+	}
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}).SetLimit(int64(limit + 1))
+	cur, err := s.conversations().Find(ctx, filter, opts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to admin list child conversations: %w", err)
+	}
+	var docs []convDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode child conversations: %w", err)
+	}
+	hasMore := len(docs) > limit
+	if hasMore {
+		docs = docs[:limit]
+	}
+	summaries := make([]registrystore.ConversationSummary, len(docs))
+	for i, d := range docs {
+		summaries[i] = registrystore.ConversationSummary{
+			ID:                      strToUUID(d.ID),
+			Title:                   s.decryptString(d.Title),
+			OwnerUserID:             d.OwnerUserID,
+			Metadata:                d.Metadata,
+			ConversationGroupID:     strToUUID(d.ConversationGroupID),
+			ForkedAtConversationID:  ptrStrToUUID(d.ForkedAtConversationID),
+			ForkedAtEntryID:         ptrStrToUUID(d.ForkedAtEntryID),
+			StartedByConversationID: ptrStrToUUID(d.StartedByConversationID),
+			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
+			CreatedAt:               d.CreatedAt,
+			UpdatedAt:               d.UpdatedAt,
+			DeletedAt:               d.DeletedAt,
+			AccessLevel:             model.AccessLevelOwner,
+		}
+	}
 	var nextCursor *string
 	if hasMore && len(summaries) > 0 {
 		c := summaries[len(summaries)-1].ID.String()
@@ -2908,7 +3073,7 @@ func normalizeEpochFilter(filter *registrystore.MemoryEpochFilter) registrystore
 	return *filter
 }
 
-func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, clientID *string, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
+func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, clientID *string, agentID *string, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
 	if channel == "" {
 		return entries
 	}
@@ -2920,6 +3085,9 @@ func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, cli
 		}
 		if channel == model.ChannelContext && clientID != nil {
 			if entry.ClientID == nil || *entry.ClientID != *clientID {
+				continue
+			}
+			if agentID != nil && (entry.AgentID == nil || *entry.AgentID != *agentID) {
 				continue
 			}
 		}
@@ -2980,7 +3148,7 @@ func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, cli
 	}
 }
 
-func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAncestorDoc, clientID string, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
+func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAncestorDoc, clientID, agentID string, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
 	epoch := normalizeEpochFilter(epochFilter)
 	result := make([]entryDoc, 0, len(allEntries))
 	maxEpochSeen := int64(0)
@@ -3014,7 +3182,8 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 			continue
 		}
 
-		if strings.EqualFold(entry.Channel, string(model.ChannelContext)) && entry.ClientID != nil && *entry.ClientID == clientID {
+		if strings.EqualFold(entry.Channel, string(model.ChannelContext)) && entry.ClientID != nil && *entry.ClientID == clientID &&
+			entry.AgentID != nil && *entry.AgentID == agentID {
 			entryEpoch := int64(0)
 			if entry.Epoch != nil {
 				entryEpoch = *entry.Epoch
@@ -3060,10 +3229,11 @@ func (s *MongoStore) loadEntriesForGroup(ctx context.Context, groupID string) ([
 
 // fetchLatestMemoryEntries returns the latest-epoch context entries for the given
 // conversation and clientID, using MemoryEntriesCache as a read-through layer.
-func (s *MongoStore) fetchLatestMemoryEntries(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID string) ([]model.Entry, error) {
+func (s *MongoStore) fetchLatestMemoryEntries(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID, agentID string) ([]model.Entry, error) {
 	convID := strToUUID(conv.ID)
+	cacheKey := scopedAgentCacheKey(clientID, agentID)
 	if s.entriesCache != nil && s.entriesCache.Available() {
-		cached, err := s.entriesCache.Get(ctx, convID, clientID)
+		cached, err := s.entriesCache.Get(ctx, convID, cacheKey)
 		if err == nil && cached != nil {
 			if security.CacheHitsTotal != nil {
 				security.CacheHitsTotal.Inc()
@@ -3077,7 +3247,7 @@ func (s *MongoStore) fetchLatestMemoryEntries(ctx context.Context, conv convDoc,
 		return nil, err
 	}
 	latestFilter := &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeLatest}
-	filteredDocs := filterMemoryEntriesWithEpochDocs(docs, ancestry, clientID, latestFilter)
+	filteredDocs := filterMemoryEntriesWithEpochDocs(docs, ancestry, clientID, agentID, latestFilter)
 
 	entries := make([]model.Entry, len(filteredDocs))
 	for i, d := range filteredDocs {
@@ -3095,7 +3265,7 @@ func (s *MongoStore) fetchLatestMemoryEntries(ctx context.Context, conv convDoc,
 					epoch = entries[i].Epoch
 				}
 			}
-			if serr := s.entriesCache.Set(ctx, convID, clientID, registrycache.CachedMemoryEntries{Entries: entries, Epoch: epoch}, 0); serr != nil {
+			if serr := s.entriesCache.Set(ctx, convID, cacheKey, registrycache.CachedMemoryEntries{Entries: entries, Epoch: epoch}, 0); serr != nil {
 				log.Warn("entries cache set error", "err", serr)
 			}
 		}
@@ -3105,24 +3275,25 @@ func (s *MongoStore) fetchLatestMemoryEntries(ctx context.Context, conv convDoc,
 
 // warmEntriesCache re-fetches the latest context entries from the DB and updates the cache.
 // Called after a successful SyncAgentEntry write to keep the cache warm.
-func (s *MongoStore) warmEntriesCache(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID string) {
+func (s *MongoStore) warmEntriesCache(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID, agentID string) {
 	if s.entriesCache == nil || !s.entriesCache.Available() {
 		return
 	}
 	convID := strToUUID(conv.ID)
+	cacheKey := scopedAgentCacheKey(clientID, agentID)
 	docs, err := s.loadEntriesForGroup(ctx, conv.ConversationGroupID)
 	if err != nil {
 		log.Warn("warmEntriesCache: failed to list entries", "err", err)
 		return
 	}
 	latestFilter := &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeLatest}
-	filteredDocs := filterMemoryEntriesWithEpochDocs(docs, ancestry, clientID, latestFilter)
+	filteredDocs := filterMemoryEntriesWithEpochDocs(docs, ancestry, clientID, agentID, latestFilter)
 	entries := make([]model.Entry, len(filteredDocs))
 	for i, d := range filteredDocs {
 		entries[i] = s.entryDocToModel(d)
 	}
 	if len(entries) == 0 {
-		if rerr := s.entriesCache.Remove(ctx, convID, clientID); rerr != nil {
+		if rerr := s.entriesCache.Remove(ctx, convID, cacheKey); rerr != nil {
 			log.Warn("warmEntriesCache: cache remove error", "err", rerr)
 		}
 		return
@@ -3133,7 +3304,7 @@ func (s *MongoStore) warmEntriesCache(ctx context.Context, conv convDoc, ancestr
 			epoch = entries[i].Epoch
 		}
 	}
-	if serr := s.entriesCache.Set(ctx, convID, clientID, registrycache.CachedMemoryEntries{Entries: entries, Epoch: epoch}, 0); serr != nil {
+	if serr := s.entriesCache.Set(ctx, convID, cacheKey, registrycache.CachedMemoryEntries{Entries: entries, Epoch: epoch}, 0); serr != nil {
 		log.Warn("warmEntriesCache: cache set error", "err", serr)
 	}
 }

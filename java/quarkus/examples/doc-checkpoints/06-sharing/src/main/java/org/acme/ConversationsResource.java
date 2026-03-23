@@ -46,10 +46,11 @@ public class ConversationsResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversations(
             @QueryParam("mode") String mode,
+            @QueryParam("ancestry") String ancestry,
             @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") Integer limit,
             @QueryParam("query") String query) {
-        return proxy.listConversations(mode, afterCursor, limit, query);
+        return proxy.listConversations(mode, ancestry, afterCursor, limit, query);
     }
 
     @GET

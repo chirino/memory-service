@@ -127,7 +127,9 @@ public class MemoryServiceProxy {
     public ResponseEntity<?> listConversations(
             String mode, String afterCursor, Integer limit, String query) {
         return execute(
-                api -> api.listConversationsWithHttpInfo(mode, toUuid(afterCursor), limit, query),
+                api ->
+                        api.listConversationsWithHttpInfo(
+                                mode, "all", toUuid(afterCursor), limit, query),
                 HttpStatus.OK);
     }
 
@@ -171,6 +173,7 @@ public class MemoryServiceProxy {
                                 limit,
                                 channel,
                                 epoch,
+                                null,
                                 forks),
                 HttpStatus.OK);
     }
