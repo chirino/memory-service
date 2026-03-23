@@ -33,24 +33,15 @@ func Command() *cli.Command {
 				Usage:    "Memory service API key",
 				Required: true,
 			},
-			&cli.StringFlag{
-				Name:    "bearer-token",
-				Sources: cli.EnvVars("MEMORY_SERVICE_BEARER_TOKEN"),
-				Usage:   "Bearer token for HTTP request authentication",
-			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			apiKey := cmd.String("api-key")
-			bearerToken := cmd.String("bearer-token")
 
 			client, err := apiclient.NewClientWithResponses(
 				cmd.String("url"),
 				apiclient.WithHTTPClient(&http.Client{Timeout: 30 * time.Second}),
 				apiclient.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
-					req.Header.Set("X-API-Key", apiKey)
-					if bearerToken != "" {
-						req.Header.Set("Authorization", "Bearer "+bearerToken)
-					}
+					req.Header.Set("Authorization", "Bearer "+apiKey)
 					return nil
 				}),
 			)
