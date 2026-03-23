@@ -98,8 +98,7 @@ final class UnixSocketRestClientFactory {
                                         "limit", args[2],
                                         "channel", args[3],
                                         "epoch", args[4],
-                                        "agentId", args[5],
-                                        "forks", args[6]),
+                                        "forks", args[5]),
                                 null,
                                 method);
                 case "listConversationChildren" ->

@@ -207,6 +207,8 @@ type convDoc struct {
 	ID                      string         `bson:"_id"`
 	Title                   []byte         `bson:"title"`
 	OwnerUserID             string         `bson:"owner_user_id"`
+	ClientID                string         `bson:"client_id"`
+	AgentID                 *string        `bson:"agent_id,omitempty"`
 	Metadata                map[string]any `bson:"metadata"`
 	ConversationGroupID     string         `bson:"conversation_group_id"`
 	ForkedAtConversationID  *string        `bson:"forked_at_conversation_id,omitempty"`
@@ -395,15 +397,15 @@ func (s *MongoStore) resolveConversationID(ctx context.Context, groupID string) 
 
 // --- Conversations ---
 
-func (s *MongoStore) CreateConversation(ctx context.Context, userID string, title string, metadata map[string]any, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	return s.createConversation(ctx, userID, uuid.New(), title, metadata, forkedAtConversationID, forkedAtEntryID)
+func (s *MongoStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]any, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+	return s.createConversation(ctx, userID, clientID, agentID, uuid.New(), title, metadata, forkedAtConversationID, forkedAtEntryID)
 }
 
-func (s *MongoStore) CreateConversationWithID(ctx context.Context, userID string, convID uuid.UUID, title string, metadata map[string]any, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	return s.createConversation(ctx, userID, convID, title, metadata, forkedAtConversationID, forkedAtEntryID)
+func (s *MongoStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]any, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+	return s.createConversation(ctx, userID, clientID, agentID, convID, title, metadata, forkedAtConversationID, forkedAtEntryID)
 }
 
-func (s *MongoStore) createConversation(ctx context.Context, userID string, convID uuid.UUID, title string, metadata map[string]any, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *MongoStore) createConversation(ctx context.Context, userID string, clientID string, agentID *string, convID uuid.UUID, title string, metadata map[string]any, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	groupID := uuid.New()
 	now := time.Now()
 
@@ -457,6 +459,8 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, conv
 		ID:                     uuidToStr(convID),
 		Title:                  encTitle,
 		OwnerUserID:            userID,
+		ClientID:               clientID,
+		AgentID:                agentID,
 		Metadata:               metadata,
 		ConversationGroupID:    actualGroupID,
 		ForkedAtConversationID: ptrUUIDToStr(forkedAtConversationID),
@@ -762,6 +766,8 @@ func (s *MongoStore) GetConversation(ctx context.Context, userID string, convers
 			ID:                     strToUUID(doc.ID),
 			Title:                  s.decryptString(doc.Title),
 			OwnerUserID:            doc.OwnerUserID,
+			ClientID:               doc.ClientID,
+			AgentID:                doc.AgentID,
 			Metadata:               doc.Metadata,
 			ConversationGroupID:    strToUUID(doc.ConversationGroupID),
 			ForkedAtConversationID: ptrStrToUUID(doc.ForkedAtConversationID),
@@ -1274,7 +1280,10 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	if channel != nil {
 		effectiveChannel = *channel
 	}
-	if effectiveChannel == model.ChannelContext && (clientID == nil || agentID == nil) {
+	if effectiveChannel == model.ChannelContext && clientID == nil {
+		return nil, &registrystore.ForbiddenError{}
+	}
+	if effectiveChannel == model.ChannelContext && conv.ClientID != "" && clientID != nil && conv.ClientID != *clientID {
 		return nil, &registrystore.ForbiddenError{}
 	}
 
@@ -1302,7 +1311,7 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	if effectiveChannel == model.ChannelContext {
 		if epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest {
 			// Use cache for the common latest-epoch case.
-			cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, *agentID)
+			cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, valueOrEmpty(agentID))
 			if err != nil {
 				return nil, err
 			}
@@ -1318,7 +1327,7 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		filtered := filterMemoryEntriesWithEpochDocs(docs, ancestry, *clientID, *agentID, epochFilter)
+		filtered := filterMemoryEntriesWithEpochDocs(docs, ancestry, *clientID, valueOrEmpty(agentID), epochFilter)
 		filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
 		entries := make([]model.Entry, len(filtered))
 		for i, d := range filtered {
@@ -1382,7 +1391,10 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			forkedAtConvID = entries[0].ForkedAtConversationID
 			forkedAtEntryID = entries[0].ForkedAtEntryID
 		}
-		detail, createErr := s.createConversation(ctx, userID, conversationID, "", nil, forkedAtConvID, forkedAtEntryID)
+		if clientID == nil {
+			return nil, &registrystore.ValidationError{Field: "clientId", Message: "authenticated client context is required when creating a conversation"}
+		}
+		detail, createErr := s.createConversation(ctx, userID, *clientID, agentID, conversationID, "", nil, forkedAtConvID, forkedAtEntryID)
 		if createErr != nil {
 			return nil, createErr
 		}
@@ -1394,6 +1406,13 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 		return nil, err
+	}
+	if clientID != nil {
+		for _, req := range entries {
+			if model.Channel(strings.ToLower(req.Channel)) == model.ChannelContext && conv.ClientID != "" && conv.ClientID != *clientID {
+				return nil, &registrystore.ForbiddenError{}
+			}
+		}
 	}
 
 	now := time.Now()
@@ -1494,7 +1513,7 @@ func deriveTitleFromContent(content string) string {
 	return ""
 }
 
-func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry registrystore.CreateEntryRequest, clientID string, agentID string) (*registrystore.SyncResult, error) {
+func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry registrystore.CreateEntryRequest, clientID string, agentID *string) (*registrystore.SyncResult, error) {
 	incomingContent := parseContentArray(entry.Content)
 
 	autoCreated := false
@@ -1508,7 +1527,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		if len(incomingContent) == 0 {
 			return &registrystore.SyncResult{NoOp: true}, nil
 		}
-		conv, err = s.autoCreateConversation(ctx, userID, conversationID)
+		conv, err = s.autoCreateConversation(ctx, userID, clientID, conversationID, agentID)
 		if err != nil {
 			return nil, err
 		}
@@ -1517,8 +1536,11 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 		return nil, err
 	}
+	if conv.ClientID != "" && conv.ClientID != clientID {
+		return nil, &registrystore.ForbiddenError{}
+	}
 	if autoCreated && s.entriesCache != nil {
-		if err := s.entriesCache.Remove(ctx, conversationID, scopedAgentCacheKey(clientID, agentID)); err != nil {
+		if err := s.entriesCache.Remove(ctx, conversationID, scopedAgentCacheKey(clientID, valueOrEmpty(agentID))); err != nil {
 			return nil, err
 		}
 	}
@@ -1528,7 +1550,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		return nil, err
 	}
 
-	latestEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, clientID, agentID)
+	latestEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, clientID, valueOrEmpty(agentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load entries for sync: %w", err)
 	}
@@ -1601,7 +1623,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		ConversationGroupID: conv.ConversationGroupID,
 		UserID:              &userID,
 		ClientID:            &clientID,
-		AgentID:             &agentID,
+		AgentID:             agentID,
 		Channel:             string(model.ChannelContext),
 		Epoch:               &epochToUse,
 		ContentType:         entry.ContentType,
@@ -1612,14 +1634,14 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 	if _, err := s.entries().InsertOne(ctx, doc); err != nil {
 		return nil, fmt.Errorf("failed to sync entry: %w", err)
 	}
-	s.warmEntriesCache(ctx, conv, ancestry, clientID, agentID)
+	s.warmEntriesCache(ctx, conv, ancestry, clientID, valueOrEmpty(agentID))
 	e := s.entryDocToModel(doc)
 	e.Content = appendContent
 	return &registrystore.SyncResult{Entry: &e, Epoch: &epochToUse, NoOp: false, EpochIncremented: epochIncremented}, nil
 }
 
 // autoCreateConversation creates a conversation with a given ID for sync auto-creation.
-func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, conversationID uuid.UUID) (convDoc, error) {
+func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID uuid.UUID, agentID *string) (convDoc, error) {
 	now := time.Now()
 	groupID := uuid.New().String()
 
@@ -1635,6 +1657,8 @@ func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, 
 		ID:                  uuidToStr(conversationID),
 		ConversationGroupID: groupID,
 		OwnerUserID:         userID,
+		ClientID:            clientID,
+		AgentID:             agentID,
 		CreatedAt:           now,
 		UpdatedAt:           now,
 	}
@@ -2190,6 +2214,8 @@ func (s *MongoStore) AdminGetConversation(ctx context.Context, conversationID uu
 			ID:                     strToUUID(doc.ID),
 			Title:                  s.decryptString(doc.Title),
 			OwnerUserID:            doc.OwnerUserID,
+			ClientID:               doc.ClientID,
+			AgentID:                doc.AgentID,
 			Metadata:               doc.Metadata,
 			ConversationGroupID:    strToUUID(doc.ConversationGroupID),
 			ForkedAtConversationID: ptrStrToUUID(doc.ForkedAtConversationID),
@@ -3087,9 +3113,6 @@ func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, cli
 			if entry.ClientID == nil || *entry.ClientID != *clientID {
 				continue
 			}
-			if agentID != nil && (entry.AgentID == nil || *entry.AgentID != *agentID) {
-				continue
-			}
 		}
 		filtered = append(filtered, entry)
 	}
@@ -3182,8 +3205,7 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 			continue
 		}
 
-		if strings.EqualFold(entry.Channel, string(model.ChannelContext)) && entry.ClientID != nil && *entry.ClientID == clientID &&
-			entry.AgentID != nil && *entry.AgentID == agentID {
+		if strings.EqualFold(entry.Channel, string(model.ChannelContext)) && entry.ClientID != nil && *entry.ClientID == clientID {
 			entryEpoch := int64(0)
 			if entry.Epoch != nil {
 				entryEpoch = *entry.Epoch

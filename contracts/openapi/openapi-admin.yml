@@ -1468,6 +1468,12 @@ components:
           nullable: true
         accessLevel:
           $ref: '#/components/schemas/AccessLevel'
+        clientId:
+          type: string
+          nullable: true
+        agentId:
+          type: string
+          nullable: true
         startedByConversationId:
           type: string
           format: uuid
@@ -1573,14 +1579,6 @@ components:
         userId:
           type: string
           nullable: true
-        clientId:
-          type: string
-          nullable: true
-          description: Client identifier that created this entry.
-        agentId:
-          type: string
-          nullable: true
-          description: Logical agent identifier that created this entry.
         channel:
           $ref: '#/components/schemas/Channel'
         epoch:

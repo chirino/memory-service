@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     title           BYTEA,
     -- External user identifier (e.g., OAuth subject); no local users table.
     owner_user_id   TEXT NOT NULL,
+    client_id       TEXT NOT NULL,
+    agent_id        TEXT,
     metadata        JSONB NOT NULL DEFAULT '{}'::JSONB,
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
     forked_at_entry_id UUID,

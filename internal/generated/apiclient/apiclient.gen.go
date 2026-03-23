@@ -212,7 +212,10 @@ type ChildConversationSummary struct {
 type Conversation struct {
 	// AccessLevel Access level of a user for a conversation.
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
-	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
+
+	// AgentId Optional logical agent associated with this conversation.
+	AgentId   *string    `json:"agentId"`
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// ForkedAtConversationId Conversation ID from which this conversation was forked.
 	ForkedAtConversationId *openapi_types.UUID `json:"forkedAtConversationId"`
@@ -277,6 +280,9 @@ type ConversationSummary struct {
 
 // CreateConversationRequest defines model for CreateConversationRequest.
 type CreateConversationRequest struct {
+	// AgentId Optional logical agent to associate with the new conversation.
+	AgentId *string `json:"agentId"`
+
 	// Id Optional client-supplied UUID for the conversation. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
 	Id       *openapi_types.UUID     `json:"id"`
 	Metadata *map[string]interface{} `json:"metadata,omitempty"`
@@ -285,7 +291,7 @@ type CreateConversationRequest struct {
 
 // CreateEntryRequest defines model for CreateEntryRequest.
 type CreateEntryRequest struct {
-	// AgentId Logical agent identifier for agent-authored entries.
+	// AgentId Optional logical agent to associate with the conversation when this request auto-creates a new conversation. Ignored for existing conversations.
 	AgentId *string `json:"agentId"`
 
 	// Channel Logical channel of the entry within the conversation.
@@ -364,9 +370,6 @@ type CreateOwnershipTransferRequest struct {
 
 // Entry defines model for Entry.
 type Entry struct {
-	// AgentId Logical agent identifier for agent-authored entries.
-	AgentId *string `json:"agentId"`
-
 	// Channel Logical channel of the entry within the conversation.
 	Channel Channel `json:"channel"`
 
@@ -778,10 +781,6 @@ type ListConversationEntriesParams struct {
 	// `latest` when not provided. The epoch selection is scoped to the
 	// calling client id.
 	Epoch *string `form:"epoch,omitempty" json:"epoch,omitempty"`
-
-	// AgentId Logical agent identifier. Required when listing the `context`
-	// channel as an authenticated client.
-	AgentId *string `form:"agentId,omitempty" json:"agentId,omitempty"`
 
 	// Forks Controls which fork entries to include. `none` (default) follows the
 	// fork ancestry path, returning entries from the target conversation
@@ -2602,22 +2601,6 @@ func NewListConversationEntriesRequest(server string, conversationId openapi_typ
 		if params.Epoch != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "epoch", runtime.ParamLocationQuery, *params.Epoch); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.AgentId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "agentId", runtime.ParamLocationQuery, *params.AgentId); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

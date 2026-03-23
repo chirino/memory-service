@@ -79,6 +79,8 @@ type Conversation struct {
 	ID                      uuid.UUID              `json:"id"                                gorm:"primaryKey;type:uuid"`
 	Title                   []byte                 `json:"-"                                 gorm:"type:bytea"` // encrypted
 	OwnerUserID             string                 `json:"ownerUserId"                       gorm:"not null"`
+	ClientID                string                 `json:"-"                                 gorm:"not null"`
+	AgentID                 *string                `json:"agentId,omitempty"`
 	Metadata                map[string]interface{} `json:"metadata"                          gorm:"type:jsonb;serializer:json;not null;default:'{}'"` // JSONB
 	ConversationGroupID     uuid.UUID              `json:"-"                                 gorm:"not null;type:uuid"`
 	ConversationGroup       *ConversationGroup     `json:"-"                                 gorm:"foreignKey:ConversationGroupID"`

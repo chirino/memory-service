@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     title BLOB,
     owner_user_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    agent_id TEXT,
     metadata TEXT NOT NULL DEFAULT '{}',
     conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
     forked_at_entry_id TEXT,

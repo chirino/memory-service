@@ -39,7 +39,6 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
     private static final Logger LOG = Logger.getLogger(MemoryServiceChatMemoryStore.class);
     private static final JacksonChatMessageJsonCodec CODEC = new JacksonChatMessageJsonCodec();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final String CONTEXT_AGENT_ID = "langchain4j";
 
     private final MemoryServiceApiBuilder conversationsApiBuilder;
     private final Instance<SecurityIdentity> securityIdentityInstance;
@@ -68,7 +67,6 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                                     50,
                                     Channel.CONTEXT,
                                     null,
-                                    CONTEXT_AGENT_ID,
                                     null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;
@@ -158,7 +156,6 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         }
         syncEntry.setChannel(ChannelEnum.CONTEXT);
         syncEntry.setContentType("LC4J");
-        syncEntry.setAgentId(CONTEXT_AGENT_ID);
         syncEntry.setContent(new ArrayList<>());
         try {
             conversationsApi()
@@ -187,8 +184,6 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         }
         request.setChannel(ChannelEnum.CONTEXT);
         request.setContentType("LC4J");
-        request.setAgentId(CONTEXT_AGENT_ID);
-
         List<Object> contentBlocks = new ArrayList<>();
         for (ChatMessage chatMessage : messages) {
             if (chatMessage != null) {

@@ -284,15 +284,6 @@ paths:
             are `latest`, `all`, or a numeric epoch identifier. Defaults to
             `latest` when not provided. The epoch selection is scoped to the
             calling client id.
-        - name: agentId
-          in: query
-          required: false
-          schema:
-            type: string
-            nullable: true
-          description: |-
-            Logical agent identifier. Required when listing the `context`
-            channel as an authenticated client.
         - name: forks
           in: query
           required: false
@@ -1743,6 +1734,10 @@ components:
         - $ref: '#/components/schemas/ConversationSummary'
         - type: object
           properties:
+            agentId:
+              type: string
+              nullable: true
+              description: Optional logical agent associated with this conversation.
             forkedAtEntryId:
               type: string
               format: uuid
@@ -1792,6 +1787,11 @@ components:
           type: string
           nullable: true
           maxLength: 500
+        agentId:
+          type: string
+          nullable: true
+          maxLength: 255
+          description: Optional logical agent to associate with the new conversation.
         metadata:
           type: object
           additionalProperties: true
@@ -2202,11 +2202,6 @@ components:
             Human user this entry is associated with.
             For history entries authored by a user, this is the sender.
             For agent entries, this is the user the agent is responding to.
-        agentId:
-          type: string
-          nullable: true
-          maxLength: 255
-          description: Logical agent identifier for agent-authored entries.
         channel:
           $ref: '#/components/schemas/Channel'
         epoch:
@@ -2288,7 +2283,9 @@ components:
           type: string
           nullable: true
           maxLength: 255
-          description: Logical agent identifier for agent-authored entries.
+          description: >-
+            Optional logical agent to associate with the conversation when this
+            request auto-creates a new conversation. Ignored for existing conversations.
         channel:
           $ref: '#/components/schemas/Channel'
         contentType:

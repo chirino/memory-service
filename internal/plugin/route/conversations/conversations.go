@@ -131,6 +131,7 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 		ID                     *string                `json:"id"`
 		Title                  string                 `json:"title"`
 		Metadata               map[string]interface{} `json:"metadata"`
+		AgentID                *string                `json:"agentId,omitempty"`
 		ForkedAtConversationId *string                `json:"forkedAtConversationId"`
 		ForkedAtEntryId        *string                `json:"forkedAtEntryId"`
 	}
@@ -140,6 +141,11 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 	}
 	if len(req.Title) > 500 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": "title exceeds maximum length"})
+		return
+	}
+	clientID := security.GetClientID(c)
+	if clientID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "authenticated client context required"})
 		return
 	}
 
@@ -178,9 +184,9 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 			err  error
 		)
 		if convID != nil {
-			conv, err = store.CreateConversationWithID(ctx, userID, *convID, req.Title, req.Metadata, forkConvID, forkEntryID)
+			conv, err = store.CreateConversationWithID(ctx, userID, clientID, *convID, req.Title, req.Metadata, req.AgentID, forkConvID, forkEntryID)
 		} else {
-			conv, err = store.CreateConversation(ctx, userID, req.Title, req.Metadata, forkConvID, forkEntryID)
+			conv, err = store.CreateConversation(ctx, userID, clientID, req.Title, req.Metadata, req.AgentID, forkConvID, forkEntryID)
 		}
 		if err != nil {
 			return err

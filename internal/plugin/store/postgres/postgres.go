@@ -178,7 +178,7 @@ func (s *PostgresStore) decryptString(data []byte) string {
 
 // --- Conversations ---
 
-func (s *PostgresStore) CreateConversation(ctx context.Context, userID string, title string, metadata map[string]interface{}, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *PostgresStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	groupID := uuid.New()
 	// For root (non-forked) conversations, use the same UUID for conversation and group
 	// to match Java parity (features reference conversationGroupId in SQL against conversations.id).
@@ -186,14 +186,14 @@ func (s *PostgresStore) CreateConversation(ctx context.Context, userID string, t
 	if forkedAtConversationID != nil {
 		convID = uuid.New()
 	}
-	return s.createConversationWithID(ctx, userID, convID, title, metadata, forkedAtConversationID, forkedAtEntryID)
+	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID)
 }
 
-func (s *PostgresStore) CreateConversationWithID(ctx context.Context, userID string, convID uuid.UUID, title string, metadata map[string]interface{}, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	return s.createConversationWithID(ctx, userID, convID, title, metadata, forkedAtConversationID, forkedAtEntryID)
+func (s *PostgresStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID)
 }
 
-func (s *PostgresStore) createConversationWithID(ctx context.Context, userID string, convID uuid.UUID, title string, metadata map[string]interface{}, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *PostgresStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	groupID := uuid.New()
 	now := time.Now()
 
@@ -225,14 +225,16 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		actualGroupID = convID
 		group := model.ConversationGroup{ID: actualGroupID, CreatedAt: now}
 		if err := s.db.WithContext(ctx).Create(&group).Error; err != nil {
-			logDuplicateKey("createConversationWithID:createGroup", err,
-				"userID", userID,
-				"conversationID", convID.String(),
-				"conversationGroupID", actualGroupID.String(),
-				"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
-				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
-			)
-			return nil, fmt.Errorf("failed to create conversation group: %w", err)
+			if _, ok := pgUniqueViolation(err); !ok {
+				logDuplicateKey("createConversationWithID:createGroup", err,
+					"userID", userID,
+					"conversationID", convID.String(),
+					"conversationGroupID", actualGroupID.String(),
+					"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
+					"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
+				)
+				return nil, fmt.Errorf("failed to create conversation group: %w", err)
+			}
 		}
 		_ = groupID // unused for root conversations when convID is specified
 	}
@@ -245,6 +247,8 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		ID:                     convID,
 		Title:                  encTitle,
 		OwnerUserID:            userID,
+		ClientID:               clientID,
+		AgentID:                agentID,
 		Metadata:               metadata,
 		ConversationGroupID:    actualGroupID,
 		ForkedAtConversationID: forkedAtConversationID,
@@ -287,6 +291,8 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 			ID:                     convID,
 			Title:                  title,
 			OwnerUserID:            userID,
+			ClientID:               clientID,
+			AgentID:                agentID,
 			Metadata:               metadata,
 			ConversationGroupID:    actualGroupID,
 			ForkedAtConversationID: forkedAtConversationID,
@@ -426,6 +432,8 @@ func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conv
 			ID:                      conv.ID,
 			Title:                   s.decryptString(conv.Title),
 			OwnerUserID:             conv.OwnerUserID,
+			ClientID:                conv.ClientID,
+			AgentID:                 conv.AgentID,
 			Metadata:                conv.Metadata,
 			ConversationGroupID:     conv.ConversationGroupID,
 			ForkedAtConversationID:  conv.ForkedAtConversationID,
@@ -970,7 +978,10 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		effectiveChannel = *channel
 	}
 
-	if effectiveChannel == model.ChannelContext && (clientID == nil || agentID == nil) {
+	if effectiveChannel == model.ChannelContext && clientID == nil {
+		return nil, &ForbiddenError{}
+	}
+	if effectiveChannel == model.ChannelContext && conv.ClientID != "" && clientID != nil && conv.ClientID != *clientID {
 		return nil, &ForbiddenError{}
 	}
 
@@ -995,7 +1006,7 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		// Context-only: filter context entries by epoch/clientID.
 		// Use the cache for the common latest-epoch case.
 		if epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest {
-			filtered, err = s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, *agentID)
+			filtered, err = s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, valueOrEmpty(agentID))
 			if err != nil {
 				return nil, err
 			}
@@ -1004,7 +1015,7 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 			if err != nil {
 				return nil, err
 			}
-			filtered = filterMemoryEntriesWithEpoch(allEntries, ancestry, *clientID, *agentID, epochFilter)
+			filtered = filterMemoryEntriesWithEpoch(allEntries, ancestry, *clientID, valueOrEmpty(agentID), epochFilter)
 		}
 	} else {
 		allEntries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
@@ -1061,9 +1072,12 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			forkedAtConvID = entries[0].ForkedAtConversationID
 			forkedAtEntryID = entries[0].ForkedAtEntryID
 		}
+		if clientID == nil {
+			return nil, &ValidationError{Field: "clientId", Message: "authenticated client context is required when creating a conversation"}
+		}
 
 		title := inferTitleFromEntries(entries)
-		detail, err := s.createConversationWithID(ctx, userID, conversationID, title, nil, forkedAtConvID, forkedAtEntryID)
+		detail, err := s.createConversationWithID(ctx, userID, *clientID, conversationID, title, nil, agentID, forkedAtConvID, forkedAtEntryID)
 		if err != nil {
 			// Concurrent writers can race to auto-create the same root conversation.
 			// If another request won the insert, load the conversation and continue.
@@ -1115,6 +1129,13 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 		return nil, err
+	}
+	if clientID != nil {
+		for _, req := range entries {
+			if model.Channel(strings.ToLower(req.Channel)) == model.ChannelContext && conv.ClientID != "" && conv.ClientID != *clientID {
+				return nil, &ForbiddenError{}
+			}
+		}
 	}
 
 	now := time.Now()
@@ -1217,7 +1238,7 @@ func deriveTitleFromContent(content string) string {
 	return ""
 }
 
-func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry registrystore.CreateEntryRequest, clientID string, agentID string) (*registrystore.SyncResult, error) {
+func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry registrystore.CreateEntryRequest, clientID string, agentID *string) (*registrystore.SyncResult, error) {
 	incomingContent := parseContentArray(entry.Content)
 
 	autoCreated := false
@@ -1232,7 +1253,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 			return &registrystore.SyncResult{NoOp: true}, nil
 		}
 		var err error
-		conv, err = s.autoCreateConversation(ctx, userID, conversationID)
+		conv, err = s.autoCreateConversation(ctx, userID, clientID, conversationID, agentID)
 		if err != nil {
 			return nil, err
 		}
@@ -1241,8 +1262,11 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 		return nil, err
 	}
+	if conv.ClientID != "" && conv.ClientID != clientID {
+		return nil, &ForbiddenError{}
+	}
 	if autoCreated && s.entriesCache != nil {
-		if err := s.entriesCache.Remove(ctx, conversationID, scopedAgentCacheKey(clientID, agentID)); err != nil {
+		if err := s.entriesCache.Remove(ctx, conversationID, scopedAgentCacheKey(clientID, valueOrEmpty(agentID))); err != nil {
 			return nil, err
 		}
 	}
@@ -1251,7 +1275,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 	if err != nil {
 		return nil, err
 	}
-	latestEpochEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, clientID, agentID)
+	latestEpochEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, clientID, valueOrEmpty(agentID))
 	if err != nil {
 		return nil, err
 	}
@@ -1325,7 +1349,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		ConversationGroupID: conv.ConversationGroupID,
 		UserID:              &userID,
 		ClientID:            &clientID,
-		AgentID:             &agentID,
+		AgentID:             agentID,
 		Channel:             model.ChannelContext,
 		Epoch:               &epochToUse,
 		ContentType:         entry.ContentType,
@@ -1337,12 +1361,12 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		return nil, fmt.Errorf("failed to sync entry: %w", err)
 	}
 	newEntry.Content = appendContent
-	s.warmEntriesCache(ctx, conv, ancestry, clientID, agentID)
+	s.warmEntriesCache(ctx, conv, ancestry, clientID, valueOrEmpty(agentID))
 	return &registrystore.SyncResult{Entry: &newEntry, Epoch: &epochToUse, NoOp: false, EpochIncremented: epochIncremented}, nil
 }
 
 // autoCreateConversation creates a conversation with a given ID for sync auto-creation.
-func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID string, conversationID uuid.UUID) (model.Conversation, error) {
+func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID uuid.UUID, agentID *string) (model.Conversation, error) {
 	now := time.Now()
 	groupID := uuid.New()
 
@@ -1363,6 +1387,8 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 		ID:                  conversationID,
 		ConversationGroupID: groupID,
 		OwnerUserID:         userID,
+		ClientID:            clientID,
+		AgentID:             agentID,
 		CreatedAt:           now,
 		UpdatedAt:           now,
 	}
@@ -1787,6 +1813,8 @@ func (s *PostgresStore) AdminGetConversation(ctx context.Context, conversationID
 			ID:                      conv.ID,
 			Title:                   s.decryptString(conv.Title),
 			OwnerUserID:             conv.OwnerUserID,
+			ClientID:                conv.ClientID,
+			AgentID:                 conv.AgentID,
 			Metadata:                conv.Metadata,
 			ConversationGroupID:     conv.ConversationGroupID,
 			ForkedAtConversationID:  conv.ForkedAtConversationID,
@@ -2527,9 +2555,6 @@ func filterEntriesForAllForks(entries []model.Entry, channel model.Channel, clie
 			if entry.ClientID == nil || *entry.ClientID != *clientID {
 				continue
 			}
-			if agentID != nil && (entry.AgentID == nil || *entry.AgentID != *agentID) {
-				continue
-			}
 		}
 		filtered = append(filtered, entry)
 	}
@@ -2622,8 +2647,7 @@ func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAnces
 			continue
 		}
 
-		if entry.Channel == model.ChannelContext && entry.ClientID != nil && *entry.ClientID == clientID &&
-			entry.AgentID != nil && *entry.AgentID == agentID {
+		if entry.Channel == model.ChannelContext && entry.ClientID != nil && *entry.ClientID == clientID {
 			entryEpoch := int64(0)
 			if entry.Epoch != nil {
 				entryEpoch = *entry.Epoch

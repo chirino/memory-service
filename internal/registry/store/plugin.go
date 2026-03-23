@@ -42,6 +42,8 @@ type ConversationSummary struct {
 	ID                      uuid.UUID              `json:"id"`
 	Title                   string                 `json:"title"`
 	OwnerUserID             string                 `json:"ownerUserId"`
+	ClientID                string                 `json:"-"`
+	AgentID                 *string                `json:"agentId,omitempty"`
 	Metadata                map[string]interface{} `json:"metadata"`
 	ConversationGroupID     uuid.UUID              `json:"-"`
 	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"`
@@ -178,9 +180,9 @@ type MemoryStore interface {
 	InWriteTx(ctx context.Context, fn func(context.Context) error) error
 
 	// Conversations
-	CreateConversation(ctx context.Context, userID string, title string, metadata map[string]interface{}, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
+	CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
 	// CreateConversationWithID creates a conversation with the given ID. Used by gRPC AppendEntry for fork-on-append.
-	CreateConversationWithID(ctx context.Context, userID string, convID uuid.UUID, title string, metadata map[string]interface{}, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
+	CreateConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
 	ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter) ([]ConversationSummary, *string, error)
 	GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*ConversationDetail, error)
 	UpdateConversation(ctx context.Context, userID string, conversationID uuid.UUID, title *string, metadata map[string]interface{}) (*ConversationDetail, error)
@@ -209,7 +211,7 @@ type MemoryStore interface {
 	GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*PagedEntries, error)
 	AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error)
 	GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error)
-	SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry CreateEntryRequest, clientID string, agentID string) (*SyncResult, error)
+	SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry CreateEntryRequest, clientID string, agentID *string) (*SyncResult, error)
 
 	// Indexing
 	IndexEntries(ctx context.Context, entries []IndexEntryRequest) (*IndexConversationsResponse, error)

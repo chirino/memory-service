@@ -160,7 +160,7 @@ sequenceDiagram
     Store->>DB: INSERT entry
     DB-->>Store: OK
     Store-->>Svc: Entry created
-    Svc->>Cache: evict(conversationId, clientId)
+    Svc->>Cache: evict(conversationId, scopedContextKey)
     Cache-->>Svc: OK
     Svc-->>API: 200 Entry
     API-->>Agent: Response

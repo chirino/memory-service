@@ -33,14 +33,14 @@ func (m *metricsStore) InWriteTx(ctx context.Context, fn func(context.Context) e
 	return m.inner.InWriteTx(ctx, fn)
 }
 
-func (m *metricsStore) CreateConversation(ctx context.Context, userID string, title string, metadata map[string]interface{}, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*store.ConversationDetail, error) {
+func (m *metricsStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*store.ConversationDetail, error) {
 	defer observe("create_conversation", time.Now())
-	return m.inner.CreateConversation(ctx, userID, title, metadata, forkedAtConversationID, forkedAtEntryID)
+	return m.inner.CreateConversation(ctx, userID, clientID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID)
 }
 
-func (m *metricsStore) CreateConversationWithID(ctx context.Context, userID string, convID uuid.UUID, title string, metadata map[string]interface{}, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*store.ConversationDetail, error) {
+func (m *metricsStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*store.ConversationDetail, error) {
 	defer observe("create_conversation", time.Now())
-	return m.inner.CreateConversationWithID(ctx, userID, convID, title, metadata, forkedAtConversationID, forkedAtEntryID)
+	return m.inner.CreateConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID)
 }
 
 func (m *metricsStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter) ([]store.ConversationSummary, *string, error) {
@@ -138,7 +138,7 @@ func (m *metricsStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (
 	return m.inner.GetEntryGroupID(ctx, entryID)
 }
 
-func (m *metricsStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry store.CreateEntryRequest, clientID string, agentID string) (*store.SyncResult, error) {
+func (m *metricsStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry store.CreateEntryRequest, clientID string, agentID *string) (*store.SyncResult, error) {
 	defer observe("sync_agent_entry", time.Now())
 	return m.inner.SyncAgentEntry(ctx, userID, conversationID, entry, clientID, agentID)
 }

@@ -67,10 +67,9 @@ public class ConversationsResource {
     public Response listConversationEntries(
             @PathParam("conversationId") String conversationId,
             @QueryParam("afterCursor") String afterCursor,
-            @QueryParam("limit") Integer limit,
-            @QueryParam("agentId") String agentId) {
+            @QueryParam("limit") Integer limit) {
         return proxy.listConversationEntries(
-                conversationId, afterCursor, limit, Channel.HISTORY, null, agentId, "all");
+                conversationId, afterCursor, limit, Channel.HISTORY, null, "all");
     }
 
     @GET

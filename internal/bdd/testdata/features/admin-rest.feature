@@ -176,6 +176,11 @@ Feature: Admin REST API
     When I call GET "/v1/admin/conversations/${bobConversationId}"
     Then the response status should be 200
 
+  Scenario: Admin conversation payload exposes clientId
+    When I call GET "/v1/admin/conversations/${bobConversationId}"
+    Then the response status should be 200
+    And the response body field "clientId" should not be null
+
   Scenario: Auditor receives 403 Forbidden on delete operation
     Given I am authenticated as auditor user "charlie"
     When I call DELETE "/v1/admin/conversations/${bobConversationId}" with body:

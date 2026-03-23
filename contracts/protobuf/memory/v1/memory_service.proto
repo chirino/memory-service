@@ -104,6 +104,7 @@ message Conversation {
   bytes forked_at_conversation_id = 10;
   bytes started_by_conversation_id = 11;
   bytes started_by_entry_id = 12;
+  string agent_id = 13;
 }
 
 message ConversationMembership {
@@ -130,6 +131,7 @@ message ConversationForkSummary {
 message CreateConversationRequest {
   string title = 1;
   google.protobuf.Struct metadata = 2;
+  optional string agent_id = 3;
 }
 
 message ListConversationsRequest {
@@ -244,7 +246,6 @@ message ListEntriesRequest {
   // Controls which fork entries to include: "none" (default) follows ancestry,
   // "all" returns entries from all forks in the conversation group
   string forks = 5;
-  string agent_id = 6;
 }
 
 message ListEntriesResponse {
@@ -272,8 +273,6 @@ message Entry {
   // contains text and role fields.
   repeated google.protobuf.Value content = 7;
   string created_at = 8;
-  string client_id = 9;
-  string agent_id = 10;
 }
 
 message ListMembershipsRequest {

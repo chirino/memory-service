@@ -97,14 +97,6 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 		ch := model.ChannelHistory
 		channelPtr = &ch
 	}
-	if channelPtr != nil && *channelPtr == model.ChannelContext && clientIDParam != nil && agentIDParam == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "validation_error",
-			"details": gin.H{"message": "agentId is required for context channel"},
-		})
-		return
-	}
-
 	allForks := strings.EqualFold(c.DefaultQuery("forks", "none"), "all")
 
 	var epochFilter *registrystore.MemoryEpochFilter
@@ -230,13 +222,6 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 				"code":    "forbidden",
 				"error":   "client id is required for context channel",
 				"details": gin.H{"message": "client id is required for context channel"},
-			})
-			return
-		}
-		if ch == model.ChannelContext && agentID == nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "validation_error",
-				"details": gin.H{"message": "agentId is required for context channel"},
 			})
 			return
 		}
@@ -638,15 +623,6 @@ func syncMemory(c *gin.Context, store registrystore.MemoryStore) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Client-ID header required for sync"})
 		return
 	}
-	agentID := req.AgentID
-	if agentID == nil || strings.TrimSpace(*agentID) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "validation_error",
-			"details": gin.H{"message": "agentId is required for sync"},
-		})
-		return
-	}
-
 	// userId validation for sync.
 	if req.UserID != nil && *req.UserID != "" && *req.UserID != userID {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -657,7 +633,7 @@ func syncMemory(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	if err := routetx.MemoryWrite(c, store, func(context.Context) error {
-		result, err := store.SyncAgentEntry(c.Request.Context(), userID, convID, req, clientID, *agentID)
+		result, err := store.SyncAgentEntry(c.Request.Context(), userID, convID, req, clientID, req.AgentID)
 		if err != nil {
 			return err
 		}

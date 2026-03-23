@@ -1,6 +1,6 @@
 # Entry Data Model
 
-This document explains how entries are stored and retrieved in the memory service, covering the core data structure, channels, memory epochs, conversation forking, and how these concepts interact.
+This document explains how entries are stored and retrieved in the memory service, covering the core data structure, channels, memory epochs, conversation forking, and conversation-level identity.
 
 ## Overview
 
@@ -21,6 +21,8 @@ erDiagram
         UUID forkedAtConversationId FK
         UUID forkedAtEntryId FK
         string ownerUserId
+        string clientId
+        string agentId
         bytes title
         timestamp createdAt
         timestamp updatedAt
@@ -31,7 +33,6 @@ erDiagram
         UUID conversationId FK
         UUID conversationGroupId FK
         string userId
-        string clientId
         enum channel
         long epoch
         string contentType
@@ -48,7 +49,6 @@ erDiagram
 | `conversationId` | UUID | The conversation this entry belongs to |
 | `conversationGroupId` | UUID | The conversation group (for efficient fork queries) |
 | `userId` | string | Human user who created the entry (null for agent entries) |
-| `clientId` | string | Agent/client identifier from API key (null for user entries) |
 | `channel` | enum | Logical channel: `HISTORY` or `MEMORY` |
 | `epoch` | long | Memory epoch number (only for MEMORY channel) |
 | `contentType` | string | Schema identifier describing the content format |
@@ -68,7 +68,7 @@ flowchart TB
             H3[User: What's 2+2?]
             H4[Agent: 4]
         end
-        subgraph "MEMORY Channel (per agent)"
+        subgraph "MEMORY Channel (per conversation)"
             subgraph "Epoch 1 (superseded)"
                 M1[context1, context2]
             end
@@ -95,43 +95,45 @@ The **HISTORY** channel contains the visible conversation between users and agen
 The **MEMORY** channel stores agent-internal state that persists between interactions. This is the agent's "working memory" - context it needs to continue conversations coherently.
 
 - **Created by**: Agents only (via API key authentication)
-- **Visible to**: Only the agent that created it (filtered by `clientId`)
+- **Visible to**: Callers whose authenticated client matches the conversation's stored `clientId`
 - **Epoch**: Required - memory entries are versioned by epoch
 - **Content**: Agent-specific format (e.g., `LC4J` for LangChain4j, `SpringAI` for Spring AI)
 
-## Multi-Agent Support
+## Conversation Identity
 
-Multiple agents can participate in the same conversation without interfering with each other's memory. This is achieved through the `clientId` field.
+Each conversation stores:
+
+- `clientId`: required authenticated app/system identity derived at conversation creation time
+- `agentId`: optional logical agent associated with that conversation
+
+The public entry model no longer exposes `clientId` or `agentId`. Context isolation is conversation-scoped, and access to the `context` channel is authorized using the conversation's stored `clientId`.
 
 ```mermaid
 flowchart LR
     subgraph "Conversation conv-123"
-        subgraph "Agent A (clientId: agent-a)"
-            MA1[Memory Entry 1]
-            MA2[Memory Entry 2]
-        end
-        subgraph "Agent B (clientId: agent-b)"
-            MB1[Memory Entry 1]
-            MB2[Memory Entry 2]
-        end
+        CID[clientId: planner-app]
+        AG[agentId: planner]
         subgraph "Shared History"
             H1[User message]
-            H2[Agent A response]
-            H3[Agent B response]
+            H2[Agent response]
+        end
+        subgraph "Conversation Context"
+            MA1[Context Entry 1]
+            MA2[Context Entry 2]
         end
     end
 ```
 
 ### Client ID Resolution
 
-The `clientId` is derived from the API key used to authenticate the request. The mapping is configured as:
+The `clientId` is derived from the API key or authenticated client context used to create the conversation.
 
 ```properties
 memory-service.api-keys.agent-a=key1,key2
 memory-service.api-keys.agent-b=key3
 ```
 
-When an agent queries the MEMORY channel, entries are automatically filtered to only return entries matching their `clientId`.
+When a caller queries the `context` channel, the service checks that the authenticated client matches the conversation's stored `clientId`. History entries continue to follow normal conversation membership rules.
 
 ---
 
@@ -177,7 +179,7 @@ When querying memory entries:
 
 ```mermaid
 flowchart TB
-    subgraph "Memory Entries for agent-a in conv-123"
+    subgraph "Context Entries for conv-123"
         subgraph "Epoch 1 (superseded)"
             E1M1[msg1]
             E1M2[msg2]
@@ -195,21 +197,19 @@ flowchart TB
     Query --> E2M3
 ```
 
-### Epoch Isolation per Client
+### Epoch Isolation Per Conversation
 
-Each `(conversationId, clientId)` pair has its own independent epoch sequence:
+Each conversation has its own independent context epoch sequence:
 
 ```
 Conversation: conv-123
-├── Agent A (clientId: agent-a)
-│   ├── Epoch 1: [msg1, msg2]
-│   └── Epoch 2: [summary, msg3]  <- Agent A's latest
-│
-└── Agent B (clientId: agent-b)
-    └── Epoch 1: [context1, context2]  <- Agent B's latest
+├── clientId: planner-app
+├── agentId: planner
+├── Epoch 1: [msg1, msg2]
+└── Epoch 2: [summary, msg3]  <- latest
 ```
 
-Agent A advancing to epoch 2 does not affect Agent B's epoch sequence.
+A different conversation may have a different `clientId` and its own independent epoch sequence. Parent and child conversations do not share epochs.
 
 ---
 
@@ -371,7 +371,7 @@ flowchart TB
 
 ## Epochs in Forked Conversations
 
-Memory epochs interact with forking in a specific way: epochs are per-conversation, not per-group. A fork starts its own independent epoch sequence.
+Context epochs interact with forking in a specific way: epochs are per-conversation, not per-group. A fork starts its own independent epoch sequence.
 
 ### Epoch Divergence at Fork Points
 
@@ -379,15 +379,15 @@ Memory epochs interact with forking in a specific way: epochs are per-conversati
 flowchart TB
     subgraph "Root Conversation"
         R_A[A - HISTORY]
-        R_B["B - MEMORY (epoch=1)"]
+        R_B["B - CONTEXT (epoch=1)"]
         R_C[C - HISTORY]
-        R_D["D - MEMORY (epoch=1)"]
-        R_E["E - MEMORY (epoch=1)"]
+        R_D["D - CONTEXT (epoch=1)"]
+        R_E["E - CONTEXT (epoch=1)"]
     end
 
     subgraph "Fork (at C)"
-        F_I["I - MEMORY (epoch=1)"]
-        F_J["J - MEMORY (epoch=2)"]
+        F_I["I - CONTEXT (epoch=1)"]
+        F_J["J - CONTEXT (epoch=2)"]
         F_K[K - HISTORY]
     end
 
@@ -398,7 +398,7 @@ flowchart TB
 
 ### Query Results with Epochs
 
-When querying MEMORY with `epoch=latest` from the fork:
+When querying CONTEXT with `epoch=latest` from the fork:
 
 | Scenario | Result | Explanation |
 |----------|--------|-------------|
@@ -408,14 +408,14 @@ When querying MEMORY with `epoch=latest` from the fork:
 
 ### Epoch Filtering Algorithm
 
-When iterating through entries in fork order, track the maximum epoch seen:
+When iterating through entries in fork order, track the maximum epoch seen for the conversation-scoped context stream:
 
 ```
 maxEpochSeen = 0
 result = []
 
 for entry in entries (following fork ancestry path):
-    if entry.channel == MEMORY and entry.clientId == requestedClientId:
+    if entry.channel == CONTEXT:
         if entry.epoch > maxEpochSeen:
             result.clear()  // New epoch supersedes all previous
             maxEpochSeen = entry.epoch
@@ -469,25 +469,23 @@ flowchart LR
 
 Querying MEMORY from the fork returns: B (inherited from parent at epoch=1)
 
-### 3. Multiple Agents in Forked Conversation
-
-Each agent's memory is independently scoped by `clientId`:
+### 3. Child Or Forked Conversations Keep Independent Context
 
 ```mermaid
 flowchart TB
     subgraph "Root"
         R_H1[HISTORY: user msg]
-        R_MA["MEMORY: agent-a (epoch=1)"]
-        R_MB["MEMORY: agent-b (epoch=1)"]
+        R_MA["CONTEXT (epoch=1)"]
     end
     subgraph "Fork"
         F_H1[HISTORY: fork msg]
-        F_MA["MEMORY: agent-a (epoch=2)"]
+        F_MA["CONTEXT (epoch=2)"]
     end
 ```
 
-- Query fork as `agent-a`: Gets `agent-a`'s epoch=2 entries only (supersedes inherited epoch=1)
-- Query fork as `agent-b`: Gets inherited `agent-b` epoch=1 entries from root
+- Querying the fork with `epoch=latest` returns the fork's epoch 2 context.
+- Querying the root with `epoch=latest` still returns the root's own latest context.
+- Parent and forked conversations do not share a single context stream.
 
 ### 4. Sibling Forks
 
@@ -552,7 +550,7 @@ The empty content at epoch 3 supersedes all entries from epochs 1 and 2.
 # Get all HISTORY entries for a conversation
 GET /v1/conversations/{id}/entries?channel=history
 
-# Get latest MEMORY entries for an agent
+# Get latest CONTEXT entries for a conversation
 GET /v1/conversations/{id}/entries?channel=memory&epoch=latest
 
 # Get all entries across all forks (admin/debug)
@@ -569,7 +567,7 @@ GET /v1/conversations/{id}/entries?afterEntryId={lastSeenId}&limit=50
 The entry data model supports:
 
 1. **Multiple channels** for different data types (HISTORY, MEMORY)
-2. **Multi-agent support** through `clientId` isolation
+2. **Conversation-scoped context** authorized by conversation `clientId`
 3. **Memory epochs** for versioning agent context with superseding semantics
 4. **Efficient forking** without copying data, using ancestry-based retrieval
 5. **Nested forks** with proper epoch handling across fork boundaries

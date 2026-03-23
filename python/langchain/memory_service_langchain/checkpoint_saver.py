@@ -240,7 +240,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             "GET",
             f"/v1/conversations/{conv_id}/entries",
             thread_id=thread_id,
-            params={"channel": "context", "agentId": _CONTEXT_AGENT_ID},
+            params={"channel": "context"},
         )
         if response.status_code == 404:
             return None
@@ -280,7 +280,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             "GET",
             f"/v1/conversations/{conv_id}/entries",
             thread_id=thread_id,
-            params={"channel": "context", "agentId": _CONTEXT_AGENT_ID},
+            params={"channel": "context"},
         )
         if response.status_code >= 400:
             return iter(())
@@ -323,7 +323,6 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
 
         payload = {
             "channel": "context",
-            "agentId": _CONTEXT_AGENT_ID,
             "contentType": self.CHECKPOINT_CONTENT_TYPE,
             "content": [
                 {

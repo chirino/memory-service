@@ -5,6 +5,7 @@ Feature: Conversations REST API
 
   Background:
     Given I am authenticated as user "alice"
+    And I am authenticated as agent with API key "test-agent-key"
 
   Scenario: Create a conversation
     When I create a conversation with request:
@@ -25,6 +26,7 @@ Feature: Conversations REST API
       "accessLevel": "owner"
     }
     """
+    And the response body should not contain "clientId"
 
   Scenario: Create a conversation with metadata
     When I create a conversation with request:
@@ -58,6 +60,7 @@ Feature: Conversations REST API
     And the response should contain at least 2 conversations
     And the response body "data[0].title" should be "Second Conversation"
     And the response body "data[1].title" should be "First Conversation"
+    And the response body should not contain "clientId"
 
   Scenario: List conversations with pagination
     Given I have a conversation with title "Conversation 1"
@@ -96,6 +99,7 @@ Feature: Conversations REST API
       "accessLevel": "owner"
     }
     """
+    And the response body should not contain "clientId"
 
   Scenario: Get non-existent conversation
     When I get conversation "00000000-0000-0000-0000-000000000000"

@@ -20,6 +20,8 @@
 
 **`@AgentId` scope gotcha**: In the Quarkus history interceptor, one `@AgentId` value applies to both the intercepted user entry and the recorded AI entry for that single invocation. If the delegating message and the sub-agent response need different agent IDs, use `ConversationStore` manual appends around the delegated call instead of a single `@RecordConversation` wrapper.
 
+**History-side `agentId` is transitional**: Quarkus history/runtime code may still pass `agentId` on history appends for child-conversation attribution, but context reads/writes should no longer depend on request-level `agentId`.
+
 **Async sub-agent auth propagation**: The Quarkus extension carries `userId` and bearer token for background child-task execution via its own thread-local execution context. That lets app-specific `SubAgentTaskTool` subclasses call Memory Service-backed chat memory and history APIs even though they run off the original request thread.
 
 **Unified sub-agent tool shape**: Quarkus exposes one write tool, `messageSubAgent`, which creates a child conversation when `childConversationId` is omitted and appends follow-up child messages when it is present. Applications typically expose concrete subclasses such as `FactFindingSubAgentTool`; joined waiting happens in `SubAgentTurnRunner`, not inside the tool method.

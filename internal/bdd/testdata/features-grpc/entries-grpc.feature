@@ -5,6 +5,7 @@ Feature: Entries gRPC API
 
   Background:
     Given I am authenticated as user "alice"
+    And I am authenticated as agent with API key "test-agent-key"
     And I have a conversation with title "Test Conversation"
     And the conversation has an entry "Hello from Alice"
 
@@ -253,6 +254,87 @@ Feature: Entries gRPC API
     And the gRPC response field "id" should not be null
     And the gRPC response field "channel" should be "CONTEXT"
     And the gRPC response field "contentType" should be "test.v1"
+
+  Scenario: A different client cannot read context via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has an entry "Planner memory" in channel "CONTEXT" with contentType "test.v1"
+    Given I am authenticated as agent with API key "test-agent-key-b"
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    channel: CONTEXT
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should have status "PERMISSION_DENIED"
+
+  Scenario: A different client cannot append context via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has an entry "Planner memory" in channel "CONTEXT" with contentType "test.v1"
+    Given I am authenticated as agent with API key "test-agent-key-b"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    entry {
+      user_id: "alice"
+      channel: CONTEXT
+      content_type: "test.v1"
+      content {
+        string_value: "Other client memory"
+      }
+    }
+    """
+    Then the gRPC response should have status "PERMISSION_DENIED"
+
+  Scenario: A different client cannot sync context via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has an entry "Planner memory" in channel "CONTEXT" with contentType "test.v1"
+    Given I am authenticated as agent with API key "test-agent-key-b"
+    When I send gRPC request "EntriesService/SyncEntries" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    entry {
+      channel: CONTEXT
+      content_type: "test.v1"
+      content {
+        string_value: "Other client sync"
+      }
+    }
+    """
+    Then the gRPC response should have status "PERMISSION_DENIED"
+
+  Scenario: A different client can append history via gRPC
+    Given I am authenticated as agent with API key "test-agent-key-b"
+    And the conversation exists
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    entry {
+      user_id: "alice"
+      channel: HISTORY
+      content_type: "history"
+      content {
+        struct_value {
+          fields {
+            key: "role"
+            value {
+              string_value: "USER"
+            }
+          }
+          fields {
+            key: "text"
+            value {
+              string_value: "History from another client"
+            }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "channel" should be "HISTORY"
+    And the gRPC response field "contentType" should be "history"
 
   Scenario: gRPC history channel entries must use 'history' or 'history/*' contentType
     Given I am authenticated as agent with API key "test-agent-key"

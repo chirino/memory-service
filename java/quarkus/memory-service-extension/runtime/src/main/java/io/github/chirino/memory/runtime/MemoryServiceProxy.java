@@ -109,18 +109,6 @@ public class MemoryServiceProxy {
             Channel channel,
             String epoch,
             String forks) {
-        return listConversationEntries(
-                conversationId, afterCursor, limit, channel, epoch, null, forks);
-    }
-
-    public Response listConversationEntries(
-            String conversationId,
-            String afterCursor,
-            Integer limit,
-            Channel channel,
-            String epoch,
-            String agentId,
-            String forks) {
         return execute(
                 () ->
                         conversationsApi()
@@ -130,7 +118,6 @@ public class MemoryServiceProxy {
                                         limit,
                                         channel,
                                         epoch,
-                                        agentId,
                                         forks),
                 OK,
                 "Error listing entries for history %s",

@@ -49,6 +49,8 @@ When you discover something meaningful about this project during your work—arc
 - Entry listing uses `forks=all` to return entries from all branches in a fork tree (not `allForks=true`).
 - Enhancement doc `implemented/007-multi-agent-support.md` is older agent-scoped memory work; do not treat it as the design for parent/child agent conversations or conversation-lineage APIs.
 - Current `clientId` semantics are app/system identity, not logical agent identity; multi-agent apps may need multiple `agentId` values under one authenticated client.
+- Conversation `clientId` is internal/admin-only metadata: user-facing REST conversation payloads must not expose it, while admin conversation APIs may.
+- Conversation identity migration status: the Go backend, OpenAPI/protobuf contracts, generated Go clients, and primary Quarkus/Spring/Python consumers now use conversation-level `clientId` plus optional conversation-level `agentId`; remaining cleanup is mostly historical docs and transitional history-side `agentId` convenience paths.
 - Async sub-agent orchestration is join-based by default: framework runtimes should let child-task tools return promptly, then wait at the parent turn's final-response boundary, append completed child results into parent context, and re-invoke the parent model until no joined child tasks remain. Do not model waiting as `wait_*` tools.
 - In gRPC `memory/v1/memory_service.proto`, response recorder fields use snake_case (`conversation_id`).
 - In gRPC `EventStreamService.SubscribeEvents`, `SubscribeEventsRequest.conversation_ids` exists in the proto but is not currently applied by the server implementation; only `kinds` filtering is enforced today.

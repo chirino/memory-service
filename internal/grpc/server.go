@@ -321,7 +321,8 @@ func (s *ConversationsServer) CreateConversation(ctx context.Context, req *pb.Cr
 	}
 
 	conv, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
-		return s.Store.CreateConversation(txCtx, userID, req.GetTitle(), meta, nil, nil)
+		clientID := getClientID(ctx)
+		return s.Store.CreateConversation(txCtx, userID, clientID, req.GetTitle(), meta, nil, nil, nil)
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -578,10 +579,6 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 		clientIDPtr = &clientID
 	}
 	var agentIDPtr *string
-	if req.GetAgentId() != "" {
-		value := req.GetAgentId()
-		agentIDPtr = &value
-	}
 
 	var epochFilter *registrystore.MemoryEpochFilter
 	if channel == model.ChannelContext {
@@ -680,7 +677,8 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 		}
 		// Try to create the fork conversation with the specified conversation ID
 		_, _ = withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
-			return s.Store.CreateConversationWithID(txCtx, userID, convID, "", nil, &forkedAtConvID, forkedAtEntryID)
+			clientID := getClientID(ctx)
+			return s.Store.CreateConversationWithID(txCtx, userID, clientID, convID, "", nil, nil, &forkedAtConvID, forkedAtEntryID)
 		})
 		// Ignore error — conversation may already exist
 	}
@@ -748,7 +746,7 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 			ContentType: entry.GetContentType(),
 			Channel:     string(model.ChannelContext),
 			AgentID:     stringPtrIfNotEmpty(entry.GetAgentId()),
-		}, clientID, entry.GetAgentId())
+		}, clientID, stringPtrIfNotEmpty(entry.GetAgentId()))
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -777,12 +775,6 @@ func entryToProto(e *model.Entry) *pb.Entry {
 	}
 	if e.UserID != nil {
 		entry.UserId = *e.UserID
-	}
-	if e.ClientID != nil {
-		entry.ClientId = *e.ClientID
-	}
-	if e.AgentID != nil {
-		entry.AgentId = *e.AgentID
 	}
 	if e.Epoch != nil {
 		entry.Epoch = *e.Epoch

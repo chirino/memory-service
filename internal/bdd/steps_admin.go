@@ -46,6 +46,7 @@ func (a *adminSteps) thereIsAConversationOwnedByWithTitle(owner, title string) e
 	savedAuth := snapshotAuthState(a.s)
 	auth := &authSteps{s: a.s}
 	_ = auth.iAmAuthenticatedAsUser(owner)
+	_ = auth.iAmAuthenticatedAsAgentWithAPIKey("test-agent-key")
 
 	body := fmt.Sprintf(`{"title": %q}`, title)
 	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("POST", "/v1/conversations", &godog.DocString{Content: body}, false, false)
