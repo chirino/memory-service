@@ -8,6 +8,20 @@ import CodeFromFile from "../../../components/CodeFromFile.astro";
 
 Use [`uv`](https://docs.astral.sh/uv/getting-started/installation/) for deterministic Python environments and lockfile-driven installs. Use Docker for dependency services (memory-service, Keycloak, databases), not as your day-to-day Python package workflow.
 
+## Install the Package
+
+```bash
+pip install memory-service-langchain
+```
+
+Or with `uv`:
+
+```bash
+uv add memory-service-langchain
+```
+
+This single package includes both LangChain helpers (checkpointing, history middleware, FastAPI integration) and the LangGraph `BaseStore` implementation for episodic memories (`memory_service_langchain.langgraph`).
+
 ## Baseline Runtime
 
 <CodeFromFile file="python/examples/langgraph/doc-checkpoints/02-with-checkpointing/.python-version" lang="text" />

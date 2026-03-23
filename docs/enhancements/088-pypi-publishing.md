@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 088: Publish Python Packages to PyPI
 
-> **Status**: Proposed — Option A (merge) accepted.
+> **Status**: Implemented — tested on [TestPyPI](https://test.pypi.org/project/memory-service-langchain/0.1.0/).
 
 ## Summary
 
@@ -12,11 +12,11 @@ Publish the `memory-service-langchain` Python package to PyPI via GitHub Actions
 
 ## Motivation
 
-The current dev-setup docs require users to clone the repo, run `uv build`, and set `UV_FIND_LINKS`. Published packages remove this friction entirely.
+The dev-setup docs previously required users to clone the repo, run `uv build`, and set `UV_FIND_LINKS`. Published packages remove this friction entirely.
 
 ## Problem
 
-Two Python packages exist today:
+Two Python packages existed:
 
 | Package | Source | Purpose |
 |---------|--------|---------|
@@ -25,61 +25,39 @@ Two Python packages exist today:
 
 PyPI blocks creation of a `memory-service-langgraph` trusted publisher (likely `langgraph` namespace protection by LangChain Inc.). Decision: **merge `memory-service-langgraph` into `memory-service-langchain`** — the langchain package already depends on `langgraph>=1.0.0`, so there is no extra dependency cost.
 
-## Implementation Plan
+## What was implemented
 
-### Phase 1: Merge `memory-service-langgraph` into `memory-service-langchain`
+### Phase 1: Merged `memory-service-langgraph` into `memory-service-langchain`
 
-1. Create `python/langchain/memory_service_langchain/langgraph/` sub-package.
-2. Copy the 4 source files (`store.py`, `async_store.py`, `indexing.py`, `transport.py`) from `python/langgraph/memory_service_langgraph/` into it.
-3. Add `__init__.py` in the new sub-package that re-exports `MemoryServiceStore`, `AsyncMemoryServiceStore`, `IndexBuilder`, `IndexMode`, `IndexRedactor`, `build_index_payload`.
-4. Remove `python/langgraph/` directory entirely.
-5. Remove `langgraph` from the `[tool.uv.workspace]` members in `python/pyproject.toml`.
+- Created `python/langchain/memory_service_langchain/langgraph/` sub-package with `store.py`, `async_store.py`, `indexing.py`, `transport.py`, and `__init__.py` re-exporting all public symbols.
+- Deleted `python/langgraph/` entirely.
+- Removed `langgraph` from `[tool.uv.workspace]` members in `python/pyproject.toml`.
+- Updated imports: `from memory_service_langgraph import ...` → `from memory_service_langchain.langgraph import ...`.
 
-**Files to update** (imports `memory_service_langgraph` → `memory_service_langchain.langgraph`):
-
-| File | Change |
-|------|--------|
-| `python/examples/langgraph/doc-checkpoints/30-memories/app.py` | Update import |
-| `python/examples/langgraph/doc-checkpoints/30-memories/pyproject.toml` | Remove `memory-service-langgraph` dependency |
-| `python/examples/langgraph/doc-checkpoints/30-memories/uv.lock` | Regenerate |
-| `python/uv.lock` | Regenerate |
-| `internal/sitebdd/checkpoint.go` | Remove `--reinstall-package memory-service-langgraph` |
-| `internal/sitebdd/site_test.go` | Update comment about langgraph wheel |
-
-**Docs to update** (references to the old package name):
+Files changed:
 
 | File | Change |
 |------|--------|
-| `site/src/pages/docs/python-langgraph/memories.mdx` | Update import + explanation text |
-| `site/src/pages/docs/python-langgraph/client-configuration.mdx` | Update package name + import |
-| `site/src/pages/docs/concepts/memories.md` | Update package name + import |
-
-**Already-implemented enhancement docs** (update for accuracy, no functional impact):
-
-| File |
-|------|
-| `docs/enhancements/implemented/069-policy-driven-episodic-indexing.md` |
-| `docs/enhancements/implemented/079-client-unix-socket-support.md` |
-| `docs/enhancements/implemented/081-rename-memory-channel-to-context.md` |
-| `docs/enhancements/implemented/083-explicit-client-sdk-configuration.md` |
-| `docs/enhancements/partial/068-namespaced-episodic-memory.md` |
-
-**FACTS.md** to update:
-
-| File |
-|------|
-| `python/FACTS.md` |
+| `python/examples/langgraph/doc-checkpoints/30-memories/app.py` | Updated import |
+| `python/examples/langgraph/doc-checkpoints/30-memories/pyproject.toml` | Removed `memory-service-langgraph` dependency |
+| `internal/sitebdd/checkpoint.go` | Removed `--reinstall-package memory-service-langgraph` |
+| `internal/sitebdd/site_test.go` | Simplified `ensurePythonPackages` to single wheel build |
+| `site/src/pages/docs/python-langgraph/memories.mdx` | Updated imports + explanation text |
+| `site/src/pages/docs/python-langgraph/client-configuration.mdx` | Updated package name + import |
+| `site/src/pages/docs/concepts/memories.md` | Updated package name + import |
+| `python/FACTS.md` | Updated package layout description |
+| Enhancement docs (069, 079, 081, 083, 068) | Updated paths for accuracy |
 
 ### Phase 2: Package metadata
 
-Add to `python/langchain/pyproject.toml`:
+Added to `python/langchain/pyproject.toml`:
 - `license = {text = "Apache-2.0"}`
 - `authors`
 - `[project.urls]` (Homepage, Repository, Documentation)
 
 ### Phase 3: Release workflow
 
-Create `.github/workflows/release.yml`:
+Created `.github/workflows/release.yml`:
 
 ```yaml
 name: Release Python packages
@@ -91,6 +69,7 @@ on:
 jobs:
   publish-python:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -102,18 +81,18 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: python/langchain/dist/
+          packages-dir: python/dist/
 ```
+
+Note: the uv workspace outputs wheels to `python/dist/` (not `python/langchain/dist/`), regardless of `working-directory`.
 
 - Triggered on GitHub release creation
 - gRPC stubs are committed — no generation step in CI
 - OIDC trusted publishing (no API tokens)
 - Versioning: manual bump in `pyproject.toml` before release
 
-### Phase 4: Update documentation
+### Phase 4: Documentation updated
 
-Remove "Step 1 (Temporary): Build Local Package Wheel(s)" from:
-- `site/src/pages/docs/python-langchain/dev-setup.mdx`
-- `site/src/pages/docs/python-langgraph/dev-setup.mdx`
-
-Remove `UV_FIND_LINKS` references from user-facing doc pages. Keep them in `Taskfile.yml` dev targets (those intentionally use local builds).
+- Removed "Step 1 (Temporary): Build Local Package Wheel(s)" from both dev-setup pages.
+- Removed 14 `UV_FIND_LINKS` prerequisite lines across all Python tutorial pages.
+- Added `pip install` / `uv add` instructions to dev-setup pages.
