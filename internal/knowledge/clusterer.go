@@ -22,11 +22,11 @@ type Clusterer struct {
 
 // ClusterRunStats summarizes a single clustering cycle.
 type ClusterRunStats struct {
-	UsersProcessed int `json:"users_processed"`
-	Clustersborn   int `json:"clusters_born"`
+	UsersProcessed  int `json:"users_processed"`
+	Clustersborn    int `json:"clusters_born"`
 	ClustersUpdated int `json:"clusters_updated"`
-	ClustersDied   int `json:"clusters_died"`
-	Failures       int `json:"failures"`
+	ClustersDied    int `json:"clusters_died"`
+	Failures        int `json:"failures"`
 }
 
 // NewClusterer creates a new background clusterer.
