@@ -9,6 +9,8 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/dataencryption"
 	"github.com/chirino/memory-service/internal/episodic"
+	"github.com/chirino/memory-service/internal/knowledge"
+	routeknowledge "github.com/chirino/memory-service/internal/plugin/route/knowledge"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	grpcserver "github.com/chirino/memory-service/internal/grpc"
 	"github.com/chirino/memory-service/internal/plugin/attach/encrypt"
@@ -264,6 +266,39 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	go episodicTTL.Start(ctx)
 
 	go episodicIdx.Start(ctx)
+
+	// Start knowledge clustering goroutine (if enabled).
+	if cfg.KnowledgeClusteringEnabled && cfg.DatastoreType == "postgres" && cfg.DBURL != "" {
+		knowledgeStore, err := knowledge.OpenPostgresKnowledgeStore(cfg.DBURL)
+		if err != nil {
+			log.Warn("Knowledge clustering: failed to open store", "err", err)
+		} else {
+			clusterer := knowledge.NewClusterer(
+				knowledgeStore,
+				cfg.KnowledgeClusteringInterval,
+				cfg.KnowledgeClusteringDecay,
+				10, // keywords per cluster
+				knowledge.DBSCANConfig{
+					Epsilon:   cfg.KnowledgeClusteringEpsilon,
+					MinPoints: cfg.KnowledgeClusteringMinPts,
+				},
+			)
+			go clusterer.Start(ctx)
+
+			// Register knowledge REST routes.
+			knowledgeHandler := &routeknowledge.Handler{
+				Store:     knowledgeStore,
+				Clusterer: clusterer,
+			}
+			knowledgeHandler.RegisterRoutes(router, auth)
+
+			log.Info("Knowledge clustering enabled",
+				"interval", cfg.KnowledgeClusteringInterval,
+				"epsilon", cfg.KnowledgeClusteringEpsilon,
+				"minPts", cfg.KnowledgeClusteringMinPts,
+			)
+		}
+	}
 
 	// Set up gRPC server with auth interceptors.
 	grpcServer := grpc.NewServer(

@@ -340,3 +340,37 @@ CREATE INDEX IF NOT EXISTS memory_usage_stats_last_fetched_idx
     ON memory_usage_stats (last_fetched_at DESC);
 CREATE INDEX IF NOT EXISTS memory_usage_stats_fetch_count_idx
     ON memory_usage_stats (fetch_count DESC);
+
+------------------------------------------------------------
+-- Knowledge Clusters (Enhancement 090)
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS knowledge_clusters (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         TEXT        NOT NULL,
+    label           TEXT        NOT NULL DEFAULT '',
+    keywords        JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    centroid        BYTEA,      -- serialized []float64 centroid vector
+    member_count    INTEGER     NOT NULL DEFAULT 0,
+    trend           SMALLINT    NOT NULL DEFAULT 0,  -- 0=growing, 1=stable, 2=decaying
+    source_type     SMALLINT    NOT NULL DEFAULT 0,  -- 0=entries, 1=memories, 2=mixed
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS knowledge_clusters_user_idx
+    ON knowledge_clusters (user_id);
+CREATE INDEX IF NOT EXISTS knowledge_clusters_trend_idx
+    ON knowledge_clusters (user_id, trend);
+
+CREATE TABLE IF NOT EXISTS knowledge_cluster_members (
+    cluster_id      UUID        NOT NULL REFERENCES knowledge_clusters(id) ON DELETE CASCADE,
+    source_id       UUID        NOT NULL,  -- entry_id or memory_id
+    source_type     SMALLINT    NOT NULL,  -- 0=entry, 1=memory
+    distance        REAL        NOT NULL,  -- distance from centroid at assignment time
+    assigned_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (cluster_id, source_id)
+);
+
+CREATE INDEX IF NOT EXISTS knowledge_members_source_idx
+    ON knowledge_cluster_members (source_id);

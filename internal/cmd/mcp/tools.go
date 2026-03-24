@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -18,6 +20,8 @@ func registerTools(s *mcpServer) {
 	s.server.AddTool(listSessionsTool(), s.handleListSessions)
 	s.server.AddTool(getSessionTool(), s.handleGetSession)
 	s.server.AddTool(appendNoteTool(), s.handleAppendNote)
+	s.server.AddTool(listKnowledgeClustersTool(), s.handleListKnowledgeClusters)
+	s.server.AddTool(triggerKnowledgeClusteringTool(), s.handleTriggerKnowledgeClustering)
 }
 
 // ── Tool definitions ───────────────────────────────────────
@@ -315,6 +319,122 @@ func (s *mcpServer) handleAppendNote(ctx context.Context, request mcp.CallToolRe
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf("Note appended to conversation %s.", convID)), nil
+}
+
+// ── Knowledge cluster tools ─────────────────────────────────
+
+func listKnowledgeClustersTool() mcp.Tool {
+	return mcp.NewTool("list_knowledge_clusters",
+		mcp.WithDescription("List knowledge clusters that have emerged from your conversations. "+
+			"Clusters are automatically discovered by analyzing the semantic structure of stored entries — "+
+			"no manual labeling needed. Each cluster has auto-generated keywords and a trend (growing/stable/decaying). "+
+			"Use this to understand what topics a user has been working on without reading raw conversation entries."),
+		mcp.WithString("trend",
+			mcp.Description("Filter by trend: 'growing', 'stable', or 'decaying'. Omit for all."),
+		),
+	)
+}
+
+func triggerKnowledgeClusteringTool() mcp.Tool {
+	return mcp.NewTool("trigger_knowledge_clustering",
+		mcp.WithDescription("Trigger an immediate knowledge clustering cycle. "+
+			"Normally clustering runs on a background interval. Use this to force a re-clustering "+
+			"after adding new conversations, so clusters are up-to-date immediately."),
+	)
+}
+
+func (s *mcpServer) handleListKnowledgeClusters(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	url := strings.TrimRight(s.baseURL, "/") + "/v1/knowledge/clusters"
+	if trend, ok := request.GetArguments()["trend"].(string); ok && trend != "" {
+		url += "?trend=" + trend
+	}
+
+	body, err := s.doGet(ctx, url)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to list knowledge clusters: %v", err)), nil
+	}
+
+	var result struct {
+		Clusters []struct {
+			ID          string   `json:"id"`
+			Label       string   `json:"label"`
+			Keywords    []string `json:"keywords"`
+			MemberCount int      `json:"member_count"`
+			Trend       string   `json:"trend"`
+			SourceType  string   `json:"source_type"`
+			CreatedAt   string   `json:"created_at"`
+			UpdatedAt   string   `json:"updated_at"`
+		} `json:"clusters"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to parse response: %v", err)), nil
+	}
+
+	if len(result.Clusters) == 0 {
+		return mcp.NewToolResultText("No knowledge clusters found. Clusters emerge automatically as conversations accumulate."), nil
+	}
+
+	var out strings.Builder
+	out.WriteString(fmt.Sprintf("Found %d knowledge cluster(s):\n\n", len(result.Clusters)))
+	for i, c := range result.Clusters {
+		out.WriteString(fmt.Sprintf("### %d. %s\n", i+1, c.Label))
+		out.WriteString(fmt.Sprintf("- ID: `%s`\n", c.ID))
+		out.WriteString(fmt.Sprintf("- Keywords: %s\n", strings.Join(c.Keywords, ", ")))
+		out.WriteString(fmt.Sprintf("- Members: %d entries\n", c.MemberCount))
+		out.WriteString(fmt.Sprintf("- Trend: %s\n", c.Trend))
+		out.WriteString(fmt.Sprintf("- Source: %s\n", c.SourceType))
+		out.WriteString(fmt.Sprintf("- Updated: %s\n\n", c.UpdatedAt))
+	}
+
+	return mcp.NewToolResultText(out.String()), nil
+}
+
+func (s *mcpServer) handleTriggerKnowledgeClustering(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	url := strings.TrimRight(s.baseURL, "/") + "/admin/v1/knowledge/trigger"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to create request: %v", err)), nil
+	}
+	if err := s.authEditor(ctx, req); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Auth failed: %v", err)), nil
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Clustering trigger failed: %v", err)), nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return mcp.NewToolResultError(fmt.Sprintf("Clustering trigger failed (%d): %s", resp.StatusCode, string(body))), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Clustering cycle complete.\n%s", string(body))), nil
+}
+
+func (s *mcpServer) doGet(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authEditor(ctx, req); err != nil {
+		return nil, err
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	return body, nil
 }
 
 // truncate shortens a string to max length, adding "..." if truncated.
