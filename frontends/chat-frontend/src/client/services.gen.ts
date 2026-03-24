@@ -20,6 +20,10 @@ export class ConversationsService {
    * - `roots`: only include root conversations (conversations that are not forks).
    * - `latest-fork`: include only the most recently updated conversation per fork tree.
    * This is useful for showing a single representative conversation from each tree.
+   * @param data.ancestry Started-conversation ancestry filter.
+   * - `roots`: include only top-level conversations not started from another conversation.
+   * - `children`: include only conversations started from another conversation.
+   * - `all`: include both root and child conversations.
    * @param data.afterCursor Cursor for pagination; returns items after this conversation id (UUID format).
    * @param data.limit Maximum number of conversations to return.
    * @param data.query Optional text query for basic title/metadata search.
@@ -37,6 +41,7 @@ export class ConversationsService {
       url: "/v1/conversations",
       query: {
         mode: data.mode,
+        ancestry: data.ancestry,
         afterCursor: data.afterCursor,
         limit: data.limit,
         query: data.query,
@@ -320,6 +325,35 @@ export class ConversationsService {
       },
       errors: {
         404: "Resource not found",
+      },
+    });
+  }
+
+  /**
+   * List direct child conversations
+   * @param data The data for the request.
+   * @param data.conversationId
+   * @param data.afterCursor
+   * @param data.limit
+   * @returns unknown A list of direct child conversations.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static listConversationChildren(
+    data: $OpenApiTs["/v1/conversations/{conversationId}/children"]["get"]["req"],
+  ): CancelablePromise<
+    | $OpenApiTs["/v1/conversations/{conversationId}/children"]["get"]["res"][200]
+    | $OpenApiTs["/v1/conversations/{conversationId}/children"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/conversations/{conversationId}/children",
+      path: {
+        conversationId: data.conversationId,
+      },
+      query: {
+        afterCursor: data.afterCursor,
+        limit: data.limit,
       },
     });
   }

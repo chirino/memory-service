@@ -42,6 +42,13 @@ enum ConversationListMode {
   LATEST_FORK = 3;
 }
 
+enum ConversationAncestryFilter {
+  CONVERSATION_ANCESTRY_FILTER_UNSPECIFIED = 0;
+  CONVERSATION_ANCESTRY_FILTER_ROOTS = 1;
+  CONVERSATION_ANCESTRY_FILTER_CHILDREN = 2;
+  CONVERSATION_ANCESTRY_FILTER_ALL = 3;
+}
+
 enum AccessLevel {
   ACCESS_LEVEL_UNSPECIFIED = 0;
   OWNER = 1;
@@ -65,6 +72,20 @@ message ConversationSummary {
   string updated_at = 5;
   string last_message_preview = 6;
   AccessLevel access_level = 7;
+  bytes started_by_conversation_id = 8;
+  bytes started_by_entry_id = 9;
+}
+
+message ChildConversationSummary {
+  // Unique identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  string title = 2;
+  string owner_user_id = 3;
+  string created_at = 4;
+  string updated_at = 5;
+  string last_message_preview = 6;
+  AccessLevel access_level = 7;
+  bytes started_by_entry_id = 8;
 }
 
 message Conversation {
@@ -81,6 +102,9 @@ message Conversation {
   bytes forked_at_entry_id = 9;
   // Conversation ID from which this was forked (empty if root)
   bytes forked_at_conversation_id = 10;
+  bytes started_by_conversation_id = 11;
+  bytes started_by_entry_id = 12;
+  string agent_id = 13;
 }
 
 message ConversationMembership {
@@ -107,6 +131,7 @@ message ConversationForkSummary {
 message CreateConversationRequest {
   string title = 1;
   google.protobuf.Struct metadata = 2;
+  optional string agent_id = 3;
 }
 
 message ListConversationsRequest {
@@ -116,6 +141,7 @@ message ListConversationsRequest {
   // Optional text query for basic title/metadata search.
   string query = 2;
   PageRequest page = 3;
+  ConversationAncestryFilter ancestry = 4;
 }
 
 message ListConversationsResponse {
@@ -150,6 +176,16 @@ message ListForksResponse {
   PageInfo page_info = 2;
 }
 
+message ListChildConversationsRequest {
+  bytes conversation_id = 1;
+  PageRequest page = 2;
+}
+
+message ListChildConversationsResponse {
+  repeated ChildConversationSummary conversations = 1;
+  PageInfo page_info = 2;
+}
+
 message CreateEntryRequest {
   string user_id = 1;
   Channel channel = 2;
@@ -173,6 +209,9 @@ message CreateEntryRequest {
   // entries are excluded and the new entry become the first entry in the fork.
   optional bytes forked_at_conversation_id = 7;  // UUID as 16-byte big-endian
   optional bytes forked_at_entry_id = 8;          // UUID as 16-byte big-endian
+  optional string agent_id = 9;
+  optional bytes started_by_conversation_id = 10;
+  optional bytes started_by_entry_id = 11;
 }
 
 message SyncEntriesRequest {
@@ -506,6 +545,7 @@ service ConversationsService {
   // DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
   rpc DeleteConversation(DeleteConversationRequest) returns (google.protobuf.Empty);
   rpc ListForks(ListForksRequest) returns (ListForksResponse);
+  rpc ListChildConversations(ListChildConversationsRequest) returns (ListChildConversationsResponse);
 }
 
 service ConversationMembershipsService {

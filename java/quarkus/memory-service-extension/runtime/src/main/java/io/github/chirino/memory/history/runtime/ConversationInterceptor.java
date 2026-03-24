@@ -1,9 +1,12 @@
 package io.github.chirino.memory.history.runtime;
 
+import io.github.chirino.memory.history.annotations.AgentId;
 import io.github.chirino.memory.history.annotations.ConversationId;
 import io.github.chirino.memory.history.annotations.ForkedAtConversationId;
 import io.github.chirino.memory.history.annotations.ForkedAtEntryId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
+import io.github.chirino.memory.history.annotations.StartedByConversationId;
+import io.github.chirino.memory.history.annotations.StartedByEntryId;
 import io.github.chirino.memory.history.annotations.UserMessage;
 import io.quarkiverse.langchain4j.ImageUrl;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
@@ -46,8 +49,11 @@ public class ConversationInterceptor {
                     invocation.conversationId(),
                     invocation.userMessage(),
                     invocation.attachments(),
+                    invocation.agentId(),
                     invocation.forkedAtConversationId(),
-                    invocation.forkedAtEntryId());
+                    invocation.forkedAtEntryId(),
+                    invocation.startedByConversationId(),
+                    invocation.startedByEntryId());
         } catch (RuntimeException e) {
             LOG.warnf(
                     e,
@@ -72,7 +78,8 @@ public class ConversationInterceptor {
             }
         }
 
-        store.appendAgentMessage(invocation.conversationId(), String.valueOf(result));
+        store.appendAgentMessage(
+                invocation.conversationId(), String.valueOf(result), invocation.agentId());
         store.markCompleted(invocation.conversationId());
         return result;
     }
@@ -99,8 +106,11 @@ public class ConversationInterceptor {
         String userMessage = null;
         Attachments attachmentsObj = null;
         List<Map<String, Object>> imageUrlAttachments = new ArrayList<>();
+        String agentId = null;
         String forkedAtConversationId = null;
         String forkedAtEntryId = null;
+        String startedByConversationId = null;
+        String startedByEntryId = null;
 
         for (int i = 0; i < args.length; i++) {
             // Detect Attachments by parameter type
@@ -115,11 +125,20 @@ public class ConversationInterceptor {
                 if (a instanceof UserMessage) {
                     userMessage = (String) args[i];
                 }
+                if (a instanceof AgentId) {
+                    agentId = (String) args[i];
+                }
                 if (a instanceof ForkedAtConversationId) {
                     forkedAtConversationId = (String) args[i];
                 }
                 if (a instanceof ForkedAtEntryId) {
                     forkedAtEntryId = (String) args[i];
+                }
+                if (a instanceof StartedByConversationId) {
+                    startedByConversationId = (String) args[i];
+                }
+                if (a instanceof StartedByEntryId) {
+                    startedByEntryId = (String) args[i];
                 }
                 if (a instanceof ImageUrl && args[i] != null) {
                     Map<String, Object> att = new LinkedHashMap<>();
@@ -140,6 +159,13 @@ public class ConversationInterceptor {
                 attachmentsObj != null ? attachmentsObj.metadata() : imageUrlAttachments;
 
         return new ConversationInvocation(
-                conversationId, userMessage, attachments, forkedAtConversationId, forkedAtEntryId);
+                conversationId,
+                userMessage,
+                attachments,
+                agentId,
+                forkedAtConversationId,
+                forkedAtEntryId,
+                startedByConversationId,
+                startedByEntryId);
     }
 }

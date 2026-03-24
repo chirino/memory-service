@@ -47,6 +47,11 @@ When you discover something meaningful about this project during your work—arc
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).
 - Fork creation is implicit on first append to a new conversation ID using `forkedAtConversationId` + `forkedAtEntryId`; `POST /v1/conversations/{conversationId}/entries/{entryId}/fork` is obsolete.
 - Entry listing uses `forks=all` to return entries from all branches in a fork tree (not `allForks=true`).
+- Enhancement doc `implemented/007-multi-agent-support.md` is older agent-scoped memory work; do not treat it as the design for parent/child agent conversations or conversation-lineage APIs.
+- Current `clientId` semantics are app/system identity, not logical agent identity; multi-agent apps may need multiple `agentId` values under one authenticated client.
+- Conversation `clientId` is internal/admin-only metadata: user-facing REST conversation payloads must not expose it, while admin conversation APIs may.
+- Conversation identity migration status: public contracts and conversation APIs now use conversation-level `clientId` plus optional conversation-level `agentId`, but Go stores still persist entry-level `clientId`/`agentId` and still use agent-scoped context cache/query paths internally; Enhancement 089 is partial, not complete.
+- Async sub-agent orchestration now uses explicit model-facing control tools instead of implicit end-of-turn joins. The Quarkus default tool names are `agentSend`, `agentPoll`, `waitTask`, and `agentStop`; follow-up messages to an existing running child conversation require an explicit mode such as `queue` or `interrupt`.
 - In gRPC `memory/v1/memory_service.proto`, response recorder fields use snake_case (`conversation_id`).
 - In gRPC `EventStreamService.SubscribeEvents`, `SubscribeEventsRequest.conversation_ids` exists in the proto but is not currently applied by the server implementation; only `kinds` filtering is enforced today.
 - Response recording naming is intentionally split by scope: client-side lifecycle APIs use `ResponseRecordingManager` / `RecordingSession`, while record-only server/proto pieces use `ResponseRecorderService` and recorder handles; avoid renaming the umbrella concept back to `ResponseRecorder`.
@@ -55,58 +60,20 @@ When you discover something meaningful about this project during your work—arc
 - Attachment download tokens (`/v1/attachments/download/:token/:filename`) are HMAC-signed with `AttachmentSigningSecret`; keep `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET` non-empty, especially with DB attachment stores where storage keys are guessable. The unauthenticated download route is not registered when this secret is unset.
 - Go cache serialization gotcha: `model.Entry` has custom JSON marshaling for `content`; keep marshal/unmarshal behavior symmetric or cached memory entries lose content and break sync/list semantics.
 - Repo-root Docker build gotcha: the release `Dockerfile` builds without `.git` metadata in context, so Go commands in that image must use `-buildvcs=false` or `go build` fails with `error obtaining VCS status`.
-- Devcontainer Go gotcha: if `.devcontainer/Dockerfile` installs an older Go version than `go.mod` (e.g. 1.24.2 vs 1.24.6), Go auto-downloads a newer toolchain into `GOPATH`; keep `/go` writable by `vscode` (or set `GOPATH` to a user-owned path) to avoid `mkdir .../golang.org/toolchain: permission denied`.
+- Devcontainer Go gotcha: keep `go.mod` using a language version in the `go` directive (for example `go 1.24`) and put patch-level pinning in `toolchain go1.24.6`; if `.devcontainer/Dockerfile` installs an older Go version, Go auto-downloads the newer toolchain into `GOPATH`, so keep `/go` writable by `vscode` (or set `GOPATH` to a user-owned path) to avoid `mkdir .../golang.org/toolchain: permission denied`.
 - Devcontainer site-test gotcha: `.devcontainer/Dockerfile` needs `libsqlite3-dev` installed or `task test:site` / `go build -tags='site_tests sqlite_fts5' ./internal/sitebdd/` fails while compiling `github.com/asg017/sqlite-vec-go-bindings` with `fatal error: sqlite3.h: No such file or directory`.
 - Memory usage counters increment only on direct fetch reads (`GET /v1/memories`, gRPC `GetMemory`); search endpoints can return usage metadata with `include_usage` but do not increment counters.
 - Quarkus REST client module builds can require `-am` (`./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus -am ...`) so `memory-service-contracts` is built in the same reactor.
+- Site-doc checkpoint builds run as standalone Maven apps; after changing shared Java snapshot modules they depend on, use `./java/mvnw -f java/pom.xml -pl <module> -am install -DskipTests` rather than only `compile`, or site tests may keep using stale artifacts from `~/.m2`.
 - The demo Quarkus image Dockerfile lives at `./java/quarkus/examples/chat-quarkus/Dockerfile`; repo-root compose/task commands should use that path.
 - Contract specs live in repo-root `contracts/`; Java modules should resolve them from `${maven.multiModuleProjectDirectory}/../contracts`, and the `java/memory-service-contracts` module publishes them via `../../contracts`.
 - The Maven wrapper and reactor root live under `java/`; repo-root Maven commands must use `./java/mvnw -f java/pom.xml ...`.
 
-## Build Tags
-
-Use Go build tags to exclude plugins at compile time. Default `go build` includes everything.
-
-| Tag | Excludes |
-|-----|----------|
-| `nosqlite` | SQLite store + sqlitevec (removes CGO dependency) |
-| `nomongo` | MongoDB store + mongostore attachments |
-| `nopostgresql` | PostgreSQL store + pgvector + pgstore attachments |
-| `noredis` | Redis cache registration (impl kept if infinispan enabled) |
-| `noinfinispan` | Infinispan cache |
-| `noqdrant` | Qdrant vector plugin |
-| `nos3` | S3 attachment store |
-| `novault` | Vault encryption |
-| `noawskms` | AWS KMS encryption |
-| `noopenai` | OpenAI embeddings |
-| `notcp` | TCP listener |
-| `nouds` | Unix domain socket listener |
-| `nomcp` | MCP subcommand |
-
-At least one store backend must remain enabled (compile-time guard).
-
-**Examples**:
-```bash
-# Default (all plugins)
-go build ./...
-
-# CGO-free PostgreSQL-only build
-CGO_ENABLED=0 go build -tags 'nosqlite,nomongo' .
-
-# Minimal PostgreSQL build
-go build -tags 'nosqlite,nomongo,noqdrant,nos3,novault,noawskms,noinfinispan,noredis,noopenai' .
-
-# Docker build with custom tags
-docker build --build-arg GO_BUILD_TAGS="sqlite_fts5 sqlite_json nosqlite" .
-```
-
-Plugins contribute their own CLI flags via the registry. Excluded plugins' flags are automatically removed from `--help`.
 
 ## Development Guidelines
 
 **Security**: Don't commit secrets; pass them with env vars
 **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`). Include test commands and config changes.
-
 
 ## Notes for AI Assistants
 

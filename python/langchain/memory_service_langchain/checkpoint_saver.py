@@ -32,6 +32,7 @@ from .transport import (
 
 # Stable namespace UUID for deriving conversation UUIDs from arbitrary thread_ids.
 _CONV_ID_NAMESPACE = _uuid_module.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+_CONTEXT_AGENT_ID = "python-checkpointer"
 
 
 class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):

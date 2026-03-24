@@ -7,5 +7,8 @@ public record ConversationInvocation(
         String conversationId,
         String userMessage,
         List<Map<String, Object>> attachments,
+        String agentId,
         String forkedAtConversationId,
-        String forkedAtEntryId) {}
+        String forkedAtEntryId,
+        String startedByConversationId,
+        String startedByEntryId) {}

@@ -15,6 +15,8 @@ import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
 import io.github.chirino.memory.client.model.Entry;
 import io.github.chirino.memory.client.model.ListConversationEntries200Response;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
+import io.github.chirino.memory.subagent.runtime.SubAgentExecutionContext;
+import io.quarkus.arc.Arc;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -59,7 +61,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         ListConversationEntries200Response context;
         try {
             context =
-                    conversationsApi()
+                    conversationsApi(memoryId)
                             .listConversationEntries(
                                     UUID.fromString(memoryId.toString()),
                                     null,
@@ -128,7 +130,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
             return;
         }
         try {
-            conversationsApi()
+            conversationsApi(memoryId)
                     .syncConversationContext(UUID.fromString(memoryId.toString()), syncEntry);
         } catch (WebApplicationException e) {
             String body = readResponseBody(e);
@@ -149,8 +151,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
 
         // Sync with empty content to clear context by creating an empty epoch
         CreateEntryRequest syncEntry = new CreateEntryRequest();
-        SecurityIdentity identity = resolveSecurityIdentity();
-        String userId = principalName(identity);
+        String userId = resolveUserId();
         if (userId != null) {
             syncEntry.setUserId(userId);
         }
@@ -158,7 +159,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         syncEntry.setContentType("LC4J");
         syncEntry.setContent(new ArrayList<>());
         try {
-            conversationsApi()
+            conversationsApi(memoryId)
                     .syncConversationContext(UUID.fromString(memoryId.toString()), syncEntry);
         } catch (WebApplicationException e) {
             String body = readResponseBody(e);
@@ -178,14 +179,12 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
      */
     private CreateEntryRequest toSyncEntryRequest(List<ChatMessage> messages) {
         CreateEntryRequest request = new CreateEntryRequest();
-        SecurityIdentity identity = resolveSecurityIdentity();
-        String userId = principalName(identity);
+        String userId = resolveUserId();
         if (userId != null) {
             request.setUserId(userId);
         }
         request.setChannel(ChannelEnum.CONTEXT);
         request.setContentType("LC4J");
-
         List<Object> contentBlocks = new ArrayList<>();
         for (ChatMessage chatMessage : messages) {
             if (chatMessage != null) {
@@ -207,13 +206,68 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         return "";
     }
 
-    private ConversationsApi conversationsApi() {
-        String bearerToken = bearerToken(resolveSecurityIdentity());
+    private ConversationsApi conversationsApi(Object memoryId) {
+        String bearerToken = resolveBearerToken(memoryId);
+        LOG.debugf(
+                "Resolved chat memory auth for conversationId=%s: requestContextActive=%s"
+                        + " currentContextToken=%s conversationContextToken=%s finalToken=%s",
+                memoryId,
+                Arc.container().requestContext().isActive(),
+                present(
+                        SubAgentExecutionContext.current() != null
+                                ? SubAgentExecutionContext.current().bearerToken()
+                                : null),
+                present(memoryId == null ? null : tokenForConversation(memoryId.toString())),
+                present(bearerToken));
+        if (bearerToken == null || bearerToken.isBlank()) {
+            throw new IllegalStateException(
+                    "Missing bearer token for child task execution on conversationId=" + memoryId);
+        }
         return conversationsApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
     }
 
     private SecurityIdentity resolveSecurityIdentity() {
+        if (!Arc.container().requestContext().isActive()) {
+            return null;
+        }
         return securityIdentityInstance.isResolvable() ? securityIdentityInstance.get() : null;
+    }
+
+    private String resolveUserId() {
+        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
+        if (state != null && state.userId() != null && !state.userId().isBlank()) {
+            return state.userId();
+        }
+        return principalName(resolveSecurityIdentity());
+    }
+
+    private String resolveBearerToken(Object memoryId) {
+        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
+        if (state != null && state.bearerToken() != null && !state.bearerToken().isBlank()) {
+            return state.bearerToken();
+        }
+        if (memoryId != null) {
+            String conversationToken = tokenForConversation(memoryId.toString());
+            if (conversationToken != null) {
+                return conversationToken;
+            }
+        }
+        return bearerToken(resolveSecurityIdentity());
+    }
+
+    private static String tokenForConversation(String conversationId) {
+        SubAgentExecutionContext.State conversationState =
+                SubAgentExecutionContext.forConversation(conversationId);
+        if (conversationState == null
+                || conversationState.bearerToken() == null
+                || conversationState.bearerToken().isBlank()) {
+            return null;
+        }
+        return conversationState.bearerToken();
+    }
+
+    private static String present(String value) {
+        return value == null || value.isBlank() ? "false" : "true";
     }
 
     private List<ChatMessage> decodeContentBlock(

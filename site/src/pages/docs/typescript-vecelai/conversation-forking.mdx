@@ -148,7 +148,7 @@ Create the forked conversation by calling chat with fork metadata:
 
 <CurlTest steps={`
 Then the response status should be 200
-`} exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"id":"ff1c0c7b-f76f-495d-b73d-b88bd83de88f","conversationId":"c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:59:40.352461Z","content":[{"role":"USER","text":"Hello from the root conversation."}]},{"id":"a370e1b2-953a-4767-aa38-69638621ff00","conversationId":"c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111","userId":"bob","clientId":"checkpoint-agent","channel":"history","contentType":"history","createdAt":"2026-03-06T14:59:40.382506Z","content":[{"role":"AI","text":"I am a TypeScript memory-service demo agent."}]}]}`}>
+`} exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"id":"ff1c0c7b-f76f-495d-b73d-b88bd83de88f","conversationId":"c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111","userId":"bob","channel":"history","contentType":"history","createdAt":"2026-03-06T14:59:40.352461Z","content":[{"role":"USER","text":"Hello from the root conversation."}]},{"id":"a370e1b2-953a-4767-aa38-69638621ff00","conversationId":"c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111","userId":"bob","channel":"history","contentType":"history","createdAt":"2026-03-06T14:59:40.382506Z","content":[{"role":"AI","text":"I am a TypeScript memory-service demo agent."}]}]}`}>
 
 ```bash
 curl -NsSfX POST "http://localhost:9090/chat/e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222?forkedAtConversationId=c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111&forkedAtEntryId=${FORK_ENTRY_ID}" \

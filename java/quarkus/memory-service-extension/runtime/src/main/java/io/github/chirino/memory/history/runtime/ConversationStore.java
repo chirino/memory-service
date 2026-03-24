@@ -6,9 +6,11 @@ import static io.github.chirino.memory.security.SecurityHelper.principalName;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
+import io.github.chirino.memory.client.model.Conversation;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
+import io.github.chirino.memory.subagent.runtime.SubAgentExecutionContext;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.quarkus.arc.Arc;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -18,6 +20,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +42,7 @@ public class ConversationStore {
     @Inject Instance<ToolAttachmentExtractor> toolAttachmentExtractorInstance;
 
     private SecurityIdentity resolveIdentity() {
-        if (identityAssociation != null) {
+        if (Arc.container().requestContext().isActive() && identityAssociation != null) {
             SecurityIdentity resolved = identityAssociation.getIdentity();
             if (resolved != null && !resolved.isAnonymous()) {
                 LOG.debugf(
@@ -48,14 +51,19 @@ public class ConversationStore {
                 return resolved;
             }
         }
-        if (securityIdentity != null) {
+        if (Arc.container().requestContext().isActive() && securityIdentity != null) {
             LOG.debugf(
                     "Resolved identity from injected identity: type=%s",
                     securityIdentity.getClass().getName());
-        } else {
-            LOG.debug("Resolved identity from injected identity: <none>");
+            return securityIdentity;
         }
-        return securityIdentity;
+        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
+        if (state != null) {
+            LOG.debug("Resolved identity from sub-agent execution context");
+        } else {
+            LOG.debug("Resolved identity: <none>");
+        }
+        return null;
     }
 
     private void applyIndexedContent(CreateEntryRequest request, String text, String role) {
@@ -75,15 +83,18 @@ public class ConversationStore {
 
     public void appendUserMessage(
             String conversationId, String content, List<Map<String, Object>> attachments) {
-        appendUserMessage(conversationId, content, attachments, null, null);
+        appendUserMessage(conversationId, content, attachments, null, null, null, null, null);
     }
 
     public void appendUserMessage(
             String conversationId,
             String content,
             List<Map<String, Object>> attachments,
+            String agentId,
             String forkedAtConversationId,
-            String forkedAtEntryId) {
+            String forkedAtEntryId,
+            String startedByConversationId,
+            String startedByEntryId) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
         request.setContentType("history");
@@ -99,21 +110,39 @@ public class ConversationStore {
         }
         request.setContent(List.of(block));
         applyIndexedContent(request, content, "USER");
+        if (agentId != null) {
+            request.setAgentId(agentId);
+        }
         if (forkedAtConversationId != null) {
             request.setForkedAtConversationId(UUID.fromString(forkedAtConversationId));
         }
         if (forkedAtEntryId != null) {
             request.setForkedAtEntryId(UUID.fromString(forkedAtEntryId));
         }
-        callAppend(conversationId, request, bearerToken(securityIdentity));
+        if (startedByConversationId != null) {
+            request.setStartedByConversationId(UUID.fromString(startedByConversationId));
+        }
+        if (startedByEntryId != null) {
+            request.setStartedByEntryId(UUID.fromString(startedByEntryId));
+        }
+        callAppend(conversationId, request, resolveBearerToken());
     }
 
     public void appendAgentMessage(String conversationId, String content) {
-        String bearerToken = bearerToken(resolveIdentity());
-        appendAgentMessage(conversationId, content, bearerToken);
+        appendAgentMessageInternal(conversationId, content, null, resolveBearerToken());
     }
 
-    public void appendAgentMessage(String conversationId, String content, String bearerToken) {
+    public void appendAgentMessage(String conversationId, String content, String agentId) {
+        appendAgentMessageInternal(conversationId, content, agentId, resolveBearerToken());
+    }
+
+    void appendAgentMessageWithBearerToken(
+            String conversationId, String content, String bearerToken) {
+        appendAgentMessageInternal(conversationId, content, null, bearerToken);
+    }
+
+    private void appendAgentMessageInternal(
+            String conversationId, String content, String agentId, String bearerToken) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
         request.setContentType("history");
@@ -126,13 +155,16 @@ public class ConversationStore {
         block.put("role", "AI");
         request.setContent(List.of(block));
         applyIndexedContent(request, content, "AI");
-        String effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
+        if (agentId != null) {
+            request.setAgentId(agentId);
+        }
+        String effectiveToken = bearerToken != null ? bearerToken : resolveBearerToken();
         callAppend(conversationId, request, effectiveToken);
     }
 
     public Multi<String> appendAgentMessage(String conversationId, Multi<String> stringMulti) {
         SecurityIdentity resolvedIdentity = resolveIdentity();
-        String bearerToken = bearerToken(resolvedIdentity);
+        String bearerToken = resolveBearerToken();
         return ConversationStreamAdapter.wrap(
                 conversationId,
                 stringMulti,
@@ -155,8 +187,13 @@ public class ConversationStore {
      * @return wrapped Multi that records events as they stream
      */
     public Multi<ChatEvent> appendAgentEvents(String conversationId, Multi<ChatEvent> eventMulti) {
+        return appendAgentEvents(conversationId, eventMulti, null);
+    }
+
+    public Multi<ChatEvent> appendAgentEvents(
+            String conversationId, Multi<ChatEvent> eventMulti, String agentId) {
         SecurityIdentity resolvedIdentity = resolveIdentity();
-        String bearerToken = bearerToken(resolvedIdentity);
+        String bearerToken = resolveBearerToken();
         ToolAttachmentExtractor extractor =
                 toolAttachmentExtractorInstance != null
                                 && toolAttachmentExtractorInstance.isResolvable()
@@ -177,6 +214,7 @@ public class ConversationStore {
                 resolvedIdentity,
                 identityAssociation,
                 bearerToken,
+                agentId,
                 extractor);
     }
 
@@ -190,7 +228,18 @@ public class ConversationStore {
      */
     public void appendAgentMessageWithEvents(
             String conversationId, String finalText, List<JsonNode> events, String bearerToken) {
-        appendAgentMessageWithEvents(conversationId, finalText, events, List.of(), bearerToken);
+        appendAgentMessageWithEvents(
+                conversationId, finalText, events, List.of(), null, bearerToken);
+    }
+
+    public void appendAgentMessageWithEvents(
+            String conversationId,
+            String finalText,
+            List<JsonNode> events,
+            String agentId,
+            String bearerToken) {
+        appendAgentMessageWithEvents(
+                conversationId, finalText, events, List.of(), agentId, bearerToken);
     }
 
     /**
@@ -207,6 +256,17 @@ public class ConversationStore {
             String finalText,
             List<JsonNode> events,
             List<Map<String, Object>> attachments,
+            String bearerToken) {
+        appendAgentMessageWithEvents(
+                conversationId, finalText, events, attachments, null, bearerToken);
+    }
+
+    public void appendAgentMessageWithEvents(
+            String conversationId,
+            String finalText,
+            List<JsonNode> events,
+            List<Map<String, Object>> attachments,
+            String agentId,
             String bearerToken) {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
@@ -231,8 +291,23 @@ public class ConversationStore {
         request.setContent(List.of(block));
 
         applyIndexedContent(request, finalText, "AI");
-        String effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
+        if (agentId != null) {
+            request.setAgentId(agentId);
+        }
+        String effectiveToken = bearerToken != null ? bearerToken : resolveBearerToken();
         callAppend(conversationId, request, effectiveToken);
+    }
+
+    public Conversation getConversation(String conversationId, String bearerToken) {
+        try {
+            return conversationsApi(bearerToken).getConversation(UUID.fromString(conversationId));
+        } catch (WebApplicationException e) {
+            if (e.getResponse() != null
+                    && e.getResponse().getStatus() == Response.Status.NOT_FOUND.getStatusCode()) {
+                return null;
+            }
+            throw e;
+        }
     }
 
     private void callAppend(String conversationId, CreateEntryRequest request, String bearerToken) {
@@ -267,9 +342,18 @@ public class ConversationStore {
     }
 
     private String resolveUserId() {
-        if (!Arc.container().requestContext().isActive()) {
-            return null;
+        if (Arc.container().requestContext().isActive()) {
+            return principalName(securityIdentity);
         }
-        return principalName(securityIdentity);
+        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
+        return state != null ? state.userId() : null;
+    }
+
+    private String resolveBearerToken() {
+        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
+        if (state != null && state.bearerToken() != null && !state.bearerToken().isBlank()) {
+            return state.bearerToken();
+        }
+        return bearerToken(resolveIdentity());
     }
 }

@@ -7,7 +7,7 @@ This document describes the API and data model of the Memory Service. The goal i
 For detailed design specifications on specific features, see:
 
 - **[Architecture](architecture.md)**: System context, component overview, store abstractions, request flows, and module structure.
-- **[Entry Data Model](entry-data-model.md)**: Detailed documentation of how entries are stored and retrieved, including channels, memory epochs, conversation forking, and multi-agent support.
+- **[Entry Data Model](entry-data-model.md)**: Detailed documentation of how entries are stored and retrieved, including channels, memory epochs, conversation forking, and conversation-level client/agent identity.
 - **[Database Design](db-design.md)**: PostgreSQL schema UML diagram, table descriptions, and key design patterns (access control, soft deletes, encryption, full-text search).
 
 ## High-level Responsibilities
@@ -117,9 +117,9 @@ The HTTP API is defined in `openapi.yml` (OpenAPI 3.1) for the main API and `ope
     - If content matches exactly: no-op.
     - If content extends existing (prefix match): append delta to current epoch.
     - If content diverges: create new epoch with delta.
-  - Memory entries are scoped per `(conversationId, clientId)` where `clientId` is derived from the API key.
+  - Context entries are scoped by conversation, with context access authorized by the conversation's stored `clientId`.
   - Response: `SyncEntryResponse` with `epoch`, `noOp`, `epochIncremented`, and optional `entry`.
-  - See [Entry Data Model](entry-data-model.md) for details on memory epochs and multi-agent support.
+  - See [Entry Data Model](entry-data-model.md) for details on memory epochs and conversation-level identity.
 
 ---
 
@@ -288,7 +288,7 @@ Key concepts:
 
 - **Entries**: The fundamental unit of stored data in a conversation. Entries represent chat messages, agent memory snapshots, tool results, or any structured data. Each entry has a `channel` (HISTORY or MEMORY), `contentType`, and `content`.
 - **Channels**: Entries are organized into logical channels - HISTORY for visible conversation and MEMORY for agent-internal state.
-- **Memory Epochs**: Agent memory entries use epochs for versioning. When an agent's context changes significantly, it creates a new epoch that supersedes previous ones.
+- **Memory Epochs**: Context entries use epochs for versioning within a conversation. When an agent's context changes significantly, it creates a new epoch that supersedes previous ones for that conversation.
 - **Fork Trees**: All forks of a conversation share the same internal group, enabling shared access control. The `conversationGroupId` is not exposed in the API.
 - **Vector Embeddings**: Optional vector store integration for semantic search (pgvector, Qdrant).
 
@@ -365,4 +365,4 @@ UUID fields are represented as 16-byte big-endian binary values in protobuf mess
   - This document, providing the high-level API design and explaining how it meets the requirements for ownership, sharing, replay, forking, and semantic search.
 
 - `entry-data-model.md`
-  - Detailed documentation of how entries are stored and retrieved, including channels, memory epochs, conversation forking, and multi-agent support.
+  - Detailed documentation of how entries are stored and retrieved, including channels, memory epochs, conversation forking, and conversation-level client/agent identity.

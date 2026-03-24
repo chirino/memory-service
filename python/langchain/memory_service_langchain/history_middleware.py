@@ -8,6 +8,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest
 
 from .request_context import (
+    get_conversation_authorization,
     get_request_authorization,
     get_request_conversation_id,
     get_request_forked_at_conversation_id,
@@ -57,14 +58,18 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
         config.update(overrides)
         return cls(**config)
 
-    def _authorization(self) -> str | None:
+    def _authorization(self, conversation_id: str | None = None) -> str | None:
         if not self.authorization_getter:
-            return None
-        return self.authorization_getter()
+            authorization = None
+        else:
+            authorization = self.authorization_getter()
+        if not authorization and conversation_id:
+            authorization = get_conversation_authorization(conversation_id)
+        return authorization
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, conversation_id: str | None = None) -> dict[str, str]:
         headers = {"X-API-Key": self.api_key}
-        authorization = self._authorization()
+        authorization = self._authorization(conversation_id)
         if authorization:
             headers["Authorization"] = authorization
         return headers
@@ -185,24 +190,24 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
                 response = client.post(
                     f"/v1/conversations/{conversation_id}/entries",
                     json=payload,
-                    headers=self._headers(),
+                    headers=self._headers(conversation_id),
                 )
                 if response.status_code == 404:
                     client.post(
                         "/v1/conversations",
                         json={"id": conversation_id, "title": f"Python checkpoint {conversation_id}"},
-                        headers=self._headers(),
+                        headers=self._headers(conversation_id),
                     )
                     response = client.post(
                         f"/v1/conversations/{conversation_id}/entries",
                         json=payload,
-                        headers=self._headers(),
+                        headers=self._headers(conversation_id),
                     )
                 if self._is_duplicate_conversation_error(response):
                     response = client.post(
                         f"/v1/conversations/{conversation_id}/entries",
                         json=payload,
-                        headers=self._headers(),
+                        headers=self._headers(conversation_id),
                     )
                 if response.status_code >= 400:
                     LOG.warning(

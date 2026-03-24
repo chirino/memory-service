@@ -50,6 +50,9 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 	g.GET("/conversations/:id/forks", func(c *gin.Context) {
 		adminListForks(c, store)
 	})
+	g.GET("/conversations/:id/children", func(c *gin.Context) {
+		adminListChildConversations(c, store)
+	})
 
 	// Search
 	g.POST("/conversations/search", func(c *gin.Context) {
@@ -153,6 +156,14 @@ func HandleAdminListForks(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 	adminListForks(c, store)
+}
+
+// HandleAdminListChildConversations exposes admin list children for wrapper-native adapters.
+func HandleAdminListChildConversations(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminListChildConversations(c, store)
 }
 
 // HandleAdminSearchConversations exposes admin search for wrapper-native adapters.
@@ -277,6 +288,7 @@ func HandleAdminStatsStoreThroughput(c *gin.Context, cfg *config.Config) {
 func adminListConversations(c *gin.Context, store registrystore.MemoryStore) {
 	query := registrystore.AdminConversationQuery{
 		Mode:           model.ConversationListMode(c.DefaultQuery("mode", "latest-fork")),
+		Ancestry:       model.ConversationAncestryFilter(c.DefaultQuery("ancestry", "roots")),
 		IncludeDeleted: c.Query("includeDeleted") == "true",
 		OnlyDeleted:    c.Query("onlyDeleted") == "true",
 		Limit:          queryInt(c, "limit", 20),
@@ -301,7 +313,7 @@ func adminListConversations(c *gin.Context, store registrystore.MemoryStore) {
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, gin.H{"data": summaries, "afterCursor": cursor})
+		c.JSON(http.StatusOK, gin.H{"data": toAdminConversationSummaries(summaries), "afterCursor": cursor})
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -319,7 +331,7 @@ func adminGetConversation(c *gin.Context, store registrystore.MemoryStore) {
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, conv)
+		c.JSON(http.StatusOK, toAdminConversationResponse(conv))
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -357,7 +369,7 @@ func adminRestoreConversation(c *gin.Context, store registrystore.MemoryStore) {
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, conv)
+		c.JSON(http.StatusOK, toAdminConversationResponse(conv))
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -456,6 +468,133 @@ func adminListForks(c *gin.Context, store registrystore.MemoryStore) {
 		return nil
 	}); err != nil {
 		handleError(c, err)
+	}
+}
+
+func adminListChildConversations(c *gin.Context, store registrystore.MemoryStore) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
+		return
+	}
+	afterCursor := queryPtr(c, "afterCursor")
+	limit := queryInt(c, "limit", 20)
+
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		children, cursor, err := store.AdminListChildConversations(ctx, id, afterCursor, limit)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, gin.H{"data": toAdminChildConversationSummaries(children), "afterCursor": cursor})
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
+}
+
+type adminChildConversationSummaryResponse struct {
+	ID                      uuid.UUID         `json:"id"`
+	Title                   string            `json:"title"`
+	OwnerUserID             string            `json:"ownerUserId"`
+	ClientID                string            `json:"clientId,omitempty"`
+	AgentID                 *string           `json:"agentId,omitempty"`
+	CreatedAt               time.Time         `json:"createdAt"`
+	UpdatedAt               time.Time         `json:"updatedAt"`
+	DeletedAt               *time.Time        `json:"deletedAt,omitempty"`
+	AccessLevel             model.AccessLevel `json:"accessLevel"`
+	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
+	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
+}
+
+func toAdminChildConversationSummaries(items []registrystore.ConversationSummary) []adminChildConversationSummaryResponse {
+	result := make([]adminChildConversationSummaryResponse, 0, len(items))
+	for _, item := range items {
+		result = append(result, adminChildConversationSummaryResponse{
+			ID:                      item.ID,
+			Title:                   item.Title,
+			OwnerUserID:             item.OwnerUserID,
+			ClientID:                item.ClientID,
+			AgentID:                 item.AgentID,
+			CreatedAt:               item.CreatedAt,
+			UpdatedAt:               item.UpdatedAt,
+			DeletedAt:               item.DeletedAt,
+			AccessLevel:             item.AccessLevel,
+			StartedByConversationID: item.StartedByConversationID,
+			StartedByEntryID:        item.StartedByEntryID,
+		})
+	}
+	return result
+}
+
+type adminConversationSummaryResponse struct {
+	ID                      uuid.UUID         `json:"id"`
+	Title                   string            `json:"title"`
+	OwnerUserID             string            `json:"ownerUserId"`
+	ClientID                string            `json:"clientId,omitempty"`
+	AgentID                 *string           `json:"agentId,omitempty"`
+	CreatedAt               time.Time         `json:"createdAt"`
+	UpdatedAt               time.Time         `json:"updatedAt"`
+	DeletedAt               *time.Time        `json:"deletedAt,omitempty"`
+	AccessLevel             model.AccessLevel `json:"accessLevel"`
+	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
+	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
+}
+
+func toAdminConversationSummaries(items []registrystore.ConversationSummary) []adminConversationSummaryResponse {
+	result := make([]adminConversationSummaryResponse, 0, len(items))
+	for _, item := range items {
+		result = append(result, adminConversationSummaryResponse{
+			ID:                      item.ID,
+			Title:                   item.Title,
+			OwnerUserID:             item.OwnerUserID,
+			ClientID:                item.ClientID,
+			AgentID:                 item.AgentID,
+			CreatedAt:               item.CreatedAt,
+			UpdatedAt:               item.UpdatedAt,
+			DeletedAt:               item.DeletedAt,
+			AccessLevel:             item.AccessLevel,
+			StartedByConversationID: item.StartedByConversationID,
+			StartedByEntryID:        item.StartedByEntryID,
+		})
+	}
+	return result
+}
+
+type adminConversationResponse struct {
+	ID                      uuid.UUID              `json:"id"`
+	Title                   string                 `json:"title"`
+	OwnerUserID             string                 `json:"ownerUserId"`
+	ClientID                string                 `json:"clientId,omitempty"`
+	AgentID                 *string                `json:"agentId,omitempty"`
+	Metadata                map[string]interface{} `json:"metadata"`
+	CreatedAt               time.Time              `json:"createdAt"`
+	UpdatedAt               time.Time              `json:"updatedAt"`
+	DeletedAt               *time.Time             `json:"deletedAt,omitempty"`
+	AccessLevel             model.AccessLevel      `json:"accessLevel"`
+	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"`
+	ForkedAtConversationID  *uuid.UUID             `json:"forkedAtConversationId,omitempty"`
+	StartedByConversationID *uuid.UUID             `json:"startedByConversationId,omitempty"`
+	StartedByEntryID        *uuid.UUID             `json:"startedByEntryId,omitempty"`
+	HasResponseInProgress   bool                   `json:"hasResponseInProgress,omitempty"`
+}
+
+func toAdminConversationResponse(conv *registrystore.ConversationDetail) adminConversationResponse {
+	return adminConversationResponse{
+		ID:                      conv.ID,
+		Title:                   conv.Title,
+		OwnerUserID:             conv.OwnerUserID,
+		ClientID:                conv.ClientID,
+		AgentID:                 conv.AgentID,
+		Metadata:                conv.Metadata,
+		CreatedAt:               conv.CreatedAt,
+		UpdatedAt:               conv.UpdatedAt,
+		DeletedAt:               conv.DeletedAt,
+		AccessLevel:             conv.AccessLevel,
+		ForkedAtEntryID:         conv.ForkedAtEntryID,
+		ForkedAtConversationID:  conv.ForkedAtConversationID,
+		StartedByConversationID: conv.StartedByConversationID,
+		StartedByEntryID:        conv.StartedByEntryID,
+		HasResponseInProgress:   conv.HasResponseInProgress,
 	}
 }
 

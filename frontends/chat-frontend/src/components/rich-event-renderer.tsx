@@ -104,7 +104,7 @@ function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
             type: "tool-result",
             id: event.id,
             toolName: completed.toolName,
-            input: completed.input,
+            input: completed.input ?? event.input,
             output: completed.output,
           });
         } else {
@@ -215,19 +215,78 @@ type ToolCallPendingProps = {
   input?: unknown;
 };
 
+function formatToolPayload(value: unknown, emptyLabel: string): string {
+  if (value === undefined) {
+    return `\`\`\`text\n(${emptyLabel})\n\`\`\``;
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return `\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``;
+    } catch {
+      return `\`\`\`text\n${value}\n\`\`\``;
+    }
+  }
+  try {
+    return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
+  } catch {
+    return `\`\`\`text\n${String(value)}\n\`\`\``;
+  }
+}
+
+type ToolCallCardProps = {
+  name: string;
+  input?: unknown;
+  output?: unknown;
+  status: "pending" | "completed";
+};
+
+function ToolCallCard({ name, input, output, status }: ToolCallCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isPending = status === "pending";
+
+  return (
+    <div className={`my-2 rounded-lg border ${isPending ? "border-sage/30 bg-sage/5" : "border-sage/30 bg-sage/10"}`}>
+      <button
+        type="button"
+        onClick={() => setIsExpanded((current) => !current)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-black/5"
+      >
+        {isExpanded ? <ChevronDown className="h-4 w-4 text-stone" /> : <ChevronRight className="h-4 w-4 text-stone" />}
+        {isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin text-sage" />
+        ) : (
+          <CheckCircle2 className="h-4 w-4 text-sage" />
+        )}
+        <Wrench className="h-4 w-4 text-sage" />
+        <span className="font-medium text-ink">{getToolDisplayName(name)}</span>
+        <span className="text-xs text-stone">{isPending ? "running" : "completed"}</span>
+      </button>
+      {isExpanded && (
+        <div className="border-t border-stone/10 px-3 py-2">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-stone">Args</p>
+          <div className="text-sm text-ink">
+            <Streamdown>{formatToolPayload(input, "no args")}</Streamdown>
+          </div>
+          {!isPending && (
+            <>
+              <p className="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-stone">Output</p>
+              <div className="text-sm text-ink">
+                <Streamdown>{formatToolPayload(output, "no output")}</Streamdown>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Displays a tool call in progress with spinning indicator.
  */
-function ToolCallPending({ name }: ToolCallPendingProps) {
-  return (
-    <div className="my-2 rounded-lg border border-sage/30 bg-sage/5">
-      <div className="flex items-center gap-2 px-3 py-2 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin text-sage" />
-        <Wrench className="h-4 w-4 text-sage" />
-        <span className="font-medium text-ink">{getToolDisplayName(name)}</span>
-      </div>
-    </div>
-  );
+function ToolCallPending({ name, input }: ToolCallPendingProps) {
+  return <ToolCallCard name={name} input={input} status="pending" />;
 }
 
 type ToolCallResultProps = {
@@ -239,17 +298,8 @@ type ToolCallResultProps = {
 /**
  * Displays a completed tool call with expandable input/output.
  */
-function ToolCallResult({ name }: ToolCallResultProps) {
-  return (
-    <div className="my-2 rounded-lg border border-sage/30 bg-sage/10">
-      <div className="flex items-center gap-2 px-3 py-2 text-sm">
-        <CheckCircle2 className="h-4 w-4 text-sage" />
-        <Wrench className="h-4 w-4 text-sage" />
-        <span className="font-medium text-ink">{getToolDisplayName(name)}</span>
-        <span className="text-xs text-stone">completed</span>
-      </div>
-    </div>
-  );
+function ToolCallResult({ name, input, output }: ToolCallResultProps) {
+  return <ToolCallCard name={name} input={input} output={output} status="completed" />;
 }
 
 type ContentFetchedBlockProps = {

@@ -94,6 +94,7 @@ func (c *conversationSteps) thereIsAConversationOwnedBy(ownerId string) error {
 	savedAuth := snapshotAuthState(c.s)
 	a := &authSteps{s: c.s}
 	_ = a.iAmAuthenticatedAsUser(ownerId)
+	_ = a.iAmAuthenticatedAsAgentWithAPIKey("test-agent-key")
 
 	body := fmt.Sprintf(`{"title": "Owned by %s"}`, ownerId)
 	err := c.s.SendHTTPRequestWithJSONBodyAndStyle("POST", "/v1/conversations", &godog.DocString{Content: body}, false, false)

@@ -77,6 +77,16 @@ export const $ConversationSummary = {
     accessLevel: {
       $ref: "#/components/schemas/AccessLevel",
     },
+    startedByConversationId: {
+      type: "string",
+      format: "uuid",
+      nullable: true,
+    },
+    startedByEntryId: {
+      type: "string",
+      format: "uuid",
+      nullable: true,
+    },
   },
   example: {
     id: "550e8400-e29b-41d4-a716-446655440000",
@@ -89,6 +99,54 @@ export const $ConversationSummary = {
   },
 } as const;
 
+export const $ChildConversationSummary = {
+  type: "object",
+  properties: {
+    id: {
+      type: "string",
+      format: "uuid",
+      description: "Unique identifier for the child conversation.",
+    },
+    title: {
+      type: "string",
+      nullable: true,
+    },
+    ownerUserId: {
+      type: "string",
+    },
+    createdAt: {
+      type: "string",
+      format: "date-time",
+    },
+    updatedAt: {
+      type: "string",
+      format: "date-time",
+    },
+    lastMessagePreview: {
+      type: "string",
+      nullable: true,
+    },
+    accessLevel: {
+      $ref: "#/components/schemas/AccessLevel",
+    },
+    startedByEntryId: {
+      type: "string",
+      format: "uuid",
+      nullable: true,
+    },
+  },
+  example: {
+    id: "550e8400-e29b-41d4-a716-446655440000",
+    title: "Research sub-task",
+    ownerUserId: "user_1234",
+    createdAt: "2025-01-10T14:32:05Z",
+    updatedAt: "2025-01-10T14:45:12Z",
+    lastMessagePreview: "Vendor A is cheaper at low volume.",
+    accessLevel: "owner",
+    startedByEntryId: "660e8400-e29b-41d4-a716-446655440111",
+  },
+} as const;
+
 export const $Conversation = {
   allOf: [
     {
@@ -97,6 +155,11 @@ export const $Conversation = {
     {
       type: "object",
       properties: {
+        agentId: {
+          type: "string",
+          nullable: true,
+          description: "Optional logical agent associated with this conversation.",
+        },
         forkedAtEntryId: {
           type: "string",
           format: "uuid",
@@ -109,6 +172,18 @@ export const $Conversation = {
           format: "uuid",
           nullable: true,
           description: "Conversation ID from which this conversation was forked.",
+        },
+        startedByConversationId: {
+          type: "string",
+          format: "uuid",
+          nullable: true,
+          description: "Parent conversation that started this child conversation.",
+        },
+        startedByEntryId: {
+          type: "string",
+          format: "uuid",
+          nullable: true,
+          description: "Parent entry that started this child conversation.",
         },
       },
       example: {
@@ -140,6 +215,12 @@ export const $CreateConversationRequest = {
       type: "string",
       nullable: true,
       maxLength: 500,
+    },
+    agentId: {
+      type: "string",
+      nullable: true,
+      maxLength: 255,
+      description: "Optional logical agent to associate with the new conversation.",
     },
     metadata: {
       type: "object",
@@ -748,6 +829,13 @@ export const $CreateEntryRequest = {
 For history entries authored by a user, this is the sender.
 For agent entries, this is the user the agent is responding to.`,
     },
+    agentId: {
+      type: "string",
+      nullable: true,
+      maxLength: 255,
+      description:
+        "Optional logical agent to associate with the conversation when this request auto-creates a new conversation. Ignored for existing conversations.",
+    },
     channel: {
       $ref: "#/components/schemas/Channel",
     },
@@ -802,6 +890,17 @@ after creation. Returns 400 Bad Request if specified for non-history channels.`,
       format: "uuid",
       description:
         "Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.",
+    },
+    startedByConversationId: {
+      type: "string",
+      format: "uuid",
+      description:
+        "If the target conversation does not exist yet, auto-create it as a child conversation started from this parent conversation.",
+    },
+    startedByEntryId: {
+      type: "string",
+      format: "uuid",
+      description: "Optional parent entry that caused this child conversation to be started.",
     },
   },
   example: {

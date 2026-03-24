@@ -100,6 +100,8 @@ type postgresBus struct {
 	subMu      sync.Mutex
 	userRefs   map[string]int
 	globalRefs int
+	wantVer    int64
+	activeVer  int64
 	refreshSub chan struct{}
 	breakSub   context.CancelFunc
 	subReady   chan struct{}
@@ -162,7 +164,10 @@ func (p *postgresBus) Subscribe(ctx context.Context, userID string) (<-chan regi
 	if err != nil {
 		return nil, err
 	}
-	p.trackSubscription(userID)
+	version := p.trackSubscription(userID)
+	if err := p.waitForSubscription(ctx, version); err != nil {
+		return nil, err
+	}
 	go func() {
 		<-ctx.Done()
 		p.untrackSubscription(userID)
@@ -290,7 +295,9 @@ func (p *postgresBus) subscribeLoop(ctx context.Context) {
 	for ctx.Err() == nil {
 		channels := p.subscriptionChannels()
 		p.drainRefresh()
+		version := p.subscriptionVersion()
 		err := p.runSubscription(ctx, channels, func() {
+			p.markSubscriptionActive(version)
 			if p.clearDegraded() {
 				log.Info("PostgreSQL event bus: subscription recovered, sending invalidate")
 				if err := p.publishRecoveryInvalidate(ctx); err != nil {
@@ -451,15 +458,18 @@ func (p *postgresBus) subscriptionChannels() []string {
 	return channels
 }
 
-func (p *postgresBus) trackSubscription(userID string) {
+func (p *postgresBus) trackSubscription(userID string) int64 {
 	p.subMu.Lock()
 	if userID == "" {
 		p.globalRefs++
 	} else {
 		p.userRefs[userID]++
 	}
+	p.wantVer++
+	version := p.wantVer
 	p.subMu.Unlock()
 	p.requestRefresh()
+	return version
 }
 
 func (p *postgresBus) untrackSubscription(userID string) {
@@ -473,6 +483,7 @@ func (p *postgresBus) untrackSubscription(userID string) {
 	} else {
 		delete(p.userRefs, userID)
 	}
+	p.wantVer++
 	p.subMu.Unlock()
 	p.requestRefresh()
 }
@@ -490,6 +501,36 @@ func (p *postgresBus) drainRefresh() {
 		case <-p.refreshSub:
 		default:
 			return
+		}
+	}
+}
+
+func (p *postgresBus) subscriptionVersion() int64 {
+	p.subMu.Lock()
+	defer p.subMu.Unlock()
+	return p.wantVer
+}
+
+func (p *postgresBus) markSubscriptionActive(version int64) {
+	p.subMu.Lock()
+	defer p.subMu.Unlock()
+	if version > p.activeVer {
+		p.activeVer = version
+	}
+}
+
+func (p *postgresBus) waitForSubscription(ctx context.Context, version int64) error {
+	for {
+		p.subMu.Lock()
+		active := p.activeVer
+		p.subMu.Unlock()
+		if active >= version {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Millisecond):
 		}
 	}
 }

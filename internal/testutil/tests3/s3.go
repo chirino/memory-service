@@ -14,6 +14,7 @@ import (
 )
 
 const testBucket = "test-attachments"
+const localstackImage = "localstack/localstack@sha256:1a27b99734456054146e284d1de44af5d72b9f66a62f8a1fd1e74dc328019ba8"
 
 // StartS3 starts a disposable LocalStack container, creates a test bucket,
 // and sets AWS env vars so that aws-sdk-go-v2 LoadDefaultConfig points at it.
@@ -24,12 +25,12 @@ func StartS3(tb testing.TB) string {
 	ctx := context.Background()
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "localstack/localstack:latest",
+			Image:        localstackImage,
 			ExposedPorts: []string{"4566/tcp"},
 			Env: map[string]string{
 				"SERVICES": "s3",
 			},
-			WaitingFor: wait.ForListeningPort("4566/tcp").WithStartupTimeout(90 * time.Second),
+			WaitingFor: wait.ForListeningPort("4566/tcp").WithStartupTimeout(2 * time.Minute),
 		},
 		Started: true,
 	})

@@ -2,6 +2,8 @@
 
 **Conversation channel naming**: `MemoryServiceCheckpointSaver` stores checkpoint state in the conversation `context` channel; frontend-safe reads should continue forcing `channel="history"` unless internal agent state is explicitly desired.
 
+**Context client binding**: `MemoryServiceCheckpointSaver` should use `channel="context"` without sending `agentId`; Memory Service now authorizes context access by the conversation's stored `clientId`.
+
 **Checkpoint lineage**: Python docs checkpoints `04-conversation-forking`, `05-response-resumption`, `06-sharing`, and `07-with-search` are intentionally rebased from `03-with-history` (not chained from each other), mirroring the Quarkus tutorial branching model.
 
 **Proxy pattern**: Use `memory_service_langchain.MemoryServiceProxy` plus `to_fastapi_response(...)` in checkpoint apps for API-like Memory Service passthrough methods (`list_conversation_entries`, `list_memberships`, etc.) instead of ad-hoc `memory_service_request(...)` calls.
@@ -87,6 +89,8 @@
 **Chat app auth config**: `chat-langchain` and `chat-langgraph` explicitly call `install_fastapi_authorization_middleware(app, validate_jwt=False)` so they always forward bearer tokens to Memory Service without local JWT validation.
 
 **FastAPI helper reuse**: Prefer `memory_service_langchain.install_fastapi_authorization_middleware`, `memory_service_scope`, and `memory_service_request` over redefining ContextVars/middleware in checkpoint apps.
+
+**LangChain history auth fallback**: `MemoryServiceHistoryMiddleware` must fall back to the conversation-scoped authorization map (`get_conversation_authorization(conversation_id)`) when the request `ContextVar` auth is missing. Under concurrent site tests, LangChain model/middleware work can hop threads similarly to LangGraph checkpoint writes; without the fallback, history appends can intermittently hit `403 forbidden`.
 
 **LangGraph threadpool auth gotcha**: `ContextVar` request auth does not reliably flow into LangGraph checkpointer worker threads. `memory_service_scope(...)` now also tracks `conversation_id -> Authorization` for the active scope, and `MemoryServiceCheckpointSaver` falls back to that mapping when the direct getter is empty; this avoids intermittent `{"code":"forbidden","error":"forbidden"}` on checkpoint writes under parallel site tests.
 

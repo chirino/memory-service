@@ -25,6 +25,9 @@ export function useEventStream() {
       switch (msg.kind) {
         case "conversation":
           queryClient.invalidateQueries({ queryKey: ["conversations"] });
+          if (msg.event === "created") {
+            queryClient.invalidateQueries({ queryKey: ["conversation-sidebar-children"] });
+          }
           if (msg.data?.conversation) {
             queryClient.invalidateQueries({
               queryKey: ["conversation", msg.data.conversation],

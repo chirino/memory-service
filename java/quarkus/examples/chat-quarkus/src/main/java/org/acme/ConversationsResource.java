@@ -32,10 +32,11 @@ public class ConversationsResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversations(
             @QueryParam("mode") String mode,
+            @QueryParam("ancestry") String ancestry,
             @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") Integer limit,
             @QueryParam("query") String query) {
-        return proxy.listConversations(mode, afterCursor, limit, query);
+        return proxy.listConversations(mode, ancestry, afterCursor, limit, query);
     }
 
     @GET
@@ -76,6 +77,16 @@ public class ConversationsResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversationForks(@PathParam("conversationId") String conversationId) {
         return proxy.listConversationForks(conversationId, null, null);
+    }
+
+    @GET
+    @Path("/{conversationId}/children")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listConversationChildren(
+            @PathParam("conversationId") String conversationId,
+            @QueryParam("afterCursor") String afterCursor,
+            @QueryParam("limit") Integer limit) {
+        return proxy.listConversationChildren(conversationId, afterCursor, limit);
     }
 
     @GET

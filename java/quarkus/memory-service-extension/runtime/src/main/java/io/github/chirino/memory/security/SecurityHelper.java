@@ -1,5 +1,6 @@
 package io.github.chirino.memory.security;
 
+import io.quarkus.arc.Arc;
 import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -40,6 +41,9 @@ public final class SecurityHelper {
     }
 
     private static SecurityIdentity resolveIdentity(Instance<SecurityIdentity> identityInstance) {
+        if (!Arc.container().requestContext().isActive()) {
+            return null;
+        }
         return identityInstance != null && identityInstance.isResolvable()
                 ? identityInstance.get()
                 : null;

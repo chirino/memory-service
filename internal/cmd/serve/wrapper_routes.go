@@ -118,6 +118,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodDelete, "/v1/conversations/:conversationId", apiWrapper.DeleteConversation)
 	register(http.MethodGet, "/v1/conversations/:conversationId", apiWrapper.GetConversation)
 	register(http.MethodPatch, "/v1/conversations/:conversationId", apiWrapper.UpdateConversation)
+	register(http.MethodGet, "/v1/conversations/:conversationId/children", apiWrapper.ListConversationChildren)
 	register(http.MethodGet, "/v1/conversations/:conversationId/entries", apiWrapper.ListConversationEntries)
 	register(http.MethodPost, "/v1/conversations/:conversationId/entries", apiWrapper.AppendConversationEntry)
 	register(http.MethodPost, "/v1/conversations/:conversationId/entries/sync", apiWrapper.SyncConversationContext)
@@ -157,6 +158,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodPost, "/v1/admin/conversations/search", adminWrapper.AdminSearchConversations)
 	register(http.MethodDelete, "/v1/admin/conversations/:id", adminWrapper.AdminDeleteConversation)
 	register(http.MethodGet, "/v1/admin/conversations/:id", adminWrapper.AdminGetConversation)
+	register(http.MethodGet, "/v1/admin/conversations/:id/children", adminWrapper.AdminListChildConversations)
 	register(http.MethodGet, "/v1/admin/conversations/:id/entries", adminWrapper.AdminGetEntries)
 	register(http.MethodGet, "/v1/admin/conversations/:id/forks", adminWrapper.AdminListForks)
 	register(http.MethodGet, "/v1/admin/conversations/:id/memberships", adminWrapper.AdminGetMemberships)
@@ -244,6 +246,9 @@ func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, _ openapi_types
 }
 func (p *proxyAPIServer) ListConversationForks(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationForksParams) {
 	routeconversations.HandleListForks(c, p.store)
+}
+func (p *proxyAPIServer) ListConversationChildren(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationChildrenParams) {
+	routeconversations.HandleListChildConversations(c, p.store)
 }
 func (p *proxyAPIServer) ListConversationMemberships(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationMembershipsParams) {
 	routememberships.HandleListMemberships(c, p.store)
@@ -429,6 +434,12 @@ func (p *proxyAdminServer) AdminListForks(c *gin.Context, _ openapi_types.UUID, 
 		return
 	}
 	routeadmin.HandleAdminListForks(c, p.store)
+}
+func (p *proxyAdminServer) AdminListChildConversations(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminListChildConversationsParams) {
+	if !p.authorize(c) {
+		return
+	}
+	routeadmin.HandleAdminListChildConversations(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetMembershipsParams) {
 	if !p.authorize(c) {

@@ -77,6 +77,9 @@ func (a *apiServerAdapter) SyncConversationContext(c *gin.Context, _ openapi_typ
 func (a *apiServerAdapter) ListConversationForks(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationForksParams) {
 	notImplemented(c)
 }
+func (a *apiServerAdapter) ListConversationChildren(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationChildrenParams) {
+	notImplemented(c)
+}
 func (a *apiServerAdapter) ListConversationMemberships(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationMembershipsParams) {
 	notImplemented(c)
 }

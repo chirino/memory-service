@@ -137,6 +137,11 @@ class ConversationsServiceStub(object):
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.ListForksRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.ListForksResponse.FromString,
                 _registered_method=True)
+        self.ListChildConversations = channel.unary_unary(
+                '/memory.v1.ConversationsService/ListChildConversations',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.ListChildConversationsRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.ListChildConversationsResponse.FromString,
+                _registered_method=True)
 
 
 class ConversationsServiceServicer(object):
@@ -182,6 +187,12 @@ class ConversationsServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListChildConversations(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ConversationsServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -214,6 +225,11 @@ def add_ConversationsServiceServicer_to_server(servicer, server):
                     servicer.ListForks,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.ListForksRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.ListForksResponse.SerializeToString,
+            ),
+            'ListChildConversations': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListChildConversations,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.ListChildConversationsRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.ListChildConversationsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -378,6 +394,33 @@ class ConversationsService(object):
             '/memory.v1.ConversationsService/ListForks',
             memory_dot_v1_dot_memory__service__pb2.ListForksRequest.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.ListForksResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListChildConversations(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.ConversationsService/ListChildConversations',
+            memory_dot_v1_dot_memory__service__pb2.ListChildConversationsRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.ListChildConversationsResponse.FromString,
             options,
             channel_credentials,
             insecure,
