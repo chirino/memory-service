@@ -6,7 +6,7 @@ status: partial
 
 > **Status**: Partial.
 
-See also [089](../089-single-agent-conversations.md) for a simplification proposal that keeps lineage but standardizes on one logical agent per conversation.
+See also [089](089-single-agent-conversations.md) for the partial single-agent simplification that keeps lineage but standardizes on one logical agent per conversation.
 
 ## Summary
 

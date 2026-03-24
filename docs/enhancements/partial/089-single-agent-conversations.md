@@ -1,14 +1,16 @@
 ---
-status: proposed
+status: partial
 ---
 
 # Enhancement 089: Single-Agent Conversations
 
-> **Status**: Proposed.
+> **Status**: Partial.
 
 ## Summary
 
 Simplify the agent lineage model by storing conversation-level `clientId` on every conversation and using optional conversation-level `agentId` when a conversation belongs to a specific logical agent. Keep explicit parent/child conversation lineage with `startedByConversationId` and `startedByEntryId`, and keep conversation-list `ancestry` filters for roots vs child conversations.
+
+The public contracts and conversation APIs mostly follow this model now, but the Go stores still persist `clientId`/`agentId` on entries and still use agent-scoped context cache/query paths internally. Treat this enhancement as partially implemented until those transitional internals are removed.
 
 ## Motivation
 
@@ -362,7 +364,7 @@ Unit/store tests should cover:
 - [x] Create required conversation-level `clientId` and optional conversation-level `agentId` fields in OpenAPI and protobuf contracts
 - [x] Remove entry-level `agentId` from OpenAPI and protobuf entry models and requests
 - [x] Remove entry-level `clientId` from public entry responses
-- [ ] Update append-entry semantics so `agentId` is only used when auto-creating a new conversation, or add explicit create-conversation support for conversations with optional `agentId`
+- [x] Update append-entry semantics so `agentId` is only used when auto-creating a new conversation, or add explicit create-conversation support for conversations with optional `agentId`
 - [x] Rewrite context sync/list logic to use conversation-scoped epochs
 - [x] Add conversation-level `clientId` and optional `agentId` fields to the Go model and store abstractions
 - [x] Update Go store creation paths to persist conversation-level identity for explicit and auto-created conversations
@@ -370,12 +372,13 @@ Unit/store tests should cover:
 - [x] Update framework proxies and examples to treat agent identity as conversation-level
 - [x] Add BDD coverage for single-agent conversation invariants
 - [x] Update related design/docs pages that still describe multi-agent sharing via entry-level `clientId`
+- [ ] Remove transitional entry-level `clientId`/`agentId` persistence and agent-scoped cache/query paths from the Go stores
 
 ## Files to Modify
 
 | File | Change |
 |------|--------|
-| `docs/enhancements/089-single-agent-conversations.md` | New proposal describing the simplified model |
+| `docs/enhancements/partial/089-single-agent-conversations.md` | Tracks the remaining work for the single-agent conversation migration |
 | `docs/enhancements/partial/088-agent-conversation-lineage.md` | Cross-reference this simplification proposal and narrow remaining scope if adopted |
 | `contracts/openapi/openapi.yml` | Add optional conversation `agentId`, keep `clientId` out of user REST schemas, and simplify entry APIs |
 | `contracts/openapi/openapi-admin.yml` | Expose conversation-level `clientId` and optional `agentId` for admin APIs |
