@@ -8,6 +8,7 @@ import io.smallrye.mutiny.infrastructure.Infrastructure;
 import io.smallrye.mutiny.subscription.Cancellable;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -89,7 +90,7 @@ public class SubAgentTaskManager {
                 }
                 state.queueMessage(message, userId, bearerToken);
                 state.requestStop("Interrupted by caller");
-                interruptCurrentRun(state);
+                interruptCurrentRun(state, state.runId);
                 return state.snapshot();
             }
         }
@@ -200,8 +201,8 @@ public class SubAgentTaskManager {
                 return state.snapshot();
             }
             state.status = SubAgentTaskStatus.STOPPED;
+            interruptCurrentRun(state, state.runId);
         }
-        interruptCurrentRun(state);
         return state.snapshot();
     }
 
@@ -226,7 +227,15 @@ public class SubAgentTaskManager {
     private void submit(TaskState state, String message, String userId, String bearerToken) {
         CompletableFuture<SubAgentTaskResult> future = new CompletableFuture<>();
         state.currentRun = future;
-        SubAgentExecutionContext.bindConversation(state.childConversationId, userId, bearerToken);
+        long runId = state.runId;
+        String parentConversationId = state.parentConversationId;
+        String childConversationId = state.childConversationId;
+        String childAgentId = state.childAgentId;
+        SubAgentTaskInvoker taskInvoker = state.taskInvoker;
+        LOG.infof(
+                "Starting sub-agent task run %d for child conversation %s (parent=%s, message=%s)",
+                runId, childConversationId, parentConversationId, abbreviate(message));
+        SubAgentExecutionContext.bindConversation(childConversationId, userId, bearerToken);
         Infrastructure.getDefaultExecutor()
                 .execute(
                         () -> {
@@ -236,23 +245,41 @@ public class SubAgentTaskManager {
                                         bearerToken,
                                         () -> {
                                             try {
+                                                if (state.shouldStopRun(runId)) {
+                                                    throw new StoppedException();
+                                                }
                                                 SubAgentTaskExecution execution =
-                                                        state.taskInvoker.handle(
+                                                        taskInvoker.handle(
                                                                 new SubAgentTaskRequest(
-                                                                        state.parentConversationId,
-                                                                        state.childConversationId,
+                                                                        parentConversationId,
+                                                                        childConversationId,
                                                                         message,
-                                                                        state.childAgentId));
+                                                                        childAgentId));
+                                                if (state.shouldStopRun(runId)) {
+                                                    throw new StoppedException();
+                                                }
                                                 ExecutionOutcome outcome =
-                                                        consumeExecution(state, execution);
+                                                        consumeExecution(
+                                                                state,
+                                                                execution,
+                                                                runId,
+                                                                childAgentId);
                                                 onSuccess(
                                                         state,
+                                                        runId,
                                                         message,
                                                         outcome.response(),
                                                         outcome.historyRecorded(),
+                                                        childAgentId,
                                                         future);
                                             } catch (Exception e) {
-                                                onFailure(state, message, e, future);
+                                                onFailure(
+                                                        state,
+                                                        runId,
+                                                        message,
+                                                        e,
+                                                        childAgentId,
+                                                        future);
                                             }
                                             return null;
                                         });
@@ -260,29 +287,35 @@ public class SubAgentTaskManager {
                                 LOG.warnf(
                                         e,
                                         "Failed to run sub-agent conversation %s",
-                                        state.childConversationId);
-                                onFailure(state, message, e, future);
+                                        childConversationId);
+                                onFailure(state, runId, message, e, childAgentId, future);
                             }
                         });
     }
 
-    private ExecutionOutcome consumeExecution(TaskState state, SubAgentTaskExecution execution) {
+    private ExecutionOutcome consumeExecution(
+            TaskState state, SubAgentTaskExecution execution, long runId, String childAgentId) {
         if (execution instanceof SubAgentTaskExecution.Immediate immediate) {
             return new ExecutionOutcome(immediate.response(), false);
         }
         if (execution instanceof SubAgentTaskExecution.Streaming streaming) {
-            return new ExecutionOutcome(consumeStream(state, streaming.events()), true);
+            return new ExecutionOutcome(
+                    consumeStream(state, streaming.events(), runId, childAgentId), true);
         }
         throw new IllegalStateException("Unknown sub-agent execution type");
     }
 
-    private String consumeStream(TaskState state, io.smallrye.mutiny.Multi<ChatEvent> events) {
+    private String consumeStream(
+            TaskState state,
+            io.smallrye.mutiny.Multi<ChatEvent> events,
+            long runId,
+            String childAgentId) {
         if (events == null) {
             return "";
         }
         Multi<ChatEvent> recordedEvents =
                 conversationStore.appendAgentEvents(
-                        state.childConversationId, events, state.childAgentId);
+                        state.childConversationId, events, childAgentId);
         CompletableFuture<String> runningExecution = new CompletableFuture<>();
         state.runningExecution = runningExecution;
         Cancellable subscription =
@@ -293,6 +326,9 @@ public class SubAgentTaskManager {
                                 runningExecution::completeExceptionally,
                                 () -> runningExecution.complete("completed"));
         state.activeStreamSubscription = subscription;
+        if (state.shouldStopRun(runId)) {
+            interruptCurrentRun(state, runId);
+        }
         try {
             runningExecution.join();
         } catch (Exception e) {
@@ -331,14 +367,16 @@ public class SubAgentTaskManager {
 
     private void onSuccess(
             TaskState state,
+            long runId,
             String message,
             String response,
             boolean historyRecorded,
+            String childAgentId,
             CompletableFuture<SubAgentTaskResult> future) {
         String safeResponse = response == null ? "" : response;
         if (!historyRecorded) {
             conversationStore.appendAgentMessage(
-                    state.childConversationId, safeResponse, state.childAgentId);
+                    state.childConversationId, safeResponse, childAgentId);
             conversationStore.markCompleted(state.childConversationId);
         }
         synchronized (state) {
@@ -349,18 +387,28 @@ public class SubAgentTaskManager {
             state.lastError = null;
             state.updatedAt = Instant.now();
         }
+        LOG.infof(
+                "Completed sub-agent task run %d for child conversation %s in %dms"
+                        + " (responseLength=%d, historyRecorded=%s)",
+                runId,
+                state.childConversationId,
+                elapsedMillis(state.startedAt, state.updatedAt),
+                safeResponse.length(),
+                historyRecorded);
         future.complete(state.snapshot());
         continueWithQueuedOrClear(state);
     }
 
     private void onFailure(
             TaskState state,
+            long runId,
             String message,
             Exception failure,
+            String childAgentId,
             CompletableFuture<SubAgentTaskResult> future) {
         if (failure instanceof StoppedException || failure.getCause() instanceof StoppedException) {
             conversationStore.appendAgentMessage(
-                    state.childConversationId, "Sub-agent task stopped.", state.childAgentId);
+                    state.childConversationId, "Sub-agent task stopped.", childAgentId);
             conversationStore.markCompleted(state.childConversationId);
             synchronized (state) {
                 state.status = SubAgentTaskStatus.STOPPED;
@@ -375,6 +423,13 @@ public class SubAgentTaskManager {
                                 : state.stopReason;
                 state.updatedAt = Instant.now();
             }
+            LOG.infof(
+                    "Stopped sub-agent task run %d for child conversation %s in %dms"
+                            + " (reason=%s)",
+                    runId,
+                    state.childConversationId,
+                    elapsedMillis(state.startedAt, state.updatedAt),
+                    state.lastError);
             future.complete(state.snapshot());
             continueWithQueuedOrClear(state);
             return;
@@ -390,7 +445,7 @@ public class SubAgentTaskManager {
                 state.childConversationId,
                 state.parentConversationId);
         conversationStore.appendAgentMessage(
-                state.childConversationId, "Sub-agent task failed: " + error, state.childAgentId);
+                state.childConversationId, "Sub-agent task failed: " + error, childAgentId);
         conversationStore.markCompleted(state.childConversationId);
         synchronized (state) {
             state.status = SubAgentTaskStatus.FAILED;
@@ -399,8 +454,28 @@ public class SubAgentTaskManager {
             state.lastError = error;
             state.updatedAt = Instant.now();
         }
+        LOG.infof(
+                "Failed sub-agent task run %d for child conversation %s in %dms" + " (error=%s)",
+                runId,
+                state.childConversationId,
+                elapsedMillis(state.startedAt, state.updatedAt),
+                error);
         future.complete(state.snapshot());
         continueWithQueuedOrClear(state);
+    }
+
+    private static long elapsedMillis(Instant startedAt, Instant finishedAt) {
+        if (startedAt == null || finishedAt == null || finishedAt.isBefore(startedAt)) {
+            return -1;
+        }
+        return Duration.between(startedAt, finishedAt).toMillis();
+    }
+
+    private static String abbreviate(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= 80 ? value : value.substring(0, 77) + "...";
     }
 
     private void continueWithQueuedOrClear(TaskState state) {
@@ -421,12 +496,19 @@ public class SubAgentTaskManager {
         submitStartedRun(state, queued.message(), queued.userId(), queued.bearerToken(), false);
     }
 
-    private void interruptCurrentRun(TaskState state) {
-        Cancellable streamSubscription = state.activeStreamSubscription;
+    private void interruptCurrentRun(TaskState state, long runId) {
+        Cancellable streamSubscription;
+        CompletableFuture<String> execution;
+        synchronized (state) {
+            if (state.runId != runId) {
+                return;
+            }
+            streamSubscription = state.activeStreamSubscription;
+            execution = state.runningExecution;
+        }
         if (streamSubscription != null) {
             streamSubscription.cancel();
         }
-        CompletableFuture<String> execution = state.runningExecution;
         if (execution != null) {
             execution.completeExceptionally(new StoppedException());
         }
@@ -566,6 +648,7 @@ public class SubAgentTaskManager {
         private volatile String authUserId;
         private volatile String authBearerToken;
         private volatile SubAgentTaskInvoker taskInvoker;
+        private volatile long stopRequestedRunId;
 
         private TaskState(
                 String parentConversationId,
@@ -596,6 +679,7 @@ public class SubAgentTaskManager {
             this.updatedAt = now;
             this.authUserId = userId;
             this.authBearerToken = bearerToken;
+            this.stopRequestedRunId = 0;
         }
 
         private synchronized void queueMessage(String message, String userId, String bearerToken) {
@@ -630,7 +714,12 @@ public class SubAgentTaskManager {
             }
             this.stopReason = reason;
             this.updatedAt = Instant.now();
+            this.stopRequestedRunId = this.runId;
             return true;
+        }
+
+        private boolean shouldStopRun(long runId) {
+            return stopRequestedRunId == runId;
         }
 
         private synchronized void markRecoveredCompleted() {
@@ -667,8 +756,16 @@ public class SubAgentTaskManager {
             try {
                 return future.get(maxWaitSeconds, TimeUnit.SECONDS);
             } catch (TimeoutException e) {
+                LOG.infof(
+                        "Timed out waiting %ds for sub-agent task run %d on child conversation %s"
+                                + " (status=%s, startedAt=%s, updatedAt=%s)",
+                        maxWaitSeconds, runId, childConversationId, status, startedAt, updatedAt);
                 return snapshot();
             } catch (InterruptedException e) {
+                LOG.infof(
+                        "Interrupted while waiting %ds for sub-agent task run %d on child"
+                                + " conversation %s (status=%s, startedAt=%s, updatedAt=%s)",
+                        maxWaitSeconds, runId, childConversationId, status, startedAt, updatedAt);
                 Thread.currentThread().interrupt();
                 return snapshot();
             } catch (ExecutionException e) {

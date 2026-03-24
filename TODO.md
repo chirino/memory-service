@@ -13,6 +13,8 @@
 * The MCP sub command should support using an embedded memory-server
 * Provide a way to designate stable vs unstable features/apis.
 * Outbox pattern for reliable event delivery to external systems (webhook, kafka)
+* memories: how to deal with policy changes which change the sected indexed attributes (it's effectivly a schema change).
+* Implement the sub agent flows for all the other frameworks.
 
 ## Better Demo / Usecases
 

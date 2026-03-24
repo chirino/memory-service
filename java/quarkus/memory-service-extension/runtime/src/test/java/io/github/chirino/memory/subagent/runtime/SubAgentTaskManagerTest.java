@@ -209,6 +209,7 @@ class SubAgentTaskManagerTest {
         TestConversationStore store = new TestConversationStore();
         SubAgentTaskManager manager = manager(store);
         GateStreamingInvoker invokerB = new GateStreamingInvoker();
+        long testStartedAtNanos = System.nanoTime();
 
         SubAgentTaskResult first =
                 manager.messageTask(
@@ -257,11 +258,26 @@ class SubAgentTaskManagerTest {
                         SubAgentTaskStatus.COMPLETED, SubAgentTaskStatus.RUNNING);
 
         invokerB.complete("done two");
+        long waitStartedAtNanos = System.nanoTime();
         SubAgentWaitResult completed =
                 manager.waitForTasks(
                         PARENT_ID,
                         List.of(first.childConversationId(), second.childConversationId()),
                         5);
+        long waitFinishedAtNanos = System.nanoTime();
+        System.out.printf(
+                "waitForTasksReturnsAggregateResults timings: secondTaskStart=%dms,"
+                        + " signalToComplete=%dms, signalToEmitter=%dms, waitCall=%dms,"
+                        + " totalSinceTestStart=%dms, allCompleted=%s%n",
+                elapsedMillis(testStartedAtNanos, invokerB.lastStartedAtNanos()),
+                elapsedMillis(
+                        invokerB.lastStartedAtNanos(), invokerB.lastCompletionSignaledAtNanos()),
+                elapsedMillis(
+                        invokerB.lastCompletionSignaledAtNanos(),
+                        invokerB.lastEmitterCompletedAtNanos()),
+                elapsedMillis(waitStartedAtNanos, waitFinishedAtNanos),
+                elapsedMillis(testStartedAtNanos, waitFinishedAtNanos),
+                completed.allCompleted());
         assertThat(completed.allCompleted()).isTrue();
         assertThat(completed.tasks())
                 .extracting(SubAgentTaskResult::status)
@@ -287,6 +303,96 @@ class SubAgentTaskManagerTest {
 
         waitUntil(() -> invoker.lastRequest != null);
         assertThat(invoker.lastRequest.childAgentId()).isEqualTo("ReviewerAgent");
+    }
+
+    @Test
+    void queueDoesNotRetargetRunningTaskInvokerOrAgent() throws Exception {
+        TestConversationStore store = new TestConversationStore();
+        SubAgentTaskManager manager = manager(store);
+        BlockingInvoker firstInvoker = new BlockingInvoker();
+        CapturingInvoker secondInvoker = new CapturingInvoker();
+
+        SubAgentTaskResult created =
+                manager.messageTask(
+                        PARENT_ID,
+                        null,
+                        "first task",
+                        null,
+                        "PlannerAgent",
+                        null,
+                        "bob",
+                        "token-1",
+                        firstInvoker);
+
+        firstInvoker.awaitHandleStarted();
+
+        manager.messageTask(
+                PARENT_ID,
+                created.childConversationId(),
+                "queued task",
+                "queue",
+                "ReviewerAgent",
+                null,
+                "bob",
+                "token-1",
+                secondInvoker);
+
+        firstInvoker.release("done");
+
+        waitUntil(() -> firstInvoker.lastRequest != null);
+        waitUntil(() -> secondInvoker.lastRequest != null);
+        assertThat(firstInvoker.lastRequest.childAgentId()).isEqualTo("PlannerAgent");
+        assertThat(firstInvoker.invocationCount).isEqualTo(1);
+        assertThat(secondInvoker.lastRequest.childAgentId()).isEqualTo("ReviewerAgent");
+        assertThat(store.userMessages)
+                .extracting(message -> message.content)
+                .containsExactly("first task", "queued task");
+    }
+
+    @Test
+    void interruptStopsRunEvenBeforeStreamingSubscriptionIsInstalled() throws Exception {
+        TestConversationStore store = new TestConversationStore();
+        SubAgentTaskManager manager = manager(store);
+        BlockingStreamingInvoker blockingInvoker = new BlockingStreamingInvoker();
+        CapturingInvoker replacementInvoker = new CapturingInvoker();
+
+        SubAgentTaskResult created =
+                manager.messageTask(
+                        PARENT_ID,
+                        null,
+                        "first task",
+                        null,
+                        "SubAgent",
+                        null,
+                        "bob",
+                        "token-1",
+                        blockingInvoker);
+
+        blockingInvoker.awaitHandleStarted();
+
+        manager.messageTask(
+                PARENT_ID,
+                created.childConversationId(),
+                "replacement task",
+                "interrupt",
+                "SubAgent",
+                null,
+                "bob",
+                "token-1",
+                replacementInvoker);
+
+        blockingInvoker.release();
+
+        waitUntil(() -> replacementInvoker.lastRequest != null);
+        waitUntil(
+                () ->
+                        manager.getStatus(PARENT_ID, created.childConversationId()).status()
+                                == SubAgentTaskStatus.COMPLETED);
+
+        assertThat(store.userMessages)
+                .extracting(message -> message.content)
+                .containsExactly("first task", "replacement task");
+        assertThat(store.agentMessages).contains("Sub-agent task stopped.").contains("done");
     }
 
     @Test
@@ -373,6 +479,13 @@ class SubAgentTaskManagerTest {
         throw new AssertionError("Condition was not met before timeout");
     }
 
+    private static long elapsedMillis(long startedAtNanos, long finishedAtNanos) {
+        if (startedAtNanos == 0 || finishedAtNanos == 0 || finishedAtNanos < startedAtNanos) {
+            return -1;
+        }
+        return TimeUnit.NANOSECONDS.toMillis(finishedAtNanos - startedAtNanos);
+    }
+
     @FunctionalInterface
     private interface CheckedBooleanSupplier {
         boolean getAsBoolean() throws Exception;
@@ -432,9 +545,13 @@ class SubAgentTaskManagerTest {
     private static final class GateStreamingInvoker implements SubAgentTaskInvoker {
         private volatile CompletableFuture<String> currentResult = new CompletableFuture<>();
         private volatile CountDownLatch started = new CountDownLatch(1);
+        private volatile long lastStartedAtNanos;
+        private volatile long lastCompletionSignaledAtNanos;
+        private volatile long lastEmitterCompletedAtNanos;
 
         @Override
         public SubAgentTaskExecution handle(SubAgentTaskRequest request) {
+            lastStartedAtNanos = System.nanoTime();
             started.countDown();
             CompletableFuture<String> result = currentResult;
             return SubAgentTaskExecution.streaming(
@@ -443,6 +560,7 @@ class SubAgentTaskManagerTest {
                                     emitter -> {
                                         result.whenComplete(
                                                 (value, failure) -> {
+                                                    lastEmitterCompletedAtNanos = System.nanoTime();
                                                     if (failure != null) {
                                                         emitter.fail(failure);
                                                         return;
@@ -457,11 +575,24 @@ class SubAgentTaskManagerTest {
             CompletableFuture<String> previous = currentResult;
             currentResult = new CompletableFuture<>();
             started = new CountDownLatch(1);
+            lastCompletionSignaledAtNanos = System.nanoTime();
             previous.complete(response);
         }
 
         void awaitStarted() throws Exception {
             assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        long lastStartedAtNanos() {
+            return lastStartedAtNanos;
+        }
+
+        long lastCompletionSignaledAtNanos() {
+            return lastCompletionSignaledAtNanos;
+        }
+
+        long lastEmitterCompletedAtNanos() {
+            return lastEmitterCompletedAtNanos;
         }
     }
 
@@ -472,6 +603,49 @@ class SubAgentTaskManagerTest {
         public SubAgentTaskExecution handle(SubAgentTaskRequest request) {
             lastRequest = request;
             return SubAgentTaskExecution.immediate("done");
+        }
+    }
+
+    private static final class BlockingInvoker implements SubAgentTaskInvoker {
+        private final CountDownLatch handleStarted = new CountDownLatch(1);
+        private final CompletableFuture<String> response = new CompletableFuture<>();
+        private volatile SubAgentTaskRequest lastRequest;
+        private volatile int invocationCount;
+
+        @Override
+        public SubAgentTaskExecution handle(SubAgentTaskRequest request) {
+            invocationCount++;
+            lastRequest = request;
+            handleStarted.countDown();
+            return SubAgentTaskExecution.immediate(response.join());
+        }
+
+        void awaitHandleStarted() throws Exception {
+            assertThat(handleStarted.await(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        void release(String value) {
+            response.complete(value);
+        }
+    }
+
+    private static final class BlockingStreamingInvoker implements SubAgentTaskInvoker {
+        private final CountDownLatch handleStarted = new CountDownLatch(1);
+        private final CompletableFuture<Void> releaseHandle = new CompletableFuture<>();
+
+        @Override
+        public SubAgentTaskExecution handle(SubAgentTaskRequest request) {
+            handleStarted.countDown();
+            releaseHandle.join();
+            return SubAgentTaskExecution.streaming(Multi.createFrom().emitter(emitter -> {}));
+        }
+
+        void awaitHandleStarted() throws Exception {
+            assertThat(handleStarted.await(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        void release() {
+            releaseHandle.complete(null);
         }
     }
 }
