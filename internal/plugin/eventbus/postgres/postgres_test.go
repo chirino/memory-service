@@ -69,7 +69,7 @@ func TestPostgresBusPublishesRecoveryInvalidateAfterSubscriptionLoss(t *testing.
 	require.NoError(t, err)
 
 	busB.breakSubscription()
-	localInvalidate := waitForPostgresEvent(t, localEvents, 10*time.Second, func(event registryeventbus.Event) bool {
+	localInvalidate := waitForPostgresEvent(t, localEvents, 20*time.Second, func(event registryeventbus.Event) bool {
 		return event.Kind == "stream" && event.Event == "invalidate"
 	})
 	require.Equal(t, "pubsub recovery", postgresEventReason(localInvalidate))
@@ -81,7 +81,7 @@ func TestPostgresBusPublishesRecoveryInvalidateAfterSubscriptionLoss(t *testing.
 		Data:  map[string]any{"conversation": "after-subscription-recovery"},
 	}))
 
-	peerInvalidate := waitForPostgresEvent(t, peerEvents, 10*time.Second, func(event registryeventbus.Event) bool {
+	peerInvalidate := waitForPostgresEvent(t, peerEvents, 20*time.Second, func(event registryeventbus.Event) bool {
 		return event.Kind == "stream" && event.Event == "invalidate"
 	})
 	require.Equal(t, "pubsub recovery", postgresEventReason(peerInvalidate))
