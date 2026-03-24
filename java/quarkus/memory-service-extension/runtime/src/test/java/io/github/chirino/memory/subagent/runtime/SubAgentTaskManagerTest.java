@@ -208,7 +208,6 @@ class SubAgentTaskManagerTest {
     void waitForTasksReturnsAggregateResults() throws Exception {
         TestConversationStore store = new TestConversationStore();
         SubAgentTaskManager manager = manager(store);
-        GateStreamingInvoker invokerA = new GateStreamingInvoker();
         GateStreamingInvoker invokerB = new GateStreamingInvoker();
 
         SubAgentTaskResult first =
@@ -221,7 +220,7 @@ class SubAgentTaskManagerTest {
                         null,
                         "bob",
                         "token-1",
-                        invokerA);
+                        request -> SubAgentTaskExecution.immediate("done one"));
         SubAgentTaskResult second =
                 manager.messageTask(
                         PARENT_ID,
@@ -234,20 +233,35 @@ class SubAgentTaskManagerTest {
                         "token-1",
                         invokerB);
 
-        invokerA.awaitStarted();
         invokerB.awaitStarted();
-        invokerA.complete("done one");
 
-        SubAgentWaitResult waiting = manager.waitForTasks(PARENT_ID, List.of(), 0);
+        waitUntil(
+                () ->
+                        manager.getStatus(PARENT_ID, first.childConversationId()).status()
+                                == SubAgentTaskStatus.COMPLETED);
+
+        SubAgentWaitResult waiting =
+                manager.waitForTasks(
+                        PARENT_ID,
+                        List.of(first.childConversationId(), second.childConversationId()),
+                        0);
         assertThat(waiting.parentConversationId()).isEqualTo(PARENT_ID);
         assertThat(waiting.tasks()).hasSize(2);
         assertThat(waiting.allCompleted()).isFalse();
         assertThat(waiting.tasks())
                 .extracting(SubAgentTaskResult::childConversationId)
                 .contains(first.childConversationId(), second.childConversationId());
+        assertThat(waiting.tasks())
+                .extracting(SubAgentTaskResult::status)
+                .containsExactlyInAnyOrder(
+                        SubAgentTaskStatus.COMPLETED, SubAgentTaskStatus.RUNNING);
 
         invokerB.complete("done two");
-        SubAgentWaitResult completed = manager.waitForTasks(PARENT_ID, List.of(), 1);
+        SubAgentWaitResult completed =
+                manager.waitForTasks(
+                        PARENT_ID,
+                        List.of(first.childConversationId(), second.childConversationId()),
+                        5);
         assertThat(completed.allCompleted()).isTrue();
         assertThat(completed.tasks())
                 .extracting(SubAgentTaskResult::status)
