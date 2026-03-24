@@ -42,9 +42,29 @@ export type ConversationSummary = {
   updatedAt?: string;
   lastMessagePreview?: string | null;
   accessLevel?: AccessLevel;
+  startedByConversationId?: string | null;
+  startedByEntryId?: string | null;
+};
+
+export type ChildConversationSummary = {
+  /**
+   * Unique identifier for the child conversation.
+   */
+  id?: string;
+  title?: string | null;
+  ownerUserId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastMessagePreview?: string | null;
+  accessLevel?: AccessLevel;
+  startedByEntryId?: string | null;
 };
 
 export type Conversation = ConversationSummary & {
+  /**
+   * Optional logical agent associated with this conversation.
+   */
+  agentId?: string | null;
   /**
    * First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.
    */
@@ -53,6 +73,14 @@ export type Conversation = ConversationSummary & {
    * Conversation ID from which this conversation was forked.
    */
   forkedAtConversationId?: string | null;
+  /**
+   * Parent conversation that started this child conversation.
+   */
+  startedByConversationId?: string | null;
+  /**
+   * Parent entry that started this child conversation.
+   */
+  startedByEntryId?: string | null;
 };
 
 export type CreateConversationRequest = {
@@ -61,6 +89,10 @@ export type CreateConversationRequest = {
    */
   id?: string | null;
   title?: string | null;
+  /**
+   * Optional logical agent to associate with the new conversation.
+   */
+  agentId?: string | null;
   metadata?: {
     [key: string]: unknown;
   };
@@ -382,6 +414,10 @@ export type CreateEntryRequest = {
    * For agent entries, this is the user the agent is responding to.
    */
   userId?: string | null;
+  /**
+   * Optional logical agent to associate with the conversation when this request auto-creates a new conversation. Ignored for existing conversations.
+   */
+  agentId?: string | null;
   channel?: Channel;
   /**
    * Describes the schema/format of the content array.
@@ -426,6 +462,14 @@ export type CreateEntryRequest = {
    * Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.
    */
   forkedAtEntryId?: string;
+  /**
+   * If the target conversation does not exist yet, auto-create it as a child conversation started from this parent conversation.
+   */
+  startedByConversationId?: string;
+  /**
+   * Optional parent entry that caused this child conversation to be started.
+   */
+  startedByEntryId?: string;
 };
 
 export type SyncEntryResponse = {
@@ -609,6 +653,13 @@ export type $OpenApiTs = {
          * Cursor for pagination; returns items after this conversation id (UUID format).
          */
         afterCursor?: string | null;
+        /**
+         * Started-conversation ancestry filter.
+         * - `roots`: include only top-level conversations not started from another conversation.
+         * - `children`: include only conversations started from another conversation.
+         * - `all`: include both root and child conversations.
+         */
+        ancestry?: "all" | "roots" | "children";
         /**
          * Maximum number of conversations to return.
          */
@@ -826,6 +877,21 @@ export type $OpenApiTs = {
          * Resource not found
          */
         404: ErrorResponse;
+      };
+    };
+  };
+  "/v1/conversations/{conversationId}/children": {
+    get: {
+      req: {
+        afterCursor?: string | null;
+        conversationId: string;
+        limit?: number;
+      };
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
       };
     };
   };

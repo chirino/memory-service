@@ -6,6 +6,7 @@ import static io.github.chirino.memory.security.SecurityHelper.principalName;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
+import io.github.chirino.memory.client.model.Conversation;
 import io.github.chirino.memory.client.model.CreateEntryRequest;
 import io.github.chirino.memory.client.model.CreateEntryRequest.ChannelEnum;
 import io.github.chirino.memory.runtime.MemoryServiceApiBuilder;
@@ -19,6 +20,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +42,7 @@ public class ConversationStore {
     @Inject Instance<ToolAttachmentExtractor> toolAttachmentExtractorInstance;
 
     private SecurityIdentity resolveIdentity() {
-        if (identityAssociation != null) {
+        if (Arc.container().requestContext().isActive() && identityAssociation != null) {
             SecurityIdentity resolved = identityAssociation.getIdentity();
             if (resolved != null && !resolved.isAnonymous()) {
                 LOG.debugf(
@@ -49,14 +51,19 @@ public class ConversationStore {
                 return resolved;
             }
         }
-        if (securityIdentity != null) {
+        if (Arc.container().requestContext().isActive() && securityIdentity != null) {
             LOG.debugf(
                     "Resolved identity from injected identity: type=%s",
                     securityIdentity.getClass().getName());
-        } else {
-            LOG.debug("Resolved identity from injected identity: <none>");
+            return securityIdentity;
         }
-        return securityIdentity;
+        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
+        if (state != null) {
+            LOG.debug("Resolved identity from sub-agent execution context");
+        } else {
+            LOG.debug("Resolved identity: <none>");
+        }
+        return null;
     }
 
     private void applyIndexedContent(CreateEntryRequest request, String text, String role) {
@@ -151,7 +158,7 @@ public class ConversationStore {
         if (agentId != null) {
             request.setAgentId(agentId);
         }
-        String effectiveToken = bearerToken != null ? bearerToken : bearerToken(securityIdentity);
+        String effectiveToken = bearerToken != null ? bearerToken : resolveBearerToken();
         callAppend(conversationId, request, effectiveToken);
     }
 
@@ -180,6 +187,11 @@ public class ConversationStore {
      * @return wrapped Multi that records events as they stream
      */
     public Multi<ChatEvent> appendAgentEvents(String conversationId, Multi<ChatEvent> eventMulti) {
+        return appendAgentEvents(conversationId, eventMulti, null);
+    }
+
+    public Multi<ChatEvent> appendAgentEvents(
+            String conversationId, Multi<ChatEvent> eventMulti, String agentId) {
         SecurityIdentity resolvedIdentity = resolveIdentity();
         String bearerToken = resolveBearerToken();
         ToolAttachmentExtractor extractor =
@@ -202,6 +214,7 @@ public class ConversationStore {
                 resolvedIdentity,
                 identityAssociation,
                 bearerToken,
+                agentId,
                 extractor);
     }
 
@@ -283,6 +296,18 @@ public class ConversationStore {
         }
         String effectiveToken = bearerToken != null ? bearerToken : resolveBearerToken();
         callAppend(conversationId, request, effectiveToken);
+    }
+
+    public Conversation getConversation(String conversationId, String bearerToken) {
+        try {
+            return conversationsApi(bearerToken).getConversation(UUID.fromString(conversationId));
+        } catch (WebApplicationException e) {
+            if (e.getResponse() != null
+                    && e.getResponse().getStatus() == Response.Status.NOT_FOUND.getStatusCode()) {
+                return null;
+            }
+            throw e;
+        }
     }
 
     private void callAppend(String conversationId, CreateEntryRequest request, String bearerToken) {

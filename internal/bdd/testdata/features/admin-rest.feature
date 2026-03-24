@@ -39,6 +39,32 @@ Feature: Admin REST API
     Then the response status should be 200
     And the response body should have field "deletedAt" that is not null
 
+  Scenario: Admin can list child conversations for any conversation
+    Given I am authenticated as user "bob"
+    And set "parentConversationId" to "${bobConversationId}"
+    And set "childConversationId" to "00000000-0000-0000-0000-eeeeeeeeeeee"
+    When I call POST "/v1/conversations/${childConversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "startedByConversationId": "${parentConversationId}",
+      "content": [
+        {
+          "role": "USER",
+          "text": "Admin-visible child task"
+        }
+      ]
+    }
+    """
+    Then the response status should be 201
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations/${bobConversationId}/children?limit=200"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${childConversationId}"
+    And the response body "data[0].startedByConversationId" should be "${bobConversationId}"
+
   Scenario: Admin can delete any conversation
     When I call DELETE "/v1/admin/conversations/${bobConversationId}" with body:
     """

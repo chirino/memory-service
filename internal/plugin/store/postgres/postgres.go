@@ -186,14 +186,14 @@ func (s *PostgresStore) CreateConversation(ctx context.Context, userID string, c
 	if forkedAtConversationID != nil {
 		convID = uuid.New()
 	}
-	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID)
+	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
 func (s *PostgresStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID)
+	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
-func (s *PostgresStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *PostgresStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID, startedByConversationID *uuid.UUID, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	groupID := uuid.New()
 	now := time.Now()
 
@@ -201,8 +201,14 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		metadata = map[string]interface{}{}
 	}
 
+	if forkedAtConversationID != nil && startedByConversationID != nil {
+		return nil, &ValidationError{Field: "lineage", Message: "fork and started-by lineage cannot both be set"}
+	}
+
 	// If forking, look up the source conversation's group
 	var actualGroupID uuid.UUID
+	ownerUserID := userID
+	var membershipsToCopy []model.ConversationMembership
 	if forkedAtConversationID != nil {
 		var sourceConv model.Conversation
 		if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", *forkedAtConversationID).First(&sourceConv).Error; err != nil {
@@ -220,6 +226,45 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 			}
 		}
 		actualGroupID = sourceConv.ConversationGroupID
+	} else if startedByConversationID != nil {
+		var parentConv model.Conversation
+		findResult := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", *startedByConversationID).Limit(1).Find(&parentConv)
+		if findResult.Error != nil {
+			return nil, findResult.Error
+		}
+		if findResult.RowsAffected == 0 {
+			return nil, &NotFoundError{Resource: "conversation", ID: startedByConversationID.String()}
+		}
+		if _, err := s.requireAccess(ctx, userID, parentConv.ConversationGroupID, model.AccessLevelWriter); err != nil {
+			return nil, err
+		}
+		if startedByEntryID != nil {
+			visible, err := s.entryVisibleInConversationAncestry(ctx, parentConv, *startedByEntryID)
+			if err != nil {
+				return nil, err
+			}
+			if !visible {
+				return nil, &ValidationError{Field: "startedByEntryId", Message: "startedByEntryId must be visible in the parent conversation ancestry"}
+			}
+		}
+		actualGroupID = convID
+		ownerUserID = parentConv.OwnerUserID
+		group := model.ConversationGroup{ID: actualGroupID, CreatedAt: now}
+		if err := s.db.WithContext(ctx).Create(&group).Error; err != nil {
+			if _, ok := pgUniqueViolation(err); !ok {
+				logDuplicateKey("createConversationWithID:createStartedGroup", err,
+					"userID", userID,
+					"conversationID", convID.String(),
+					"conversationGroupID", actualGroupID.String(),
+					"startedByConversationID", uuidPtrString(startedByConversationID),
+					"startedByEntryID", uuidPtrString(startedByEntryID),
+				)
+				return nil, fmt.Errorf("failed to create conversation group: %w", err)
+			}
+		}
+		if err := s.db.WithContext(ctx).Where("conversation_group_id = ?", parentConv.ConversationGroupID).Order("created_at ASC").Find(&membershipsToCopy).Error; err != nil {
+			return nil, fmt.Errorf("failed to load parent memberships: %w", err)
+		}
 	} else {
 		// New root conversation — create a group; for non-forked, use convID as groupID for Java parity
 		actualGroupID = convID
@@ -244,17 +289,19 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		return nil, fmt.Errorf("failed to encrypt title: %w", err)
 	}
 	conv := model.Conversation{
-		ID:                     convID,
-		Title:                  encTitle,
-		OwnerUserID:            userID,
-		ClientID:               clientID,
-		AgentID:                agentID,
-		Metadata:               metadata,
-		ConversationGroupID:    actualGroupID,
-		ForkedAtConversationID: forkedAtConversationID,
-		ForkedAtEntryID:        forkedAtEntryID,
-		CreatedAt:              now,
-		UpdatedAt:              now,
+		ID:                      convID,
+		Title:                   encTitle,
+		OwnerUserID:             ownerUserID,
+		ClientID:                clientID,
+		AgentID:                 agentID,
+		Metadata:                metadata,
+		ConversationGroupID:     actualGroupID,
+		ForkedAtConversationID:  forkedAtConversationID,
+		ForkedAtEntryID:         forkedAtEntryID,
+		StartedByConversationID: startedByConversationID,
+		StartedByEntryID:        startedByEntryID,
+		CreatedAt:               now,
+		UpdatedAt:               now,
 	}
 
 	if err := s.db.WithContext(ctx).Create(&conv).Error; err != nil {
@@ -268,15 +315,22 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
 	}
 
-	// Create owner membership (only for root conversations)
+	// Root conversations get a new owner membership; started conversations copy parent memberships.
 	if forkedAtConversationID == nil {
-		membership := model.ConversationMembership{
-			ConversationGroupID: actualGroupID,
-			UserID:              userID,
-			AccessLevel:         model.AccessLevelOwner,
-			CreatedAt:           now,
+		if len(membershipsToCopy) == 0 {
+			membershipsToCopy = []model.ConversationMembership{{
+				ConversationGroupID: actualGroupID,
+				UserID:              ownerUserID,
+				AccessLevel:         model.AccessLevelOwner,
+				CreatedAt:           now,
+			}}
+		} else {
+			for i := range membershipsToCopy {
+				membershipsToCopy[i].ConversationGroupID = actualGroupID
+				membershipsToCopy[i].CreatedAt = now
+			}
 		}
-		if err := s.db.WithContext(ctx).Create(&membership).Error; err != nil {
+		if err := s.db.WithContext(ctx).Create(&membershipsToCopy).Error; err != nil {
 			logDuplicateKey("createConversationWithID:createMembership", err,
 				"userID", userID,
 				"conversationID", convID.String(),
@@ -288,18 +342,20 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 
 	return &registrystore.ConversationDetail{
 		ConversationSummary: registrystore.ConversationSummary{
-			ID:                     convID,
-			Title:                  title,
-			OwnerUserID:            userID,
-			ClientID:               clientID,
-			AgentID:                agentID,
-			Metadata:               metadata,
-			ConversationGroupID:    actualGroupID,
-			ForkedAtConversationID: forkedAtConversationID,
-			ForkedAtEntryID:        forkedAtEntryID,
-			CreatedAt:              now,
-			UpdatedAt:              now,
-			AccessLevel:            model.AccessLevelOwner,
+			ID:                      convID,
+			Title:                   title,
+			OwnerUserID:             ownerUserID,
+			ClientID:                clientID,
+			AgentID:                 agentID,
+			Metadata:                metadata,
+			ConversationGroupID:     actualGroupID,
+			ForkedAtConversationID:  forkedAtConversationID,
+			ForkedAtEntryID:         forkedAtEntryID,
+			StartedByConversationID: startedByConversationID,
+			StartedByEntryID:        startedByEntryID,
+			CreatedAt:               now,
+			UpdatedAt:               now,
+			AccessLevel:             model.AccessLevelOwner,
 		},
 	}, nil
 }
@@ -1068,16 +1124,20 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 		// Check first entry for fork metadata.
 		var forkedAtConvID *uuid.UUID
 		var forkedAtEntryID *uuid.UUID
+		var startedByConversationID *uuid.UUID
+		var startedByEntryID *uuid.UUID
 		if len(entries) > 0 {
 			forkedAtConvID = entries[0].ForkedAtConversationID
 			forkedAtEntryID = entries[0].ForkedAtEntryID
+			startedByConversationID = entries[0].StartedByConversationID
+			startedByEntryID = entries[0].StartedByEntryID
 		}
-		if clientID == nil {
-			return nil, &ValidationError{Field: "clientId", Message: "authenticated client context is required when creating a conversation"}
-		}
-
 		title := inferTitleFromEntries(entries)
-		detail, err := s.createConversationWithID(ctx, userID, *clientID, conversationID, title, nil, agentID, forkedAtConvID, forkedAtEntryID)
+		resolvedClientID := ""
+		if clientID != nil {
+			resolvedClientID = *clientID
+		}
+		detail, err := s.createConversationWithID(ctx, userID, resolvedClientID, conversationID, title, nil, agentID, forkedAtConvID, forkedAtEntryID, startedByConversationID, startedByEntryID)
 		if err != nil {
 			// Concurrent writers can race to auto-create the same root conversation.
 			// If another request won the insert, load the conversation and continue.
@@ -2303,6 +2363,24 @@ func (s *PostgresStore) FailTask(ctx context.Context, taskID uuid.UUID, errMsg s
 		"retry_at":    time.Now().Add(retryDelay),
 		"last_error":  errMsg,
 	}).Error
+}
+
+func (s *PostgresStore) entryVisibleInConversationAncestry(ctx context.Context, conv model.Conversation, entryID uuid.UUID) (bool, error) {
+	ancestry, err := s.buildAncestryStack(ctx, conv)
+	if err != nil {
+		return false, err
+	}
+	allEntries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
+	if err != nil {
+		return false, err
+	}
+	visibleEntries := filterEntriesByAncestry(allEntries, ancestry)
+	for _, entry := range visibleEntries {
+		if entry.ID == entryID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *PostgresStore) AdminGetAttachmentByStorageKey(ctx context.Context, storageKey string) (*registrystore.AdminAttachment, error) {

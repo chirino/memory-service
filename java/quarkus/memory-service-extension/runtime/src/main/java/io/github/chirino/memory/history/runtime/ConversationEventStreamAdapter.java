@@ -71,6 +71,7 @@ public final class ConversationEventStreamAdapter {
                 identity,
                 identityAssociation,
                 bearerToken,
+                null,
                 null);
     }
 
@@ -87,6 +88,7 @@ public final class ConversationEventStreamAdapter {
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
             String bearerToken,
+            String agentId,
             ToolAttachmentExtractor toolAttachmentExtractor) {
 
         ResponseRecordingManager.RecordingSession recorder =
@@ -116,6 +118,7 @@ public final class ConversationEventStreamAdapter {
                                         identity,
                                         identityAssociation,
                                         bearerToken,
+                                        agentId,
                                         toolAttachmentExtractor,
                                         collectedAttachments));
     }
@@ -132,6 +135,7 @@ public final class ConversationEventStreamAdapter {
             SecurityIdentity identity,
             SecurityIdentityAssociation identityAssociation,
             String bearerToken,
+            String agentId,
             ToolAttachmentExtractor toolAttachmentExtractor,
             List<Map<String, Object>> collectedAttachments) {
 
@@ -159,6 +163,7 @@ public final class ConversationEventStreamAdapter {
                             coalescer,
                             recorder,
                             bearerToken,
+                            agentId,
                             collectedAttachments);
                     cancelWatcherStop.run();
                     if (!emitter.isCancelled()) {
@@ -215,6 +220,7 @@ public final class ConversationEventStreamAdapter {
                                                 emitter,
                                                 failure,
                                                 bearerToken,
+                                                agentId,
                                                 collectedAttachments);
                                         cancelWatcherStop.run();
                                     }
@@ -230,6 +236,7 @@ public final class ConversationEventStreamAdapter {
                                                 recorder,
                                                 emitter,
                                                 bearerToken,
+                                                agentId,
                                                 collectedAttachments);
                                         cancelWatcherStop.run();
                                     }
@@ -452,11 +459,12 @@ public final class ConversationEventStreamAdapter {
             ResponseRecordingManager.RecordingSession recorder,
             MultiEmitter<? super ChatEvent> emitter,
             String bearerToken,
+            String agentId,
             List<Map<String, Object>> collectedAttachments) {
 
         try {
             storeCoalescedEvents(
-                    conversationId, store, coalescer, bearerToken, collectedAttachments);
+                    conversationId, store, coalescer, bearerToken, agentId, collectedAttachments);
             store.markCompleted(conversationId);
         } catch (RuntimeException e) {
             // Ignore failures to avoid breaking the response stream
@@ -475,6 +483,7 @@ public final class ConversationEventStreamAdapter {
             MultiEmitter<? super ChatEvent> emitter,
             Throwable failure,
             String bearerToken,
+            String agentId,
             List<Map<String, Object>> collectedAttachments) {
 
         // Store partial events on failure
@@ -482,7 +491,12 @@ public final class ConversationEventStreamAdapter {
         if (!events.isEmpty()) {
             try {
                 storeCoalescedEvents(
-                        conversationId, store, coalescer, bearerToken, collectedAttachments);
+                        conversationId,
+                        store,
+                        coalescer,
+                        bearerToken,
+                        agentId,
+                        collectedAttachments);
                 store.markCompleted(conversationId);
             } catch (RuntimeException e) {
                 // Ignore to avoid masking original error
@@ -500,11 +514,12 @@ public final class ConversationEventStreamAdapter {
             EventCoalescer coalescer,
             ResponseRecordingManager.RecordingSession recorder,
             String bearerToken,
+            String agentId,
             List<Map<String, Object>> collectedAttachments) {
 
         try {
             storeCoalescedEvents(
-                    conversationId, store, coalescer, bearerToken, collectedAttachments);
+                    conversationId, store, coalescer, bearerToken, agentId, collectedAttachments);
             store.markCompleted(conversationId);
         } catch (RuntimeException e) {
             // Ignore
@@ -517,6 +532,7 @@ public final class ConversationEventStreamAdapter {
             ConversationStore store,
             EventCoalescer coalescer,
             String bearerToken,
+            String agentId,
             List<Map<String, Object>> collectedAttachments) {
 
         List<JsonNode> events = coalescer.finish();
@@ -528,6 +544,6 @@ public final class ConversationEventStreamAdapter {
 
         // Store using the new history-events format, with any tool-generated attachments
         store.appendAgentMessageWithEvents(
-                conversationId, finalText, events, collectedAttachments, bearerToken);
+                conversationId, finalText, events, collectedAttachments, agentId, bearerToken);
     }
 }

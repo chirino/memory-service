@@ -144,10 +144,6 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 		return
 	}
 	clientID := security.GetClientID(c)
-	if clientID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "authenticated client context required"})
-		return
-	}
 
 	var convID *uuid.UUID
 	if req.ID != nil {
@@ -396,28 +392,30 @@ func listChildConversations(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 type childConversationSummaryResponse struct {
-	ID               uuid.UUID         `json:"id"`
-	Title            string            `json:"title"`
-	OwnerUserID      string            `json:"ownerUserId"`
-	CreatedAt        time.Time         `json:"createdAt"`
-	UpdatedAt        time.Time         `json:"updatedAt"`
-	DeletedAt        *time.Time        `json:"deletedAt,omitempty"`
-	AccessLevel      model.AccessLevel `json:"accessLevel"`
-	StartedByEntryID *uuid.UUID        `json:"startedByEntryId,omitempty"`
+	ID                      uuid.UUID         `json:"id"`
+	Title                   string            `json:"title"`
+	OwnerUserID             string            `json:"ownerUserId"`
+	CreatedAt               time.Time         `json:"createdAt"`
+	UpdatedAt               time.Time         `json:"updatedAt"`
+	DeletedAt               *time.Time        `json:"deletedAt,omitempty"`
+	AccessLevel             model.AccessLevel `json:"accessLevel"`
+	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
+	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
 }
 
 func toChildConversationSummaries(items []registrystore.ConversationSummary) []childConversationSummaryResponse {
 	result := make([]childConversationSummaryResponse, 0, len(items))
 	for _, item := range items {
 		result = append(result, childConversationSummaryResponse{
-			ID:               item.ID,
-			Title:            item.Title,
-			OwnerUserID:      item.OwnerUserID,
-			CreatedAt:        item.CreatedAt,
-			UpdatedAt:        item.UpdatedAt,
-			DeletedAt:        item.DeletedAt,
-			AccessLevel:      item.AccessLevel,
-			StartedByEntryID: item.StartedByEntryID,
+			ID:                      item.ID,
+			Title:                   item.Title,
+			OwnerUserID:             item.OwnerUserID,
+			CreatedAt:               item.CreatedAt,
+			UpdatedAt:               item.UpdatedAt,
+			DeletedAt:               item.DeletedAt,
+			AccessLevel:             item.AccessLevel,
+			StartedByConversationID: item.StartedByConversationID,
+			StartedByEntryID:        item.StartedByEntryID,
 		})
 	}
 	return result

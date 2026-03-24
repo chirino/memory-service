@@ -5,10 +5,14 @@ type ChatSidebarProps = {
   conversations: ConversationSummary[];
   selectedConversationId: string | null;
   onSelectConversation: (conversation: ConversationSummary) => void;
+  onSelectConversationId: (conversationId: string) => void;
   onNewChat: () => void;
   onOpenSearch: () => void;
   statusMessage?: string | null;
   resumableConversationIds?: Set<string>;
+  childrenByParentId?: Map<string, ConversationSummary[]>;
+  selectedRootConversationId?: string | null;
+  selectedConversationLineage?: Set<string>;
 };
 
 function formatRelativeTime(value?: string): string {
@@ -44,11 +48,70 @@ export function ChatSidebar({
   conversations,
   selectedConversationId,
   onSelectConversation,
+  onSelectConversationId,
   onNewChat,
   onOpenSearch,
   statusMessage,
   resumableConversationIds = new Set(),
+  childrenByParentId = new Map(),
+  selectedRootConversationId = null,
+  selectedConversationLineage = new Set(),
 }: ChatSidebarProps) {
+  const renderConversationItem = (conversation: ConversationSummary, depth = 0, animationDelay?: string) => {
+    const conversationId = conversation.id ?? null;
+    const isSelected = conversationId === selectedConversationId;
+    const isResumable = conversationId ? resumableConversationIds.has(conversationId) : false;
+    const isExpanded = conversationId
+      ? conversationId === selectedRootConversationId || selectedConversationLineage.has(conversationId)
+      : false;
+    const children = conversationId ? (childrenByParentId.get(conversationId) ?? []) : [];
+
+    return (
+      <div
+        key={conversationId ?? `${depth}-${conversation.createdAt ?? conversation.title ?? "conversation"}`}
+        className={depth === 0 ? "animate-fade-in" : undefined}
+        style={depth === 0 && animationDelay ? { animationDelay } : undefined}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (conversationId) {
+              onSelectConversationId(conversationId);
+              return;
+            }
+            onSelectConversation(conversation);
+          }}
+          className={`w-full rounded-xl px-4 py-3.5 text-left transition-all ${
+            isSelected ? "border border-stone/10 bg-mist" : "border border-transparent hover:bg-mist/60"
+          }`}
+          style={depth > 0 ? { paddingLeft: `${1 + depth * 1.25}rem` } : undefined}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h3 className={`truncate ${depth > 0 ? "text-sm" : "font-medium"} text-ink`}>
+                {conversation.title || "Untitled conversation"}
+              </h3>
+              {depth === 0 && conversation.lastMessagePreview && (
+                <p className="mt-1 line-clamp-2 text-sm text-stone">{conversation.lastMessagePreview}</p>
+              )}
+            </div>
+            {isResumable ? (
+              <div className="spinner mt-0.5 flex-shrink-0" />
+            ) : (
+              <span className="mt-0.5 flex-shrink-0 whitespace-nowrap text-xs text-stone">
+                {formatRelativeTime(conversation.updatedAt || conversation.createdAt)}
+              </span>
+            )}
+          </div>
+        </button>
+
+        {isExpanded && children.length > 0 && (
+          <div className="mt-1 space-y-1">{children.map((child) => renderConversationItem(child, depth + 1))}</div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <aside className="flex w-80 flex-col border-r border-stone/20 bg-cream">
       {/* Sidebar Header */}
@@ -89,37 +152,8 @@ export function ChatSidebar({
 
         <div className="space-y-1">
           {conversations.map((conversation, index) => {
-            const isSelected = conversation.id === selectedConversationId;
-            const isResumable = conversation.id ? resumableConversationIds.has(conversation.id) : false;
             const animationDelay = `${index * 0.05}s`;
-
-            return (
-              <div key={conversation.id} className="animate-fade-in" style={{ animationDelay }}>
-                <button
-                  type="button"
-                  onClick={() => onSelectConversation(conversation)}
-                  className={`w-full rounded-xl px-4 py-3.5 text-left transition-all ${
-                    isSelected ? "border border-stone/10 bg-mist" : "border border-transparent hover:bg-mist/60"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="truncate font-medium text-ink">{conversation.title || "Untitled conversation"}</h3>
-                      {conversation.lastMessagePreview && (
-                        <p className="mt-1 line-clamp-2 text-sm text-stone">{conversation.lastMessagePreview}</p>
-                      )}
-                    </div>
-                    {isResumable ? (
-                      <div className="spinner mt-0.5 flex-shrink-0" />
-                    ) : (
-                      <span className="mt-0.5 flex-shrink-0 whitespace-nowrap text-xs text-stone">
-                        {formatRelativeTime(conversation.updatedAt || conversation.createdAt)}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              </div>
-            );
+            return renderConversationItem(conversation, 0, animationDelay);
           })}
         </div>
       </nav>

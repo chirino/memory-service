@@ -112,6 +112,88 @@ Feature: Conversations REST API
     Then the response status should be 403
     And the response should contain error code "forbidden"
 
+  Scenario: Append-created child conversation is excluded from roots list and visible as a child
+    Given I have a conversation with title "Parent Conversation"
+    And set "parentConversationId" to "${conversationId}"
+    And set "childConversationId" to "00000000-0000-0000-0000-cccccccccccc"
+    When I call POST "/v1/conversations/${childConversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "startedByConversationId": "${parentConversationId}",
+      "content": [
+        {
+          "role": "USER",
+          "text": "Child task"
+        }
+      ]
+    }
+    """
+    Then the response status should be 201
+    When I call GET "/v1/conversations/${childConversationId}"
+    Then the response status should be 200
+    And the response body field "id" should be "${childConversationId}"
+    And the response body field "startedByConversationId" should be "${parentConversationId}"
+    When I list conversations
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${parentConversationId}"
+    When I call GET "/v1/conversations?ancestry=children"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${childConversationId}"
+    And the response body "data[0].startedByConversationId" should be "${parentConversationId}"
+    When I execute SQL query:
+    """
+    SELECT id, started_by_conversation_id FROM conversations WHERE id = '${childConversationId}'
+    """
+    Then the SQL result should match:
+      | id                                   | started_by_conversation_id         |
+      | ${childConversationId}               | ${parentConversationId}            |
+    When I execute MongoDB query:
+    """
+    {
+      "collection": "conversations",
+      "operation": "find",
+      "filter": {
+        "_id": "${childConversationId}"
+      },
+      "projection": {
+        "_id": 1,
+        "started_by_conversation_id": 1
+      }
+    }
+    """
+    Then the MongoDB result should match:
+      | _id                                  | started_by_conversation_id         |
+      | ${childConversationId}               | ${parentConversationId}            |
+
+  Scenario: Started child conversation is returned by the dedicated children endpoint
+    Given I have a conversation with title "Parent Conversation"
+    And set "parentConversationId" to "${conversationId}"
+    And set "childConversationId" to "00000000-0000-0000-0000-dddddddddddd"
+    When I call POST "/v1/conversations/${childConversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "startedByConversationId": "${parentConversationId}",
+      "content": [
+        {
+          "role": "USER",
+          "text": "Child task from endpoint"
+        }
+      ]
+    }
+    """
+    Then the response status should be 201
+    When I call GET "/v1/conversations/${parentConversationId}/children?limit=200"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${childConversationId}"
+    And the response body "data[0].startedByConversationId" should be "${parentConversationId}"
+
   Scenario: Delete a conversation performs soft delete
     Given I have a conversation with title "To Be Deleted"
     When I delete the conversation

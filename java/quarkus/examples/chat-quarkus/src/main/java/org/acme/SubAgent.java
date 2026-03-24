@@ -16,15 +16,12 @@ import java.util.List;
         tools = {
             ImageGenerationTool.class,
             WebSearchTool.class,
-        },
-        toolProviderSupplier = SubAgentToolProviderSupplier.class)
-public interface Agent {
+        })
+public interface SubAgent {
 
     @SystemMessage(
             """
-            You are the main assistant for this conversation.
-            Use delegated agent conversations for parallelizable or separable work.
-            Prefer reusing an existing agent conversation with the right context over starting a new one.
+            Be consise but accurate in your response.
             """)
     Multi<ChatEvent> chat(
             @MemoryId String memoryId,

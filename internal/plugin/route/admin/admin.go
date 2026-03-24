@@ -493,32 +493,34 @@ func adminListChildConversations(c *gin.Context, store registrystore.MemoryStore
 }
 
 type adminChildConversationSummaryResponse struct {
-	ID               uuid.UUID         `json:"id"`
-	Title            string            `json:"title"`
-	OwnerUserID      string            `json:"ownerUserId"`
-	ClientID         string            `json:"clientId,omitempty"`
-	AgentID          *string           `json:"agentId,omitempty"`
-	CreatedAt        time.Time         `json:"createdAt"`
-	UpdatedAt        time.Time         `json:"updatedAt"`
-	DeletedAt        *time.Time        `json:"deletedAt,omitempty"`
-	AccessLevel      model.AccessLevel `json:"accessLevel"`
-	StartedByEntryID *uuid.UUID        `json:"startedByEntryId,omitempty"`
+	ID                      uuid.UUID         `json:"id"`
+	Title                   string            `json:"title"`
+	OwnerUserID             string            `json:"ownerUserId"`
+	ClientID                string            `json:"clientId,omitempty"`
+	AgentID                 *string           `json:"agentId,omitempty"`
+	CreatedAt               time.Time         `json:"createdAt"`
+	UpdatedAt               time.Time         `json:"updatedAt"`
+	DeletedAt               *time.Time        `json:"deletedAt,omitempty"`
+	AccessLevel             model.AccessLevel `json:"accessLevel"`
+	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
+	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
 }
 
 func toAdminChildConversationSummaries(items []registrystore.ConversationSummary) []adminChildConversationSummaryResponse {
 	result := make([]adminChildConversationSummaryResponse, 0, len(items))
 	for _, item := range items {
 		result = append(result, adminChildConversationSummaryResponse{
-			ID:               item.ID,
-			Title:            item.Title,
-			OwnerUserID:      item.OwnerUserID,
-			ClientID:         item.ClientID,
-			AgentID:          item.AgentID,
-			CreatedAt:        item.CreatedAt,
-			UpdatedAt:        item.UpdatedAt,
-			DeletedAt:        item.DeletedAt,
-			AccessLevel:      item.AccessLevel,
-			StartedByEntryID: item.StartedByEntryID,
+			ID:                      item.ID,
+			Title:                   item.Title,
+			OwnerUserID:             item.OwnerUserID,
+			ClientID:                item.ClientID,
+			AgentID:                 item.AgentID,
+			CreatedAt:               item.CreatedAt,
+			UpdatedAt:               item.UpdatedAt,
+			DeletedAt:               item.DeletedAt,
+			AccessLevel:             item.AccessLevel,
+			StartedByConversationID: item.StartedByConversationID,
+			StartedByEntryID:        item.StartedByEntryID,
 		})
 	}
 	return result
@@ -559,21 +561,21 @@ func toAdminConversationSummaries(items []registrystore.ConversationSummary) []a
 }
 
 type adminConversationResponse struct {
-	ID                      uuid.UUID                `json:"id"`
-	Title                   string                   `json:"title"`
-	OwnerUserID             string                   `json:"ownerUserId"`
-	ClientID                string                   `json:"clientId,omitempty"`
-	AgentID                 *string                  `json:"agentId,omitempty"`
-	Metadata                map[string]interface{}   `json:"metadata"`
-	CreatedAt               time.Time                `json:"createdAt"`
-	UpdatedAt               time.Time                `json:"updatedAt"`
-	DeletedAt               *time.Time               `json:"deletedAt,omitempty"`
-	AccessLevel             model.AccessLevel        `json:"accessLevel"`
-	ForkedAtEntryID         *uuid.UUID               `json:"forkedAtEntryId,omitempty"`
-	ForkedAtConversationID  *uuid.UUID               `json:"forkedAtConversationId,omitempty"`
-	StartedByConversationID *uuid.UUID               `json:"startedByConversationId,omitempty"`
-	StartedByEntryID        *uuid.UUID               `json:"startedByEntryId,omitempty"`
-	HasResponseInProgress   bool                     `json:"hasResponseInProgress,omitempty"`
+	ID                      uuid.UUID              `json:"id"`
+	Title                   string                 `json:"title"`
+	OwnerUserID             string                 `json:"ownerUserId"`
+	ClientID                string                 `json:"clientId,omitempty"`
+	AgentID                 *string                `json:"agentId,omitempty"`
+	Metadata                map[string]interface{} `json:"metadata"`
+	CreatedAt               time.Time              `json:"createdAt"`
+	UpdatedAt               time.Time              `json:"updatedAt"`
+	DeletedAt               *time.Time             `json:"deletedAt,omitempty"`
+	AccessLevel             model.AccessLevel      `json:"accessLevel"`
+	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"`
+	ForkedAtConversationID  *uuid.UUID             `json:"forkedAtConversationId,omitempty"`
+	StartedByConversationID *uuid.UUID             `json:"startedByConversationId,omitempty"`
+	StartedByEntryID        *uuid.UUID             `json:"startedByEntryId,omitempty"`
+	HasResponseInProgress   bool                   `json:"hasResponseInProgress,omitempty"`
 }
 
 func toAdminConversationResponse(conv *registrystore.ConversationDetail) adminConversationResponse {

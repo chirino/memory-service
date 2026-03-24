@@ -468,7 +468,7 @@ function ConversationsUIEmptyState({
   description = "Ask a question, explore an idea, or get help with code. Your AI assistant is ready.",
   className,
 }: ConversationsUIEmptyStateProps) {
-  const { sendMessage } = useConversationStreaming();
+  const { setValue } = useConversationInput();
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [popupMaxHeight, setPopupMaxHeight] = useState(320);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -513,6 +513,12 @@ function ConversationsUIEmptyState({
 
   const suggestions = [
     {
+      text: "Write the FizzBuzz function in java, typescript, and python in parallel",
+      icon: MessageCircle,
+      iconBg: "bg-terracotta/20",
+      iconColor: "text-terracotta",
+    },
+    {
       text: "Write me a 12 paragraph essay on the benefits of AI",
       icon: PenLine,
       iconBg: "bg-ink/10",
@@ -528,7 +534,7 @@ function ConversationsUIEmptyState({
 
   const handlePromptSelect = (prompt: string) => {
     setIsPopupOpen(false);
-    sendMessage(prompt);
+    setValue(prompt);
   };
 
   const showHeader = false;
@@ -560,7 +566,7 @@ function ConversationsUIEmptyState({
               <button
                 key={suggestion.text}
                 type="button"
-                onClick={() => sendMessage(suggestion.text)}
+                onClick={() => handlePromptSelect(suggestion.text)}
                 className="group w-full rounded-xl border border-transparent bg-mist px-5 py-4 text-left transition-all hover:border-stone/20"
               >
                 <div className="flex items-center gap-3">

@@ -12,6 +12,7 @@
 * MCP should focus more on memories than conversations.
 * The MCP sub command should support using an embedded memory-server
 * Provide a way to designate stable vs unstable features/apis.
+* Outbox pattern for reliable event delivery to external systems (webhook, kafka)
 
 ## Better Demo / Usecases
 

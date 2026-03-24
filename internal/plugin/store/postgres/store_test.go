@@ -54,7 +54,7 @@ func TestCreateAndGetConversation(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
 	// Create a conversation
-	conv, err := store.CreateConversation(ctx, "user1", "Test Conversation", nil, nil, nil)
+	conv, err := store.CreateConversation(ctx, "user1", "", "Test Conversation", nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, conv)
 	assert.Equal(t, "Test Conversation", conv.Title)
@@ -72,10 +72,10 @@ func TestListConversations(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
 	// Create two conversations
-	_, err := store.CreateConversation(ctx, "user2", "Conv A", nil, nil, nil)
+	_, err := store.CreateConversation(ctx, "user2", "", "Conv A", nil, nil, nil, nil)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond) // ensure ordering
-	_, err = store.CreateConversation(ctx, "user2", "Conv B", nil, nil, nil)
+	_, err = store.CreateConversation(ctx, "user2", "", "Conv B", nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// List conversations
@@ -88,7 +88,7 @@ func TestListConversations(t *testing.T) {
 func TestDeleteConversation(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	conv, err := store.CreateConversation(ctx, "user3", "To Delete", nil, nil, nil)
+	conv, err := store.CreateConversation(ctx, "user3", "", "To Delete", nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	err = store.DeleteConversation(ctx, "user3", conv.ID)
@@ -102,7 +102,7 @@ func TestDeleteConversation(t *testing.T) {
 func TestAppendAndGetEntries(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	conv, err := store.CreateConversation(ctx, "user4", "Entry Test", nil, nil, nil)
+	conv, err := store.CreateConversation(ctx, "user4", "", "Entry Test", nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// Append entries
@@ -122,7 +122,7 @@ func TestAppendAndGetEntries(t *testing.T) {
 func TestMemberships(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	conv, err := store.CreateConversation(ctx, "owner1", "Shared Conv", nil, nil, nil)
+	conv, err := store.CreateConversation(ctx, "owner1", "", "Shared Conv", nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// Share with another user
@@ -148,7 +148,7 @@ func TestMemberships(t *testing.T) {
 func TestConversationAccessControl(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	conv, err := store.CreateConversation(ctx, "owner2", "Private Conv", nil, nil, nil)
+	conv, err := store.CreateConversation(ctx, "owner2", "", "Private Conv", nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// Unauthorized user cannot see the conversation
@@ -159,7 +159,7 @@ func TestConversationAccessControl(t *testing.T) {
 func TestOwnershipTransfers(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	conv, err := store.CreateConversation(ctx, "from_user", "Transfer Conv", nil, nil, nil)
+	conv, err := store.CreateConversation(ctx, "from_user", "", "Transfer Conv", nil, nil, nil, nil)
 	require.NoError(t, err)
 	_, err = store.ShareConversation(ctx, "from_user", conv.ID, "to_user", model.AccessLevelReader)
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestOwnershipTransfers(t *testing.T) {
 func TestAdminRestoreConversationConflictAndSuccess(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	conv, err := store.CreateConversation(ctx, "admin-user", "Admin Restore", nil, nil, nil)
+	conv, err := store.CreateConversation(ctx, "admin-user", "", "Admin Restore", nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	err = store.AdminRestoreConversation(ctx, conv.ID)
@@ -205,7 +205,7 @@ func TestAdminRestoreConversationConflictAndSuccess(t *testing.T) {
 func TestAdminGetEntriesForkModes(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	root, err := store.CreateConversation(ctx, "owner", "Root", nil, nil, nil)
+	root, err := store.CreateConversation(ctx, "owner", "", "Root", nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	rootEntry1, err := store.AppendEntries(ctx, "owner", root.ID, []registrystore.CreateEntryRequest{
@@ -220,7 +220,7 @@ func TestAdminGetEntriesForkModes(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rootEntry2, 1)
 
-	fork, err := store.CreateConversation(ctx, "owner", "Fork", nil, &root.ID, &rootEntry2[0].ID)
+	fork, err := store.CreateConversation(ctx, "owner", "", "Fork", nil, nil, &root.ID, &rootEntry2[0].ID)
 	require.NoError(t, err)
 	forkEntries, err := store.AppendEntries(ctx, "owner", fork.ID, []registrystore.CreateEntryRequest{
 		{Content: json.RawMessage(`"fork-1"`), ContentType: "text/plain", Channel: "history"},
@@ -251,9 +251,9 @@ func TestAdminGetEntriesForkModes(t *testing.T) {
 func TestSearchEntriesGroupByConversation(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	convA, err := store.CreateConversation(ctx, "search-user", "Search A", nil, nil, nil)
+	convA, err := store.CreateConversation(ctx, "search-user", "", "Search A", nil, nil, nil, nil)
 	require.NoError(t, err)
-	convB, err := store.CreateConversation(ctx, "search-user", "Search B", nil, nil, nil)
+	convB, err := store.CreateConversation(ctx, "search-user", "", "Search B", nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	_, err = store.AppendEntries(ctx, "search-user", convA.ID, []registrystore.CreateEntryRequest{
@@ -300,9 +300,9 @@ func TestSearchEntriesGroupByConversation(t *testing.T) {
 func TestAdminSearchEntriesIncludeDeletedAndAfterCursor(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	activeConv, err := store.CreateConversation(ctx, "admin-search-user", "Active", nil, nil, nil)
+	activeConv, err := store.CreateConversation(ctx, "admin-search-user", "", "Active", nil, nil, nil, nil)
 	require.NoError(t, err)
-	deletedConv, err := store.CreateConversation(ctx, "admin-search-user", "Deleted", nil, nil, nil)
+	deletedConv, err := store.CreateConversation(ctx, "admin-search-user", "", "Deleted", nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	_, err = store.AppendEntries(ctx, "admin-search-user", activeConv.ID, []registrystore.CreateEntryRequest{

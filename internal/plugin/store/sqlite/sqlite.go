@@ -1078,12 +1078,12 @@ func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversa
 			startedByConversationID = entries[0].StartedByConversationID
 			startedByEntryID = entries[0].StartedByEntryID
 		}
-		if clientID == nil {
-			return nil, &ValidationError{Field: "clientId", Message: "authenticated client context is required when creating a conversation"}
-		}
-
 		title := inferTitleFromEntries(entries)
-		detail, err := s.createConversationWithID(ctx, userID, *clientID, conversationID, title, nil, agentID, forkedAtConvID, forkedAtEntryID, startedByConversationID, startedByEntryID)
+		resolvedClientID := ""
+		if clientID != nil {
+			resolvedClientID = *clientID
+		}
+		detail, err := s.createConversationWithID(ctx, userID, resolvedClientID, conversationID, title, nil, agentID, forkedAtConvID, forkedAtEntryID, startedByConversationID, startedByEntryID)
 		if err != nil {
 			// Concurrent writers can race to auto-create the same root conversation.
 			// If another request won the insert, load the conversation and continue.

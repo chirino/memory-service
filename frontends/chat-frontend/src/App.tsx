@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ConversationSummary } from "@/client";
+import type { ChildConversationSummary, Conversation, ConversationSummary } from "@/client";
 import { ApiError, ConversationsService, OpenAPI } from "@/client";
 import { ChatPanel } from "@/components/chat-panel";
 import { ChatSidebar } from "@/components/chat-sidebar";
@@ -104,6 +104,10 @@ function App() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const pendingUrlLookupRef = useRef<string | null>(null);
   const [resolvedConversationIds, setResolvedConversationIds] = useState<Set<string>>(new Set());
+  const [sidebarChildrenByParentId, setSidebarChildrenByParentId] = useState<Map<string, ConversationSummary[]>>(
+    new Map(),
+  );
+  const [sidebarParentByConversationId, setSidebarParentByConversationId] = useState<Map<string, string>>(new Map());
   const queryClient = useQueryClient();
 
   // Subscribe to server-sent events for live cache invalidation
@@ -115,7 +119,7 @@ function App() {
     queryFn: async (): Promise<ConversationSummary[]> => {
       const response = (await ConversationsService.listConversations({
         limit: 20,
-        mode: "latest-fork",
+        mode: "roots",
       })) as unknown as ListUserConversationsResponse;
       return Array.isArray(response.data) ? response.data : [];
     },
@@ -130,6 +134,93 @@ function App() {
   const auth = useAuth();
   const currentUser = auth.user;
   const currentUserId = currentUser?.userId ?? null;
+  const isResolvedSelectedConversation = Boolean(
+    selectedConversationId && resolvedConversationIds.has(selectedConversationId),
+  );
+
+  const selectedConversationQuery = useQuery<Conversation, ApiError>({
+    queryKey: ["conversation", selectedConversationId],
+    enabled: isResolvedSelectedConversation,
+    queryFn: async (): Promise<Conversation> => {
+      return (await ConversationsService.getConversation({
+        conversationId: selectedConversationId!,
+      })) as Conversation;
+    },
+  });
+
+  const selectedConversationChildrenQuery = useQuery<ChildConversationSummary[], ApiError, ChildConversationSummary[]>({
+    queryKey: ["conversation-sidebar-children", selectedConversationId],
+    enabled: isResolvedSelectedConversation,
+    queryFn: async (): Promise<ChildConversationSummary[]> => {
+      const response = (await ConversationsService.listConversationChildren({
+        conversationId: selectedConversationId!,
+        limit: 200,
+      })) as unknown as ChildConversationSummary[] | { data?: ChildConversationSummary[] };
+      return Array.isArray(response) ? response : Array.isArray(response.data) ? response.data : [];
+    },
+  });
+
+  useEffect(() => {
+    if (!selectedConversationId || !selectedConversationChildrenQuery.data) {
+      return;
+    }
+
+    const children = selectedConversationChildrenQuery.data.map((child) => ({
+      id: child.id,
+      title: child.title ?? null,
+      ownerUserId: child.ownerUserId,
+      createdAt: child.createdAt,
+      updatedAt: child.updatedAt,
+      lastMessagePreview: child.lastMessagePreview ?? null,
+      accessLevel: child.accessLevel,
+    }));
+
+    setSidebarChildrenByParentId((prev) => {
+      const next = new Map(prev);
+      next.set(selectedConversationId, children);
+      return next;
+    });
+  }, [selectedConversationChildrenQuery.data, selectedConversationId]);
+
+  useEffect(() => {
+    const conversation = selectedConversationQuery.data;
+    if (!conversation?.id || !conversation.startedByConversationId) {
+      return;
+    }
+    const conversationId = conversation.id;
+    const parentConversationId = conversation.startedByConversationId;
+
+    setSidebarParentByConversationId((prev) => {
+      if (prev.get(conversationId) === parentConversationId) {
+        return prev;
+      }
+      const next = new Map(prev);
+      next.set(conversationId, parentConversationId);
+      return next;
+    });
+  }, [selectedConversationQuery.data]);
+
+  const { selectedRootConversationId, selectedConversationLineage } = useMemo(() => {
+    const selectedId = selectedConversationId ?? null;
+    const lineage = new Set<string>();
+    let rootId = selectedId;
+    let cursorId = selectedId;
+
+    while (cursorId) {
+      lineage.add(cursorId);
+      const parentId = sidebarParentByConversationId.get(cursorId) ?? null;
+      if (!parentId) {
+        break;
+      }
+      rootId = parentId;
+      cursorId = parentId;
+    }
+
+    return {
+      selectedRootConversationId: rootId,
+      selectedConversationLineage: lineage,
+    };
+  }, [selectedConversationId, sidebarParentByConversationId]);
 
   useEffect(() => {
     const interceptor = (response: Response) => {
@@ -329,10 +420,14 @@ function App() {
       conversations={conversations}
       selectedConversationId={selectedConversationId}
       onSelectConversation={handleSelectConversation}
+      onSelectConversationId={handleSelectConversationId}
       onNewChat={handleNewChat}
       onOpenSearch={() => setIsSearchOpen(true)}
       statusMessage={statusMessage}
       resumableConversationIds={resumableConversationIds}
+      childrenByParentId={sidebarChildrenByParentId}
+      selectedRootConversationId={selectedRootConversationId}
+      selectedConversationLineage={selectedConversationLineage}
     />
   );
 

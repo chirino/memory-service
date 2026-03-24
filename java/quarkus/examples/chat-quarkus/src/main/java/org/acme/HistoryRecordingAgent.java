@@ -6,7 +6,6 @@ import io.github.chirino.memory.history.annotations.ForkedAtEntryId;
 import io.github.chirino.memory.history.annotations.RecordConversation;
 import io.github.chirino.memory.history.annotations.UserMessage;
 import io.github.chirino.memory.history.runtime.Attachments;
-import io.github.chirino.memory.subagent.runtime.SubAgentTurnRunner;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -16,12 +15,10 @@ import jakarta.inject.Inject;
 public class HistoryRecordingAgent {
 
     private final Agent agent;
-    private final SubAgentTurnRunner subAgentTurnRunner;
 
     @Inject
-    public HistoryRecordingAgent(Agent agent, SubAgentTurnRunner subAgentTurnRunner) {
+    public HistoryRecordingAgent(Agent agent) {
         this.agent = agent;
-        this.subAgentTurnRunner = subAgentTurnRunner;
     }
 
     @RecordConversation
@@ -31,11 +28,6 @@ public class HistoryRecordingAgent {
             Attachments attachments,
             @ForkedAtConversationId String forkedAtConversationId,
             @ForkedAtEntryId String forkedAtEntryId) {
-        return subAgentTurnRunner.runEventTurn(
-                conversationId,
-                userMessage,
-                attachments,
-                (prompt, currentAttachments) ->
-                        agent.chat(conversationId, prompt, currentAttachments.contents()));
+        return agent.chat(conversationId, userMessage, attachments.contents());
     }
 }

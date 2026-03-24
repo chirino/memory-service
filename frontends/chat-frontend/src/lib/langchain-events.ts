@@ -13,6 +13,16 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function getToolArgs(record: JsonRecord): unknown {
+  if ("input" in record && record.input !== undefined) {
+    return record.input;
+  }
+  if ("arguments" in record && record.arguments !== undefined) {
+    return record.arguments;
+  }
+  return undefined;
+}
+
 function extractTextChunks(value: unknown): string[] {
   if (typeof value === "string") {
     return value ? [value] : [];
@@ -82,12 +92,12 @@ function normalizeCanonicalEvent(eventRecord: JsonRecord): ChatEvent[] {
     case "BeforeToolExecution": {
       const toolName = asString(eventRecord.toolName) ?? "tool";
       const id = asString(eventRecord.id);
-      return [{ eventType: "BeforeToolExecution", id, toolName, input: eventRecord.input }];
+      return [{ eventType: "BeforeToolExecution", id, toolName, input: getToolArgs(eventRecord) }];
     }
     case "ToolExecuted": {
       const toolName = asString(eventRecord.toolName) ?? "tool";
       const id = asString(eventRecord.id);
-      return [{ eventType: "ToolExecuted", id, toolName, input: eventRecord.input, output: eventRecord.output }];
+      return [{ eventType: "ToolExecuted", id, toolName, input: getToolArgs(eventRecord), output: eventRecord.output }];
     }
     case "ContentFetched": {
       const source = asString(eventRecord.source);
@@ -113,9 +123,9 @@ function normalizeLangChainEnvelope(eventRecord: JsonRecord): ChatEvent[] {
 
   switch (eventName) {
     case "on_tool_start":
-      return [{ eventType: "BeforeToolExecution", id, toolName: name, input: data.input }];
+      return [{ eventType: "BeforeToolExecution", id, toolName: name, input: getToolArgs(data) }];
     case "on_tool_end":
-      return [{ eventType: "ToolExecuted", id, toolName: name, input: data.input, output: data.output }];
+      return [{ eventType: "ToolExecuted", id, toolName: name, input: getToolArgs(data), output: data.output }];
     case "on_chat_model_stream":
     case "on_llm_stream":
     case "on_chain_stream": {

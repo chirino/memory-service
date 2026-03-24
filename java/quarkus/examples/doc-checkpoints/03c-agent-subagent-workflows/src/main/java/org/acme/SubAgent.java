@@ -9,15 +9,14 @@ import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
 
 @RegisterAiService(tools = WebSearchTool.class)
-public interface FactFindingSubAgent {
+public interface SubAgent {
 
     @SystemMessage(
             """
-            You are a focused fact-finding sub-agent.
-            Complete the delegated task by gathering concrete facts, constraints, and evidence.
+            You are a focused delegated agent.
+            Complete the delegated task with concise, concrete results.
             Use web search when current external information would improve the result. Stream back
-            useful progress while you research, then return one concise result for the parent
-            agent.
+            useful progress while you work, then return one concise result for the parent agent.
             """)
     Multi<ChatEvent> chat(@MemoryId String conversationId, @UserMessage String userMessage);
 }

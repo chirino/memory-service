@@ -51,7 +51,7 @@ When you discover something meaningful about this project during your work—arc
 - Current `clientId` semantics are app/system identity, not logical agent identity; multi-agent apps may need multiple `agentId` values under one authenticated client.
 - Conversation `clientId` is internal/admin-only metadata: user-facing REST conversation payloads must not expose it, while admin conversation APIs may.
 - Conversation identity migration status: the Go backend, OpenAPI/protobuf contracts, generated Go clients, and primary Quarkus/Spring/Python consumers now use conversation-level `clientId` plus optional conversation-level `agentId`; remaining cleanup is mostly historical docs and transitional history-side `agentId` convenience paths.
-- Async sub-agent orchestration is join-based by default: framework runtimes should let child-task tools return promptly, then wait at the parent turn's final-response boundary, append completed child results into parent context, and re-invoke the parent model until no joined child tasks remain. Do not model waiting as `wait_*` tools.
+- Async sub-agent orchestration now uses explicit model-facing control tools instead of implicit end-of-turn joins. The Quarkus default tool names are `agentSend`, `agentPoll`, `waitTask`, and `agentStop`; follow-up messages to an existing running child conversation require an explicit mode such as `queue` or `interrupt`.
 - In gRPC `memory/v1/memory_service.proto`, response recorder fields use snake_case (`conversation_id`).
 - In gRPC `EventStreamService.SubscribeEvents`, `SubscribeEventsRequest.conversation_ids` exists in the proto but is not currently applied by the server implementation; only `kinds` filtering is enforced today.
 - Response recording naming is intentionally split by scope: client-side lifecycle APIs use `ResponseRecordingManager` / `RecordingSession`, while record-only server/proto pieces use `ResponseRecorderService` and recorder handles; avoid renaming the umbrella concept back to `ResponseRecorder`.
@@ -60,7 +60,7 @@ When you discover something meaningful about this project during your work—arc
 - Attachment download tokens (`/v1/attachments/download/:token/:filename`) are HMAC-signed with `AttachmentSigningSecret`; keep `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET` non-empty, especially with DB attachment stores where storage keys are guessable. The unauthenticated download route is not registered when this secret is unset.
 - Go cache serialization gotcha: `model.Entry` has custom JSON marshaling for `content`; keep marshal/unmarshal behavior symmetric or cached memory entries lose content and break sync/list semantics.
 - Repo-root Docker build gotcha: the release `Dockerfile` builds without `.git` metadata in context, so Go commands in that image must use `-buildvcs=false` or `go build` fails with `error obtaining VCS status`.
-- Devcontainer Go gotcha: if `.devcontainer/Dockerfile` installs an older Go version than `go.mod` (e.g. 1.24.2 vs 1.24.6), Go auto-downloads a newer toolchain into `GOPATH`; keep `/go` writable by `vscode` (or set `GOPATH` to a user-owned path) to avoid `mkdir .../golang.org/toolchain: permission denied`.
+- Devcontainer Go gotcha: keep `go.mod` using a language version in the `go` directive (for example `go 1.24`) and put patch-level pinning in `toolchain go1.24.6`; if `.devcontainer/Dockerfile` installs an older Go version, Go auto-downloads the newer toolchain into `GOPATH`, so keep `/go` writable by `vscode` (or set `GOPATH` to a user-owned path) to avoid `mkdir .../golang.org/toolchain: permission denied`.
 - Devcontainer site-test gotcha: `.devcontainer/Dockerfile` needs `libsqlite3-dev` installed or `task test:site` / `go build -tags='site_tests sqlite_fts5' ./internal/sitebdd/` fails while compiling `github.com/asg017/sqlite-vec-go-bindings` with `fatal error: sqlite3.h: No such file or directory`.
 - Memory usage counters increment only on direct fetch reads (`GET /v1/memories`, gRPC `GetMemory`); search endpoints can return usage metadata with `include_usage` but do not increment counters.
 - Quarkus REST client module builds can require `-am` (`./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus -am ...`) so `memory-service-contracts` is built in the same reactor.
@@ -69,50 +69,11 @@ When you discover something meaningful about this project during your work—arc
 - Contract specs live in repo-root `contracts/`; Java modules should resolve them from `${maven.multiModuleProjectDirectory}/../contracts`, and the `java/memory-service-contracts` module publishes them via `../../contracts`.
 - The Maven wrapper and reactor root live under `java/`; repo-root Maven commands must use `./java/mvnw -f java/pom.xml ...`.
 
-## Build Tags
-
-Use Go build tags to exclude plugins at compile time. Default `go build` includes everything.
-
-| Tag | Excludes |
-|-----|----------|
-| `nosqlite` | SQLite store + sqlitevec (removes CGO dependency) |
-| `nomongo` | MongoDB store + mongostore attachments |
-| `nopostgresql` | PostgreSQL store + pgvector + pgstore attachments |
-| `noredis` | Redis cache registration (impl kept if infinispan enabled) |
-| `noinfinispan` | Infinispan cache |
-| `noqdrant` | Qdrant vector plugin |
-| `nos3` | S3 attachment store |
-| `novault` | Vault encryption |
-| `noawskms` | AWS KMS encryption |
-| `noopenai` | OpenAI embeddings |
-| `notcp` | TCP listener |
-| `nouds` | Unix domain socket listener |
-| `nomcp` | MCP subcommand |
-
-At least one store backend must remain enabled (compile-time guard).
-
-**Examples**:
-```bash
-# Default (all plugins)
-go build ./...
-
-# CGO-free PostgreSQL-only build
-CGO_ENABLED=0 go build -tags 'nosqlite,nomongo' .
-
-# Minimal PostgreSQL build
-go build -tags 'nosqlite,nomongo,noqdrant,nos3,novault,noawskms,noinfinispan,noredis,noopenai' .
-
-# Docker build with custom tags
-docker build --build-arg GO_BUILD_TAGS="sqlite_fts5 sqlite_json nosqlite" .
-```
-
-Plugins contribute their own CLI flags via the registry. Excluded plugins' flags are automatically removed from `--help`.
 
 ## Development Guidelines
 
 **Security**: Don't commit secrets; pass them with env vars
 **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`). Include test commands and config changes.
-
 
 ## Notes for AI Assistants
 

@@ -1,12 +1,12 @@
 ---
 layout: ../../../layouts/DocsLayout.astro
 title: Agent and Sub-Agent Workflows
-description: Start async sub-agent tasks from Quarkus and expose the child-conversation endpoints.
+description: Start delegated child-agent conversations from Quarkus and expose the child-conversation endpoints.
 ---
 
 import CodeFromFile from "../../../components/CodeFromFile.astro";
 
-This guide branches from [Conversation History](/docs/quarkus/conversation-history/) and shows how to start async sub-agent work from a Quarkus app while exposing the child-conversation endpoints.
+This guide branches from [Conversation History](/docs/quarkus/conversation-history/) and shows how to start delegated child-agent conversations from a Quarkus app while exposing the child-conversation endpoints.
 
 > **New to the concept?**
 > Read [Agent and Sub-Agent Workflows](/docs/concepts/agent-subagent-workflows/) first. This page focuses on the Quarkus integration.
@@ -24,46 +24,47 @@ You should already have:
 
 ## What the Quarkus Extension Adds
 
-The Quarkus integration now supports sub-agent orchestration in two places:
+The Quarkus integration now supports delegated child-agent conversations through a low-level `ToolProvider`:
 
-- `SubAgentTaskTool` is a reusable base class for app-specific tools such as `FactFindingSubAgentTool`.
-- `StreamingSubAgentTaskTool` is the companion base class for app-specific streaming child tools such as `FeedbackSubAgentTool`.
-- your app-specific tool binds a concrete child AI service while the extension owns joined execution, history appends, and task tracking.
-- `SubAgentTurnRunner` keeps the parent turn open until joined child results have been added back into context and the LLM has had a chance to continue.
+- your parent AI service registers `toolProviderSupplier`,
+- `SubAgentToolProviderFactory` builds the model-facing tools,
+- your app binds those tools to concrete child AI services, and
 - `MemoryServiceProxy` exposes `GET /v1/conversations/{conversationId}/children`.
 
-This keeps the user code narrow: the app supplies the parent AI service and the child AI service. The extension handles the joined task lifecycle.
+This keeps the user code narrow: the app supplies the parent AI service and the child AI services. The extension handles child-conversation creation, async execution, task tracking, and history recording.
 
-## Add the Parent Agent Tool
+## Add the Parent Agent Tool Provider
 
-Update the parent AI service to expose the concrete app tool:
+Update the parent AI service to register a tool-provider supplier:
 
 <CodeFromFile
   file="java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows/src/main/java/org/acme/Agent.java"
   lang="java"
 />
 
-**What changed**: Added `FactFindingSubAgentTool` and `FeedbackSubAgentTool` to the parent AI service. **Why**: The model now gets two distinct sub-agent capabilities with different strengths while the extension still provides the shared orchestration behavior.
+**What changed**: The parent AI service now uses `toolProviderSupplier = SubAgentToolProviderSupplier.class`. **Why**: The child-agent tools are now built by the extension runtime and injected as low-level tools instead of subclassed tool beans.
 
-## Add the Child AI Services
+The `@SystemMessage` was also shortened on purpose. The generic tool behavior now lives with the tools themselves, so the parent prompt only needs to set the high-level policy: use delegated agent conversations for separable work and reuse an existing child conversation when it already has the right context. Keeping the prompt short reduces repetition and keeps the checkpoint aligned with `chat-quarkus`.
 
-Show the fact-finding child AI service:
+Show the provider that binds the concrete child AI service:
 
 <CodeFromFile
-  file="java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows/src/main/java/org/acme/FactFindingSubAgent.java"
+  file="java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows/src/main/java/org/acme/SubAgentToolProviderSupplier.java"
   lang="java"
 />
 
-**What changed**: Added a `FactFindingSubAgent` AI service. **Why**: This child handles delegated research work and can stream progress while it gathers evidence.
+**What changed**: Added one provider that builds the delegated-agent tools from the extension runtime. **Why**: The example stays close to `chat-quarkus` while the extension still owns the shared orchestration behavior.
 
-Show the feedback child AI service:
+## Add the Child AI Service
+
+Show the delegated child AI service:
 
 <CodeFromFile
-  file="java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows/src/main/java/org/acme/FeedbackSubAgent.java"
+  file="java/quarkus/examples/doc-checkpoints/03c-agent-subagent-workflows/src/main/java/org/acme/SubAgent.java"
   lang="java"
 />
 
-**What changed**: Added a `FeedbackSubAgent` AI service. **Why**: This child reviews the combined findings and decides whether more research is needed before the parent answers.
+**What changed**: Added a single `SubAgent` AI service. **Why**: This child handles delegated work and can stream progress while it gathers results for the parent.
 
 ## Expose the Child Endpoint
 
@@ -94,16 +95,16 @@ function get-token() {
 }
 ```
 
-Create a parent conversation and ask the agent to split the work into child tasks. This prompt is written to strongly encourage the model to start one fact-finding child per CRM and then use the feedback child to evaluate the full set of findings:
+Create a parent conversation and ask the agent to split the work into child conversations:
 
 ```bash
 curl -NsSfX POST http://localhost:9090/chat/5a7129d8-0a9f-4688-b650-c085d3f30c13 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
-  -d "Evaluate Salesforce, HubSpot, and Zoho CRM for a mid-sized B2B sales team. Start a fact-finding sub-agent for each CRM to gather pricing, security, API integration, and customization facts. Run those fact-finding tasks in parallel if possible. Then start a feedback sub-agent to review the findings across all three CRMs together, identify gaps or weak comparisons, and produce follow-up research questions for the fact-finding sub-agents before giving a final recommendation."
+  -d "Write the FizzBuzz function in java, typescript, and python in parallel"
 ```
 
-If the model decides to use `messageSubAgent`, the extension will create child conversations when needed, wait for those joined tasks before finalizing the parent turn, add the child results back into the parent context, and then let the parent LLM continue.
+If the model decides to use the delegated-agent tools, the extension will create child conversations when needed, run those child agents asynchronously, and record their work in the child histories. The parent can then use the explicit poll and wait tools to decide when the results are ready before answering.
 
 List the direct children that were created for the parent conversation:
 
@@ -112,7 +113,7 @@ curl -sSfX GET http://localhost:9090/v1/conversations/5a7129d8-0a9f-4688-b650-c0
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
-You should see one item per child conversation. Each child ID is the conversation ID returned by `messageSubAgent`.
+You should see one item per child conversation. Each child ID is the conversation ID returned by the delegated-agent send tool.
 
 Capture one of the child IDs so you can inspect its activity:
 
@@ -133,14 +134,14 @@ curl -sSfX GET "http://localhost:9090/v1/conversations/${CHILD_ID}/entries" \
 
 In the child history you should see the delegated user task followed by the sub-agent response. If your application sets `agentId` values, those show up here as well.
 
-Inspect the parent conversation again to see how the joined results were folded back into the same user turn:
+Inspect the parent conversation again to see the parent tool calls and final answer:
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/5a7129d8-0a9f-4688-b650-c085d3f30c13/entries \
   -H "Authorization: Bearer $(get-token)" | jq
 ```
 
-The parent conversation should now include the original user request, one or more internal join-result prompts added by the runtime, and the final AI response that was only returned after the joined child tasks had completed.
+The parent conversation should now include the original user request, the delegated-agent tool calls, any explicit wait or poll calls, and the final AI response.
 
 ## Completed Checkpoint
 
