@@ -34,7 +34,7 @@ type adminStatsSteps struct {
 }
 
 func (a *adminStatsSteps) mockProm() *MockPrometheus {
-	if mp, ok := a.s.Suite.Extra["mockPrometheus"]; ok {
+	if mp, ok := a.s.Extra["mockPrometheus"]; ok {
 		return mp.(*MockPrometheus)
 	}
 	return nil

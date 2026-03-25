@@ -68,10 +68,10 @@ func (c *conversationSteps) iHaveAConversationWithTitle(title string) error {
 }
 
 func (c *conversationSteps) resolveGroupID(convID string) {
-	if c.s.Suite.DB == nil {
+	if c.s.TestDB() == nil {
 		return
 	}
-	groupID, err := c.s.Suite.DB.ResolveGroupID(context.Background(), convID)
+	groupID, err := c.s.TestDB().ResolveGroupID(context.Background(), convID)
 	if err == nil {
 		c.s.Variables["conversationGroupId"] = groupID
 	}
@@ -287,11 +287,11 @@ func (c *conversationSteps) iResolveConversationGroupID(convID, varName string) 
 		return err
 	}
 
-	if c.s.Suite.DB == nil {
+	if c.s.TestDB() == nil {
 		return fmt.Errorf("no TestDB configured for resolving conversation group ID")
 	}
 
-	groupID, err := c.s.Suite.DB.ResolveGroupID(context.Background(), expanded)
+	groupID, err := c.s.TestDB().ResolveGroupID(context.Background(), expanded)
 	if err != nil {
 		return err
 	}

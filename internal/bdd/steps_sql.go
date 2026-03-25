@@ -25,7 +25,7 @@ type sqlSteps struct {
 }
 
 func (sq *sqlSteps) iExecuteSQLQuery(query *godog.DocString) error {
-	if sq.s.Suite.DB == nil {
+	if sq.s.TestDB() == nil {
 		return fmt.Errorf("no TestDB configured")
 	}
 
@@ -35,7 +35,7 @@ func (sq *sqlSteps) iExecuteSQLQuery(query *godog.DocString) error {
 	}
 	expanded = sq.s.RewriteQuotedUsers(expanded)
 
-	sq.lastRows, err = sq.s.Suite.DB.ExecSQL(context.Background(), expanded)
+	sq.lastRows, err = sq.s.TestDB().ExecSQL(context.Background(), expanded)
 	if err != nil {
 		return err
 	}

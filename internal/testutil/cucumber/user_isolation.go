@@ -29,6 +29,13 @@ func (s *TestScenario) IsolatedUser(name string) string {
 	return name
 }
 
+func (s *TestScenario) IsolatedClientID(clientID string) string {
+	if strings.TrimSpace(clientID) == "" {
+		return clientID
+	}
+	return clientID + "-" + s.ScenarioUID
+}
+
 func (s *TestScenario) NormalizeUsers(text string) string {
 	for canonical, isolated := range s.userAliases {
 		text = strings.ReplaceAll(text, isolated, canonical)

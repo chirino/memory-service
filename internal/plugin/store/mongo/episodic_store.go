@@ -47,9 +47,9 @@ func init() {
 				return nil, fmt.Errorf("episodic mongo: ping: %w", err)
 			}
 			s := &mongoEpisodicStore{
-				col:     client.Database("memory_service").Collection("memories"),
-				usage:   client.Database("memory_service").Collection("memory_usage_stats"),
-				vectors: client.Database("memory_service").Collection("memory_vectors"),
+				col:     client.Database(config.MongoDatabaseName(cfg.DBURL)).Collection("memories"),
+				usage:   client.Database(config.MongoDatabaseName(cfg.DBURL)).Collection("memory_usage_stats"),
+				vectors: client.Database(config.MongoDatabaseName(cfg.DBURL)).Collection("memory_vectors"),
 			}
 			if strings.EqualFold(strings.TrimSpace(cfg.VectorType), "qdrant") {
 				qdrantClient, qErr := episodicqdrant.New(cfg)
@@ -90,7 +90,7 @@ func (m *mongoEpisodicMigrator) Migrate(ctx context.Context) error {
 	}
 	defer client.Disconnect(ctx)
 
-	db := client.Database("memory_service")
+	db := client.Database(config.MongoDatabaseName(cfg.DBURL))
 	db.CreateCollection(ctx, "memories") // idempotent: fails silently if exists
 	db.CreateCollection(ctx, "memory_usage_stats")
 	db.CreateCollection(ctx, "memory_vectors")

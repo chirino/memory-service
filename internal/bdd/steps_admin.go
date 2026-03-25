@@ -108,14 +108,14 @@ func (a *adminSteps) theConversationOwnedByIsDeleted(owner string) error {
 }
 
 func (a *adminSteps) iSoftDeleteConversationDirectlyInStorage(conversationID string) error {
-	if a.s.Suite.DB == nil {
+	if a.s.TestDB() == nil {
 		return fmt.Errorf("no TestDB configured")
 	}
 	expanded, err := a.s.Expand(conversationID)
 	if err != nil {
 		return err
 	}
-	return a.s.Suite.DB.SoftDeleteConversationOnly(context.Background(), expanded, 0)
+	return a.s.TestDB().SoftDeleteConversationOnly(context.Background(), expanded, 0)
 }
 
 func (a *adminSteps) allConversationsShouldHaveOwnerUserId(expected string) error {

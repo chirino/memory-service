@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -25,7 +26,7 @@ func (m *MongoTestDB) db(ctx context.Context) (*mongo.Client, *mongo.Database, e
 	if err != nil {
 		return nil, nil, fmt.Errorf("mongo connect: %w", err)
 	}
-	return client, client.Database("memory_service"), nil
+	return client, client.Database(config.MongoDatabaseName(m.DBURL)), nil
 }
 
 func (m *MongoTestDB) ClearAll(ctx context.Context) error {

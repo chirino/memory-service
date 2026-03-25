@@ -42,7 +42,7 @@ func load(ctx context.Context) (registryattach.AttachmentStore, error) {
 	if err := client.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("mongostore: ping failed: %w", err)
 	}
-	db := client.Database("memory_service")
+	db := client.Database(config.MongoDatabaseName(cfg.DBURL))
 	bucket := db.GridFSBucket()
 
 	// Legacy chunk collection kept for backward-compat reads of old Go-stored attachments.

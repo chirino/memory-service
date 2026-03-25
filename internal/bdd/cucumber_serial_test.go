@@ -1,21 +1,14 @@
 package bdd
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/plugin/store/postgres"
-	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/chirino/memory-service/internal/testutil/testinfinispan"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
-	"github.com/cucumber/godog"
-	"github.com/stretchr/testify/require"
 
 	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
 	_ "github.com/chirino/memory-service/internal/plugin/cache/infinispan"
@@ -28,7 +21,6 @@ func TestFeaturesSerial(t *testing.T) {
 	_ = postgres.ForceImport
 
 	dbURL := testpg.StartPostgres(t)
-	prom := NewMockPrometheus(t)
 	infinispan := testinfinispan.StartInfinispan(t)
 
 	cfg := config.DefaultConfig()
@@ -44,17 +36,8 @@ func TestFeaturesSerial(t *testing.T) {
 	cfg.AdminUsers = bddAdminUsers()
 	cfg.AuditorUsers = bddAuditorUsers()
 	cfg.IndexerUsers = bddIndexerUsers()
-	cfg.PrometheusURL = prom.Server.URL
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false
-	ctx := config.WithContext(context.Background(), &cfg)
-
-	srv, err := serve.StartServer(ctx, &cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
-
-	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
-	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
 	featuresDir := filepath.Join("testdata", "features")
 	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
@@ -62,44 +45,13 @@ func TestFeaturesSerial(t *testing.T) {
 	}
 
 	featureFiles, err := filepath.Glob(filepath.Join(featuresDir, "*.feature"))
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("glob postgres serial feature files: %v", err)
+	}
 	featureFiles = filterSerialFeatures(featureFiles, true)
-	require.NotEmpty(t, featureFiles, "No serial feature files found in %s", featuresDir)
-
-	opts := cucumber.DefaultOptions()
-	opts.Concurrency = 1
-	for _, arg := range os.Args[1:] {
-		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
-			opts.Format = "pretty"
-		}
+	if len(featureFiles) == 0 {
+		t.Fatalf("No serial feature files found in %s", featuresDir)
 	}
 
-	for _, featurePath := range featureFiles {
-		name := strings.TrimSuffix(filepath.Base(featurePath), ".feature")
-		t.Run(name, func(t *testing.T) {
-			clearFeatureDB(t, &PostgresTestDB{DBURL: dbURL})
-
-			o := opts
-			o.TestingT = t
-			o.Paths = []string{featurePath}
-			defer cucumber.ApplyReportOptions(&o, t.Name())()
-
-			suite := cucumber.NewTestSuite()
-			suite.APIURL = apiURL
-			suite.TestingT = t
-			suite.Context = &cfg
-			suite.DB = &PostgresTestDB{DBURL: dbURL}
-			suite.Extra["mockPrometheus"] = prom
-			suite.Extra["grpcAddr"] = grpcAddr
-
-			status := godog.TestSuite{
-				Name:                "serial-" + name,
-				Options:             &o,
-				ScenarioInitializer: suite.InitializeScenario,
-			}.Run()
-			if status != 0 {
-				t.Fail()
-			}
-		})
-	}
+	runBDDFeaturesWithScenarioSetup(t, "serial", featureFiles, "", "", &cfg, nil, nil, newPostgresScenarioSetup(t, cfg), bddScenarioConcurrency())
 }

@@ -130,6 +130,9 @@ type TestSuite struct {
 	TestingT *testing.T
 	Extra    map[string]interface{} // additional test-scoped objects (e.g. mock servers)
 	DB       TestDB                 // injected by test runner for store-specific operations
+	// ScenarioSetup optionally provisions per-scenario runtime state such as
+	// dedicated servers, datastore handles, and extra values.
+	ScenarioSetup ScenarioSetupFunc
 }
 
 // TestUser represents a user that can interact with the API.
@@ -145,11 +148,15 @@ type TestScenario struct {
 	ScenarioUID     string
 	CurrentUser     string
 	PathPrefix      string
+	APIURL          string
+	DB              TestDB
+	Extra           map[string]interface{}
 	sessions        map[string]*TestSession
 	Variables       map[string]interface{}
 	Users           map[string]*TestUser
 	userAliases     map[string]string
 	hasTestCaseLock bool
+	cleanupScenario func(context.Context) error
 }
 
 func (s *TestScenario) Logf(format string, args ...any) {
@@ -603,10 +610,17 @@ func (s *TestSession) SetRespBytes(bytes []byte) {
 // StepModules is the list of functions used to register steps with a godog.ScenarioContext.
 var StepModules []func(ctx *godog.ScenarioContext, s *TestScenario)
 
+// ScenarioSetupFunc provisions scenario-local runtime state and returns an
+// optional cleanup callback.
+type ScenarioSetupFunc func(ctx context.Context, s *TestScenario, sc *godog.Scenario) (func(context.Context) error, error)
+
 func (suite *TestSuite) InitializeScenario(ctx *godog.ScenarioContext) {
 	s := &TestScenario{
 		Suite:       suite,
 		ScenarioUID: strings.Split(uuid.NewString(), "-")[0],
+		APIURL:      suite.APIURL,
+		DB:          suite.DB,
+		Extra:       cloneExtraMap(suite.Extra),
 		Users:       map[string]*TestUser{},
 		sessions:    map[string]*TestSession{},
 		Variables:   map[string]interface{}{},
@@ -614,7 +628,55 @@ func (suite *TestSuite) InitializeScenario(ctx *godog.ScenarioContext) {
 	}
 	s.RegisterCanonicalUsers("alice", "bob", "charlie", "dave", "stranger")
 
+	if suite.ScenarioSetup != nil {
+		ctx.Before(func(ctx context.Context, sc *godog.Scenario) (context.Context, error) {
+			cleanup, err := suite.ScenarioSetup(ctx, s, sc)
+			if err != nil {
+				return ctx, err
+			}
+			s.cleanupScenario = cleanup
+			return ctx, nil
+		})
+	}
+
 	for _, module := range StepModules {
 		module(ctx, s)
 	}
+
+	if suite.ScenarioSetup != nil {
+		ctx.After(func(ctx context.Context, sc *godog.Scenario, err error) (context.Context, error) {
+			if s.cleanupScenario == nil {
+				return ctx, nil
+			}
+			if cleanupErr := s.cleanupScenario(ctx); cleanupErr != nil && err == nil {
+				return ctx, cleanupErr
+			}
+			return ctx, nil
+		})
+	}
+}
+
+func cloneExtraMap(src map[string]interface{}) map[string]interface{} {
+	if len(src) == 0 {
+		return map[string]interface{}{}
+	}
+	dst := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func (s *TestScenario) APIBaseURL() string {
+	if s.APIURL != "" {
+		return s.APIURL
+	}
+	return s.Suite.APIURL
+}
+
+func (s *TestScenario) TestDB() TestDB {
+	if s.DB != nil {
+		return s.DB
+	}
+	return s.Suite.DB
 }

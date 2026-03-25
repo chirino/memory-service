@@ -45,7 +45,7 @@ type taskQueueSteps struct {
 }
 
 func (t *taskQueueSteps) db() cucumber.TestDB {
-	return t.s.Suite.DB
+	return t.s.TestDB()
 }
 
 func (t *taskQueueSteps) allTasksAreDeleted() error {

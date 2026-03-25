@@ -100,7 +100,7 @@ func (s *TestScenario) SendHTTPRequestWithJSONBodyAndStyle(method, path string, 
 	if err == nil && expandedPathURL.Scheme != "" {
 		fullURL = expandedPath
 	} else {
-		fullURL = s.Suite.APIURL + s.PathPrefix + expandedPath
+		fullURL = s.APIBaseURL() + s.PathPrefix + expandedPath
 	}
 
 	// Reset response state
