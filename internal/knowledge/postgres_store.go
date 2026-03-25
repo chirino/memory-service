@@ -74,11 +74,11 @@ func (s *PostgresKnowledgeStore) ListUsersWithEmbeddings(ctx context.Context) ([
 	var users []string
 	// Find users who own conversations that have indexed entries.
 	err := s.db.WithContext(ctx).Raw(`
-		SELECT DISTINCT cg.owner_id
+		SELECT DISTINCT cg.owner_user_id
 		FROM entry_embeddings ee
 		JOIN conversations c ON c.id = ee.conversation_id
 		JOIN conversation_groups cg ON cg.id = c.conversation_group_id
-		WHERE cg.owner_id IS NOT NULL
+		WHERE cg.owner_user_id IS NOT NULL
 	`).Scan(&users).Error
 	return users, err
 }
@@ -87,12 +87,12 @@ func (s *PostgresKnowledgeStore) LoadEmbeddingsForUser(ctx context.Context, user
 	var rows []embeddingRow
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT ee.entry_id AS source_id,
-		       cg.owner_id AS user_id,
+		       cg.owner_user_id AS user_id,
 		       ee.embedding::text::bytea AS embedding_raw
 		FROM entry_embeddings ee
 		JOIN conversations c ON c.id = ee.conversation_id
 		JOIN conversation_groups cg ON cg.id = c.conversation_group_id
-		WHERE cg.owner_id = ?
+		WHERE cg.owner_user_id = ?
 	`, userID).Scan(&rows).Error
 	if err != nil {
 		return nil, err
