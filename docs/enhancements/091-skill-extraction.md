@@ -10,6 +10,8 @@ status: proposed
 
 Extract reusable **skills** — procedural knowledge, decision patterns, and problem-solution mappings — from the knowledge clusters produced by [enhancement 090](090-adaptive-knowledge-clustering.md). An LLM runs *once per cluster* on the already-compact cluster IR (keywords + representative entries, ~500 tokens) rather than on raw conversation data (~15,000+ tokens). Skills are stored, versioned, and queryable, letting agents answer "how does this user handle X?" without re-reading any conversation history.
 
+**Admin/user boundary**: Clusters are admin-only (centroids contain embedding-derived data that may be sensitive). Skills are the **user-facing knowledge API** — they expose abstracted procedural knowledge (titles, steps, descriptions) without raw embedding data. This makes skills safe to expose to end users and MCP tools.
+
 ## Motivation
 
 ### Clusters Tell You *What*. Skills Tell You *How*.

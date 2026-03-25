@@ -115,7 +115,11 @@ func (s *PostgresKnowledgeStore) LoadEmbeddingsForUser(ctx context.Context, user
 
 func (s *PostgresKnowledgeStore) LoadClustersForUser(ctx context.Context, userID string) ([]StoredCluster, error) {
 	var clusterRows []knowledgeClusterRow
-	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).Find(&clusterRows).Error; err != nil {
+	q := s.db.WithContext(ctx)
+	if userID != "" {
+		q = q.Where("user_id = ?", userID)
+	}
+	if err := q.Find(&clusterRows).Error; err != nil {
 		return nil, err
 	}
 

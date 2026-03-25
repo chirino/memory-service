@@ -193,16 +193,19 @@ This is a pure statistical operation — no LLM needed. The keywords serve as hu
 
 ### 6. REST API
 
-New endpoints under `/v1/knowledge`:
+All cluster endpoints are **admin-only** (`/admin/v1/knowledge/`). Clusters contain centroids derived from embeddings which may encode sensitive content. The user-facing knowledge API will be skills (see [enhancement 091](091-skill-extraction.md)), which expose abstracted procedural knowledge without raw embedding data.
 
-#### GET /v1/knowledge/clusters — List Clusters
+#### GET /admin/v1/knowledge/clusters — List Clusters (admin)
+
+Requires admin role.
 
 ```
-GET /v1/knowledge/clusters?trend=growing&limit=20
+GET /admin/v1/knowledge/clusters?user_id=alice&trend=growing
 ```
 
 | Parameter | Type | Notes |
 |-----------|------|-------|
+| `user_id` | string | Filter by user; omit to list all users' clusters |
 | `trend` | string | Filter by `growing`, `stable`, `decaying`; omit for all |
 | `source_type` | string | Filter by `entries`, `memories`, `mixed` |
 | `limit` | integer | Default 20, max 100 |
@@ -226,7 +229,7 @@ Response `200 OK`:
 }
 ```
 
-#### GET /v1/knowledge/clusters/{clusterId} — Cluster Detail
+#### GET /admin/v1/knowledge/clusters/{clusterId} — Cluster Detail (admin)
 
 Returns cluster metadata plus representative entries (closest to centroid).
 
@@ -257,7 +260,7 @@ Response `200 OK`:
 }
 ```
 
-#### POST /v1/knowledge/search — Semantic Cluster Search
+#### POST /admin/v1/knowledge/search — Semantic Cluster Search (admin)
 
 Find clusters relevant to a query.
 
@@ -290,7 +293,7 @@ Response `200 OK`:
 }
 ```
 
-#### GET /v1/knowledge/trends — What's Changing
+#### GET /admin/v1/knowledge/trends — What's Changing (admin)
 
 Returns clusters with notable recent activity: new clusters, fastest growing, drifting topics, decaying topics.
 
@@ -321,22 +324,15 @@ Response `200 OK`:
 
 ### 7. MCP Tools
 
-Two MCP tools are registered in the MCP server (`internal/cmd/mcp/tools.go`):
-
-| Tool | Description |
-|------|-------------|
-| `list_knowledge_clusters` | Lists clusters for the authenticated user. Optional `trend` filter. Returns labels, keywords, member counts, trends. |
-| `trigger_knowledge_clustering` | Forces an immediate clustering cycle. Useful after adding conversations to see clusters immediately. |
-
-These use the same `baseURL`, `httpClient`, and `authEditor` as existing MCP tools — no separate server.
+No MCP tools for clusters — the MCP server is user-facing and cluster data is admin-only. MCP tools for the user-facing knowledge API will be added as part of skill extraction ([enhancement 091](091-skill-extraction.md)).
 
 ### 8. Access Control
 
-Clusters inherit the access control of their source data:
+Cluster APIs require **admin role** (`security.RequireAdminRole()`). Centroids are derived from embeddings which encode semantic content — exposing them to regular users could leak sensitive information.
 
-- **Entry-sourced clusters**: scoped by conversation membership. A user sees clusters formed from conversations they have access to.
-- **Memory-sourced clusters**: scoped by episodic memory OPA policies. A user sees clusters formed from memories in namespaces they can read.
-- The clustering goroutine operates on the full dataset. The API layer filters results per-user at query time.
+- **Cluster endpoints**: admin-only. Admins can query any user's clusters via `user_id` parameter or list all.
+- **Skill endpoints** (future, [enhancement 091](091-skill-extraction.md)): user-facing. Skills are abstracted procedural knowledge (titles, steps, descriptions) that do not expose raw embedding data.
+- The clustering goroutine operates on the full dataset. The admin API layer provides full visibility.
 
 ### 9. Configuration
 
@@ -464,7 +460,7 @@ Expected output:
 ### Step 5 — View the emerged clusters
 
 ```bash
-curl -s "$API/v1/knowledge/clusters" $AUTH | jq
+curl -s "$API/admin/v1/knowledge/clusters" $AUTH | jq
 ```
 
 Expected output (labels/keywords depend on embedding model):
@@ -501,13 +497,6 @@ Expected output (labels/keywords depend on embedding model):
 }
 ```
 
-### Step 5b — Using MCP tools (from Claude Code)
-
-Instead of curl, Claude Code can use the MCP tools directly:
-
-1. Use `trigger_knowledge_clustering` to force a cycle
-2. Use `list_knowledge_clusters` to see the results
-
 ### Step 6 — Add more data and watch clusters evolve
 
 Add more entries to existing topics and trigger again:
@@ -522,7 +511,7 @@ curl -s -X POST "$API/v1/conversations/$CONV1/entries" $AUTH \
 curl -s -X POST "$API/admin/v1/knowledge/trigger" $AUTH | jq
 
 # Check: Python cluster member_count should increase
-curl -s "$API/v1/knowledge/clusters" $AUTH | jq '.clusters[] | select(.label | test("python"))'
+curl -s "$API/admin/v1/knowledge/clusters" $AUTH | jq '.clusters[] | select(.label | test("python"))'
 ```
 
 ### What to Look For
@@ -759,16 +748,13 @@ Feature: Knowledge-driven agent context
 - [x] Cluster birth/death/update via diff
 - [ ] Centroid drift detection (track centroid movement between cycles)
 
-### Phase 4 — REST API + MCP
+### Phase 4 — Admin REST API
 
-- [x] `GET /v1/knowledge/clusters` — list clusters with user scoping (`internal/plugin/route/knowledge/knowledge.go`)
-- [x] `POST /admin/v1/knowledge/trigger` — force clustering cycle
-- [x] MCP tool `list_knowledge_clusters` (`internal/cmd/mcp/tools.go`)
-- [x] MCP tool `trigger_knowledge_clustering` (`internal/cmd/mcp/tools.go`)
-- [ ] `GET /v1/knowledge/clusters/{id}` — cluster detail with representative entries
-- [ ] `POST /v1/knowledge/search` — semantic search over clusters
-- [ ] `GET /v1/knowledge/trends` — recent cluster activity
-- [ ] Add endpoints to `contracts/openapi/openapi.yml`
+- [x] `GET /admin/v1/knowledge/clusters` — list clusters with admin role check and `user_id` filter
+- [x] `POST /admin/v1/knowledge/trigger` — force clustering cycle with admin role check
+- [ ] `GET /admin/v1/knowledge/clusters/{id}` — cluster detail with representative entries
+- [ ] `POST /admin/v1/knowledge/search` — semantic search over clusters
+- [ ] `GET /admin/v1/knowledge/trends` — recent cluster activity
 - [ ] Add endpoints to `contracts/openapi/openapi-admin.yml`
 
 ### Phase 5 — gRPC Parity
@@ -800,9 +786,7 @@ Feature: Knowledge-driven agent context
 | `internal/knowledge/store.go` | **new** — KnowledgeStore interface | Done |
 | `internal/knowledge/postgres_store.go` | **new** — PostgreSQL implementation | Done |
 | `internal/plugin/store/postgres/db/schema.sql` | Add `knowledge_clusters` and `knowledge_cluster_members` tables | Done |
-| `internal/plugin/route/knowledge/knowledge.go` | **new** — REST handlers for list clusters + admin trigger | Done |
-| `internal/cmd/mcp/cmd.go` | Add baseURL, httpClient, authEditor for knowledge tool HTTP calls | Done |
-| `internal/cmd/mcp/tools.go` | Add `list_knowledge_clusters` and `trigger_knowledge_clustering` MCP tools | Done |
+| `internal/plugin/route/knowledge/knowledge.go` | **new** — Admin REST handlers for list clusters + trigger (RequireAdminRole) | Done |
 | `internal/config/config.go` | Add `KnowledgeClustering*` settings | Done |
 | `internal/cmd/serve/serve.go` | Add clustering CLI flags | Done |
 | `internal/cmd/serve/server.go` | Wire clustering goroutine + knowledge routes | Done |

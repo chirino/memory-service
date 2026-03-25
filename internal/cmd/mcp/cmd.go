@@ -11,11 +11,8 @@ import (
 )
 
 type mcpServer struct {
-	server     *mcpserver.MCPServer
-	client     *apiclient.ClientWithResponses
-	baseURL    string
-	httpClient *http.Client
-	authEditor apiclient.RequestEditorFn
+	server *mcpserver.MCPServer
+	client *apiclient.ClientWithResponses
 }
 
 // Command returns the CLI command for the MCP server.
@@ -45,22 +42,17 @@ func Command() *cli.Command {
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			apiKey := cmd.String("api-key")
 			bearerToken := cmd.String("bearer-token")
-			baseURL := cmd.String("url")
-
-			authEditor := apiclient.RequestEditorFn(func(_ context.Context, req *http.Request) error {
-				req.Header.Set("X-API-Key", apiKey)
-				if bearerToken != "" {
-					req.Header.Set("Authorization", "Bearer "+bearerToken)
-				}
-				return nil
-			})
-
-			httpClient := &http.Client{Timeout: 30 * time.Second}
 
 			client, err := apiclient.NewClientWithResponses(
-				baseURL,
-				apiclient.WithHTTPClient(httpClient),
-				apiclient.WithRequestEditorFn(authEditor),
+				cmd.String("url"),
+				apiclient.WithHTTPClient(&http.Client{Timeout: 30 * time.Second}),
+				apiclient.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
+					req.Header.Set("X-API-Key", apiKey)
+					if bearerToken != "" {
+						req.Header.Set("Authorization", "Bearer "+bearerToken)
+					}
+					return nil
+				}),
 			)
 			if err != nil {
 				return err
@@ -72,10 +64,7 @@ func Command() *cli.Command {
 					"0.1.0",
 					mcpserver.WithToolCapabilities(false),
 				),
-				client:     client,
-				baseURL:    baseURL,
-				httpClient: httpClient,
-				authEditor: authEditor,
+				client: client,
 			}
 
 			registerTools(s)

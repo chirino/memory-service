@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Handler serves knowledge cluster REST endpoints.
+// Handler serves knowledge cluster admin endpoints.
 type Handler struct {
 	Store     knowledgepkg.KnowledgeStore
 	Clusterer *knowledgepkg.Clusterer
@@ -18,6 +18,7 @@ type Handler struct {
 
 type clusterResponse struct {
 	ID          uuid.UUID `json:"id"`
+	UserID      string    `json:"user_id"`
 	Label       string    `json:"label"`
 	Keywords    []string  `json:"keywords"`
 	MemberCount int       `json:"member_count"`
@@ -27,23 +28,23 @@ type clusterResponse struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// RegisterRoutes adds knowledge endpoints to the router.
+// RegisterRoutes adds knowledge admin endpoints to the router.
 func (h *Handler) RegisterRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc) {
-	g := router.Group("/v1/knowledge", authMiddleware)
-	g.GET("/clusters", h.listClusters)
-
-	admin := router.Group("/admin/v1/knowledge", authMiddleware)
+	admin := router.Group("/admin/v1/knowledge", authMiddleware, security.RequireAdminRole())
+	admin.GET("/clusters", h.listClusters)
 	admin.POST("/trigger", h.triggerClustering)
 }
 
 func (h *Handler) listClusters(c *gin.Context) {
-	userID := security.GetUserID(c)
-	if userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
-		return
-	}
+	userID := c.Query("user_id")
 
-	clusters, err := h.Store.LoadClustersForUser(c.Request.Context(), userID)
+	var clusters []knowledgepkg.StoredCluster
+	var err error
+	if userID != "" {
+		clusters, err = h.Store.LoadClustersForUser(c.Request.Context(), userID)
+	} else {
+		clusters, err = h.Store.LoadClustersForUser(c.Request.Context(), "")
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load clusters"})
 		return
@@ -53,6 +54,7 @@ func (h *Handler) listClusters(c *gin.Context) {
 	for _, cl := range clusters {
 		result = append(result, clusterResponse{
 			ID:          cl.ID,
+			UserID:      cl.UserID,
 			Label:       cl.Label,
 			Keywords:    cl.Keywords,
 			MemberCount: cl.MemberCount,
