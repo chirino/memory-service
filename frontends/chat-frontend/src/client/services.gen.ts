@@ -7,10 +7,11 @@ import type { $OpenApiTs } from "./types.gen";
 
 export class CapabilitiesService {
   /**
-   * Get server capabilities for the authenticated client
+   * Get server capabilities for the authenticated caller
    * Returns a secret-free summary of the configured server capabilities and
-   * selected backend technologies for an authenticated agent/app client.
-   * Requires a resolved client context.
+   * selected backend technologies for an authenticated agent/app client,
+   * admin, or auditor. Requires either a resolved client context or an
+   * authenticated admin/auditor role.
    * @returns CapabilitiesResponse Capability summary for the current client.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -22,8 +23,8 @@ export class CapabilitiesService {
       method: "GET",
       url: "/v1/capabilities",
       errors: {
-        400: "Client context required.",
         401: "Authentication required.",
+        403: "Client context or admin/auditor role required.",
       },
     });
   }

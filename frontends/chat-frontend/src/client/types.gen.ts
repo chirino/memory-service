@@ -693,13 +693,13 @@ export type $OpenApiTs = {
          */
         200: ErrorResponse;
         /**
-         * Client context required.
-         */
-        400: unknown;
-        /**
          * Authentication required.
          */
         401: unknown;
+        /**
+         * Client context or admin/auditor role required.
+         */
+        403: unknown;
       };
     };
   };
