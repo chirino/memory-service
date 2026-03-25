@@ -673,6 +673,8 @@ MEMORY_SERVICE_API_KEYS_AGENT_B=agent-b-key-1`}
 
 Clients include the API key in requests via the `X-API-Key` header.
 
+Authenticated agent/app clients can call `GET /v1/capabilities` or gRPC `SystemService/GetCapabilities` to retrieve a secret-free summary of the server's configured capabilities and backend choices. These endpoints allow either a resolved client context or an authenticated admin/auditor role; bearer-authenticated user calls without a client ID are rejected.
+
 ## OIDC Authentication
 
 Memory Service supports OIDC authentication via Keycloak or any compliant provider.

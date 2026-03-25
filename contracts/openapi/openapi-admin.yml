@@ -780,16 +780,18 @@ paths:
       summary: Subscribe to all real-time events (admin SSE)
       description: |-
         Admin/auditor SSE stream that delivers all events from all users,
-        bypassing membership filtering. Requires admin or auditor role and a
-        justification query parameter for audit logging.
+        bypassing membership filtering. Requires admin or auditor role.
+        The optional justification query parameter is logged for audit use
+        when provided, and may be required when admin justification
+        enforcement is enabled on the server.
       operationId: adminSubscribeEvents
       parameters:
         - name: justification
           in: query
-          required: true
+          required: false
           schema:
             type: string
-          description: Non-empty reason for subscribing (logged for audit).
+          description: Optional reason for subscribing, logged for audit when present. Servers configured to require admin justifications reject requests without one.
         - name: kinds
           in: query
           required: false
@@ -818,7 +820,7 @@ paths:
               schema:
                 type: string
         '400':
-          description: Missing or empty justification.
+          description: Invalid request parameters, including missing justification when admin justification enforcement is enabled.
         '401':
           description: Authentication required.
         '403':

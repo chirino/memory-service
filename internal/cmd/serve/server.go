@@ -270,7 +270,7 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		grpc.ChainUnaryInterceptor(security.GRPCUnaryInterceptor(resolver)),
 		grpc.ChainStreamInterceptor(security.GRPCStreamInterceptor(resolver)),
 	)
-	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{})
+	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg})
 	pb.RegisterConversationsServiceServer(grpcServer, &grpcserver.ConversationsServer{Store: store})
 	pb.RegisterEntriesServiceServer(grpcServer, &grpcserver.EntriesServer{Store: store})
 	pb.RegisterConversationMembershipsServiceServer(grpcServer, &grpcserver.MembershipsServer{Store: store})

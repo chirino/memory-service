@@ -25,6 +25,7 @@ import (
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
+	servicecapabilities "github.com/chirino/memory-service/internal/service/capabilities"
 	"github.com/chirino/memory-service/internal/service/eventstream"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -218,10 +219,65 @@ func inEpisodicWrite(ctx context.Context, store registryepisodic.EpisodicStore, 
 
 type SystemServer struct {
 	pb.UnimplementedSystemServiceServer
+	Config *config.Config
 }
 
 func (s *SystemServer) GetHealth(_ context.Context, _ *emptypb.Empty) (*pb.HealthResponse, error) {
 	return &pb.HealthResponse{Status: "ok"}, nil
+}
+
+func (s *SystemServer) GetCapabilities(ctx context.Context, _ *emptypb.Empty) (*pb.CapabilitiesResponse, error) {
+	if getUserID(ctx) == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if !hasCapabilitiesAccessGRPC(ctx) {
+		return nil, status.Error(codes.PermissionDenied, "client context or admin/auditor role required")
+	}
+	return mapCapabilitiesSummary(servicecapabilities.Build(s.Config)), nil
+}
+
+func hasCapabilitiesAccessGRPC(ctx context.Context) bool {
+	id := security.IdentityFromContext(ctx)
+	if id == nil {
+		return false
+	}
+	if id.ClientID != "" {
+		return true
+	}
+	return id.Roles[security.RoleAdmin] || id.Roles[security.RoleAuditor]
+}
+
+func mapCapabilitiesSummary(summary servicecapabilities.Summary) *pb.CapabilitiesResponse {
+	return &pb.CapabilitiesResponse{
+		Version: summary.Version,
+		Tech: &pb.CapabilitiesTech{
+			Store:       summary.Tech.Store,
+			Attachments: summary.Tech.Attachments,
+			Cache:       summary.Tech.Cache,
+			Vector:      summary.Tech.Vector,
+			EventBus:    summary.Tech.EventBus,
+			Embedder:    summary.Tech.Embedder,
+		},
+		Features: &pb.CapabilitiesFeatures{
+			OutboxEnabled:             summary.Features.OutboxEnabled,
+			SemanticSearchEnabled:     summary.Features.SemanticSearchEnabled,
+			FulltextSearchEnabled:     summary.Features.FulltextSearchEnabled,
+			CorsEnabled:               summary.Features.CorsEnabled,
+			ManagementListenerEnabled: summary.Features.ManagementListenerEnabled,
+			PrivateSourceUrlsEnabled:  summary.Features.PrivateSourceURLsEnabled,
+			S3DirectDownloadEnabled:   summary.Features.S3DirectDownloadEnabled,
+		},
+		Auth: &pb.CapabilitiesAuth{
+			OidcEnabled:                summary.Auth.OIDCEnabled,
+			ApiKeyEnabled:              summary.Auth.APIKeyEnabled,
+			AdminJustificationRequired: summary.Auth.AdminJustificationRequired,
+		},
+		Security: &pb.CapabilitiesSecurity{
+			EncryptionEnabled:           summary.Security.EncryptionEnabled,
+			DbEncryptionEnabled:         summary.Security.DBEncryptionEnabled,
+			AttachmentEncryptionEnabled: summary.Security.AttachmentEncryptionEnabled,
+		},
+	}
 }
 
 // --- Conversations Service ---

@@ -141,10 +141,12 @@ Feature: SSE Event Stream
     Then the response status should be 201
     And "alice" should receive an SSE event with kind "entry" and event "created"
 
-  Scenario: Admin SSE endpoint requires justification
+  Scenario: Admin SSE endpoint streams without justification
     Given I am authenticated as admin user "alice"
-    When I call GET "/v1/admin/events"
-    Then the response status should be 400
+    And "alice" is connected to the admin SSE event stream with query ""
+    And I am authenticated as user "bob"
+    And I have a conversation with title "Admin Visibility Without Justification"
+    Then "alice" should receive an SSE event with kind "conversation" and event "created"
 
   Scenario: Admin SSE endpoint streams all events
     Given I am authenticated as admin user "alice"

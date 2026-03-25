@@ -219,7 +219,7 @@ curl -N -H "Authorization: Bearer $(get-admin-token)" \
   "http://localhost:8080/v1/admin/events?justification=Investigating+issue+%231234"
 ```
 
-The `justification` query parameter is required. It is logged for audit purposes so administrators can explain why they accessed the global event stream. See [Real-Time Events](/docs/concepts/events/) for event format, kinds, and connection lifecycle details.
+The `justification` value is optional by default and is logged for audit purposes when provided. If the server enables `MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION=true`, admin event subscriptions without a justification are rejected with `400 Bad Request`. See [Real-Time Events](/docs/concepts/events/) for event format, kinds, and connection lifecycle details.
 
 ## Next Steps
 

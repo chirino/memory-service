@@ -321,6 +321,11 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.GetHealth(ctx, req.(*emptypb.Empty))
 				})
+		case "GetCapabilities":
+			return g.invokeUnary(conn, ctx, "", func() proto.Message { return &emptypb.Empty{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.GetCapabilities(ctx, req.(*emptypb.Empty))
+				})
 		}
 
 	case "ConversationsService":

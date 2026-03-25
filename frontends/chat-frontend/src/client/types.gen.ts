@@ -26,6 +26,45 @@ export type SearchTypeUnavailableError = {
   availableTypes?: Array<string>;
 };
 
+export type CapabilitiesResponse = {
+  version: string;
+  tech: CapabilitiesTech;
+  features: CapabilitiesFeatures;
+  auth: CapabilitiesAuth;
+  security: CapabilitiesSecurity;
+};
+
+export type CapabilitiesTech = {
+  store: string;
+  attachments: string;
+  cache: string;
+  vector: string;
+  event_bus: string;
+  embedder: string;
+};
+
+export type CapabilitiesFeatures = {
+  outbox_enabled: boolean;
+  semantic_search_enabled: boolean;
+  fulltext_search_enabled: boolean;
+  cors_enabled: boolean;
+  management_listener_enabled: boolean;
+  private_source_urls_enabled: boolean;
+  s3_direct_download_enabled: boolean;
+};
+
+export type CapabilitiesAuth = {
+  oidc_enabled: boolean;
+  api_key_enabled: boolean;
+  admin_justification_required: boolean;
+};
+
+export type CapabilitiesSecurity = {
+  encryption_enabled: boolean;
+  db_encryption_enabled: boolean;
+  attachment_encryption_enabled: boolean;
+};
+
 /**
  * Access level of a user for a conversation.
  */
@@ -646,6 +685,24 @@ export type CreateOwnershipTransferRequest = {
 };
 
 export type $OpenApiTs = {
+  "/v1/capabilities": {
+    get: {
+      res: {
+        /**
+         * Error response
+         */
+        200: ErrorResponse;
+        /**
+         * Authentication required.
+         */
+        401: unknown;
+        /**
+         * Client context or admin/auditor role required.
+         */
+        403: unknown;
+      };
+    };
+  };
   "/v1/conversations": {
     get: {
       req: {
@@ -1526,9 +1583,9 @@ export type $OpenApiTs = {
          */
         detail?: "summary" | "full";
         /**
-         * Non-empty reason for subscribing (logged for audit).
+         * Optional reason for subscribing, logged for audit when present. Servers configured to require admin justifications reject requests without one.
          */
-        justification: string;
+        justification?: string;
         /**
          * Comma-separated event kinds to filter.
          */
@@ -1540,7 +1597,7 @@ export type $OpenApiTs = {
          */
         200: string;
         /**
-         * Missing or empty justification.
+         * Invalid request parameters, including missing justification when admin justification enforcement is enabled.
          */
         400: unknown;
         /**

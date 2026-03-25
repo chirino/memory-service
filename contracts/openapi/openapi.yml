@@ -14,6 +14,8 @@ info:
 tags:
   - name: Conversations
     description: APIs for listing, reading, writing, and sharing conversations (user and agent views).
+  - name: Capabilities
+    description: Capability discovery for authenticated agent/app clients.
   - name: Search
     description: Semantic and keyword search APIs.
   - name: Sharing
@@ -25,6 +27,36 @@ tags:
   - name: Admin
     description: Administrative operations and system management.
 paths:
+
+  ############################################################
+  # Capabilities
+  ############################################################
+
+  /v1/capabilities:
+    get:
+      tags: [Capabilities]
+      summary: Get server capabilities for the authenticated caller
+      description: |-
+        Returns a secret-free summary of the configured server capabilities and
+        selected backend technologies for an authenticated agent/app client,
+        admin, or auditor. Requires either a resolved client context or an
+        authenticated admin/auditor role.
+      operationId: getCapabilities
+      responses:
+        '200':
+          description: Capability summary for the current client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+        '403':
+          description: Client context or admin/auditor role required.
+        '401':
+          description: Authentication required.
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
 
   ############################################################
   # Conversations
@@ -1566,8 +1598,10 @@ paths:
       summary: Subscribe to all real-time events (admin SSE)
       description: |-
         Admin/auditor SSE stream that delivers all events from all users,
-        bypassing membership filtering. Requires admin or auditor role and a
-        justification query parameter for audit logging.
+        bypassing membership filtering. Requires admin or auditor role.
+        The optional justification query parameter is logged for audit use
+        when provided, and may be required when admin justification
+        enforcement is enabled on the server.
       tags:
         - Admin
       security:
@@ -1575,10 +1609,10 @@ paths:
       parameters:
         - name: justification
           in: query
-          required: true
+          required: false
           schema:
             type: string
-          description: Non-empty reason for subscribing (logged for audit).
+          description: Optional reason for subscribing, logged for audit when present. Servers configured to require admin justifications reject requests without one.
         - name: kinds
           in: query
           required: false
@@ -1607,7 +1641,7 @@ paths:
               schema:
                 type: string
         '400':
-          description: Missing or empty justification.
+          description: Invalid request parameters, including missing justification when admin justification enforcement is enabled.
         '401':
           description: Authentication required.
         '403':
@@ -1670,6 +1704,93 @@ components:
             type: string
           description: List of search types that are available on this server.
           example: [fulltext]
+
+    CapabilitiesResponse:
+      type: object
+      required: [version, tech, features, auth, security]
+      properties:
+        version:
+          type: string
+          example: "1.0.0"
+        tech:
+          $ref: '#/components/schemas/CapabilitiesTech'
+        features:
+          $ref: '#/components/schemas/CapabilitiesFeatures'
+        auth:
+          $ref: '#/components/schemas/CapabilitiesAuth'
+        security:
+          $ref: '#/components/schemas/CapabilitiesSecurity'
+
+    CapabilitiesTech:
+      type: object
+      required: [store, attachments, cache, vector, event_bus, embedder]
+      properties:
+        store:
+          type: string
+          example: postgres
+        attachments:
+          type: string
+          example: postgres
+        cache:
+          type: string
+          example: infinispan
+        vector:
+          type: string
+          example: pgvector
+        event_bus:
+          type: string
+          example: postgres
+        embedder:
+          type: string
+          example: local
+
+    CapabilitiesFeatures:
+      type: object
+      required:
+        - outbox_enabled
+        - semantic_search_enabled
+        - fulltext_search_enabled
+        - cors_enabled
+        - management_listener_enabled
+        - private_source_urls_enabled
+        - s3_direct_download_enabled
+      properties:
+        outbox_enabled:
+          type: boolean
+        semantic_search_enabled:
+          type: boolean
+        fulltext_search_enabled:
+          type: boolean
+        cors_enabled:
+          type: boolean
+        management_listener_enabled:
+          type: boolean
+        private_source_urls_enabled:
+          type: boolean
+        s3_direct_download_enabled:
+          type: boolean
+
+    CapabilitiesAuth:
+      type: object
+      required: [oidc_enabled, api_key_enabled, admin_justification_required]
+      properties:
+        oidc_enabled:
+          type: boolean
+        api_key_enabled:
+          type: boolean
+        admin_justification_required:
+          type: boolean
+
+    CapabilitiesSecurity:
+      type: object
+      required: [encryption_enabled, db_encryption_enabled, attachment_encryption_enabled]
+      properties:
+        encryption_enabled:
+          type: boolean
+        db_encryption_enabled:
+          type: boolean
+        attachment_encryption_enabled:
+          type: boolean
 
     AccessLevel:
       type: string

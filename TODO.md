@@ -16,6 +16,7 @@
 * Enhancement 091 Mongo follow-up: implement [091-mongo-outbox-transactions.md](docs/enhancements/091-mongo-outbox-transactions.md) so `MongoStore.InWriteTx` uses `mongo.Session` / `WithTransaction` and Mongo outbox replay uses change-stream resume tokens instead of best-effort ObjectID cursors.
 * memories: how to deal with policy changes which change the sected indexed attributes (it's effectivly a schema change).
 * Implement the sub agent flows for all the other frameworks.
+* Soft Delete -> Archive (for better event semantics)
 
 ## Better Demo / Usecases
 

@@ -40,12 +40,23 @@ class SystemServiceStub(object):
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.HealthResponse.FromString,
                 _registered_method=True)
+        self.GetCapabilities = channel.unary_unary(
+                '/memory.v1.SystemService/GetCapabilities',
+                request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.CapabilitiesResponse.FromString,
+                _registered_method=True)
 
 
 class SystemServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def GetHealth(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetCapabilities(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -58,6 +69,11 @@ def add_SystemServiceServicer_to_server(servicer, server):
                     servicer.GetHealth,
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.HealthResponse.SerializeToString,
+            ),
+            'GetCapabilities': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetCapabilities,
+                    request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.CapabilitiesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -87,6 +103,33 @@ class SystemService(object):
             '/memory.v1.SystemService/GetHealth',
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.HealthResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetCapabilities(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.SystemService/GetCapabilities',
+            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.CapabilitiesResponse.FromString,
             options,
             channel_credentials,
             insecure,

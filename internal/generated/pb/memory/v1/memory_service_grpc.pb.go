@@ -20,7 +20,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SystemService_GetHealth_FullMethodName = "/memory.v1.SystemService/GetHealth"
+	SystemService_GetHealth_FullMethodName       = "/memory.v1.SystemService/GetHealth"
+	SystemService_GetCapabilities_FullMethodName = "/memory.v1.SystemService/GetCapabilities"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -28,6 +29,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SystemServiceClient interface {
 	GetHealth(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HealthResponse, error)
+	GetCapabilities(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*CapabilitiesResponse, error)
 }
 
 type systemServiceClient struct {
@@ -48,11 +50,22 @@ func (c *systemServiceClient) GetHealth(ctx context.Context, in *emptypb.Empty, 
 	return out, nil
 }
 
+func (c *systemServiceClient) GetCapabilities(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*CapabilitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CapabilitiesResponse)
+	err := c.cc.Invoke(ctx, SystemService_GetCapabilities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
 type SystemServiceServer interface {
 	GetHealth(context.Context, *emptypb.Empty) (*HealthResponse, error)
+	GetCapabilities(context.Context, *emptypb.Empty) (*CapabilitiesResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -65,6 +78,9 @@ type UnimplementedSystemServiceServer struct{}
 
 func (UnimplementedSystemServiceServer) GetHealth(context.Context, *emptypb.Empty) (*HealthResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetHealth not implemented")
+}
+func (UnimplementedSystemServiceServer) GetCapabilities(context.Context, *emptypb.Empty) (*CapabilitiesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCapabilities not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -105,6 +121,24 @@ func _SystemService_GetHealth_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_GetCapabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).GetCapabilities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_GetCapabilities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).GetCapabilities(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -115,6 +149,10 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetHealth",
 			Handler:    _SystemService_GetHealth_Handler,
+		},
+		{
+			MethodName: "GetCapabilities",
+			Handler:    _SystemService_GetCapabilities_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

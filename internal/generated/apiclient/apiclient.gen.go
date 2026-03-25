@@ -202,6 +202,50 @@ type AttachmentUploadResponse struct {
 // - `failed` - Download from sourceUrl failed
 type AttachmentUploadResponseStatus string
 
+// CapabilitiesAuth defines model for CapabilitiesAuth.
+type CapabilitiesAuth struct {
+	AdminJustificationRequired bool `json:"admin_justification_required"`
+	ApiKeyEnabled              bool `json:"api_key_enabled"`
+	OidcEnabled                bool `json:"oidc_enabled"`
+}
+
+// CapabilitiesFeatures defines model for CapabilitiesFeatures.
+type CapabilitiesFeatures struct {
+	CorsEnabled               bool `json:"cors_enabled"`
+	FulltextSearchEnabled     bool `json:"fulltext_search_enabled"`
+	ManagementListenerEnabled bool `json:"management_listener_enabled"`
+	OutboxEnabled             bool `json:"outbox_enabled"`
+	PrivateSourceUrlsEnabled  bool `json:"private_source_urls_enabled"`
+	S3DirectDownloadEnabled   bool `json:"s3_direct_download_enabled"`
+	SemanticSearchEnabled     bool `json:"semantic_search_enabled"`
+}
+
+// CapabilitiesResponse defines model for CapabilitiesResponse.
+type CapabilitiesResponse struct {
+	Auth     CapabilitiesAuth     `json:"auth"`
+	Features CapabilitiesFeatures `json:"features"`
+	Security CapabilitiesSecurity `json:"security"`
+	Tech     CapabilitiesTech     `json:"tech"`
+	Version  string               `json:"version"`
+}
+
+// CapabilitiesSecurity defines model for CapabilitiesSecurity.
+type CapabilitiesSecurity struct {
+	AttachmentEncryptionEnabled bool `json:"attachment_encryption_enabled"`
+	DbEncryptionEnabled         bool `json:"db_encryption_enabled"`
+	EncryptionEnabled           bool `json:"encryption_enabled"`
+}
+
+// CapabilitiesTech defines model for CapabilitiesTech.
+type CapabilitiesTech struct {
+	Attachments string `json:"attachments"`
+	Cache       string `json:"cache"`
+	Embedder    string `json:"embedder"`
+	EventBus    string `json:"event_bus"`
+	Store       string `json:"store"`
+	Vector      string `json:"vector"`
+}
+
 // Channel Logical channel of the entry within the conversation.
 type Channel string
 
@@ -707,8 +751,8 @@ type SearchTypeUnavailable = SearchTypeUnavailableError
 
 // AdminSubscribeEventsParams defines parameters for AdminSubscribeEvents.
 type AdminSubscribeEventsParams struct {
-	// Justification Non-empty reason for subscribing (logged for audit).
-	Justification string `form:"justification" json:"justification"`
+	// Justification Optional reason for subscribing, logged for audit when present. Servers configured to require admin justifications reject requests without one.
+	Justification *string `form:"justification,omitempty" json:"justification,omitempty"`
 
 	// Kinds Comma-separated event kinds to filter.
 	Kinds *string `form:"kinds,omitempty" json:"kinds,omitempty"`
@@ -1111,6 +1155,9 @@ type ClientInterface interface {
 	// GetAttachmentDownloadUrl request
 	GetAttachmentDownloadUrl(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetCapabilities request
+	GetCapabilities(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListConversations request
 	ListConversations(ctx context.Context, params *ListConversationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1298,6 +1345,18 @@ func (c *Client) GetAttachment(ctx context.Context, id openapi_types.UUID, reqEd
 
 func (c *Client) GetAttachmentDownloadUrl(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetAttachmentDownloadUrlRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetCapabilities(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCapabilitiesRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -1822,16 +1881,20 @@ func NewAdminSubscribeEventsRequest(server string, params *AdminSubscribeEventsP
 	if params != nil {
 		queryValues := queryURL.Query()
 
-		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "justification", runtime.ParamLocationQuery, params.Justification); err != nil {
-			return nil, err
-		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-			return nil, err
-		} else {
-			for k, v := range parsed {
-				for _, v2 := range v {
-					queryValues.Add(k, v2)
+		if params.Justification != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "justification", runtime.ParamLocationQuery, *params.Justification); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
 				}
 			}
+
 		}
 
 		if params.Kinds != nil {
@@ -2081,6 +2144,33 @@ func NewGetAttachmentDownloadUrlRequest(server string, id openapi_types.UUID) (*
 	}
 
 	operationPath := fmt.Sprintf("/v1/attachments/%s/download-url", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetCapabilitiesRequest generates requests for GetCapabilities
+func NewGetCapabilitiesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/capabilities")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -3904,6 +3994,9 @@ type ClientWithResponsesInterface interface {
 	// GetAttachmentDownloadUrlWithResponse request
 	GetAttachmentDownloadUrlWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetAttachmentDownloadUrlResp, error)
 
+	// GetCapabilitiesWithResponse request
+	GetCapabilitiesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCapabilitiesResp, error)
+
 	// ListConversationsWithResponse request
 	ListConversationsWithResponse(ctx context.Context, params *ListConversationsParams, reqEditors ...RequestEditorFn) (*ListConversationsResp, error)
 
@@ -4154,6 +4247,29 @@ func (r GetAttachmentDownloadUrlResp) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetAttachmentDownloadUrlResp) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetCapabilitiesResp struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CapabilitiesResponse
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCapabilitiesResp) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCapabilitiesResp) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -4958,6 +5074,15 @@ func (c *ClientWithResponses) GetAttachmentDownloadUrlWithResponse(ctx context.C
 	return ParseGetAttachmentDownloadUrlResp(rsp)
 }
 
+// GetCapabilitiesWithResponse request returning *GetCapabilitiesResp
+func (c *ClientWithResponses) GetCapabilitiesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCapabilitiesResp, error) {
+	rsp, err := c.GetCapabilities(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCapabilitiesResp(rsp)
+}
+
 // ListConversationsWithResponse request returning *ListConversationsResp
 func (c *ClientWithResponses) ListConversationsWithResponse(ctx context.Context, params *ListConversationsParams, reqEditors ...RequestEditorFn) (*ListConversationsResp, error) {
 	rsp, err := c.ListConversations(ctx, params, reqEditors...)
@@ -5533,6 +5658,39 @@ func ParseGetAttachmentDownloadUrlResp(rsp *http.Response) (*GetAttachmentDownlo
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetCapabilitiesResp parses an HTTP response from a GetCapabilitiesWithResponse call
+func ParseGetCapabilitiesResp(rsp *http.Response) (*GetCapabilitiesResp, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCapabilitiesResp{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CapabilitiesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
