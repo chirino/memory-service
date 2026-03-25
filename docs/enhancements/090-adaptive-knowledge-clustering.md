@@ -393,12 +393,14 @@ CREATE INDEX knowledge_members_source_idx ON knowledge_cluster_members (source_i
 ### Step 1 — Start the service with clustering enabled
 
 ```bash
-MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_ENABLED=true \
-MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_INTERVAL=30s \
-task dev:memory-service
+task dev:memory-service-pgvector
 ```
 
+This uses pgvector (not Qdrant) for the vector store, enables clustering, and starts all required Docker containers. Requires `OPENAI_API_KEY` env var for real embeddings.
+
 Wait for the service to be ready on `:8082`.
+
+> **Note**: Clustering currently only supports pgvector. The default `task dev:memory-service` uses Qdrant and will silently skip clustering. Qdrant support is tracked in Phase 6.
 
 ### Step 2 — Create conversations about distinct topics
 
@@ -763,7 +765,16 @@ Feature: Knowledge-driven agent context
 - [ ] Implement gRPC handlers
 - [ ] Add BDD coverage for gRPC knowledge endpoints
 
-### Phase 6 — MongoDB Backend
+### Phase 6 — Qdrant Backend Support
+
+Currently clustering only works with pgvector (queries `entry_embeddings` table directly). Add support for Qdrant so clustering works with the default dev mode vector store.
+
+- [ ] Abstract embedding retrieval behind the `VectorStore` interface (or a new `EmbeddingReader` interface)
+- [ ] Implement Qdrant embedding retrieval (list points by user/conversation)
+- [ ] Remove the `cfg.VectorType == "pgvector"` guard from server.go
+- [ ] Test with `task dev:memory-service` (Qdrant mode)
+
+### Phase 7 — MongoDB Backend
 
 - [ ] Implement cluster storage for MongoDB
 - [ ] Adapt clustering goroutine for MongoDB embedding retrieval

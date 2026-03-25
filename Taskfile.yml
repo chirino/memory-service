@@ -193,6 +193,52 @@ tasks:
       - docker compose stop memory-service >/dev/null 2>&1 || true
       - air -root . -c deploy/dev/air.toml
 
+  dev:memory-service-pgvector:
+    desc: Run the memory-service app in dev mode with pgvector (for knowledge clustering).
+    env:
+      MEMORY_SERVICE_PORT: 8082
+      # ── Datastore ──────────────────────────────────────────────
+      MEMORY_SERVICE_DB_URL: postgres://postgres:postgres@localhost:5432/memory_service?sslmode=disable
+      MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
+      # ── Cache ──────────────────────────────────────────────────
+      MEMORY_SERVICE_CACHE_KIND: redis
+      MEMORY_SERVICE_REDIS_HOSTS: redis://localhost:6379
+      # ── Authentication & authorization ─────────────────────────
+      MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
+      MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
+      MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
+      MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1
+      # ── CORS ───────────────────────────────────────────────────
+      MEMORY_SERVICE_CORS_ENABLED: "true"
+      MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
+      # ── Observability ──────────────────────────────────────────
+      MEMORY_SERVICE_PROMETHEUS_URL: http://localhost:9092
+      # ── Encryption ─────────────────────────────────────────────
+      MEMORY_SERVICE_ENCRYPTION_KIND: dek
+      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: '{{.MEMORY_SERVICE_ENCRYPTION_DEK_KEY | default "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}'
+      # ── Attachments ────────────────────────────────────────────
+      MEMORY_SERVICE_ATTACHMENTS_KIND: s3
+      MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
+      MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE: "true"
+      AWS_ENDPOINT_URL: http://localhost:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      # ── Vector search (pgvector) ────────────────────────────────
+      MEMORY_SERVICE_VECTOR_KIND: pgvector
+      # ── Embeddings ─────────────────────────────────────────────
+      MEMORY_SERVICE_EMBEDDING_KIND: '{{.MEMORY_SERVICE_EMBEDDING_KIND | default "openai"}}'
+      MEMORY_SERVICE_OPENAI_API_KEY: '{{.OPENAI_API_KEY | default "none"}}'
+      # ── Knowledge clustering ────────────────────────────────────
+      MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_ENABLED: "true"
+      MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_INTERVAL: 30s
+    cmds:
+      - docker compose up -d postgres redis keycloak prometheus minio minio-init
+      - docker compose stop memory-service >/dev/null 2>&1 || true
+      - air -root . -c deploy/dev/air.toml
+
   dev:chat-quarkus:
     desc: Run the chat-quarkus app in dev mode. Use quick=true to skip npm install and dependency compilation.
     cmds:
