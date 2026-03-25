@@ -23,9 +23,11 @@ func init() {
 
 		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream$`, e.userIsConnectedToGRPCEventStream)
 		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream filtered to kinds "([^"]*)"$`, e.userIsConnectedToGRPCEventStreamFilteredToKinds)
+		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream after cursor "([^"]*)" with detail "([^"]*)"$`, e.userIsConnectedToGRPCEventStreamAfterCursorWithDetail)
 		ctx.Step(`^"([^"]*)" should receive a gRPC event with kind "([^"]*)" and event "([^"]*)" within (\d+) seconds$`, e.userShouldReceiveGRPCEvent)
 		ctx.Step(`^"([^"]*)" should receive a gRPC event with kind "([^"]*)" and event "([^"]*)"$`, e.userShouldReceiveGRPCEventDefault)
 		ctx.Step(`^"([^"]*)" should not receive any gRPC event within (\d+) seconds$`, e.userShouldNotReceiveGRPCEvent)
+		ctx.Step(`^the gRPC event cursor should be saved as "([^"]*)"$`, e.saveGRPCEventCursor)
 		ctx.Step(`^the gRPC event data should contain "([^"]*)"$`, e.grpcEventDataShouldContain)
 		ctx.Step(`^the gRPC event data "([^"]*)" should be "([^"]*)"$`, e.grpcEventDataFieldShouldBe)
 
@@ -50,7 +52,7 @@ type grpcEventSteps struct {
 	mu        sync.Mutex
 }
 
-func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string) error {
+func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, afterCursor, detail *string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -76,7 +78,9 @@ func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string) erro
 	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+subject))
 
 	stream, err := pb.NewEventStreamServiceClient(conn).SubscribeEvents(ctx, &pb.SubscribeEventsRequest{
-		Kinds: kinds,
+		Kinds:       kinds,
+		AfterCursor: afterCursor,
+		Detail:      detail,
 	})
 	if err != nil {
 		cancel()
@@ -108,6 +112,9 @@ func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string) erro
 				"event": msg.GetEvent(),
 				"kind":  msg.GetKind(),
 			}
+			if msg.GetCursor() != "" {
+				event["cursor"] = msg.GetCursor()
+			}
 			if len(msg.GetData()) > 0 {
 				var data map[string]any
 				if err := json.Unmarshal(msg.GetData(), &data); err == nil {
@@ -136,7 +143,7 @@ func (e *grpcEventSteps) closeAll() {
 }
 
 func (e *grpcEventSteps) userIsConnectedToGRPCEventStream(userID string) error {
-	return e.openGRPCEventStream(userID, nil)
+	return e.openGRPCEventStream(userID, nil, nil, nil)
 }
 
 func (e *grpcEventSteps) userIsConnectedToGRPCEventStreamFilteredToKinds(userID, kinds string) error {
@@ -147,7 +154,19 @@ func (e *grpcEventSteps) userIsConnectedToGRPCEventStreamFilteredToKinds(userID,
 			filter = append(filter, kind)
 		}
 	}
-	return e.openGRPCEventStream(userID, filter)
+	return e.openGRPCEventStream(userID, filter, nil, nil)
+}
+
+func (e *grpcEventSteps) userIsConnectedToGRPCEventStreamAfterCursorWithDetail(userID, afterCursor, detail string) error {
+	expandedCursor, err := e.s.Expand(afterCursor)
+	if err != nil {
+		return err
+	}
+	expandedDetail, err := e.s.Expand(detail)
+	if err != nil {
+		return err
+	}
+	return e.openGRPCEventStream(userID, nil, &expandedCursor, &expandedDetail)
 }
 
 func (e *grpcEventSteps) userShouldReceiveGRPCEventDefault(userID, kind, event string) error {
@@ -188,15 +207,32 @@ func (e *grpcEventSteps) userShouldNotReceiveGRPCEvent(userID string, timeoutSec
 	}
 
 	timeout := time.After(time.Duration(timeoutSec) * time.Second)
-	select {
-	case evt, ok := <-stream.events:
-		if !ok {
+	for {
+		select {
+		case evt, ok := <-stream.events:
+			if !ok {
+				return nil
+			}
+			if evt["kind"] == "stream" && evt["event"] == "phase" {
+				continue
+			}
+			return fmt.Errorf("expected no gRPC event for %q within %ds, but received: %v", userID, timeoutSec, evt)
+		case <-timeout:
 			return nil
 		}
-		return fmt.Errorf("expected no gRPC event for %q within %ds, but received: %v", userID, timeoutSec, evt)
-	case <-timeout:
-		return nil
 	}
+}
+
+func (e *grpcEventSteps) saveGRPCEventCursor(varName string) error {
+	if e.lastEvent == nil {
+		return fmt.Errorf("no gRPC event captured for assertion")
+	}
+	cursor, ok := e.lastEvent["cursor"].(string)
+	if !ok || strings.TrimSpace(cursor) == "" {
+		return fmt.Errorf("gRPC event has no cursor: %v", e.lastEvent)
+	}
+	e.s.Variables[varName] = cursor
+	return nil
 }
 
 func (e *grpcEventSteps) grpcEventDataShouldContain(field string) error {

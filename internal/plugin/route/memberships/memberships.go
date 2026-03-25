@@ -13,7 +13,7 @@ import (
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
-	"github.com/chirino/memory-service/internal/service/eventing"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -117,12 +117,35 @@ func shareConversation(c *gin.Context, store registrystore.MemoryStore, eventBus
 	}
 
 	var createdMembership *model.ConversationMembership
+	var eventsToPublish []registryeventbus.Event
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		membership, err := store.ShareConversation(ctx, userID, convID, req.UserID, req.AccessLevel)
 		if err != nil {
 			return err
 		}
 		createdMembership = membership
+		if membership != nil {
+			events := []registryeventbus.Event{{
+				Event: "created",
+				Kind:  "membership",
+				Data: map[string]any{
+					"conversation_group": membership.ConversationGroupID,
+					"user":               membership.UserID,
+					"role":               membership.AccessLevel,
+				},
+				ConversationGroupID: membership.ConversationGroupID,
+				UserIDs:             []string{membership.UserID},
+			}}
+			appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+			if err != nil {
+				return err
+			}
+			if used {
+				eventsToPublish = appended
+			} else {
+				eventsToPublish = events
+			}
+		}
 		c.JSON(http.StatusCreated, toMembershipResponse(convID, *membership))
 		return nil
 	}); err != nil {
@@ -130,16 +153,7 @@ func shareConversation(c *gin.Context, store registrystore.MemoryStore, eventBus
 		return
 	}
 	if eventBus != nil && createdMembership != nil {
-		if err := eventing.PublishToUsers(c.Request.Context(), eventBus, []string{createdMembership.UserID}, registryeventbus.Event{
-			Event: "added",
-			Kind:  "membership",
-			Data: map[string]any{
-				"conversation_group": createdMembership.ConversationGroupID,
-				"user":               createdMembership.UserID,
-				"role":               createdMembership.AccessLevel,
-			},
-			ConversationGroupID: createdMembership.ConversationGroupID,
-		}); err != nil {
+		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
 			log.Warn("Failed to publish event", "err", err)
 		}
 	}
@@ -163,12 +177,35 @@ func updateMembership(c *gin.Context, store registrystore.MemoryStore, eventBus 
 	}
 
 	var updatedMembership *model.ConversationMembership
+	var eventsToPublish []registryeventbus.Event
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		membership, err := store.UpdateMembership(ctx, userID, convID, memberUserID, req.AccessLevel)
 		if err != nil {
 			return err
 		}
 		updatedMembership = membership
+		if membership != nil {
+			events := []registryeventbus.Event{{
+				Event: "updated",
+				Kind:  "membership",
+				Data: map[string]any{
+					"conversation_group": membership.ConversationGroupID,
+					"user":               membership.UserID,
+					"role":               membership.AccessLevel,
+				},
+				ConversationGroupID: membership.ConversationGroupID,
+				UserIDs:             []string{membership.UserID},
+			}}
+			appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+			if err != nil {
+				return err
+			}
+			if used {
+				eventsToPublish = appended
+			} else {
+				eventsToPublish = events
+			}
+		}
 		c.JSON(http.StatusOK, toMembershipResponse(convID, *membership))
 		return nil
 	}); err != nil {
@@ -176,16 +213,7 @@ func updateMembership(c *gin.Context, store registrystore.MemoryStore, eventBus 
 		return
 	}
 	if eventBus != nil && updatedMembership != nil {
-		if err := eventing.PublishToUsers(c.Request.Context(), eventBus, []string{updatedMembership.UserID}, registryeventbus.Event{
-			Event: "updated",
-			Kind:  "membership",
-			Data: map[string]any{
-				"conversation_group": updatedMembership.ConversationGroupID,
-				"user":               updatedMembership.UserID,
-				"role":               updatedMembership.AccessLevel,
-			},
-			ConversationGroupID: updatedMembership.ConversationGroupID,
-		}); err != nil {
+		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
 			log.Warn("Failed to publish event", "err", err)
 		}
 	}
@@ -202,6 +230,7 @@ func deleteMembership(c *gin.Context, store registrystore.MemoryStore, eventBus 
 
 	// Fetch conversation before deletion to capture the group ID for the event.
 	var groupID uuid.UUID
+	var eventsToPublish []registryeventbus.Event
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		conv, err := store.GetConversation(ctx, userID, convID)
 		if err != nil {
@@ -211,6 +240,25 @@ func deleteMembership(c *gin.Context, store registrystore.MemoryStore, eventBus 
 		if err := store.DeleteMembership(ctx, userID, convID, memberUserID); err != nil {
 			return err
 		}
+		events := []registryeventbus.Event{{
+			Event: "deleted",
+			Kind:  "membership",
+			Data: map[string]any{
+				"conversation_group": groupID,
+				"user":               memberUserID,
+			},
+			ConversationGroupID: groupID,
+			UserIDs:             []string{memberUserID},
+		}}
+		appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+		if err != nil {
+			return err
+		}
+		if used {
+			eventsToPublish = appended
+		} else {
+			eventsToPublish = events
+		}
 		c.Status(http.StatusNoContent)
 		return nil
 	}); err != nil {
@@ -218,15 +266,7 @@ func deleteMembership(c *gin.Context, store registrystore.MemoryStore, eventBus 
 		return
 	}
 	if eventBus != nil {
-		if err := eventing.PublishToUsers(c.Request.Context(), eventBus, []string{memberUserID}, registryeventbus.Event{
-			Event: "removed",
-			Kind:  "membership",
-			Data: map[string]any{
-				"conversation_group": groupID,
-				"user":               memberUserID,
-			},
-			ConversationGroupID: groupID,
-		}); err != nil {
+		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
 			log.Warn("Failed to publish event", "err", err)
 		}
 	}

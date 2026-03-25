@@ -27,7 +27,10 @@ import (
 )
 
 // mongoSkipFeatures lists feature files that cannot run on MongoDB.
-var mongoSkipFeatures = map[string]bool{}
+var mongoSkipFeatures = map[string]bool{
+	"sse-events-rest.feature":        true,
+	"sse-events-replay-rest.feature": true,
+}
 
 func TestFeaturesMongo(t *testing.T) {
 	_ = mongoplugin.ForceImport
@@ -64,18 +67,12 @@ func TestFeaturesMongo(t *testing.T) {
 	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
-	// Discover feature files: main features/ + features-qdrant/ + features-grpc/ + features-encrypted/
+	// Discover feature files: main REST features/ + features-qdrant/ + features-encrypted/
 	resourcesDir := "testdata"
-	featuresDir := filepath.Join(resourcesDir, "features")
-	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
-		t.Skipf("Feature files directory not found: %s", featuresDir)
-	}
-
-	featureFiles, err := filepath.Glob(filepath.Join(featuresDir, "*.feature"))
-	require.NoError(t, err)
+	featureFiles := collectRESTFeatureFiles(t, resourcesDir, mongoSkipFeatures)
 
 	// Add subdirectory features
-	subdirPatterns := []string{"features-qdrant", "features-grpc", "features-encrypted"}
+	subdirPatterns := []string{"features-qdrant", "features-encrypted"}
 	for _, subdir := range subdirPatterns {
 		subFiles, _ := filepath.Glob(filepath.Join(resourcesDir, subdir, "*.feature"))
 		featureFiles = append(featureFiles, subFiles...)

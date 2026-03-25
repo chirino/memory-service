@@ -51,6 +51,7 @@ func init() {
 			store := &MongoStore{
 				client:       client,
 				db:           client.Database(dbName),
+				cfg:          cfg,
 				entriesCache: registrycache.EntriesCacheFromContext(ctx),
 			}
 			if !cfg.EncryptionDBDisabled {
@@ -121,6 +122,10 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 			{Keys: bson.D{{Key: "user_id", Value: 1}}},
 			{Keys: bson.D{{Key: "deleted_at", Value: 1}}},
 		},
+		"outbox_events": {
+			{Keys: bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}},
+			{Keys: bson.D{{Key: "kind", Value: 1}, {Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}},
+		},
 		"tasks": {
 			{Keys: bson.D{{Key: "retry_at", Value: 1}, {Key: "created_at", Value: 1}}},
 			{Keys: bson.D{{Key: "processing_at", Value: 1}}},
@@ -155,8 +160,13 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 type MongoStore struct {
 	client       *mongo.Client
 	db           *mongo.Database
+	cfg          *config.Config
 	enc          *dataencryption.Service
 	entriesCache registrycache.MemoryEntriesCache
+}
+
+func (s *MongoStore) OutboxEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.OutboxEnabled
 }
 
 func (s *MongoStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
@@ -315,6 +325,9 @@ func (s *MongoStore) memberships() *mongo.Collection {
 	return s.db.Collection("conversation_memberships")
 }
 func (s *MongoStore) entries() *mongo.Collection { return s.db.Collection("entries") }
+func (s *MongoStore) outboxEvents() *mongo.Collection {
+	return s.db.Collection("outbox_events")
+}
 func (s *MongoStore) transfers() *mongo.Collection {
 	return s.db.Collection("conversation_ownership_transfers")
 }

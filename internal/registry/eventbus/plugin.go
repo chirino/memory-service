@@ -16,14 +16,15 @@ import (
 // ConversationGroupID, UserIDs, Broadcast, and AdminOnly are routing metadata
 // and are not serialized to public SSE clients.
 type Event struct {
-	Event               string    `json:"event"` // action: created, updated, deleted, appended, started, completed, failed, added, removed, evicted
-	Kind                string    `json:"kind"`  // resource type: conversation, entry, response, membership, stream
-	Data                any       `json:"data"`  // kind-specific payload
-	ConversationGroupID uuid.UUID `json:"-"`     // used for access control filtering, not serialized
-	UserIDs             []string  `json:"-"`     // explicit user delivery targets
-	Broadcast           bool      `json:"-"`     // deliver to all user/admin subscribers
-	AdminOnly           bool      `json:"-"`     // deliver only to admin/all subscribers
-	Internal            bool      `json:"-"`     // internal control events (e.g. resync.required), never forwarded to clients
+	Event               string    `json:"event"`            // action: created, updated, deleted, phase, evicted, invalidate, shutdown
+	Kind                string    `json:"kind"`             // resource type: conversation, entry, response, membership, stream
+	Data                any       `json:"data"`             // kind-specific payload
+	OutboxCursor        string    `json:"cursor,omitempty"` // durable replay cursor when available
+	ConversationGroupID uuid.UUID `json:"-"`                // used for access control filtering, not serialized
+	UserIDs             []string  `json:"-"`                // explicit user delivery targets
+	Broadcast           bool      `json:"-"`                // deliver to all user/admin subscribers
+	AdminOnly           bool      `json:"-"`                // deliver only to admin/all subscribers
+	Internal            bool      `json:"-"`                // internal control events (e.g. resync.required), never forwarded to clients
 }
 
 // EventBus is the interface for publishing and subscribing to events.

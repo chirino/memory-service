@@ -1529,6 +1529,20 @@ paths:
           schema:
             type: string
           description: Comma-separated event kinds to filter (conversation, entry, response, membership).
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+        - name: detail
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [summary, full]
+            default: summary
+          description: Event payload detail level.
       responses:
         '200':
           description: SSE event stream opened successfully.
@@ -1571,6 +1585,20 @@ paths:
           schema:
             type: string
           description: Comma-separated event kinds to filter.
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+        - name: detail
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [summary, full]
+            default: summary
+          description: Event payload detail level.
       responses:
         '200':
           description: SSE event stream opened successfully.

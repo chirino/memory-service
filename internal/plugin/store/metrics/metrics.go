@@ -302,3 +302,38 @@ func (m *metricsStore) AdminGetAttachmentByStorageKey(ctx context.Context, stora
 	defer observe("admin_get_attachment_by_storage_key", time.Now())
 	return m.inner.AdminGetAttachmentByStorageKey(ctx, storageKey)
 }
+
+func (m *metricsStore) AppendOutboxEvents(ctx context.Context, events []store.OutboxWrite) ([]store.OutboxEvent, error) {
+	outbox, ok := m.inner.(store.EventOutboxStore)
+	if !ok {
+		return nil, nil
+	}
+	defer observe("append_outbox_events", time.Now())
+	return outbox.AppendOutboxEvents(ctx, events)
+}
+
+func (m *metricsStore) ListOutboxEvents(ctx context.Context, query store.OutboxQuery) (*store.OutboxPage, error) {
+	outbox, ok := m.inner.(store.EventOutboxStore)
+	if !ok {
+		return nil, nil
+	}
+	defer observe("list_outbox_events", time.Now())
+	return outbox.ListOutboxEvents(ctx, query)
+}
+
+func (m *metricsStore) EvictOutboxEventsBefore(ctx context.Context, before time.Time, limit int) (int64, error) {
+	outbox, ok := m.inner.(store.EventOutboxStore)
+	if !ok {
+		return 0, nil
+	}
+	defer observe("evict_outbox_events_before", time.Now())
+	return outbox.EvictOutboxEventsBefore(ctx, before, limit)
+}
+
+func (m *metricsStore) OutboxEnabled() bool {
+	provider, ok := m.inner.(store.OutboxEnabledProvider)
+	return ok && provider.OutboxEnabled()
+}
+
+var _ store.EventOutboxStore = (*metricsStore)(nil)
+var _ store.OutboxEnabledProvider = (*metricsStore)(nil)

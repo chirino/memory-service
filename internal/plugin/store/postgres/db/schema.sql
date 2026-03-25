@@ -213,6 +213,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name
     ON tasks (task_name) WHERE task_name IS NOT NULL;
 
 ------------------------------------------------------------
+-- Event outbox
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS outbox_events (
+    seq         BIGSERIAL PRIMARY KEY,
+    event       TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    data        JSONB NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_events_created_at
+    ON outbox_events (created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_events_kind_seq
+    ON outbox_events (kind, seq);
+
+------------------------------------------------------------
 -- Attachments
 ------------------------------------------------------------
 

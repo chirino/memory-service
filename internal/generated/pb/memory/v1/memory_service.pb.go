@@ -5219,7 +5219,11 @@ type SubscribeEventsRequest struct {
 	// Optional: subscribe to specific conversation IDs only.
 	ConversationIds [][]byte `protobuf:"bytes,1,rep,name=conversation_ids,json=conversationIds,proto3" json:"conversation_ids,omitempty"`
 	// Optional: filter by event kinds (conversation, entry, response, membership).
-	Kinds         []string `protobuf:"bytes,2,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	Kinds []string `protobuf:"bytes,2,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	// Optional: durable replay cursor. Omit for tail-only mode.
+	AfterCursor *string `protobuf:"bytes,3,opt,name=after_cursor,json=afterCursor,proto3,oneof" json:"after_cursor,omitempty"`
+	// Optional: event detail mode. Supported values are "summary" and "full".
+	Detail        *string `protobuf:"bytes,4,opt,name=detail,proto3,oneof" json:"detail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5268,14 +5272,30 @@ func (x *SubscribeEventsRequest) GetKinds() []string {
 	return nil
 }
 
+func (x *SubscribeEventsRequest) GetAfterCursor() string {
+	if x != nil && x.AfterCursor != nil {
+		return *x.AfterCursor
+	}
+	return ""
+}
+
+func (x *SubscribeEventsRequest) GetDetail() string {
+	if x != nil && x.Detail != nil {
+		return *x.Detail
+	}
+	return ""
+}
+
 type EventNotification struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Action: created, updated, deleted, appended, started, completed, failed, added, removed, evicted, invalidate
+	// Action: created, updated, deleted, phase, evicted, invalidate
 	Event string `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
 	// Resource type: conversation, entry, response, membership, stream
 	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Kind-specific payload as JSON-encoded bytes.
-	Data          []byte `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	Data []byte `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	// Durable replay cursor when available.
+	Cursor        *string `protobuf:"bytes,4,opt,name=cursor,proto3,oneof" json:"cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5329,6 +5349,13 @@ func (x *EventNotification) GetData() []byte {
 		return x.Data
 	}
 	return nil
+}
+
+func (x *EventNotification) GetCursor() string {
+	if x != nil && x.Cursor != nil {
+		return *x.Cursor
+	}
+	return ""
 }
 
 var File_memory_v1_memory_service_proto protoreflect.FileDescriptor
@@ -5710,14 +5737,20 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x1aDownloadAttachmentResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x19.memory.v1.AttachmentInfoH\x00R\bmetadata\x12\x16\n" +
 	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\t\n" +
-	"\apayload\"Y\n" +
+	"\apayload\"\xba\x01\n" +
 	"\x16SubscribeEventsRequest\x12)\n" +
 	"\x10conversation_ids\x18\x01 \x03(\fR\x0fconversationIds\x12\x14\n" +
-	"\x05kinds\x18\x02 \x03(\tR\x05kinds\"Q\n" +
+	"\x05kinds\x18\x02 \x03(\tR\x05kinds\x12&\n" +
+	"\fafter_cursor\x18\x03 \x01(\tH\x00R\vafterCursor\x88\x01\x01\x12\x1b\n" +
+	"\x06detail\x18\x04 \x01(\tH\x01R\x06detail\x88\x01\x01B\x0f\n" +
+	"\r_after_cursorB\t\n" +
+	"\a_detail\"y\n" +
 	"\x11EventNotification\x12\x14\n" +
 	"\x05event\x18\x01 \x01(\tR\x05event\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\fR\x04data*c\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\x12\x1b\n" +
+	"\x06cursor\x18\x04 \x01(\tH\x00R\x06cursor\x88\x01\x01B\t\n" +
+	"\a_cursor*c\n" +
 	"\x14ConversationListMode\x12&\n" +
 	"\"CONVERSATION_LIST_MODE_UNSPECIFIED\x10\x00\x12\a\n" +
 	"\x03ALL\x10\x01\x12\t\n" +
@@ -6082,6 +6115,8 @@ func file_memory_v1_memory_service_proto_init() {
 		(*DownloadAttachmentResponse_Metadata)(nil),
 		(*DownloadAttachmentResponse_Chunk)(nil),
 	}
+	file_memory_v1_memory_service_proto_msgTypes[78].OneofWrappers = []any{}
+	file_memory_v1_memory_service_proto_msgTypes[79].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

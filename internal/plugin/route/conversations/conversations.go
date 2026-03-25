@@ -18,7 +18,7 @@ import (
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
-	"github.com/chirino/memory-service/internal/service/eventing"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -174,6 +174,7 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 	}
 
 	var createdConv *registrystore.ConversationDetail
+	var eventsToPublish []registryeventbus.Event
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		var (
 			conv *registrystore.ConversationDetail
@@ -188,6 +189,26 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 			return err
 		}
 		createdConv = conv
+		if conv != nil {
+			events := []registryeventbus.Event{{
+				Event: "created",
+				Kind:  "conversation",
+				Data: map[string]any{
+					"conversation":       conv.ID,
+					"conversation_group": conv.ConversationGroupID,
+				},
+				ConversationGroupID: conv.ConversationGroupID,
+			}}
+			appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+			if err != nil {
+				return err
+			}
+			if used {
+				eventsToPublish = appended
+			} else {
+				eventsToPublish = events
+			}
+		}
 		// Java parity: fork creation returns 200, regular creation returns 201.
 		if forkConvID != nil {
 			c.JSON(http.StatusOK, conv)
@@ -200,15 +221,7 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 		return
 	}
 	if eventBus != nil && createdConv != nil {
-		if err := eventing.PublishToGroup(c.Request.Context(), store, eventBus, createdConv.ConversationGroupID, registryeventbus.Event{
-			Event: "created",
-			Kind:  "conversation",
-			Data: map[string]any{
-				"conversation":       createdConv.ID,
-				"conversation_group": createdConv.ConversationGroupID,
-			},
-			ConversationGroupID: createdConv.ConversationGroupID,
-		}); err != nil {
+		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
 			log.Warn("Failed to publish event", "err", err)
 		}
 	}
@@ -275,12 +288,33 @@ func updateConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 	}
 
 	var updatedConv *registrystore.ConversationDetail
+	var eventsToPublish []registryeventbus.Event
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		conv, err := store.UpdateConversation(ctx, userID, convID, title, metadata)
 		if err != nil {
 			return err
 		}
 		updatedConv = conv
+		if conv != nil {
+			events := []registryeventbus.Event{{
+				Event: "updated",
+				Kind:  "conversation",
+				Data: map[string]any{
+					"conversation":       conv.ID,
+					"conversation_group": conv.ConversationGroupID,
+				},
+				ConversationGroupID: conv.ConversationGroupID,
+			}}
+			appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+			if err != nil {
+				return err
+			}
+			if used {
+				eventsToPublish = appended
+			} else {
+				eventsToPublish = events
+			}
+		}
 		c.JSON(http.StatusOK, conv)
 		return nil
 	}); err != nil {
@@ -288,15 +322,7 @@ func updateConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 		return
 	}
 	if eventBus != nil && updatedConv != nil {
-		if err := eventing.PublishToGroup(c.Request.Context(), store, eventBus, updatedConv.ConversationGroupID, registryeventbus.Event{
-			Event: "updated",
-			Kind:  "conversation",
-			Data: map[string]any{
-				"conversation":       updatedConv.ID,
-				"conversation_group": updatedConv.ConversationGroupID,
-			},
-			ConversationGroupID: updatedConv.ConversationGroupID,
-		}); err != nil {
+		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
 			log.Warn("Failed to publish event", "err", err)
 		}
 	}
@@ -311,7 +337,7 @@ func deleteConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 	}
 
 	var groupID uuid.UUID
-	var memberUserIDs []string
+	var eventsToPublish []registryeventbus.Event
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		// Fetch conversation and members before deletion — memberships are
 		// hard-deleted in the same transaction, so we must capture them first.
@@ -320,9 +346,29 @@ func deleteConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 			return err
 		}
 		groupID = conv.ConversationGroupID
-		memberUserIDs, _ = store.GetGroupMemberUserIDs(ctx, groupID)
+		memberUserIDs, _ := store.GetGroupMemberUserIDs(ctx, groupID)
 		if err := store.DeleteConversation(ctx, userID, convID); err != nil {
 			return err
+		}
+		events := []registryeventbus.Event{{
+			Event: "deleted",
+			Kind:  "conversation",
+			Data: map[string]any{
+				"conversation":       convID,
+				"conversation_group": groupID,
+				"members":            memberUserIDs,
+			},
+			ConversationGroupID: groupID,
+			UserIDs:             append([]string(nil), memberUserIDs...),
+		}}
+		appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+		if err != nil {
+			return err
+		}
+		if used {
+			eventsToPublish = appended
+		} else {
+			eventsToPublish = events
 		}
 		c.Status(http.StatusNoContent)
 		return nil
@@ -331,15 +377,7 @@ func deleteConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 		return
 	}
 	if eventBus != nil {
-		if err := eventing.PublishToUsers(c.Request.Context(), eventBus, memberUserIDs, registryeventbus.Event{
-			Event: "deleted",
-			Kind:  "conversation",
-			Data: map[string]any{
-				"conversation":       convID,
-				"conversation_group": groupID,
-			},
-			ConversationGroupID: groupID,
-		}); err != nil {
+		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
 			log.Warn("Failed to publish event", "err", err)
 		}
 	}

@@ -40,7 +40,7 @@ Feature: SSE Event Stream
     And "alice" should receive an SSE event with kind "conversation" and event "deleted"
     And the SSE event data should contain "conversation"
 
-  Scenario: Receive entry appended event
+  Scenario: Receive entry created event
     Given I have a conversation with title "Entry Test"
     And "alice" is connected to the SSE event stream
     And I am authenticated as agent with API key "test-agent-key"
@@ -53,8 +53,9 @@ Feature: SSE Event Stream
     }
     """
     Then the response status should be 201
-    And "alice" should receive an SSE event with kind "entry" and event "appended"
+    And "alice" should receive an SSE event with kind "entry" and event "created"
     And the SSE event data should contain "conversation"
+    And the SSE event data should contain "conversation_group"
     And the SSE event data should contain "entry"
 
   Scenario: Events are filtered by access — no leakage
@@ -83,7 +84,7 @@ Feature: SSE Event Stream
     }
     """
     Then the response status should be 201
-    And "bob" should receive an SSE event with kind "membership" and event "added"
+    And "bob" should receive an SSE event with kind "membership" and event "created"
     # Now bob should receive events for this conversation
     Given I am authenticated as agent with API key "test-agent-key"
     When I call POST "/v1/conversations/${conversationId}/entries" with body:
@@ -95,7 +96,7 @@ Feature: SSE Event Stream
     }
     """
     Then the response status should be 201
-    And "bob" should receive an SSE event with kind "entry" and event "appended"
+    And "bob" should receive an SSE event with kind "entry" and event "created"
 
   Scenario: Stop receiving events after access revoked
     Given I have a conversation with title "Revoke Test"
@@ -103,7 +104,7 @@ Feature: SSE Event Stream
     And "bob" is connected to the SSE event stream
     When I delete membership for user "bob"
     Then the response status should be 204
-    And "bob" should receive an SSE event with kind "membership" and event "removed"
+    And "bob" should receive an SSE event with kind "membership" and event "deleted"
     # Now bob should NOT receive events for this conversation
     Given I am authenticated as agent with API key "test-agent-key"
     When I call POST "/v1/conversations/${conversationId}/entries" with body:
@@ -138,7 +139,7 @@ Feature: SSE Event Stream
     }
     """
     Then the response status should be 201
-    And "alice" should receive an SSE event with kind "entry" and event "appended"
+    And "alice" should receive an SSE event with kind "entry" and event "created"
 
   Scenario: Admin SSE endpoint requires justification
     Given I am authenticated as admin user "alice"

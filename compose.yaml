@@ -115,6 +115,9 @@ services:
       MEMORY_SERVICE_CACHE_KIND: redis
       MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
 
+      # ── Event outbox ──────────────────────────────────────────
+      MEMORY_SERVICE_OUTBOX_ENABLED: "true"
+
       # ── Authentication & authorization ─────────────────────────
       MEMORY_SERVICE_OIDC_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service

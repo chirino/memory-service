@@ -19,6 +19,25 @@ Feature: Event Stream gRPC API
     And the gRPC event data should contain "conversation"
     And the gRPC event data should contain "conversation_group"
 
+  Scenario: Replay gRPC events after a cursor with full detail
+    Given "alice" is connected to the gRPC event stream
+    And I have a conversation with title "gRPC Replay Conversation"
+    Then the response status should be 201
+    And "alice" should receive a gRPC event with kind "conversation" and event "created"
+    And the gRPC event cursor should be saved as "grpcAfterCursor"
+    When I update the conversation with request:
+    """
+    {
+      "title": "gRPC Replay Conversation Updated"
+    }
+    """
+    Then the response status should be 200
+    And "alice" should receive a gRPC event with kind "conversation" and event "updated"
+    Given "alice" is connected to the gRPC event stream after cursor "${grpcAfterCursor}" with detail "full"
+    Then "alice" should receive a gRPC event with kind "conversation" and event "updated"
+    And the gRPC event data should contain "id"
+    And the gRPC event data "title" should be "gRPC Replay Conversation Updated"
+
   Scenario: Events are filtered by access via gRPC
     Given I have a conversation with title "gRPC Private Conversation"
     And "bob" is connected to the gRPC event stream
@@ -45,7 +64,7 @@ Feature: Event Stream gRPC API
     }
     """
     Then the response status should be 201
-    And "bob" should receive a gRPC event with kind "membership" and event "added"
+    And "bob" should receive a gRPC event with kind "membership" and event "created"
     And the gRPC event data should contain "user"
 
   Scenario: Deleted conversations are delivered to prior members via gRPC
@@ -77,4 +96,4 @@ Feature: Event Stream gRPC API
     }
     """
     Then the response status should be 201
-    And "alice" should receive a gRPC event with kind "entry" and event "appended"
+    And "alice" should receive a gRPC event with kind "entry" and event "created"

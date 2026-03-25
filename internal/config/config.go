@@ -227,6 +227,8 @@ type Config struct {
 	SSEMembershipCacheTTL    time.Duration
 	SSEMaxConnectionsPerUser int
 	SSESubscriberBufferSize  int
+	OutboxEnabled            bool
+	OutboxReplayBatchSize    int
 
 	// Episodic memory settings
 	EpisodicMaxDepth           int           // Maximum namespace depth (default 5)
@@ -303,6 +305,8 @@ func DefaultConfig() Config {
 		SSEMembershipCacheTTL:    5 * time.Minute,
 		SSEMaxConnectionsPerUser: 5,
 		SSESubscriberBufferSize:  64,
+		OutboxEnabled:            false,
+		OutboxReplayBatchSize:    1000,
 
 		// Episodic memory defaults
 		EpisodicMaxDepth:           5,

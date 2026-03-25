@@ -19,11 +19,11 @@ import (
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
-	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func init() {
@@ -114,12 +114,8 @@ type PostgresStore struct {
 	entriesCache registrycache.MemoryEntriesCache
 }
 
-func (s *PostgresStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
-	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
-}
-
-func (s *PostgresStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
-	return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
+func (s *PostgresStore) OutboxEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.OutboxEnabled
 }
 
 func pgUniqueViolation(err error) (*pgconn.PgError, bool) {
@@ -194,6 +190,10 @@ func (s *PostgresStore) CreateConversationWithID(ctx context.Context, userID str
 }
 
 func (s *PostgresStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID, startedByConversationID *uuid.UUID, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+	db, err := s.writeDBFor(ctx, "create conversation")
+	if err != nil {
+		return nil, err
+	}
 	groupID := uuid.New()
 	now := time.Now()
 
@@ -211,7 +211,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	var membershipsToCopy []model.ConversationMembership
 	if forkedAtConversationID != nil {
 		var sourceConv model.Conversation
-		if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", *forkedAtConversationID).First(&sourceConv).Error; err != nil {
+		if err := db.Where("id = ? AND deleted_at IS NULL", *forkedAtConversationID).First(&sourceConv).Error; err != nil {
 			return nil, &NotFoundError{Resource: "conversation", ID: forkedAtConversationID.String()}
 		}
 		// Verify user has access
@@ -221,14 +221,14 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		// Validate fork point entry exists
 		if forkedAtEntryID != nil {
 			var entry model.Entry
-			if err := s.db.WithContext(ctx).Where("id = ? AND conversation_group_id = ?", *forkedAtEntryID, sourceConv.ConversationGroupID).First(&entry).Error; err != nil {
+			if err := db.Where("id = ? AND conversation_group_id = ?", *forkedAtEntryID, sourceConv.ConversationGroupID).First(&entry).Error; err != nil {
 				return nil, &NotFoundError{Resource: "entry", ID: forkedAtEntryID.String()}
 			}
 		}
 		actualGroupID = sourceConv.ConversationGroupID
 	} else if startedByConversationID != nil {
 		var parentConv model.Conversation
-		findResult := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", *startedByConversationID).Limit(1).Find(&parentConv)
+		findResult := db.Where("id = ? AND deleted_at IS NULL", *startedByConversationID).Limit(1).Find(&parentConv)
 		if findResult.Error != nil {
 			return nil, findResult.Error
 		}
@@ -250,36 +250,32 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		actualGroupID = convID
 		ownerUserID = parentConv.OwnerUserID
 		group := model.ConversationGroup{ID: actualGroupID, CreatedAt: now}
-		if err := s.db.WithContext(ctx).Create(&group).Error; err != nil {
-			if _, ok := pgUniqueViolation(err); !ok {
-				logDuplicateKey("createConversationWithID:createStartedGroup", err,
-					"userID", userID,
-					"conversationID", convID.String(),
-					"conversationGroupID", actualGroupID.String(),
-					"startedByConversationID", uuidPtrString(startedByConversationID),
-					"startedByEntryID", uuidPtrString(startedByEntryID),
-				)
-				return nil, fmt.Errorf("failed to create conversation group: %w", err)
-			}
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&group).Error; err != nil {
+			logDuplicateKey("createConversationWithID:createStartedGroup", err,
+				"userID", userID,
+				"conversationID", convID.String(),
+				"conversationGroupID", actualGroupID.String(),
+				"startedByConversationID", uuidPtrString(startedByConversationID),
+				"startedByEntryID", uuidPtrString(startedByEntryID),
+			)
+			return nil, fmt.Errorf("failed to create conversation group: %w", err)
 		}
-		if err := s.db.WithContext(ctx).Where("conversation_group_id = ?", parentConv.ConversationGroupID).Order("created_at ASC").Find(&membershipsToCopy).Error; err != nil {
+		if err := db.Where("conversation_group_id = ?", parentConv.ConversationGroupID).Order("created_at ASC").Find(&membershipsToCopy).Error; err != nil {
 			return nil, fmt.Errorf("failed to load parent memberships: %w", err)
 		}
 	} else {
 		// New root conversation — create a group; for non-forked, use convID as groupID for Java parity
 		actualGroupID = convID
 		group := model.ConversationGroup{ID: actualGroupID, CreatedAt: now}
-		if err := s.db.WithContext(ctx).Create(&group).Error; err != nil {
-			if _, ok := pgUniqueViolation(err); !ok {
-				logDuplicateKey("createConversationWithID:createGroup", err,
-					"userID", userID,
-					"conversationID", convID.String(),
-					"conversationGroupID", actualGroupID.String(),
-					"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
-					"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
-				)
-				return nil, fmt.Errorf("failed to create conversation group: %w", err)
-			}
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&group).Error; err != nil {
+			logDuplicateKey("createConversationWithID:createGroup", err,
+				"userID", userID,
+				"conversationID", convID.String(),
+				"conversationGroupID", actualGroupID.String(),
+				"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
+				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
+			)
+			return nil, fmt.Errorf("failed to create conversation group: %w", err)
 		}
 		_ = groupID // unused for root conversations when convID is specified
 	}
@@ -304,15 +300,44 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		UpdatedAt:               now,
 	}
 
-	if err := s.db.WithContext(ctx).Create(&conv).Error; err != nil {
-		logDuplicateKey("createConversationWithID:createConversation", err,
+	createResult := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&conv)
+	if createResult.Error != nil {
+		logDuplicateKey("createConversationWithID:createConversation", createResult.Error,
 			"userID", userID,
 			"conversationID", convID.String(),
 			"conversationGroupID", actualGroupID.String(),
 			"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
 			"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
 		)
-		return nil, fmt.Errorf("failed to create conversation: %w", err)
+		return nil, fmt.Errorf("failed to create conversation: %w", createResult.Error)
+	}
+	if createResult.RowsAffected == 0 {
+		var existing model.Conversation
+		result := db.Where("id = ? AND deleted_at IS NULL", convID).Limit(1).Find(&existing)
+		if result.Error != nil {
+			return nil, fmt.Errorf("failed to load existing conversation: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil, fmt.Errorf("failed to load existing conversation after conflict: %s", convID)
+		}
+		return &registrystore.ConversationDetail{
+			ConversationSummary: registrystore.ConversationSummary{
+				ID:                      existing.ID,
+				Title:                   s.decryptString(existing.Title),
+				OwnerUserID:             existing.OwnerUserID,
+				ClientID:                existing.ClientID,
+				AgentID:                 existing.AgentID,
+				Metadata:                existing.Metadata,
+				ConversationGroupID:     existing.ConversationGroupID,
+				ForkedAtConversationID:  existing.ForkedAtConversationID,
+				ForkedAtEntryID:         existing.ForkedAtEntryID,
+				StartedByConversationID: existing.StartedByConversationID,
+				StartedByEntryID:        existing.StartedByEntryID,
+				CreatedAt:               existing.CreatedAt,
+				UpdatedAt:               existing.UpdatedAt,
+				AccessLevel:             model.AccessLevelOwner,
+			},
+		}, nil
 	}
 
 	// Root conversations get a new owner membership; started conversations copy parent memberships.
@@ -330,7 +355,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 				membershipsToCopy[i].CreatedAt = now
 			}
 		}
-		if err := s.db.WithContext(ctx).Create(&membershipsToCopy).Error; err != nil {
+		if err := db.Create(&membershipsToCopy).Error; err != nil {
 			logDuplicateKey("createConversationWithID:createMembership", err,
 				"userID", userID,
 				"conversationID", convID.String(),
@@ -526,7 +551,11 @@ func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, c
 	if metadata != nil {
 		updates["metadata"] = metadata
 	}
-	if err := s.db.WithContext(ctx).Model(&conv).Updates(updates).Error; err != nil {
+	db, err := s.writeDBFor(ctx, "update conversation")
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Model(&conv).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("failed to update conversation: %w", err)
 	}
 	return s.GetConversation(ctx, userID, conversationID)
@@ -545,7 +574,11 @@ func (s *PostgresStore) DeleteConversation(ctx context.Context, userID string, c
 	}
 
 	now := time.Now()
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := s.writeDBFor(ctx, "delete conversation")
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
 		// Soft-delete the conversation group and all conversations in the fork tree.
 		if err := tx.Model(&model.ConversationGroup{}).
 			Where("id = ?", conv.ConversationGroupID).
@@ -583,7 +616,7 @@ func (s *PostgresStore) ListMemberships(ctx context.Context, userID string, conv
 		return nil, nil, err
 	}
 
-	tx := s.db.WithContext(ctx).Where("conversation_group_id = ?", groupID).Order("created_at ASC")
+	tx := s.dbFor(ctx).Where("conversation_group_id = ?", groupID).Order("created_at ASC")
 	if afterCursor != nil {
 		tx = tx.Where("created_at > (SELECT created_at FROM conversation_memberships WHERE conversation_group_id = ? AND user_id = ?)", groupID, *afterCursor)
 	}
@@ -621,7 +654,11 @@ func (s *PostgresStore) ShareConversation(ctx context.Context, userID string, co
 		AccessLevel:         accessLevel,
 		CreatedAt:           time.Now(),
 	}
-	result := s.db.WithContext(ctx).Create(&membership)
+	db, err := s.writeDBFor(ctx, "share conversation")
+	if err != nil {
+		return nil, err
+	}
+	result := db.Create(&membership)
 	if result.Error != nil {
 		if strings.Contains(result.Error.Error(), "duplicate key") {
 			return nil, &ConflictError{Message: "user already has access to this conversation"}
@@ -640,7 +677,11 @@ func (s *PostgresStore) UpdateMembership(ctx context.Context, userID string, con
 		return nil, &ValidationError{Field: "accessLevel", Message: "cannot set owner access; use ownership transfer"}
 	}
 
-	result := s.db.WithContext(ctx).Model(&model.ConversationMembership{}).
+	db, err := s.writeDBFor(ctx, "update membership")
+	if err != nil {
+		return nil, err
+	}
+	result := db.Model(&model.ConversationMembership{}).
 		Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).
 		Update("access_level", accessLevel)
 	if result.Error != nil {
@@ -651,7 +692,7 @@ func (s *PostgresStore) UpdateMembership(ctx context.Context, userID string, con
 	}
 
 	var m model.ConversationMembership
-	result = s.db.WithContext(ctx).
+	result = db.
 		Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).
 		Limit(1).
 		Find(&m)
@@ -671,7 +712,11 @@ func (s *PostgresStore) DeleteMembership(ctx context.Context, userID string, con
 	}
 	// Cannot delete the owner
 	var m model.ConversationMembership
-	if err := s.db.WithContext(ctx).Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).First(&m).Error; err != nil {
+	db, err := s.writeDBFor(ctx, "delete membership")
+	if err != nil {
+		return err
+	}
+	if err := db.Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).First(&m).Error; err != nil {
 		return &NotFoundError{Resource: "membership", ID: memberUserID}
 	}
 	if m.AccessLevel == model.AccessLevelOwner {
@@ -679,17 +724,17 @@ func (s *PostgresStore) DeleteMembership(ctx context.Context, userID string, con
 	}
 
 	// Java parity: removing the pending transfer recipient cancels the transfer.
-	s.db.WithContext(ctx).
+	db.
 		Where("conversation_group_id = ? AND to_user_id = ?", groupID, memberUserID).
 		Delete(&model.OwnershipTransfer{})
 
-	s.db.WithContext(ctx).Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).Delete(&model.ConversationMembership{})
+	db.Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).Delete(&model.ConversationMembership{})
 	return nil
 }
 
 func (s *PostgresStore) GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error) {
 	var userIDs []string
-	err := s.db.WithContext(ctx).
+	err := s.dbFor(ctx).
 		Model(&model.ConversationMembership{}).
 		Where("conversation_group_id = ?", conversationGroupID).
 		Pluck("user_id", &userIDs).Error
@@ -1103,7 +1148,7 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 
 func (s *PostgresStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error) {
 	var entry model.Entry
-	result := s.db.WithContext(ctx).Select("conversation_group_id").Where("id = ?", entryID).Limit(1).Find(&entry)
+	result := s.dbFor(ctx).Select("conversation_group_id").Where("id = ?", entryID).Limit(1).Find(&entry)
 	if result.Error != nil {
 		return uuid.Nil, result.Error
 	}
@@ -1114,8 +1159,12 @@ func (s *PostgresStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) 
 }
 
 func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
+	db, err := s.writeDBFor(ctx, "append entries")
+	if err != nil {
+		return nil, err
+	}
 	var conv model.Conversation
-	convResult := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", conversationID).Limit(1).Find(&conv)
+	convResult := db.Where("id = ? AND deleted_at IS NULL", conversationID).Limit(1).Find(&conv)
 	if convResult.Error != nil {
 		return nil, convResult.Error
 	}
@@ -1156,7 +1205,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			)
 			loaded := false
 			for attempt := 0; attempt < 10; attempt++ {
-				convResult = s.db.WithContext(ctx).
+				convResult = db.
 					Where("id = ? AND deleted_at IS NULL", conversationID).
 					Limit(1).
 					Find(&conv)
@@ -1231,7 +1280,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			IndexedContent:      req.IndexedContent,
 			CreatedAt:           now,
 		}
-		if err := s.db.WithContext(ctx).Create(&entry).Error; err != nil {
+		if err := db.Create(&entry).Error; err != nil {
 			return nil, fmt.Errorf("failed to append entry: %w", err)
 		}
 		entry.Content = req.Content // return unencrypted
@@ -1244,7 +1293,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			if e.Channel == model.ChannelHistory {
 				title := deriveTitleFromContent(string(e.Content))
 				if title != "" {
-					s.db.WithContext(ctx).Model(&model.Conversation{}).Where("id = ?", conversationID).Update("title", title)
+					db.Model(&model.Conversation{}).Where("id = ?", conversationID).Update("title", title)
 				}
 				break
 			}
@@ -1252,7 +1301,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 	}
 
 	// Update conversation timestamp
-	s.db.WithContext(ctx).Model(&model.Conversation{}).Where("id = ?", conversationID).Update("updated_at", now)
+	db.Model(&model.Conversation{}).Where("id = ?", conversationID).Update("updated_at", now)
 
 	// Keep memory latest-epoch cache warm after memory appends.
 	if clientID != nil {
@@ -1299,11 +1348,15 @@ func deriveTitleFromContent(content string) string {
 }
 
 func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry registrystore.CreateEntryRequest, clientID string, agentID *string) (*registrystore.SyncResult, error) {
+	db, err := s.writeDBFor(ctx, "sync agent entry")
+	if err != nil {
+		return nil, err
+	}
 	incomingContent := parseContentArray(entry.Content)
 
 	autoCreated := false
 	var conv model.Conversation
-	result := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", conversationID).Limit(1).Find(&conv)
+	result := db.Where("id = ? AND deleted_at IS NULL", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -1312,7 +1365,6 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		if len(incomingContent) == 0 {
 			return &registrystore.SyncResult{NoOp: true}, nil
 		}
-		var err error
 		conv, err = s.autoCreateConversation(ctx, userID, clientID, conversationID, agentID)
 		if err != nil {
 			return nil, err
@@ -1417,7 +1469,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		IndexedContent:      entry.IndexedContent,
 		CreatedAt:           now,
 	}
-	if err := s.db.WithContext(ctx).Create(&newEntry).Error; err != nil {
+	if err := db.Create(&newEntry).Error; err != nil {
 		return nil, fmt.Errorf("failed to sync entry: %w", err)
 	}
 	newEntry.Content = appendContent
@@ -1427,6 +1479,10 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 
 // autoCreateConversation creates a conversation with a given ID for sync auto-creation.
 func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID uuid.UUID, agentID *string) (model.Conversation, error) {
+	db, err := s.writeDBFor(ctx, "auto-create conversation")
+	if err != nil {
+		return model.Conversation{}, err
+	}
 	now := time.Now()
 	groupID := uuid.New()
 
@@ -1434,7 +1490,7 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 		ID:        groupID,
 		CreatedAt: now,
 	}
-	if err := s.db.WithContext(ctx).Create(&group).Error; err != nil {
+	if err := db.Create(&group).Error; err != nil {
 		logDuplicateKey("autoCreateConversation:createGroup", err,
 			"userID", userID,
 			"conversationID", conversationID.String(),
@@ -1452,9 +1508,9 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 		CreatedAt:           now,
 		UpdatedAt:           now,
 	}
-	if err := s.db.WithContext(ctx).Create(&conv).Error; err != nil {
+	if err := db.Create(&conv).Error; err != nil {
 		// Clean up the orphaned group before handling the error.
-		_ = s.db.WithContext(ctx).Delete(&group).Error
+		_ = db.Delete(&group).Error
 		logDuplicateKey("autoCreateConversation:createConversation", err,
 			"userID", userID,
 			"conversationID", conversationID.String(),
@@ -1463,7 +1519,7 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 		if _, ok := pgUniqueViolation(err); ok {
 			// A concurrent request already created this conversation; fetch and return it.
 			var existing model.Conversation
-			if findErr := s.db.WithContext(ctx).Limit(1).Find(&existing, "id = ?", conversationID).Error; findErr != nil {
+			if findErr := db.Limit(1).Find(&existing, "id = ?", conversationID).Error; findErr != nil {
 				return model.Conversation{}, fmt.Errorf("failed to fetch existing conversation: %w", findErr)
 			}
 			return existing, nil
@@ -1477,7 +1533,7 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 		AccessLevel:         model.AccessLevelOwner,
 		CreatedAt:           now,
 	}
-	if err := s.db.WithContext(ctx).Create(&membership).Error; err != nil {
+	if err := db.Create(&membership).Error; err != nil {
 		return model.Conversation{}, fmt.Errorf("failed to create membership: %w", err)
 	}
 
@@ -2411,7 +2467,7 @@ func (s *PostgresStore) AdminGetAttachmentByStorageKey(ctx context.Context, stor
 
 func (s *PostgresStore) requireAccess(ctx context.Context, userID string, groupID uuid.UUID, minLevel model.AccessLevel) (model.AccessLevel, error) {
 	var m model.ConversationMembership
-	result := s.db.WithContext(ctx).
+	result := s.dbFor(ctx).
 		Where("conversation_group_id = ? AND user_id = ?", groupID, userID).
 		Limit(1).
 		Find(&m)
@@ -2516,7 +2572,7 @@ func (s *PostgresStore) warmEntriesCache(ctx context.Context, conv model.Convers
 
 func (s *PostgresStore) listEntriesForGroup(ctx context.Context, groupID uuid.UUID) ([]model.Entry, error) {
 	var entries []model.Entry
-	if err := s.db.WithContext(ctx).
+	if err := s.dbFor(ctx).
 		Where("conversation_group_id = ?", groupID).
 		Order("created_at ASC").
 		Find(&entries).Error; err != nil {
@@ -2527,7 +2583,7 @@ func (s *PostgresStore) listEntriesForGroup(ctx context.Context, groupID uuid.UU
 
 func (s *PostgresStore) buildAncestryStack(ctx context.Context, target model.Conversation) ([]forkAncestor, error) {
 	var conversations []model.Conversation
-	if err := s.db.WithContext(ctx).
+	if err := s.dbFor(ctx).
 		Where("conversation_group_id = ? AND deleted_at IS NULL", target.ConversationGroupID).
 		Find(&conversations).Error; err != nil {
 		return nil, fmt.Errorf("failed to load fork ancestry: %w", err)
@@ -3030,7 +3086,7 @@ func (s *PostgresStore) DeleteAttachment(ctx context.Context, userID string, con
 // GORM logging "record not found" when absence is expected control flow.
 func (s *PostgresStore) lookupConversation(ctx context.Context, where string, args ...interface{}) (model.Conversation, bool, error) {
 	var conv model.Conversation
-	result := s.db.WithContext(ctx).Where(where, args...).Limit(1).Find(&conv)
+	result := s.dbFor(ctx).Where(where, args...).Limit(1).Find(&conv)
 	if result.Error != nil {
 		return conv, false, result.Error
 	}

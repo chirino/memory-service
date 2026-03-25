@@ -1,50 +1,157 @@
 ---
 layout: ../../../layouts/DocsLayout.astro
 title: Real-Time Events
-description: Subscribe to server-sent events for real-time cache invalidation — conversation changes, entry appends, response recording lifecycle, and sharing updates.
+description: Use real-time events either as lightweight frontend cache invalidation hints or as durable replayable notifications for reliable consumers.
 ---
 
 import TestScenario from "../../../components/TestScenario.astro";
 import CurlTest from "../../../components/CurlTest.astro";
 
-Events provide real-time notifications for cache invalidation. Frontends subscribe to an SSE stream and receive lightweight JSON events when resources change. Events are best-effort cache invalidation hints — on receiving an event, refetch the affected resource. Never rely on events as a source of record.
+Memory Service events support two different consumption models:
+
+- **Frontend cache invalidation**: subscribe to the live stream, treat each event as a hint, and refetch the affected resource.
+- **Reliable event delivery**: when the outbox is enabled and the datastore supports replay, reconnect with a durable cursor and continue from the last processed event.
+
+Those two models use the same event kinds, but they are configured and operated differently. The biggest difference is what the consumer persists.
+
+## Choose the Right Model
+
+| Use case                    | Recommended options                                             | What the consumer stores                                                                                         | Recovery model                                                                                                                                                                         |
+| --------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Frontend cache invalidation | `GET /v1/events?detail=summary`                                 | Usually no durable event state. Store normal UI cache/query state only.                                          | On disconnect, `stream/invalidate`, or uncertainty, reconnect and refetch visible data.                                                                                                |
+| Reliable event delivery     | `GET /v1/events?after=<cursor>&detail=summary` or `detail=full` | The last fully processed opaque cursor, stored durably alongside the consumer's own projection/checkpoint state. | Handle `stream/phase` transitions between `replay` and `live`. If recovery falls beyond retention or the stream closes, resume with `after=<cursor>` or rebuild from source-of-record. |
+
+Use the frontend model when your UI already has REST reads and just needs a push signal to invalidate cached queries.
+
+Use the reliable model when a worker, projector, or integration must avoid missing events across reconnects. That path requires:
+
+- `MEMORY_SERVICE_OUTBOX_ENABLED=true`
+- A datastore that implements durable replay for the event outbox
+- Durable storage on the consumer side for the last processed cursor
 
 ## Event Format
 
 Each SSE message contains a JSON envelope on a single `data:` line:
 
 ```
-data: {"event":"created","kind":"conversation","data":{"conversation":"<uuid>","conversation_group":"<uuid>"}}
+data: {"event":"created","kind":"entry","data":{"conversation":"<uuid>","conversation_group":"<uuid>","entry":"<uuid>"},"cursor":"<opaque-cursor>"}
 ```
 
-The envelope has three fields:
+The envelope fields are:
 
-- **`event`** — the action that occurred (e.g. `created`, `updated`, `deleted`, `appended`)
-- **`kind`** — the resource type (e.g. `conversation`, `entry`, `response`, `membership`, `stream`)
-- **`data`** — kind-specific payload with identifiers for the affected resource
+- **`event`**: action name
+- **`kind`**: resource type
+- **`data`**: kind-specific payload
+- **`cursor`**: opaque durable replay position when the event came from an outbox-backed stream
 
-A keepalive comment `: keepalive` is sent every 30 seconds to keep the connection alive.
+A keepalive comment `: keepalive` is sent every 30 seconds to keep the connection open.
 
-## Event Kinds and Actions
+### Action Names
 
-| Kind           | Event        | Trigger                                             | `data` Fields                        |
-| -------------- | ------------ | --------------------------------------------------- | ------------------------------------ |
-| `conversation` | `created`    | New conversation created                            | `conversation`, `conversation_group` |
-| `conversation` | `updated`    | Title, metadata, or other conversation-level change | `conversation`, `conversation_group` |
-| `conversation` | `deleted`    | Conversation soft-deleted                           | `conversation`, `conversation_group` |
-| `entry`        | `appended`   | New entry added to a conversation                   | `conversation`, `entry`              |
-| `response`     | `started`    | Response recording session begins                   | `conversation`, `recording`          |
-| `response`     | `completed`  | Response recording session ends successfully        | `conversation`, `recording`          |
-| `response`     | `failed`     | Response recording session fails                    | `conversation`, `recording`          |
-| `membership`   | `added`      | Access granted to a user                            | `conversation_group`, `user`, `role` |
-| `membership`   | `updated`    | Access level changed                                | `conversation_group`, `user`, `role` |
-| `membership`   | `removed`    | Access revoked from a user                          | `conversation_group`, `user`         |
-| `stream`       | `evicted`    | Server closing connection (slow consumer)           | `reason`                             |
-| `stream`       | `invalidate` | Events may have been missed (pub/sub disruption)    | `reason`                             |
+Business events now use normalized actions:
+
+- `created`
+- `updated`
+- `deleted`
+
+Stream-control events still use:
+
+- `phase`
+- `evicted`
+- `invalidate`
+
+For response-recording lifecycle events, look at both `event` and `data.status`:
+
+- `{"event":"created","kind":"response","data":{"status":"started",...}}`
+- `{"event":"deleted","kind":"response","data":{"status":"completed",...}}`
+- `{"event":"deleted","kind":"response","data":{"status":"failed",...}}`
+
+## Detail Modes
+
+The event stream supports two payload modes:
+
+- **`detail=summary`**: default. `data` contains identifiers and a small amount of routing metadata.
+- **`detail=full`**: the server enriches business events before sending them.
+
+With `detail=full`:
+
+- `conversation` events carry the full conversation payload.
+- `entry` events carry the full entry payload.
+- `response` events are unchanged from `summary`; they keep the compact `conversation`, `conversation_group`, `recording`, and `status` fields.
+- `stream` events are never enriched.
+
+For frontend cache invalidation, `summary` is usually the right choice because the client already knows how to refetch.
+
+For reliable consumers, choose:
+
+- `summary` if the consumer wants small events and will fetch details itself.
+- `full` if the consumer wants to project directly from enriched `conversation` and `entry` events and can tolerate larger payloads.
+
+## Event Kinds
+
+This table shows the default `detail=summary` payload shape.
+
+| Kind           | Event        | Summary `data` fields                                       | Notes                                                                                                                                                                     |
+| -------------- | ------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversation` | `created`    | `conversation`, `conversation_group`                        | New conversation visible to the user                                                                                                                                      |
+| `conversation` | `updated`    | `conversation`, `conversation_group`                        | Title or metadata changed                                                                                                                                                 |
+| `conversation` | `deleted`    | `conversation`, `conversation_group`, `members`             | `members` may be included so affected users can be targeted                                                                                                               |
+| `entry`        | `created`    | `conversation`, `conversation_group`, `entry`               | New entry appended                                                                                                                                                        |
+| `response`     | `created`    | `conversation`, `conversation_group`, `recording`, `status` | `status` is currently `started`                                                                                                                                           |
+| `response`     | `deleted`    | `conversation`, `conversation_group`, `recording`, `status` | `status` is currently `completed` or `failed`                                                                                                                             |
+| `membership`   | `created`    | `conversation_group`, `user`, `role`                        | Access granted                                                                                                                                                            |
+| `membership`   | `updated`    | `conversation_group`, `user`, `role`                        | Access level changed                                                                                                                                                      |
+| `membership`   | `deleted`    | `conversation_group`, `user`                                | Access removed                                                                                                                                                            |
+| `stream`       | `phase`      | `phase`                                                     | Stream phase marker. `phase` is `replay` or `live`. Tail-only streams start at `live`. Replay streams emit `replay` before catch-up and `live` after they reach the tail. |
+| `stream`       | `evicted`    | `reason`                                                    | Connection closed, often for slow-consumer or replacement reasons                                                                                                         |
+| `stream`       | `invalidate` | `reason`                                                    | Caller must assume events may have been missed                                                                                                                            |
+
+## Frontend Cache Invalidation
+
+This is the existing UI-oriented pattern.
+
+Subscribe without `after` and keep the handler simple:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-token)" \
+  "http://localhost:9090/v1/events?detail=summary"
+```
+
+Typical frontend behavior:
+
+- Filter with `kinds=...` if you only need a subset.
+- On `conversation`, `entry`, `response`, or `membership`, invalidate the corresponding query cache and refetch.
+- On `stream/invalidate`, do a broad cache refresh.
+- On disconnect or `stream/evicted`, reconnect and refetch the visible data set.
+
+In this model, the frontend usually stores no durable event position. It stores normal application state, not a replay cursor.
+
+## Reliable Event Delivery
+
+This is the replayable consumer model for workers and downstream projections.
+
+Start by storing the last fully processed event cursor in your own durable store. That cursor is opaque. Do not parse it, sort it, or synthesize your own.
+
+Then subscribe with that cursor:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-token)" \
+  "http://localhost:9090/v1/events?after=${LAST_CURSOR}&detail=full"
+```
+
+Consumer rules for this mode:
+
+- Persist the new cursor only after your own side effects or projection updates succeed.
+- Keep the cursor with the state it protects, so recovery is atomic from the consumer's point of view.
+- Watch for `stream` / `phase` events if you need to know whether the stream is replaying historical events or has reached the live tail.
+- Treat `stream/invalidate` as a loss-of-guarantee signal.
+- If the server reports that the cursor is beyond retention, rebuild from source-of-record and restart from a fresh checkpoint.
+
+If `after` is rejected, the server returns an explicit not-implemented error for replay. On REST SSE that is an HTTP `501 Not Implemented` response before the stream opens. On gRPC it is an `Unimplemented` error from `SubscribeEvents`. In both cases, live tail-only events may still be supported even though durable replay is not.
 
 ## Subscribing with curl
 
-The SSE endpoint:
+The SSE endpoint is:
 
 ```
 GET /v1/events
@@ -52,46 +159,52 @@ Accept: text/event-stream
 Authorization: Bearer <token>
 ```
 
-An optional `kinds` query parameter (comma-separated) filters which event kinds are delivered:
+Optional query parameters:
+
+- `kinds=conversation,entry,...` filters event kinds.
+- `detail=summary|full` controls payload enrichment.
+- `after=<cursor>` starts in replay mode and requires outbox support.
+
+Examples:
 
 ```bash
 curl -N -H "Authorization: Bearer $(get-token)" \
-  http://localhost:8080/v1/events
+  "http://localhost:9090/v1/events?kinds=conversation,entry"
 ```
-
-With a filter to receive only conversation and entry events:
 
 ```bash
 curl -N -H "Authorization: Bearer $(get-token)" \
-  "http://localhost:8080/v1/events?kinds=conversation,entry"
+  "http://localhost:9090/v1/events?after=${LAST_CURSOR}&detail=summary"
 ```
+
+The same concepts also exist on gRPC `EventStreamService.SubscribeEvents` using `after_cursor` and `detail`.
 
 ## Walkthrough
 
-Open two terminals side by side to see events in real time.
+Open two terminals side by side to see summary events in real time.
 
-**Terminal 1** — subscribe to the event stream:
+**Terminal 1** subscribes to the event stream:
 
 ```bash
 curl -N -H "Authorization: Bearer $(get-token)" \
-  http://localhost:9090/v1/events
+  "http://localhost:9090/v1/events?detail=summary"
 ```
 
-**Terminal 2** — create a conversation and add an entry:
+**Terminal 2** creates a conversation and adds an entry:
 
 ```bash
-# Create a conversation
 curl -sSfX POST http://localhost:9090/chat/e2c9a1b0-0001-4000-8000-000000000001 \
   -H "Content-Type: text/plain" \
   -H "Authorization: Bearer $(get-token)" \
   -d "Hello, this is a test."
 ```
 
-Terminal 1 output shows a `conversation`/`created` event followed by `entry`/`appended` events:
+Terminal 1 shows a `conversation`/`created` event followed by an `entry`/`created` event:
 
 ```
+data: {"event":"phase","kind":"stream","data":{"phase":"live"}}
 data: {"event":"created","kind":"conversation","data":{"conversation":"e2c9a1b0-0001-4000-8000-000000000001","conversation_group":"..."}}
-data: {"event":"appended","kind":"entry","data":{"conversation":"e2c9a1b0-0001-4000-8000-000000000001","entry":"..."}}
+data: {"event":"created","kind":"entry","data":{"conversation":"e2c9a1b0-0001-4000-8000-000000000001","conversation_group":"...","entry":"..."}}
 ```
 
 Update the conversation title:
@@ -173,24 +286,30 @@ curl -sSf http://localhost:9090/v1/conversations/e2c9a1b0-0001-4000-8000-0000000
 
 ## Access Control
 
-Events are filtered by conversation membership. Users only receive events for conversations they have at least reader access to. Stream-level events (`stream` kind) bypass membership filtering because they describe the health of the SSE connection itself, not a specific resource.
+User streams are filtered by conversation membership. Callers only receive events for conversations they can read. Stream-control events bypass membership filtering because they describe the health of the subscription itself, not a specific resource.
+
+Admin streams use `/v1/admin/events`, require admin access plus a `justification` query parameter, and bypass conversation-membership filtering.
 
 ## Connection Lifecycle
 
-**Keepalive**: A `: keepalive` comment is sent every 30 seconds to prevent proxies and load balancers from closing idle connections.
+**Keepalive**: a `: keepalive` comment is sent every 30 seconds.
 
-**Slow consumer eviction**: If a client falls too far behind processing events, the server sends a `stream`/`evicted` event with a `reason` field, then closes the connection. The client should reconnect and do a broad cache refresh.
+**Phase markers**: consumers may receive `stream` / `phase` events with `{"phase":"replay"}` and `{"phase":"live"}`. Tail-only streams start with `live`. Replay-capable streams emit `replay` while catching up and `live` once they reach the current tail.
 
-**Pub/sub recovery**: In multi-node deployments, if the event bus (Redis or PostgreSQL) experiences a disruption, clients receive a `stream`/`invalidate` event. This means events may have been missed during the gap. The client should refresh all cached data.
+**Connection limit**: the server enforces a per-user limit on concurrent SSE connections. When a new connection is established and the user is already at the limit, the oldest local stream is evicted and receives `stream` / `evicted` with reason `too many connections`. The limit is configurable with `MEMORY_SERVICE_SSE_MAX_CONNECTIONS_PER_USER`.
 
-**Disconnection**: On any disconnection, reconnect and do a broad cache refresh. The event stream does not support `Last-Event-ID` replay.
+**Slow consumer handling**: if a client falls too far behind, one of two things happens. Replay-capable SSE streams may switch back to `stream` / `phase` = `replay` on the same connection and catch up from the last cursor. When in-place recovery is not available, the server emits `stream` / `evicted` with reason `slow consumer` and closes the stream. In either case, consumers should keep their last durable cursor so they can resume if the connection is lost.
+
+**Pub/sub recovery**: in multi-node deployments, Redis or PostgreSQL event-bus recovery can emit `stream`/`invalidate` with a reason such as `pubsub recovery`.
+
+**Retention window miss**: replay consumers can also receive `stream`/`invalidate` if their stored cursor has fallen beyond outbox retention.
 
 ## Frontend Integration Tips
 
-- On event receive, invalidate cache entries for the affected resource and refetch.
-- On `stream`/`invalidate`, do a broad cache invalidation across all cached resources.
-- On reconnect after a disconnection, refetch all active data.
-- Never assume the event stream replaces normal REST reads — events are hints, not data.
+- Keep the frontend path simple: treat events as hints, not as your only source of truth.
+- Prefer `detail=summary` for browser clients.
+- Only add durable cursor handling when you actually need replay guarantees.
+- If you proxy the event stream through your agent app, keep the proxy transparent and let the frontend own cache invalidation behavior.
 
 ## Next Steps
 
@@ -200,4 +319,4 @@ Events are filtered by conversation membership. Users only receive events for co
   - [TypeScript Vercel AI Events](/docs/typescript-vecelai/events/)
   - [Quarkus Events](/docs/quarkus/events/)
   - [Spring Events](/docs/spring/events/)
-- Review [Service Configuration](/docs/configuration/) for event bus settings.
+- Review [Service Configuration](/docs/configuration/) for event bus settings and related deployment flags.

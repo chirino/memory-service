@@ -306,7 +306,7 @@ func (p *proxyAPIServer) AdminSubscribeEvents(c *gin.Context, _ generatedapi.Adm
 		c.JSON(http.StatusForbidden, gin.H{"error": "admin role required"})
 		return
 	}
-	routeadmin.HandleAdminSSEEvents(c, p.eventBus, p.cfg)
+	routeadmin.HandleAdminSSEEvents(c, p.store, p.eventBus, p.cfg)
 }
 
 type proxyAdminServer struct {

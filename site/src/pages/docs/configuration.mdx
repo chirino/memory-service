@@ -247,9 +247,12 @@ MEMORY_SERVICE_INFINISPAN_PASSWORD=password`}
 
 ## Event Bus Configuration
 
-The event bus enables real-time Server-Sent Events (SSE) for frontend cache invalidation. Connected clients receive lightweight notifications when
-conversations, entries, or memberships change. Single-node deployments use the default `local` bus; multi-node deployments use one of the other types for
-cross-node fan-out.
+The event bus enables real-time Server-Sent Events (SSE). You can use that stream in two ways:
+
+- Frontend cache invalidation with live, best-effort event delivery
+- Reliable replayable delivery with the event outbox enabled
+
+Single-node deployments use the default `local` bus. Multi-node deployments use one of the other types for cross-node fan-out.
 
 For higher-scale multi-node deployments, prefer `redis` or `infinispan`. The current event routing model is user-scoped, and PostgreSQL LISTEN/NOTIFY does not scale as well with the resulting
 per-user channel fan-out. PostgreSQL remains supported, but it is better suited to smaller clustered installs.
@@ -268,6 +271,24 @@ per-user channel fan-out. PostgreSQL remains supported, but it is better suited 
 | <Cfg p="--sse-membership-cache-ttl" e="MEMORY_SERVICE_SSE_MEMBERSHIP_CACHE_TTL" />         | duration | `5m`    | TTL for local conversation-group membership cache                                      |
 | <Cfg p="--sse-max-connections-per-user" e="MEMORY_SERVICE_SSE_MAX_CONNECTIONS_PER_USER" /> | integer  | `5`     | Max concurrent SSE connections per user; older local streams are evicted when exceeded |
 | <Cfg p="--sse-subscriber-buffer-size" e="MEMORY_SERVICE_SSE_SUBSCRIBER_BUFFER_SIZE" />     | integer  | `64`    | Per-subscriber channel buffer; full buffer triggers eviction                           |
+
+### Event Outbox Settings
+
+Enable the outbox when consumers need durable replay with `/v1/events?after=<cursor>` or gRPC `SubscribeEvents.after_cursor`. Leave it disabled if you only need live frontend cache invalidation.
+
+| Flag / Env Var                                                                     | Values          | Default | Description                                                                  |
+| ---------------------------------------------------------------------------------- | --------------- | ------- | ---------------------------------------------------------------------------- |
+| <Cfg p="--outbox-enabled" e="MEMORY_SERVICE_OUTBOX_ENABLED" />                     | `true`, `false` | `false` | Enable durable event outbox writes and replay-capable event streaming        |
+| <Cfg p="--outbox-replay-batch-size" e="MEMORY_SERVICE_OUTBOX_REPLAY_BATCH_SIZE" /> | integer         | `1000`  | Max outbox events read per replay page before switching back to live tailing |
+
+When `MEMORY_SERVICE_OUTBOX_ENABLED=true`:
+
+- REST SSE supports `GET /v1/events?after=<cursor>`
+- Admin SSE supports `GET /v1/admin/events?after=<cursor>`
+- gRPC supports `SubscribeEvents.after_cursor`
+- Consumers can store the opaque cursor and resume from the last processed event
+
+When it is disabled, the event stream still works for live delivery, but replay is unavailable.
 
 ### Event Bus: Local
 

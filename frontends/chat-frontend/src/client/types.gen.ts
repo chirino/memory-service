@@ -1486,6 +1486,14 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
+         * Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+         */
+        after?: string;
+        /**
+         * Event payload detail level.
+         */
+        detail?: "summary" | "full";
+        /**
          * Comma-separated event kinds to filter (conversation, entry, response, membership).
          */
         kinds?: string;
@@ -1509,6 +1517,14 @@ export type $OpenApiTs = {
   "/v1/admin/events": {
     get: {
       req: {
+        /**
+         * Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+         */
+        after?: string;
+        /**
+         * Event payload detail level.
+         */
+        detail?: "summary" | "full";
         /**
          * Non-empty reason for subscribing (logged for audit).
          */

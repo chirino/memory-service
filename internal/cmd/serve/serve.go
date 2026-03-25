@@ -309,6 +309,22 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.SSESubscriberBufferSize,
 			Usage:       "Per-subscriber channel buffer; full buffer triggers eviction",
 		},
+		&cli.BoolFlag{
+			Name:        "outbox-enabled",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_OUTBOX_ENABLED"),
+			Destination: &cfg.OutboxEnabled,
+			Value:       cfg.OutboxEnabled,
+			Usage:       "Enable durable event replay parameters on event stream endpoints",
+		},
+		&cli.IntFlag{
+			Name:        "outbox-replay-batch-size",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_OUTBOX_REPLAY_BATCH_SIZE"),
+			Destination: &cfg.OutboxReplayBatchSize,
+			Value:       cfg.OutboxReplayBatchSize,
+			Usage:       "Replay page size used by outbox-backed event streams",
+		},
 
 		// ── Attachment Storage ────────────────────────────────────
 		&cli.StringFlag{
