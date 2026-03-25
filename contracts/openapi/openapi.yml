@@ -1529,6 +1529,20 @@ paths:
           schema:
             type: string
           description: Comma-separated event kinds to filter (conversation, entry, response, membership).
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+        - name: detail
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [summary, full]
+            default: summary
+          description: Event payload detail level.
       responses:
         '200':
           description: SSE event stream opened successfully.
@@ -1551,8 +1565,8 @@ paths:
       operationId: adminSubscribeEvents
       summary: Subscribe to all real-time events (admin SSE)
       description: |-
-        Admin-only SSE stream that delivers all events from all users,
-        bypassing membership filtering. Requires admin role and a
+        Admin/auditor SSE stream that delivers all events from all users,
+        bypassing membership filtering. Requires admin or auditor role and a
         justification query parameter for audit logging.
       tags:
         - Admin
@@ -1571,6 +1585,20 @@ paths:
           schema:
             type: string
           description: Comma-separated event kinds to filter.
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+        - name: detail
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [summary, full]
+            default: summary
+          description: Event payload detail level.
       responses:
         '200':
           description: SSE event stream opened successfully.
@@ -1583,7 +1611,7 @@ paths:
         '401':
           description: Authentication required.
         '403':
-          description: Admin role required.
+          description: Admin or auditor role required.
 
 components:
   securitySchemes:

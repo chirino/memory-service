@@ -25,7 +25,7 @@ import (
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
-	"github.com/chirino/memory-service/internal/service/eventing"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -2161,30 +2161,45 @@ type ResponseRecorderServer struct {
 	EventBus registryeventbus.EventBus
 }
 
-func (s *ResponseRecorderServer) publishResponseEvent(ctx context.Context, eventName string, convUUID uuid.UUID, recordingID string) {
-	if s.EventBus == nil {
-		return
-	}
+func (s *ResponseRecorderServer) publishResponseEvent(ctx context.Context, eventName string, statusValue string, convUUID uuid.UUID, recordingID string) {
 	userID := getUserID(ctx)
-	if userID == "" {
+	if s.EventBus == nil || userID == "" {
 		return
 	}
-	conv, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
-		return s.Store.GetConversation(txCtx, userID, convUUID)
+
+	var eventsToPublish []registryeventbus.Event
+	err := inMemoryWrite(ctx, s.Store, func(txCtx context.Context) error {
+		conv, err := s.Store.GetConversation(txCtx, userID, convUUID)
+		if err != nil {
+			return err
+		}
+		events := []registryeventbus.Event{{
+			Event: eventName,
+			Kind:  "response",
+			Data: map[string]any{
+				"conversation":       convUUID,
+				"conversation_group": conv.ConversationGroupID,
+				"recording":          recordingID,
+				"status":             statusValue,
+			},
+			ConversationGroupID: conv.ConversationGroupID,
+		}}
+		appended, used, err := eventstream.AppendOutboxEvents(txCtx, s.Store, events...)
+		if err != nil {
+			return err
+		}
+		if used {
+			eventsToPublish = appended
+		} else {
+			eventsToPublish = events
+		}
+		return nil
 	})
 	if err != nil {
-		log.Warn("Failed to get conversation for response event", "err", err)
+		log.Warn("Failed to build response event", "err", err)
 		return
 	}
-	if err := eventing.PublishToGroup(ctx, s.Store, s.EventBus, conv.ConversationGroupID, registryeventbus.Event{
-		Event: eventName,
-		Kind:  "response",
-		Data: map[string]any{
-			"conversation": convUUID,
-			"recording":    recordingID,
-		},
-		ConversationGroupID: conv.ConversationGroupID,
-	}); err != nil {
+	if err := eventstream.PublishEvents(ctx, s.Store, s.EventBus, eventsToPublish...); err != nil {
 		log.Warn("Failed to publish response event", "err", err)
 	}
 }
@@ -2207,7 +2222,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 		if err := recorder.Complete(); err != nil {
 			log.Warn("failed to clean up response recorder after stream error", "conversation_id", convID, "error", err)
 		}
-		s.publishResponseEvent(stream.Context(), "failed", convUUID, convID)
+		s.publishResponseEvent(stream.Context(), "deleted", "failed", convUUID, convID)
 	}()
 
 	type recvResult struct {
@@ -2240,7 +2255,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 					return status.Error(codes.Internal, err.Error())
 				}
 			}
-			s.publishResponseEvent(stream.Context(), "failed", convUUID, convID)
+			s.publishResponseEvent(stream.Context(), "deleted", "failed", convUUID, convID)
 			return stream.SendAndClose(&pb.RecordResponse{
 				Status: pb.RecordStatus_RECORD_STATUS_CANCELLED,
 			})
@@ -2253,7 +2268,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 						return status.Error(codes.Internal, err.Error())
 					}
 				}
-				s.publishResponseEvent(stream.Context(), "completed", convUUID, convID)
+				s.publishResponseEvent(stream.Context(), "deleted", "completed", convUUID, convID)
 				return stream.SendAndClose(&pb.RecordResponse{
 					Status: pb.RecordStatus_RECORD_STATUS_SUCCESS,
 				})
@@ -2283,7 +2298,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 					log.Warn("record stream: failed to subscribe to cancel channel", "conversation_id", convID, "error", err)
 					return status.Error(codes.Internal, err.Error())
 				}
-				s.publishResponseEvent(stream.Context(), "started", convUUID, convID)
+				s.publishResponseEvent(stream.Context(), "created", "started", convUUID, convID)
 			}
 			if convID == "" {
 				return status.Error(codes.InvalidArgument, "conversation_id is required in first record chunk")
@@ -2304,7 +2319,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 					log.Warn("record stream: complete failed", "conversation_id", convID, "error", err)
 					return status.Error(codes.Internal, err.Error())
 				}
-				s.publishResponseEvent(stream.Context(), "completed", convUUID, convID)
+				s.publishResponseEvent(stream.Context(), "deleted", "completed", convUUID, convID)
 				return stream.SendAndClose(&pb.RecordResponse{
 					Status: pb.RecordStatus_RECORD_STATUS_SUCCESS,
 				})
@@ -2458,6 +2473,16 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	if s.EventBus == nil {
 		return status.Error(codes.Unavailable, "event bus not available")
 	}
+	if req.GetAfterCursor() != "" && (s.Config == nil || !s.Config.OutboxEnabled) {
+		return status.Error(codes.Unimplemented, "after_cursor requires the event outbox to be enabled")
+	}
+	detail := strings.TrimSpace(req.GetDetail())
+	if detail == "" {
+		detail = "summary"
+	}
+	if detail != "summary" && detail != "full" {
+		return status.Error(codes.InvalidArgument, "detail must be one of: summary, full")
+	}
 
 	userID := getUserID(stream.Context())
 
@@ -2469,56 +2494,450 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		}
 	}
 
-	// Subscribe to event bus.
-	sub, err := s.EventBus.Subscribe(stream.Context(), userID)
+	lastCursor := ""
+	outbox, _ := s.Store.(registrystore.EventOutboxStore)
+	resumeCursor := req.GetAfterCursor()
+	replayChecked := resumeCursor != ""
+	replayAvailable := resumeCursor != ""
+
+	if resumeCursor != "" {
+		if outbox == nil {
+			return status.Error(codes.Unimplemented, "durable event replay is not supported by the configured datastore")
+		}
+		if err := eventstream.ReplaySupported(stream.Context(), s.Store, outbox); err != nil {
+			if errors.Is(err, registrystore.ErrOutboxReplayUnsupported) {
+				return status.Error(codes.Unimplemented, "durable event replay is not supported by the configured datastore")
+			}
+			return status.Error(codes.Internal, "failed to initialize event replay")
+		}
+	}
+
+	canRecoverSlowConsumer := func() bool {
+		if s.Config == nil || !s.Config.OutboxEnabled || outbox == nil || lastCursor == "" {
+			return false
+		}
+		if replayChecked {
+			return replayAvailable
+		}
+		if err := eventstream.ReplaySupported(stream.Context(), s.Store, outbox); err != nil {
+			replayChecked = true
+			replayAvailable = false
+			return false
+		}
+		replayChecked = true
+		replayAvailable = true
+		return true
+	}
+
+streamLoop:
+	for {
+		sub, err := s.EventBus.Subscribe(stream.Context(), userID)
+		if err != nil {
+			return status.Error(codes.Internal, "failed to subscribe to event bus")
+		}
+
+		if resumeCursor != "" {
+			if err := sendGRPCPhaseEvent(stream, "replay"); err != nil {
+				return err
+			}
+			outcome, err := s.replayGRPCEvents(stream, outbox, sub, resumeCursor, detail, userID, s.replayBatchSize(), kindsFilter, &lastCursor)
+			if err != nil {
+				return err
+			}
+			switch outcome {
+			case replayGRPCClosed:
+				return nil
+			case replayGRPCRecover:
+				if canRecoverSlowConsumer() {
+					resumeCursor = lastCursor
+					continue streamLoop
+				}
+				evictData, _ := json.Marshal(map[string]string{"reason": "slow consumer"})
+				_ = stream.Send(&pb.EventNotification{
+					Event:  "evicted",
+					Kind:   "stream",
+					Data:   evictData,
+					Cursor: eventCursorPtr(lastCursor),
+				})
+				return nil
+			case replayGRPCContinue:
+				resumeCursor = ""
+			}
+		}
+
+		if err := sendGRPCPhaseEvent(stream, "live"); err != nil {
+			return err
+		}
+
+		for {
+			select {
+			case <-stream.Context().Done():
+				return nil
+			case event, ok := <-sub:
+				if !ok {
+					if canRecoverSlowConsumer() {
+						resumeCursor = lastCursor
+						continue streamLoop
+					}
+					evictData, _ := json.Marshal(map[string]string{"reason": "slow consumer"})
+					_ = stream.Send(&pb.EventNotification{
+						Event:  "evicted",
+						Kind:   "stream",
+						Data:   evictData,
+						Cursor: eventCursorPtr(lastCursor),
+					})
+					return nil
+				}
+
+				if event.Internal {
+					continue
+				}
+				if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
+					continue
+				}
+
+				// Stream events bypass membership filtering.
+				if event.Kind == "stream" {
+					if err := sendGRPCEvent(stream, event); err != nil {
+						return err
+					}
+					continue
+				}
+
+				if event.OutboxCursor != "" {
+					lastCursor = event.OutboxCursor
+				}
+				enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
+				if err != nil {
+					return status.Error(codes.Internal, "failed to enrich event")
+				}
+				if !ok {
+					continue
+				}
+				if err := sendGRPCEvent(stream, enriched); err != nil {
+					return err
+				}
+			}
+		}
+	}
+}
+
+func eventCursorPtr(cursor string) *string {
+	if cursor == "" {
+		return nil
+	}
+	return &cursor
+}
+
+func sendGRPCEvent(stream pb.EventStreamService_SubscribeEventsServer, event registryeventbus.Event) error {
+	data, err := json.Marshal(event.Data)
 	if err != nil {
-		return status.Error(codes.Internal, "failed to subscribe to event bus")
+		return err
+	}
+	return stream.Send(&pb.EventNotification{
+		Event:  event.Event,
+		Kind:   event.Kind,
+		Data:   data,
+		Cursor: eventCursorPtr(event.OutboxCursor),
+	})
+}
+
+func sendGRPCPhaseEvent(stream pb.EventStreamService_SubscribeEventsServer, phase string) error {
+	return sendGRPCEvent(stream, registryeventbus.Event{
+		Event: "phase",
+		Kind:  "stream",
+		Data:  map[string]string{"phase": phase},
+	})
+}
+
+type replayGRPCOutcome int
+
+const (
+	replayGRPCContinue replayGRPCOutcome = iota
+	replayGRPCClosed
+	replayGRPCRecover
+)
+
+func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail, userID string, batchSize int, kindsFilter map[string]bool, lastCursor *string) (replayGRPCOutcome, error) {
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+	visibleGroups, err := s.loadReplayGroups(stream.Context(), userID)
+	if err != nil {
+		return replayGRPCClosed, status.Error(codes.Internal, "failed to preload replay membership state")
+	}
+	query := registrystore.OutboxQuery{
+		AfterCursor: afterCursor,
+		Limit:       batchSize,
+		Kinds:       grpcMapKeys(kindsFilter),
+	}
+	seen := map[string]struct{}{}
+	cursor := afterCursor
+
+	for {
+		query.AfterCursor = cursor
+		var page *registrystore.OutboxPage
+		err := s.Store.InReadTx(stream.Context(), func(txCtx context.Context) error {
+			var err error
+			page, err = outbox.ListOutboxEvents(txCtx, query)
+			return err
+		})
+		if err != nil {
+			if err == registrystore.ErrStaleOutboxCursor {
+				invalidateData, _ := json.Marshal(map[string]string{"reason": "cursor beyond retention window"})
+				_ = stream.Send(&pb.EventNotification{
+					Event: "invalidate",
+					Kind:  "stream",
+					Data:  invalidateData,
+				})
+				return replayGRPCClosed, nil
+			}
+			return replayGRPCClosed, status.Error(codes.Internal, "failed to replay outbox events")
+		}
+		if page == nil {
+			break
+		}
+		for _, replayEvent := range page.Events {
+			cursor = replayEvent.Cursor
+			event := registryeventbus.Event{
+				Event:        replayEvent.Event,
+				Kind:         replayEvent.Kind,
+				Data:         json.RawMessage(replayEvent.Data),
+				OutboxCursor: replayEvent.Cursor,
+			}
+			if replayEvent.Cursor != "" {
+				seen[replayEvent.Cursor] = struct{}{}
+				*lastCursor = replayEvent.Cursor
+			}
+			if !grpcUserCanReplayEvent(userID, visibleGroups, event) {
+				continue
+			}
+			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
+			if err != nil {
+				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
+			}
+			if !ok {
+				continue
+			}
+			if err := sendGRPCEvent(stream, enriched); err != nil {
+				return replayGRPCClosed, err
+			}
+		}
+		if !page.HasMore || cursor == "" {
+			break
+		}
 	}
 
 	for {
 		select {
-		case <-stream.Context().Done():
-			return nil
 		case event, ok := <-sub:
 			if !ok {
-				// Evicted — send final event and close.
-				evictData, _ := json.Marshal(map[string]string{"reason": "slow consumer"})
-				_ = stream.Send(&pb.EventNotification{
-					Event: "evicted",
-					Kind:  "stream",
-					Data:  evictData,
-				})
-				return nil
+				return replayGRPCRecover, nil
 			}
-
 			if event.Internal {
 				continue
+			}
+			if event.OutboxCursor != "" {
+				if _, ok := seen[event.OutboxCursor]; ok {
+					continue
+				}
+				*lastCursor = event.OutboxCursor
 			}
 			if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
 				continue
 			}
-
-			// Stream events bypass membership filtering.
-			if event.Kind == "stream" {
-				data, _ := json.Marshal(event.Data)
-				if err := stream.Send(&pb.EventNotification{
-					Event: event.Event,
-					Kind:  event.Kind,
-					Data:  data,
-				}); err != nil {
-					return err
-				}
+			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
+			if err != nil {
+				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
+			}
+			if !ok {
 				continue
 			}
+			if err := sendGRPCEvent(stream, enriched); err != nil {
+				return replayGRPCClosed, err
+			}
+		default:
+			return replayGRPCContinue, nil
+		}
+	}
+}
 
-			jsonData, _ := json.Marshal(event.Data)
-			if err := stream.Send(&pb.EventNotification{
-				Event: event.Event,
-				Kind:  event.Kind,
-				Data:  jsonData,
-			}); err != nil {
-				return err
+func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID, detail string, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
+	if detail != "full" || event.Kind == "stream" {
+		return event, true, nil
+	}
+	data, ok := decodeGRPCEventData(event.Data)
+	if !ok {
+		return event, true, nil
+	}
+
+	switch event.Kind {
+	case "conversation":
+		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
+		if !ok {
+			return event, true, nil
+		}
+		conv, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+			return s.Store.GetConversation(txCtx, userID, conversationID)
+		})
+		if err != nil {
+			return event, false, nil
+		}
+		event.Data = conv
+		return event, true, nil
+	case "entry":
+		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
+		if !ok {
+			return event, true, nil
+		}
+		entryID, ok := decodeGRPCUUIDField(data, "entry")
+		if !ok {
+			return event, true, nil
+		}
+		page, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
+			return s.Store.GetEntries(txCtx, userID, conversationID, nil, 5000, nil, nil, nil, nil, true)
+		})
+		if err != nil {
+			return event, false, nil
+		}
+		if page == nil {
+			return event, false, nil
+		}
+		for i := range page.Data {
+			if page.Data[i].ID == entryID {
+				event.Data = page.Data[i]
+				return event, true, nil
 			}
 		}
+		return event, false, nil
+	default:
+		return event, true, nil
+	}
+}
+
+func decodeGRPCEventData(data any) (map[string]any, bool) {
+	switch typed := data.(type) {
+	case map[string]any:
+		return typed, true
+	case json.RawMessage:
+		var out map[string]any
+		if err := json.Unmarshal(typed, &out); err == nil {
+			return out, true
+		}
+	case []byte:
+		var out map[string]any
+		if err := json.Unmarshal(typed, &out); err == nil {
+			return out, true
+		}
+	}
+	return nil, false
+}
+
+func decodeGRPCUUIDField(data map[string]any, field string) (uuid.UUID, bool) {
+	raw, ok := data[field]
+	if !ok {
+		return uuid.Nil, false
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+func grpcMapKeys(items map[string]bool) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func (s *EventStreamServer) replayBatchSize() int {
+	if s.Config == nil || s.Config.OutboxReplayBatchSize <= 0 {
+		return 1000
+	}
+	return s.Config.OutboxReplayBatchSize
+}
+
+func (s *EventStreamServer) loadReplayGroups(ctx context.Context, userID string) (map[uuid.UUID]bool, error) {
+	visible := map[uuid.UUID]bool{}
+	err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
+		groupIDs, err := s.Store.ListConversationGroupIDs(txCtx, userID)
+		if err != nil {
+			return err
+		}
+		for _, groupID := range groupIDs {
+			visible[groupID] = true
+		}
+		return nil
+	})
+	return visible, err
+}
+
+func grpcUserCanReplayEvent(userID string, visibleGroups map[uuid.UUID]bool, event registryeventbus.Event) bool {
+	if event.Kind == "stream" {
+		return true
+	}
+	data, ok := decodeGRPCEventData(event.Data)
+	if !ok {
+		return false
+	}
+	if event.Kind == "conversation" && event.Event == "deleted" {
+		if members, ok := decodeGRPCUserListField(data, "members"); ok {
+			for _, member := range members {
+				if member == userID {
+					return true
+				}
+			}
+		}
+	}
+	groupID, ok := decodeGRPCUUIDField(data, "conversation_group")
+	if !ok {
+		return false
+	}
+	allowed := visibleGroups[groupID]
+	if event.Kind == "membership" {
+		targetUser, _ := data["user"].(string)
+		if targetUser == userID {
+			allowed = true
+			switch event.Event {
+			case "created", "updated":
+				visibleGroups[groupID] = true
+			case "deleted":
+				delete(visibleGroups, groupID)
+			}
+		}
+	}
+	return allowed
+}
+
+func decodeGRPCUserListField(data map[string]any, field string) ([]string, bool) {
+	raw, ok := data[field]
+	if !ok {
+		return nil, false
+	}
+	switch typed := raw.(type) {
+	case []string:
+		return typed, true
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			value, ok := item.(string)
+			if !ok {
+				continue
+			}
+			out = append(out, value)
+		}
+		return out, len(out) > 0
+	default:
+		return nil, false
 	}
 }

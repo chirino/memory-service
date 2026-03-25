@@ -56,6 +56,7 @@ When you discover something meaningful about this project during your work—arc
 - In gRPC `EventStreamService.SubscribeEvents`, `SubscribeEventsRequest.conversation_ids` exists in the proto but is not currently applied by the server implementation; only `kinds` filtering is enforced today.
 - Response recording naming is intentionally split by scope: client-side lifecycle APIs use `ResponseRecordingManager` / `RecordingSession`, while record-only server/proto pieces use `ResponseRecorderService` and recorder handles; avoid renaming the umbrella concept back to `ResponseRecorder`.
 - Event stream routing is now user-scoped: publish paths resolve recipient user IDs up front, REST/gRPC `/v1/events` subscribers subscribe by authenticated user, and Redis/PostgreSQL transports fan out on per-user channels plus shared broadcast/admin channels instead of broadcasting every business event to every subscriber.
+- Postgres store gotcha: inside route-scoped transactions, use `dbFor(ctx)` / `writeDBFor(ctx, ...)` rather than `s.db.WithContext(ctx)` for reads/writes that must see uncommitted work. Using the base handle breaks sync auto-create flows and cache warming because conversation-group inserts and entry/cache reads can land on different transactions.
 - List endpoints may include `"afterCursor": null`; docs-test JSON assertions should tolerate additive pagination fields.
 - Attachment download tokens (`/v1/attachments/download/:token/:filename`) are HMAC-signed with `AttachmentSigningSecret`; keep `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET` non-empty, especially with DB attachment stores where storage keys are guessable. The unauthenticated download route is not registered when this secret is unset.
 - Go cache serialization gotcha: `model.Entry` has custom JSON marshaling for `content`; keep marshal/unmarshal behavior symmetric or cached memory entries lose content and break sync/list semantics.
@@ -68,6 +69,7 @@ When you discover something meaningful about this project during your work—arc
 - The demo Quarkus image Dockerfile lives at `./java/quarkus/examples/chat-quarkus/Dockerfile`; repo-root compose/task commands should use that path.
 - Contract specs live in repo-root `contracts/`; Java modules should resolve them from `${maven.multiModuleProjectDirectory}/../contracts`, and the `java/memory-service-contracts` module publishes them via `../../contracts`.
 - The Maven wrapper and reactor root live under `java/`; repo-root Maven commands must use `./java/mvnw -f java/pom.xml ...`.
+- BDD event-stream matrix: keep broad datastore suites on their default config, and cover outbox behavior with dedicated runners (`TestFeaturesPgOutbox`, `TestFeaturesSQLiteOutbox`, `TestFeaturesMongoOutbox`). PostgreSQL is the only gRPC outbox suite; SQLite and Mongo outbox coverage is REST-only.
 
 
 ## Development Guidelines

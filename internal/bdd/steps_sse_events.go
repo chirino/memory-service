@@ -23,12 +23,16 @@ func init() {
 		// Connection management
 		ctx.Step(`^"([^"]*)" is connected to the SSE event stream$`, e.userIsConnectedToSSEStream)
 		ctx.Step(`^"([^"]*)" is connected to the SSE event stream filtered to kinds "([^"]*)"$`, e.userIsConnectedToSSEStreamFilteredToKinds)
+		ctx.Step(`^"([^"]*)" is connected to the SSE event stream with query "([^"]*)"$`, e.userIsConnectedToSSEStreamWithQuery)
 		ctx.Step(`^"([^"]*)" is connected to the admin SSE event stream with justification "([^"]*)"$`, e.userIsConnectedToAdminSSEStream)
+		ctx.Step(`^"([^"]*)" is connected to the admin SSE event stream with query "([^"]*)"$`, e.userIsConnectedToAdminSSEStreamWithQuery)
 
 		// Event assertions
 		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)" within (\d+) seconds$`, e.userShouldReceiveSSEEvent)
 		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)"$`, e.userShouldReceiveSSEEventDefault)
+		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)" where data "([^"]*)" is "([^"]*)"$`, e.userShouldReceiveSSEEventWithDataField)
 		ctx.Step(`^"([^"]*)" should not receive any SSE event within (\d+) seconds$`, e.userShouldNotReceiveSSEEvent)
+		ctx.Step(`^the SSE event cursor should be saved as "([^"]*)"$`, e.saveSSEEventCursor)
 		ctx.Step(`^the SSE event data should contain "([^"]*)"$`, e.sseEventDataShouldContain)
 		ctx.Step(`^the SSE event data "([^"]*)" should be "([^"]*)"$`, e.sseEventDataFieldShouldBe)
 
@@ -70,7 +74,12 @@ func (e *sseEventSteps) openSSEStream(userID, path string) error {
 	subject := e.s.IsolatedUser(userID)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	url := e.s.Suite.APIURL + path
+	expandedPath, err := e.s.Expand(path)
+	if err != nil {
+		cancel()
+		return err
+	}
+	url := e.s.Suite.APIURL + expandedPath
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -148,12 +157,60 @@ func (e *sseEventSteps) userIsConnectedToSSEStreamFilteredToKinds(userID, kinds 
 	return e.openSSEStream(userID, "/v1/events?kinds="+kinds)
 }
 
+func (e *sseEventSteps) userIsConnectedToSSEStreamWithQuery(userID, query string) error {
+	if strings.TrimSpace(query) == "" {
+		return e.openSSEStream(userID, "/v1/events")
+	}
+	return e.openSSEStream(userID, "/v1/events?"+query)
+}
+
 func (e *sseEventSteps) userIsConnectedToAdminSSEStream(userID, justification string) error {
 	return e.openSSEStream(userID, "/v1/admin/events?justification="+url.QueryEscape(justification))
 }
 
+func (e *sseEventSteps) userIsConnectedToAdminSSEStreamWithQuery(userID, query string) error {
+	if strings.TrimSpace(query) == "" {
+		return e.openSSEStream(userID, "/v1/admin/events")
+	}
+	return e.openSSEStream(userID, "/v1/admin/events?"+query)
+}
+
 func (e *sseEventSteps) userShouldReceiveSSEEventDefault(userID, kind, event string) error {
 	return e.userShouldReceiveSSEEvent(userID, kind, event, 5)
+}
+
+func (e *sseEventSteps) userShouldReceiveSSEEventWithDataField(userID, kind, eventType, field, expected string) error {
+	e.mu.Lock()
+	stream, ok := e.streams[userID]
+	e.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no SSE stream open for user %q", userID)
+	}
+
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case evt, ok := <-stream.events:
+			if !ok {
+				return fmt.Errorf("SSE stream for %q closed before receiving kind=%q event=%q with %s=%q", userID, kind, eventType, field, expected)
+			}
+			if evt["kind"] != kind || evt["event"] != eventType {
+				continue
+			}
+			data, ok := evt["data"].(map[string]any)
+			if !ok {
+				continue
+			}
+			actual := fmt.Sprintf("%v", data[field])
+			if actual != expected {
+				continue
+			}
+			e.lastEvent = evt
+			return nil
+		case <-timeout:
+			return fmt.Errorf("timed out after 5s waiting for SSE event kind=%q event=%q with %s=%q for user %q", kind, eventType, field, expected, userID)
+		}
+	}
 }
 
 func (e *sseEventSteps) userShouldReceiveSSEEvent(userID, kind, eventType string, timeoutSec int) error {
@@ -191,15 +248,32 @@ func (e *sseEventSteps) userShouldNotReceiveSSEEvent(userID string, timeoutSec i
 	}
 
 	timeout := time.After(time.Duration(timeoutSec) * time.Second)
-	select {
-	case evt, ok := <-stream.events:
-		if !ok {
-			return nil // Stream closed — no events.
+	for {
+		select {
+		case evt, ok := <-stream.events:
+			if !ok {
+				return nil // Stream closed — no events.
+			}
+			if evt["kind"] == "stream" && evt["event"] == "phase" {
+				continue
+			}
+			return fmt.Errorf("expected no SSE event for %q within %ds, but received: %v", userID, timeoutSec, evt)
+		case <-timeout:
+			return nil // Good — no event received within the timeout.
 		}
-		return fmt.Errorf("expected no SSE event for %q within %ds, but received: %v", userID, timeoutSec, evt)
-	case <-timeout:
-		return nil // Good — no event received within the timeout.
 	}
+}
+
+func (e *sseEventSteps) saveSSEEventCursor(varName string) error {
+	if e.lastEvent == nil {
+		return fmt.Errorf("no SSE event captured for assertion")
+	}
+	cursor, ok := e.lastEvent["cursor"].(string)
+	if !ok || strings.TrimSpace(cursor) == "" {
+		return fmt.Errorf("SSE event has no cursor: %v", e.lastEvent)
+	}
+	e.s.Variables[varName] = cursor
+	return nil
 }
 
 func (e *sseEventSteps) sseEventDataShouldContain(field string) error {

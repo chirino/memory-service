@@ -67,6 +67,12 @@ const (
 	Qdrant   SearchResultKind = "qdrant"
 )
 
+// Defines values for AdminSubscribeEventsParamsDetail.
+const (
+	AdminSubscribeEventsParamsDetailFull    AdminSubscribeEventsParamsDetail = "full"
+	AdminSubscribeEventsParamsDetailSummary AdminSubscribeEventsParamsDetail = "summary"
+)
+
 // Defines values for ListConversationsParamsMode.
 const (
 	ListConversationsParamsModeAll        ListConversationsParamsMode = "all"
@@ -85,6 +91,12 @@ const (
 const (
 	ListConversationEntriesParamsForksAll  ListConversationEntriesParamsForks = "all"
 	ListConversationEntriesParamsForksNone ListConversationEntriesParamsForks = "none"
+)
+
+// Defines values for SubscribeEventsParamsDetail.
+const (
+	SubscribeEventsParamsDetailFull    SubscribeEventsParamsDetail = "full"
+	SubscribeEventsParamsDetailSummary SubscribeEventsParamsDetail = "summary"
 )
 
 // Defines values for ListMemoryEventsParamsKinds.
@@ -700,7 +712,16 @@ type AdminSubscribeEventsParams struct {
 
 	// Kinds Comma-separated event kinds to filter.
 	Kinds *string `form:"kinds,omitempty" json:"kinds,omitempty"`
+
+	// After Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+	After *string `form:"after,omitempty" json:"after,omitempty"`
+
+	// Detail Event payload detail level.
+	Detail *AdminSubscribeEventsParamsDetail `form:"detail,omitempty" json:"detail,omitempty"`
 }
+
+// AdminSubscribeEventsParamsDetail defines parameters for AdminSubscribeEvents.
+type AdminSubscribeEventsParamsDetail string
 
 // UploadAttachmentMultipartBody defines parameters for UploadAttachment.
 type UploadAttachmentMultipartBody struct {
@@ -821,7 +842,16 @@ type UpdateConversationMembershipJSONBody struct {
 type SubscribeEventsParams struct {
 	// Kinds Comma-separated event kinds to filter (conversation, entry, response, membership).
 	Kinds *string `form:"kinds,omitempty" json:"kinds,omitempty"`
+
+	// After Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+	After *string `form:"after,omitempty" json:"after,omitempty"`
+
+	// Detail Event payload detail level.
+	Detail *SubscribeEventsParamsDetail `form:"detail,omitempty" json:"detail,omitempty"`
 }
+
+// SubscribeEventsParamsDetail defines parameters for SubscribeEvents.
+type SubscribeEventsParamsDetail string
 
 // DeleteMemoryParams defines parameters for DeleteMemory.
 type DeleteMemoryParams struct {
@@ -1807,6 +1837,38 @@ func NewAdminSubscribeEventsRequest(server string, params *AdminSubscribeEventsP
 		if params.Kinds != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "kinds", runtime.ParamLocationQuery, *params.Kinds); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.After != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "after", runtime.ParamLocationQuery, *params.After); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Detail != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "detail", runtime.ParamLocationQuery, *params.Detail); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -3080,6 +3142,38 @@ func NewSubscribeEventsRequest(server string, params *SubscribeEventsParams) (*h
 		if params.Kinds != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "kinds", runtime.ParamLocationQuery, *params.Kinds); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.After != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "after", runtime.ParamLocationQuery, *params.After); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Detail != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "detail", runtime.ParamLocationQuery, *params.Detail); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

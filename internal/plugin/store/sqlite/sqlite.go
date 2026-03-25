@@ -95,6 +95,10 @@ type SQLiteStore struct {
 	entriesCache registrycache.MemoryEntriesCache
 }
 
+func (s *SQLiteStore) OutboxEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.OutboxEnabled
+}
+
 func (s *SQLiteStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
 	return s.handle.InReadTx(ctx, fn)
 }

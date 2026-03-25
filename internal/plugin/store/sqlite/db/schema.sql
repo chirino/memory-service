@@ -106,6 +106,19 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_ready
     ON tasks(task_type, retry_at);
 
+CREATE TABLE IF NOT EXISTS outbox_events (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    event TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_events_created_at
+    ON outbox_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_events_kind_seq
+    ON outbox_events(kind, seq);
+
 CREATE TABLE IF NOT EXISTS attachments (
     id TEXT PRIMARY KEY,
     storage_key TEXT,

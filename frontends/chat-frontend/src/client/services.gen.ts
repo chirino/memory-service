@@ -1128,6 +1128,8 @@ export class EventsService {
    * `{"event":"<action>","kind":"<resource>","data":{...}}`
    * @param data The data for the request.
    * @param data.kinds Comma-separated event kinds to filter (conversation, entry, response, membership).
+   * @param data.after Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+   * @param data.detail Event payload detail level.
    * @returns string SSE event stream opened successfully.
    * @throws ApiError
    */
@@ -1139,6 +1141,8 @@ export class EventsService {
       url: "/v1/events",
       query: {
         kinds: data.kinds,
+        after: data.after,
+        detail: data.detail,
       },
       errors: {
         401: "Authentication required.",
@@ -1151,12 +1155,14 @@ export class EventsService {
 export class AdminService {
   /**
    * Subscribe to all real-time events (admin SSE)
-   * Admin-only SSE stream that delivers all events from all users,
-   * bypassing membership filtering. Requires admin role and a
+   * Admin/auditor SSE stream that delivers all events from all users,
+   * bypassing membership filtering. Requires admin or auditor role and a
    * justification query parameter for audit logging.
    * @param data The data for the request.
    * @param data.justification Non-empty reason for subscribing (logged for audit).
    * @param data.kinds Comma-separated event kinds to filter.
+   * @param data.after Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+   * @param data.detail Event payload detail level.
    * @returns string SSE event stream opened successfully.
    * @throws ApiError
    */
@@ -1169,11 +1175,13 @@ export class AdminService {
       query: {
         justification: data.justification,
         kinds: data.kinds,
+        after: data.after,
+        detail: data.detail,
       },
       errors: {
         400: "Missing or empty justification.",
         401: "Authentication required.",
-        403: "Admin role required.",
+        403: "Admin or auditor role required.",
       },
     });
   }

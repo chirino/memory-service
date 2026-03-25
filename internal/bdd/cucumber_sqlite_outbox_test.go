@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFeaturesSQLite(t *testing.T) {
+func TestFeaturesSQLiteOutbox(t *testing.T) {
 	prom := NewMockPrometheus(t)
 	dbURL := filepath.Join(t.TempDir(), "memory.db")
 
@@ -25,6 +25,7 @@ func TestFeaturesSQLite(t *testing.T) {
 	cfg.AttachType = "fs"
 	cfg.VectorType = "none"
 	cfg.SearchSemanticEnabled = false
+	cfg.OutboxEnabled = true
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
@@ -43,19 +44,12 @@ func TestFeaturesSQLite(t *testing.T) {
 	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
-	featureFiles := collectSQLiteRESTFeatures(t)
-	runBDDFeatures(t, "sqlite-rest", featureFiles, apiURL, grpcAddr, &cfg, &SQLiteTestDB{DBURL: dbURL}, map[string]interface{}{
+	featureFiles := []string{
+		filepath.Join("testdata", "features", "sse-events-rest.feature"),
+		filepath.Join("testdata", "features", "sse-events-replay-rest.feature"),
+	}
+	runBDDFeatures(t, "sqlite-outbox", featureFiles, apiURL, grpcAddr, &cfg, &SQLiteTestDB{DBURL: dbURL}, map[string]interface{}{
 		"mockPrometheus": prom,
 		"grpcAddr":       grpcAddr,
-	})
-}
-
-func collectSQLiteRESTFeatures(t *testing.T) []string {
-	t.Helper()
-
-	return collectRESTFeatureFiles(t, "testdata", map[string]bool{
-		"memory-cache-rest.feature":      true,
-		"sse-events-rest.feature":        true,
-		"sse-events-replay-rest.feature": true,
 	})
 }

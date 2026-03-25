@@ -744,13 +744,19 @@ message SubscribeEventsRequest {
   repeated bytes conversation_ids = 1;
   // Optional: filter by event kinds (conversation, entry, response, membership).
   repeated string kinds = 2;
+  // Optional: durable replay cursor. Omit for tail-only mode.
+  optional string after_cursor = 3;
+  // Optional: event detail mode. Supported values are "summary" and "full".
+  optional string detail = 4;
 }
 
 message EventNotification {
-  // Action: created, updated, deleted, appended, started, completed, failed, added, removed, evicted, invalidate
+  // Action: created, updated, deleted, phase, evicted, invalidate
   string event = 1;
   // Resource type: conversation, entry, response, membership, stream
   string kind = 2;
   // Kind-specific payload as JSON-encoded bytes.
   bytes data = 3;
+  // Durable replay cursor when available.
+  optional string cursor = 4;
 }

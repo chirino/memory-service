@@ -72,6 +72,11 @@ func TestFeatures(t *testing.T) {
 		subFiles, _ := filepath.Glob(filepath.Join(parentDir, subdir, "*.feature"))
 		featureFiles = append(featureFiles, subFiles...)
 	}
+	featureFiles = filterFeatureBase(featureFiles, map[string]bool{
+		"sse-events-grpc.feature":        true,
+		"sse-events-rest.feature":        true,
+		"sse-events-replay-rest.feature": true,
+	})
 	featureFiles = filterSerialFeatures(featureFiles, false)
 	require.NotEmpty(t, featureFiles, "No feature files found in %s", featuresDir)
 

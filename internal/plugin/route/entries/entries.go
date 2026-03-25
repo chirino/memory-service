@@ -15,7 +15,7 @@ import (
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
-	"github.com/chirino/memory-service/internal/service/eventing"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -275,11 +275,12 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 	var convExistedBefore bool
 	var groupID uuid.UUID
 	var result []model.Entry
-	if err := routetx.MemoryWrite(c, store, func(context.Context) error {
+	var eventsToPublish []registryeventbus.Event
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		// Check if conversation exists before append — if not, AppendEntries will auto-create it
 		// and we need to publish a conversation/created event. Must be inside the transaction
 		// scope for SQLite which requires InReadTx/InWriteTx.
-		existingConv, _ := store.GetConversation(c.Request.Context(), userID, convID)
+		existingConv, _ := store.GetConversation(ctx, userID, convID)
 		convExistedBefore = existingConv != nil
 		// Resolve attachmentId references inside the write scope so SQLite
 		// attachment lookups and cross-link record creation see the required tx context.
@@ -293,7 +294,7 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 			if ch != model.ChannelHistory {
 				continue
 			}
-			modified, links, err := resolveAttachmentRefs(c.Request.Context(), store, userID, convID, entry.Content)
+			modified, links, err := resolveAttachmentRefs(ctx, store, userID, convID, entry.Content)
 			if err != nil {
 				return err
 			}
@@ -306,7 +307,7 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		}
 
 		var err error
-		result, err = store.AppendEntries(c.Request.Context(), userID, convID, entries, clientID, agentID, req.Epoch)
+		result, err = store.AppendEntries(ctx, userID, convID, entries, clientID, agentID, req.Epoch)
 		if err != nil {
 			return err
 		}
@@ -315,7 +316,7 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		for _, link := range pendingLinks {
 			if link.entryIndex < len(result) {
 				entryID := result[link.entryIndex].ID
-				if _, err := store.UpdateAttachment(c.Request.Context(), userID, link.attachmentID, registrystore.AttachmentUpdate{
+				if _, err := store.UpdateAttachment(ctx, userID, link.attachmentID, registrystore.AttachmentUpdate{
 					EntryID: &entryID,
 				}); err != nil {
 					return err
@@ -325,11 +326,46 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 
 		// Resolve group ID inside the transaction for SQLite compatibility.
 		if eventBus != nil && len(result) > 0 {
-			gid, gErr := store.GetEntryGroupID(c.Request.Context(), result[0].ID)
+			gid, gErr := store.GetEntryGroupID(ctx, result[0].ID)
 			if gErr != nil {
 				log.Warn("Failed to resolve group ID for entry event", "err", gErr)
 			} else {
 				groupID = gid
+			}
+		}
+		if len(result) > 0 && groupID != uuid.Nil {
+			events := make([]registryeventbus.Event, 0, len(result)+1)
+			if !convExistedBefore {
+				events = append(events, registryeventbus.Event{
+					Event: "created",
+					Kind:  "conversation",
+					Data: map[string]any{
+						"conversation":       convID,
+						"conversation_group": groupID,
+					},
+					ConversationGroupID: groupID,
+				})
+			}
+			for _, entry := range result {
+				events = append(events, registryeventbus.Event{
+					Event: "created",
+					Kind:  "entry",
+					Data: map[string]any{
+						"conversation":       entry.ConversationID,
+						"conversation_group": groupID,
+						"entry":              entry.ID,
+					},
+					ConversationGroupID: groupID,
+				})
+			}
+			appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+			if err != nil {
+				return err
+			}
+			if used {
+				eventsToPublish = appended
+			} else {
+				eventsToPublish = events
 			}
 		}
 
@@ -349,33 +385,9 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		return
 	}
 	// Publish events after successful transaction.
-	if eventBus != nil && len(result) > 0 && groupID != uuid.Nil {
-		// If conversation was auto-created by this append, publish conversation/created.
-		if !convExistedBefore {
-			if err := eventing.PublishToGroup(c.Request.Context(), store, eventBus, groupID, registryeventbus.Event{
-				Event: "created",
-				Kind:  "conversation",
-				Data: map[string]any{
-					"conversation":       convID,
-					"conversation_group": groupID,
-				},
-				ConversationGroupID: groupID,
-			}); err != nil {
-				log.Warn("Failed to publish conversation.created event", "err", err)
-			}
-		}
-		for _, entry := range result {
-			if err := eventing.PublishToGroup(c.Request.Context(), store, eventBus, groupID, registryeventbus.Event{
-				Event: "appended",
-				Kind:  "entry",
-				Data: map[string]any{
-					"conversation": entry.ConversationID,
-					"entry":        entry.ID,
-				},
-				ConversationGroupID: groupID,
-			}); err != nil {
-				log.Warn("Failed to publish entry.appended event", "err", err)
-			}
+	if eventBus != nil && len(eventsToPublish) > 0 {
+		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
+			log.Warn("Failed to publish append events", "err", err)
 		}
 	}
 }

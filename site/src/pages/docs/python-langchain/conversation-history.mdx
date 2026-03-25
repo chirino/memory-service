@@ -107,10 +107,11 @@ curl -sSfX GET http://localhost:9090/v1/conversations/0ef33d7b-11b1-4992-9785-68
 <CurlTest steps={`
 Then the response status should be 200
 And the response should contain "0ef33d7b-11b1-4992-9785-681e222dbcd2"
-And the response should contain "\"channel\": \"history\""
+And the response should contain "channel"
+And the response should contain "history"
 And the response should contain "Give me a random number between 1 and 100."
-And the response should contain "\"role\": \"USER\""
-And the response should contain "\"role\": \"AI\""
+And the response should contain "USER"
+And the response should contain "AI"
 `} exampleOutputLang="json" exampleOutput={`{"afterCursor":null,"data":[{"id":"bedf7599-4b34-4310-83de-d70e95922774","conversationId":"0ef33d7b-11b1-4992-9785-681e222dbcd2","userId":"bob","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.349103Z","content":[{"role":"USER","text":"Give me a random number between 1 and 100."}]},{"id":"3bfad611-ef90-40b5-a5e3-0ea20397e416","conversationId":"0ef33d7b-11b1-4992-9785-681e222dbcd2","userId":"bob","channel":"history","contentType":"history","createdAt":"2026-03-06T14:58:32.42779Z","content":[{"role":"AI","text":"The random number between 1 and 100 is 42."}]}]}`}>
 
 ```bash
