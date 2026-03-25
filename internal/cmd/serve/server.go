@@ -268,7 +268,7 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	go episodicIdx.Start(ctx)
 
 	// Start knowledge clustering goroutine (if enabled).
-	if cfg.KnowledgeClusteringEnabled && cfg.DatastoreType == "postgres" && cfg.DBURL != "" && vectorStore != nil && vectorStore.IsEnabled() {
+	if cfg.KnowledgeClusteringEnabled && cfg.DatastoreType == "postgres" && cfg.DBURL != "" && cfg.VectorType == "pgvector" && vectorStore != nil && vectorStore.IsEnabled() {
 		knowledgeStore, err := knowledge.OpenPostgresKnowledgeStore(cfg.DBURL)
 		if err != nil {
 			log.Warn("Knowledge clustering: failed to open store", "err", err)
