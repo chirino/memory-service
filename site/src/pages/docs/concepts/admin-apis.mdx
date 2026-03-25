@@ -221,6 +221,20 @@ curl -N -H "Authorization: Bearer $(get-admin-token)" \
 
 The `justification` value is optional by default and is logged for audit purposes when provided. If the server enables `MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION=true`, admin event subscriptions without a justification are rejected with `400 Bad Request`. See [Real-Time Events](/docs/concepts/events/) for event format, kinds, and connection lifecycle details.
 
+## Admin Stats Summary Endpoint
+
+`GET /v1/admin/stats/summary` returns a point-in-time inventory snapshot from the configured datastores. It is separate from the Prometheus-backed chart endpoints and works even when Prometheus is not configured.
+
+The response includes nested totals for:
+
+- `conversationGroups`
+- `conversations`
+- `entries`
+- `memories`
+- `outboxEvents`
+
+`conversationGroups.oldestSoftDeletedAt` is the oldest `updatedAt` timestamp among soft-deleted conversations. `memories.oldestSoftDeletedAt` is the oldest memory soft-delete timestamp. `outboxEvents` is `null` when the outbox feature is disabled or unsupported for the active datastore.
+
 ## Next Steps
 
 - Configure admin roles and audit logging in [Service Configuration](/docs/configuration/#admin-access-configuration)

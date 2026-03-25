@@ -804,6 +804,8 @@ Use `/ready` for Kubernetes readiness probes and Docker Compose `healthcheck` (s
 
 When `--prometheus-url` is not configured, admin stats endpoints return **501 Not Implemented**. All other Memory Service functionality works normally.
 
+`GET /v1/admin/stats/summary` is different: it is datastore-backed, does not query Prometheus, and remains available without `--prometheus-url`.
+
 #### Available Stats Endpoints
 
 | Endpoint                              | Description                         |
@@ -813,6 +815,7 @@ When `--prometheus-url` is not configured, admin stats endpoints return **501 No
 | `/v1/admin/stats/latency-p95`         | P95 response latency (seconds)      |
 | `/v1/admin/stats/cache-hit-rate`      | Cache hit rate (percent)            |
 | `/v1/admin/stats/db-pool-utilization` | DB connection pool usage (percent)  |
+| `/v1/admin/stats/summary`             | Current datastore-backed totals     |
 | `/v1/admin/stats/store-latency-p95`   | Store operation P95 latency by type |
 | `/v1/admin/stats/store-throughput`    | Store operations/sec by type        |
 

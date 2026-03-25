@@ -335,5 +335,15 @@ func (m *metricsStore) OutboxEnabled() bool {
 	return ok && provider.OutboxEnabled()
 }
 
+func (m *metricsStore) AdminStatsSummary(ctx context.Context) (*store.AdminStatsSummary, error) {
+	provider, ok := m.inner.(store.AdminStatsSummaryProvider)
+	if !ok {
+		return nil, store.ErrAdminStatsSummaryUnsupported
+	}
+	defer observe("admin_stats_summary", time.Now())
+	return provider.AdminStatsSummary(ctx)
+}
+
 var _ store.EventOutboxStore = (*metricsStore)(nil)
 var _ store.OutboxEnabledProvider = (*metricsStore)(nil)
+var _ store.AdminStatsSummaryProvider = (*metricsStore)(nil)

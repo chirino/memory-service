@@ -10,7 +10,7 @@ tags:
   - name: Admin
     description: Administrative APIs for system-wide access to conversations and entries.
   - name: Admin Stats
-    description: Operational statistics endpoints for admin dashboards. Requires Prometheus to be configured.
+    description: Operational statistics endpoints for admin dashboards, including Prometheus-backed time series and datastore-backed summaries.
   - name: System
     description: Health Endpoints
 paths:
@@ -1259,6 +1259,35 @@ paths:
       security:
         - BearerAuth: []
 
+  /v1/admin/stats/summary:
+    get:
+      tags: [Admin Stats]
+      summary: Get current datastore-backed admin inventory summary
+      description: |-
+        Returns current counts for persisted conversations, entries, memories,
+        and optional outbox retention details. Requires auditor or admin role.
+
+        This endpoint reads directly from the configured datastores. It does not
+        require Prometheus.
+      operationId: getStatsSummary
+      responses:
+        '200':
+          description: Current datastore-backed stats summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsSummaryResponse'
+        '501':
+          description: The configured datastore does not implement summary stats.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
   /v1/admin/stats/store-latency-p95:
     get:
       tags: [Admin Stats]
@@ -1823,6 +1852,103 @@ components:
           description: Time series data points.
           items:
             $ref: '#/components/schemas/TimeSeriesDataPoint'
+
+    AdminStatsSummaryResponse:
+      type: object
+      required:
+        - conversationGroups
+        - conversations
+        - entries
+        - memories
+        - outboxEvents
+      properties:
+        conversationGroups:
+          $ref: '#/components/schemas/AdminConversationGroupStats'
+        conversations:
+          $ref: '#/components/schemas/AdminTotalStats'
+        entries:
+          $ref: '#/components/schemas/AdminTotalStats'
+        memories:
+          $ref: '#/components/schemas/AdminSoftDeletedTotalStats'
+        outboxEvents:
+          allOf:
+            - $ref: '#/components/schemas/AdminOutboxStats'
+          nullable: true
+
+    AdminTotalStats:
+      type: object
+      required:
+        - total
+      properties:
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 185
+
+    AdminSoftDeletedTotalStats:
+      type: object
+      required:
+        - total
+        - softDeleted
+      properties:
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 93
+        softDeleted:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 11
+        oldestSoftDeletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Oldest soft-delete timestamp for that resource type.
+          example: "2026-03-25T09:15:00Z"
+
+    AdminConversationGroupStats:
+      type: object
+      required:
+        - total
+        - softDeleted
+      properties:
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 120
+        softDeleted:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 7
+        oldestSoftDeletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Oldest `updatedAt` timestamp among soft-deleted conversations.
+          example: "2026-03-25T10:15:00Z"
+
+    AdminOutboxStats:
+      type: object
+      required:
+        - total
+        - oldestAt
+      properties:
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 422
+        oldestAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Oldest retained outbox event timestamp.
+          example: "2026-03-25T10:15:00Z"
 
     TimeSeriesDataPoint:
       type: object
