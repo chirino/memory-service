@@ -5,6 +5,30 @@ import { OpenAPI } from "./core/OpenAPI";
 import { request as __request } from "./core/request";
 import type { $OpenApiTs } from "./types.gen";
 
+export class CapabilitiesService {
+  /**
+   * Get server capabilities for the authenticated client
+   * Returns a secret-free summary of the configured server capabilities and
+   * selected backend technologies for an authenticated agent/app client.
+   * Requires a resolved client context.
+   * @returns CapabilitiesResponse Capability summary for the current client.
+   * @returns ErrorResponse Error response
+   * @throws ApiError
+   */
+  public static getCapabilities(): CancelablePromise<
+    $OpenApiTs["/v1/capabilities"]["get"]["res"][200] | $OpenApiTs["/v1/capabilities"]["get"]["res"][200]
+  > {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/v1/capabilities",
+      errors: {
+        400: "Client context required.",
+        401: "Authentication required.",
+      },
+    });
+  }
+}
+
 export class ConversationsService {
   /**
    * List conversations visible to current user
@@ -1156,10 +1180,12 @@ export class AdminService {
   /**
    * Subscribe to all real-time events (admin SSE)
    * Admin/auditor SSE stream that delivers all events from all users,
-   * bypassing membership filtering. Requires admin or auditor role and a
-   * justification query parameter for audit logging.
+   * bypassing membership filtering. Requires admin or auditor role.
+   * The optional justification query parameter is logged for audit use
+   * when provided, and may be required when admin justification
+   * enforcement is enabled on the server.
    * @param data The data for the request.
-   * @param data.justification Non-empty reason for subscribing (logged for audit).
+   * @param data.justification Optional reason for subscribing, logged for audit when present. Servers configured to require admin justifications reject requests without one.
    * @param data.kinds Comma-separated event kinds to filter.
    * @param data.after Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
    * @param data.detail Event payload detail level.
@@ -1167,7 +1193,7 @@ export class AdminService {
    * @throws ApiError
    */
   public static adminSubscribeEvents(
-    data: $OpenApiTs["/v1/admin/events"]["get"]["req"],
+    data: $OpenApiTs["/v1/admin/events"]["get"]["req"] = {},
   ): CancelablePromise<$OpenApiTs["/v1/admin/events"]["get"]["res"][200]> {
     return __request(OpenAPI, {
       method: "GET",
@@ -1179,7 +1205,7 @@ export class AdminService {
         detail: data.detail,
       },
       errors: {
-        400: "Missing or empty justification.",
+        400: "Invalid request parameters, including missing justification when admin justification enforcement is enabled.",
         401: "Authentication required.",
         403: "Admin or auditor role required.",
       },

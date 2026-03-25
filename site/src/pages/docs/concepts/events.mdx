@@ -288,7 +288,7 @@ curl -sSf http://localhost:9090/v1/conversations/e2c9a1b0-0001-4000-8000-0000000
 
 User streams are filtered by conversation membership. Callers only receive events for conversations they can read. Stream-control events bypass membership filtering because they describe the health of the subscription itself, not a specific resource.
 
-Admin streams use `/v1/admin/events`, require admin access plus a `justification` query parameter, and bypass conversation-membership filtering.
+Admin streams use `/v1/admin/events`, require admin or auditor access, and bypass conversation-membership filtering. A `justification` may be supplied for audit logging and can be required if the server enables admin justification enforcement.
 
 ## Connection Lifecycle
 

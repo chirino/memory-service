@@ -530,8 +530,48 @@ message HealthResponse {
   string status = 1;
 }
 
+message CapabilitiesTech {
+  string store = 1;
+  string attachments = 2;
+  string cache = 3;
+  string vector = 4;
+  string event_bus = 5;
+  string embedder = 6;
+}
+
+message CapabilitiesFeatures {
+  bool outbox_enabled = 1;
+  bool semantic_search_enabled = 2;
+  bool fulltext_search_enabled = 3;
+  bool cors_enabled = 4;
+  bool management_listener_enabled = 5;
+  bool private_source_urls_enabled = 6;
+  bool s3_direct_download_enabled = 7;
+}
+
+message CapabilitiesAuth {
+  bool oidc_enabled = 1;
+  bool api_key_enabled = 2;
+  bool admin_justification_required = 3;
+}
+
+message CapabilitiesSecurity {
+  bool encryption_enabled = 1;
+  bool db_encryption_enabled = 2;
+  bool attachment_encryption_enabled = 3;
+}
+
+message CapabilitiesResponse {
+  string version = 1;
+  CapabilitiesTech tech = 2;
+  CapabilitiesFeatures features = 3;
+  CapabilitiesAuth auth = 4;
+  CapabilitiesSecurity security = 5;
+}
+
 service SystemService {
   rpc GetHealth(google.protobuf.Empty) returns (HealthResponse);
+  rpc GetCapabilities(google.protobuf.Empty) returns (CapabilitiesResponse);
 }
 
 service ConversationsService {

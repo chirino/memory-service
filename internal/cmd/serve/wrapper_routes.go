@@ -11,6 +11,7 @@ import (
 	routeadmin "github.com/chirino/memory-service/internal/plugin/route/admin"
 	routeagentevents "github.com/chirino/memory-service/internal/plugin/route/agent"
 	routeattachments "github.com/chirino/memory-service/internal/plugin/route/attachments"
+	routecapabilities "github.com/chirino/memory-service/internal/plugin/route/capabilities"
 	routeconversations "github.com/chirino/memory-service/internal/plugin/route/conversations"
 	routeentries "github.com/chirino/memory-service/internal/plugin/route/entries"
 	routememberships "github.com/chirino/memory-service/internal/plugin/route/memberships"
@@ -111,6 +112,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodDelete, "/v1/attachments/:id", apiWrapper.DeleteAttachment)
 	register(http.MethodGet, "/v1/attachments/:id", apiWrapper.GetAttachment)
 	register(http.MethodGet, "/v1/attachments/:id/download-url", apiWrapper.GetAttachmentDownloadUrl)
+	register(http.MethodGet, "/v1/capabilities", apiWrapper.GetCapabilities)
 	register(http.MethodGet, "/v1/conversations", apiWrapper.ListConversations)
 	register(http.MethodPost, "/v1/conversations", apiWrapper.CreateConversation)
 	register(http.MethodPost, "/v1/conversations/index", apiWrapper.IndexConversations)
@@ -211,6 +213,9 @@ func (p *proxyAPIServer) GetAttachmentDownloadUrl(c *gin.Context, _ openapi_type
 		primary = p.signingKeys[0]
 	}
 	routeattachments.HandleDownloadURL(c, p.store, p.attachStore, p.cfg, primary)
+}
+func (p *proxyAPIServer) GetCapabilities(c *gin.Context) {
+	routecapabilities.HandleGetCapabilities(c, p.cfg)
 }
 func (p *proxyAPIServer) ListConversations(c *gin.Context, _ generatedapi.ListConversationsParams) {
 	routeconversations.HandleListConversations(c, p.store)

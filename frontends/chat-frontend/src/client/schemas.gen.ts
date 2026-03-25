@@ -41,6 +41,128 @@ export const $SearchTypeUnavailableError = {
   },
 } as const;
 
+export const $CapabilitiesResponse = {
+  type: "object",
+  required: ["version", "tech", "features", "auth", "security"],
+  properties: {
+    version: {
+      type: "string",
+      example: "1.0.0",
+    },
+    tech: {
+      $ref: "#/components/schemas/CapabilitiesTech",
+    },
+    features: {
+      $ref: "#/components/schemas/CapabilitiesFeatures",
+    },
+    auth: {
+      $ref: "#/components/schemas/CapabilitiesAuth",
+    },
+    security: {
+      $ref: "#/components/schemas/CapabilitiesSecurity",
+    },
+  },
+} as const;
+
+export const $CapabilitiesTech = {
+  type: "object",
+  required: ["store", "attachments", "cache", "vector", "event_bus", "embedder"],
+  properties: {
+    store: {
+      type: "string",
+      example: "postgres",
+    },
+    attachments: {
+      type: "string",
+      example: "postgres",
+    },
+    cache: {
+      type: "string",
+      example: "infinispan",
+    },
+    vector: {
+      type: "string",
+      example: "pgvector",
+    },
+    event_bus: {
+      type: "string",
+      example: "postgres",
+    },
+    embedder: {
+      type: "string",
+      example: "local",
+    },
+  },
+} as const;
+
+export const $CapabilitiesFeatures = {
+  type: "object",
+  required: [
+    "outbox_enabled",
+    "semantic_search_enabled",
+    "fulltext_search_enabled",
+    "cors_enabled",
+    "management_listener_enabled",
+    "private_source_urls_enabled",
+    "s3_direct_download_enabled",
+  ],
+  properties: {
+    outbox_enabled: {
+      type: "boolean",
+    },
+    semantic_search_enabled: {
+      type: "boolean",
+    },
+    fulltext_search_enabled: {
+      type: "boolean",
+    },
+    cors_enabled: {
+      type: "boolean",
+    },
+    management_listener_enabled: {
+      type: "boolean",
+    },
+    private_source_urls_enabled: {
+      type: "boolean",
+    },
+    s3_direct_download_enabled: {
+      type: "boolean",
+    },
+  },
+} as const;
+
+export const $CapabilitiesAuth = {
+  type: "object",
+  required: ["oidc_enabled", "api_key_enabled", "admin_justification_required"],
+  properties: {
+    oidc_enabled: {
+      type: "boolean",
+    },
+    api_key_enabled: {
+      type: "boolean",
+    },
+    admin_justification_required: {
+      type: "boolean",
+    },
+  },
+} as const;
+
+export const $CapabilitiesSecurity = {
+  type: "object",
+  required: ["encryption_enabled", "db_encryption_enabled", "attachment_encryption_enabled"],
+  properties: {
+    encryption_enabled: {
+      type: "boolean",
+    },
+    db_encryption_enabled: {
+      type: "boolean",
+    },
+    attachment_encryption_enabled: {
+      type: "boolean",
+    },
+  },
+} as const;
+
 export const $AccessLevel = {
   type: "string",
   description: "Access level of a user for a conversation.",

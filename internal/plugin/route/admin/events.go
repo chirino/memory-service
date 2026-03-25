@@ -43,12 +43,10 @@ func writeAdminSSEPhaseEvent(c *gin.Context, phase string) {
 }
 
 // HandleAdminSSEEvents streams all (non-internal) events to an admin user via SSE.
-// Requires a justification query parameter for audit purposes.
 func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus registryeventbus.EventBus, cfg *config.Config) {
 	justification := strings.TrimSpace(c.Query("justification"))
 	if justification == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "justification query parameter is required"})
-		return
+		justification = strings.TrimSpace(c.GetHeader("X-Justification"))
 	}
 	after := strings.TrimSpace(c.Query("after"))
 	if after != "" && !cfg.OutboxEnabled {

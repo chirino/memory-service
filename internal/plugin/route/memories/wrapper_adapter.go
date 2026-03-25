@@ -45,6 +45,9 @@ func (a *apiServerAdapter) GetAttachment(c *gin.Context, _ openapi_types.UUID) {
 func (a *apiServerAdapter) GetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID) {
 	notImplemented(c)
 }
+func (a *apiServerAdapter) GetCapabilities(c *gin.Context) {
+	notImplemented(c)
+}
 func (a *apiServerAdapter) ListConversations(c *gin.Context, _ generatedapi.ListConversationsParams) {
 	notImplemented(c)
 }

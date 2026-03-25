@@ -147,7 +147,7 @@ func TestStartSinglePortHTTPAndGRPCOverUnixSocket(t *testing.T) {
 	})
 
 	grpcServer := grpc.NewServer()
-	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{})
+	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: &config.Config{}})
 
 	running, err := StartSinglePortHTTPAndGRPC(context.Background(), config.ListenerConfig{
 		UnixSocket:      socketPath,
