@@ -9,6 +9,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -67,7 +68,7 @@ func (knowledgeClusterMemberRow) TableName() string { return "knowledge_cluster_
 type embeddingRow struct {
 	SourceID  uuid.UUID `gorm:"column:source_id"`
 	UserID    string    `gorm:"column:user_id"`
-	Embedding []byte    `gorm:"column:embedding_raw"`
+	Embedding string    `gorm:"column:embedding_text"`
 }
 
 func (s *PostgresKnowledgeStore) ListUsersWithEmbeddings(ctx context.Context) ([]string, error) {
@@ -88,7 +89,7 @@ func (s *PostgresKnowledgeStore) LoadEmbeddingsForUser(ctx context.Context, user
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT ee.entry_id AS source_id,
 		       cm.user_id AS user_id,
-		       ee.embedding::text::bytea AS embedding_raw
+		       ee.embedding::text AS embedding_text
 		FROM entry_embeddings ee
 		JOIN conversations c ON c.id = ee.conversation_id
 		JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id
@@ -99,8 +100,9 @@ func (s *PostgresKnowledgeStore) LoadEmbeddingsForUser(ctx context.Context, user
 	}
 
 	records := make([]EmbeddingRecord, 0, len(rows))
+	parseFailures := 0
 	for _, r := range rows {
-		emb := parseEmbeddingText(r.Embedding)
+		emb := parseEmbeddingText([]byte(r.Embedding))
 		if len(emb) > 0 {
 			records = append(records, EmbeddingRecord{
 				SourceID:   r.SourceID,
@@ -108,7 +110,12 @@ func (s *PostgresKnowledgeStore) LoadEmbeddingsForUser(ctx context.Context, user
 				UserID:     r.UserID,
 				Embedding:  emb,
 			})
+		} else {
+			parseFailures++
 		}
+	}
+	if parseFailures > 0 {
+		log.Warn("Knowledge store: failed to parse embeddings", "user", userID, "failures", parseFailures, "total", len(rows))
 	}
 	return records, nil
 }

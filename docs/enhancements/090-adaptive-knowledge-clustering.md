@@ -404,48 +404,57 @@ Wait for the service to be ready on `:8082`.
 
 ### Step 2 — Create conversations about distinct topics
 
-Using curl (or the MCP `save_session_notes` tool):
+> **Important**: The `indexedContent` field is required for the BackgroundIndexer to generate embeddings. Without it, entries have `indexed_content = NULL` and the indexer skips them. Auth requires both `Authorization: Bearer` and `X-API-Key` headers (see [issue #181](https://github.com/chirino/memory-service/issues/181)).
 
 ```bash
 API="http://localhost:8082"
-AUTH="-H 'X-API-Key: test'"
+H1="Authorization: Bearer agent-api-key-1"
+H2="X-API-Key: agent-api-key-1"
+CT="Content-Type: application/json"
 
 # Topic 1: Python migration
-CONV1=$(curl -s -X POST "$API/v1/conversations" $AUTH \
-  -H 'Content-Type: application/json' \
+CONV1=$(curl -s -X POST "$API/v1/conversations" -H "$H1" -H "$H2" -H "$CT" \
   -d '{"title":"Python Flask to FastAPI migration"}' | jq -r '.id')
+echo "CONV1=$CONV1"
 
-curl -s -X POST "$API/v1/conversations/$CONV1/entries" $AUTH \
-  -H 'Content-Type: application/json' \
-  -d '{"contentType":"history","content":[{"role":"USER","text":"We need to migrate our Flask app to FastAPI. What about SQLAlchemy models and async routes?"},{"role":"ASSISTANT","text":"Start with route definitions. SQLAlchemy models can stay mostly unchanged. FastAPI works well with existing ORM patterns."}]}'
+curl -s -X POST "$API/v1/conversations/$CONV1/entries" -H "$H1" -H "$H2" -H "$CT" \
+  -d '{"contentType":"history","indexedContent":"migrate Flask app to FastAPI SQLAlchemy models async routes ORM patterns","content":[{"role":"USER","text":"We need to migrate our Flask app to FastAPI. What about SQLAlchemy models and async routes?"},{"role":"ASSISTANT","text":"Start with route definitions. SQLAlchemy models can stay mostly unchanged. FastAPI works well with existing ORM patterns."}]}'
 
 # Topic 2: Kubernetes deployment
-CONV2=$(curl -s -X POST "$API/v1/conversations" $AUTH \
-  -H 'Content-Type: application/json' \
+CONV2=$(curl -s -X POST "$API/v1/conversations" -H "$H1" -H "$H2" -H "$CT" \
   -d '{"title":"K8s resource limits and HPA"}' | jq -r '.id')
+echo "CONV2=$CONV2"
 
-curl -s -X POST "$API/v1/conversations/$CONV2/entries" $AUTH \
-  -H 'Content-Type: application/json' \
-  -d '{"contentType":"history","content":[{"role":"USER","text":"How do I set resource limits in a Kubernetes deployment? Pod keeps getting OOMKilled."},{"role":"ASSISTANT","text":"Add resources.limits and resources.requests to the container spec. Increase memory limit or check for memory leaks."}]}'
+curl -s -X POST "$API/v1/conversations/$CONV2/entries" -H "$H1" -H "$H2" -H "$CT" \
+  -d '{"contentType":"history","indexedContent":"Kubernetes resource limits pod OOMKilled container spec memory leaks pprof","content":[{"role":"USER","text":"How do I set resource limits in a Kubernetes deployment? Pod keeps getting OOMKilled."},{"role":"ASSISTANT","text":"Add resources.limits and resources.requests to the container spec. Increase memory limit or check for memory leaks."}]}'
 
 # Topic 3: Database performance
-CONV3=$(curl -s -X POST "$API/v1/conversations" $AUTH \
-  -H 'Content-Type: application/json' \
+CONV3=$(curl -s -X POST "$API/v1/conversations" -H "$H1" -H "$H2" -H "$CT" \
   -d '{"title":"PostgreSQL query optimization"}' | jq -r '.id')
+echo "CONV3=$CONV3"
 
-curl -s -X POST "$API/v1/conversations/$CONV3/entries" $AUTH \
-  -H 'Content-Type: application/json' \
-  -d '{"contentType":"history","content":[{"role":"USER","text":"PostgreSQL queries are slow on the orders table. Missing index on customer_id."},{"role":"ASSISTANT","text":"CREATE INDEX CONCURRENTLY idx_orders_customer ON orders(customer_id). Use EXPLAIN ANALYZE to verify the plan."}]}'
+curl -s -X POST "$API/v1/conversations/$CONV3/entries" -H "$H1" -H "$H2" -H "$CT" \
+  -d '{"contentType":"history","indexedContent":"PostgreSQL queries slow orders table missing index customer_id EXPLAIN ANALYZE CREATE INDEX CONCURRENTLY","content":[{"role":"USER","text":"PostgreSQL queries are slow on the orders table. Missing index on customer_id."},{"role":"ASSISTANT","text":"CREATE INDEX CONCURRENTLY idx_orders_customer ON orders(customer_id). Use EXPLAIN ANALYZE to verify the plan."}]}'
 ```
 
-### Step 3 — Wait for the entry indexer to generate embeddings
+### Step 3 — Wait for the BackgroundIndexer to generate embeddings
 
-The background indexer runs every 30s. Wait ~30-60s for entries to be embedded.
+The BackgroundIndexer runs every 30s. It picks up entries with `indexed_content IS NOT NULL AND indexed_at IS NULL`, calls the embedder, and stores vectors in `entry_embeddings`.
+
+```bash
+echo "Waiting 35s for BackgroundIndexer..."
+sleep 35
+
+# Verify embeddings were created
+docker exec -i $(docker ps -q -f name=postgres) psql -U postgres -d memory_service \
+  -c "SELECT COUNT(*) FROM entry_embeddings;"
+# Should show 3
+```
 
 ### Step 4 — Trigger clustering
 
 ```bash
-curl -s -X POST "$API/admin/v1/knowledge/trigger" $AUTH | jq
+curl -s -X POST "$API/admin/v1/knowledge/trigger" -H "$H1" -H "$H2" | jq
 ```
 
 Expected output:
@@ -462,7 +471,7 @@ Expected output:
 ### Step 5 — View the emerged clusters
 
 ```bash
-curl -s "$API/admin/v1/knowledge/clusters" $AUTH | jq
+curl -s "$API/admin/v1/knowledge/clusters" -H "$H1" -H "$H2" | jq
 ```
 
 Expected output (labels/keywords depend on embedding model):
@@ -501,19 +510,21 @@ Expected output (labels/keywords depend on embedding model):
 
 ### Step 6 — Add more data and watch clusters evolve
 
-Add more entries to existing topics and trigger again:
+Add more entries to existing topics, wait for indexing, and trigger again:
 
 ```bash
 # Add more Python content
-curl -s -X POST "$API/v1/conversations/$CONV1/entries" $AUTH \
-  -H 'Content-Type: application/json' \
-  -d '{"contentType":"history","content":[{"role":"USER","text":"Python tests failing after migration. pytest-asyncio not configured for async routes."},{"role":"ASSISTANT","text":"Install pytest-asyncio and add the asyncio_mode=auto setting."}]}'
+curl -s -X POST "$API/v1/conversations/$CONV1/entries" -H "$H1" -H "$H2" -H "$CT" \
+  -d '{"contentType":"history","indexedContent":"Python tests failing migration pytest-asyncio async routes asyncio_mode","content":[{"role":"USER","text":"Python tests failing after migration. pytest-asyncio not configured for async routes."},{"role":"ASSISTANT","text":"Install pytest-asyncio and add the asyncio_mode=auto setting."}]}'
+
+# Wait for BackgroundIndexer
+sleep 35
 
 # Trigger re-clustering
-curl -s -X POST "$API/admin/v1/knowledge/trigger" $AUTH | jq
+curl -s -X POST "$API/admin/v1/knowledge/trigger" -H "$H1" -H "$H2" | jq
 
 # Check: Python cluster member_count should increase
-curl -s "$API/admin/v1/knowledge/clusters" $AUTH | jq '.clusters[] | select(.label | test("python"))'
+curl -s "$API/admin/v1/knowledge/clusters" -H "$H1" -H "$H2" | jq '.clusters[] | select(.label | test("python"))'
 ```
 
 ### What to Look For

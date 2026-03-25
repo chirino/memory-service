@@ -112,6 +112,7 @@ func (c *Clusterer) clusterUser(ctx context.Context, userID string) (born, updat
 		return 0, 0, 0, err
 	}
 	if len(records) == 0 {
+		log.Debug("Knowledge clusterer: no embeddings for user", "user", userID)
 		return 0, 0, 0, nil
 	}
 
