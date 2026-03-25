@@ -136,7 +136,7 @@ func newMongo(cfg *config.Config) (Store, error) {
 		client.Disconnect(context.Background())
 		return nil, fmt.Errorf("dekstore: mongo ping: %w", err)
 	}
-	coll := client.Database(config.MongoDatabaseName(cfg.DBURL)).Collection("encryption_deks")
+	coll := client.Database("memory_service").Collection("encryption_deks")
 	return &mongoStore{client: client, coll: coll}, nil
 }
 

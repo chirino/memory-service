@@ -4,19 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/cucumber/godog"
-	"github.com/jackc/pgx/v5"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 func newSQLiteScenarioSetup(t *testing.T, baseCfg config.Config) cucumber.ScenarioSetupFunc {
@@ -47,88 +42,6 @@ func newSQLiteScenarioSetup(t *testing.T, baseCfg config.Config) cucumber.Scenar
 
 		return func(context.Context) error {
 			return errors.Join(cleanup(context.Background()), closePrometheusAndDir(prom, tempDir))
-		}, nil
-	}
-}
-
-func newPostgresScenarioSetup(t *testing.T, baseCfg config.Config) cucumber.ScenarioSetupFunc {
-	t.Helper()
-
-	return func(ctx context.Context, s *cucumber.TestScenario, sc *godog.Scenario) (func(context.Context) error, error) {
-		_ = ctx
-		_ = sc
-
-		schema := "bdd_" + sanitizeScenarioName(s.ScenarioUID)
-		if err := createPostgresSchema(context.Background(), baseCfg.DBURL, schema); err != nil {
-			return nil, err
-		}
-
-		dbURL, err := postgresURLWithSearchPath(baseCfg.DBURL, schema)
-		if err != nil {
-			_ = dropPostgresSchema(context.Background(), baseCfg.DBURL, schema)
-			return nil, err
-		}
-
-		prom := newMockPrometheus()
-		cfg := baseCfg
-		cfg.DBURL = dbURL
-		cfg.PrometheusURL = prom.Server.URL
-
-		cleanup, err := startScenarioServer(s, &cfg, &PostgresTestDB{DBURL: dbURL}, map[string]interface{}{
-			"mockPrometheus": prom,
-		})
-		if err != nil {
-			_ = dropPostgresSchema(context.Background(), baseCfg.DBURL, schema)
-			prom.Server.Close()
-			return nil, err
-		}
-
-		return func(context.Context) error {
-			return errors.Join(
-				cleanup(context.Background()),
-				dropPostgresSchema(context.Background(), baseCfg.DBURL, schema),
-				closePrometheusAndDir(prom, ""),
-			)
-		}, nil
-	}
-}
-
-func newMongoScenarioSetup(t *testing.T, baseCfg config.Config) cucumber.ScenarioSetupFunc {
-	t.Helper()
-
-	return func(ctx context.Context, s *cucumber.TestScenario, sc *godog.Scenario) (func(context.Context) error, error) {
-		_ = ctx
-		_ = sc
-
-		dbName := "memory_service_" + sanitizeScenarioName(s.ScenarioUID)
-		dbURL, err := mongoURLWithDatabase(baseCfg.DBURL, dbName)
-		if err != nil {
-			return nil, err
-		}
-
-		prom := newMockPrometheus()
-		cfg := baseCfg
-		cfg.DBURL = dbURL
-		cfg.PrometheusURL = prom.Server.URL
-		if strings.TrimSpace(cfg.QdrantCollectionName) == "" {
-			cfg.QdrantCollectionPrefix = "memory-service-bdd-" + sanitizeScenarioName(s.ScenarioUID)
-		}
-
-		cleanup, err := startScenarioServer(s, &cfg, &MongoTestDB{DBURL: dbURL}, map[string]interface{}{
-			"mockPrometheus": prom,
-		})
-		if err != nil {
-			prom.Server.Close()
-			_ = dropMongoDatabase(context.Background(), dbURL)
-			return nil, err
-		}
-
-		return func(context.Context) error {
-			return errors.Join(
-				cleanup(context.Background()),
-				dropMongoDatabase(context.Background(), dbURL),
-				closePrometheusAndDir(prom, ""),
-			)
 		}, nil
 	}
 }
@@ -172,76 +85,4 @@ func closePrometheusAndDir(prom *MockPrometheus, dir string) error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-func sanitizeScenarioName(value string) string {
-	var b strings.Builder
-	for _, r := range value {
-		switch {
-		case r >= 'a' && r <= 'z':
-			b.WriteRune(r)
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r + ('a' - 'A'))
-		case r >= '0' && r <= '9':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	if b.Len() == 0 {
-		return "scenario"
-	}
-	return b.String()
-}
-
-func postgresURLWithSearchPath(baseURL, schema string) (string, error) {
-	parsed, err := url.Parse(baseURL)
-	if err != nil {
-		return "", err
-	}
-	query := parsed.Query()
-	query.Set("search_path", schema)
-	parsed.RawQuery = query.Encode()
-	return parsed.String(), nil
-}
-
-func createPostgresSchema(ctx context.Context, baseURL, schema string) error {
-	conn, err := pgx.Connect(ctx, baseURL)
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
-
-	_, err = conn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+schema)
-	return err
-}
-
-func dropPostgresSchema(ctx context.Context, baseURL, schema string) error {
-	conn, err := pgx.Connect(ctx, baseURL)
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
-
-	_, err = conn.Exec(ctx, "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
-	return err
-}
-
-func mongoURLWithDatabase(baseURL, dbName string) (string, error) {
-	parsed, err := url.Parse(baseURL)
-	if err != nil {
-		return "", err
-	}
-	parsed.Path = "/" + dbName
-	return parsed.String(), nil
-}
-
-func dropMongoDatabase(ctx context.Context, dbURL string) error {
-	client, err := mongo.Connect(options.Client().ApplyURI(dbURL))
-	if err != nil {
-		return err
-	}
-	defer client.Disconnect(ctx)
-
-	return client.Database(config.MongoDatabaseName(dbURL)).Drop(ctx)
 }

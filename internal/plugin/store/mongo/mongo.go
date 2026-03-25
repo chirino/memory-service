@@ -47,7 +47,7 @@ func init() {
 				return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
 			}
 
-			dbName := config.MongoDatabaseName(cfg.DBURL)
+			dbName := "memory_service"
 			store := &MongoStore{
 				client:       client,
 				db:           client.Database(dbName),
@@ -83,7 +83,7 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 	}
 	defer client.Disconnect(ctx)
 
-	db := client.Database(config.MongoDatabaseName(cfg.DBURL))
+	db := client.Database("memory_service")
 
 	// Create collections with indexes
 	collections := map[string][]mongo.IndexModel{
