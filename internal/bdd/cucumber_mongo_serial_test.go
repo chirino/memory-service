@@ -5,17 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
 	mongoplugin "github.com/chirino/memory-service/internal/plugin/store/mongo"
-	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/chirino/memory-service/internal/testutil/testmongo"
 	"github.com/chirino/memory-service/internal/testutil/testqdrant"
 	"github.com/chirino/memory-service/internal/testutil/testredis"
-	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
 
 	_ "github.com/chirino/memory-service/internal/plugin/attach/mongostore"
@@ -70,40 +67,8 @@ func TestFeaturesMongoSerial(t *testing.T) {
 	featureFiles = filterSerialFeatures(featureFiles, true)
 	require.NotEmpty(t, featureFiles, "No serial Mongo feature files found")
 
-	opts := cucumber.DefaultOptions()
-	opts.Concurrency = 1
-	for _, arg := range os.Args[1:] {
-		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
-			opts.Format = "pretty"
-		}
-	}
-
-	for _, featurePath := range featureFiles {
-		name := strings.TrimSuffix(filepath.Base(featurePath), ".feature")
-		t.Run(name, func(t *testing.T) {
-			clearFeatureDB(t, &MongoTestDB{DBURL: mongoURL})
-
-			o := opts
-			o.TestingT = t
-			o.Paths = []string{featurePath}
-			defer cucumber.ApplyReportOptions(&o, t.Name())()
-
-			suite := cucumber.NewTestSuite()
-			suite.APIURL = apiURL
-			suite.TestingT = t
-			suite.Context = &cfg
-			suite.DB = &MongoTestDB{DBURL: mongoURL}
-			suite.Extra["mockPrometheus"] = prom
-			suite.Extra["grpcAddr"] = grpcAddr
-
-			status := godog.TestSuite{
-				Name:                "mongo-serial-" + name,
-				Options:             &o,
-				ScenarioInitializer: suite.InitializeScenario,
-			}.Run()
-			if status != 0 {
-				t.Fail()
-			}
-		})
-	}
+	runBDDFeaturesWithConcurrency(t, "mongo-serial", featureFiles, apiURL, grpcAddr, &cfg, &MongoTestDB{DBURL: mongoURL}, map[string]interface{}{
+		"mockPrometheus": prom,
+		"grpcAddr":       grpcAddr,
+	}, 1)
 }

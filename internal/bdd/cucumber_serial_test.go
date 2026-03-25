@@ -5,16 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/plugin/store/postgres"
-	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/chirino/memory-service/internal/testutil/testinfinispan"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
-	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
 
 	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
@@ -66,40 +63,8 @@ func TestFeaturesSerial(t *testing.T) {
 	featureFiles = filterSerialFeatures(featureFiles, true)
 	require.NotEmpty(t, featureFiles, "No serial feature files found in %s", featuresDir)
 
-	opts := cucumber.DefaultOptions()
-	opts.Concurrency = 1
-	for _, arg := range os.Args[1:] {
-		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
-			opts.Format = "pretty"
-		}
-	}
-
-	for _, featurePath := range featureFiles {
-		name := strings.TrimSuffix(filepath.Base(featurePath), ".feature")
-		t.Run(name, func(t *testing.T) {
-			clearFeatureDB(t, &PostgresTestDB{DBURL: dbURL})
-
-			o := opts
-			o.TestingT = t
-			o.Paths = []string{featurePath}
-			defer cucumber.ApplyReportOptions(&o, t.Name())()
-
-			suite := cucumber.NewTestSuite()
-			suite.APIURL = apiURL
-			suite.TestingT = t
-			suite.Context = &cfg
-			suite.DB = &PostgresTestDB{DBURL: dbURL}
-			suite.Extra["mockPrometheus"] = prom
-			suite.Extra["grpcAddr"] = grpcAddr
-
-			status := godog.TestSuite{
-				Name:                "serial-" + name,
-				Options:             &o,
-				ScenarioInitializer: suite.InitializeScenario,
-			}.Run()
-			if status != 0 {
-				t.Fail()
-			}
-		})
-	}
+	runBDDFeaturesWithConcurrency(t, "serial", featureFiles, apiURL, grpcAddr, &cfg, &PostgresTestDB{DBURL: dbURL}, map[string]interface{}{
+		"mockPrometheus": prom,
+		"grpcAddr":       grpcAddr,
+	}, 1)
 }

@@ -44,10 +44,10 @@ func (e *evictionSteps) theConversationWasSoftDeletedDaysAgo(days int) error {
 }
 
 func (e *evictionSteps) softDeleteConversationDaysAgo(convID string, days int) error {
-	if e.s.Suite.DB == nil {
+	if e.s.TestDB() == nil {
 		return fmt.Errorf("no TestDB configured")
 	}
-	return e.s.Suite.DB.SoftDeleteConversation(context.Background(), convID, days)
+	return e.s.TestDB().SoftDeleteConversation(context.Background(), convID, days)
 }
 
 func (e *evictionSteps) iHaveConversationsSoftDeletedDaysAgo(count, days int) error {
@@ -181,7 +181,7 @@ func (e *evictionSteps) iCallPOSTConcurrentlyTimesWithBody(path string, count in
 		return err
 	}
 
-	apiURL := e.s.Suite.APIURL
+	apiURL := e.s.APIBaseURL()
 	var wg sync.WaitGroup
 	e.concurrentResp = make([]int, count)
 

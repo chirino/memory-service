@@ -3,6 +3,7 @@ Feature: Data Eviction
   Background:
     Given I am authenticated as admin user "alice"
 
+  # Serial required: this scenario runs a datastore-wide eviction sweep that can hard-delete records and queue tasks for data created by other scenarios.
   Scenario: Evict conversation groups past retention period (default response)
     Given I have a conversation with title "Old Conversation"
     And set "oldGroupId" to "${conversationGroupId}"
@@ -83,6 +84,7 @@ Feature: Data Eviction
       | count |
       | 1     |
 
+  # Serial required: this scenario runs a datastore-wide eviction sweep that can hard-delete records created by other scenarios.
   Scenario: Evict with SSE progress stream via Accept header
     Given I have a conversation with title "To Evict"
     And the conversation was soft-deleted 100 days ago
@@ -98,6 +100,7 @@ Feature: Data Eviction
     And the SSE stream should contain progress events
     And the final progress should be 100
 
+  # Serial required: this scenario runs a datastore-wide eviction sweep that can hard-delete records created by other scenarios.
   Scenario: Evict with SSE progress stream via async=true
     Given I have a conversation with title "To Evict Async"
     And the conversation was soft-deleted 100 days ago
@@ -113,6 +116,7 @@ Feature: Data Eviction
     And the SSE stream should contain progress events
     And the final progress should be 100
 
+  # Serial required: this scenario intentionally runs multiple eviction requests against the shared datastore and would interfere with any other scenario's soft-deleted records.
   Scenario: Concurrent eviction is safe
     Given I have 100 conversations soft-deleted 100 days ago
     When I call POST "/v1/admin/evict" concurrently 3 times with body:
@@ -149,6 +153,7 @@ Feature: Data Eviction
       | count |
       | 0     |
 
+  # Serial today only because this feature shares the serial eviction runner; this scenario is a pure authorization check and appears parallel-safe.
   Scenario: Non-admin user cannot evict
     Given I am authenticated as auditor user "charlie"
     When I call POST "/v1/admin/evict" with body:
@@ -160,6 +165,7 @@ Feature: Data Eviction
       """
     Then the response status should be 403
 
+  # Serial today only because this feature shares the serial eviction runner; this scenario is a pure validation check and appears parallel-safe.
   Scenario: Invalid retention period format rejected
     When I call POST "/v1/admin/evict" with body:
       """
@@ -170,6 +176,7 @@ Feature: Data Eviction
       """
     Then the response status should be 400
 
+  # Serial today only because this feature shares the serial eviction runner; this scenario is a pure validation check and appears parallel-safe.
   Scenario: Unknown resource type rejected
     When I call POST "/v1/admin/evict" with body:
       """
@@ -180,6 +187,7 @@ Feature: Data Eviction
       """
     Then the response status should be 400
 
+  # Serial required: this scenario runs a datastore-wide eviction sweep and asserts hard-deletion side effects in shared tables.
   Scenario: Cascade deletes child records
     Given I have a conversation with title "Parent Conversation"
     And set "groupId" to "${conversationGroupId}"
@@ -218,6 +226,7 @@ Feature: Data Eviction
   # Note: Membership eviction tests removed - memberships are now hard-deleted immediately
   # (see enhancement 028-membership-hard-delete.md)
 
+  # Serial required: this scenario runs a datastore-wide eviction sweep that can hard-delete records created by other scenarios.
   Scenario: Evict multiple conversations in single request
     Given I have a conversation with title "Group To Evict"
     And set "groupAId" to "${conversationGroupId}"
@@ -275,6 +284,7 @@ Feature: Data Eviction
       | count |
       | 1     |
 
+  # Serial required: this scenario still executes the global eviction path, so concurrent scenarios could make the datastore non-empty and change the outcome.
   Scenario: Empty eviction returns 204
     When I call POST "/v1/admin/evict" with body:
       """
@@ -285,6 +295,7 @@ Feature: Data Eviction
       """
     Then the response status should be 204
 
+  # Serial required: this scenario runs a datastore-wide eviction sweep over many records and would interfere with other scenarios' soft-deleted data.
   Scenario: Batching evicts all records
     Given I have 25 conversations soft-deleted 100 days ago
     When I call POST "/v1/admin/evict" with body:
@@ -319,6 +330,7 @@ Feature: Data Eviction
       | count |
       | 0     |
 
+  # Serial required: this scenario runs a datastore-wide eviction sweep and asserts hard-deletion side effects in shared tables.
   Scenario: Cascade deletes memberships and ownership transfers
     Given I have a conversation with title "Full Cascade"
     And set "groupId" to "${conversationGroupId}"
@@ -376,6 +388,7 @@ Feature: Data Eviction
       | count |
       | 0     |
 
+  # Serial required: this scenario runs the global eviction path and then inspects the shared task queue contents.
   Scenario: Vector store task contains correct group ID
     Given I have a conversation with title "Vector Cleanup"
     And set "groupId" to "${conversationGroupId}"

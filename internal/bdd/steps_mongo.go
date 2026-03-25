@@ -26,7 +26,7 @@ type mongoSteps struct {
 }
 
 func (mq *mongoSteps) iExecuteMongoDBQuery(query *godog.DocString) error {
-	if mq.s.Suite.DB == nil {
+	if mq.s.TestDB() == nil {
 		return fmt.Errorf("no TestDB configured")
 	}
 
@@ -36,7 +36,7 @@ func (mq *mongoSteps) iExecuteMongoDBQuery(query *godog.DocString) error {
 	}
 	expanded = mq.s.RewriteQuotedUsers(expanded)
 
-	mq.lastRows, err = mq.s.Suite.DB.ExecMongoQuery(context.Background(), expanded)
+	mq.lastRows, err = mq.s.TestDB().ExecMongoQuery(context.Background(), expanded)
 	if err != nil {
 		return err
 	}

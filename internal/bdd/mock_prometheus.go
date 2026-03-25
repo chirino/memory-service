@@ -15,9 +15,7 @@ type MockPrometheus struct {
 	available bool
 }
 
-// NewMockPrometheus creates a mock Prometheus that returns canned time-series responses.
-func NewMockPrometheus(t *testing.T) *MockPrometheus {
-	t.Helper()
+func newMockPrometheus() *MockPrometheus {
 	mp := &MockPrometheus{available: true}
 	mp.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mp.mu.Lock()
@@ -52,6 +50,13 @@ func NewMockPrometheus(t *testing.T) *MockPrometheus {
   }
 }`))
 	}))
+	return mp
+}
+
+// NewMockPrometheus creates a mock Prometheus that returns canned time-series responses.
+func NewMockPrometheus(t *testing.T) *MockPrometheus {
+	t.Helper()
+	mp := newMockPrometheus()
 	t.Cleanup(mp.Server.Close)
 	return mp
 }

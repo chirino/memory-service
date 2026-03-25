@@ -10,35 +10,41 @@ Feature: Admin REST API
     And there is a conversation owned by "alice" with title "Alice's Conversation"
     And set "aliceConversationId" to "${conversationId}"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only asserts a minimum count on a global list and appears parallel-safe after user/client isolation.
   Scenario: Admin can list all conversations across users
     When I call GET "/v1/admin/conversations"
     Then the response status should be 200
     And the response should contain at least 2 conversations
 
+  # Serial today only because this feature shares the serial admin runner; this scenario scopes the query to the scenario-local user ID and appears parallel-safe.
   Scenario: Admin can filter conversations by userId
     When I call GET "/v1/admin/conversations?userId=bob"
     Then the response status should be 200
     And the response should contain at least 1 conversation
     And all conversations should have ownerUserId "bob"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only checks that at least one deleted conversation is visible and appears parallel-safe.
   Scenario: Admin can view soft-deleted conversations with includeDeleted=true
     Given the conversation owned by "bob" is deleted
     When I call GET "/v1/admin/conversations?includeDeleted=true"
     Then the response status should be 200
     And the response should contain at least 1 conversation with deletedAt set
 
+  # Serial today only because this feature shares the serial admin runner; this scenario filters to deleted records and appears parallel-safe.
   Scenario: Admin can filter by onlyDeleted
     Given the conversation owned by "bob" is deleted
     When I call GET "/v1/admin/conversations?onlyDeleted=true"
     Then the response status should be 200
     And all conversations should have deletedAt set
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local conversation by ID and appears parallel-safe.
   Scenario: Admin can get any conversation including soft-deleted
     Given the conversation owned by "bob" is deleted
     When I call GET "/v1/admin/conversations/${bobConversationId}?includeDeleted=true"
     Then the response status should be 200
     And the response body should have field "deletedAt" that is not null
 
+  # Serial today only because this feature shares the serial admin runner; this scenario inspects children for one scenario-local root conversation and appears parallel-safe.
   Scenario: Admin can list child conversations for any conversation
     Given I am authenticated as user "bob"
     And set "parentConversationId" to "${bobConversationId}"
@@ -65,6 +71,7 @@ Feature: Admin REST API
     And the response body "data[0].id" should be "${childConversationId}"
     And the response body "data[0].startedByConversationId" should be "${bobConversationId}"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario soft-deletes one scenario-local conversation by ID and appears parallel-safe.
   Scenario: Admin can delete any conversation
     When I call DELETE "/v1/admin/conversations/${bobConversationId}" with body:
     """
@@ -76,6 +83,7 @@ Feature: Admin REST API
     And set "conversationId" to "${bobConversationId}"
     And the conversation should be soft-deleted
 
+  # Serial today only because this feature shares the serial admin runner; this scenario restores one scenario-local conversation by ID and appears parallel-safe.
   Scenario: Admin can restore a soft-deleted conversation
     Given the conversation owned by "bob" is deleted
     When I call POST "/v1/admin/conversations/${bobConversationId}/restore" with body:
@@ -88,6 +96,7 @@ Feature: Admin REST API
     And set "conversationId" to "${bobConversationId}"
     And the conversation should not be deleted
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only mutates one scenario-local fork tree and appears parallel-safe.
   Scenario: Admin deleting a fork soft-deletes all conversations in the group
     Given I am authenticated as user "bob"
     And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
@@ -117,6 +126,7 @@ Feature: Admin REST API
     And set "conversationId" to "${bobConversationId}"
     And the conversation should be soft-deleted
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only mutates one scenario-local fork tree and appears parallel-safe.
   Scenario: Admin deleting the root soft-deletes all conversations in the group
     Given I am authenticated as user "bob"
     And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
@@ -146,6 +156,7 @@ Feature: Admin REST API
     And set "conversationId" to "${forkConversationId}"
     And the conversation should be soft-deleted
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only restores one scenario-local fork tree and appears parallel-safe.
   Scenario: Admin restoring via fork ID restores all conversations in the group
     Given I am authenticated as user "bob"
     And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
@@ -182,6 +193,7 @@ Feature: Admin REST API
     And set "conversationId" to "${bobConversationId}"
     And the conversation should not be deleted
 
+  # Serial today only because this feature shares the serial admin runner; this scenario checks one scenario-local restore conflict and appears parallel-safe.
   Scenario: Restoring an already-active conversation returns conflict
     When I call POST "/v1/admin/conversations/${aliceConversationId}/restore" with body:
     """
@@ -191,22 +203,26 @@ Feature: Admin REST API
     """
     Then the response status should be 409
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only checks that the auditor can read the global list and appears parallel-safe.
   Scenario: Auditor can list conversations across users
     Given I am authenticated as auditor user "charlie"
     When I call GET "/v1/admin/conversations"
     Then the response status should be 200
     And the response should contain at least 1 conversation
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local conversation by ID and appears parallel-safe.
   Scenario: Auditor can view any conversation
     Given I am authenticated as auditor user "charlie"
     When I call GET "/v1/admin/conversations/${bobConversationId}"
     Then the response status should be 200
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local conversation by ID and appears parallel-safe.
   Scenario: Admin conversation payload exposes clientId
     When I call GET "/v1/admin/conversations/${bobConversationId}"
     Then the response status should be 200
     And the response body field "clientId" should not be null
 
+  # Serial today only because this feature shares the serial admin runner; this scenario is an authorization check against one scenario-local conversation and appears parallel-safe.
   Scenario: Auditor receives 403 Forbidden on delete operation
     Given I am authenticated as auditor user "charlie"
     When I call DELETE "/v1/admin/conversations/${bobConversationId}" with body:
@@ -217,6 +233,7 @@ Feature: Admin REST API
     """
     Then the response status should be 403
 
+  # Serial today only because this feature shares the serial admin runner; this scenario is an authorization check against one scenario-local conversation and appears parallel-safe.
   Scenario: Auditor receives 403 Forbidden on restore operation
     Given I am authenticated as auditor user "charlie"
     And the conversation owned by "bob" is deleted
@@ -228,23 +245,27 @@ Feature: Admin REST API
     """
     Then the response status should be 403
 
+  # Serial today only because this feature shares the serial admin runner; this scenario is a pure authorization check and appears parallel-safe.
   Scenario: Non-admin user receives 403 Forbidden on all admin endpoints
     Given I am authenticated as user "bob"
     When I call GET "/v1/admin/conversations"
     Then the response status should be 403
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only checks that the request succeeds with a justification parameter and appears parallel-safe.
   Scenario: Justification is logged when provided
     When I call GET "/v1/admin/conversations?justification=Support+ticket+1234"
     Then the response status should be 200
     And the admin audit log should contain "listConversations"
     And the admin audit log should contain "Support ticket 1234"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads entries for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin can get entries from any conversation
     Given the conversation owned by "bob" has an entry "Test entry"
     When I call GET "/v1/admin/conversations/${bobConversationId}/entries"
     Then the response status should be 200
     And the response should contain at least 1 items
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads context entries for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin can get context channel entries from any conversation
     # Create context entries as an agent (which sets clientId).
     # Agent auth defaults to user "alice", so use alice's conversation.
@@ -258,11 +279,13 @@ Feature: Admin REST API
     Then the response status should be 200
     And the response should contain at least 1 items
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads memberships for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin can get memberships for any conversation
     When I call GET "/v1/admin/conversations/${bobConversationId}/memberships"
     Then the response status should be 200
     And the response should contain at least 1 memberships
 
+  # Serial today only because this feature shares the serial admin runner; this scenario searches for a scenario-unique marker and appears parallel-safe.
   Scenario: Admin can perform system-wide semantic search
     Given the conversation owned by "bob" has an entry "Searchable content"
     When I call POST "/v1/admin/conversations/search" with body:
@@ -274,6 +297,7 @@ Feature: Admin REST API
     Then the response status should be 200
     And the response should contain at least 1 items
 
+  # Serial today only because this feature shares the serial admin runner; this scenario scopes the search to the scenario-local user ID and appears parallel-safe.
   Scenario: Admin search can filter by userId
     Given the conversation owned by "bob" has an entry "Bob's entry"
     Given the conversation owned by "alice" has an entry "Alice's entry"
@@ -287,6 +311,7 @@ Feature: Admin REST API
     Then the response status should be 200
     And all search results should have conversation owned by "bob"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario searches for a scenario-unique marker and appears parallel-safe.
   Scenario: Admin search can include deleted conversations when requested
     Given the conversation owned by "bob" has an entry "Deleted-only search marker"
     And the conversation owned by "bob" is deleted
@@ -309,6 +334,7 @@ Feature: Admin REST API
     Then the response status should be 200
     And the response should contain at least 1 items
 
+  # Serial today only because this feature shares the serial admin runner; this scenario paginates over scenario-unique search markers and appears parallel-safe.
   Scenario: Admin search supports afterCursor pagination
     Given the conversation owned by "bob" has an entry "Admin cursor marker one"
     Given the conversation owned by "alice" has an entry "Admin cursor marker two"
@@ -332,11 +358,13 @@ Feature: Admin REST API
     """
     Then the response status should be 200
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local conversation by ID and appears parallel-safe.
   Scenario: Admin conversation response does not contain conversationGroupId
     When I call GET "/v1/admin/conversations/${bobConversationId}"
     Then the response status should be 200
     And the response body should not contain "conversationGroupId"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads memberships for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin membership response contains conversationId
     When I call GET "/v1/admin/conversations/${bobConversationId}/memberships"
     Then the response status should be 200
@@ -344,6 +372,7 @@ Feature: Admin REST API
     And the response body "data[0].conversationId" should be "${bobConversationId}"
     And the response body should not contain "conversationGroupId"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario scopes latest-fork mode to the scenario-local user ID and appears parallel-safe.
   Scenario: Admin can list conversations with mode=latest-fork
     # First authenticate as bob to create an entry
     Given I am authenticated as user "bob"
@@ -375,6 +404,7 @@ Feature: Admin REST API
     And the response should contain 1 conversation
     And the response body "data[0].id" should be "${forkConversationId}"
 
+  # Serial required: this scenario asserts the exact global latest-fork result set across users, so concurrent scenarios can change both the count and ordering.
   Scenario: Admin latest-fork returns one conversation per group across users
     Given I am authenticated as user "bob"
     And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
@@ -404,6 +434,7 @@ Feature: Admin REST API
     And the response body "data[0].id" should be "${forkConversationId}"
     And the response body "data[1].id" should be "${aliceConversationId}"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario scopes latest-fork mode to the scenario-local user ID and appears parallel-safe.
   Scenario: Admin latest-fork honors deleted filters within a fork tree
     Given I am authenticated as user "bob"
     And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
@@ -441,6 +472,7 @@ Feature: Admin REST API
     And the response should contain 1 conversation
     And the response body "data[0].id" should be "${forkConversationId}"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario scopes roots mode to the scenario-local user ID and appears parallel-safe.
   Scenario: Admin can list conversations with mode=roots
     # First authenticate as bob to create an entry and fork
     Given I am authenticated as user "bob"
@@ -464,6 +496,7 @@ Feature: Admin REST API
     And the response should contain 1 conversation
     And the response body "data[0].id" should be "${bobConversationId}"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario scopes all mode to the scenario-local user ID and appears parallel-safe.
   Scenario: Admin can list conversations with mode=all
     Given I am authenticated as user "bob"
     And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
@@ -486,6 +519,7 @@ Feature: Admin REST API
     And the response body "data[0].id" should be "${forkConversationId}"
     And the response body "data[1].id" should be "${bobConversationId}"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario lists forks for one scenario-local conversation tree and appears parallel-safe.
   Scenario: Admin can list forks for any conversation
     # First authenticate as bob to create entries and forks
     Given I am authenticated as user "bob"
@@ -524,6 +558,7 @@ Feature: Admin REST API
     # Results are ordered by conversation ID (ASC) for cursor-based pagination
     And the response body should contain "${bobConversationId}"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario lists forks for one scenario-local conversation tree and appears parallel-safe.
   Scenario: Auditor can list forks for any conversation
     # First authenticate as bob to create an entry and fork
     Given I am authenticated as user "bob"
@@ -545,11 +580,13 @@ Feature: Admin REST API
     Then the response status should be 200
     And the response should contain at least 2 conversations
 
+  # Serial today only because this feature shares the serial admin runner; this scenario is a pure authorization check and appears parallel-safe.
   Scenario: Non-admin user receives 403 Forbidden on admin forks endpoint
     Given I am authenticated as user "bob"
     When I call GET "/v1/admin/conversations/${bobConversationId}/forks"
     Then the response status should be 403
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only checks that the request succeeds with a justification parameter and appears parallel-safe.
   Scenario: Admin forks justification is logged
     When I call GET "/v1/admin/conversations/${bobConversationId}/forks?justification=Investigating+fork+history"
     Then the response status should be 200

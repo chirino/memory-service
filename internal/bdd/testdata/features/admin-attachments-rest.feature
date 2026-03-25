@@ -8,6 +8,7 @@ Feature: Admin Attachments REST API
 
   # --- Listing ---
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only asserts a minimum count on a global list and appears parallel-safe after scenario isolation.
   Scenario: Admin can list all attachments across users
     Given I am authenticated as user "alice"
     And I have a conversation with title "Alice Attachment Conv"
@@ -24,6 +25,7 @@ Feature: Admin Attachments REST API
     Then the response status should be 200
     And the response body "data" should have at least 2 item
 
+  # Serial today only because this feature shares the serial admin runner; this scenario scopes the query to the scenario-local user ID and appears parallel-safe.
   Scenario: Admin can filter attachments by userId
     Given I am authenticated as user "bob"
     And I have a conversation with title "Bob Filter Conv"
@@ -34,6 +36,7 @@ Feature: Admin Attachments REST API
     Then the response status should be 200
     And the response body "data" should have at least 1 item
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only checks that at least one scenario-local linked attachment is returned and appears parallel-safe.
   Scenario: Admin can filter attachments by status=linked
     Given I am authenticated as agent with API key "test-agent-key"
     And I have a conversation with title "Linked Attachment Conv"
@@ -55,6 +58,7 @@ Feature: Admin Attachments REST API
     Then the response status should be 200
     And the response body "data" should have at least 1 item
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only checks cursor pagination on its own uploads and appears parallel-safe.
   Scenario: Admin can paginate attachment listing
     Given I am authenticated as user "alice"
     And I have a conversation with title "Pagination Conv"
@@ -71,6 +75,7 @@ Feature: Admin Attachments REST API
 
   # --- Get Metadata ---
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local attachment by ID and appears parallel-safe.
   Scenario: Admin can get metadata for any attachment
     Given I am authenticated as user "bob"
     And I have a conversation with title "Bob Metadata Conv"
@@ -84,6 +89,7 @@ Feature: Admin Attachments REST API
     And the response body field "userId" should be "bob"
     And the response body field "refCount" should not be null
 
+  # Serial today only because this feature shares the serial admin runner; this scenario is a pure not-found check and appears parallel-safe.
   Scenario: Admin get returns 404 for non-existent attachment
     Given I am authenticated as admin user "alice"
     When I call GET "/v1/admin/attachments/00000000-0000-0000-0000-000000000099"
@@ -91,6 +97,7 @@ Feature: Admin Attachments REST API
 
   # --- Download ---
 
+  # Serial today only because this feature shares the serial admin runner; this scenario downloads one scenario-local attachment by ID and appears parallel-safe.
   Scenario: Admin can download content for any attachment
     Given I am authenticated as user "bob"
     And I have a conversation with title "Bob Download Conv"
@@ -102,6 +109,7 @@ Feature: Admin Attachments REST API
     Then the response status should be 200
     And the binary response content should be "downloadable content"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local attachment by ID and appears parallel-safe.
   Scenario: Admin can get download URL for any attachment
     Given I am authenticated as user "bob"
     And I have a conversation with title "Bob DL URL Conv"
@@ -114,6 +122,7 @@ Feature: Admin Attachments REST API
     And the response body field "url" should not be null
     And the response body field "expiresIn" should not be null
 
+  # Serial today only because this feature shares the serial admin runner; this scenario is a pure not-found check and appears parallel-safe.
   Scenario: Download content returns 404 for non-existent attachment
     Given I am authenticated as admin user "alice"
     When I call GET "/v1/admin/attachments/00000000-0000-0000-0000-000000000099/content" expecting binary
@@ -121,6 +130,7 @@ Feature: Admin Attachments REST API
 
   # --- Delete ---
 
+  # Serial today only because this feature shares the serial admin runner; this scenario deletes one scenario-local attachment by ID and appears parallel-safe.
   Scenario: Admin can delete an unlinked attachment
     Given I am authenticated as user "bob"
     And I have a conversation with title "Bob Delete Conv"
@@ -136,6 +146,7 @@ Feature: Admin Attachments REST API
     """
     Then the response status should be 204
 
+  # Serial today only because this feature shares the serial admin runner; this scenario deletes one scenario-local linked attachment by ID and appears parallel-safe.
   Scenario: Admin can delete a linked attachment
     Given I am authenticated as agent with API key "test-agent-key"
     And I have a conversation with title "Linked Delete Conv"
@@ -161,6 +172,7 @@ Feature: Admin Attachments REST API
     """
     Then the response status should be 204
 
+  # Serial today only because this feature shares the serial admin runner; this scenario is a pure not-found check and appears parallel-safe.
   Scenario: Admin delete returns 404 for non-existent attachment
     Given I am authenticated as admin user "alice"
     When I call DELETE "/v1/admin/attachments/00000000-0000-0000-0000-000000000099" with body:
@@ -173,6 +185,7 @@ Feature: Admin Attachments REST API
 
   # --- Authorization ---
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only checks that the auditor can read the global list and appears parallel-safe.
   Scenario: Auditor can list attachments
     Given I am authenticated as user "bob"
     And I have a conversation with title "Auditor List Conv"
@@ -182,6 +195,7 @@ Feature: Admin Attachments REST API
     When I call GET "/v1/admin/attachments"
     Then the response status should be 200
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local attachment by ID and appears parallel-safe.
   Scenario: Auditor can view attachment metadata
     Given I am authenticated as user "bob"
     And I have a conversation with title "Auditor View Conv"
@@ -192,6 +206,7 @@ Feature: Admin Attachments REST API
     When I call GET "/v1/admin/attachments/${auditorViewAttachmentId}"
     Then the response status should be 200
 
+  # Serial today only because this feature shares the serial admin runner; this scenario is an authorization check against one scenario-local attachment and appears parallel-safe.
   Scenario: Auditor cannot delete attachments
     Given I am authenticated as user "bob"
     And I have a conversation with title "Auditor Delete Conv"
@@ -207,6 +222,7 @@ Feature: Admin Attachments REST API
     """
     Then the response status should be 403
 
+  # Serial today only because this feature shares the serial admin runner; this scenario is a pure authorization check and appears parallel-safe.
   Scenario: Non-admin user cannot access admin attachment endpoints
     Given I am authenticated as user "bob"
     When I call GET "/v1/admin/attachments"
@@ -214,6 +230,7 @@ Feature: Admin Attachments REST API
 
   # --- Audit logging ---
 
+  # Serial today only because this feature shares the serial admin runner; this scenario only checks that the request succeeds with a justification parameter and appears parallel-safe.
   Scenario: Justification is logged when listing attachments
     When I call GET "/v1/admin/attachments?justification=Compliance+audit+2024"
     Then the response status should be 200
@@ -222,6 +239,7 @@ Feature: Admin Attachments REST API
 
   # --- Cache Headers ---
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local attachment by ID and appears parallel-safe.
   Scenario: Admin attachment content download includes ETag and Cache-Control
     Given I am authenticated as user "bob"
     And I have a conversation with title "Admin Cache Conv"
@@ -237,6 +255,7 @@ Feature: Admin Attachments REST API
     And the response header "Cache-Control" should contain "max-age="
     And the response header "Cache-Control" should contain "immutable"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local attachment by ID and appears parallel-safe.
   Scenario: Admin attachment content returns 304 for matching ETag
     Given I am authenticated as user "bob"
     And I have a conversation with title "Admin ETag Conv"

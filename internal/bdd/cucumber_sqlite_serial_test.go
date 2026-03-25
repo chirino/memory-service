@@ -3,25 +3,17 @@
 package bdd
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/stretchr/testify/require"
 )
 
 func TestFeaturesSQLiteSerial(t *testing.T) {
-	prom := NewMockPrometheus(t)
-	dbURL := filepath.Join(t.TempDir(), "memory.db")
-
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DatastoreType = "sqlite"
-	cfg.DBURL = dbURL
 	cfg.CacheType = "none"
 	cfg.AttachType = "fs"
 	cfg.VectorType = "none"
@@ -32,17 +24,8 @@ func TestFeaturesSQLiteSerial(t *testing.T) {
 	cfg.AdminUsers = bddAdminUsers()
 	cfg.AuditorUsers = bddAuditorUsers()
 	cfg.IndexerUsers = bddIndexerUsers()
-	cfg.PrometheusURL = prom.Server.URL
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false
-	ctx := config.WithContext(context.Background(), &cfg)
-
-	srv, err := serve.StartServer(ctx, &cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
-
-	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
-	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
 	featuresDir := filepath.Join("testdata", "features")
 	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
@@ -50,12 +33,13 @@ func TestFeaturesSQLiteSerial(t *testing.T) {
 	}
 
 	featureFiles, err := filepath.Glob(filepath.Join(featuresDir, "*.feature"))
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("glob sqlite serial feature files: %v", err)
+	}
 	featureFiles = filterSerialFeatures(featureFiles, true)
-	require.NotEmpty(t, featureFiles, "No serial SQLite feature files found in %s", featuresDir)
+	if len(featureFiles) == 0 {
+		t.Fatalf("No serial SQLite feature files found in %s", featuresDir)
+	}
 
-	runBDDFeaturesWithConcurrency(t, "sqlite-serial", featureFiles, apiURL, grpcAddr, &cfg, &SQLiteTestDB{DBURL: dbURL}, map[string]interface{}{
-		"mockPrometheus": prom,
-		"grpcAddr":       grpcAddr,
-	}, 1)
+	runBDDFeaturesWithScenarioSetup(t, "sqlite-serial", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency())
 }

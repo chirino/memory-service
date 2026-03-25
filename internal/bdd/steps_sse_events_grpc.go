@@ -61,7 +61,7 @@ func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, afte
 		<-existing.done
 	}
 
-	addr, ok := e.s.Suite.Extra["grpcAddr"].(string)
+	addr, ok := e.s.Extra["grpcAddr"].(string)
 	if !ok || addr == "" {
 		return fmt.Errorf("gRPC address not configured in test suite")
 	}

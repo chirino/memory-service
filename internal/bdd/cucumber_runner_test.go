@@ -12,10 +12,14 @@ import (
 )
 
 func runBDDFeatures(t *testing.T, suiteName string, featureFiles []string, apiURL, grpcAddr string, cfg *config.Config, db cucumber.TestDB, extra map[string]interface{}) {
-	runBDDFeaturesWithConcurrency(t, suiteName, featureFiles, apiURL, grpcAddr, cfg, db, extra, bddScenarioConcurrency())
+	runBDDFeaturesWithScenarioSetup(t, suiteName, featureFiles, apiURL, grpcAddr, cfg, db, extra, nil, bddScenarioConcurrency())
 }
 
 func runBDDFeaturesWithConcurrency(t *testing.T, suiteName string, featureFiles []string, apiURL, grpcAddr string, cfg *config.Config, db cucumber.TestDB, extra map[string]interface{}, concurrency int) {
+	runBDDFeaturesWithScenarioSetup(t, suiteName, featureFiles, apiURL, grpcAddr, cfg, db, extra, nil, concurrency)
+}
+
+func runBDDFeaturesWithScenarioSetup(t *testing.T, suiteName string, featureFiles []string, apiURL, grpcAddr string, cfg *config.Config, db cucumber.TestDB, extra map[string]interface{}, setup cucumber.ScenarioSetupFunc, concurrency int) {
 	t.Helper()
 
 	opts := cucumber.DefaultOptions()
@@ -41,6 +45,7 @@ func runBDDFeaturesWithConcurrency(t *testing.T, suiteName string, featureFiles 
 			suite.TestingT = t
 			suite.Context = cfg
 			suite.DB = db
+			suite.ScenarioSetup = setup
 			for k, v := range extra {
 				suite.Extra[k] = v
 			}

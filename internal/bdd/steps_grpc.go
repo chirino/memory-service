@@ -86,7 +86,7 @@ type grpcSteps struct {
 }
 
 func (g *grpcSteps) conn() (*grpc.ClientConn, error) {
-	addr, ok := g.s.Suite.Extra["grpcAddr"].(string)
+	addr, ok := g.s.Extra["grpcAddr"].(string)
 	if !ok || addr == "" {
 		return nil, fmt.Errorf("gRPC address not configured in test suite")
 	}

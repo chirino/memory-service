@@ -79,7 +79,7 @@ func (e *sseEventSteps) openSSEStream(userID, path string) error {
 		cancel()
 		return err
 	}
-	url := e.s.Suite.APIURL + expandedPath
+	url := e.s.APIBaseURL() + expandedPath
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

@@ -78,7 +78,7 @@ func (o *oidcAuthSteps) oidcLoginShouldFail() error {
 }
 
 func (o *oidcAuthSteps) provider() (oidcTokenProvider, error) {
-	raw := o.s.Suite.Extra[OIDCTokenProviderExtraKey]
+	raw := o.s.Extra[OIDCTokenProviderExtraKey]
 	if raw == nil {
 		return nil, fmt.Errorf("OIDC token provider not configured in suite extra %q", OIDCTokenProviderExtraKey)
 	}

@@ -100,7 +100,7 @@ func (a *authSteps) iAmAuthenticatedAsAgentWithAPIKey(apiKey string) error {
 		}
 	}
 	session := a.s.Session()
-	session.Header.Set("X-Client-ID", apiKey)
+	session.Header.Set("X-Client-ID", a.s.IsolatedClientID(apiKey))
 	return nil
 }
 

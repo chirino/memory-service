@@ -52,7 +52,7 @@ func (a *attachmentSteps) iUploadAFile(filename, contentType, content string) er
 	session.RespBytes = nil
 	session.SetRespBytes(nil)
 
-	fullURL := a.s.Suite.APIURL + "/v1/attachments"
+	fullURL := a.s.APIBaseURL() + "/v1/attachments"
 	req, err := http.NewRequestWithContext(context.Background(), "POST", fullURL, &buf)
 	if err != nil {
 		return err
