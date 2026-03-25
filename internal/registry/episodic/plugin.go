@@ -6,11 +6,14 @@ package episodic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+var ErrAdminStatsSummaryUnsupported = errors.New("admin stats summary unsupported")
 
 // PutMemoryRequest is the input for creating or updating a memory.
 type PutMemoryRequest struct {
@@ -46,6 +49,20 @@ type MemoryItem struct {
 type MemoryUsage struct {
 	FetchCount    int64     `json:"fetchCount"`
 	LastFetchedAt time.Time `json:"lastFetchedAt"`
+}
+
+type AdminMemoryStats struct {
+	Total               int64      `json:"total"`
+	SoftDeleted         int64      `json:"softDeleted"`
+	OldestSoftDeletedAt *time.Time `json:"oldestSoftDeletedAt"`
+}
+
+type AdminStatsSummary struct {
+	Memories AdminMemoryStats `json:"memories"`
+}
+
+type AdminStatsSummaryProvider interface {
+	AdminStatsSummary(ctx context.Context) (*AdminStatsSummary, error)
 }
 
 // MemoryKey identifies a memory by decoded namespace + key.

@@ -13,6 +13,10 @@ import (
 	"time"
 
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/plugin/route/routetx"
+	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
+	"github.com/chirino/memory-service/internal/security"
 	"github.com/gin-gonic/gin"
 )
 
@@ -70,6 +74,14 @@ type prometheusRangeResult struct {
 	Values [][]any           `json:"values"`
 }
 
+type adminStatsSummaryResponse struct {
+	ConversationGroups registrystore.AdminConversationGroupStats `json:"conversationGroups"`
+	Conversations      registrystore.AdminTotalStats             `json:"conversations"`
+	Entries            registrystore.AdminTotalStats             `json:"entries"`
+	Memories           registryepisodic.AdminMemoryStats         `json:"memories"`
+	OutboxEvents       *registrystore.AdminOutboxStats           `json:"outboxEvents"`
+}
+
 func newPrometheusStatsHandler(cfg *config.Config) *prometheusStatsHandler {
 	baseURL := ""
 	if cfg != nil {
@@ -82,6 +94,82 @@ func newPrometheusStatsHandler(cfg *config.Config) *prometheusStatsHandler {
 		},
 		now: time.Now,
 	}
+}
+
+func HandleAdminStatsSummary(c *gin.Context, store registrystore.MemoryStore, episodicStore registryepisodic.EpisodicStore, cfg *config.Config) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+
+	memoryProvider, ok := store.(registrystore.AdminStatsSummaryProvider)
+	if !ok {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "admin stats summary unsupported"})
+		return
+	}
+	episodicProvider, ok := episodicStore.(registryepisodic.AdminStatsSummaryProvider)
+	if !ok {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "admin stats summary unsupported"})
+		return
+	}
+
+	var memorySummary *registrystore.AdminStatsSummary
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		summary, err := memoryProvider.AdminStatsSummary(ctx)
+		if err != nil {
+			return err
+		}
+		memorySummary = summary
+		return nil
+	}); err != nil {
+		if errors.Is(err, registrystore.ErrAdminStatsSummaryUnsupported) {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "admin stats summary unsupported"})
+			return
+		}
+		handleError(c, err)
+		return
+	}
+
+	var episodicSummary *registryepisodic.AdminStatsSummary
+	if err := routetx.EpisodicRead(c, episodicStore, func(ctx context.Context) error {
+		summary, err := episodicProvider.AdminStatsSummary(ctx)
+		if err != nil {
+			return err
+		}
+		episodicSummary = summary
+		return nil
+	}); err != nil {
+		if errors.Is(err, registryepisodic.ErrAdminStatsSummaryUnsupported) {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "admin stats summary unsupported"})
+			return
+		}
+		handleError(c, err)
+		return
+	}
+
+	if memorySummary == nil || episodicSummary == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	outboxEvents := memorySummary.OutboxEvents
+	if !adminStatsOutboxEnabled(store, cfg) {
+		outboxEvents = nil
+	}
+
+	c.JSON(http.StatusOK, adminStatsSummaryResponse{
+		ConversationGroups: memorySummary.ConversationGroups,
+		Conversations:      memorySummary.Conversations,
+		Entries:            memorySummary.Entries,
+		Memories:           episodicSummary.Memories,
+		OutboxEvents:       outboxEvents,
+	})
+}
+
+func adminStatsOutboxEnabled(store registrystore.MemoryStore, cfg *config.Config) bool {
+	if provider, ok := store.(registrystore.OutboxEnabledProvider); ok {
+		return provider.OutboxEnabled()
+	}
+	return cfg != nil && cfg.OutboxEnabled
 }
 
 func (h *prometheusStatsHandler) rangeHandler(promQL, metric, unit string) gin.HandlerFunc {

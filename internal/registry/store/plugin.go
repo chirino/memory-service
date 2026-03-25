@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v3"
 )
+
+var ErrAdminStatsSummaryUnsupported = errors.New("admin stats summary unsupported")
 
 // PagedEntries is a paginated list of entries.
 type PagedEntries struct {
@@ -147,6 +150,32 @@ type AdminAttachmentQuery struct {
 type AdminAttachment struct {
 	model.Attachment
 	RefCount int64 `json:"refCount"`
+}
+
+type AdminTotalStats struct {
+	Total int64 `json:"total"`
+}
+
+type AdminConversationGroupStats struct {
+	Total               int64      `json:"total"`
+	SoftDeleted         int64      `json:"softDeleted"`
+	OldestSoftDeletedAt *time.Time `json:"oldestSoftDeletedAt"`
+}
+
+type AdminOutboxStats struct {
+	Total    int64      `json:"total"`
+	OldestAt *time.Time `json:"oldestAt"`
+}
+
+type AdminStatsSummary struct {
+	ConversationGroups AdminConversationGroupStats `json:"conversationGroups"`
+	Conversations      AdminTotalStats             `json:"conversations"`
+	Entries            AdminTotalStats             `json:"entries"`
+	OutboxEvents       *AdminOutboxStats           `json:"outboxEvents"`
+}
+
+type AdminStatsSummaryProvider interface {
+	AdminStatsSummary(ctx context.Context) (*AdminStatsSummary, error)
 }
 
 // AttachmentUpdate defines mutable attachment fields.

@@ -172,6 +172,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodGet, "/v1/admin/stats/error-rate", adminWrapper.GetErrorRate)
 	register(http.MethodGet, "/v1/admin/stats/latency-p95", adminWrapper.GetLatencyP95)
 	register(http.MethodGet, "/v1/admin/stats/request-rate", adminWrapper.GetRequestRate)
+	register(http.MethodGet, "/v1/admin/stats/summary", adminWrapper.GetStatsSummary)
 	register(http.MethodGet, "/v1/admin/stats/store-latency-p95", adminWrapper.GetStoreLatencyP95)
 	register(http.MethodGet, "/v1/admin/stats/store-throughput", adminWrapper.GetStoreThroughput)
 	register(http.MethodGet, "/v1/health", adminWrapper.GetHealth)
@@ -501,6 +502,12 @@ func (p *proxyAdminServer) GetRequestRate(c *gin.Context, _ generatedadmin.GetRe
 		return
 	}
 	routeadmin.HandleAdminStatsRequestRate(c, p.cfg)
+}
+func (p *proxyAdminServer) GetStatsSummary(c *gin.Context) {
+	if !p.authorize(c) {
+		return
+	}
+	routeadmin.HandleAdminStatsSummary(c, p.store, p.episodicStore, p.cfg)
 }
 func (p *proxyAdminServer) GetStoreLatencyP95(c *gin.Context, _ generatedadmin.GetStoreLatencyP95Params) {
 	if !p.authorize(c) {

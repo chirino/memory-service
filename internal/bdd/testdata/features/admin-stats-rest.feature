@@ -43,6 +43,49 @@ Feature: Admin Stats REST API
     When I call GET "/v1/admin/stats/request-rate"
     Then the response status should be 403
 
+  Scenario: Admin can fetch datastore-backed summary stats
+    And there is a conversation owned by "bob" with title "Summary soft-delete probe"
+    And set "summaryConversationId" to "${conversationId}"
+    Given I am authenticated as user "alice"
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "summary"],
+      "key": "to-delete",
+      "value": { "x": 1 }
+    }
+    """
+    And I call DELETE "/v1/memories?ns=user&ns=alice&ns=summary&key=to-delete"
+    And I am authenticated as admin user "alice"
+    When I call DELETE "/v1/admin/conversations/${summaryConversationId}" with body:
+    """
+    {
+      "justification": "Create deleted data for summary stats"
+    }
+    """
+    Then the response status should be 204
+    When I call GET "/v1/admin/stats/summary"
+    Then the response status should be 200
+    And the response body field "conversationGroups.total" should not be null
+    And the response body field "conversationGroups.softDeleted" should not be null
+    And the response body field "conversationGroups.oldestSoftDeletedAt" should not be null
+    And the response body field "conversations.total" should not be null
+    And the response body field "entries.total" should not be null
+    And the response body field "memories.total" should not be null
+    And the response body field "memories.softDeleted" should not be null
+    And the response body field "memories.oldestSoftDeletedAt" should not be null
+    And the response body field "outboxEvents" should be null
+
+  Scenario: Auditor can fetch datastore-backed summary stats
+    Given I am authenticated as auditor user "charlie"
+    When I call GET "/v1/admin/stats/summary"
+    Then the response status should be 200
+
+  Scenario: Non-admin user cannot fetch datastore-backed summary stats
+    Given I am authenticated as user "bob"
+    When I call GET "/v1/admin/stats/summary"
+    Then the response status should be 403
+
   Scenario: Stats return 503 when Prometheus is unavailable
     Given Prometheus is unavailable
     When I call GET "/v1/admin/stats/request-rate"
