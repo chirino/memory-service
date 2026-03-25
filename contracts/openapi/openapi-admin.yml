@@ -774,6 +774,60 @@ paths:
       security:
         - BearerAuth: []
 
+  /v1/admin/events:
+    get:
+      tags: [Admin]
+      summary: Subscribe to all real-time events (admin SSE)
+      description: |-
+        Admin/auditor SSE stream that delivers all events from all users,
+        bypassing membership filtering. Requires admin or auditor role and a
+        justification query parameter for audit logging.
+      operationId: adminSubscribeEvents
+      parameters:
+        - name: justification
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Non-empty reason for subscribing (logged for audit).
+        - name: kinds
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated event kinds to filter.
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
+        - name: detail
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [summary, full]
+            default: summary
+          description: Event payload detail level.
+      responses:
+        '200':
+          description: SSE event stream opened successfully.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Missing or empty justification.
+        '401':
+          description: Authentication required.
+        '403':
+          description: Admin or auditor role required.
+        '501':
+          description: Replay requested but outbox support is unavailable.
+      security:
+        - BearerAuth: []
+
   ############################################################
   # Admin Attachments
   ############################################################

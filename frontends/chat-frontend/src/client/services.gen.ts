@@ -1155,8 +1155,8 @@ export class EventsService {
 export class AdminService {
   /**
    * Subscribe to all real-time events (admin SSE)
-   * Admin-only SSE stream that delivers all events from all users,
-   * bypassing membership filtering. Requires admin role and a
+   * Admin/auditor SSE stream that delivers all events from all users,
+   * bypassing membership filtering. Requires admin or auditor role and a
    * justification query parameter for audit logging.
    * @param data The data for the request.
    * @param data.justification Non-empty reason for subscribing (logged for audit).
@@ -1181,7 +1181,7 @@ export class AdminService {
       errors: {
         400: "Missing or empty justification.",
         401: "Authentication required.",
-        403: "Admin role required.",
+        403: "Admin or auditor role required.",
       },
     });
   }

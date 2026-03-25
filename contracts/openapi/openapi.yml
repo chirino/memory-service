@@ -1565,8 +1565,8 @@ paths:
       operationId: adminSubscribeEvents
       summary: Subscribe to all real-time events (admin SSE)
       description: |-
-        Admin-only SSE stream that delivers all events from all users,
-        bypassing membership filtering. Requires admin role and a
+        Admin/auditor SSE stream that delivers all events from all users,
+        bypassing membership filtering. Requires admin or auditor role and a
         justification query parameter for audit logging.
       tags:
         - Admin
@@ -1611,7 +1611,7 @@ paths:
         '401':
           description: Authentication required.
         '403':
-          description: Admin role required.
+          description: Admin or auditor role required.
 
 components:
   securitySchemes:

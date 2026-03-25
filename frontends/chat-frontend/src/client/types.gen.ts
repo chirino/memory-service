@@ -1548,7 +1548,7 @@ export type $OpenApiTs = {
          */
         401: unknown;
         /**
-         * Admin role required.
+         * Admin or auditor role required.
          */
         403: unknown;
       };

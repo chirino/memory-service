@@ -84,6 +84,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 			episodicStore:   episodicStore,
 			episodicPolicy:  episodicPolicy,
 			episodicIndexer: episodicIndexer,
+			eventBus:        eventBus,
 		},
 		ErrorHandler: func(c *gin.Context, err error, statusCode int) {
 			c.JSON(statusCode, gin.H{"error": err.Error()})
@@ -302,8 +303,8 @@ func (p *proxyAPIServer) SubscribeEvents(c *gin.Context, _ generatedapi.Subscrib
 	routeagentevents.HandleSSEEvents(c, p.store, p.eventBus, p.cfg)
 }
 func (p *proxyAPIServer) AdminSubscribeEvents(c *gin.Context, _ generatedapi.AdminSubscribeEventsParams) {
-	if !security.IsAdmin(c) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "admin role required"})
+	if security.EffectiveAdminRole(c) == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin or auditor role required"})
 		return
 	}
 	routeadmin.HandleAdminSSEEvents(c, p.store, p.eventBus, p.cfg)
@@ -317,6 +318,7 @@ type proxyAdminServer struct {
 	episodicStore   registryepisodic.EpisodicStore
 	episodicPolicy  *episodic.PolicyEngine
 	episodicIndexer *service.EpisodicIndexer
+	eventBus        registryeventbus.EventBus
 }
 
 func (p *proxyAdminServer) authorize(c *gin.Context) bool {
@@ -332,6 +334,12 @@ func (p *proxyAdminServer) AdminGetMemoryIndexStatus(c *gin.Context) {
 		return
 	}
 	routememories.HandleAdminGetMemoryIndexStatus(c, p.episodicStore)
+}
+func (p *proxyAdminServer) AdminSubscribeEvents(c *gin.Context, _ generatedadmin.AdminSubscribeEventsParams) {
+	if !p.authorize(c) {
+		return
+	}
+	routeadmin.HandleAdminSSEEvents(c, p.store, p.eventBus, p.cfg)
 }
 func (p *proxyAdminServer) AdminTriggerMemoryIndex(c *gin.Context) {
 	if !p.authorize(c) {
