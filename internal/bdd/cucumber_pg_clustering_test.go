@@ -65,7 +65,7 @@ func TestFeaturesPgClustering(t *testing.T) {
 	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
 
 	featureFiles := []string{
-		filepath.Join("testdata", "features", "clustering-rest.feature"),
+		filepath.Join("testdata", "features-clustering", "clustering-rest.feature"),
 	}
 
 	opts := cucumber.DefaultOptions()
