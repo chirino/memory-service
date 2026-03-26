@@ -25,6 +25,25 @@ This is a proof of concept (POC) currently under development.
 
 ![Diagram](site/src/pages/docs/memory-service-architecture.png)
 
+## MCP Server
+
+The Memory Service includes an [MCP](https://modelcontextprotocol.io/) server that lets AI coding assistants (Claude Code, Cursor, etc.) persist and search session notes across conversations.
+
+**Install:**
+
+```bash
+go install github.com/chirino/memory-service/memory-service-mcp@latest
+```
+
+Or use the `mcp` subcommand of the main binary:
+
+```bash
+go install github.com/chirino/memory-service@latest
+memory-service mcp
+```
+
+See [memory-service-mcp/README.md](memory-service-mcp/README.md) for full configuration and usage details.
+
 ## Documentation
 
 Visit the [Memory Service Documentation](https://chirino.github.io/memory-service/docs/) for complete guides:

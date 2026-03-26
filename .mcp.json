@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "memory-service": {
-      "command": "sh",
-      "args": ["-c", "exec go run ./memory-service-mcp"],
+      "command": "memory-service-mcp",
       "env": {
         "MEMORY_SERVICE_URL": "${MEMORY_SERVICE_URL}",
         "MEMORY_SERVICE_API_KEY": "${MEMORY_SERVICE_API_KEY}"
