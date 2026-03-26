@@ -4,7 +4,7 @@ status: partial
 
 # Enhancement 090: Adaptive Knowledge Clustering
 
-> **Status**: Partial — Phases 1-4 (core engine, keywords, trends, API + MCP) implemented.
+> **Status**: Partial — Phases 1-4 (core engine, keywords, trends, admin API) implemented. BDD E2E test passing.
 
 ## Summary
 
@@ -736,6 +736,16 @@ Feature: Knowledge-driven agent context
   - `TestTokenize_FiltersStopWordsAndShortTokens` — tokenizer correctness
   - `TestKeywordStrings` — keyword string extraction
 
+## Prerequisites — Embedding Pipeline
+
+Clustering operates on **existing vector embeddings** in the `entry_embeddings` table. It does not generate embeddings itself. For entries to be clustered, they must flow through the embedding pipeline first:
+
+1. **Entry creation**: The client must include `indexedContent` (plaintext) in the entry payload, or populate it later via `POST /v1/conversations/index`. Without `indexed_content`, the entry is invisible to the embedding pipeline.
+2. **BackgroundIndexer** (runs every 30s): Picks up entries with `indexed_content IS NOT NULL AND indexed_at IS NULL`, calls the configured embedder, and upserts vectors into `entry_embeddings`.
+3. **Knowledge Clusterer** (configurable interval): Reads from `entry_embeddings`, runs DBSCAN per user, stores clusters in `knowledge_clusters`.
+
+If `indexed_content` is NULL, no embedding is generated, and the clusterer has nothing to work with.
+
 ## Tasks
 
 ### Phase 1 — Core Clustering Engine
@@ -812,6 +822,9 @@ Currently clustering only works with pgvector (queries `entry_embeddings` table 
 | `internal/config/config.go` | Add `KnowledgeClustering*` settings | Done |
 | `internal/cmd/serve/serve.go` | Add clustering CLI flags | Done |
 | `internal/cmd/serve/server.go` | Wire clustering goroutine + knowledge routes | Done |
+| `internal/bdd/cucumber_pg_clustering_test.go` | **new** — BDD test runner (pgvector + local embedder + clustering) | Done |
+| `internal/bdd/steps_clustering.go` | **new** — "I wait for embeddings" polling step | Done |
+| `internal/bdd/testdata/features/clustering-rest.feature` | **new** — 3 BDD scenarios (trigger, list, auth) | Done |
 | `internal/plugin/store/mongo/knowledge_store.go` | **new** — MongoDB storage for cluster metadata | Pending |
 | `internal/grpc/server.go` | Add knowledge gRPC handlers | Pending |
 | `contracts/openapi/openapi.yml` | Add `/v1/knowledge/*` endpoints and schemas | Pending |
@@ -824,15 +837,11 @@ Currently clustering only works with pgvector (queries `entry_embeddings` table 
 # Compile
 go build ./...
 
-# Unit tests (26 tests)
+# Unit tests (26 tests — DBSCAN, c-TF-IDF, cluster diff)
 go test ./internal/knowledge/... -v -count=1
 
-# BDD integration tests (Postgres)
-go test ./internal/bdd -run TestFeaturesPg -count=1
-
-# Full test suite (capture output)
-task test:go > test.log 2>&1
-# Search for failures using Grep tool on test.log
+# BDD E2E test (full pipeline: entry → index → embed → cluster → admin API)
+go test ./internal/bdd -run TestFeaturesPgClustering -count=1 -v -timeout 300s
 ```
 
 ## Non-Goals
