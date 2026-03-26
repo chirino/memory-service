@@ -119,44 +119,44 @@ func (p *PostgresTestDB) ExecMongoQuery(_ context.Context, _ string) ([]map[stri
 	return nil, nil
 }
 
-func (p *PostgresTestDB) SoftDeleteConversation(ctx context.Context, conversationID string, days int) error {
+func (p *PostgresTestDB) ArchiveConversation(ctx context.Context, conversationID string, days int) error {
 	conn, err := p.conn(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer conn.Close(ctx)
 
-	deletedAt := time.Now().AddDate(0, 0, -days)
+	archivedAt := time.Now().AddDate(0, 0, -days)
 
 	_, err = conn.Exec(ctx,
-		`UPDATE conversation_groups SET deleted_at = $1 WHERE id = (SELECT conversation_group_id FROM conversations WHERE id = $2)`,
-		deletedAt, conversationID)
+		`UPDATE conversation_groups SET archived_at = $1 WHERE id = (SELECT conversation_group_id FROM conversations WHERE id = $2)`,
+		archivedAt, conversationID)
 	if err != nil {
-		return fmt.Errorf("failed to soft-delete conversation group: %w", err)
+		return fmt.Errorf("failed to archive conversation group: %w", err)
 	}
 	_, err = conn.Exec(ctx,
-		`UPDATE conversations SET deleted_at = $1 WHERE id = $2`,
-		deletedAt, conversationID)
+		`UPDATE conversations SET archived_at = $1 WHERE id = $2`,
+		archivedAt, conversationID)
 	if err != nil {
-		return fmt.Errorf("failed to soft-delete conversation: %w", err)
+		return fmt.Errorf("failed to archive conversation: %w", err)
 	}
 	return nil
 }
 
-func (p *PostgresTestDB) SoftDeleteConversationOnly(ctx context.Context, conversationID string, days int) error {
+func (p *PostgresTestDB) ArchiveConversationOnly(ctx context.Context, conversationID string, days int) error {
 	conn, err := p.conn(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer conn.Close(ctx)
 
-	deletedAt := time.Now().AddDate(0, 0, -days)
+	archivedAt := time.Now().AddDate(0, 0, -days)
 
 	_, err = conn.Exec(ctx,
-		`UPDATE conversations SET deleted_at = $1 WHERE id = $2`,
-		deletedAt, conversationID)
+		`UPDATE conversations SET archived_at = $1 WHERE id = $2`,
+		archivedAt, conversationID)
 	if err != nil {
-		return fmt.Errorf("failed to soft-delete conversation: %w", err)
+		return fmt.Errorf("failed to archive conversation: %w", err)
 	}
 	return nil
 }

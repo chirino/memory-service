@@ -5,6 +5,8 @@ status: implemented
 # Admin Access APIs
 
 > **Status**: Implemented.
+>
+> **Current Contract Note**: This enhancement is historical. Conversation archive behavior, admin conversation PATCH semantics, admin list filtering, and admin stats/reporting are now defined by [094](./094-archive-operations.md). References below to admin conversation `DELETE`, `/restore`, or `includeArchived` / `onlyArchived` describe an obsolete contract and should not be used as current API guidance.
 
 ## Motivation
 
@@ -16,9 +18,9 @@ The memory-service currently provides two API audiences:
 There is no mechanism for platform administrators to:
 
 - **View all conversations** across all users (for support, compliance, or debugging).
-- **Inspect soft-deleted resources** introduced by enhancement 013.
+- **Inspect archived resources** introduced by enhancement 013.
 - **Search across the entire system**, not just a single user's conversations.
-- **Manage conversations on behalf of users** (e.g., force-delete, restore soft-deleted resources).
+- **Manage conversations on behalf of users** (e.g., force-delete, restore archived resources).
 - **Audit system state** (e.g., list all conversations deleted in a time range, view membership history).
 
 This enhancement introduces `/v1/admin/*` APIs that mirror the existing user-facing endpoints but operate with elevated, cross-user privileges. It defines how admin and auditor roles are identified, authorized, and audit-logged.
@@ -34,7 +36,7 @@ Two granular roles govern access to the admin APIs:
 | `admin` | Read + Write | Full administrative access: list, view, delete, restore conversations across all users |
 | `auditor` | Read-only | Compliance and support: list and view conversations across all users, but cannot modify anything |
 
-Both roles have cross-user visibility (they can see any user's conversations, including soft-deleted resources). The difference is that `auditor` cannot perform write operations (delete, restore).
+Both roles have cross-user visibility (they can see any user's conversations, including archived resources). The difference is that `auditor` cannot perform write operations (delete, restore).
 
 ### How Roles Are Resolved
 
@@ -195,7 +197,7 @@ When set to `true`, any admin API call without a `justification` value returns `
 private static final Logger ADMIN_AUDIT = Logger.getLogger("io.github.chirino.memory.admin.audit");
 
 // Example log entries:
-// INFO  [admin.audit] ADMIN_READ user=alice action=listConversations params={userId=bob,includeDeleted=true} justification="Support ticket #1234"
+// INFO  [admin.audit] ADMIN_READ user=alice action=listConversations params={userId=bob,includeArchived=true} justification="Support ticket #1234"
 // INFO  [admin.audit] ADMIN_WRITE user=alice action=restoreConversation target=conv-uuid-123 justification="Accidental deletion recovery"
 // INFO  [admin.audit] ADMIN_READ user=charlie role=auditor action=getConversation target=conv-uuid-456 justification="Compliance review Q4"
 ```
@@ -217,7 +219,7 @@ Rationale:
 - The main spec (`openapi.yml`) generates the Java REST client (`memory-service-rest-quarkus`) and the TypeScript client (`chat-frontend`). Neither consumer needs admin endpoints.
 - A separate spec keeps generated clients clean — no admin methods appear in user/agent SDKs.
 - Admin tooling (CLI scripts, internal dashboards) generates its own client from `openapi-admin.yml`.
-- Shared schemas (e.g., `Conversation`, `Message`) are duplicated in the admin spec with the additional `deletedAt` field. Since we are pre-release and the admin spec is small, this duplication is acceptable and avoids `$ref` cross-file complexity.
+- Shared schemas (e.g., `Conversation`, `Message`) are duplicated in the admin spec with the additional `archivedAt` field. Since we are pre-release and the admin spec is small, this duplication is acceptable and avoids `$ref` cross-file complexity.
 
 ### Admin API Structure
 
@@ -228,9 +230,9 @@ All admin endpoints live under `/v1/admin/*` on the same HTTP port as the main A
 | Endpoint | Method | Role Required | Description |
 |----------|--------|---------------|-------------|
 | `/v1/admin/conversations` | GET | auditor | List all conversations across all users |
-| `/v1/admin/conversations/{id}` | GET | auditor | Get any conversation (including soft-deleted) |
+| `/v1/admin/conversations/{id}` | GET | auditor | Get any conversation (including archived) |
 | `/v1/admin/conversations/{id}` | DELETE | admin | Soft-delete any conversation |
-| `/v1/admin/conversations/{id}/restore` | POST | admin | Restore a soft-deleted conversation |
+| `/v1/admin/conversations/{id}/restore` | POST | admin | Restore a archived conversation |
 | `/v1/admin/conversations/{id}/messages` | GET | auditor | Get messages from any conversation |
 | `/v1/admin/conversations/{id}/memberships` | GET | auditor | Get memberships for any conversation |
 | `/v1/admin/search/messages` | POST | auditor | System-wide semantic search |
@@ -244,10 +246,10 @@ Admin endpoints support all existing query parameters plus:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `userId` | string | — | Filter conversations owned by this user |
-| `includeDeleted` | boolean | `false` | Include soft-deleted resources in results |
-| `onlyDeleted` | boolean | `false` | Show only soft-deleted resources |
-| `deletedAfter` | ISO 8601 datetime | — | Filter: deleted at or after this time |
-| `deletedBefore` | ISO 8601 datetime | — | Filter: deleted before this time |
+| `includeArchived` | boolean | `false` | Include archived resources in results |
+| `onlyArchived` | boolean | `false` | Show only archived resources |
+| `archivedAfter` | ISO 8601 datetime | — | Filter: deleted at or after this time |
+| `archivedBefore` | ISO 8601 datetime | — | Filter: deleted before this time |
 | `justification` | string | — | Reason for the admin action (for audit log) |
 
 #### Response Schema Differences
@@ -261,12 +263,12 @@ Admin API responses include additional fields not present in user-facing APIs:
   "ownerUserId": "alice",
   "createdAt": "2024-01-15T10:00:00Z",
   "updatedAt": "2024-01-15T12:00:00Z",
-  "deletedAt": "2024-01-20T08:30:00Z",
+  "archivedAt": "2024-01-20T08:30:00Z",
   "conversationGroupId": "..."
 }
 ```
 
-The `deletedAt` field is included when non-null. User-facing APIs continue to omit it.
+The `archivedAt` field is included when non-null. User-facing APIs continue to omit it.
 
 ### Authorization Enforcement
 
@@ -288,12 +290,12 @@ public class AdminResource {
     @Path("/conversations")
     public Response listConversations(
             @QueryParam("userId") String userId,
-            @QueryParam("includeDeleted") @DefaultValue("false") boolean includeDeleted,
-            @QueryParam("onlyDeleted") @DefaultValue("false") boolean onlyDeleted,
+            @QueryParam("includeArchived") @DefaultValue("false") boolean includeArchived,
+            @QueryParam("onlyArchived") @DefaultValue("false") boolean onlyArchived,
             @QueryParam("justification") String justification) {
         roleResolver.requireAuditor(identity, apiKeyContext);
         auditLogger.logRead("listConversations",
-            Map.of("userId", userId, "includeDeleted", includeDeleted),
+            Map.of("userId", userId, "includeArchived", includeArchived),
             justification, identity, apiKeyContext);
         // ...
     }
@@ -335,7 +337,7 @@ public interface MemoryStore {
 
     // Admin methods — no userId scoping, configurable deleted-resource visibility
     List<Conversation> adminListConversations(AdminConversationQuery query);
-    Optional<Conversation> adminGetConversation(String conversationId, boolean includeDeleted);
+    Optional<Conversation> adminGetConversation(String conversationId, boolean includeArchived);
     void adminDeleteConversation(String conversationId);
     void adminRestoreConversation(String conversationId);
     List<Message> adminGetMessages(String conversationId, AdminMessageQuery query);
@@ -345,7 +347,7 @@ public interface MemoryStore {
 
 Key difference from user methods:
 - No `userId` scoping (or optional `userId` filter).
-- Configurable `deletedAt` filtering (include, exclude, or only deleted).
+- Configurable `archivedAt` filtering (include, exclude, or only deleted).
 - No `ensureHasAccess()` calls.
 
 ### Restore Operation (Undo Soft Delete)
@@ -363,8 +365,8 @@ POST /v1/admin/conversations/{id}/restore
 
 **Behavior:**
 1. Find the conversation group by ID (including deleted records).
-2. Verify it is currently soft-deleted (`deletedAt IS NOT NULL`).
-3. Set `deletedAt = NULL` on the `ConversationGroupEntity`, all `ConversationEntity` records in the group, and all `ConversationMembershipEntity` records in the group.
+2. Verify it is currently archived (`archivedAt IS NOT NULL`).
+3. Set `archivedAt = NULL` on the `ConversationGroupEntity`, all `ConversationEntity` records in the group, and all `ConversationMembershipEntity` records in the group.
 4. Return the restored conversation.
 
 **Edge cases:**
@@ -398,8 +400,8 @@ Add `admin` and `auditor` realm roles. Assign `admin` to a test user (e.g., `ali
 
 Admin endpoint definitions with:
 - Bearer auth security scheme
-- Query parameters (`userId`, `includeDeleted`, `onlyDeleted`, `deletedAfter`, `deletedBefore`, `justification`)
-- Admin response schemas including `deletedAt`
+- Query parameters (`userId`, `includeArchived`, `onlyArchived`, `archivedAfter`, `archivedBefore`, `justification`)
+- Admin response schemas including `archivedAt`
 - `AdminActionRequest` schema with `justification` field
 
 ### 5. Application Configuration
@@ -430,10 +432,10 @@ memory-service.admin.require-justification=false
 ```java
 public class AdminConversationQuery {
     private String userId;
-    private boolean includeDeleted;
-    private boolean onlyDeleted;
-    private OffsetDateTime deletedAfter;
-    private OffsetDateTime deletedBefore;
+    private boolean includeArchived;
+    private boolean onlyArchived;
+    private OffsetDateTime archivedAfter;
+    private OffsetDateTime archivedBefore;
     // pagination fields
 }
 ```
@@ -456,7 +458,7 @@ Add admin method signatures (see Store Layer Changes section above).
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/store/impl/PostgresMemoryStore.java`
 
-Implement admin methods with configurable `deletedAt` filtering and no per-user scoping.
+Implement admin methods with configurable `archivedAt` filtering and no per-user scoping.
 
 ### 9. MongoMemoryStore Implementation
 
@@ -490,10 +492,10 @@ JAX-RS resource under `/v1/admin`. Uses `AdminRoleResolver` for authorization an
 
 Scenarios:
 - Admin can list all conversations across users
-- Admin can view soft-deleted conversations with `includeDeleted=true`
-- Admin can filter by `userId`, `onlyDeleted`, and date ranges
+- Admin can view archived conversations with `includeArchived=true`
+- Admin can filter by `userId`, `onlyArchived`, and date ranges
 - Admin can delete any conversation
-- Admin can restore a soft-deleted conversation
+- Admin can restore a archived conversation
 - Auditor can list and view conversations across users
 - Auditor receives `403 Forbidden` on write operations (delete, restore)
 - Non-admin/non-auditor user receives `403 Forbidden` on all admin endpoints
@@ -511,7 +513,7 @@ Add steps for:
 Given I am authenticated as admin user "alice"
 Given I am authenticated as auditor user "charlie"
 When I call GET "/v1/admin/conversations"
-When I call GET "/v1/admin/conversations?userId=bob&includeDeleted=true"
+When I call GET "/v1/admin/conversations?userId=bob&includeArchived=true"
 When I call DELETE "/v1/admin/conversations/{conversationId}" with justification "ticket #123"
 When I call POST "/v1/admin/conversations/{conversationId}/restore" with justification "recovery"
 Then the admin audit log should contain "listConversations"
@@ -691,7 +693,7 @@ cd examples/chat-frontend && npm run generate
 
 5. **Admin cannot impersonate users.** Admin endpoints return data directly — there is no "act as user X" mechanism.
 
-6. **Restore only applies to soft-deleted conversations.** There is no "undo" for hard-deleted (purged) data.
+6. **Restore only applies to archived conversations.** There is no "undo" for hard-deleted (purged) data.
 
 7. **The `/v1/admin/*` path prefix is the only admin surface.** No separate port.
 

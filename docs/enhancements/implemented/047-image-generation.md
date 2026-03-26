@@ -459,7 +459,7 @@ Generated images are stored as attachments in the memory-service. This provides:
 
 ### Explicit `status` Field on Attachments
 
-Currently, attachment state is **implicit** — derived from combinations of `storageKey`, `entryId`, `expiresAt`, and `deletedAt` (see [Attachments concept docs](/docs/concepts/attachments/)). The URL-based creation flow introduces async states (`downloading`, `failed`) that don't fit cleanly into the implicit model. Rather than adding more implicit field combinations, we add an explicit `status` field that tracks **content readiness**:
+Currently, attachment state is **implicit** — derived from combinations of `storageKey`, `entryId`, `expiresAt`, and `archivedAt` (see [Attachments concept docs](/docs/concepts/attachments/)). The URL-based creation flow introduces async states (`downloading`, `failed`) that don't fit cleanly into the implicit model. Rather than adding more implicit field combinations, we add an explicit `status` field that tracks **content readiness**:
 
 | `status` | Meaning | Current implicit equivalent |
 |----------|---------|----------------------------|
@@ -471,7 +471,7 @@ Currently, attachment state is **implicit** — derived from combinations of `st
 The `status` field is orthogonal to the existing lifecycle concerns:
 - **Linked/unlinked** — still tracked by `entryId`
 - **Expiration** — still tracked by `expiresAt`
-- **Soft deletion** — still tracked by `deletedAt`
+- **Soft deletion** — still tracked by `archivedAt`
 
 For existing multipart uploads, the transition is `uploading → ready` within a single request (no behavioral change). The `status` field is most useful for the new async URL-based path.
 

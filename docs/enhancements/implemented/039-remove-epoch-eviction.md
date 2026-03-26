@@ -63,7 +63,7 @@ Remove the `memory_epochs` resource type from the eviction endpoint. Old epochs 
 
 2. **The latest-epoch guarantee is sufficient**: Agents only read the latest epoch during normal operation. Old epochs were retained purely for auditability.
 
-3. **Full conversation eviction still works**: When a conversation group is soft-deleted and evicted via `conversation_groups` resource type, all entries (including all epochs) are deleted. This remains the primary storage reclamation mechanism.
+3. **Full conversation eviction still works**: When a conversation group is archived and evicted via `conversation_groups` resource type, all entries (including all epochs) are deleted. This remains the primary storage reclamation mechanism.
 
 4. **No production deployments depend on epoch eviction yet**: This feature was introduced recently and has not been relied upon for storage management.
 

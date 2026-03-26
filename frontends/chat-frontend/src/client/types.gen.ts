@@ -83,6 +83,10 @@ export type ConversationSummary = {
   accessLevel?: AccessLevel;
   startedByConversationId?: string | null;
   startedByEntryId?: string | null;
+  /**
+   * Synthetic archive flag derived from the internal archived timestamp.
+   */
+  archived?: boolean;
 };
 
 export type ChildConversationSummary = {
@@ -97,6 +101,10 @@ export type ChildConversationSummary = {
   lastMessagePreview?: string | null;
   accessLevel?: AccessLevel;
   startedByEntryId?: string | null;
+  /**
+   * Synthetic archive flag derived from the internal archived timestamp.
+   */
+  archived?: boolean;
 };
 
 export type Conversation = ConversationSummary & {
@@ -139,6 +147,10 @@ export type CreateConversationRequest = {
 
 export type UpdateConversationRequest = {
   title?: string | null;
+  /**
+   * Set to `true` to archive the conversation and its fork tree.
+   */
+  archived?: boolean;
 };
 
 export type ConversationMembership = {
@@ -219,6 +231,17 @@ export type MemoryItem = {
   createdAt?: string;
   expiresAt?: string | null;
   usage?: MemoryUsage;
+  /**
+   * Synthetic archive flag derived from the internal archived timestamp.
+   */
+  archived?: boolean;
+};
+
+export type UpdateMemoryRequest = {
+  /**
+   * Set to `true` to archive the active memory item.
+   */
+  archived?: boolean;
 };
 
 export type MemoryUsage = {
@@ -235,6 +258,7 @@ export type SearchMemoriesRequest = {
   limit?: number;
   offset?: number;
   include_usage?: boolean;
+  archived?: "exclude" | "include" | "only";
 };
 
 export type SearchMemoriesResponse = {
@@ -249,7 +273,7 @@ export type MemoryEventItem = {
   id?: string;
   namespace?: Array<string>;
   key?: string;
-  kind?: "add" | "update" | "delete" | "expired";
+  kind?: "add" | "update" | "expired";
   occurred_at?: string;
   value?: {
     [key: string]: unknown;
@@ -718,6 +742,10 @@ export type $OpenApiTs = {
          */
         ancestry?: "all" | "roots" | "children";
         /**
+         * Controls whether archived conversations are excluded, included, or returned exclusively.
+         */
+        archived?: "exclude" | "include" | "only";
+        /**
          * Maximum number of conversations to return.
          */
         limit?: number;
@@ -790,28 +818,6 @@ export type $OpenApiTs = {
          * Error response
          */
         200: ErrorResponse;
-        /**
-         * Resource not found
-         */
-        404: ErrorResponse;
-      };
-    };
-    delete: {
-      req: {
-        /**
-         * Conversation identifier (UUID format).
-         */
-        conversationId: string;
-      };
-      res: {
-        /**
-         * Error response
-         */
-        200: ErrorResponse;
-        /**
-         * Conversation deleted.
-         */
-        204: void;
         /**
          * Resource not found
          */
@@ -1287,6 +1293,10 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
+         * Controls whether archived memories are excluded, included, or returned exclusively.
+         */
+        archived?: "exclude" | "include" | "only";
+        /**
          * Include usage counters for the requested memory.
          */
         includeUsage?: boolean;
@@ -1307,13 +1317,14 @@ export type $OpenApiTs = {
         404: ErrorResponse;
       };
     };
-    delete: {
+    patch: {
       req: {
         key: string;
         /**
          * Namespace segments. Repeat once per segment.
          */
         ns: Array<string>;
+        requestBody: UpdateMemoryRequest;
       };
       res: {
         /**
@@ -1321,7 +1332,7 @@ export type $OpenApiTs = {
          */
         200: ErrorResponse;
         /**
-         * Memory deleted.
+         * Memory updated.
          */
         204: void;
       };
@@ -1343,6 +1354,10 @@ export type $OpenApiTs = {
   "/v1/memories/namespaces": {
     get: {
       req: {
+        /**
+         * Controls whether archived memories are excluded, included, or returned exclusively.
+         */
+        archived?: "exclude" | "include" | "only";
         maxDepth?: number;
         /**
          * Namespace prefix segments. Repeat once per segment.
@@ -1377,9 +1392,9 @@ export type $OpenApiTs = {
          */
         before?: string;
         /**
-         * Filter by event kind. Repeat to include multiple. Values: add, update, delete, expired.
+         * Filter by event kind. Repeat to include multiple. Values: add, update, expired.
          */
-        kinds?: Array<"add" | "update" | "delete" | "expired">;
+        kinds?: Array<"add" | "update" | "expired">;
         limit?: number;
         /**
          * Namespace prefix segments. Repeat once per segment.

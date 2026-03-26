@@ -88,12 +88,12 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 	// Create collections with indexes
 	collections := map[string][]mongo.IndexModel{
 		"conversation_groups": {
-			{Keys: bson.D{{Key: "deleted_at", Value: 1}}},
+			{Keys: bson.D{{Key: "archived_at", Value: 1}}},
 		},
 		"conversations": {
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}}},
 			{Keys: bson.D{{Key: "owner_user_id", Value: 1}}},
-			{Keys: bson.D{{Key: "deleted_at", Value: 1}}},
+			{Keys: bson.D{{Key: "archived_at", Value: 1}}},
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "created_at", Value: 1}}},
 		},
 		"conversation_memberships": {
@@ -120,7 +120,7 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 		"attachments": {
 			{Keys: bson.D{{Key: "entry_id", Value: 1}}},
 			{Keys: bson.D{{Key: "user_id", Value: 1}}},
-			{Keys: bson.D{{Key: "deleted_at", Value: 1}}},
+			{Keys: bson.D{{Key: "archived_at", Value: 1}}},
 		},
 		"outbox_events": {
 			{Keys: bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}},
@@ -208,9 +208,9 @@ func (s *MongoStore) decryptString(data []byte) string {
 // --- MongoDB document types ---
 
 type groupDoc struct {
-	ID        string     `bson:"_id"`
-	CreatedAt time.Time  `bson:"created_at"`
-	DeletedAt *time.Time `bson:"deleted_at,omitempty"`
+	ID         string     `bson:"_id"`
+	CreatedAt  time.Time  `bson:"created_at"`
+	ArchivedAt *time.Time `bson:"archived_at,omitempty"`
 }
 
 type convDoc struct {
@@ -227,7 +227,7 @@ type convDoc struct {
 	StartedByEntryID        *string        `bson:"started_by_entry_id,omitempty"`
 	CreatedAt               time.Time      `bson:"created_at"`
 	UpdatedAt               time.Time      `bson:"updated_at"`
-	DeletedAt               *time.Time     `bson:"deleted_at,omitempty"`
+	ArchivedAt              *time.Time     `bson:"archived_at,omitempty"`
 }
 
 type memberDoc struct {
@@ -314,7 +314,7 @@ type attachmentDoc struct {
 	SourceURL   *string    `bson:"source_url,omitempty"`
 	ExpiresAt   *time.Time `bson:"expires_at,omitempty"`
 	CreatedAt   time.Time  `bson:"created_at"`
-	DeletedAt   *time.Time `bson:"deleted_at,omitempty"`
+	ArchivedAt  *time.Time `bson:"archived_at,omitempty"`
 }
 
 // --- Collection accessors ---
@@ -383,8 +383,8 @@ func (s *MongoStore) requireAccess(ctx context.Context, userID string, groupID s
 func (s *MongoStore) getGroupID(ctx context.Context, userID string, conversationID uuid.UUID, minLevel model.AccessLevel) (string, error) {
 	var doc convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
-		"_id":        uuidToStr(conversationID),
-		"deleted_at": bson.M{"$exists": false},
+		"_id":         uuidToStr(conversationID),
+		"archived_at": bson.M{"$exists": false},
 	}).Decode(&doc)
 	if err != nil {
 		return "", &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
@@ -400,7 +400,7 @@ func (s *MongoStore) resolveConversationID(ctx context.Context, groupID string) 
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
 		"conversation_group_id": groupID,
-		"deleted_at":            bson.M{"$exists": false},
+		"archived_at":           bson.M{"$exists": false},
 	}).Decode(&conv)
 	if err != nil {
 		return uuid.Nil
@@ -436,8 +436,8 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 	if forkedAtConversationID != nil {
 		var sourceConv convDoc
 		err := s.conversations().FindOne(ctx, bson.M{
-			"_id":        uuidToStr(*forkedAtConversationID),
-			"deleted_at": bson.M{"$exists": false},
+			"_id":         uuidToStr(*forkedAtConversationID),
+			"archived_at": bson.M{"$exists": false},
 		}).Decode(&sourceConv)
 		if err != nil {
 			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: forkedAtConversationID.String()}
@@ -462,8 +462,8 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 	} else if startedByConversationID != nil {
 		var parentConv convDoc
 		err := s.conversations().FindOne(ctx, bson.M{
-			"_id":        uuidToStr(*startedByConversationID),
-			"deleted_at": bson.M{"$exists": false},
+			"_id":         uuidToStr(*startedByConversationID),
+			"archived_at": bson.M{"$exists": false},
 		}).Decode(&parentConv)
 		if err != nil {
 			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: startedByConversationID.String()}
@@ -575,7 +575,7 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 	}, nil
 }
 
-func (s *MongoStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter) ([]registrystore.ConversationSummary, *string, error) {
+func (s *MongoStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter) ([]registrystore.ConversationSummary, *string, error) {
 	// Find all groups the user has membership in
 	cursor, err := s.memberships().Find(ctx, bson.M{"user_id": userID})
 	if err != nil {
@@ -599,7 +599,14 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 
 	filter := bson.M{
 		"conversation_group_id": bson.M{"$in": groupIDs},
-		"deleted_at":            bson.M{"$exists": false},
+	}
+	switch archived {
+	case registrystore.ArchiveFilterInclude:
+		// No archive filter.
+	case registrystore.ArchiveFilterOnly:
+		filter["archived_at"] = bson.M{"$exists": true}
+	default:
+		filter["archived_at"] = bson.M{"$exists": false}
 	}
 	switch ancestry {
 	case model.ConversationAncestryChildren:
@@ -654,7 +661,7 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
 			CreatedAt:               d.CreatedAt,
 			UpdatedAt:               d.UpdatedAt,
-			DeletedAt:               d.DeletedAt,
+			ArchivedAt:              d.ArchivedAt,
 			AccessLevel:             al,
 		}
 	}
@@ -669,7 +676,7 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 
 func (s *MongoStore) ListChildConversations(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
 	var parent convDoc
-	if err := s.conversations().FindOne(ctx, bson.M{"_id": uuidToStr(conversationID), "deleted_at": bson.M{"$exists": false}}).Decode(&parent); err != nil {
+	if err := s.conversations().FindOne(ctx, bson.M{"_id": uuidToStr(conversationID)}).Decode(&parent); err != nil {
 		return nil, nil, &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
 	if _, err := s.requireAccess(ctx, userID, parent.ConversationGroupID, model.AccessLevelReader); err != nil {
@@ -692,7 +699,6 @@ func (s *MongoStore) ListChildConversations(ctx context.Context, userID string, 
 	}
 	filter := bson.M{
 		"conversation_group_id":      bson.M{"$in": groupIDs},
-		"deleted_at":                 bson.M{"$exists": false},
 		"started_by_conversation_id": uuidToStr(conversationID),
 	}
 	if afterCursor != nil {
@@ -731,7 +737,7 @@ func (s *MongoStore) ListChildConversations(ctx context.Context, userID string, 
 			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
 			CreatedAt:               d.CreatedAt,
 			UpdatedAt:               d.UpdatedAt,
-			DeletedAt:               d.DeletedAt,
+			ArchivedAt:              d.ArchivedAt,
 			AccessLevel:             accessMap[d.ConversationGroupID],
 		}
 	}
@@ -812,6 +818,7 @@ func (s *MongoStore) listConversationsLatestFork(ctx context.Context, baseFilter
 			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
 			CreatedAt:               d.CreatedAt,
 			UpdatedAt:               d.UpdatedAt,
+			ArchivedAt:              d.ArchivedAt,
 			AccessLevel:             al,
 		}
 	}
@@ -826,10 +833,7 @@ func (s *MongoStore) listConversationsLatestFork(ctx context.Context, baseFilter
 
 func (s *MongoStore) GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*registrystore.ConversationDetail, error) {
 	var doc convDoc
-	err := s.conversations().FindOne(ctx, bson.M{
-		"_id":        uuidToStr(conversationID),
-		"deleted_at": bson.M{"$exists": false},
-	}).Decode(&doc)
+	err := s.conversations().FindOne(ctx, bson.M{"_id": uuidToStr(conversationID)}).Decode(&doc)
 	if err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
@@ -853,6 +857,7 @@ func (s *MongoStore) GetConversation(ctx context.Context, userID string, convers
 			StartedByEntryID:        ptrStrToUUID(doc.StartedByEntryID),
 			CreatedAt:               doc.CreatedAt,
 			UpdatedAt:               doc.UpdatedAt,
+			ArchivedAt:              doc.ArchivedAt,
 			AccessLevel:             access,
 		},
 	}, nil
@@ -861,8 +866,8 @@ func (s *MongoStore) GetConversation(ctx context.Context, userID string, convers
 func (s *MongoStore) UpdateConversation(ctx context.Context, userID string, conversationID uuid.UUID, title *string, metadata map[string]any) (*registrystore.ConversationDetail, error) {
 	var doc convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
-		"_id":        uuidToStr(conversationID),
-		"deleted_at": bson.M{"$exists": false},
+		"_id":         uuidToStr(conversationID),
+		"archived_at": bson.M{"$exists": false},
 	}).Decode(&doc)
 	if err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
@@ -891,11 +896,11 @@ func (s *MongoStore) UpdateConversation(ctx context.Context, userID string, conv
 	return s.GetConversation(ctx, userID, conversationID)
 }
 
-func (s *MongoStore) DeleteConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+func (s *MongoStore) ArchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
 	var doc convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
-		"_id":        uuidToStr(conversationID),
-		"deleted_at": bson.M{"$exists": false},
+		"_id":         uuidToStr(conversationID),
+		"archived_at": bson.M{"$exists": false},
 	}).Decode(&doc)
 	if err != nil {
 		return &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
@@ -905,16 +910,34 @@ func (s *MongoStore) DeleteConversation(ctx context.Context, userID string, conv
 	}
 
 	now := time.Now()
-	s.groups().UpdateByID(ctx, doc.ConversationGroupID, bson.M{"$set": bson.M{"deleted_at": now}})
+	s.groups().UpdateByID(ctx, doc.ConversationGroupID, bson.M{"$set": bson.M{"archived_at": now}})
 	s.conversations().UpdateMany(ctx,
-		bson.M{"conversation_group_id": doc.ConversationGroupID, "deleted_at": bson.M{"$exists": false}},
-		bson.M{"$set": bson.M{"deleted_at": now}},
+		bson.M{"conversation_group_id": doc.ConversationGroupID, "archived_at": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"archived_at": now}},
 	)
 
-	// Java/Postgres parity: hard-delete memberships, entries, and transfers in the group.
-	s.memberships().DeleteMany(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID})
-	s.entries().DeleteMany(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID})
-	s.transfers().DeleteMany(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID})
+	return nil
+}
+
+func (s *MongoStore) UnarchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+	var doc convDoc
+	err := s.conversations().FindOne(ctx, bson.M{
+		"_id":         uuidToStr(conversationID),
+		"archived_at": bson.M{"$exists": true},
+	}).Decode(&doc)
+	if err != nil {
+		return &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
+	}
+	if _, err := s.requireAccess(ctx, userID, doc.ConversationGroupID, model.AccessLevelOwner); err != nil {
+		return err
+	}
+
+	s.groups().UpdateByID(ctx, doc.ConversationGroupID, bson.M{"$unset": bson.M{"archived_at": ""}})
+	s.conversations().UpdateMany(ctx,
+		bson.M{"conversation_group_id": doc.ConversationGroupID, "archived_at": bson.M{"$exists": true}},
+		bson.M{"$unset": bson.M{"archived_at": ""}},
+	)
+
 	return nil
 }
 
@@ -1086,14 +1109,19 @@ func (s *MongoStore) GetGroupMemberUserIDs(ctx context.Context, conversationGrou
 // --- Forks ---
 
 func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
-	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelReader)
+	var doc convDoc
+	err := s.conversations().FindOne(ctx, bson.M{
+		"_id": uuidToStr(conversationID),
+	}).Decode(&doc)
 	if err != nil {
+		return nil, nil, &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
+	}
+	if _, err := s.requireAccess(ctx, userID, doc.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, nil, err
 	}
 
 	filter := bson.M{
-		"conversation_group_id": groupID,
-		"deleted_at":            bson.M{"$exists": false},
+		"conversation_group_id": doc.ConversationGroupID,
 	}
 	if afterCursor != nil {
 		var cursorDoc convDoc
@@ -1218,8 +1246,8 @@ func (s *MongoStore) GetTransfer(ctx context.Context, userID string, transferID 
 func (s *MongoStore) CreateOwnershipTransfer(ctx context.Context, userID string, conversationID uuid.UUID, toUserID string) (*registrystore.OwnershipTransferDto, error) {
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
-		"_id":        uuidToStr(conversationID),
-		"deleted_at": bson.M{"$exists": false},
+		"_id":         uuidToStr(conversationID),
+		"archived_at": bson.M{"$exists": false},
 	}).Decode(&conv)
 	if err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
@@ -1313,7 +1341,7 @@ func (s *MongoStore) AcceptTransfer(ctx context.Context, userID string, transfer
 
 	// Update conversation owner
 	s.conversations().UpdateMany(ctx,
-		bson.M{"conversation_group_id": doc.ConversationGroupID, "deleted_at": bson.M{"$exists": false}},
+		bson.M{"conversation_group_id": doc.ConversationGroupID, "archived_at": bson.M{"$exists": false}},
 		bson.M{"$set": bson.M{"owner_user_id": doc.ToUserID}},
 	)
 
@@ -1339,10 +1367,7 @@ func (s *MongoStore) DeleteTransfer(ctx context.Context, userID string, transfer
 
 func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
 	var conv convDoc
-	err := s.conversations().FindOne(ctx, bson.M{
-		"_id":        uuidToStr(conversationID),
-		"deleted_at": bson.M{"$exists": false},
-	}).Decode(&conv)
+	err := s.conversations().FindOne(ctx, bson.M{"_id": uuidToStr(conversationID)}).Decode(&conv)
 	if err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
@@ -1458,8 +1483,8 @@ func (s *MongoStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uu
 func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
-		"_id":        uuidToStr(conversationID),
-		"deleted_at": bson.M{"$exists": false},
+		"_id":         uuidToStr(conversationID),
+		"archived_at": bson.M{"$exists": false},
 	}).Decode(&conv)
 	if err != nil {
 		// Auto-create conversation if it doesn't exist (Java/Postgres parity).
@@ -1605,8 +1630,8 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 	autoCreated := false
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
-		"_id":        uuidToStr(conversationID),
-		"deleted_at": bson.M{"$exists": false},
+		"_id":         uuidToStr(conversationID),
+		"archived_at": bson.M{"$exists": false},
 	}).Decode(&conv)
 	if err != nil {
 		// Auto-create conversation if it does not exist and content is non-empty.
@@ -2073,11 +2098,13 @@ func (s *MongoStore) SearchEntries(ctx context.Context, userID string, query str
 func (s *MongoStore) AdminListConversations(ctx context.Context, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
 	filter := bson.M{}
 
-	if !query.IncludeDeleted && !query.OnlyDeleted {
-		filter["deleted_at"] = bson.M{"$exists": false}
-	}
-	if query.OnlyDeleted {
-		filter["deleted_at"] = bson.M{"$exists": true}
+	switch query.Archived {
+	case registrystore.ArchiveFilterInclude:
+		// No archive filter.
+	case registrystore.ArchiveFilterOnly:
+		filter["archived_at"] = bson.M{"$exists": true}
+	default:
+		filter["archived_at"] = bson.M{"$exists": false}
 	}
 	if query.UserID != nil {
 		filter["owner_user_id"] = *query.UserID
@@ -2089,22 +2116,22 @@ func (s *MongoStore) AdminListConversations(ctx context.Context, query registrys
 	default:
 		filter["started_by_conversation_id"] = bson.M{"$exists": false}
 	}
-	if query.DeletedAfter != nil {
-		if existing, ok := filter["deleted_at"]; ok {
+	if query.ArchivedAfter != nil {
+		if existing, ok := filter["archived_at"]; ok {
 			if m, ok := existing.(bson.M); ok {
-				m["$gte"] = *query.DeletedAfter
+				m["$gte"] = *query.ArchivedAfter
 			}
 		} else {
-			filter["deleted_at"] = bson.M{"$gte": *query.DeletedAfter}
+			filter["archived_at"] = bson.M{"$gte": *query.ArchivedAfter}
 		}
 	}
-	if query.DeletedBefore != nil {
-		if existing, ok := filter["deleted_at"]; ok {
+	if query.ArchivedBefore != nil {
+		if existing, ok := filter["archived_at"]; ok {
 			if m, ok := existing.(bson.M); ok {
-				m["$lt"] = *query.DeletedBefore
+				m["$lt"] = *query.ArchivedBefore
 			}
 		} else {
-			filter["deleted_at"] = bson.M{"$lt": *query.DeletedBefore}
+			filter["archived_at"] = bson.M{"$lt": *query.ArchivedBefore}
 		}
 	}
 
@@ -2152,7 +2179,7 @@ func (s *MongoStore) AdminListConversations(ctx context.Context, query registrys
 			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
 			CreatedAt:               d.CreatedAt,
 			UpdatedAt:               d.UpdatedAt,
-			DeletedAt:               d.DeletedAt,
+			ArchivedAt:              d.ArchivedAt,
 			AccessLevel:             model.AccessLevelOwner,
 		}
 	}
@@ -2205,7 +2232,7 @@ func (s *MongoStore) AdminListChildConversations(ctx context.Context, conversati
 			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
 			CreatedAt:               d.CreatedAt,
 			UpdatedAt:               d.UpdatedAt,
-			DeletedAt:               d.DeletedAt,
+			ArchivedAt:              d.ArchivedAt,
 			AccessLevel:             model.AccessLevelOwner,
 		}
 	}
@@ -2276,7 +2303,7 @@ func (s *MongoStore) adminListConversationsLatestFork(ctx context.Context, baseF
 			ForkedAtEntryID:        ptrStrToUUID(d.ForkedAtEntryID),
 			CreatedAt:              d.CreatedAt,
 			UpdatedAt:              d.UpdatedAt,
-			DeletedAt:              d.DeletedAt,
+			ArchivedAt:             d.ArchivedAt,
 			AccessLevel:            model.AccessLevelOwner,
 		}
 	}
@@ -2310,40 +2337,34 @@ func (s *MongoStore) AdminGetConversation(ctx context.Context, conversationID uu
 			StartedByEntryID:        ptrStrToUUID(doc.StartedByEntryID),
 			CreatedAt:               doc.CreatedAt,
 			UpdatedAt:               doc.UpdatedAt,
-			DeletedAt:               doc.DeletedAt,
+			ArchivedAt:              doc.ArchivedAt,
 			AccessLevel:             model.AccessLevelOwner,
 		},
 	}, nil
 }
 
-func (s *MongoStore) AdminDeleteConversation(ctx context.Context, conversationID uuid.UUID) error {
+func (s *MongoStore) AdminSetConversationArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error {
 	var doc convDoc
 	err := s.conversations().FindOne(ctx, bson.M{"_id": uuidToStr(conversationID)}).Decode(&doc)
 	if err != nil {
 		return &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
-	now := time.Now()
-	s.groups().UpdateByID(ctx, doc.ConversationGroupID, bson.M{"$set": bson.M{"deleted_at": now}})
-	s.conversations().UpdateMany(ctx,
-		bson.M{"conversation_group_id": doc.ConversationGroupID, "deleted_at": bson.M{"$exists": false}},
-		bson.M{"$set": bson.M{"deleted_at": now}},
-	)
-	return nil
-}
-
-func (s *MongoStore) AdminRestoreConversation(ctx context.Context, conversationID uuid.UUID) error {
-	var doc convDoc
-	err := s.conversations().FindOne(ctx, bson.M{"_id": uuidToStr(conversationID)}).Decode(&doc)
-	if err != nil {
-		return &registrystore.NotFoundError{Resource: "conversation", ID: conversationID.String()}
+	if archived {
+		now := time.Now()
+		s.groups().UpdateByID(ctx, doc.ConversationGroupID, bson.M{"$set": bson.M{"archived_at": now}})
+		s.conversations().UpdateMany(ctx,
+			bson.M{"conversation_group_id": doc.ConversationGroupID, "archived_at": bson.M{"$exists": false}},
+			bson.M{"$set": bson.M{"archived_at": now}},
+		)
+		return nil
 	}
-	if doc.DeletedAt == nil {
-		return &registrystore.ConflictError{Message: "conversation is not deleted"}
+	if doc.ArchivedAt == nil {
+		return &registrystore.ConflictError{Message: "conversation is not archived"}
 	}
-	s.groups().UpdateByID(ctx, doc.ConversationGroupID, bson.M{"$unset": bson.M{"deleted_at": ""}})
+	s.groups().UpdateByID(ctx, doc.ConversationGroupID, bson.M{"$unset": bson.M{"archived_at": ""}})
 	s.conversations().UpdateMany(ctx,
 		bson.M{"conversation_group_id": doc.ConversationGroupID},
-		bson.M{"$unset": bson.M{"deleted_at": ""}},
+		bson.M{"$unset": bson.M{"archived_at": ""}},
 	)
 	return nil
 }
@@ -2510,14 +2531,14 @@ func (s *MongoStore) AdminSearchEntries(ctx context.Context, query registrystore
 	filter := bson.M{
 		"$text": bson.M{"$search": query.Query},
 	}
-	needsConversationLookup := query.UserID != nil || !query.IncludeDeleted
+	needsConversationLookup := query.UserID != nil || !query.IncludeArchived
 	if needsConversationLookup {
 		convFilter := bson.M{}
 		if query.UserID != nil {
 			convFilter["owner_user_id"] = *query.UserID
 		}
-		if !query.IncludeDeleted {
-			convFilter["deleted_at"] = bson.M{"$exists": false}
+		if !query.IncludeArchived {
+			convFilter["archived_at"] = bson.M{"$exists": false}
 		}
 
 		cur, err := s.conversations().Find(ctx, convFilter)
@@ -2636,7 +2657,7 @@ func (s *MongoStore) AdminListAttachments(ctx context.Context, query registrysto
 		if d.StorageKey != nil {
 			refCount, _ = s.attachments().CountDocuments(ctx, bson.M{
 				"storage_key": d.StorageKey,
-				"deleted_at":  bson.M{"$exists": false},
+				"archived_at": bson.M{"$exists": false},
 			})
 		}
 		results[i] = registrystore.AdminAttachment{
@@ -2663,7 +2684,7 @@ func (s *MongoStore) AdminGetAttachment(ctx context.Context, attachmentID uuid.U
 	if doc.StorageKey != nil {
 		refCount, _ = s.attachments().CountDocuments(ctx, bson.M{
 			"storage_key": doc.StorageKey,
-			"deleted_at":  bson.M{"$exists": false},
+			"archived_at": bson.M{"$exists": false},
 		})
 	}
 
@@ -2727,7 +2748,7 @@ func (s *MongoStore) CreateAttachment(ctx context.Context, userID string, conver
 func (s *MongoStore) UpdateAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, update registrystore.AttachmentUpdate) (*model.Attachment, error) {
 	id := uuidToStr(attachmentID)
 	var current attachmentDoc
-	if err := s.attachments().FindOne(ctx, bson.M{"_id": id, "deleted_at": bson.M{"$exists": false}}).Decode(&current); err != nil {
+	if err := s.attachments().FindOne(ctx, bson.M{"_id": id, "archived_at": bson.M{"$exists": false}}).Decode(&current); err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 	if current.UserID != userID {
@@ -2770,7 +2791,7 @@ func (s *MongoStore) UpdateAttachment(ctx context.Context, userID string, attach
 	}
 
 	var updated attachmentDoc
-	if err := s.attachments().FindOne(ctx, bson.M{"_id": id, "deleted_at": bson.M{"$exists": false}}).Decode(&updated); err != nil {
+	if err := s.attachments().FindOne(ctx, bson.M{"_id": id, "archived_at": bson.M{"$exists": false}}).Decode(&updated); err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 	attachment := s.attachmentDocToModel(updated)
@@ -2778,7 +2799,7 @@ func (s *MongoStore) UpdateAttachment(ctx context.Context, userID string, attach
 }
 
 func (s *MongoStore) ListAttachments(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.Attachment, *string, error) {
-	filter := bson.M{"deleted_at": bson.M{"$exists": false}}
+	filter := bson.M{"archived_at": bson.M{"$exists": false}}
 	if conversationID == uuid.Nil {
 		filter["user_id"] = userID
 		filter["entry_id"] = bson.M{"$exists": false}
@@ -2847,8 +2868,8 @@ func (s *MongoStore) ListAttachments(ctx context.Context, userID string, convers
 func (s *MongoStore) GetAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachmentID uuid.UUID) (*model.Attachment, error) {
 	var doc attachmentDoc
 	err := s.attachments().FindOne(ctx, bson.M{
-		"_id":        uuidToStr(attachmentID),
-		"deleted_at": bson.M{"$exists": false},
+		"_id":         uuidToStr(attachmentID),
+		"archived_at": bson.M{"$exists": false},
 	}).Decode(&doc)
 	if err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
@@ -2911,7 +2932,7 @@ func (s *MongoStore) DeleteAttachment(ctx context.Context, userID string, conver
 func (s *MongoStore) FindEvictableGroupIDs(ctx context.Context, cutoff time.Time, limit int) ([]uuid.UUID, error) {
 	opts := options.Find().SetLimit(int64(limit)).SetProjection(bson.M{"_id": 1})
 	cur, err := s.groups().Find(ctx, bson.M{
-		"deleted_at": bson.M{"$exists": true, "$lt": cutoff},
+		"archived_at": bson.M{"$exists": true, "$lt": cutoff},
 	}, opts)
 	if err != nil {
 		return nil, err
@@ -2930,8 +2951,60 @@ func (s *MongoStore) FindEvictableGroupIDs(ctx context.Context, cutoff time.Time
 
 func (s *MongoStore) CountEvictableGroups(ctx context.Context, cutoff time.Time) (int64, error) {
 	return s.groups().CountDocuments(ctx, bson.M{
-		"deleted_at": bson.M{"$exists": true, "$lt": cutoff},
+		"archived_at": bson.M{"$exists": true, "$lt": cutoff},
 	})
+}
+
+func (s *MongoStore) LoadDeletedConversationGroups(ctx context.Context, groupIDs []uuid.UUID) ([]registrystore.DeletedConversationGroup, error) {
+	if len(groupIDs) == 0 {
+		return nil, nil
+	}
+
+	strIDs := make([]string, len(groupIDs))
+	for i, id := range groupIDs {
+		strIDs[i] = uuidToStr(id)
+	}
+
+	convCur, err := s.conversations().Find(ctx, bson.M{
+		"conversation_group_id": bson.M{"$in": strIDs},
+	}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var conversations []convDoc
+	if err := convCur.All(ctx, &conversations); err != nil {
+		return nil, err
+	}
+
+	memberCur, err := s.memberships().Find(ctx, bson.M{
+		"conversation_group_id": bson.M{"$in": strIDs},
+	}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "user_id", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var memberships []memberDoc
+	if err := memberCur.All(ctx, &memberships); err != nil {
+		return nil, err
+	}
+
+	groupMap := make(map[string]*registrystore.DeletedConversationGroup, len(strIDs))
+	for _, groupID := range strIDs {
+		groupMap[groupID] = &registrystore.DeletedConversationGroup{ConversationGroupID: strToUUID(groupID)}
+	}
+	for _, conversation := range conversations {
+		groupMap[conversation.ConversationGroupID].ConversationIDs = append(groupMap[conversation.ConversationGroupID].ConversationIDs, strToUUID(conversation.ID))
+	}
+	for _, membership := range memberships {
+		groupMap[membership.ConversationGroupID].MemberUserIDs = append(groupMap[membership.ConversationGroupID].MemberUserIDs, membership.UserID)
+	}
+
+	result := make([]registrystore.DeletedConversationGroup, 0, len(groupIDs))
+	for _, groupID := range strIDs {
+		if group, ok := groupMap[groupID]; ok {
+			result = append(result, *group)
+		}
+	}
+	return result, nil
 }
 
 func (s *MongoStore) HardDeleteConversationGroups(ctx context.Context, groupIDs []uuid.UUID) error {
@@ -3094,14 +3167,14 @@ func (s *MongoStore) AdminGetAttachmentByStorageKey(ctx context.Context, storage
 	var doc attachmentDoc
 	if err := s.attachments().FindOne(ctx, bson.M{
 		"storage_key": storageKey,
-		"deleted_at":  bson.M{"$exists": false},
+		"archived_at": bson.M{"$exists": false},
 	}).Decode(&doc); err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: storageKey}
 	}
 
 	refCount, _ := s.attachments().CountDocuments(ctx, bson.M{
 		"storage_key": storageKey,
-		"deleted_at":  bson.M{"$exists": false},
+		"archived_at": bson.M{"$exists": false},
 	})
 
 	return &registrystore.AdminAttachment{
@@ -3595,7 +3668,7 @@ func (s *MongoStore) attachmentDocToModel(d attachmentDoc) model.Attachment {
 		SourceURL:   d.SourceURL,
 		ExpiresAt:   d.ExpiresAt,
 		CreatedAt:   d.CreatedAt,
-		DeletedAt:   d.DeletedAt,
+		ArchivedAt:  d.ArchivedAt,
 	}
 	a.EntryID = ptrStrToUUID(d.EntryID)
 	return a

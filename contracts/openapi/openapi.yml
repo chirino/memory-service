@@ -124,6 +124,14 @@ paths:
           schema:
             type: string
             nullable: true
+        - name: archived
+          in: query
+          required: false
+          description: Controls whether archived conversations are excluded, included, or returned exclusively.
+          schema:
+            type: string
+            enum: [exclude, include, only]
+            default: exclude
       responses:
         '200':
           description: A list of conversations.
@@ -171,7 +179,7 @@ paths:
     get:
       tags: [Conversations]
       summary: Get a conversation
-      description: Retrieve a conversation the user has access to.
+      description: Retrieve a conversation the user has access to, including archived conversations.
       operationId: getConversation
       parameters:
         - name: conversationId
@@ -198,7 +206,7 @@ paths:
       tags: [Conversations]
       summary: Update a conversation
       description: |-
-        Updates conversation properties. Currently supports updating the title.
+        Updates conversation properties.
         Requires writer or higher access on the conversation.
       operationId: updateConversation
       parameters:
@@ -228,32 +236,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-    delete:
-      tags: [Conversations]
-      summary: Delete a conversation
-      description: |-
-        Deletes a conversation. Only the owner (or manager, depending on policy) may delete.
-
-        **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
-      operationId: deleteConversation
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          description: Conversation identifier (UUID format).
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204':
-          description: Conversation deleted.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-      security:
-        - BearerAuth: []
-
   /v1/conversations/{conversationId}/entries:
     get:
       tags: [Conversations]
@@ -1120,6 +1102,14 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: archived
+          in: query
+          required: false
+          description: Controls whether archived memories are excluded, included, or returned exclusively.
+          schema:
+            type: string
+            enum: [exclude, include, only]
+            default: exclude
       responses:
         '200':
           description: Memory found.
@@ -1133,10 +1123,19 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-    delete:
+    patch:
       tags: [Memories]
-      summary: Delete a memory item
-      operationId: deleteMemory
+      summary: Update a memory item
+      description: |-
+        Updates mutable memory state. Currently supports archiving the active
+        memory item by setting `archived` to `true`.
+      operationId: updateMemory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMemoryRequest'
       parameters:
         - name: ns
           in: query
@@ -1155,7 +1154,7 @@ paths:
             type: string
       responses:
         '204':
-          description: Memory deleted.
+          description: Memory updated.
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -1166,6 +1165,7 @@ paths:
       tags: [Memories]
       summary: Search memory items
       operationId: searchMemories
+      description: Search current memory items, with optional archive-state filtering.
       requestBody:
         required: true
         content:
@@ -1216,6 +1216,14 @@ paths:
           schema:
             type: integer
             minimum: 0
+        - name: archived
+          in: query
+          required: false
+          description: Controls whether archived memories are excluded, included, or returned exclusively.
+          schema:
+            type: string
+            enum: [exclude, include, only]
+            default: exclude
       responses:
         '200':
           description: Distinct namespaces.
@@ -1235,7 +1243,7 @@ paths:
       operationId: listMemoryEvents
       description: |-
         Returns a paginated, time-ordered stream of memory lifecycle events —
-        `add`, `update`, `delete`, and `expired` — for namespaces under the
+        `add`, `update`, and `expired` — for namespaces under the
         given prefix. Cursor-based pagination via `after_cursor`.
       parameters:
         - name: ns
@@ -1251,12 +1259,12 @@ paths:
         - name: kinds
           in: query
           required: false
-          description: "Filter by event kind. Repeat to include multiple. Values: add, update, delete, expired."
+          description: "Filter by event kind. Repeat to include multiple. Values: add, update, expired."
           schema:
             type: array
             items:
               type: string
-              enum: [add, update, delete, expired]
+              enum: [add, update, expired]
           style: form
           explode: true
         - name: after
@@ -1832,6 +1840,9 @@ components:
           type: string
           format: uuid
           nullable: true
+        archived:
+          type: boolean
+          description: Synthetic archive flag derived from the internal archived timestamp.
       example:
         id: "550e8400-e29b-41d4-a716-446655440000"
         title: "Brainstorming UI for memory service"
@@ -1840,6 +1851,7 @@ components:
         updatedAt: "2025-01-10T14:45:12Z"
         lastMessagePreview: "Let's try modeling forks as separate conversations…"
         accessLevel: "owner"
+        archived: false
 
     ChildConversationSummary:
       type: object
@@ -1868,6 +1880,9 @@ components:
           type: string
           format: uuid
           nullable: true
+        archived:
+          type: boolean
+          description: Synthetic archive flag derived from the internal archived timestamp.
       example:
         id: "550e8400-e29b-41d4-a716-446655440000"
         title: "Research sub-task"
@@ -1877,6 +1892,7 @@ components:
         lastMessagePreview: "Vendor A is cheaper at low volume."
         accessLevel: "owner"
         startedByEntryId: "660e8400-e29b-41d4-a716-446655440111"
+        archived: false
 
     Conversation:
       allOf:
@@ -1957,6 +1973,9 @@ components:
           type: string
           nullable: true
           maxLength: 500
+        archived:
+          type: boolean
+          description: Set to `true` to archive the conversation and its fork tree.
 
     ConversationMembership:
       type: object
@@ -2103,6 +2122,16 @@ components:
           nullable: true
         usage:
           $ref: '#/components/schemas/MemoryUsage'
+        archived:
+          type: boolean
+          description: Synthetic archive flag derived from the internal archived timestamp.
+
+    UpdateMemoryRequest:
+      type: object
+      properties:
+        archived:
+          type: boolean
+          description: Set to `true` to archive the active memory item.
 
     MemoryUsage:
       type: object
@@ -2138,6 +2167,10 @@ components:
         include_usage:
           type: boolean
           default: false
+        archived:
+          type: string
+          enum: [exclude, include, only]
+          default: exclude
 
     SearchMemoriesResponse:
       type: object
@@ -2171,7 +2204,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [add, update, delete, expired]
+          enum: [add, update, expired]
         occurred_at:
           type: string
           format: date-time

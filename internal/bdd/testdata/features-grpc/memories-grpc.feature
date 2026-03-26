@@ -83,7 +83,7 @@ Feature: Episodic Memory gRPC API
     """
     Then the gRPC response should have status "NOT_FOUND"
 
-  Scenario: Delete memory removes it
+  Scenario: Archive memory keeps it readable via archive filters
     Given I send gRPC request "MemoriesService/PutMemory" with body:
     """
     namespace: "user"
@@ -97,12 +97,13 @@ Feature: Episodic Memory gRPC API
       }
     }
     """
-    When I send gRPC request "MemoriesService/DeleteMemory" with body:
+    When I send gRPC request "MemoriesService/UpdateMemory" with body:
     """
     namespace: "user"
     namespace: "alice"
     namespace: "tmp"
     key: "to-delete"
+    archived: true
     """
     Then the gRPC response should not have an error
     When I send gRPC request "MemoriesService/GetMemory" with body:
@@ -113,6 +114,26 @@ Feature: Episodic Memory gRPC API
     key: "to-delete"
     """
     Then the gRPC response should have status "NOT_FOUND"
+    When I send gRPC request "MemoriesService/GetMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "tmp"
+    key: "to-delete"
+    archived: ARCHIVE_FILTER_INCLUDE
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "archived" should be true
+    When I send gRPC request "MemoriesService/GetMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "tmp"
+    key: "to-delete"
+    archived: ARCHIVE_FILTER_ONLY
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "archived" should be true
 
   Scenario: Search memories under prefix
     Given I send gRPC request "MemoriesService/PutMemory" with body:
@@ -150,6 +171,82 @@ Feature: Episodic Memory gRPC API
     """
     Then the gRPC response should not have an error
     And the gRPC response field "items" should have size 2
+
+  Scenario: Search memories and list namespaces honor archive filters
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "archive-search"
+    key: "active-note"
+    value {
+      fields {
+        key: "text"
+        value { string_value: "still active" }
+      }
+    }
+    """
+    And I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "archive-search"
+    key: "archived-note"
+    value {
+      fields {
+        key: "text"
+        value { string_value: "only archived" }
+      }
+    }
+    """
+    And I send gRPC request "MemoriesService/UpdateMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "archive-search"
+    key: "archived-note"
+    archived: true
+    """
+    When I send gRPC request "MemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "archive-search"
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 1
+    And the gRPC response field "items[0].key" should be "active-note"
+    When I send gRPC request "MemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "archive-search"
+    archived: ARCHIVE_FILTER_INCLUDE
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 2
+    When I send gRPC request "MemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "archive-search"
+    archived: ARCHIVE_FILTER_ONLY
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 1
+    And the gRPC response field "items[0].key" should be "archived-note"
+    When I send gRPC request "MemoriesService/ListMemoryNamespaces" with body:
+    """
+    prefix: "user"
+    prefix: "alice"
+    prefix: "archive-search"
+    archived: ARCHIVE_FILTER_ONLY
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "namespaces" should have size 1
 
   Scenario: GetMemory include_usage returns usage counters
     Given I send gRPC request "MemoriesService/PutMemory" with body:

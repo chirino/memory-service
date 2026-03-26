@@ -47,7 +47,6 @@ const (
 // Defines values for MemoryEventItemKind.
 const (
 	MemoryEventItemKindAdd     MemoryEventItemKind = "add"
-	MemoryEventItemKindDelete  MemoryEventItemKind = "delete"
 	MemoryEventItemKindExpired MemoryEventItemKind = "expired"
 	MemoryEventItemKindUpdate  MemoryEventItemKind = "update"
 )
@@ -57,6 +56,13 @@ const (
 	Auto     SearchConversationsSearchTypeSingle = "auto"
 	Fulltext SearchConversationsSearchTypeSingle = "fulltext"
 	Semantic SearchConversationsSearchTypeSingle = "semantic"
+)
+
+// Defines values for SearchMemoriesRequestArchived.
+const (
+	SearchMemoriesRequestArchivedExclude SearchMemoriesRequestArchived = "exclude"
+	SearchMemoriesRequestArchivedInclude SearchMemoriesRequestArchived = "include"
+	SearchMemoriesRequestArchivedOnly    SearchMemoriesRequestArchived = "only"
 )
 
 // Defines values for SearchResultKind.
@@ -87,6 +93,13 @@ const (
 	ListConversationsParamsAncestryRoots    ListConversationsParamsAncestry = "roots"
 )
 
+// Defines values for ListConversationsParamsArchived.
+const (
+	ListConversationsParamsArchivedExclude ListConversationsParamsArchived = "exclude"
+	ListConversationsParamsArchivedInclude ListConversationsParamsArchived = "include"
+	ListConversationsParamsArchivedOnly    ListConversationsParamsArchived = "only"
+)
+
 // Defines values for ListConversationEntriesParamsForks.
 const (
 	ListConversationEntriesParamsForksAll  ListConversationEntriesParamsForks = "all"
@@ -99,12 +112,25 @@ const (
 	SubscribeEventsParamsDetailSummary SubscribeEventsParamsDetail = "summary"
 )
 
+// Defines values for GetMemoryParamsArchived.
+const (
+	GetMemoryParamsArchivedExclude GetMemoryParamsArchived = "exclude"
+	GetMemoryParamsArchivedInclude GetMemoryParamsArchived = "include"
+	GetMemoryParamsArchivedOnly    GetMemoryParamsArchived = "only"
+)
+
 // Defines values for ListMemoryEventsParamsKinds.
 const (
 	ListMemoryEventsParamsKindsAdd     ListMemoryEventsParamsKinds = "add"
-	ListMemoryEventsParamsKindsDelete  ListMemoryEventsParamsKinds = "delete"
 	ListMemoryEventsParamsKindsExpired ListMemoryEventsParamsKinds = "expired"
 	ListMemoryEventsParamsKindsUpdate  ListMemoryEventsParamsKinds = "update"
+)
+
+// Defines values for ListMemoryNamespacesParamsArchived.
+const (
+	ListMemoryNamespacesParamsArchivedExclude ListMemoryNamespacesParamsArchived = "exclude"
+	ListMemoryNamespacesParamsArchivedInclude ListMemoryNamespacesParamsArchived = "include"
+	ListMemoryNamespacesParamsArchivedOnly    ListMemoryNamespacesParamsArchived = "only"
 )
 
 // Defines values for ListPendingTransfersParamsRole.
@@ -253,7 +279,10 @@ type Channel string
 type ChildConversationSummary struct {
 	// AccessLevel Access level of a user for a conversation.
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
-	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
+
+	// Archived Synthetic archive flag derived from the internal archived timestamp.
+	Archived  *bool      `json:"archived,omitempty"`
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// Id Unique identifier for the child conversation.
 	Id                 *openapi_types.UUID `json:"id,omitempty"`
@@ -270,7 +299,10 @@ type Conversation struct {
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
 
 	// AgentId Optional logical agent associated with this conversation.
-	AgentId   *string    `json:"agentId"`
+	AgentId *string `json:"agentId"`
+
+	// Archived Synthetic archive flag derived from the internal archived timestamp.
+	Archived  *bool      `json:"archived,omitempty"`
 	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// ForkedAtConversationId Conversation ID from which this conversation was forked.
@@ -322,7 +354,10 @@ type ConversationMembership struct {
 type ConversationSummary struct {
 	// AccessLevel Access level of a user for a conversation.
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
-	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
+
+	// Archived Synthetic archive flag derived from the internal archived timestamp.
+	Archived  *bool      `json:"archived,omitempty"`
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// Id Unique identifier for the conversation.
 	Id                      *openapi_types.UUID `json:"id,omitempty"`
@@ -533,6 +568,8 @@ type MemoryEventItemKind string
 
 // MemoryItem defines model for MemoryItem.
 type MemoryItem struct {
+	// Archived Synthetic archive flag derived from the internal archived timestamp.
+	Archived   *bool                   `json:"archived,omitempty"`
 	Attributes *map[string]interface{} `json:"attributes,omitempty"`
 	CreatedAt  *time.Time              `json:"createdAt,omitempty"`
 	ExpiresAt  *time.Time              `json:"expiresAt"`
@@ -650,13 +687,17 @@ type SearchConversationsSearchTypeSingle string
 
 // SearchMemoriesRequest defines model for SearchMemoriesRequest.
 type SearchMemoriesRequest struct {
-	Filter          *map[string]interface{} `json:"filter,omitempty"`
-	IncludeUsage    *bool                   `json:"include_usage,omitempty"`
-	Limit           *int                    `json:"limit,omitempty"`
-	NamespacePrefix []string                `json:"namespace_prefix"`
-	Offset          *int                    `json:"offset,omitempty"`
-	Query           *string                 `json:"query,omitempty"`
+	Archived        *SearchMemoriesRequestArchived `json:"archived,omitempty"`
+	Filter          *map[string]interface{}        `json:"filter,omitempty"`
+	IncludeUsage    *bool                          `json:"include_usage,omitempty"`
+	Limit           *int                           `json:"limit,omitempty"`
+	NamespacePrefix []string                       `json:"namespace_prefix"`
+	Offset          *int                           `json:"offset,omitempty"`
+	Query           *string                        `json:"query,omitempty"`
 }
+
+// SearchMemoriesRequestArchived defines model for SearchMemoriesRequest.Archived.
+type SearchMemoriesRequestArchived string
 
 // SearchMemoriesResponse defines model for SearchMemoriesResponse.
 type SearchMemoriesResponse struct {
@@ -737,7 +778,15 @@ type UnindexedEntry struct {
 
 // UpdateConversationRequest defines model for UpdateConversationRequest.
 type UpdateConversationRequest struct {
-	Title *string `json:"title"`
+	// Archived Set to `true` to archive the conversation and its fork tree.
+	Archived *bool   `json:"archived,omitempty"`
+	Title    *string `json:"title"`
+}
+
+// UpdateMemoryRequest defines model for UpdateMemoryRequest.
+type UpdateMemoryRequest struct {
+	// Archived Set to `true` to archive the active memory item.
+	Archived *bool `json:"archived,omitempty"`
 }
 
 // Error defines model for Error.
@@ -804,6 +853,9 @@ type ListConversationsParams struct {
 
 	// Query Optional text query for basic title/metadata search.
 	Query *string `form:"query,omitempty" json:"query,omitempty"`
+
+	// Archived Controls whether archived conversations are excluded, included, or returned exclusively.
+	Archived *ListConversationsParamsArchived `form:"archived,omitempty" json:"archived,omitempty"`
 }
 
 // ListConversationsParamsMode defines parameters for ListConversations.
@@ -811,6 +863,9 @@ type ListConversationsParamsMode string
 
 // ListConversationsParamsAncestry defines parameters for ListConversations.
 type ListConversationsParamsAncestry string
+
+// ListConversationsParamsArchived defines parameters for ListConversations.
+type ListConversationsParamsArchived string
 
 // IndexConversationsJSONBody defines parameters for IndexConversations.
 type IndexConversationsJSONBody = []IndexEntryRequest
@@ -897,13 +952,6 @@ type SubscribeEventsParams struct {
 // SubscribeEventsParamsDetail defines parameters for SubscribeEvents.
 type SubscribeEventsParamsDetail string
 
-// DeleteMemoryParams defines parameters for DeleteMemory.
-type DeleteMemoryParams struct {
-	// Ns Namespace segments. Repeat once per segment.
-	Ns  []string `form:"ns" json:"ns"`
-	Key string   `form:"key" json:"key"`
-}
-
 // GetMemoryParams defines parameters for GetMemory.
 type GetMemoryParams struct {
 	// Ns Namespace segments. Repeat once per segment.
@@ -912,6 +960,19 @@ type GetMemoryParams struct {
 
 	// IncludeUsage Include usage counters for the requested memory.
 	IncludeUsage *bool `form:"include_usage,omitempty" json:"include_usage,omitempty"`
+
+	// Archived Controls whether archived memories are excluded, included, or returned exclusively.
+	Archived *GetMemoryParamsArchived `form:"archived,omitempty" json:"archived,omitempty"`
+}
+
+// GetMemoryParamsArchived defines parameters for GetMemory.
+type GetMemoryParamsArchived string
+
+// UpdateMemoryParams defines parameters for UpdateMemory.
+type UpdateMemoryParams struct {
+	// Ns Namespace segments. Repeat once per segment.
+	Ns  []string `form:"ns" json:"ns"`
+	Key string   `form:"key" json:"key"`
 }
 
 // ListMemoryEventsParams defines parameters for ListMemoryEvents.
@@ -919,7 +980,7 @@ type ListMemoryEventsParams struct {
 	// Ns Namespace prefix segments. Repeat once per segment.
 	Ns *[]string `form:"ns,omitempty" json:"ns,omitempty"`
 
-	// Kinds Filter by event kind. Repeat to include multiple. Values: add, update, delete, expired.
+	// Kinds Filter by event kind. Repeat to include multiple. Values: add, update, expired.
 	Kinds *[]ListMemoryEventsParamsKinds `form:"kinds,omitempty" json:"kinds,omitempty"`
 
 	// After Return events with occurred_at strictly after this ISO 8601 timestamp.
@@ -944,7 +1005,13 @@ type ListMemoryNamespacesParams struct {
 	// Suffix Namespace suffix segments. Repeat once per segment.
 	Suffix   *[]string `form:"suffix,omitempty" json:"suffix,omitempty"`
 	MaxDepth *int      `form:"max_depth,omitempty" json:"max_depth,omitempty"`
+
+	// Archived Controls whether archived memories are excluded, included, or returned exclusively.
+	Archived *ListMemoryNamespacesParamsArchived `form:"archived,omitempty" json:"archived,omitempty"`
 }
+
+// ListMemoryNamespacesParamsArchived defines parameters for ListMemoryNamespaces.
+type ListMemoryNamespacesParamsArchived string
 
 // ListPendingTransfersParams defines parameters for ListPendingTransfers.
 type ListPendingTransfersParams struct {
@@ -990,6 +1057,9 @@ type ShareConversationJSONRequestBody = ShareConversationRequest
 
 // UpdateConversationMembershipJSONRequestBody defines body for UpdateConversationMembership for application/json ContentType.
 type UpdateConversationMembershipJSONRequestBody UpdateConversationMembershipJSONBody
+
+// UpdateMemoryJSONRequestBody defines body for UpdateMemory for application/json ContentType.
+type UpdateMemoryJSONRequestBody = UpdateMemoryRequest
 
 // PutMemoryJSONRequestBody defines body for PutMemory for application/json ContentType.
 type PutMemoryJSONRequestBody = PutMemoryRequest
@@ -1179,9 +1249,6 @@ type ClientInterface interface {
 	// ListUnindexedEntries request
 	ListUnindexedEntries(ctx context.Context, params *ListUnindexedEntriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// DeleteConversation request
-	DeleteConversation(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetConversation request
 	GetConversation(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1231,11 +1298,13 @@ type ClientInterface interface {
 	// SubscribeEvents request
 	SubscribeEvents(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// DeleteMemory request
-	DeleteMemory(ctx context.Context, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetMemory request
 	GetMemory(ctx context.Context, params *GetMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateMemoryWithBody request with any body
+	UpdateMemoryWithBody(ctx context.Context, params *UpdateMemoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateMemory(ctx context.Context, params *UpdateMemoryParams, body UpdateMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PutMemoryWithBody request with any body
 	PutMemoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1463,18 +1532,6 @@ func (c *Client) ListUnindexedEntries(ctx context.Context, params *ListUnindexed
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteConversation(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteConversationRequest(c.Server, conversationId)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 func (c *Client) GetConversation(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetConversationRequest(c.Server, conversationId)
 	if err != nil {
@@ -1691,8 +1748,8 @@ func (c *Client) SubscribeEvents(ctx context.Context, params *SubscribeEventsPar
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteMemory(ctx context.Context, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteMemoryRequest(c.Server, params)
+func (c *Client) GetMemory(ctx context.Context, params *GetMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMemoryRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1703,8 +1760,20 @@ func (c *Client) DeleteMemory(ctx context.Context, params *DeleteMemoryParams, r
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetMemory(ctx context.Context, params *GetMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetMemoryRequest(c.Server, params)
+func (c *Client) UpdateMemoryWithBody(ctx context.Context, params *UpdateMemoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMemoryRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateMemory(ctx context.Context, params *UpdateMemoryParams, body UpdateMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMemoryRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2290,6 +2359,22 @@ func NewListConversationsRequest(server string, params *ListConversationsParams)
 
 		}
 
+		if params.Archived != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "archived", runtime.ParamLocationQuery, *params.Archived); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
 		queryURL.RawQuery = queryValues.Encode()
 	}
 
@@ -2479,40 +2564,6 @@ func NewListUnindexedEntriesRequest(server string, params *ListUnindexedEntriesP
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewDeleteConversationRequest generates requests for DeleteConversation
-func NewDeleteConversationRequest(server string, conversationId openapi_types.UUID) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "conversationId", runtime.ParamLocationPath, conversationId)
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/conversations/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3288,63 +3339,6 @@ func NewSubscribeEventsRequest(server string, params *SubscribeEventsParams) (*h
 	return req, nil
 }
 
-// NewDeleteMemoryRequest generates requests for DeleteMemory
-func NewDeleteMemoryRequest(server string, params *DeleteMemoryParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/memories")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "ns", runtime.ParamLocationQuery, params.Ns); err != nil {
-			return nil, err
-		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-			return nil, err
-		} else {
-			for k, v := range parsed {
-				for _, v2 := range v {
-					queryValues.Add(k, v2)
-				}
-			}
-		}
-
-		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "key", runtime.ParamLocationQuery, params.Key); err != nil {
-			return nil, err
-		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-			return nil, err
-		} else {
-			for k, v := range parsed {
-				for _, v2 := range v {
-					queryValues.Add(k, v2)
-				}
-			}
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewGetMemoryRequest generates requests for GetMemory
 func NewGetMemoryRequest(server string, params *GetMemoryParams) (*http.Request, error) {
 	var err error
@@ -3407,6 +3401,22 @@ func NewGetMemoryRequest(server string, params *GetMemoryParams) (*http.Request,
 
 		}
 
+		if params.Archived != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "archived", runtime.ParamLocationQuery, *params.Archived); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
 		queryURL.RawQuery = queryValues.Encode()
 	}
 
@@ -3414,6 +3424,76 @@ func NewGetMemoryRequest(server string, params *GetMemoryParams) (*http.Request,
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewUpdateMemoryRequest calls the generic UpdateMemory builder with application/json body
+func NewUpdateMemoryRequest(server string, params *UpdateMemoryParams, body UpdateMemoryJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateMemoryRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewUpdateMemoryRequestWithBody generates requests for UpdateMemory with any type of body
+func NewUpdateMemoryRequestWithBody(server string, params *UpdateMemoryParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/memories")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "ns", runtime.ParamLocationQuery, params.Ns); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "key", runtime.ParamLocationQuery, params.Key); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -3644,6 +3724,22 @@ func NewListMemoryNamespacesRequest(server string, params *ListMemoryNamespacesP
 		if params.MaxDepth != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "max_depth", runtime.ParamLocationQuery, *params.MaxDepth); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Archived != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "archived", runtime.ParamLocationQuery, *params.Archived); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -4018,9 +4114,6 @@ type ClientWithResponsesInterface interface {
 	// ListUnindexedEntriesWithResponse request
 	ListUnindexedEntriesWithResponse(ctx context.Context, params *ListUnindexedEntriesParams, reqEditors ...RequestEditorFn) (*ListUnindexedEntriesResp, error)
 
-	// DeleteConversationWithResponse request
-	DeleteConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteConversationResp, error)
-
 	// GetConversationWithResponse request
 	GetConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetConversationResp, error)
 
@@ -4070,11 +4163,13 @@ type ClientWithResponsesInterface interface {
 	// SubscribeEventsWithResponse request
 	SubscribeEventsWithResponse(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*SubscribeEventsResp, error)
 
-	// DeleteMemoryWithResponse request
-	DeleteMemoryWithResponse(ctx context.Context, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*DeleteMemoryResp, error)
-
 	// GetMemoryWithResponse request
 	GetMemoryWithResponse(ctx context.Context, params *GetMemoryParams, reqEditors ...RequestEditorFn) (*GetMemoryResp, error)
+
+	// UpdateMemoryWithBodyWithResponse request with any body
+	UpdateMemoryWithBodyWithResponse(ctx context.Context, params *UpdateMemoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMemoryResp, error)
+
+	UpdateMemoryWithResponse(ctx context.Context, params *UpdateMemoryParams, body UpdateMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMemoryResp, error)
 
 	// PutMemoryWithBodyWithResponse request with any body
 	PutMemoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutMemoryResp, error)
@@ -4401,29 +4496,6 @@ func (r ListUnindexedEntriesResp) StatusCode() int {
 	return 0
 }
 
-type DeleteConversationResp struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON404      *NotFound
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteConversationResp) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteConversationResp) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type GetConversationResp struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4743,28 +4815,6 @@ func (r SubscribeEventsResp) StatusCode() int {
 	return 0
 }
 
-type DeleteMemoryResp struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteMemoryResp) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteMemoryResp) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type GetMemoryResp struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4783,6 +4833,28 @@ func (r GetMemoryResp) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetMemoryResp) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateMemoryResp struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateMemoryResp) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateMemoryResp) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5152,15 +5224,6 @@ func (c *ClientWithResponses) ListUnindexedEntriesWithResponse(ctx context.Conte
 	return ParseListUnindexedEntriesResp(rsp)
 }
 
-// DeleteConversationWithResponse request returning *DeleteConversationResp
-func (c *ClientWithResponses) DeleteConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteConversationResp, error) {
-	rsp, err := c.DeleteConversation(ctx, conversationId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteConversationResp(rsp)
-}
-
 // GetConversationWithResponse request returning *GetConversationResp
 func (c *ClientWithResponses) GetConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetConversationResp, error) {
 	rsp, err := c.GetConversation(ctx, conversationId, reqEditors...)
@@ -5318,15 +5381,6 @@ func (c *ClientWithResponses) SubscribeEventsWithResponse(ctx context.Context, p
 	return ParseSubscribeEventsResp(rsp)
 }
 
-// DeleteMemoryWithResponse request returning *DeleteMemoryResp
-func (c *ClientWithResponses) DeleteMemoryWithResponse(ctx context.Context, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*DeleteMemoryResp, error) {
-	rsp, err := c.DeleteMemory(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteMemoryResp(rsp)
-}
-
 // GetMemoryWithResponse request returning *GetMemoryResp
 func (c *ClientWithResponses) GetMemoryWithResponse(ctx context.Context, params *GetMemoryParams, reqEditors ...RequestEditorFn) (*GetMemoryResp, error) {
 	rsp, err := c.GetMemory(ctx, params, reqEditors...)
@@ -5334,6 +5388,23 @@ func (c *ClientWithResponses) GetMemoryWithResponse(ctx context.Context, params 
 		return nil, err
 	}
 	return ParseGetMemoryResp(rsp)
+}
+
+// UpdateMemoryWithBodyWithResponse request with arbitrary body returning *UpdateMemoryResp
+func (c *ClientWithResponses) UpdateMemoryWithBodyWithResponse(ctx context.Context, params *UpdateMemoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMemoryResp, error) {
+	rsp, err := c.UpdateMemoryWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMemoryResp(rsp)
+}
+
+func (c *ClientWithResponses) UpdateMemoryWithResponse(ctx context.Context, params *UpdateMemoryParams, body UpdateMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMemoryResp, error) {
+	rsp, err := c.UpdateMemory(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMemoryResp(rsp)
 }
 
 // PutMemoryWithBodyWithResponse request with arbitrary body returning *PutMemoryResp
@@ -5903,39 +5974,6 @@ func ParseListUnindexedEntriesResp(rsp *http.Response) (*ListUnindexedEntriesRes
 	return response, nil
 }
 
-// ParseDeleteConversationResp parses an HTTP response from a DeleteConversationWithResponse call
-func ParseDeleteConversationResp(rsp *http.Response) (*DeleteConversationResp, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &DeleteConversationResp{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
 // ParseGetConversationResp parses an HTTP response from a GetConversationWithResponse call
 func ParseGetConversationResp(rsp *http.Response) (*GetConversationResp, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -6430,32 +6468,6 @@ func ParseSubscribeEventsResp(rsp *http.Response) (*SubscribeEventsResp, error) 
 	return response, nil
 }
 
-// ParseDeleteMemoryResp parses an HTTP response from a DeleteMemoryWithResponse call
-func ParseDeleteMemoryResp(rsp *http.Response) (*DeleteMemoryResp, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &DeleteMemoryResp{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
 // ParseGetMemoryResp parses an HTTP response from a GetMemoryWithResponse call
 func ParseGetMemoryResp(rsp *http.Response) (*GetMemoryResp, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -6484,6 +6496,32 @@ func ParseGetMemoryResp(rsp *http.Response) (*GetMemoryResp, error) {
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateMemoryResp parses an HTTP response from a UpdateMemoryWithResponse call
+func ParseUpdateMemoryResp(rsp *http.Response) (*UpdateMemoryResp, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateMemoryResp{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

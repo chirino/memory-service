@@ -49,8 +49,9 @@ public class ConversationsResource {
             @QueryParam("ancestry") String ancestry,
             @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") Integer limit,
-            @QueryParam("query") String query) {
-        return proxy.listConversations(mode, ancestry, afterCursor, limit, query);
+            @QueryParam("query") String query,
+            @QueryParam("archived") String archived) {
+        return proxy.listConversations(mode, ancestry, afterCursor, limit, query, archived);
     }
 
     @GET

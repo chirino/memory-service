@@ -15,14 +15,16 @@ import (
 	"github.com/chirino/memory-service/internal/model"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
 // MountRoutes mounts admin API routes.
-func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, auth gin.HandlerFunc) {
+func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, auth gin.HandlerFunc, eventBus registryeventbus.EventBus) {
 	requireAuditor := security.RequireAuditorRole()
 	requireAdmin := security.RequireAdminRole()
 
@@ -35,11 +37,8 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 	g.GET("/conversations/:id", func(c *gin.Context) {
 		adminGetConversation(c, store)
 	})
-	g.DELETE("/conversations/:id", requireAdmin, func(c *gin.Context) {
-		adminDeleteConversation(c, store)
-	})
-	g.POST("/conversations/:id/restore", requireAdmin, func(c *gin.Context) {
-		adminRestoreConversation(c, store)
+	g.PATCH("/conversations/:id", requireAdmin, func(c *gin.Context) {
+		adminUpdateConversation(c, store)
 	})
 	g.GET("/conversations/:id/entries", func(c *gin.Context) {
 		adminGetEntries(c, store)
@@ -78,7 +77,7 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 
 	// Eviction
 	g.POST("/evict", requireAdmin, func(c *gin.Context) {
-		adminEvict(c, store)
+		adminEvict(c, store, eventBus)
 	})
 
 	// Stats (Prometheus-backed parity with Java admin stats behavior)
@@ -118,20 +117,12 @@ func HandleAdminGetConversation(c *gin.Context, store registrystore.MemoryStore)
 	adminGetConversation(c, store)
 }
 
-// HandleAdminDeleteConversation exposes admin delete conversation for wrapper-native adapters.
-func HandleAdminDeleteConversation(c *gin.Context, store registrystore.MemoryStore) {
+// HandleAdminUpdateConversation exposes admin conversation archive/restore for wrapper-native adapters.
+func HandleAdminUpdateConversation(c *gin.Context, store registrystore.MemoryStore) {
 	if !runMiddlewares(c, security.RequireAuditorRole(), security.RequireAdminRole()) {
 		return
 	}
-	adminDeleteConversation(c, store)
-}
-
-// HandleAdminRestoreConversation exposes admin restore conversation for wrapper-native adapters.
-func HandleAdminRestoreConversation(c *gin.Context, store registrystore.MemoryStore) {
-	if !runMiddlewares(c, security.RequireAuditorRole(), security.RequireAdminRole()) {
-		return
-	}
-	adminRestoreConversation(c, store)
+	adminUpdateConversation(c, store)
 }
 
 // HandleAdminGetEntries exposes admin get entries for wrapper-native adapters.
@@ -215,11 +206,18 @@ func HandleAdminGetAttachmentDownloadURL(c *gin.Context, store registrystore.Mem
 }
 
 // HandleAdminEvict exposes admin eviction for wrapper-native adapters.
-func HandleAdminEvict(c *gin.Context, store registrystore.MemoryStore) {
+func HandleAdminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	if !runMiddlewares(c, security.RequireAuditorRole(), security.RequireAdminRole()) {
 		return
 	}
-	adminEvict(c, store)
+	adminEvict(c, store, eventBus)
+}
+
+func choosePublishedEvents(events []registryeventbus.Event, appended []registryeventbus.Event, used bool) []registryeventbus.Event {
+	if used {
+		return appended
+	}
+	return events
 }
 
 // HandleAdminStatsRequestRate exposes admin request-rate stats for wrapper-native adapters.
@@ -286,25 +284,29 @@ func HandleAdminStatsStoreThroughput(c *gin.Context, cfg *config.Config) {
 }
 
 func adminListConversations(c *gin.Context, store registrystore.MemoryStore) {
+	archived, err := registrystore.ParseArchiveFilter(c.DefaultQuery("archived", string(registrystore.ArchiveFilterExclude)))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	query := registrystore.AdminConversationQuery{
-		Mode:           model.ConversationListMode(c.DefaultQuery("mode", "latest-fork")),
-		Ancestry:       model.ConversationAncestryFilter(c.DefaultQuery("ancestry", "roots")),
-		IncludeDeleted: c.Query("includeDeleted") == "true",
-		OnlyDeleted:    c.Query("onlyDeleted") == "true",
-		Limit:          queryInt(c, "limit", 20),
-		AfterCursor:    queryPtr(c, "afterCursor"),
+		Mode:        model.ConversationListMode(c.DefaultQuery("mode", "latest-fork")),
+		Ancestry:    model.ConversationAncestryFilter(c.DefaultQuery("ancestry", "roots")),
+		Archived:    archived,
+		Limit:       queryInt(c, "limit", 20),
+		AfterCursor: queryPtr(c, "afterCursor"),
 	}
 	if uid := c.Query("userId"); uid != "" {
 		query.UserID = &uid
 	}
-	if da := c.Query("deletedAfter"); da != "" {
+	if da := c.Query("archivedAfter"); da != "" {
 		if t, err := time.Parse(time.RFC3339, da); err == nil {
-			query.DeletedAfter = &t
+			query.ArchivedAfter = &t
 		}
 	}
-	if db := c.Query("deletedBefore"); db != "" {
+	if db := c.Query("archivedBefore"); db != "" {
 		if t, err := time.Parse(time.RFC3339, db); err == nil {
-			query.DeletedBefore = &t
+			query.ArchivedBefore = &t
 		}
 	}
 
@@ -338,32 +340,32 @@ func adminGetConversation(c *gin.Context, store registrystore.MemoryStore) {
 	}
 }
 
-func adminDeleteConversation(c *gin.Context, store registrystore.MemoryStore) {
+func adminUpdateConversation(c *gin.Context, store registrystore.MemoryStore) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
-	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-		if err := store.AdminDeleteConversation(ctx, id); err != nil {
-			return err
-		}
-		c.Status(http.StatusNoContent)
-		return nil
-	}); err != nil {
-		handleError(c, err)
+	var req struct {
+		Archived *bool `json:"archived"`
 	}
-}
-
-func adminRestoreConversation(c *gin.Context, store registrystore.MemoryStore) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Archived == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "archived is required"})
 		return
 	}
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-		if err := store.AdminRestoreConversation(ctx, id); err != nil {
-			return err
+		if *req.Archived {
+			if err := store.AdminSetConversationArchived(ctx, id, true); err != nil {
+				return err
+			}
+		} else {
+			if err := store.AdminSetConversationArchived(ctx, id, false); err != nil {
+				return err
+			}
 		}
 		conv, err := store.AdminGetConversation(ctx, id)
 		if err != nil {
@@ -500,7 +502,7 @@ type adminChildConversationSummaryResponse struct {
 	AgentID                 *string           `json:"agentId,omitempty"`
 	CreatedAt               time.Time         `json:"createdAt"`
 	UpdatedAt               time.Time         `json:"updatedAt"`
-	DeletedAt               *time.Time        `json:"deletedAt,omitempty"`
+	Archived                bool              `json:"archived"`
 	AccessLevel             model.AccessLevel `json:"accessLevel"`
 	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
@@ -517,7 +519,7 @@ func toAdminChildConversationSummaries(items []registrystore.ConversationSummary
 			AgentID:                 item.AgentID,
 			CreatedAt:               item.CreatedAt,
 			UpdatedAt:               item.UpdatedAt,
-			DeletedAt:               item.DeletedAt,
+			Archived:                item.ArchivedAt != nil,
 			AccessLevel:             item.AccessLevel,
 			StartedByConversationID: item.StartedByConversationID,
 			StartedByEntryID:        item.StartedByEntryID,
@@ -534,7 +536,7 @@ type adminConversationSummaryResponse struct {
 	AgentID                 *string           `json:"agentId,omitempty"`
 	CreatedAt               time.Time         `json:"createdAt"`
 	UpdatedAt               time.Time         `json:"updatedAt"`
-	DeletedAt               *time.Time        `json:"deletedAt,omitempty"`
+	Archived                bool              `json:"archived"`
 	AccessLevel             model.AccessLevel `json:"accessLevel"`
 	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
@@ -551,7 +553,7 @@ func toAdminConversationSummaries(items []registrystore.ConversationSummary) []a
 			AgentID:                 item.AgentID,
 			CreatedAt:               item.CreatedAt,
 			UpdatedAt:               item.UpdatedAt,
-			DeletedAt:               item.DeletedAt,
+			Archived:                item.ArchivedAt != nil,
 			AccessLevel:             item.AccessLevel,
 			StartedByConversationID: item.StartedByConversationID,
 			StartedByEntryID:        item.StartedByEntryID,
@@ -569,7 +571,7 @@ type adminConversationResponse struct {
 	Metadata                map[string]interface{} `json:"metadata"`
 	CreatedAt               time.Time              `json:"createdAt"`
 	UpdatedAt               time.Time              `json:"updatedAt"`
-	DeletedAt               *time.Time             `json:"deletedAt,omitempty"`
+	Archived                bool                   `json:"archived"`
 	AccessLevel             model.AccessLevel      `json:"accessLevel"`
 	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"`
 	ForkedAtConversationID  *uuid.UUID             `json:"forkedAtConversationId,omitempty"`
@@ -588,7 +590,7 @@ func toAdminConversationResponse(conv *registrystore.ConversationDetail) adminCo
 		Metadata:                conv.Metadata,
 		CreatedAt:               conv.CreatedAt,
 		UpdatedAt:               conv.UpdatedAt,
-		DeletedAt:               conv.DeletedAt,
+		Archived:                conv.ArchivedAt != nil,
 		AccessLevel:             conv.AccessLevel,
 		ForkedAtEntryID:         conv.ForkedAtEntryID,
 		ForkedAtConversationID:  conv.ForkedAtConversationID,
@@ -600,12 +602,12 @@ func toAdminConversationResponse(conv *registrystore.ConversationDetail) adminCo
 
 func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
 	var req struct {
-		Query          string  `json:"query"          binding:"required"`
-		Limit          int     `json:"limit"`
-		AfterCursor    *string `json:"afterCursor"`
-		UserID         *string `json:"userId"`
-		IncludeDeleted *bool   `json:"includeDeleted"`
-		IncludeEntry   *bool   `json:"includeEntry"`
+		Query           string  `json:"query"           binding:"required"`
+		Limit           int     `json:"limit"`
+		AfterCursor     *string `json:"afterCursor"`
+		UserID          *string `json:"userId"`
+		IncludeArchived *bool   `json:"includeArchived"`
+		IncludeEntry    *bool   `json:"includeEntry"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -618,9 +620,9 @@ func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": "limit must be less than or equal to 1000"})
 		return
 	}
-	includeDeleted := false
-	if req.IncludeDeleted != nil {
-		includeDeleted = *req.IncludeDeleted
+	includeArchived := false
+	if req.IncludeArchived != nil {
+		includeArchived = *req.IncludeArchived
 	}
 	includeEntry := true
 	if req.IncludeEntry != nil {
@@ -629,12 +631,12 @@ func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
 		results, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
-			Query:          req.Query,
-			UserID:         req.UserID,
-			Limit:          req.Limit,
-			IncludeEntry:   includeEntry,
-			IncludeDeleted: includeDeleted,
-			AfterCursor:    req.AfterCursor,
+			Query:           req.Query,
+			UserID:          req.UserID,
+			Limit:           req.Limit,
+			IncludeEntry:    includeEntry,
+			IncludeArchived: includeArchived,
+			AfterCursor:     req.AfterCursor,
 		})
 		if err != nil {
 			return err
@@ -816,7 +818,7 @@ func adminGetAttachmentDownloadURL(c *gin.Context, store registrystore.MemorySto
 	}
 }
 
-func adminEvict(c *gin.Context, store registrystore.MemoryStore) {
+func adminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	var req struct {
 		RetentionPeriod string   `json:"retentionPeriod" binding:"required"`
 		ResourceTypes   []string `json:"resourceTypes"   binding:"required"`
@@ -872,7 +874,19 @@ func adminEvict(c *gin.Context, store registrystore.MemoryStore) {
 					return nil
 				}
 				createVectorDeleteTasks(ctx, store, ids)
+				deletedGroups, err := store.LoadDeletedConversationGroups(ctx, ids)
+				if err != nil {
+					return err
+				}
+				events := eventstream.ConversationDeletedEvents(deletedGroups)
+				appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+				if err != nil {
+					return err
+				}
 				if err := store.HardDeleteConversationGroups(ctx, ids); err != nil {
+					return err
+				}
+				if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, choosePublishedEvents(events, appended, used)...); err != nil {
 					return err
 				}
 			}
@@ -926,7 +940,25 @@ func adminEvict(c *gin.Context, store registrystore.MemoryStore) {
 							break
 						}
 						createVectorDeleteTasks(ctx, store, ids)
+						deletedGroups, err := store.LoadDeletedConversationGroups(ctx, ids)
+						if err != nil {
+							fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
+							c.Writer.Flush()
+							return nil
+						}
+						events := eventstream.ConversationDeletedEvents(deletedGroups)
+						appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+						if err != nil {
+							fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
+							c.Writer.Flush()
+							return nil
+						}
 						if err := store.HardDeleteConversationGroups(ctx, ids); err != nil {
+							fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
+							c.Writer.Flush()
+							return nil
+						}
+						if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, choosePublishedEvents(events, appended, used)...); err != nil {
 							fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
 							c.Writer.Flush()
 							return nil

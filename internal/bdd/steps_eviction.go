@@ -18,8 +18,8 @@ func init() {
 	cucumber.StepModules = append(cucumber.StepModules, func(ctx *godog.ScenarioContext, s *cucumber.TestScenario) {
 		e := &evictionSteps{s: s}
 
-		ctx.Step(`^the conversation was soft-deleted (\d+) days ago$`, e.theConversationWasSoftDeletedDaysAgo)
-		ctx.Step(`^I have (\d+) conversations soft-deleted (\d+) days ago$`, e.iHaveConversationsSoftDeletedDaysAgo)
+		ctx.Step(`^the conversation was archived (\d+) days ago$`, e.theConversationWasArchivedDaysAgo)
+		ctx.Step(`^I have (\d+) conversations archived (\d+) days ago$`, e.iHaveConversationsArchivedDaysAgo)
 		ctx.Step(`^the conversation has entries$`, e.theConversationHasEntries)
 		ctx.Step(`^the conversation is shared with user "([^"]*)"$`, e.theConversationIsSharedWithUser)
 		ctx.Step(`^the conversation has a pending ownership transfer to user "([^"]*)"$`, e.theConversationHasAPendingOwnershipTransferToUser)
@@ -38,19 +38,19 @@ type evictionSteps struct {
 	concurrentResp []int // status codes from concurrent requests
 }
 
-func (e *evictionSteps) theConversationWasSoftDeletedDaysAgo(days int) error {
+func (e *evictionSteps) theConversationWasArchivedDaysAgo(days int) error {
 	convID := fmt.Sprintf("%v", e.s.Variables["conversationId"])
-	return e.softDeleteConversationDaysAgo(convID, days)
+	return e.archiveConversationDaysAgo(convID, days)
 }
 
-func (e *evictionSteps) softDeleteConversationDaysAgo(convID string, days int) error {
+func (e *evictionSteps) archiveConversationDaysAgo(convID string, days int) error {
 	if e.s.TestDB() == nil {
 		return fmt.Errorf("no TestDB configured")
 	}
-	return e.s.TestDB().SoftDeleteConversation(context.Background(), convID, days)
+	return e.s.TestDB().ArchiveConversation(context.Background(), convID, days)
 }
 
-func (e *evictionSteps) iHaveConversationsSoftDeletedDaysAgo(count, days int) error {
+func (e *evictionSteps) iHaveConversationsArchivedDaysAgo(count, days int) error {
 	for i := 0; i < count; i++ {
 		// Create a conversation
 		body := fmt.Sprintf(`{"title": "Bulk conversation %d"}`, i)
@@ -74,7 +74,7 @@ func (e *evictionSteps) iHaveConversationsSoftDeletedDaysAgo(count, days int) er
 		if !ok {
 			return fmt.Errorf("no id in response")
 		}
-		if err := e.softDeleteConversationDaysAgo(id, days); err != nil {
+		if err := e.archiveConversationDaysAgo(id, days); err != nil {
 			return err
 		}
 	}

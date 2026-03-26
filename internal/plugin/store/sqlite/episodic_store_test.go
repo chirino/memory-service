@@ -44,7 +44,7 @@ func TestSQLiteEpisodicStoreRequiresScope(t *testing.T) {
 	require.PanicsWithError(t,
 		"sqlite: sqlite episodic store requires InReadTx or InWriteTx scope",
 		func() {
-			_, _ = store.GetMemory(ctx, []string{"users", "alice"}, "profile")
+			_, _ = store.GetMemory(ctx, []string{"users", "alice"}, "profile", registryepisodic.ArchiveFilterExclude)
 		},
 	)
 }
@@ -95,7 +95,7 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	err = store.InReadTx(ctx, func(readCtx context.Context) error {
-		item, err := store.GetMemory(readCtx, []string{"users", "alice"}, "profile")
+		item, err := store.GetMemory(readCtx, []string{"users", "alice"}, "profile", registryepisodic.ArchiveFilterExclude)
 		require.NoError(t, err)
 		require.NotNil(t, item)
 		require.Equal(t, "owner", item.Value["role"])
@@ -110,7 +110,7 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 			"tenant":  "acme",
 			"enabled": true,
 			"score":   map[string]interface{}{"gte": 11.0},
-		}, 10, 0)
+		}, 10, 0, registryepisodic.ArchiveFilterExclude)
 		require.NoError(t, err)
 		require.Len(t, items, 1)
 		require.Equal(t, "profile", items[0].Key)
@@ -129,14 +129,20 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	err = store.InWriteTx(ctx, func(writeCtx context.Context) error {
-		return store.DeleteMemory(writeCtx, []string{"users", "alice"}, "profile")
+		return store.ArchiveMemory(writeCtx, []string{"users", "alice"}, "profile")
 	})
 	require.NoError(t, err)
 
 	err = store.InReadTx(ctx, func(readCtx context.Context) error {
-		item, err := store.GetMemory(readCtx, []string{"users", "alice"}, "profile")
+		item, err := store.GetMemory(readCtx, []string{"users", "alice"}, "profile", registryepisodic.ArchiveFilterExclude)
 		require.NoError(t, err)
 		require.Nil(t, item)
+
+		item, err = store.GetMemory(readCtx, []string{"users", "alice"}, "profile", registryepisodic.ArchiveFilterOnly)
+		require.NoError(t, err)
+		require.NotNil(t, item)
+		require.Equal(t, "owner", item.Value["role"])
+		require.NotNil(t, item.ArchivedAt)
 
 		events, err := store.ListMemoryEvents(readCtx, registryepisodic.ListEventsRequest{
 			NamespacePrefix: []string{"users"},
@@ -144,8 +150,8 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Len(t, events.Events, 3)
-		require.Equal(t, registryepisodic.EventKindDelete, events.Events[2].Kind)
-		require.Nil(t, events.Events[2].Value)
+		require.Equal(t, registryepisodic.EventKindUpdate, events.Events[2].Kind)
+		require.NotNil(t, events.Events[2].Value)
 		return nil
 	})
 	require.NoError(t, err)
@@ -230,13 +236,13 @@ func TestSQLiteEpisodicStoreVectorSearch(t *testing.T) {
 		results, err := store.SearchMemoryVectors(readCtx, namespacePrefix, []float32{1, 0}, map[string]interface{}{
 			"tenant": "acme",
 			"rank":   map[string]interface{}{"gte": 5.0},
-		}, 10)
+		}, 10, registryepisodic.ArchiveFilterExclude)
 		require.NoError(t, err)
 		require.Len(t, results, 1)
 		require.Equal(t, firstID, results[0].MemoryID.String())
 		require.Greater(t, results[0].Score, 0.99)
 
-		items, err := store.GetMemoriesByIDs(readCtx, []uuid.UUID{results[0].MemoryID})
+		items, err := store.GetMemoriesByIDs(readCtx, []uuid.UUID{results[0].MemoryID}, registryepisodic.ArchiveFilterExclude)
 		require.NoError(t, err)
 		require.Len(t, items, 1)
 		require.Equal(t, "first", items[0].Key)

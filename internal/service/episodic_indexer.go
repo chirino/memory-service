@@ -12,8 +12,8 @@ import (
 )
 
 // EpisodicIndexer polls for memories with indexed_at IS NULL and:
-//   - Active rows (deleted_at IS NULL): generates embeddings and upserts them into the vector store.
-//   - Soft-deleted rows (deleted_at IS NOT NULL): removes the corresponding vector entries.
+//   - Active rows (archived_at IS NULL): generates embeddings and upserts them into the vector store.
+//   - Soft-deleted rows (archived_at IS NOT NULL): removes the corresponding vector entries.
 type EpisodicIndexer struct {
 	store     registryepisodic.EpisodicStore
 	embedder  registryembed.Embedder
@@ -34,7 +34,7 @@ type EpisodicIndexRunStats struct {
 }
 
 // NewEpisodicIndexer creates a new EpisodicIndexer. If embedder is nil, indexing is skipped
-// for active rows but soft-deleted cleanup still runs.
+// for active rows but archived cleanup still runs.
 func NewEpisodicIndexer(store registryepisodic.EpisodicStore, embedder registryembed.Embedder, interval time.Duration, batchSize int) *EpisodicIndexer {
 	return &EpisodicIndexer{
 		store:     store,
@@ -88,20 +88,22 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 	stats.Pending = len(pending)
 	for _, m := range pending {
 		stats.Processed++
-		if m.DeletedAt != nil {
-			// Soft-deleted: remove vector entries.
-			if err := idx.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-				if err := idx.store.DeleteMemoryVectors(writeCtx, m.ID); err != nil {
-					return err
+		if m.ArchivedAt != nil {
+			// Archived memories keep vectors for semantic search; expired/superseded rows do not.
+			if m.DeletedReason == nil || *m.DeletedReason != 1 {
+				if err := idx.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+					if err := idx.store.DeleteMemoryVectors(writeCtx, m.ID); err != nil {
+						return err
+					}
+					return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
+				}); err != nil {
+					log.Warn("Episodic indexer: delete vectors failed", "id", m.ID, "err", err)
+					stats.Failures++
+					continue
 				}
-				return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
-			}); err != nil {
-				log.Warn("Episodic indexer: delete vectors failed", "id", m.ID, "err", err)
-				stats.Failures++
+				stats.VectorDeletes++
 				continue
 			}
-			stats.VectorDeletes++
-			continue
 		}
 
 		// Active row: embed and upsert.
@@ -151,6 +153,7 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 							FieldName:        fe.name,
 							Namespace:        m.Namespace,
 							PolicyAttributes: m.PolicyAttributes,
+							Archived:         m.ArchivedAt != nil,
 							Embedding:        embeddings[i],
 						})
 					}

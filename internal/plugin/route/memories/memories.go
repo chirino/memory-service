@@ -34,7 +34,7 @@ func MountRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, policy *ep
 	g := r.Group("/v1", auth, clientID)
 	g.PUT("/memories", func(c *gin.Context) { putMemory(c, store, policy, cfg) })
 	g.GET("/memories", func(c *gin.Context) { getMemory(c, store, policy, cfg) })
-	g.DELETE("/memories", func(c *gin.Context) { deleteMemory(c, store, policy, cfg) })
+	g.PATCH("/memories", func(c *gin.Context) { updateMemory(c, store, policy, cfg) })
 	g.POST("/memories/search", func(c *gin.Context) { searchMemories(c, store, policy, cfg, embedder) })
 	g.GET("/memories/namespaces", func(c *gin.Context) { listNamespaces(c, store, policy, cfg) })
 	g.GET("/memories/events", func(c *gin.Context) { listMemoryEvents(c, store, policy, cfg) })
@@ -146,6 +146,11 @@ func getMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, p
 	ns := params.Ns
 	key := params.Key
 	includeUsage := queryBool(c, "include_usage", false)
+	archived, err := registryepisodic.ParseArchiveFilter(c.DefaultQuery("archived", string(registryepisodic.ArchiveFilterExclude)))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := validateNamespace(ns, cfg.EpisodicMaxDepth); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -174,7 +179,7 @@ func getMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, p
 	}
 
 	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
-		item, err := store.GetMemory(ctx, ns, key)
+		item, err := store.GetMemory(ctx, ns, key, archived)
 		if err != nil {
 			return err
 		}
@@ -206,17 +211,26 @@ func getMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, p
 	}
 }
 
-func deleteMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
-	params := generatedapi.DeleteMemoryParams{
+func updateMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
+	params := generatedapi.UpdateMemoryParams{
 		Ns:  c.QueryArray("ns"),
 		Key: c.Query("key"),
 	}
-	deleteMemoryWithParams(c, store, policy, cfg, params)
+	updateMemoryWithParams(c, store, policy, cfg, params)
 }
 
-func deleteMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.DeleteMemoryParams) {
+func updateMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.UpdateMemoryParams) {
 	ns := params.Ns
 	key := params.Key
+	var req generatedapi.UpdateMemoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Archived == nil || !*req.Archived {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "archived must be true"})
+		return
+	}
 
 	if err := validateNamespace(ns, cfg.EpisodicMaxDepth); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -229,7 +243,7 @@ func deleteMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore
 
 	if policy != nil {
 		pc := policyContext(c)
-		decision, err := policy.EvaluateAuthz(c.Request.Context(), "delete", ns, key, nil, nil, pc)
+		decision, err := policy.EvaluateAuthz(c.Request.Context(), "update", ns, key, nil, nil, pc)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "policy evaluation error"})
 			return
@@ -245,7 +259,7 @@ func deleteMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore
 	}
 
 	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
-		if err := store.DeleteMemory(ctx, ns, key); err != nil {
+		if err := store.ArchiveMemory(ctx, ns, key); err != nil {
 			return err
 		}
 		c.Status(http.StatusNoContent)
@@ -283,6 +297,15 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 	if req.Filter != nil {
 		filter = *req.Filter
 	}
+	archived := registryepisodic.ArchiveFilterExclude
+	if req.Archived != nil {
+		parsedArchived, err := registryepisodic.ParseArchiveFilter(string(*req.Archived))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		archived = parsedArchived
+	}
 
 	effectivePrefix := req.NamespacePrefix
 
@@ -303,7 +326,7 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 	}
 	if query != "" && embedder != nil {
 		if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
-			items, err := semanticSearch(c, store, embedder, effectivePrefix, filter, query, limit)
+			items, err := semanticSearch(c, store, embedder, effectivePrefix, filter, query, limit, archived)
 			if err != nil {
 				return err
 			}
@@ -325,7 +348,7 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 	}
 
 	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
-		items, err := store.SearchMemories(ctx, effectivePrefix, filter, limit, offset)
+		items, err := store.SearchMemories(ctx, effectivePrefix, filter, limit, offset, archived)
 		if err != nil {
 			return err
 		}
@@ -369,6 +392,11 @@ func listNamespacesWithParams(c *gin.Context, store registryepisodic.EpisodicSto
 	if params.MaxDepth != nil {
 		maxDepth = *params.MaxDepth
 	}
+	archived, err := registryepisodic.ParseArchiveFilter(c.DefaultQuery("archived", string(registryepisodic.ArchiveFilterExclude)))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if maxDepth < 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "max_depth must be >= 0"})
@@ -406,6 +434,7 @@ func listNamespacesWithParams(c *gin.Context, store registryepisodic.EpisodicSto
 			Prefix:   prefix,
 			Suffix:   suffix,
 			MaxDepth: maxDepth,
+			Archived: archived,
 		})
 		if err != nil {
 			return err
@@ -839,6 +868,7 @@ func toAPIMemoryItem(item registryepisodic.MemoryItem) generatedapi.MemoryItem {
 	namespace := append([]string(nil), item.Namespace...)
 	key := item.Key
 	createdAt := item.CreatedAt.UTC()
+	archived := item.ArchivedAt != nil
 	var expiresAt *time.Time
 	if item.ExpiresAt != nil {
 		t := item.ExpiresAt.UTC()
@@ -854,6 +884,7 @@ func toAPIMemoryItem(item registryepisodic.MemoryItem) generatedapi.MemoryItem {
 		Score:      item.Score,
 		CreatedAt:  &createdAt,
 		ExpiresAt:  expiresAt,
+		Archived:   &archived,
 	}
 }
 
@@ -904,7 +935,7 @@ func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.Epis
 	}
 }
 
-func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter map[string]interface{}, query string, limit int) ([]registryepisodic.MemoryItem, error) {
+func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter map[string]interface{}, query string, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	embeddings, err := embedder.EmbedTexts(c.Request.Context(), []string{query})
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
@@ -917,7 +948,7 @@ func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedd
 	if err != nil {
 		return nil, err
 	}
-	vectorResults, err := store.SearchMemoryVectors(c.Request.Context(), nsEncoded, embeddings[0], filter, limit)
+	vectorResults, err := store.SearchMemoryVectors(c.Request.Context(), nsEncoded, embeddings[0], filter, limit, archived)
 	if err != nil {
 		return nil, fmt.Errorf("search memory vectors: %w", err)
 	}
@@ -939,7 +970,7 @@ func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedd
 		return nil, nil
 	}
 
-	items, err := store.GetMemoriesByIDs(c.Request.Context(), orderedIDs)
+	items, err := store.GetMemoriesByIDs(c.Request.Context(), orderedIDs, archived)
 	if err != nil {
 		return nil, fmt.Errorf("get memories by ids: %w", err)
 	}

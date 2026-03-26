@@ -55,7 +55,7 @@ type ConversationSummary struct {
 	StartedByEntryID        *uuid.UUID             `json:"startedByEntryId,omitempty"`
 	CreatedAt               time.Time              `json:"createdAt"`
 	UpdatedAt               time.Time              `json:"updatedAt"`
-	DeletedAt               *time.Time             `json:"deletedAt,omitempty"`
+	ArchivedAt              *time.Time             `json:"archivedAt,omitempty"`
 	AccessLevel             model.AccessLevel      `json:"accessLevel"`
 }
 
@@ -80,10 +80,16 @@ type MemoryEpochFilter struct {
 	Epoch *int64
 }
 
+type ArchiveFilter string
+
 const (
 	MemoryEpochModeLatest = "latest"
 	MemoryEpochModeAll    = "all"
 	MemoryEpochModeEpoch  = "epoch"
+
+	ArchiveFilterExclude ArchiveFilter = "exclude"
+	ArchiveFilterInclude ArchiveFilter = "include"
+	ArchiveFilterOnly    ArchiveFilter = "only"
 )
 
 // ParseMemoryEpochFilter parses API epoch filter values:
@@ -106,15 +112,28 @@ func ParseMemoryEpochFilter(raw string) (*MemoryEpochFilter, error) {
 	}
 }
 
+func ParseArchiveFilter(raw string) (ArchiveFilter, error) {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	switch ArchiveFilter(value) {
+	case "", ArchiveFilterExclude:
+		return ArchiveFilterExclude, nil
+	case ArchiveFilterInclude:
+		return ArchiveFilterInclude, nil
+	case ArchiveFilterOnly:
+		return ArchiveFilterOnly, nil
+	default:
+		return "", fmt.Errorf("invalid archive filter %q; expected exclude, include, or only", raw)
+	}
+}
+
 // AdminConversationQuery holds parameters for admin conversation listing.
 type AdminConversationQuery struct {
 	Mode           model.ConversationListMode
 	Ancestry       model.ConversationAncestryFilter
 	UserID         *string
-	IncludeDeleted bool
-	OnlyDeleted    bool
-	DeletedAfter   *time.Time
-	DeletedBefore  *time.Time
+	Archived       ArchiveFilter
+	ArchivedAfter  *time.Time
+	ArchivedBefore *time.Time
 	AfterCursor    *string
 	Limit          int
 }
@@ -129,12 +148,12 @@ type AdminMessageQuery struct {
 
 // AdminSearchQuery holds parameters for admin search.
 type AdminSearchQuery struct {
-	Query          string
-	UserID         *string
-	Limit          int
-	IncludeEntry   bool
-	IncludeDeleted bool
-	AfterCursor    *string
+	Query           string
+	UserID          *string
+	Limit           int
+	IncludeEntry    bool
+	IncludeArchived bool
+	AfterCursor     *string
 }
 
 // AdminAttachmentQuery holds parameters for admin attachment listing.
@@ -157,9 +176,9 @@ type AdminTotalStats struct {
 }
 
 type AdminConversationGroupStats struct {
-	Total               int64      `json:"total"`
-	SoftDeleted         int64      `json:"softDeleted"`
-	OldestSoftDeletedAt *time.Time `json:"oldestSoftDeletedAt"`
+	Total            int64      `json:"total"`
+	Archived         int64      `json:"archived"`
+	OldestArchivedAt *time.Time `json:"oldestArchivedAt"`
 }
 
 type AdminOutboxStats struct {
@@ -176,6 +195,12 @@ type AdminStatsSummary struct {
 
 type AdminStatsSummaryProvider interface {
 	AdminStatsSummary(ctx context.Context) (*AdminStatsSummary, error)
+}
+
+type DeletedConversationGroup struct {
+	ConversationGroupID uuid.UUID
+	ConversationIDs     []uuid.UUID
+	MemberUserIDs       []string
 }
 
 // AttachmentUpdate defines mutable attachment fields.
@@ -212,10 +237,11 @@ type MemoryStore interface {
 	CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
 	// CreateConversationWithID creates a conversation with the given ID. Used by gRPC AppendEntry for fork-on-append.
 	CreateConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
-	ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter) ([]ConversationSummary, *string, error)
+	ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived ArchiveFilter) ([]ConversationSummary, *string, error)
 	GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*ConversationDetail, error)
 	UpdateConversation(ctx context.Context, userID string, conversationID uuid.UUID, title *string, metadata map[string]interface{}) (*ConversationDetail, error)
-	DeleteConversation(ctx context.Context, userID string, conversationID uuid.UUID) error
+	ArchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error
+	UnarchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error
 
 	// Memberships
 	ListMemberships(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error)
@@ -256,8 +282,7 @@ type MemoryStore interface {
 	// Admin
 	AdminListConversations(ctx context.Context, query AdminConversationQuery) ([]ConversationSummary, *string, error)
 	AdminGetConversation(ctx context.Context, conversationID uuid.UUID) (*ConversationDetail, error)
-	AdminDeleteConversation(ctx context.Context, conversationID uuid.UUID) error
-	AdminRestoreConversation(ctx context.Context, conversationID uuid.UUID) error
+	AdminSetConversationArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error
 	AdminGetEntries(ctx context.Context, conversationID uuid.UUID, query AdminMessageQuery) (*PagedEntries, error)
 	AdminListMemberships(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error)
 	AdminListForks(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]ConversationForkSummary, *string, error)
@@ -277,6 +302,7 @@ type MemoryStore interface {
 	// Eviction
 	FindEvictableGroupIDs(ctx context.Context, cutoff time.Time, limit int) ([]uuid.UUID, error)
 	CountEvictableGroups(ctx context.Context, cutoff time.Time) (int64, error)
+	LoadDeletedConversationGroups(ctx context.Context, groupIDs []uuid.UUID) ([]DeletedConversationGroup, error)
 	HardDeleteConversationGroups(ctx context.Context, groupIDs []uuid.UUID) error
 
 	// Tasks

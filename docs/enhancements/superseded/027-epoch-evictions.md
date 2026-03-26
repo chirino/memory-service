@@ -11,7 +11,7 @@ superseded-by:
 
 ## Motivation
 
-Enhancement 016 introduced eviction for soft-deleted resources (conversation groups and memberships). However, there's another category of data that grows unbounded: **old memory epochs**.
+Enhancement 016 introduced eviction for archived resources (conversation groups and memberships). However, there's another category of data that grows unbounded: **old memory epochs**.
 
 When agents compact or summarize their memory, they create new epochs. The old epochs are retained for auditability and debugging (as described in the `memory epochs` documentation), but they are never accessed during normal agent operation. Over time, these historical epochs can consume significant storage.
 
@@ -67,8 +67,8 @@ Add a new resource type `memory_epochs` to the existing eviction endpoint:
 
 | Resource Type | Description |
 |---------------|-------------|
-| `conversation_groups` | Existing - soft-deleted conversation groups |
-| `conversation_memberships` | Existing - soft-deleted memberships |
+| `conversation_groups` | Existing - archived conversation groups |
+| `conversation_memberships` | Existing - archived memberships |
 | `memory_epochs` | **New** - entries from non-latest epochs past retention |
 
 ### Eviction Algorithm
@@ -628,7 +628,7 @@ Feature: Memory Epoch Eviction
 
 4. **Vector store cleanup is async.** Entry embeddings are cleaned up via the task queue, not synchronously during eviction.
 
-5. **Soft-delete status of parent conversation is ignored.** Epoch eviction applies to all conversations, whether soft-deleted or not. If the conversation is soft-deleted, the entire group will eventually be evicted via `conversation_groups` eviction anyway.
+5. **Soft-delete status of parent conversation is ignored.** Epoch eviction applies to all conversations, whether archived or not. If the conversation is archived, the entire group will eventually be evicted via `conversation_groups` eviction anyway.
 
 6. **The retention period applies to the epoch's last update time.** We use `max(created_at)` of entries in the epoch, not the creation time of the first entry.
 
@@ -640,13 +640,13 @@ For example, require epochs to be at least 24 hours old before considering them 
 
 **Recommendation:** Not needed. The retention period already provides this safety margin. If an admin specifies `P1D`, epochs less than 1 day old are automatically protected.
 
-### Q2: Should eviction consider conversation soft-delete status?
+### Q2: Should eviction consider conversation archive status?
 
-Option A: Evict epochs only from non-deleted conversations (soft-deleted conversations will be fully evicted when the group is evicted).
+Option A: Evict epochs only from non-deleted conversations (archived conversations will be fully evicted when the group is evicted).
 
 Option B: Evict epochs from all conversations regardless of deletion status.
 
-**Recommendation:** Option B. Evicting old epochs from soft-deleted conversations reduces storage immediately rather than waiting for the group retention period. No harm is done since the data is already marked for deletion.
+**Recommendation:** Option B. Evicting old epochs from archived conversations reduces storage immediately rather than waiting for the group retention period. No harm is done since the data is already marked for deletion.
 
 ### Q3: Should we support evicting specific conversations or clients?
 

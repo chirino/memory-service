@@ -5,13 +5,16 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"github.com/google/uuid"
 )
 
-// EvictionService periodically cleans up soft-deleted records past retention.
+// EvictionService periodically cleans up archived records past retention.
 type EvictionService struct {
 	store     registrystore.MemoryStore
+	eventBus  registryeventbus.EventBus
 	interval  time.Duration
 	retention time.Duration
 	batchSize int
@@ -19,9 +22,10 @@ type EvictionService struct {
 }
 
 // NewEvictionService creates a new eviction service.
-func NewEvictionService(store registrystore.MemoryStore, batchSize int, delayMs int) *EvictionService {
+func NewEvictionService(store registrystore.MemoryStore, eventBus registryeventbus.EventBus, batchSize int, delayMs int) *EvictionService {
 	return &EvictionService{
 		store:     store,
+		eventBus:  eventBus,
 		interval:  1 * time.Hour,
 		retention: 30 * 24 * time.Hour, // 30 days default
 		batchSize: batchSize,
@@ -76,6 +80,7 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 		if len(ids) == 0 {
 			break
 		}
+		var eventsToPublish []registryeventbus.Event
 		if err := e.store.InWriteTx(ctx, func(writeCtx context.Context) error {
 			// Create vector delete tasks before hard-deleting so orphaned
 			// embeddings are cleaned up asynchronously by the task processor.
@@ -85,9 +90,24 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 					log.Error("Eviction: create vector delete task failed", "groupId", id, "err", err)
 				}
 			}
+			deletedGroups, err := e.store.LoadDeletedConversationGroups(writeCtx, ids)
+			if err != nil {
+				return err
+			}
+			appended, used, err := eventstream.AppendOutboxEvents(writeCtx, e.store, eventstream.ConversationDeletedEvents(deletedGroups)...)
+			if err != nil {
+				return err
+			}
+			if used {
+				eventsToPublish = appended
+			} else {
+				eventsToPublish = eventstream.ConversationDeletedEvents(deletedGroups)
+			}
 			return e.store.HardDeleteConversationGroups(writeCtx, ids)
 		}); err != nil {
 			log.Error("Eviction: hard delete failed", "err", err)
+		} else if err := eventstream.PublishEvents(ctx, e.store, e.eventBus, eventsToPublish...); err != nil {
+			log.Error("Eviction: publish delete events failed", "err", err)
 		}
 		evicted += len(ids)
 

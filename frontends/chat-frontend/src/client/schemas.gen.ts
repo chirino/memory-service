@@ -209,6 +209,10 @@ export const $ConversationSummary = {
       format: "uuid",
       nullable: true,
     },
+    archived: {
+      type: "boolean",
+      description: "Synthetic archive flag derived from the internal archived timestamp.",
+    },
   },
   example: {
     id: "550e8400-e29b-41d4-a716-446655440000",
@@ -218,6 +222,7 @@ export const $ConversationSummary = {
     updatedAt: "2025-01-10T14:45:12Z",
     lastMessagePreview: "Let's try modeling forks as separate conversations…",
     accessLevel: "owner",
+    archived: false,
   },
 } as const;
 
@@ -256,6 +261,10 @@ export const $ChildConversationSummary = {
       format: "uuid",
       nullable: true,
     },
+    archived: {
+      type: "boolean",
+      description: "Synthetic archive flag derived from the internal archived timestamp.",
+    },
   },
   example: {
     id: "550e8400-e29b-41d4-a716-446655440000",
@@ -266,6 +275,7 @@ export const $ChildConversationSummary = {
     lastMessagePreview: "Vendor A is cheaper at low volume.",
     accessLevel: "owner",
     startedByEntryId: "660e8400-e29b-41d4-a716-446655440111",
+    archived: false,
   },
 } as const;
 
@@ -365,6 +375,10 @@ export const $UpdateConversationRequest = {
       type: "string",
       nullable: true,
       maxLength: 500,
+    },
+    archived: {
+      type: "boolean",
+      description: "Set to `true` to archive the conversation and its fork tree.",
     },
   },
 } as const;
@@ -553,6 +567,20 @@ export const $MemoryItem = {
     usage: {
       $ref: "#/components/schemas/MemoryUsage",
     },
+    archived: {
+      type: "boolean",
+      description: "Synthetic archive flag derived from the internal archived timestamp.",
+    },
+  },
+} as const;
+
+export const $UpdateMemoryRequest = {
+  type: "object",
+  properties: {
+    archived: {
+      type: "boolean",
+      description: "Set to `true` to archive the active memory item.",
+    },
   },
 } as const;
 
@@ -599,6 +627,11 @@ export const $SearchMemoriesRequest = {
     include_usage: {
       type: "boolean",
       default: false,
+    },
+    archived: {
+      type: "string",
+      enum: ["exclude", "include", "only"],
+      default: "exclude",
     },
   },
 } as const;
@@ -648,7 +681,7 @@ export const $MemoryEventItem = {
     },
     kind: {
       type: "string",
-      enum: ["add", "update", "delete", "expired"],
+      enum: ["add", "update", "expired"],
     },
     occurred_at: {
       type: "string",

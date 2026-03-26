@@ -5,6 +5,8 @@ status: partial
 # Enhancement 068: Namespaced Episodic Memory
 
 > **Status**: Partial. Core CRUD, encryption, OPA policy enforcement, TTL/eviction, OpenAPI/proto contract parity, generated REST model adoption, gRPC handlers/tests, vector indexing (Postgres + MongoDB + Qdrant), admin policy bundle endpoints, and manual index-trigger endpoint are implemented. Remaining: LangGraph integration tests (Phase 6) and the event-timeline work in Phase 9.
+>
+> **Current Contract Note**: Memory archive behavior now follows [094](../implemented/094-archive-operations.md). References below to `DELETE /v1/memories`, archive-as-delete event semantics, or archived rows always removing vector entries are obsolete. The current API uses `PATCH /v1/memories` for archive state, allows archived memories to be read/searched/listed via `archived=exclude|include|only`, and applies the same archive filter to semantic search.
 
 ## Summary
 
@@ -97,12 +99,12 @@ queries efficiently.
 --   2 = expired  — TTL elapsed; cleared to tombstone on eviction, kept for event history
 
 -- Event log: each row is a write event for a (namespace, key).
--- The active value of a key is the single row where deleted_at IS NULL.
+-- The active value of a key is the single row where archived_at IS NULL.
 -- On update: a new row is inserted (kind='update') with created_at = T;
---            the previous active row is soft-deleted: deleted_at = T, deleted_reason = 0.
--- On delete: the active row is soft-deleted: deleted_at = NOW(), deleted_reason = 1.
--- On TTL expiry: the active row is soft-deleted: deleted_at = NOW(), deleted_reason = 2.
--- When a row is soft-deleted its indexed_at is reset to NULL so the indexer removes it from the vector store.
+--            the previous active row is archived: archived_at = T, deleted_reason = 0.
+-- On delete: the active row is archived: archived_at = NOW(), deleted_reason = 1.
+-- On TTL expiry: the active row is archived: archived_at = NOW(), deleted_reason = 2.
+-- When a row is archived its indexed_at is reset to NULL so the indexer removes it from the vector store.
 CREATE TABLE memories (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     namespace         TEXT        NOT NULL,   -- RS-encoded, e.g. "user\x1ealice\x1ememories"
@@ -113,7 +115,7 @@ CREATE TABLE memories (
     kind              SMALLINT    NOT NULL DEFAULT 0,  -- 0=add, 1=update — set at write time, never changed
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at        TIMESTAMPTZ,            -- NULL = no TTL
-    deleted_at        TIMESTAMPTZ,            -- NULL = active; non-NULL = superseded or key deleted
+    archived_at        TIMESTAMPTZ,            -- NULL = active; non-NULL = superseded or key deleted
     deleted_reason    SMALLINT,               -- NULL=active, 0=updated, 1=deleted, 2=expired
     indexed_at        TIMESTAMPTZ             -- NULL = pending vector index sync
 );
@@ -121,13 +123,13 @@ CREATE TABLE memories (
 -- History / audit queries (all versions of a key, ordered)
 CREATE INDEX memories_namespace_key_idx    ON memories (namespace, key, created_at DESC);
 -- Active-record point lookups (GET, search)
-CREATE INDEX memories_active_idx           ON memories (namespace, key) WHERE deleted_at IS NULL;
+CREATE INDEX memories_active_idx           ON memories (namespace, key) WHERE archived_at IS NULL;
 CREATE INDEX memories_expires_idx          ON memories (expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX memories_indexed_at_idx       ON memories (indexed_at);
 CREATE INDEX memories_policy_attrs_gin_idx ON memories USING GIN (policy_attributes);
 -- Event timeline queries
 CREATE INDEX memories_write_events_idx     ON memories (namespace, created_at, id) WHERE kind IN (0, 1);
-CREATE INDEX memories_delete_events_idx    ON memories (namespace, deleted_at, id) WHERE deleted_reason IN (1, 2);
+CREATE INDEX memories_delete_events_idx    ON memories (namespace, archived_at, id) WHERE deleted_reason IN (1, 2);
 
 ```
 
@@ -140,11 +142,11 @@ and set to `null` for tombstones.
 
 Indexes:
 - `{namespace: 1, key: 1, created_at: -1}` — history queries
-- `{namespace: 1, key: 1, deleted_at: 1}` (sparse) — active-record lookups
+- `{namespace: 1, key: 1, archived_at: 1}` (sparse) — active-record lookups
 - `{expires_at: 1}` (TTL index)
 - `{indexed_at: 1}`
 - `{namespace: 1, created_at: 1, _id: 1}, {partialFilterExpression: {kind: {$in: [0, 1]}}}` — write event queries
-- `{namespace: 1, deleted_at: 1, _id: 1}, {partialFilterExpression: {deleted_reason: {$in: [1, 2]}}}` — delete event queries
+- `{namespace: 1, archived_at: 1, _id: 1}, {partialFilterExpression: {deleted_reason: {$in: [1, 2]}}}` — delete event queries
 
 No unique constraint on `(namespace, key)` — multiple historical rows per key are retained.
 Access control is enforced entirely by OPA policies.
@@ -248,7 +250,7 @@ Response `200 OK`:
 }
 ```
 
-Value is decrypted on read. Returns `404` if no active row exists for the key (`deleted_at IS NULL`). Returns `403` if inaccessible.
+Value is decrypted on read. Returns `404` if no active row exists for the key (`archived_at IS NULL`). Returns `403` if inaccessible.
 
 #### DELETE /v1/memories — Delete a Memory
 
@@ -256,7 +258,7 @@ Value is decrypted on read. Returns `404` if no active row exists for the key (`
 DELETE /v1/memories?ns=user&ns=alice&ns=memories&key=first_meeting
 ```
 
-Returns `204 No Content`. Sets `deleted_at = NOW()` and resets `indexed_at = NULL` on the active row; the background indexer then removes the corresponding vector entries.
+Returns `204 No Content`. Sets `archived_at = NOW()` and resets `indexed_at = NULL` on the active row; the background indexer then removes the corresponding vector entries.
 
 #### POST /v1/memories/search — Filter and Semantic Search
 
@@ -391,7 +393,7 @@ Response `200 OK`:
 }
 ```
 
-- `occurred_at` = `created_at` for `add`/`update`; `deleted_at` for `delete`/`expired`
+- `occurred_at` = `created_at` for `add`/`update`; `archived_at` for `delete`/`expired`
 - `value` and `attributes` are decrypted and returned for `add`/`update` events; `null` for tombstoned events
 - Events ordered by `occurred_at ASC, id ASC` for stable cursor pagination
 - `add`/`update` events are sourced from the `kind` column; `delete`/`expired` events from `deleted_reason`
@@ -575,11 +577,11 @@ indexing is decoupled from the write path via the `indexed_at` column (`NULL` = 
 A background goroutine polls for rows where `indexed_at IS NULL` at a configurable interval
 (default: 30s) and processes each in one of two ways:
 
-- **`deleted_at IS NULL`** (active row): generate embedding, upsert to vector store, set `indexed_at = NOW()`.
-- **`deleted_at IS NOT NULL`** (soft-deleted row): remove the corresponding vector entry by `memory_id`,
+- **`archived_at IS NULL`** (active row): generate embedding, upsert to vector store, set `indexed_at = NOW()`.
+- **`archived_at IS NOT NULL`** (archived row): remove the corresponding vector entry by `memory_id`,
   set `indexed_at = NOW()`.
 
-The soft-delete path is triggered on both key deletion and update. On update, the write handler
+The archive path is triggered on both key deletion and update. On update, the write handler
 resets `indexed_at = NULL` on the previous active row at the same time it inserts the new row
 (same transaction, same timestamp), so both the old removal and the new embedding are processed
 in the next indexer cycle.
@@ -601,18 +603,18 @@ Admin-configurable settings:
 
 TTL cleanup runs as a background goroutine on a configurable interval (default: 60s) in two passes:
 
-**Expiry pass** — soft-deletes memories whose TTL has elapsed:
+**Expiry pass** — archives memories whose TTL has elapsed:
 
 ```sql
 UPDATE memories
-SET deleted_at = NOW(), indexed_at = NULL
-WHERE expires_at <= NOW() AND deleted_at IS NULL
+SET archived_at = NOW(), indexed_at = NULL
+WHERE expires_at <= NOW() AND archived_at IS NULL
 ```
 
 Resetting `indexed_at = NULL` causes the batch indexer (§6) to remove the corresponding
 vector entries on its next cycle. No direct vector store interaction occurs here.
 
-**Eviction pass** — processes soft-deleted rows based on `deleted_reason`:
+**Eviction pass** — processes archived rows based on `deleted_reason`:
 
 - `deleted_reason = 0` (updated): hard-delete immediately — the update event is captured by the
   new row's `kind = 1`. The indexer already handled vector cleanup via `indexed_at = NULL`.
@@ -732,9 +734,9 @@ Feature: Namespaced Episodic Memory
   - `TestNamespaceDepthLimit` — depth limit enforcement
 - `internal/episodic/ttl_test.go` — expired items deleted on next cleanup cycle
 - `internal/episodic/indexer_test.go`
-  - `TestIndexerEmbedsActiveRow` — active row (`deleted_at IS NULL`) is embedded and upserted
+  - `TestIndexerEmbedsActiveRow` — active row (`archived_at IS NULL`) is embedded and upserted
   - `TestIndexerSetsIndexedAt` — `indexed_at` is set after successful vector upsert
-  - `TestIndexerRemovesSoftDeleted` — soft-deleted row (`deleted_at IS NOT NULL`) removes vector entry
+  - `TestIndexerRemovesArchived` — archived row (`archived_at IS NOT NULL`) removes vector entry
   - `TestIndexerUpdateCycle` — update resets old row's `indexed_at`; indexer removes old vector entry and upserts new one
 - `internal/episodic/policy_test.go`
   - `TestDefaultAuthzPolicyOwnerNamespace` — user allowed to access `user/<user_id>/...`
@@ -777,7 +779,7 @@ Feature: Namespaced Episodic Memory
 
 ### Phase 4 — TTL Cleanup
 
-- [x] Background goroutine: soft-delete memories where `expires_at <= NOW()`; eviction pass hard-deletes confirmed rows
+- [x] Background goroutine: archive memories where `expires_at <= NOW()`; eviction pass hard-deletes confirmed rows
 - [x] Configurable cleanup interval
 
 ### Phase 5 — Vector Indexing
@@ -817,7 +819,7 @@ Feature: Namespaced Episodic Memory
 - [ ] Add equivalent fields to MongoDB `memories` collection
 - [ ] Add event-timeline indexes (`memories_write_events_idx`, `memories_delete_events_idx`)
 - [ ] Update `PUT /v1/memories` handler to set `kind` (0=add, 1=update) at write time
-- [ ] Update `DELETE /v1/memories` handler to set `deleted_reason = 1` at soft-delete time
+- [ ] Update `DELETE /v1/memories` handler to set `deleted_reason = 1` at archive time
 - [ ] Update TTL expiry pass to set `deleted_reason = 2`; update pass to set `deleted_reason = 0`
 - [ ] Update eviction pass: hard-delete `deleted_reason = 0` rows; tombstone `deleted_reason IN (1,2)` rows
 - [ ] Add tombstone-retention pass (hard-delete tombstones older than `tombstone_retention`)

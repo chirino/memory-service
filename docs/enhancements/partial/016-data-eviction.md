@@ -13,18 +13,18 @@ superseded-by:
 
 ## Motivation
 
-Enhancement 013 (Soft Deletes) introduced soft deletion, where resources are marked with a `deletedAt` timestamp instead of being physically removed. This preserves data for audit trails but creates unbounded storage growth.
+Enhancement 013 (Soft Deletes) introduced soft deletion, where resources are marked with a `archivedAt` timestamp instead of being physically removed. This preserves data for audit trails but creates unbounded storage growth.
 
-This enhancement adds an admin endpoint to **permanently hard-delete** resources that have been soft-deleted for longer than a configurable retention period. This addresses:
+This enhancement adds an admin endpoint to **permanently hard-delete** resources that have been archived for longer than a configurable retention period. This addresses:
 
-1. **Storage Management**: Prevent unbounded growth of soft-deleted records.
+1. **Storage Management**: Prevent unbounded growth of archived records.
 2. **GDPR Compliance**: Support "right to erasure" by permanently removing data after the retention period.
 3. **Performance**: Reduce table sizes by removing stale data that will never be accessed.
 4. **Compliance**: Meet organizational data retention policy requirements (e.g., "delete all data older than 7 years").
 
 ## Dependencies
 
-- **Enhancement 013 (Soft Deletes)**: Resources must have `deletedAt` timestamps
+- **Enhancement 013 (Soft Deletes)**: Resources must have `archivedAt` timestamps
 - **Enhancement 014 (Admin Access)**: Eviction endpoint uses admin authorization and audit logging
 - **Enhancement 015 (Task Queue)**: Vector store cleanup uses the background task queue
 
@@ -63,7 +63,7 @@ data: {"progress": 100}
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `retentionPeriod` | ISO 8601 Duration | Yes | Resources soft-deleted longer than this are hard-deleted (e.g., `P90D` = 90 days, `PT24H` = 24 hours) |
+| `retentionPeriod` | ISO 8601 Duration | Yes | Resources archived longer than this are hard-deleted (e.g., `P90D` = 90 days, `PT24H` = 24 hours) |
 | `resourceTypes` | array of strings | Yes | Which resource types to evict. Valid values: `conversation_groups`, `conversation_memberships` |
 | `justification` | string | No* | Reason for the eviction (required if `memory-service.admin.require-justification=true`) |
 
@@ -80,15 +80,15 @@ The eviction endpoint accepts a list of resource types to delete. Due to the exi
 
 **Why only these two types?**
 
-- **`conversation_groups`**: The root entity. When a conversation is soft-deleted, the entire group (including all conversations in the tree, messages, and memberships) is marked deleted. Hard-deleting the group cascades to all children via `ON DELETE CASCADE`.
+- **`conversation_groups`**: The root entity. When a conversation is archived, the entire group (including all conversations in the tree, messages, and memberships) is marked deleted. Hard-deleting the group cascades to all children via `ON DELETE CASCADE`.
 
-- **`conversation_memberships`**: Memberships can be soft-deleted independently (e.g., when a user is removed from a shared conversation). These orphaned membership records should be evicted separately from the parent group.
+- **`conversation_memberships`**: Memberships can be archived independently (e.g., when a user is removed from a shared conversation). These orphaned membership records should be evicted separately from the parent group.
 
 **Why not `conversations` or `messages` directly?**
 
-- `conversations` always belong to a `conversation_group`. The soft-delete design marks the entire group as deleted, not individual conversations. Evicting at the group level is cleaner and ensures referential integrity.
+- `conversations` always belong to a `conversation_group`. The archive design marks the entire group as deleted, not individual conversations. Evicting at the group level is cleaner and ensures referential integrity.
 
-- `messages` are never soft-deleted; they inherit their deleted status from their parent conversation. They are cascade-deleted when the group is hard-deleted.
+- `messages` are never archived; they inherit their deleted status from their parent conversation. They are cascade-deleted when the group is hard-deleted.
 
 ### Cutoff Time Calculation
 
@@ -102,13 +102,13 @@ Then used in queries to find records to evict:
 
 ```java
 // PostgreSQL
-WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff
+WHERE archived_at IS NOT NULL AND archived_at < :cutoff
 
 // MongoDB  
-{ deletedAt: { $ne: null, $lt: cutoff } }
+{ archivedAt: { $ne: null, $lt: cutoff } }
 ```
 
-This means: "Delete resources whose `deleted_at` timestamp is older than the retention period."
+This means: "Delete resources whose `archived_at` timestamp is older than the retention period."
 
 Example: If `retentionPeriod=P90D` and today is 2026-01-27, resources deleted before 2025-10-29 are evicted.
 
@@ -122,7 +122,7 @@ The eviction implementation uses **native SQL queries** instead of JPA/Hibernate
 | JPQL `DELETE FROM Entity WHERE ...` | Bypasses `ON DELETE CASCADE` - database constraints don't fire from JPQL |
 | **Native SQL `DELETE FROM table WHERE ...`** | Single statement, database handles cascade, no entity loading |
 
-The existing soft-delete code uses Panache's `update()` with JPQL strings, which translates to bulk UPDATE statements (efficient). For hard deletes, we need native SQL to leverage `ON DELETE CASCADE` at the database level.
+The existing archive code uses Panache's `update()` with JPQL strings, which translates to bulk UPDATE statements (efficient). For hard deletes, we need native SQL to leverage `ON DELETE CASCADE` at the database level.
 
 ```java
 // WRONG - ORM loads entities, N+1 deletes
@@ -177,7 +177,7 @@ To ensure consistency when multiple eviction processes run concurrently on the s
 ```sql
 -- PostgreSQL
 SELECT id FROM conversation_groups 
-WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff 
+WHERE archived_at IS NOT NULL AND archived_at < :cutoff 
 FOR UPDATE SKIP LOCKED
 LIMIT 1000;
 ```
@@ -199,11 +199,11 @@ LIMIT 1000;
 
 **None.** The eviction locks do not affect normal user queries because:
 
-1. **Disjoint row sets**: User queries filter `WHERE deleted_at IS NULL`. Eviction queries filter `WHERE deleted_at IS NOT NULL`. These are completely separate sets of rows with no overlap.
+1. **Disjoint row sets**: User queries filter `WHERE archived_at IS NULL`. Eviction queries filter `WHERE archived_at IS NOT NULL`. These are completely separate sets of rows with no overlap.
 
-2. **Row-level locking**: PostgreSQL's `FOR UPDATE` acquires row-level locks, not table locks. Only soft-deleted rows (which users never access) are locked.
+2. **Row-level locking**: PostgreSQL's `FOR UPDATE` acquires row-level locks, not table locks. Only archived rows (which users never access) are locked.
 
-3. **Index optimization**: The partial indexes (`WHERE deleted_at IS NULL`) ensure user queries never scan soft-deleted rows, so they don't encounter the locks at all.
+3. **Index optimization**: The partial indexes (`WHERE archived_at IS NULL`) ensure user queries never scan archived rows, so they don't encounter the locks at all.
 
 The only indirect impacts are:
 - **I/O contention**: Heavy eviction competes for disk bandwidth, mitigated by batch delays
@@ -354,9 +354,9 @@ Add to `openapi-admin.yml`:
 /v1/admin/evict:
   post:
     tags: [Admin]
-    summary: Hard-delete soft-deleted resources past retention period
+    summary: Hard-delete archived resources past retention period
     description: |-
-      Permanently removes resources that have been soft-deleted for longer than
+      Permanently removes resources that have been archived for longer than
       the specified retention period. This operation is irreversible.
       
       The operation runs in batches to minimize database lock contention.
@@ -413,7 +413,7 @@ components:
         retentionPeriod:
           type: string
           description: |-
-            ISO 8601 duration. Resources soft-deleted longer than this are hard-deleted.
+            ISO 8601 duration. Resources archived longer than this are hard-deleted.
             Examples: P90D (90 days), P1Y (1 year), PT24H (24 hours).
           example: "P90D"
         resourceTypes:
@@ -468,7 +468,7 @@ public class EvictionService {
     long batchDelayMs;
     
     /**
-     * Evict soft-deleted resources older than the cutoff.
+     * Evict archived resources older than the cutoff.
      * @param retentionPeriod resources deleted longer than this are hard-deleted
      * @param resourceTypes which resource types to evict
      * @param progressCallback optional callback for progress updates (0-100)
@@ -583,8 +583,8 @@ public List<UUID> findEvictableGroupIds(OffsetDateTime cutoff, int limit) {
     @SuppressWarnings("unchecked")
     List<UUID> ids = entityManager.createNativeQuery(
         "SELECT id FROM conversation_groups " +
-        "WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff " +
-        "ORDER BY deleted_at " +
+        "WHERE archived_at IS NOT NULL AND archived_at < :cutoff " +
+        "ORDER BY archived_at " +
         "LIMIT :limit " +
         "FOR UPDATE SKIP LOCKED")
         .setParameter("cutoff", cutoff)
@@ -597,7 +597,7 @@ public List<UUID> findEvictableGroupIds(OffsetDateTime cutoff, int limit) {
 public long countEvictableGroups(OffsetDateTime cutoff) {
     return ((Number) entityManager.createNativeQuery(
         "SELECT COUNT(*) FROM conversation_groups " +
-        "WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff")
+        "WHERE archived_at IS NOT NULL AND archived_at < :cutoff")
         .setParameter("cutoff", cutoff)
         .getSingleResult()).longValue();
 }
@@ -625,7 +625,7 @@ public void hardDeleteConversationGroups(List<UUID> groupIds) {
 public long countEvictableMemberships(OffsetDateTime cutoff) {
     return ((Number) entityManager.createNativeQuery(
         "SELECT COUNT(*) FROM conversation_memberships " +
-        "WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff")
+        "WHERE archived_at IS NOT NULL AND archived_at < :cutoff")
         .setParameter("cutoff", cutoff)
         .getSingleResult()).longValue();
 }
@@ -637,7 +637,7 @@ public int hardDeleteMembershipsBatch(OffsetDateTime cutoff, int limit) {
     return entityManager.createNativeQuery(
         "WITH batch AS (" +
         "  SELECT conversation_group_id, user_id FROM conversation_memberships " +
-        "  WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff " +
+        "  WHERE archived_at IS NOT NULL AND archived_at < :cutoff " +
         "  LIMIT :limit " +
         "  FOR UPDATE SKIP LOCKED" +
         ") " +
@@ -663,8 +663,8 @@ MongoTaskRepository taskRepository;
 public List<String> findEvictableGroupIds(Instant cutoff, int limit) {
     return conversationGroupCollection
         .find(Filters.and(
-            Filters.ne("deletedAt", null),
-            Filters.lt("deletedAt", cutoff)))
+            Filters.ne("archivedAt", null),
+            Filters.lt("archivedAt", cutoff)))
         .limit(limit)
         .map(doc -> doc.getString("_id"))
         .into(new ArrayList<>());
@@ -770,10 +770,10 @@ Feature: Data Eviction
   Scenario: Evict conversation groups past retention period (default response)
     Given I have a conversation with title "Old Conversation"
     And set "oldGroupId" to "${conversationGroupId}"
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     And I have a conversation with title "Recent Conversation"
     And set "recentGroupId" to "${conversationGroupId}"
-    And the conversation was soft-deleted 10 days ago
+    And the conversation was archived 10 days ago
     When I call POST "/v1/admin/evict" with body:
       """
       {
@@ -810,7 +810,7 @@ Feature: Data Eviction
 
   Scenario: Evict with SSE progress stream
     Given I have a conversation with title "To Evict"
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     When I call POST "/v1/admin/evict" with Accept "text/event-stream" and body:
       """
       {
@@ -824,7 +824,7 @@ Feature: Data Eviction
     And the final progress should be 100
 
   Scenario: Concurrent eviction is safe
-    Given I have 100 conversations soft-deleted 100 days ago
+    Given I have 100 conversations archived 100 days ago
     When I call POST "/v1/admin/evict" concurrently 3 times with body:
       """
       {
@@ -836,7 +836,7 @@ Feature: Data Eviction
     # Verify all conversations were deleted exactly once
     When I execute SQL query:
       """
-      SELECT COUNT(*) as count FROM conversation_groups WHERE deleted_at IS NOT NULL
+      SELECT COUNT(*) as count FROM conversation_groups WHERE archived_at IS NOT NULL
       """
     Then the SQL result should match:
       | count |
@@ -877,7 +877,7 @@ Feature: Data Eviction
     Given I have a conversation with title "Parent Conversation"
     And set "groupId" to "${conversationGroupId}"
     And the conversation has messages
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     When I call POST "/v1/admin/evict" with body:
       """
       {
@@ -939,7 +939,7 @@ Feature: Data Eviction
 
 ## Assumptions
 
-1. **Soft deletes are already implemented** per enhancement 013. All evictable resources have `deletedAt IS NOT NULL`.
+1. **Soft deletes are already implemented** per enhancement 013. All evictable resources have `archivedAt IS NOT NULL`.
 
 2. **Admin APIs are already implemented** per enhancement 014. The eviction endpoint follows the same authorization and audit patterns.
 
@@ -949,11 +949,11 @@ Feature: Data Eviction
 
 5. **Vector store cleanup is eventually consistent.** Tasks are queued for vector store deletion; cleanup happens asynchronously via the task processor. The vector store can be temporarily unavailable without blocking eviction.
 
-6. **The retention period is absolute from `deletedAt`.** There is no "soft" retention that considers last access time.
+6. **The retention period is absolute from `archivedAt`.** There is no "soft" retention that considers last access time.
 
 7. **Eviction is synchronous.** The endpoint blocks until data store eviction completes. Vector store cleanup happens asynchronously via tasks.
 
-8. **Messages are never soft-deleted independently.** They only inherit deleted status from their parent conversation and are cascade-deleted when the group is hard-deleted.
+8. **Messages are never archived independently.** They only inherit deleted status from their parent conversation and are cascade-deleted when the group is hard-deleted.
 
 9. **Ownership transfers are cascade-deleted with the group.** They are not independently evictable.
 

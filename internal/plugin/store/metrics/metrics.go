@@ -43,9 +43,9 @@ func (m *metricsStore) CreateConversationWithID(ctx context.Context, userID stri
 	return m.inner.CreateConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID)
 }
 
-func (m *metricsStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter) ([]store.ConversationSummary, *string, error) {
+func (m *metricsStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived store.ArchiveFilter) ([]store.ConversationSummary, *string, error) {
 	defer observe("list_conversations", time.Now())
-	return m.inner.ListConversations(ctx, userID, query, afterCursor, limit, mode, ancestry)
+	return m.inner.ListConversations(ctx, userID, query, afterCursor, limit, mode, ancestry, archived)
 }
 
 func (m *metricsStore) GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*store.ConversationDetail, error) {
@@ -58,9 +58,14 @@ func (m *metricsStore) UpdateConversation(ctx context.Context, userID string, co
 	return m.inner.UpdateConversation(ctx, userID, conversationID, title, metadata)
 }
 
-func (m *metricsStore) DeleteConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
-	defer observe("delete_conversation", time.Now())
-	return m.inner.DeleteConversation(ctx, userID, conversationID)
+func (m *metricsStore) ArchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+	defer observe("archive_conversation", time.Now())
+	return m.inner.ArchiveConversation(ctx, userID, conversationID)
+}
+
+func (m *metricsStore) UnarchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+	defer observe("unarchive_conversation", time.Now())
+	return m.inner.UnarchiveConversation(ctx, userID, conversationID)
 }
 
 func (m *metricsStore) ListMemberships(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
@@ -188,14 +193,13 @@ func (m *metricsStore) AdminGetConversation(ctx context.Context, conversationID 
 	return m.inner.AdminGetConversation(ctx, conversationID)
 }
 
-func (m *metricsStore) AdminDeleteConversation(ctx context.Context, conversationID uuid.UUID) error {
-	defer observe("admin_delete_conversation", time.Now())
-	return m.inner.AdminDeleteConversation(ctx, conversationID)
-}
-
-func (m *metricsStore) AdminRestoreConversation(ctx context.Context, conversationID uuid.UUID) error {
-	defer observe("admin_restore_conversation", time.Now())
-	return m.inner.AdminRestoreConversation(ctx, conversationID)
+func (m *metricsStore) AdminSetConversationArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error {
+	if archived {
+		defer observe("admin_archive_conversation", time.Now())
+	} else {
+		defer observe("admin_unarchive_conversation", time.Now())
+	}
+	return m.inner.AdminSetConversationArchived(ctx, conversationID, archived)
 }
 
 func (m *metricsStore) AdminGetEntries(ctx context.Context, conversationID uuid.UUID, query store.AdminMessageQuery) (*store.PagedEntries, error) {
@@ -271,6 +275,11 @@ func (m *metricsStore) FindEvictableGroupIDs(ctx context.Context, cutoff time.Ti
 func (m *metricsStore) CountEvictableGroups(ctx context.Context, cutoff time.Time) (int64, error) {
 	defer observe("count_evictable_groups", time.Now())
 	return m.inner.CountEvictableGroups(ctx, cutoff)
+}
+
+func (m *metricsStore) LoadDeletedConversationGroups(ctx context.Context, groupIDs []uuid.UUID) ([]store.DeletedConversationGroup, error) {
+	defer observe("load_deleted_conversation_groups", time.Now())
+	return m.inner.LoadDeletedConversationGroups(ctx, groupIDs)
 }
 
 func (m *metricsStore) HardDeleteConversationGroups(ctx context.Context, groupIDs []uuid.UUID) error {

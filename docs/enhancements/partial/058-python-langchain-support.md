@@ -482,7 +482,7 @@ The experimental `MemoryServiceStore` maps LangGraph's `BaseStore` onto existing
 | `search(namespace_prefix, query=...)` | Call `/v1/conversations/search` then client-filter by namespace conversation IDs | Namespace filtering is approximate and expensive |
 | `list_namespaces()` | Query `/v1/conversations?query=store:` and parse titles/metadata | O(n) over accessible conversations; depends on naming conventions |
 
-The root cause is a model mismatch: the memory service is **conversation-centric** (append-only entries, soft deletes, content-type consolidation), while `BaseStore` needs **key-value semantics** (upsert by key, hard delete, namespace-addressable lookups). Mapping one onto the other is inherently awkward.
+The root cause is a model mismatch: the memory service is **conversation-centric** (append-only entries, archives, content-type consolidation), while `BaseStore` needs **key-value semantics** (upsert by key, hard delete, namespace-addressable lookups). Mapping one onto the other is inherently awkward.
 
 ### Proposed: `/v1/store` API
 

@@ -343,8 +343,8 @@ public class FullTextSearchRepository {
                             ORDER BY ts_rank(e.indexed_content_tsv, plainto_tsquery('english', ?1)) DESC
                         ) AS rank_in_conversation
                     FROM entries e
-                    JOIN conversations c ON c.id = e.conversation_id AND c.deleted_at IS NULL
-                    JOIN conversation_groups cg ON cg.id = c.conversation_group_id AND cg.deleted_at IS NULL
+                    JOIN conversations c ON c.id = e.conversation_id AND c.archived_at IS NULL
+                    JOIN conversation_groups cg ON cg.id = c.conversation_group_id AND cg.archived_at IS NULL
                     JOIN conversation_memberships cm ON cm.conversation_group_id = cg.id AND cm.user_id = ?2
                     WHERE e.indexed_content_tsv @@ plainto_tsquery('english', ?1)
                 )
@@ -363,8 +363,8 @@ public class FullTextSearchRepository {
                     ts_headline('english', e.indexed_content, plainto_tsquery('english', ?1),
                         'StartSel=<mark>, StopSel=</mark>, MaxWords=50, MinWords=20') AS highlight
                 FROM entries e
-                JOIN conversations c ON c.id = e.conversation_id AND c.deleted_at IS NULL
-                JOIN conversation_groups cg ON cg.id = c.conversation_group_id AND cg.deleted_at IS NULL
+                JOIN conversations c ON c.id = e.conversation_id AND c.archived_at IS NULL
+                JOIN conversation_groups cg ON cg.id = c.conversation_group_id AND cg.archived_at IS NULL
                 JOIN conversation_memberships cm ON cm.conversation_group_id = cg.id AND cm.user_id = ?2
                 WHERE e.indexed_content_tsv @@ plainto_tsquery('english', ?1)
                 ORDER BY score DESC

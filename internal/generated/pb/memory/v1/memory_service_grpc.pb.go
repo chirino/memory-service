@@ -164,7 +164,6 @@ const (
 	ConversationsService_CreateConversation_FullMethodName     = "/memory.v1.ConversationsService/CreateConversation"
 	ConversationsService_GetConversation_FullMethodName        = "/memory.v1.ConversationsService/GetConversation"
 	ConversationsService_UpdateConversation_FullMethodName     = "/memory.v1.ConversationsService/UpdateConversation"
-	ConversationsService_DeleteConversation_FullMethodName     = "/memory.v1.ConversationsService/DeleteConversation"
 	ConversationsService_ListForks_FullMethodName              = "/memory.v1.ConversationsService/ListForks"
 	ConversationsService_ListChildConversations_FullMethodName = "/memory.v1.ConversationsService/ListChildConversations"
 )
@@ -180,8 +179,6 @@ type ConversationsServiceClient interface {
 	CreateConversation(ctx context.Context, in *CreateConversationRequest, opts ...grpc.CallOption) (*Conversation, error)
 	GetConversation(ctx context.Context, in *GetConversationRequest, opts ...grpc.CallOption) (*Conversation, error)
 	UpdateConversation(ctx context.Context, in *UpdateConversationRequest, opts ...grpc.CallOption) (*Conversation, error)
-	// DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
-	DeleteConversation(ctx context.Context, in *DeleteConversationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListForks(ctx context.Context, in *ListForksRequest, opts ...grpc.CallOption) (*ListForksResponse, error)
 	ListChildConversations(ctx context.Context, in *ListChildConversationsRequest, opts ...grpc.CallOption) (*ListChildConversationsResponse, error)
 }
@@ -234,16 +231,6 @@ func (c *conversationsServiceClient) UpdateConversation(ctx context.Context, in 
 	return out, nil
 }
 
-func (c *conversationsServiceClient) DeleteConversation(ctx context.Context, in *DeleteConversationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, ConversationsService_DeleteConversation_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *conversationsServiceClient) ListForks(ctx context.Context, in *ListForksRequest, opts ...grpc.CallOption) (*ListForksResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListForksResponse)
@@ -275,8 +262,6 @@ type ConversationsServiceServer interface {
 	CreateConversation(context.Context, *CreateConversationRequest) (*Conversation, error)
 	GetConversation(context.Context, *GetConversationRequest) (*Conversation, error)
 	UpdateConversation(context.Context, *UpdateConversationRequest) (*Conversation, error)
-	// DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
-	DeleteConversation(context.Context, *DeleteConversationRequest) (*emptypb.Empty, error)
 	ListForks(context.Context, *ListForksRequest) (*ListForksResponse, error)
 	ListChildConversations(context.Context, *ListChildConversationsRequest) (*ListChildConversationsResponse, error)
 	mustEmbedUnimplementedConversationsServiceServer()
@@ -300,9 +285,6 @@ func (UnimplementedConversationsServiceServer) GetConversation(context.Context, 
 }
 func (UnimplementedConversationsServiceServer) UpdateConversation(context.Context, *UpdateConversationRequest) (*Conversation, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateConversation not implemented")
-}
-func (UnimplementedConversationsServiceServer) DeleteConversation(context.Context, *DeleteConversationRequest) (*emptypb.Empty, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteConversation not implemented")
 }
 func (UnimplementedConversationsServiceServer) ListForks(context.Context, *ListForksRequest) (*ListForksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListForks not implemented")
@@ -403,24 +385,6 @@ func _ConversationsService_UpdateConversation_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ConversationsService_DeleteConversation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteConversationRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ConversationsServiceServer).DeleteConversation(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ConversationsService_DeleteConversation_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ConversationsServiceServer).DeleteConversation(ctx, req.(*DeleteConversationRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _ConversationsService_ListForks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListForksRequest)
 	if err := dec(in); err != nil {
@@ -479,10 +443,6 @@ var ConversationsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateConversation",
 			Handler:    _ConversationsService_UpdateConversation_Handler,
-		},
-		{
-			MethodName: "DeleteConversation",
-			Handler:    _ConversationsService_DeleteConversation_Handler,
 		},
 		{
 			MethodName: "ListForks",
@@ -1342,7 +1302,7 @@ var SearchService_ServiceDesc = grpc.ServiceDesc{
 const (
 	MemoriesService_PutMemory_FullMethodName            = "/memory.v1.MemoriesService/PutMemory"
 	MemoriesService_GetMemory_FullMethodName            = "/memory.v1.MemoriesService/GetMemory"
-	MemoriesService_DeleteMemory_FullMethodName         = "/memory.v1.MemoriesService/DeleteMemory"
+	MemoriesService_UpdateMemory_FullMethodName         = "/memory.v1.MemoriesService/UpdateMemory"
 	MemoriesService_SearchMemories_FullMethodName       = "/memory.v1.MemoriesService/SearchMemories"
 	MemoriesService_ListMemoryNamespaces_FullMethodName = "/memory.v1.MemoriesService/ListMemoryNamespaces"
 	MemoriesService_GetMemoryIndexStatus_FullMethodName = "/memory.v1.MemoriesService/GetMemoryIndexStatus"
@@ -1356,7 +1316,7 @@ const (
 type MemoriesServiceClient interface {
 	PutMemory(ctx context.Context, in *PutMemoryRequest, opts ...grpc.CallOption) (*MemoryWriteResult, error)
 	GetMemory(ctx context.Context, in *GetMemoryRequest, opts ...grpc.CallOption) (*MemoryItem, error)
-	DeleteMemory(ctx context.Context, in *DeleteMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	UpdateMemory(ctx context.Context, in *UpdateMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	SearchMemories(ctx context.Context, in *SearchMemoriesRequest, opts ...grpc.CallOption) (*SearchMemoriesResponse, error)
 	ListMemoryNamespaces(ctx context.Context, in *ListMemoryNamespacesRequest, opts ...grpc.CallOption) (*ListMemoryNamespacesResponse, error)
 	// Admin-only: returns count of memories with pending index synchronization.
@@ -1395,10 +1355,10 @@ func (c *memoriesServiceClient) GetMemory(ctx context.Context, in *GetMemoryRequ
 	return out, nil
 }
 
-func (c *memoriesServiceClient) DeleteMemory(ctx context.Context, in *DeleteMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *memoriesServiceClient) UpdateMemory(ctx context.Context, in *UpdateMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, MemoriesService_DeleteMemory_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, MemoriesService_UpdateMemory_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1461,7 +1421,7 @@ func (c *memoriesServiceClient) ListTopMemoryUsage(ctx context.Context, in *List
 type MemoriesServiceServer interface {
 	PutMemory(context.Context, *PutMemoryRequest) (*MemoryWriteResult, error)
 	GetMemory(context.Context, *GetMemoryRequest) (*MemoryItem, error)
-	DeleteMemory(context.Context, *DeleteMemoryRequest) (*emptypb.Empty, error)
+	UpdateMemory(context.Context, *UpdateMemoryRequest) (*emptypb.Empty, error)
 	SearchMemories(context.Context, *SearchMemoriesRequest) (*SearchMemoriesResponse, error)
 	ListMemoryNamespaces(context.Context, *ListMemoryNamespacesRequest) (*ListMemoryNamespacesResponse, error)
 	// Admin-only: returns count of memories with pending index synchronization.
@@ -1486,8 +1446,8 @@ func (UnimplementedMemoriesServiceServer) PutMemory(context.Context, *PutMemoryR
 func (UnimplementedMemoriesServiceServer) GetMemory(context.Context, *GetMemoryRequest) (*MemoryItem, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMemory not implemented")
 }
-func (UnimplementedMemoriesServiceServer) DeleteMemory(context.Context, *DeleteMemoryRequest) (*emptypb.Empty, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteMemory not implemented")
+func (UnimplementedMemoriesServiceServer) UpdateMemory(context.Context, *UpdateMemoryRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateMemory not implemented")
 }
 func (UnimplementedMemoriesServiceServer) SearchMemories(context.Context, *SearchMemoriesRequest) (*SearchMemoriesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchMemories not implemented")
@@ -1561,20 +1521,20 @@ func _MemoriesService_GetMemory_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MemoriesService_DeleteMemory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteMemoryRequest)
+func _MemoriesService_UpdateMemory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateMemoryRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MemoriesServiceServer).DeleteMemory(ctx, in)
+		return srv.(MemoriesServiceServer).UpdateMemory(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MemoriesService_DeleteMemory_FullMethodName,
+		FullMethod: MemoriesService_UpdateMemory_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MemoriesServiceServer).DeleteMemory(ctx, req.(*DeleteMemoryRequest))
+		return srv.(MemoriesServiceServer).UpdateMemory(ctx, req.(*UpdateMemoryRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1685,8 +1645,8 @@ var MemoriesService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MemoriesService_GetMemory_Handler,
 		},
 		{
-			MethodName: "DeleteMemory",
-			Handler:    _MemoriesService_DeleteMemory_Handler,
+			MethodName: "UpdateMemory",
+			Handler:    _MemoriesService_UpdateMemory_Handler,
 		},
 		{
 			MethodName: "SearchMemories",

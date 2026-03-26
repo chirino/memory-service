@@ -52,6 +52,7 @@ export class ConversationsService {
    * @param data.afterCursor Cursor for pagination; returns items after this conversation id (UUID format).
    * @param data.limit Maximum number of conversations to return.
    * @param data.query Optional text query for basic title/metadata search.
+   * @param data.archived Controls whether archived conversations are excluded, included, or returned exclusively.
    * @returns unknown A list of conversations.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -70,6 +71,7 @@ export class ConversationsService {
         afterCursor: data.afterCursor,
         limit: data.limit,
         query: data.query,
+        archived: data.archived,
       },
     });
   }
@@ -98,7 +100,7 @@ export class ConversationsService {
 
   /**
    * Get a conversation
-   * Retrieve a conversation the user has access to.
+   * Retrieve a conversation the user has access to, including archived conversations.
    * @param data The data for the request.
    * @param data.conversationId Conversation identifier (UUID format).
    * @returns Conversation The conversation.
@@ -125,7 +127,7 @@ export class ConversationsService {
 
   /**
    * Update a conversation
-   * Updates conversation properties. Currently supports updating the title.
+   * Updates conversation properties.
    * Requires writer or higher access on the conversation.
    * @param data The data for the request.
    * @param data.conversationId Conversation identifier (UUID format).
@@ -148,35 +150,6 @@ export class ConversationsService {
       },
       body: data.requestBody,
       mediaType: "application/json",
-      errors: {
-        404: "Resource not found",
-      },
-    });
-  }
-
-  /**
-   * Delete a conversation
-   * Deletes a conversation. Only the owner (or manager, depending on policy) may delete.
-   *
-   * **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
-   * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
-   * @returns ErrorResponse Error response
-   * @returns void Conversation deleted.
-   * @throws ApiError
-   */
-  public static deleteConversation(
-    data: $OpenApiTs["/v1/conversations/{conversationId}"]["delete"]["req"],
-  ): CancelablePromise<
-    | $OpenApiTs["/v1/conversations/{conversationId}"]["delete"]["res"][200]
-    | $OpenApiTs["/v1/conversations/{conversationId}"]["delete"]["res"][204]
-  > {
-    return __request(OpenAPI, {
-      method: "DELETE",
-      url: "/v1/conversations/{conversationId}",
-      path: {
-        conversationId: data.conversationId,
-      },
       errors: {
         404: "Resource not found",
       },
@@ -833,6 +806,7 @@ export class MemoriesService {
    * @param data.ns Namespace segments. Repeat once per segment.
    * @param data.key
    * @param data.includeUsage Include usage counters for the requested memory.
+   * @param data.archived Controls whether archived memories are excluded, included, or returned exclusively.
    * @returns MemoryItem Memory found.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -847,6 +821,7 @@ export class MemoriesService {
         ns: data.ns,
         key: data.key,
         include_usage: data.includeUsage,
+        archived: data.archived,
       },
       errors: {
         404: "Resource not found",
@@ -855,31 +830,37 @@ export class MemoriesService {
   }
 
   /**
-   * Delete a memory item
+   * Update a memory item
+   * Updates mutable memory state. Currently supports archiving the active
+   * memory item by setting `archived` to `true`.
    * @param data The data for the request.
    * @param data.ns Namespace segments. Repeat once per segment.
    * @param data.key
+   * @param data.requestBody
    * @returns ErrorResponse Error response
-   * @returns void Memory deleted.
+   * @returns void Memory updated.
    * @throws ApiError
    */
-  public static deleteMemory(
-    data: $OpenApiTs["/v1/memories"]["delete"]["req"],
+  public static updateMemory(
+    data: $OpenApiTs["/v1/memories"]["patch"]["req"],
   ): CancelablePromise<
-    $OpenApiTs["/v1/memories"]["delete"]["res"][200] | $OpenApiTs["/v1/memories"]["delete"]["res"][204]
+    $OpenApiTs["/v1/memories"]["patch"]["res"][200] | $OpenApiTs["/v1/memories"]["patch"]["res"][204]
   > {
     return __request(OpenAPI, {
-      method: "DELETE",
+      method: "PATCH",
       url: "/v1/memories",
       query: {
         ns: data.ns,
         key: data.key,
       },
+      body: data.requestBody,
+      mediaType: "application/json",
     });
   }
 
   /**
    * Search memory items
+   * Search current memory items, with optional archive-state filtering.
    * @param data The data for the request.
    * @param data.requestBody
    * @returns SearchMemoriesResponse Search results.
@@ -905,6 +886,7 @@ export class MemoriesService {
    * @param data.prefix Namespace prefix segments. Repeat once per segment.
    * @param data.suffix Namespace suffix segments. Repeat once per segment.
    * @param data.maxDepth
+   * @param data.archived Controls whether archived memories are excluded, included, or returned exclusively.
    * @returns ListMemoryNamespacesResponse Distinct namespaces.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -921,6 +903,7 @@ export class MemoriesService {
         prefix: data.prefix,
         suffix: data.suffix,
         max_depth: data.maxDepth,
+        archived: data.archived,
       },
     });
   }
@@ -928,11 +911,11 @@ export class MemoriesService {
   /**
    * List memory lifecycle events
    * Returns a paginated, time-ordered stream of memory lifecycle events —
-   * `add`, `update`, `delete`, and `expired` — for namespaces under the
+   * `add`, `update`, and `expired` — for namespaces under the
    * given prefix. Cursor-based pagination via `after_cursor`.
    * @param data The data for the request.
    * @param data.ns Namespace prefix segments. Repeat once per segment.
-   * @param data.kinds Filter by event kind. Repeat to include multiple. Values: add, update, delete, expired.
+   * @param data.kinds Filter by event kind. Repeat to include multiple. Values: add, update, expired.
    * @param data.after Return events with occurred_at strictly after this ISO 8601 timestamp.
    * @param data.before Return events with occurred_at strictly before this ISO 8601 timestamp.
    * @param data.afterCursor Opaque cursor from a previous response for pagination.

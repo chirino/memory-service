@@ -76,7 +76,7 @@ idx_entry_embeddings_hnsw     -- ANN vector search (HNSW)
 1. **Index bloat**: As tables grow, all indexes grow proportionally. Index maintenance (inserts, vacuuming) becomes more expensive.
 2. **Full-text search**: The GIN index on `indexed_content_tsv` degrades with table size since GIN indexes don't support partial scans efficiently.
 3. **ANN search**: HNSW and IVFFlat vector indexes perform better with smaller candidate sets. Partitioning reduces the search space per partition.
-4. **Eviction**: Batch deletion of soft-deleted entries requires scanning and vacuuming large table segments.
+4. **Eviction**: Batch deletion of archived entries requires scanning and vacuuming large table segments.
 5. **Sequential scans**: Queries that can't use indexes (e.g., complex fork tree traversals) become slower.
 
 ## Design
@@ -163,7 +163,7 @@ CREATE TABLE entry_embeddings (
 );
 ```
 
-The cascade delete behavior is handled by the eviction task queue (already the case for soft-deleted entries).
+The cascade delete behavior is handled by the eviction task queue (already the case for archived entries).
 
 #### 3. Partition Creation
 
@@ -319,7 +319,7 @@ SELECT tableoid::regclass, count(*) FROM entry_embeddings GROUP BY tableoid ORDE
 1. **Hash over range**: The dominant query pattern is by `conversation_id`/`conversation_group_id`, not by time. Hash partitioning gives partition pruning on the hot path.
 2. **Same key and modulus for both tables**: Using `conversation_group_id` with modulus 16 on both tables keeps the design consistent and means related data lands in the same partition number.
 3. **16 partitions**: A moderate starting point. Can be increased by re-partitioning (data migration required). Too few partitions give little benefit; too many add planning overhead.
-4. **Application-level cascade**: Losing FK constraints is the main trade-off. Since the service already uses soft deletes and background eviction tasks, the cascade is effectively application-managed already.
+4. **Application-level cascade**: Losing FK constraints is the main trade-off. Since the service already uses archives and background eviction tasks, the cascade is effectively application-managed already.
 5. **MongoDB not affected**: MongoDB has its own sharding model and doesn't use SQL partitioning. This enhancement is PostgreSQL-only.
 6. **No `pg_partman`**: For initial simplicity, use static hash partitions. `pg_partman` is useful for time-range partitions with automatic creation/retention, which we're not using.
 

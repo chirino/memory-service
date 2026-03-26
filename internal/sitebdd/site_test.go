@@ -270,6 +270,7 @@ func ensureJavaCheckpointArtifacts(t *testing.T, projectRoot string, scenarios [
 		"-B", "-T", "1C",
 		"-f", filepath.Join(projectRoot, "java", "pom.xml"),
 		"-DskipTests",
+		"clean",
 		"install",
 		"-pl", ":memory-service-extension-deployment,:memory-service-spring-boot-starter",
 		"-am",

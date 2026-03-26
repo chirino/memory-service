@@ -1,25 +1,25 @@
 ---
 status: implemented
 supersedes:
-  - partial/013-soft-deletes.md
+  - partial/013-archives.md
 ---
 
 # Hard Delete for Conversation Memberships with Audit Logging
 
-> **Status**: Implemented. Replaces membership soft deletes from
-> [013](../partial/013-soft-deletes.md) with hard deletes and audit logging.
+> **Status**: Implemented. Replaces membership archives from
+> [013](../partial/013-archives.md) with hard deletes and audit logging.
 
 ## Motivation
 
-Enhancement 013 (Soft Deletes) introduced soft deletion for conversation memberships, marking them with a `deletedAt` timestamp instead of removing them. This was designed for audit trail retention. Enhancement 016 (Data Eviction) then added a mechanism to hard-delete these soft-deleted memberships after a configurable retention period.
+Enhancement 013 (Soft Deletes) introduced soft deletion for conversation memberships, marking them with a `archivedAt` timestamp instead of removing them. This was designed for audit trail retention. Enhancement 016 (Data Eviction) then added a mechanism to hard-delete these archived memberships after a configurable retention period.
 
-Upon review, this two-phase approach (soft delete + deferred eviction) adds unnecessary complexity for memberships:
+Upon review, this two-phase approach (archive + deferred eviction) adds unnecessary complexity for memberships:
 
 1. **Memberships are metadata, not content.** Unlike conversations and messages (which contain user data with compliance implications), memberships are access control records. The value of retaining deleted membership records is low compared to the operational overhead.
 
-2. **Eviction adds operational burden.** Operators must run periodic eviction jobs to prevent unbounded growth of soft-deleted membership records.
+2. **Eviction adds operational burden.** Operators must run periodic eviction jobs to prevent unbounded growth of archived membership records.
 
-3. **Query complexity.** Every membership query must filter by `deletedAt IS NULL`, adding overhead and potential for bugs.
+3. **Query complexity.** Every membership query must filter by `archivedAt IS NULL`, adding overhead and potential for bugs.
 
 4. **Audit logging is a better fit.** Rather than retaining the data itself, logging membership changes provides a complete audit trail without the storage overhead.
 
@@ -33,12 +33,12 @@ This enhancement changes conversation memberships to use **immediate hard delete
 
 ### Hard Delete Instead of Soft Delete
 
-Membership delete operations will immediately remove the record from the database instead of setting `deletedAt`:
+Membership delete operations will immediately remove the record from the database instead of setting `archivedAt`:
 
 | Aspect | Before (Soft Delete) | After (Hard Delete) |
 |--------|---------------------|---------------------|
-| DELETE operation | Sets `deletedAt = NOW()` | Removes row from database |
-| Query filtering | `WHERE deletedAt IS NULL` | No filter needed |
+| DELETE operation | Sets `archivedAt = NOW()` | Removes row from database |
+| Query filtering | `WHERE archivedAt IS NULL` | No filter needed |
 | Data retention | Retained until eviction | Not retained |
 | Audit trail | Query deleted records | Audit log entries |
 | Eviction | Required to reclaim storage | Not applicable |
@@ -96,17 +96,17 @@ Since memberships are now hard-deleted immediately, the membership eviction func
 2. Remove `countEvictableMemberships()` and `hardDeleteMembershipsBatch()` from `MemoryStore` interface.
 3. Remove corresponding implementations from `PostgresMemoryStore` and `MongoMemoryStore`.
 4. Remove membership eviction from `EvictionService`.
-5. Remove the `deleted_at` column from the `conversation_memberships` table.
+5. Remove the `archived_at` column from the `conversation_memberships` table.
 
 ### Database Schema Changes
 
-Remove the `deleted_at` column and related indexes from the memberships table:
+Remove the `archived_at` column and related indexes from the memberships table:
 
 ```sql
--- Remove soft delete column
-ALTER TABLE conversation_memberships DROP COLUMN deleted_at;
+-- Remove archive column
+ALTER TABLE conversation_memberships DROP COLUMN archived_at;
 
--- Drop soft delete indexes (no longer needed)
+-- Drop archive indexes (no longer needed)
 DROP INDEX IF EXISTS idx_conversation_memberships_not_deleted;
 DROP INDEX IF EXISTS idx_conversation_memberships_deleted;
 ```
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS conversation_memberships (
     user_id                 TEXT NOT NULL,
     access_level            TEXT NOT NULL,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- deleted_at removed
+    -- archived_at removed
     PRIMARY KEY (conversation_group_id, user_id)
 );
 
@@ -135,31 +135,31 @@ The external API behavior remains **unchanged**:
 | Endpoint | Before | After |
 |----------|--------|-------|
 | `DELETE /v1/conversations/{id}/memberships/{userId}` | 204 No Content | 204 No Content |
-| `GET /v1/conversations/{id}/memberships` | Returns active members | Returns all members (same - no soft deleted to filter) |
+| `GET /v1/conversations/{id}/memberships` | Returns active members | Returns all members (same - no archived to filter) |
 | `PUT /v1/conversations/{id}/memberships/{userId}` | Updates membership | Updates membership |
 
 The only difference is internal: the record is permanently removed rather than marked deleted.
 
 ### Cascade Behavior on Conversation Delete
 
-When a conversation group is soft-deleted (the whole conversation tree), the associated memberships should be **hard-deleted immediately** rather than soft-deleted:
+When a conversation group is archived (the whole conversation tree), the associated memberships should be **hard-deleted immediately** rather than archived:
 
 ```java
-// Before: soft delete memberships with conversation
+// Before: archive memberships with conversation
 private void softDeleteConversationGroup(UUID conversationGroupId) {
     OffsetDateTime now = OffsetDateTime.now();
-    // ... soft delete group and conversations ...
+    // ... archive group and conversations ...
 
     // OLD: Soft delete memberships
     membershipRepository.update(
-        "deletedAt = ?1 WHERE id.conversationGroupId = ?2 AND deletedAt IS NULL",
+        "archivedAt = ?1 WHERE id.conversationGroupId = ?2 AND archivedAt IS NULL",
         now, conversationGroupId);
 }
 
 // After: hard delete memberships when conversation is deleted
 private void softDeleteConversationGroup(UUID conversationGroupId) {
     OffsetDateTime now = OffsetDateTime.now();
-    // ... soft delete group and conversations ...
+    // ... archive group and conversations ...
 
     // NEW: Log all memberships being removed, then hard delete
     List<ConversationMembershipEntity> memberships =
@@ -181,21 +181,21 @@ private void softDeleteConversationGroup(UUID conversationGroupId) {
 
 ### Admin API Considerations
 
-The admin APIs introduced in enhancement 014 include the ability to view soft-deleted resources. Since memberships are no longer soft-deleted:
+The admin APIs introduced in enhancement 014 include the ability to view archived resources. Since memberships are no longer archived:
 
-- `GET /v1/admin/conversations/{id}/memberships` returns only active memberships (there are no soft-deleted ones).
-- The `includeDeleted` and `onlyDeleted` query parameters have no effect on membership queries.
+- `GET /v1/admin/conversations/{id}/memberships` returns only active memberships (there are no archived ones).
+- The conversation-level `archived=exclude|include|only` filter does not change membership query results.
 - Admin users can query the membership audit log for historical membership data.
 
 ### Migration Strategy
 
-For existing deployments with soft-deleted membership records:
+For existing deployments with archived membership records:
 
-1. **Run final eviction** with `resourceTypes=["conversation_memberships"]` to clear any pending soft-deleted records.
-2. **Apply schema migration** to drop the `deleted_at` column.
+1. **Run final eviction** with `resourceTypes=["conversation_memberships"]` to clear any pending archived records.
+2. **Apply schema migration** to drop the `archived_at` column.
 3. **Deploy new code** with hard delete behavior.
 
-The migration is backward-compatible: the new code without `deleted_at` will work correctly whether or not old soft-deleted records exist (since they would have been evicted in step 1).
+The migration is backward-compatible: the new code without `archived_at` will work correctly whether or not old archived records exist (since they would have been evicted in step 1).
 
 ## Scope of Changes
 
@@ -264,11 +264,11 @@ CREATE TABLE IF NOT EXISTS conversation_memberships (
     user_id                 TEXT NOT NULL,
     access_level            TEXT NOT NULL,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- deleted_at column removed
+    -- archived_at column removed
     PRIMARY KEY (conversation_group_id, user_id)
 );
 
--- Remove soft-delete indexes, add simple group index
+-- Remove archive indexes, add simple group index
 CREATE INDEX IF NOT EXISTS idx_conversation_memberships_group
     ON conversation_memberships (conversation_group_id);
 ```
@@ -277,7 +277,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_memberships_group
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/persistence/entity/ConversationMembershipEntity.java`
 
-Remove the `deletedAt` field and `isDeleted()` method:
+Remove the `archivedAt` field and `isDeleted()` method:
 
 ```java
 @Entity
@@ -298,7 +298,7 @@ public class ConversationMembershipEntity {
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
-    // REMOVED: deletedAt field and isDeleted() method
+    // REMOVED: archivedAt field and isDeleted() method
 
     @PrePersist
     protected void onCreate() {
@@ -307,7 +307,7 @@ public class ConversationMembershipEntity {
         }
     }
 
-    // getters and setters (without deletedAt)
+    // getters and setters (without archivedAt)
 }
 ```
 
@@ -315,7 +315,7 @@ public class ConversationMembershipEntity {
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/mongo/model/MongoConversationMembership.java`
 
-Remove the `deletedAt` field:
+Remove the `archivedAt` field:
 
 ```java
 public class MongoConversationMembership {
@@ -324,7 +324,7 @@ public class MongoConversationMembership {
     public String userId;
     public AccessLevel accessLevel;
     public Instant createdAt;
-    // REMOVED: deletedAt field
+    // REMOVED: archivedAt field
 }
 ```
 
@@ -332,19 +332,19 @@ public class MongoConversationMembership {
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/persistence/repo/ConversationMembershipRepository.java`
 
-Remove all `deletedAt IS NULL` filters from queries:
+Remove all `archivedAt IS NULL` filters from queries:
 
 ```java
 @ApplicationScoped
 public class ConversationMembershipRepository implements PanacheRepository<ConversationMembershipEntity> {
 
-    // BEFORE: "FROM ConversationMembershipEntity WHERE id.conversationGroupId = ?1 AND deletedAt IS NULL"
+    // BEFORE: "FROM ConversationMembershipEntity WHERE id.conversationGroupId = ?1 AND archivedAt IS NULL"
     // AFTER:
     public List<ConversationMembershipEntity> listForConversationGroup(UUID conversationGroupId) {
         return list("id.conversationGroupId", conversationGroupId);
     }
 
-    // BEFORE: "... AND deletedAt IS NULL"
+    // BEFORE: "... AND archivedAt IS NULL"
     // AFTER:
     public List<ConversationMembershipEntity> listForUser(String userId, int limit) {
         return find("id.userId = ?1", Sort.by("createdAt").descending(), userId)
@@ -352,7 +352,7 @@ public class ConversationMembershipRepository implements PanacheRepository<Conve
             .list();
     }
 
-    // BEFORE: "... AND deletedAt IS NULL"
+    // BEFORE: "... AND archivedAt IS NULL"
     // AFTER:
     public Optional<ConversationMembershipEntity> findMembership(UUID groupId, String userId) {
         return find("id.conversationGroupId = ?1 AND id.userId = ?2", groupId, userId)
@@ -367,10 +367,10 @@ public class ConversationMembershipRepository implements PanacheRepository<Conve
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/mongo/repo/MongoConversationMembershipRepository.java`
 
-Remove all `deletedAt == null` filters:
+Remove all `archivedAt == null` filters:
 
 ```java
-// BEFORE: stream.filter(m -> m.deletedAt == null)
+// BEFORE: stream.filter(m -> m.archivedAt == null)
 // AFTER: no filter needed
 public List<MongoConversationMembership> listForConversationGroup(String conversationGroupId) {
     return find("conversationGroupId", conversationGroupId).list();
@@ -381,7 +381,7 @@ public List<MongoConversationMembership> listForConversationGroup(String convers
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/store/impl/PostgresMemoryStore.java`
 
-Change from soft delete to hard delete with audit logging:
+Change from archive to hard delete with audit logging:
 
 ```java
 @Inject
@@ -505,12 +505,12 @@ private void softDeleteConversationGroup(UUID conversationGroupId, String actorU
 
     // Mark conversation group as deleted
     conversationGroupRepository.update(
-        "deletedAt = ?1 WHERE id = ?2 AND deletedAt IS NULL",
+        "archivedAt = ?1 WHERE id = ?2 AND archivedAt IS NULL",
         now, conversationGroupId);
 
     // Mark all conversations in the group as deleted
     conversationRepository.update(
-        "deletedAt = ?1 WHERE conversationGroup.id = ?2 AND deletedAt IS NULL",
+        "archivedAt = ?1 WHERE conversationGroup.id = ?2 AND archivedAt IS NULL",
         now, conversationGroupId);
 
     // Expire pending ownership transfers
@@ -525,7 +525,7 @@ private void softDeleteConversationGroup(UUID conversationGroupId, String actorU
 **File:** `memory-service/src/main/java/io/github/chirino/memory/store/impl/MongoMemoryStore.java`
 
 Apply the same changes as PostgresMemoryStore:
-- Hard delete instead of soft delete for `deleteMembership()`
+- Hard delete instead of archive for `deleteMembership()`
 - Add audit logging for add, update, remove operations
 - Hard delete memberships when conversation group is deleted
 
@@ -632,7 +632,7 @@ Scenario: Delete membership permanently removes the record
     # Membership should not be in the list
     When I list memberships for the conversation
     Then the response should not contain a membership for user "bob"
-    # Verify record is actually deleted (not soft deleted)
+    # Verify record is actually deleted (not archived)
     When I execute SQL query:
     """
     SELECT COUNT(*) as count
@@ -716,8 +716,8 @@ public void theMembershipAuditLogShouldContainEntries(int count, String pattern)
 ## Implementation Order
 
 1. **MembershipAuditLogger** - Create the new audit logger class
-2. **Entity changes** - Remove `deletedAt` from JPA entity and MongoDB model
-3. **Repository changes** - Remove `deletedAt` filters from all queries
+2. **Entity changes** - Remove `archivedAt` from JPA entity and MongoDB model
+3. **Repository changes** - Remove `archivedAt` filters from all queries
 4. **Store implementation** - Update PostgresMemoryStore:
    - Change `deleteMembership()` to hard delete with audit logging
    - Add audit logging to `shareConversation()`
@@ -726,7 +726,7 @@ public void theMembershipAuditLogShouldContainEntries(int count, String pattern)
 5. **Store implementation** - Apply same changes to MongoMemoryStore
 6. **Remove eviction** - Remove membership eviction from EvictionService and MemoryStore
 7. **OpenAPI update** - Remove `conversation_memberships` from eviction resource types
-8. **Database schema** - Update schema.sql to remove `deleted_at` column
+8. **Database schema** - Update schema.sql to remove `archived_at` column
 9. **Application config** - Add membership audit log configuration
 10. **Cucumber tests** - Update existing tests, add audit log verification
 11. **Compile and test**
@@ -752,15 +752,15 @@ grep "MEMBERSHIP_CHANGE" memory-service/target/quarkus.log
 | File | Change Type |
 |------|-------------|
 | `memory-service/src/main/java/io/github/chirino/memory/security/MembershipAuditLogger.java` | New file |
-| `memory-service/src/main/java/io/github/chirino/memory/persistence/entity/ConversationMembershipEntity.java` | Remove `deletedAt` |
-| `memory-service/src/main/java/io/github/chirino/memory/mongo/model/MongoConversationMembership.java` | Remove `deletedAt` |
-| `memory-service/src/main/java/io/github/chirino/memory/persistence/repo/ConversationMembershipRepository.java` | Remove `deletedAt` filters |
-| `memory-service/src/main/java/io/github/chirino/memory/mongo/repo/MongoConversationMembershipRepository.java` | Remove `deletedAt` filters |
+| `memory-service/src/main/java/io/github/chirino/memory/persistence/entity/ConversationMembershipEntity.java` | Remove `archivedAt` |
+| `memory-service/src/main/java/io/github/chirino/memory/mongo/model/MongoConversationMembership.java` | Remove `archivedAt` |
+| `memory-service/src/main/java/io/github/chirino/memory/persistence/repo/ConversationMembershipRepository.java` | Remove `archivedAt` filters |
+| `memory-service/src/main/java/io/github/chirino/memory/mongo/repo/MongoConversationMembershipRepository.java` | Remove `archivedAt` filters |
 | `memory-service/src/main/java/io/github/chirino/memory/store/MemoryStore.java` | Remove eviction methods |
 | `memory-service/src/main/java/io/github/chirino/memory/store/impl/PostgresMemoryStore.java` | Hard delete + audit logging |
 | `memory-service/src/main/java/io/github/chirino/memory/store/impl/MongoMemoryStore.java` | Hard delete + audit logging |
 | `memory-service/src/main/java/io/github/chirino/memory/service/EvictionService.java` | Remove membership eviction |
-| `memory-service/src/main/resources/db/schema.sql` | Remove `deleted_at` column |
+| `memory-service/src/main/resources/db/schema.sql` | Remove `archived_at` column |
 | `memory-service/src/main/resources/application.properties` | Add audit log config |
 | `memory-service-contracts/src/main/resources/openapi-admin.yml` | Update eviction resourceTypes |
 | `memory-service/src/test/resources/features/memberships-rest.feature` | Update tests |
@@ -772,7 +772,7 @@ grep "MEMBERSHIP_CHANGE" memory-service/target/quarkus.log
 
 2. **Log retention is handled externally.** The application does not manage log retention; operators route logs to external systems (ELK, Splunk, S3) with their own retention policies.
 
-3. **Existing soft-deleted memberships are evicted before migration.** Deployments should run a final eviction before applying the schema change to ensure no orphaned records.
+3. **Existing archived memberships are evicted before migration.** Deployments should run a final eviction before applying the schema change to ensure no orphaned records.
 
 4. **Membership history is not queryable via API.** Unlike conversations (which can be restored via admin API), membership history is only available in logs. This is acceptable because membership changes are access control operations, not user content.
 
@@ -793,17 +793,17 @@ For existing deployments upgrading to this version:
      -H "Content-Type: application/json" \
      -d '{"retentionPeriod": "PT0S", "resourceTypes": ["conversation_memberships"]}'
    ```
-   This hard-deletes all soft-deleted membership records (retention period of 0 seconds means all).
+   This hard-deletes all archived membership records (retention period of 0 seconds means all).
 
-2. **Verify no soft-deleted memberships remain:**
+2. **Verify no archived memberships remain:**
    ```sql
-   SELECT COUNT(*) FROM conversation_memberships WHERE deleted_at IS NOT NULL;
+   SELECT COUNT(*) FROM conversation_memberships WHERE archived_at IS NOT NULL;
    -- Should return 0
    ```
 
 ### Schema Migration
 
-Apply the schema migration to drop the `deleted_at` column:
+Apply the schema migration to drop the `archived_at` column:
 
 ```sql
 -- Drop indexes first
@@ -811,7 +811,7 @@ DROP INDEX IF EXISTS idx_conversation_memberships_not_deleted;
 DROP INDEX IF EXISTS idx_conversation_memberships_deleted;
 
 -- Drop the column
-ALTER TABLE conversation_memberships DROP COLUMN deleted_at;
+ALTER TABLE conversation_memberships DROP COLUMN archived_at;
 
 -- Add new index
 CREATE INDEX IF NOT EXISTS idx_conversation_memberships_group
@@ -820,7 +820,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_memberships_group
 
 ### Post-Migration
 
-Deploy the new application version. The code no longer references `deleted_at` and uses hard delete with audit logging.
+Deploy the new application version. The code no longer references `archived_at` and uses hard delete with audit logging.
 
 ## Future Considerations
 

@@ -23,26 +23,26 @@ Feature: Admin REST API
     And the response should contain at least 1 conversation
     And all conversations should have ownerUserId "bob"
 
-  # Serial today only because this feature shares the serial admin runner; this scenario only checks that at least one deleted conversation is visible and appears parallel-safe.
-  Scenario: Admin can view soft-deleted conversations with includeDeleted=true
+  # Serial today only because this feature shares the serial admin runner; this scenario only checks that at least one archived conversation is visible and appears parallel-safe.
+  Scenario: Admin can view archived conversations with archived=include
     Given the conversation owned by "bob" is deleted
-    When I call GET "/v1/admin/conversations?includeDeleted=true"
+    When I call GET "/v1/admin/conversations?archived=include"
     Then the response status should be 200
-    And the response should contain at least 1 conversation with deletedAt set
+    And the response should contain at least 1 conversations that are archived
 
-  # Serial today only because this feature shares the serial admin runner; this scenario filters to deleted records and appears parallel-safe.
-  Scenario: Admin can filter by onlyDeleted
+  # Serial today only because this feature shares the serial admin runner; this scenario filters to archived records and appears parallel-safe.
+  Scenario: Admin can filter by archived=only
     Given the conversation owned by "bob" is deleted
-    When I call GET "/v1/admin/conversations?onlyDeleted=true"
+    When I call GET "/v1/admin/conversations?archived=only"
     Then the response status should be 200
-    And all conversations should have deletedAt set
+    And all conversations should be archived
 
   # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local conversation by ID and appears parallel-safe.
-  Scenario: Admin can get any conversation including soft-deleted
+  Scenario: Admin can get any conversation including archived
     Given the conversation owned by "bob" is deleted
-    When I call GET "/v1/admin/conversations/${bobConversationId}?includeDeleted=true"
+    When I call GET "/v1/admin/conversations/${bobConversationId}"
     Then the response status should be 200
-    And the response body should have field "deletedAt" that is not null
+    And the response body field "archived" should be "true"
 
   # Serial today only because this feature shares the serial admin runner; this scenario inspects children for one scenario-local root conversation and appears parallel-safe.
   Scenario: Admin can list child conversations for any conversation
@@ -71,33 +71,35 @@ Feature: Admin REST API
     And the response body "data[0].id" should be "${childConversationId}"
     And the response body "data[0].startedByConversationId" should be "${bobConversationId}"
 
-  # Serial today only because this feature shares the serial admin runner; this scenario soft-deletes one scenario-local conversation by ID and appears parallel-safe.
-  Scenario: Admin can delete any conversation
-    When I call DELETE "/v1/admin/conversations/${bobConversationId}" with body:
+  # Serial today only because this feature shares the serial admin runner; this scenario archives one scenario-local conversation by ID and appears parallel-safe.
+  Scenario: Admin can archive any conversation
+    When I call PATCH "/v1/admin/conversations/${bobConversationId}" with body:
     """
     {
-      "justification": "Test deletion"
+      "archived": true,
+      "justification": "Test archive"
     }
     """
-    Then the response status should be 204
+    Then the response status should be 200
     And set "conversationId" to "${bobConversationId}"
-    And the conversation should be soft-deleted
+    And the conversation should be archived
 
-  # Serial today only because this feature shares the serial admin runner; this scenario restores one scenario-local conversation by ID and appears parallel-safe.
-  Scenario: Admin can restore a soft-deleted conversation
+  # Serial today only because this feature shares the serial admin runner; this scenario unarchives one scenario-local conversation by ID and appears parallel-safe.
+  Scenario: Admin can unarchive an archived conversation
     Given the conversation owned by "bob" is deleted
-    When I call POST "/v1/admin/conversations/${bobConversationId}/restore" with body:
+    When I call PATCH "/v1/admin/conversations/${bobConversationId}" with body:
     """
     {
-      "justification": "Test restoration"
+      "archived": false,
+      "justification": "Test unarchive"
     }
     """
     Then the response status should be 200
     And set "conversationId" to "${bobConversationId}"
-    And the conversation should not be deleted
+    And the conversation should not be archived
 
   # Serial today only because this feature shares the serial admin runner; this scenario only mutates one scenario-local fork tree and appears parallel-safe.
-  Scenario: Admin deleting a fork soft-deletes all conversations in the group
+  Scenario: Admin archiving a fork archives all conversations in the group
     Given I am authenticated as user "bob"
     And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
     """
@@ -113,92 +115,97 @@ Feature: Admin REST API
     """
     And set "forkConversationId" to "${forkedConversationId}"
     Given I am authenticated as admin user "alice"
-    When I call DELETE "/v1/admin/conversations/${forkConversationId}" with body:
+    When I call PATCH "/v1/admin/conversations/${forkConversationId}" with body:
     """
     {
-      "justification": "Test fork deletion"
-    }
-    """
-    Then the response status should be 204
-    # Both the fork and the root should be soft-deleted (same conversation group)
-    And set "conversationId" to "${forkConversationId}"
-    And the conversation should be soft-deleted
-    And set "conversationId" to "${bobConversationId}"
-    And the conversation should be soft-deleted
-
-  # Serial today only because this feature shares the serial admin runner; this scenario only mutates one scenario-local fork tree and appears parallel-safe.
-  Scenario: Admin deleting the root soft-deletes all conversations in the group
-    Given I am authenticated as user "bob"
-    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
-    """
-    {
-      "contentType": "message",
-      "content": [{"type": "text", "text": "Entry to fork at"}]
-    }
-    """
-    And set "forkEntryId" to "${response.body.id}"
-    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
-    """
-    {}
-    """
-    And set "forkConversationId" to "${forkedConversationId}"
-    Given I am authenticated as admin user "alice"
-    When I call DELETE "/v1/admin/conversations/${bobConversationId}" with body:
-    """
-    {
-      "justification": "Test root deletion"
-    }
-    """
-    Then the response status should be 204
-    # Both the root and the fork should be soft-deleted (same conversation group)
-    And set "conversationId" to "${bobConversationId}"
-    And the conversation should be soft-deleted
-    And set "conversationId" to "${forkConversationId}"
-    And the conversation should be soft-deleted
-
-  # Serial today only because this feature shares the serial admin runner; this scenario only restores one scenario-local fork tree and appears parallel-safe.
-  Scenario: Admin restoring via fork ID restores all conversations in the group
-    Given I am authenticated as user "bob"
-    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
-    """
-    {
-      "contentType": "message",
-      "content": [{"type": "text", "text": "Entry to fork at"}]
-    }
-    """
-    And set "forkEntryId" to "${response.body.id}"
-    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
-    """
-    {}
-    """
-    And set "forkConversationId" to "${forkedConversationId}"
-    Given I am authenticated as admin user "alice"
-    And I call DELETE "/v1/admin/conversations/${forkConversationId}" with body:
-    """
-    {
-      "justification": "Test fork deletion before restore"
-    }
-    """
-    And the response status should be 204
-    When I call POST "/v1/admin/conversations/${forkConversationId}/restore" with body:
-    """
-    {
-      "justification": "Test fork restoration"
+      "archived": true,
+      "justification": "Test fork archive"
     }
     """
     Then the response status should be 200
-    # Both the fork and the root should be restored (same conversation group)
+    # Both the fork and the root should be archived (same conversation group)
     And set "conversationId" to "${forkConversationId}"
-    And the conversation should not be deleted
+    And the conversation should be archived
     And set "conversationId" to "${bobConversationId}"
-    And the conversation should not be deleted
+    And the conversation should be archived
 
-  # Serial today only because this feature shares the serial admin runner; this scenario checks one scenario-local restore conflict and appears parallel-safe.
-  Scenario: Restoring an already-active conversation returns conflict
-    When I call POST "/v1/admin/conversations/${aliceConversationId}/restore" with body:
+  # Serial today only because this feature shares the serial admin runner; this scenario only mutates one scenario-local fork tree and appears parallel-safe.
+  Scenario: Admin archiving the root archives all conversations in the group
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
     """
     {
-      "justification": "Test restoration"
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry to fork at"}]
+    }
+    """
+    And set "forkEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    Given I am authenticated as admin user "alice"
+    When I call PATCH "/v1/admin/conversations/${bobConversationId}" with body:
+    """
+    {
+      "archived": true,
+      "justification": "Test root archive"
+    }
+    """
+    Then the response status should be 200
+    # Both the root and the fork should be archived (same conversation group)
+    And set "conversationId" to "${bobConversationId}"
+    And the conversation should be archived
+    And set "conversationId" to "${forkConversationId}"
+    And the conversation should be archived
+
+  # Serial today only because this feature shares the serial admin runner; this scenario only unarchives one scenario-local fork tree and appears parallel-safe.
+  Scenario: Admin unarchiving via fork ID unarchives all conversations in the group
+    Given I am authenticated as user "bob"
+    And I call POST "/v1/conversations/${bobConversationId}/entries" with body:
+    """
+    {
+      "contentType": "message",
+      "content": [{"type": "text", "text": "Entry to fork at"}]
+    }
+    """
+    And set "forkEntryId" to "${response.body.id}"
+    And I fork conversation "${bobConversationId}" at entry "${forkEntryId}" with request:
+    """
+    {}
+    """
+    And set "forkConversationId" to "${forkedConversationId}"
+    Given I am authenticated as admin user "alice"
+    And I call PATCH "/v1/admin/conversations/${forkConversationId}" with body:
+    """
+    {
+      "archived": true,
+      "justification": "Test fork archive before unarchive"
+    }
+    """
+    And the response status should be 200
+    When I call PATCH "/v1/admin/conversations/${forkConversationId}" with body:
+    """
+    {
+      "archived": false,
+      "justification": "Test fork unarchive"
+    }
+    """
+    Then the response status should be 200
+    # Both the fork and the root should be unarchived (same conversation group)
+    And set "conversationId" to "${forkConversationId}"
+    And the conversation should not be archived
+    And set "conversationId" to "${bobConversationId}"
+    And the conversation should not be archived
+
+  # Serial today only because this feature shares the serial admin runner; this scenario checks one scenario-local no-op unarchive and appears parallel-safe.
+  Scenario: Unarchiving an already-active conversation returns conflict
+    When I call PATCH "/v1/admin/conversations/${aliceConversationId}" with body:
+    """
+    {
+      "archived": false,
+      "justification": "Test unarchive"
     }
     """
     Then the response status should be 409
@@ -223,24 +230,26 @@ Feature: Admin REST API
     And the response body field "clientId" should not be null
 
   # Serial today only because this feature shares the serial admin runner; this scenario is an authorization check against one scenario-local conversation and appears parallel-safe.
-  Scenario: Auditor receives 403 Forbidden on delete operation
+  Scenario: Auditor receives 403 Forbidden on archive operation
     Given I am authenticated as auditor user "charlie"
-    When I call DELETE "/v1/admin/conversations/${bobConversationId}" with body:
+    When I call PATCH "/v1/admin/conversations/${bobConversationId}" with body:
     """
     {
-      "justification": "Test deletion"
+      "archived": true,
+      "justification": "Test archive"
     }
     """
     Then the response status should be 403
 
   # Serial today only because this feature shares the serial admin runner; this scenario is an authorization check against one scenario-local conversation and appears parallel-safe.
-  Scenario: Auditor receives 403 Forbidden on restore operation
+  Scenario: Auditor receives 403 Forbidden on unarchive operation
     Given I am authenticated as auditor user "charlie"
     And the conversation owned by "bob" is deleted
-    When I call POST "/v1/admin/conversations/${bobConversationId}/restore" with body:
+    When I call PATCH "/v1/admin/conversations/${bobConversationId}" with body:
     """
     {
-      "justification": "Test restoration"
+      "archived": false,
+      "justification": "Test unarchive"
     }
     """
     Then the response status should be 403
@@ -319,7 +328,7 @@ Feature: Admin REST API
     """
     {
       "query": "Deleted-only search marker",
-      "includeDeleted": false
+      "includeArchived": false
     }
     """
     Then the response status should be 200
@@ -328,7 +337,7 @@ Feature: Admin REST API
     """
     {
       "query": "Deleted-only search marker",
-      "includeDeleted": true
+      "includeArchived": true
     }
     """
     Then the response status should be 200
@@ -457,17 +466,17 @@ Feature: Admin REST API
       "content": [{"type": "text", "text": "Fork entry"}]
     }
     """
-    And I soft-delete conversation "${forkConversationId}" directly in storage
+    And I archive conversation "${forkConversationId}" directly in storage
     Given I am authenticated as admin user "alice"
     When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob"
     Then the response status should be 200
     And the response should contain 1 conversation
     And the response body "data[0].id" should be "${bobConversationId}"
-    When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob&includeDeleted=true"
+    When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob&archived=include"
     Then the response status should be 200
     And the response should contain 1 conversation
     And the response body "data[0].id" should be "${forkConversationId}"
-    When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob&onlyDeleted=true"
+    When I call GET "/v1/admin/conversations?mode=latest-fork&userId=bob&archived=only"
     Then the response status should be 200
     And the response should contain 1 conversation
     And the response body "data[0].id" should be "${forkConversationId}"

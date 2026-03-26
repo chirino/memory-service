@@ -13,7 +13,7 @@
 CREATE TABLE IF NOT EXISTS conversation_groups (
     id              UUID PRIMARY KEY,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at      TIMESTAMPTZ
+    archived_at     TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     vectorized_at   TIMESTAMPTZ,
-    deleted_at      TIMESTAMPTZ
+    archived_at     TIMESTAMPTZ
 );
 
 -- Per-user access to conversations.
@@ -53,15 +53,15 @@ CREATE INDEX IF NOT EXISTS idx_conversation_memberships_user
 CREATE INDEX IF NOT EXISTS idx_conversation_memberships_group
     ON conversation_memberships (conversation_group_id);
 
-CREATE INDEX IF NOT EXISTS idx_conversation_groups_not_deleted
-    ON conversation_groups (deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_conversation_groups_not_archived
+    ON conversation_groups (archived_at) WHERE archived_at IS NULL;
 
-CREATE INDEX IF NOT EXISTS idx_conversations_not_deleted
-    ON conversations (deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_conversations_not_archived
+    ON conversations (archived_at) WHERE archived_at IS NULL;
 
--- Index for eviction queries (deleted records past retention)
-CREATE INDEX IF NOT EXISTS idx_conversation_groups_deleted
-    ON conversation_groups (deleted_at) WHERE deleted_at IS NOT NULL;
+-- Index for eviction queries (archived records past retention)
+CREATE INDEX IF NOT EXISTS idx_conversation_groups_archived
+    ON conversation_groups (archived_at) WHERE archived_at IS NOT NULL;
 
 ------------------------------------------------------------
 -- Entries & summaries
@@ -246,7 +246,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     source_url      VARCHAR(2048),
     expires_at      TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at      TIMESTAMPTZ
+    archived_at     TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_expires_at
@@ -255,8 +255,8 @@ CREATE INDEX IF NOT EXISTS idx_attachments_entry_id
     ON attachments(entry_id) WHERE entry_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_storage_key
     ON attachments(storage_key) WHERE storage_key IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_attachments_deleted_at
-    ON attachments(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_archived_at
+    ON attachments(archived_at) WHERE archived_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_status
     ON attachments(status) WHERE status != 'ready';
 CREATE INDEX IF NOT EXISTS idx_attachments_user_id
@@ -280,18 +280,18 @@ CREATE TABLE IF NOT EXISTS encryption_deks (
 ------------------------------------------------------------
 -- Namespaced Episodic Memory
 -- Each row is a write event for a (namespace, key).
--- The active value of a key is the single row where deleted_at IS NULL.
--- On update: a new row is inserted; the previous active row is soft-deleted
---            with deleted_at set to the same timestamp (same txn).
--- On delete: the active row is soft-deleted with deleted_at = NOW(); no new row.
--- When a row is soft-deleted its indexed_at is reset to NULL so the background
+-- The active value of a key is the single row where archived_at IS NULL.
+-- On update: a new row is inserted; the previous active row is archived
+--            with archived_at set to the same timestamp (same txn).
+-- On archive: the active row is archived with archived_at = NOW(); no new row.
+-- When a row is archived its indexed_at is reset to NULL so the background
 -- indexer removes it from the vector store on its next cycle.
 ------------------------------------------------------------
 
 -- kind values (SMALLINT): 0=add (first write), 1=update (subsequent write)
 -- deleted_reason values (SMALLINT):
 --   0 = updated  — superseded by a newer write; hard-deleted on eviction
---   1 = deleted  — explicit DELETE; tombstoned on eviction (data cleared, row kept for event history)
+--   1 = archived — explicit archive; tombstoned on eviction (data cleared, row kept for event history)
 --   2 = expired  — TTL elapsed;    tombstoned on eviction (data cleared, row kept for event history)
 CREATE TABLE IF NOT EXISTS memories (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -303,7 +303,7 @@ CREATE TABLE IF NOT EXISTS memories (
     kind              SMALLINT    NOT NULL DEFAULT 0,  -- 0=add, 1=update — set at write time, never changed
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at        TIMESTAMPTZ,            -- NULL = no TTL
-    deleted_at        TIMESTAMPTZ,            -- NULL = active; non-NULL = superseded or deleted
+    archived_at       TIMESTAMPTZ,            -- NULL = active; non-NULL = superseded or archived
     deleted_reason    SMALLINT,               -- NULL=active, 0=updated, 1=deleted, 2=expired
     indexed_at        TIMESTAMPTZ             -- NULL = pending vector index sync
 );
@@ -314,7 +314,7 @@ CREATE INDEX IF NOT EXISTS memories_namespace_key_idx
 
 -- Active-record point lookups (GET, search)
 CREATE INDEX IF NOT EXISTS memories_active_idx
-    ON memories (namespace, key) WHERE deleted_at IS NULL;
+    ON memories (namespace, key) WHERE archived_at IS NULL;
 
 -- TTL expiry cleanup
 CREATE INDEX IF NOT EXISTS memories_expires_idx
@@ -332,7 +332,7 @@ CREATE INDEX IF NOT EXISTS memories_policy_attrs_gin_idx
 CREATE INDEX IF NOT EXISTS memories_write_events_idx
     ON memories (namespace, created_at, id) WHERE kind IN (0, 1);
 CREATE INDEX IF NOT EXISTS memories_delete_events_idx
-    ON memories (namespace, deleted_at, id) WHERE deleted_reason IN (1, 2);
+    ON memories (namespace, archived_at, id) WHERE deleted_reason IN (1, 2);
 
 -- Schema reconciliation for existing databases.
 ALTER TABLE memories

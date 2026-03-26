@@ -51,9 +51,6 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, cfg *config.Con
 	g.PATCH("/conversations/:conversationId", func(c *gin.Context) {
 		updateConversation(c, store, nil)
 	})
-	g.DELETE("/conversations/:conversationId", func(c *gin.Context) {
-		deleteConversation(c, store, nil)
-	})
 	g.GET("/conversations/:conversationId/forks", func(c *gin.Context) {
 		listForks(c, store)
 	})
@@ -85,11 +82,6 @@ func HandleUpdateConversation(c *gin.Context, store registrystore.MemoryStore, e
 	updateConversation(c, store, eventBus)
 }
 
-// HandleDeleteConversation exposes delete conversation handling for wrapper-native adapters.
-func HandleDeleteConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
-	deleteConversation(c, store, eventBus)
-}
-
 // HandleListForks exposes list forks handling for wrapper-native adapters.
 func HandleListForks(c *gin.Context, store registrystore.MemoryStore) {
 	listForks(c, store)
@@ -112,13 +104,18 @@ func listConversations(c *gin.Context, store registrystore.MemoryStore) {
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 	query := queryPtr(c, "query")
+	archived, err := registrystore.ParseArchiveFilter(c.DefaultQuery("archived", string(registrystore.ArchiveFilterExclude)))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		summaries, cursor, err := store.ListConversations(ctx, userID, query, afterCursor, limit, mode, ancestry)
+		summaries, cursor, err := store.ListConversations(ctx, userID, query, afterCursor, limit, mode, ancestry, archived)
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, gin.H{"data": summaries, "afterCursor": cursor})
+		c.JSON(http.StatusOK, gin.H{"data": toConversationSummaries(summaries), "afterCursor": cursor})
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -211,9 +208,9 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 		}
 		// Java parity: fork creation returns 200, regular creation returns 201.
 		if forkConvID != nil {
-			c.JSON(http.StatusOK, conv)
+			c.JSON(http.StatusOK, toConversationDetail(conv))
 		} else {
-			c.JSON(http.StatusCreated, conv)
+			c.JSON(http.StatusCreated, toConversationDetail(conv))
 		}
 		return nil
 	}); err != nil {
@@ -240,7 +237,7 @@ func getConversation(c *gin.Context, store registrystore.MemoryStore) {
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, conv)
+		c.JSON(http.StatusOK, toConversationDetail(conv))
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -286,24 +283,68 @@ func updateConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 			return
 		}
 	}
+	var archived *bool
+	if data, ok := raw["archived"]; ok {
+		var value bool
+		if err := json.Unmarshal(data, &value); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid archived"})
+			return
+		}
+		archived = &value
+	}
 
 	var updatedConv *registrystore.ConversationDetail
 	var eventsToPublish []registryeventbus.Event
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-		conv, err := store.UpdateConversation(ctx, userID, convID, title, metadata)
-		if err != nil {
-			return err
+		var (
+			conv          *registrystore.ConversationDetail
+			err           error
+			eventName     = "updated"
+			eventData     map[string]any
+			memberUserIDs []string
+		)
+		if archived != nil {
+			conv, err = store.GetConversation(ctx, userID, convID)
+			if err != nil {
+				return err
+			}
+			memberUserIDs, _ = store.GetGroupMemberUserIDs(ctx, conv.ConversationGroupID)
+			if *archived {
+				if err := store.ArchiveConversation(ctx, userID, convID); err != nil {
+					return err
+				}
+				now := time.Now().UTC()
+				conv.ArchivedAt = &now
+			} else {
+				if err := store.UnarchiveConversation(ctx, userID, convID); err != nil {
+					return err
+				}
+				conv.ArchivedAt = nil
+			}
+			eventData = map[string]any{
+				"conversation":       conv.ID,
+				"conversation_group": conv.ConversationGroupID,
+				"members":            memberUserIDs,
+				"archived":           *archived,
+			}
+		} else {
+			conv, err = store.UpdateConversation(ctx, userID, convID, title, metadata)
+			if err != nil {
+				return err
+			}
+			eventData = map[string]any{
+				"conversation":       conv.ID,
+				"conversation_group": conv.ConversationGroupID,
+			}
 		}
 		updatedConv = conv
 		if conv != nil {
 			events := []registryeventbus.Event{{
-				Event: "updated",
-				Kind:  "conversation",
-				Data: map[string]any{
-					"conversation":       conv.ID,
-					"conversation_group": conv.ConversationGroupID,
-				},
+				Event:               eventName,
+				Kind:                "conversation",
+				Data:                eventData,
 				ConversationGroupID: conv.ConversationGroupID,
+				UserIDs:             append([]string(nil), memberUserIDs...),
 			}}
 			appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
 			if err != nil {
@@ -315,68 +356,13 @@ func updateConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 				eventsToPublish = events
 			}
 		}
-		c.JSON(http.StatusOK, conv)
+		c.JSON(http.StatusOK, toConversationDetail(conv))
 		return nil
 	}); err != nil {
 		handleError(c, err)
 		return
 	}
 	if eventBus != nil && updatedConv != nil {
-		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
-			log.Warn("Failed to publish event", "err", err)
-		}
-	}
-}
-
-func deleteConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
-	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
-		return
-	}
-
-	var groupID uuid.UUID
-	var eventsToPublish []registryeventbus.Event
-	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-		// Fetch conversation and members before deletion — memberships are
-		// hard-deleted in the same transaction, so we must capture them first.
-		conv, err := store.GetConversation(ctx, userID, convID)
-		if err != nil {
-			return err
-		}
-		groupID = conv.ConversationGroupID
-		memberUserIDs, _ := store.GetGroupMemberUserIDs(ctx, groupID)
-		if err := store.DeleteConversation(ctx, userID, convID); err != nil {
-			return err
-		}
-		events := []registryeventbus.Event{{
-			Event: "deleted",
-			Kind:  "conversation",
-			Data: map[string]any{
-				"conversation":       convID,
-				"conversation_group": groupID,
-				"members":            memberUserIDs,
-			},
-			ConversationGroupID: groupID,
-			UserIDs:             append([]string(nil), memberUserIDs...),
-		}}
-		appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
-		if err != nil {
-			return err
-		}
-		if used {
-			eventsToPublish = appended
-		} else {
-			eventsToPublish = events
-		}
-		c.Status(http.StatusNoContent)
-		return nil
-	}); err != nil {
-		handleError(c, err)
-		return
-	}
-	if eventBus != nil {
 		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
 			log.Warn("Failed to publish event", "err", err)
 		}
@@ -435,10 +421,64 @@ type childConversationSummaryResponse struct {
 	OwnerUserID             string            `json:"ownerUserId"`
 	CreatedAt               time.Time         `json:"createdAt"`
 	UpdatedAt               time.Time         `json:"updatedAt"`
-	DeletedAt               *time.Time        `json:"deletedAt,omitempty"`
+	Archived                bool              `json:"archived"`
 	AccessLevel             model.AccessLevel `json:"accessLevel"`
 	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
+}
+
+type conversationSummaryResponse struct {
+	ID                      uuid.UUID         `json:"id"`
+	Title                   string            `json:"title"`
+	OwnerUserID             string            `json:"ownerUserId"`
+	AgentID                 *string           `json:"agentId,omitempty"`
+	Metadata                map[string]any    `json:"metadata"`
+	ForkedAtEntryID         *uuid.UUID        `json:"forkedAtEntryId,omitempty"`
+	ForkedAtConversationID  *uuid.UUID        `json:"forkedAtConversationId,omitempty"`
+	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
+	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
+	CreatedAt               time.Time         `json:"createdAt"`
+	UpdatedAt               time.Time         `json:"updatedAt"`
+	Archived                bool              `json:"archived"`
+	AccessLevel             model.AccessLevel `json:"accessLevel"`
+}
+
+type conversationDetailResponse struct {
+	conversationSummaryResponse
+	HasResponseInProgress bool `json:"hasResponseInProgress,omitempty"`
+}
+
+func toConversationSummary(item registrystore.ConversationSummary) conversationSummaryResponse {
+	return conversationSummaryResponse{
+		ID:                      item.ID,
+		Title:                   item.Title,
+		OwnerUserID:             item.OwnerUserID,
+		AgentID:                 item.AgentID,
+		Metadata:                item.Metadata,
+		ForkedAtEntryID:         item.ForkedAtEntryID,
+		ForkedAtConversationID:  item.ForkedAtConversationID,
+		StartedByConversationID: item.StartedByConversationID,
+		StartedByEntryID:        item.StartedByEntryID,
+		CreatedAt:               item.CreatedAt,
+		UpdatedAt:               item.UpdatedAt,
+		Archived:                item.ArchivedAt != nil,
+		AccessLevel:             item.AccessLevel,
+	}
+}
+
+func toConversationSummaries(items []registrystore.ConversationSummary) []conversationSummaryResponse {
+	result := make([]conversationSummaryResponse, 0, len(items))
+	for _, item := range items {
+		result = append(result, toConversationSummary(item))
+	}
+	return result
+}
+
+func toConversationDetail(item *registrystore.ConversationDetail) conversationDetailResponse {
+	return conversationDetailResponse{
+		conversationSummaryResponse: toConversationSummary(item.ConversationSummary),
+		HasResponseInProgress:       item.HasResponseInProgress,
+	}
 }
 
 func toChildConversationSummaries(items []registrystore.ConversationSummary) []childConversationSummaryResponse {
@@ -450,7 +490,7 @@ func toChildConversationSummaries(items []registrystore.ConversationSummary) []c
 			OwnerUserID:             item.OwnerUserID,
 			CreatedAt:               item.CreatedAt,
 			UpdatedAt:               item.UpdatedAt,
-			DeletedAt:               item.DeletedAt,
+			Archived:                item.ArchivedAt != nil,
 			AccessLevel:             item.AccessLevel,
 			StartedByConversationID: item.StartedByConversationID,
 			StartedByEntryID:        item.StartedByEntryID,

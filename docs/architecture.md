@@ -282,9 +282,9 @@ stateDiagram-v2
     [*] --> Uploaded : POST /attachments
     Uploaded --> Linked : Referenced in entry content
     Uploaded --> Expired : TTL exceeded (default 1h)
-    Linked --> SoftDeleted : Entry or conversation deleted
+    Linked --> Archived : Entry or conversation deleted
     Expired --> Cleaned : AttachmentCleanupJob
-    SoftDeleted --> HardDeleted : Eviction job
+    Archived --> HardDeleted : Eviction job
     Cleaned --> [*]
     HardDeleted --> [*]
 

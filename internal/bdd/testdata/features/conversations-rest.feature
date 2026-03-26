@@ -194,20 +194,20 @@ Feature: Conversations REST API
     And the response body "data[0].id" should be "${childConversationId}"
     And the response body "data[0].startedByConversationId" should be "${parentConversationId}"
 
-  Scenario: Delete a conversation performs soft delete
+  Scenario: Archiving a conversation keeps it readable and marks it archived
     Given I have a conversation with title "To Be Deleted"
-    When I delete the conversation
-    Then the response status should be 204
-    # API should treat it as deleted
+    When I archive the conversation
+    Then the response status should be 200
+    And the response body field "archived" should be "true"
     When I get the conversation
-    Then the response status should be 404
-    # But data should still exist in database with deleted_at set
+    Then the response status should be 200
+    And the response body field "archived" should be "true"
     When I execute SQL query:
     """
-    SELECT id, deleted_at FROM conversations WHERE id = '${conversationId}'
+    SELECT id, archived_at FROM conversations WHERE id = '${conversationId}'
     """
     Then the SQL result should have 1 row
-    And the SQL result column "deleted_at" should be non-null
+    And the SQL result column "archived_at" should be non-null
     When I execute MongoDB query:
     """
     {
@@ -218,26 +218,40 @@ Feature: Conversations REST API
       },
       "projection": {
         "_id": 1,
-        "deleted_at": 1
+        "archived_at": 1
       }
     }
     """
     Then the MongoDB result should have 1 row
-    And the MongoDB result column "deleted_at" should be non-null
+    And the MongoDB result column "archived_at" should be non-null
 
-  Scenario: Deleted conversation excluded from list
+  Scenario: Archived conversation filters work for user lists
     Given I have a conversation with title "Active Conversation"
     And set "activeConversationId" to "${conversationId}"
     And I have a conversation with title "To Be Deleted"
     And set "deletedConversationId" to "${conversationId}"
-    When I delete the conversation
+    When I archive the conversation
     And I list conversations
     Then the response status should be 200
     And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${activeConversationId}"
+    When I call GET "/v1/conversations?archived=include"
+    Then the response status should be 200
+    And the response should contain 2 conversations
+    When I call GET "/v1/conversations?archived=only"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${deletedConversationId}"
+    And the response body field "data[0].archived" should be "true"
+    When I call GET "/v1/conversations?mode=roots&archived=only"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${deletedConversationId}"
+    And the response body field "data[0].archived" should be "true"
     # Verify both still exist in database
     When I execute SQL query:
     """
-    SELECT id, title, deleted_at FROM conversations ORDER BY created_at
+    SELECT id, title, archived_at FROM conversations ORDER BY created_at
     """
     Then the SQL result should have 2 rows
     When I execute MongoDB query:
@@ -247,7 +261,7 @@ Feature: Conversations REST API
       "operation": "find",
       "projection": {
         "_id": 1,
-        "deleted_at": 1
+        "archived_at": 1
       },
       "sort": {
         "created_at": 1
@@ -256,18 +270,18 @@ Feature: Conversations REST API
     """
     Then the MongoDB result should have 2 rows
 
-  Scenario: Soft delete cascades to conversation group, hard deletes memberships
+  Scenario: Archiving cascades to conversation group and preserves memberships and entries until eviction
     Given I have a conversation with title "Test Conversation"
     And I resolve the conversation group ID for conversation "${conversationId}" into "groupId"
-    When I delete the conversation
-    Then the response status should be 204
-    # Verify conversation group is soft deleted
+    When I archive the conversation
+    Then the response status should be 200
+    # Verify conversation group is archived
     When I execute SQL query:
     """
-    SELECT id, deleted_at FROM conversation_groups WHERE id = '${groupId}'
+    SELECT id, archived_at FROM conversation_groups WHERE id = '${groupId}'
     """
     Then the SQL result should have 1 row
-    And the SQL result column "deleted_at" should be non-null
+    And the SQL result column "archived_at" should be non-null
     When I execute MongoDB query:
     """
     {
@@ -278,20 +292,20 @@ Feature: Conversations REST API
       },
       "projection": {
         "_id": 1,
-        "deleted_at": 1
+        "archived_at": 1
       }
     }
     """
     Then the MongoDB result should have 1 row
-    And the MongoDB result column "deleted_at" should be non-null
-    # Verify membership is hard deleted (not soft deleted)
+    And the MongoDB result column "archived_at" should be non-null
+    # Verify memberships remain so the archived conversation stays readable until eviction.
     When I execute SQL query:
     """
     SELECT COUNT(*) as count FROM conversation_memberships WHERE conversation_group_id = '${groupId}'
     """
     Then the SQL result should match:
       | count |
-      | 0     |
+      | 1     |
     When I execute MongoDB query:
     """
     {
@@ -304,8 +318,8 @@ Feature: Conversations REST API
     """
     Then the MongoDB result should match:
       | count |
-      | 0     |
-    # Verify entries were cascade deleted (foreign key ON DELETE CASCADE)
+      | 1     |
+    # Verify entries remain until hard-delete eviction.
     When I execute SQL query:
     """
     SELECT COUNT(*) as count FROM entries WHERE conversation_group_id = '${groupId}'
@@ -313,6 +327,8 @@ Feature: Conversations REST API
     Then the SQL result should match:
       | count |
       | 0     |
+    When I call GET "/v1/conversations/${conversationId}"
+    Then the response status should be 200
     When I execute MongoDB query:
     """
     {
@@ -327,14 +343,14 @@ Feature: Conversations REST API
       | count |
       | 0     |
 
-  Scenario: Delete non-existent conversation
-    When I delete conversation "00000000-0000-0000-0000-000000000000"
+  Scenario: Archive non-existent conversation
+    When I archive conversation "00000000-0000-0000-0000-000000000000"
     Then the response status should be 404
     And the response should contain error code "not_found"
 
-  Scenario: Delete conversation without access
+  Scenario: Archive conversation without access
     Given there is a conversation owned by "bob"
-    When I delete that conversation
+    When I archive that conversation
     Then the response status should be 403
     And the response should contain error code "forbidden"
 
@@ -348,7 +364,7 @@ Feature: Conversations REST API
     Then the response status should be 201
     And the response body should not contain "conversationGroupId"
 
-  Scenario: Deleting a conversation deletes all forks
+  Scenario: Archiving a conversation archives all forks
     Given I have a conversation with title "Root Conversation"
     And set "rootConversationId" to "${conversationId}"
     And I append an entry to the conversation:
@@ -361,14 +377,14 @@ Feature: Conversations REST API
     And set "entryId" to "${response.body.id}"
     When I fork the conversation at entry "${entryId}"
     And set "forkConversationId" to "${forkedConversationId}"
-    And I delete conversation "${rootConversationId}"
-    Then the response status should be 204
+    And I archive conversation "${rootConversationId}"
+    Then the response status should be 200
     When I get conversation "${rootConversationId}"
-    Then the response status should be 404
+    Then the response status should be 200
     When I get conversation "${forkConversationId}"
-    Then the response status should be 404
+    Then the response status should be 200
 
-  Scenario: Deleting a fork deletes the entire fork tree
+  Scenario: Archiving a fork archives the entire fork tree
     Given I have a conversation with title "Root Conversation"
     And set "rootConversationId" to "${conversationId}"
     And I append an entry to the conversation:
@@ -381,12 +397,12 @@ Feature: Conversations REST API
     And set "entryId" to "${response.body.id}"
     When I fork the conversation at entry "${entryId}"
     And set "forkConversationId" to "${forkedConversationId}"
-    And I delete conversation "${forkConversationId}"
-    Then the response status should be 204
+    And I archive conversation "${forkConversationId}"
+    Then the response status should be 200
     When I get conversation "${rootConversationId}"
-    Then the response status should be 404
+    Then the response status should be 200
     When I get conversation "${forkConversationId}"
-    Then the response status should be 404
+    Then the response status should be 200
 
   Scenario: List conversations with mode=latest-fork returns only the most recently updated fork
     Given I have a conversation with title "Root Conversation"

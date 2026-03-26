@@ -96,10 +96,10 @@ type TestDB interface {
 	// ExecMongoQuery runs a MongoDB query spec (JSON payload) and returns rows as maps.
 	// Non-Mongo backends return (nil, nil) to skip assertions.
 	ExecMongoQuery(ctx context.Context, query string) ([]map[string]interface{}, error)
-	// SoftDeleteConversation sets deleted_at on the conversation and its group to `days` ago.
-	SoftDeleteConversation(ctx context.Context, conversationID string, days int) error
-	// SoftDeleteConversationOnly sets deleted_at on the conversation only, without touching the group.
-	SoftDeleteConversationOnly(ctx context.Context, conversationID string, days int) error
+	// ArchiveConversation sets archived_at on the conversation and its group to `days` ago.
+	ArchiveConversation(ctx context.Context, conversationID string, days int) error
+	// ArchiveConversationOnly sets archived_at on the conversation only, without touching the group.
+	ArchiveConversationOnly(ctx context.Context, conversationID string, days int) error
 	// Task queue operations for task-queue BDD feature.
 	DeleteAllTasks(ctx context.Context) error
 	CreateTask(ctx context.Context, id, taskType, body string) error

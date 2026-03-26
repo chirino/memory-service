@@ -25,9 +25,12 @@ func init() {
 		ctx.Step(`^I get the conversation$`, c.iGetTheConversation)
 		ctx.Step(`^I get conversation "([^"]*)"$`, c.iGetConversation)
 		ctx.Step(`^I get that conversation$`, c.iGetTheConversation)
-		ctx.Step(`^I delete the conversation$`, c.iDeleteTheConversation)
-		ctx.Step(`^I delete conversation "([^"]*)"$`, c.iDeleteConversation)
-		ctx.Step(`^I delete that conversation$`, c.iDeleteTheConversation)
+		ctx.Step(`^I archive the conversation$`, c.iArchiveTheConversation)
+		ctx.Step(`^I archive conversation "([^"]*)"$`, c.iArchiveConversation)
+		ctx.Step(`^I archive that conversation$`, c.iArchiveTheConversation)
+		ctx.Step(`^I delete the conversation$`, c.iArchiveTheConversation)
+		ctx.Step(`^I delete conversation "([^"]*)"$`, c.iArchiveConversation)
+		ctx.Step(`^I delete that conversation$`, c.iArchiveTheConversation)
 		ctx.Step(`^I update the conversation with request:$`, c.iUpdateTheConversationWithRequest)
 		ctx.Step(`^I fork the conversation at entry "([^"]*)"$`, c.iForkTheConversationAtEntry)
 		ctx.Step(`^I fork the conversation at entry "([^"]*)" with request:$`, c.iForkTheConversationAtEntryWithRequest)
@@ -182,20 +185,20 @@ func (c *conversationSteps) iGetConversation(convID string) error {
 	return c.s.SendHTTPRequestWithJSONBodyAndStyle("GET", "/v1/conversations/"+expanded, nil, false, true)
 }
 
-func (c *conversationSteps) iDeleteTheConversation() error {
+func (c *conversationSteps) iArchiveTheConversation() error {
 	convID, err := c.s.ResolveString("conversationId")
 	if err != nil {
 		return err
 	}
-	return c.s.SendHTTPRequestWithJSONBodyAndStyle("DELETE", "/v1/conversations/"+convID, nil, false, true)
+	return c.s.SendHTTPRequestWithJSONBodyAndStyle("PATCH", "/v1/conversations/"+convID, &godog.DocString{Content: `{"archived": true}`}, false, true)
 }
 
-func (c *conversationSteps) iDeleteConversation(convID string) error {
+func (c *conversationSteps) iArchiveConversation(convID string) error {
 	expanded, err := c.s.Expand(convID)
 	if err != nil {
 		return err
 	}
-	return c.s.SendHTTPRequestWithJSONBodyAndStyle("DELETE", "/v1/conversations/"+expanded, nil, false, true)
+	return c.s.SendHTTPRequestWithJSONBodyAndStyle("PATCH", "/v1/conversations/"+expanded, &godog.DocString{Content: `{"archived": true}`}, false, true)
 }
 
 func (c *conversationSteps) iUpdateTheConversationWithRequest(body *godog.DocString) error {

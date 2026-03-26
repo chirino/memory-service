@@ -3,7 +3,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS conversation_groups (
     id TEXT PRIMARY KEY,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at DATETIME
+    archived_at DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -21,11 +21,11 @@ CREATE TABLE IF NOT EXISTS conversations (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     vectorized_at DATETIME,
-    deleted_at DATETIME
+    archived_at DATETIME
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversations_group ON conversations(conversation_group_id);
-CREATE INDEX IF NOT EXISTS idx_conversations_not_deleted ON conversations(deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_conversations_not_archived ON conversations(archived_at) WHERE archived_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_conversation ON conversations(forked_at_conversation_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_entry ON conversations(forked_at_entry_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_started_by_conversation ON conversations(started_by_conversation_id, created_at, id);
@@ -43,10 +43,10 @@ CREATE INDEX IF NOT EXISTS idx_conversation_memberships_user
     ON conversation_memberships(user_id, conversation_group_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_memberships_group
     ON conversation_memberships(conversation_group_id);
-CREATE INDEX IF NOT EXISTS idx_conversation_groups_not_deleted
-    ON conversation_groups(deleted_at) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_conversation_groups_deleted
-    ON conversation_groups(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_conversation_groups_not_archived
+    ON conversation_groups(archived_at) WHERE archived_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_conversation_groups_archived
+    ON conversation_groups(archived_at) WHERE archived_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS entries (
     id TEXT NOT NULL,
@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     source_url TEXT,
     expires_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at DATETIME
+    archived_at DATETIME
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_expires_at
@@ -141,8 +141,8 @@ CREATE INDEX IF NOT EXISTS idx_attachments_entry_id
     ON attachments(entry_id) WHERE entry_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_storage_key
     ON attachments(storage_key) WHERE storage_key IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_attachments_deleted_at
-    ON attachments(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_archived_at
+    ON attachments(archived_at) WHERE archived_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_status
     ON attachments(status) WHERE status != 'ready';
 CREATE INDEX IF NOT EXISTS idx_attachments_user_id
@@ -161,18 +161,18 @@ CREATE TABLE IF NOT EXISTS memories (
     deleted_reason INTEGER,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at DATETIME,
-    deleted_at DATETIME,
+    archived_at DATETIME,
     indexed_at DATETIME
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_active_lookup
-    ON memories(namespace, key, deleted_at);
+    ON memories(namespace, key, archived_at);
 CREATE INDEX IF NOT EXISTS idx_memories_pending_index
-    ON memories(indexed_at, deleted_at);
+    ON memories(indexed_at, archived_at);
 CREATE INDEX IF NOT EXISTS idx_memories_expires_at
     ON memories(expires_at) WHERE expires_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_memories_deleted_at
-    ON memories(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_memories_archived_at
+    ON memories(archived_at) WHERE archived_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS memory_usage_stats (
     namespace TEXT NOT NULL,

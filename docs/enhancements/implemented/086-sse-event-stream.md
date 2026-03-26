@@ -122,7 +122,7 @@ The `kind` field determines the resource type and the shape of `data`. The `even
 | -------------- | ------------ | --------------------------------------------------- | ------------------------------------ |
 | `conversation` | `created`    | New conversation created                            | `conversation`, `conversation_group` |
 | `conversation` | `updated`    | Title, metadata, or other conversation-level change | `conversation`, `conversation_group` |
-| `conversation` | `deleted`    | Conversation soft-deleted                           | `conversation`, `conversation_group` |
+| `conversation` | `deleted`    | Conversation archived                           | `conversation`, `conversation_group` |
 | `entry`        | `appended`   | New entry added to a conversation                   | `conversation`, `entry`,             |
 | `response`     | `started`    | Response recording session begins                   | `conversation`, `recording`          |
 | `response`     | `completed`  | Response recording session ends successfully        | `conversation`, `recording`          |

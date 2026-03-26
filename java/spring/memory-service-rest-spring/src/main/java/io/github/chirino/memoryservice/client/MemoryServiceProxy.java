@@ -126,10 +126,15 @@ public class MemoryServiceProxy {
 
     public ResponseEntity<?> listConversations(
             String mode, String afterCursor, Integer limit, String query) {
+        return listConversations(mode, afterCursor, limit, query, "exclude");
+    }
+
+    public ResponseEntity<?> listConversations(
+            String mode, String afterCursor, Integer limit, String query, String archived) {
         return execute(
                 api ->
                         api.listConversationsWithHttpInfo(
-                                mode, "all", toUuid(afterCursor), limit, query),
+                                mode, "all", toUuid(afterCursor), limit, query, archived),
                 HttpStatus.OK);
     }
 
@@ -153,9 +158,11 @@ public class MemoryServiceProxy {
     }
 
     public ResponseEntity<?> deleteConversation(String conversationId) {
+        UpdateConversationRequest request = new UpdateConversationRequest();
+        request.setArchived(Boolean.TRUE);
         return execute(
-                api -> api.deleteConversationWithHttpInfo(toUuid(conversationId)),
-                HttpStatus.NO_CONTENT);
+                api -> api.updateConversationWithHttpInfo(toUuid(conversationId), request),
+                HttpStatus.OK);
     }
 
     public ResponseEntity<?> listConversationEntries(

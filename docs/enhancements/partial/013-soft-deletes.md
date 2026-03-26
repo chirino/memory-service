@@ -6,8 +6,10 @@ superseded-by:
 
 # Soft Deletes for Audit Retention
 
-> **Status**: Partial. Membership soft deletes replaced by hard deletes with
+> **Status**: Partial. Membership archives replaced by hard deletes with
 > audit logging in [028](../implemented/028-membership-hard-delete.md).
+>
+> **Current Contract Note**: Conversation and memory archive behavior is now defined by [094](../implemented/094-archive-operations.md). References below to conversation `DELETE`, admin `/restore`, `includeArchived` / `onlyArchived`, or archived resources being unreadable after archive are obsolete.
 
 ## Motivation
 
@@ -21,9 +23,9 @@ Currently, all delete operations in the memory-service perform hard deletes, per
 
 4. **Accidental Deletion**: Users who accidentally delete conversations have no recourse for recovery.
 
-This enhancement introduces soft deletes at the data layer, marking resources as deleted with a `deletedAt` timestamp instead of removing them. All API operations will treat soft-deleted resources as if they were actually deleted (returning 404, excluding from lists), while preserving the underlying data for auditing purposes.
+This enhancement introduces archives at the data layer, marking resources as deleted with a `archivedAt` timestamp instead of removing them. All API operations will treat archived resources as if they were actually deleted (returning 404, excluding from lists), while preserving the underlying data for auditing purposes.
 
-**Scope**: This enhancement covers only the soft delete mechanism. A follow-up enhancement will implement a batch job for data retention policies that performs actual hard deletes of soft-deleted resources older than a configurable retention period.
+**Scope**: This enhancement covers only the archive mechanism. A follow-up enhancement will implement a batch job for data retention policies that performs actual hard deletes of archived resources older than a configurable retention period.
 
 ## Design Decisions
 
@@ -35,7 +37,7 @@ Soft deletes will apply to:
 |--------|-------------|-----------|
 | `ConversationGroupEntity` | Yes | Contains the full conversation tree; must be preserved for audit |
 | `ConversationEntity` | Yes | Primary user-facing resource; audit trail essential |
-| `MessageEntity` | No | Messages are immutable and only deleted via cascade from conversation; will be filtered by parent's `deletedAt` |
+| `MessageEntity` | No | Messages are immutable and only deleted via cascade from conversation; will be filtered by parent's `archivedAt` |
 | `ConversationMembershipEntity` | Yes | Tracks who had access; important for security audits |
 | `ConversationOwnershipTransferEntity` | No | Already has status tracking (PENDING, ACCEPTED, REJECTED, EXPIRED); historical records naturally preserved |
 
@@ -43,49 +45,49 @@ Soft deletes will apply to:
 
 When a conversation is deleted:
 
-1. The `ConversationGroupEntity` is marked with `deletedAt = now()`
-2. All `ConversationEntity` records in the group are marked with `deletedAt = now()`
-3. All `ConversationMembershipEntity` records for the group are marked with `deletedAt = now()`
+1. The `ConversationGroupEntity` is marked with `archivedAt = now()`
+2. All `ConversationEntity` records in the group are marked with `archivedAt = now()`
+3. All `ConversationMembershipEntity` records for the group are marked with `archivedAt = now()`
 4. `MessageEntity` records are NOT modified (they inherit deleted status from their conversation)
 5. Pending `ConversationOwnershipTransferEntity` records are updated to status `EXPIRED`
 
 When a membership is deleted:
 
-1. The `ConversationMembershipEntity` is marked with `deletedAt = now()`
+1. The `ConversationMembershipEntity` is marked with `archivedAt = now()`
 2. No cascade to other entities
 
 ### Database Schema Changes
 
-Add `deleted_at` columns to the relevant tables:
+Add `archived_at` columns to the relevant tables:
 
 ```sql
--- Add deleted_at to conversation_groups
-ALTER TABLE conversation_groups ADD COLUMN deleted_at TIMESTAMPTZ;
-CREATE INDEX idx_conversation_groups_deleted_at ON conversation_groups(deleted_at) WHERE deleted_at IS NULL;
+-- Add archived_at to conversation_groups
+ALTER TABLE conversation_groups ADD COLUMN archived_at TIMESTAMPTZ;
+CREATE INDEX idx_conversation_groups_archived_at ON conversation_groups(archived_at) WHERE archived_at IS NULL;
 
--- Add deleted_at to conversations
-ALTER TABLE conversations ADD COLUMN deleted_at TIMESTAMPTZ;
-CREATE INDEX idx_conversations_deleted_at ON conversations(deleted_at) WHERE deleted_at IS NULL;
+-- Add archived_at to conversations
+ALTER TABLE conversations ADD COLUMN archived_at TIMESTAMPTZ;
+CREATE INDEX idx_conversations_archived_at ON conversations(archived_at) WHERE archived_at IS NULL;
 
--- Add deleted_at to conversation_memberships
-ALTER TABLE conversation_memberships ADD COLUMN deleted_at TIMESTAMPTZ;
-CREATE INDEX idx_conversation_memberships_deleted_at ON conversation_memberships(deleted_at) WHERE deleted_at IS NULL;
+-- Add archived_at to conversation_memberships
+ALTER TABLE conversation_memberships ADD COLUMN archived_at TIMESTAMPTZ;
+CREATE INDEX idx_conversation_memberships_archived_at ON conversation_memberships(archived_at) WHERE archived_at IS NULL;
 ```
 
-The partial indexes (`WHERE deleted_at IS NULL`) optimize queries that filter for non-deleted records, which is the common case.
+The partial indexes (`WHERE archived_at IS NULL`) optimize queries that filter for non-deleted records, which is the common case.
 
-**Note on `ON DELETE CASCADE`**: The existing CASCADE constraints are intentionally preserved. Since the application layer performs only soft deletes, CASCADE never triggers during normal operations. When the future data retention purge job performs hard deletes of expired soft-deleted records, CASCADE will automatically clean up child records (messages, memberships, etc.), simplifying the purge implementation.
+**Note on `ON DELETE CASCADE`**: The existing CASCADE constraints are intentionally preserved. Since the application layer performs only archives, CASCADE never triggers during normal operations. When the future data retention purge job performs hard deletes of expired archived records, CASCADE will automatically clean up child records (messages, memberships, etc.), simplifying the purge implementation.
 
 ### Query Filtering
 
-All read operations must filter out soft-deleted records:
+All read operations must filter out archived records:
 
 ```java
 // Repository queries must include:
-// AND (e.deletedAt IS NULL)
+// AND (e.archivedAt IS NULL)
 
 // Example for listing conversations:
-@Query("SELECT c FROM ConversationEntity c WHERE c.conversationGroup.id = ?1 AND c.deletedAt IS NULL")
+@Query("SELECT c FROM ConversationEntity c WHERE c.conversationGroup.id = ?1 AND c.archivedAt IS NULL")
 List<ConversationEntity> findActiveByGroupId(UUID groupId);
 ```
 
@@ -101,14 +103,14 @@ The API contract remains unchanged from the client perspective. Soft deletes are
 
 ### Vector Store Handling
 
-The memory-service supports mixed storage configurations (e.g., PostgreSQL data store with MongoDB vector store). Since cross-store joins are not possible, the existing **two-phase query pattern** naturally handles soft deletes:
+The memory-service supports mixed storage configurations (e.g., PostgreSQL data store with MongoDB vector store). Since cross-store joins are not possible, the existing **two-phase query pattern** naturally handles archives:
 
 **Current search flow:**
 1. **Phase 1 (Data Store)**: Get user's memberships → Get accessible conversation IDs
 2. **Phase 2 (Vector Store)**: Search within those conversation IDs
 
-**With soft deletes:**
-1. **Phase 1**: Filter memberships and conversations where `deletedAt IS NULL`
+**With archives:**
+1. **Phase 1**: Filter memberships and conversations where `archivedAt IS NULL`
 2. **Phase 2**: Vector store receives only valid (non-deleted) conversation IDs - no changes needed
 
 This means:
@@ -119,19 +121,19 @@ This means:
 
 ### MongoDB Implementation
 
-MongoDB documents will include an optional `deletedAt` field:
+MongoDB documents will include an optional `archivedAt` field:
 
 ```javascript
 {
   "_id": "...",
-  "deletedAt": null,  // or ISODate("2024-01-15T10:30:00Z")
+  "archivedAt": null,  // or ISODate("2024-01-15T10:30:00Z")
   // ... other fields
 }
 
 // All queries must include:
-{ "deletedAt": null }
+{ "archivedAt": null }
 // or
-{ "deletedAt": { "$exists": false } }
+{ "archivedAt": { "$exists": false } }
 ```
 
 ## Scope of Changes
@@ -140,26 +142,26 @@ MongoDB documents will include an optional `deletedAt` field:
 
 **File:** `memory-service/src/main/resources/db/schema.sql`
 
-Add `deleted_at` columns to relevant tables:
+Add `archived_at` columns to relevant tables:
 
 ```sql
 -- conversation_groups table
 CREATE TABLE conversation_groups (
     id UUID PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ  -- NEW
+    archived_at TIMESTAMPTZ  -- NEW
 );
 
 -- conversations table
 CREATE TABLE conversations (
     -- ... existing columns ...
-    deleted_at TIMESTAMPTZ  -- NEW
+    archived_at TIMESTAMPTZ  -- NEW
 );
 
 -- conversation_memberships table
 CREATE TABLE conversation_memberships (
     -- ... existing columns ...
-    deleted_at TIMESTAMPTZ  -- NEW
+    archived_at TIMESTAMPTZ  -- NEW
 );
 ```
 
@@ -171,48 +173,48 @@ Add new changeset:
 
 ```yaml
 - changeSet:
-    id: add-soft-delete-columns
+    id: add-archive-columns
     author: memory-service
     changes:
       - addColumn:
           tableName: conversation_groups
           columns:
             - column:
-                name: deleted_at
+                name: archived_at
                 type: TIMESTAMPTZ
       - addColumn:
           tableName: conversations
           columns:
             - column:
-                name: deleted_at
+                name: archived_at
                 type: TIMESTAMPTZ
       - addColumn:
           tableName: conversation_memberships
           columns:
             - column:
-                name: deleted_at
+                name: archived_at
                 type: TIMESTAMPTZ
       - createIndex:
           indexName: idx_conversation_groups_not_deleted
           tableName: conversation_groups
           columns:
             - column:
-                name: deleted_at
-          where: deleted_at IS NULL
+                name: archived_at
+          where: archived_at IS NULL
       - createIndex:
           indexName: idx_conversations_not_deleted
           tableName: conversations
           columns:
             - column:
-                name: deleted_at
-          where: deleted_at IS NULL
+                name: archived_at
+          where: archived_at IS NULL
       - createIndex:
           indexName: idx_conversation_memberships_not_deleted
           tableName: conversation_memberships
           columns:
             - column:
-                name: deleted_at
-          where: deleted_at IS NULL
+                name: archived_at
+          where: archived_at IS NULL
 ```
 
 ### 3. JPA Entity Classes
@@ -221,23 +223,23 @@ Add new changeset:
 
 ```java
 // Add field
-@Column(name = "deleted_at")
-private OffsetDateTime deletedAt;
+@Column(name = "archived_at")
+private OffsetDateTime archivedAt;
 
 // Add getter/setter
-public OffsetDateTime getDeletedAt() { return deletedAt; }
-public void setDeletedAt(OffsetDateTime deletedAt) { this.deletedAt = deletedAt; }
+public OffsetDateTime getArchivedAt() { return archivedAt; }
+public void setArchivedAt(OffsetDateTime archivedAt) { this.archivedAt = archivedAt; }
 
 // Add helper method
-public boolean isDeleted() { return deletedAt != null; }
+public boolean isDeleted() { return archivedAt != null; }
 ```
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/persistence/entity/ConversationEntity.java`
 
 ```java
 // Add field
-@Column(name = "deleted_at")
-private OffsetDateTime deletedAt;
+@Column(name = "archived_at")
+private OffsetDateTime archivedAt;
 
 // Add getter/setter and helper (same pattern)
 ```
@@ -246,8 +248,8 @@ private OffsetDateTime deletedAt;
 
 ```java
 // Add field
-@Column(name = "deleted_at")
-private OffsetDateTime deletedAt;
+@Column(name = "archived_at")
+private OffsetDateTime archivedAt;
 
 // Add getter/setter and helper (same pattern)
 ```
@@ -261,34 +263,34 @@ Update all repository queries to filter out deleted records.
 ```java
 // Update findById to exclude deleted
 default Optional<ConversationGroupEntity> findActiveById(UUID id) {
-    return find("id = ?1 AND deletedAt IS NULL", id).firstResultOptional();
+    return find("id = ?1 AND archivedAt IS NULL", id).firstResultOptional();
 }
 ```
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/persistence/repository/ConversationRepository.java`
 
 ```java
-// Update all queries to include: AND deletedAt IS NULL
-// AND conversationGroup.deletedAt IS NULL (to handle parent deletion)
+// Update all queries to include: AND archivedAt IS NULL
+// AND conversationGroup.archivedAt IS NULL (to handle parent deletion)
 ```
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/persistence/repository/ConversationMembershipRepository.java`
 
 ```java
-// Update queries to include: AND deletedAt IS NULL
+// Update queries to include: AND archivedAt IS NULL
 ```
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/persistence/repository/MessageRepository.java`
 
 ```java
-// Update queries to join conversation and filter: AND conversation.deletedAt IS NULL
+// Update queries to join conversation and filter: AND conversation.archivedAt IS NULL
 ```
 
 ### 5. PostgresMemoryStore Implementation
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/store/impl/PostgresMemoryStore.java`
 
-Replace hard delete with soft delete:
+Replace hard delete with archive:
 
 ```java
 // BEFORE
@@ -316,17 +318,17 @@ private void softDeleteConversationGroup(UUID conversationGroupId) {
 
     // Mark conversation group as deleted
     conversationGroupRepository.update(
-        "deletedAt = ?1 WHERE id = ?2 AND deletedAt IS NULL",
+        "archivedAt = ?1 WHERE id = ?2 AND archivedAt IS NULL",
         now, conversationGroupId);
 
     // Mark all conversations in the group as deleted
     conversationRepository.update(
-        "deletedAt = ?1 WHERE conversationGroup.id = ?2 AND deletedAt IS NULL",
+        "archivedAt = ?1 WHERE conversationGroup.id = ?2 AND archivedAt IS NULL",
         now, conversationGroupId);
 
     // Mark all memberships as deleted
     membershipRepository.update(
-        "deletedAt = ?1 WHERE id.conversationGroupId = ?2 AND deletedAt IS NULL",
+        "archivedAt = ?1 WHERE id.conversationGroupId = ?2 AND archivedAt IS NULL",
         now, conversationGroupId);
 
     // Expire pending ownership transfers
@@ -346,7 +348,7 @@ public void deleteMembership(String userId, String conversationId, String member
 public void deleteMembership(String userId, String conversationId, String memberUserId) {
     // ... validation ...
     membershipRepository.update(
-        "deletedAt = ?1 WHERE id.conversationGroupId = ?2 AND id.userId = ?3 AND deletedAt IS NULL",
+        "archivedAt = ?1 WHERE id.conversationGroupId = ?2 AND id.userId = ?3 AND archivedAt IS NULL",
         OffsetDateTime.now(), groupId, memberUserId);
 }
 ```
@@ -357,7 +359,7 @@ Update all query methods to filter deleted records:
 // Example: getConversation
 public Conversation getConversation(String userId, String conversationId) {
     ConversationEntity entity = conversationRepository
-        .find("id = ?1 AND deletedAt IS NULL AND conversationGroup.deletedAt IS NULL",
+        .find("id = ?1 AND archivedAt IS NULL AND conversationGroup.archivedAt IS NULL",
               UUID.fromString(conversationId))
         .firstResultOptional()
         .orElseThrow(() -> new NotFoundException("Conversation not found"));
@@ -371,18 +373,18 @@ public Conversation getConversation(String userId, String conversationId) {
 
 ```java
 // Add field
-private Instant deletedAt;
+private Instant archivedAt;
 
 // Add getter/setter
-public Instant getDeletedAt() { return deletedAt; }
-public void setDeletedAt(Instant deletedAt) { this.deletedAt = deletedAt; }
+public Instant getArchivedAt() { return archivedAt; }
+public void setArchivedAt(Instant archivedAt) { this.archivedAt = archivedAt; }
 ```
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/mongo/model/MongoConversation.java`
 
 ```java
 // Add field
-private Instant deletedAt;
+private Instant archivedAt;
 // Add getter/setter
 ```
 
@@ -390,7 +392,7 @@ private Instant deletedAt;
 
 ```java
 // Add field
-private Instant deletedAt;
+private Instant archivedAt;
 // Add getter/setter
 ```
 
@@ -398,7 +400,7 @@ private Instant deletedAt;
 
 **File:** `memory-service/src/main/java/io/github/chirino/memory/store/impl/MongoMemoryStore.java`
 
-Replace hard delete with soft delete:
+Replace hard delete with archive:
 
 ```java
 // BEFORE
@@ -418,18 +420,18 @@ private void softDeleteConversationGroup(String conversationGroupId) {
 
     // Mark conversation group as deleted
     conversationGroupCollection.updateOne(
-        Filters.and(Filters.eq("_id", conversationGroupId), Filters.eq("deletedAt", null)),
-        Updates.set("deletedAt", now));
+        Filters.and(Filters.eq("_id", conversationGroupId), Filters.eq("archivedAt", null)),
+        Updates.set("archivedAt", now));
 
     // Mark all conversations as deleted
     conversationCollection.updateMany(
-        Filters.and(Filters.eq("conversationGroupId", conversationGroupId), Filters.eq("deletedAt", null)),
-        Updates.set("deletedAt", now));
+        Filters.and(Filters.eq("conversationGroupId", conversationGroupId), Filters.eq("archivedAt", null)),
+        Updates.set("archivedAt", now));
 
     // Mark all memberships as deleted
     membershipCollection.updateMany(
-        Filters.and(Filters.eq("conversationGroupId", conversationGroupId), Filters.eq("deletedAt", null)),
-        Updates.set("deletedAt", now));
+        Filters.and(Filters.eq("conversationGroupId", conversationGroupId), Filters.eq("archivedAt", null)),
+        Updates.set("archivedAt", now));
 
     // Expire pending ownership transfers
     transferCollection.updateMany(
@@ -442,22 +444,22 @@ private void softDeleteConversationGroup(String conversationGroupId) {
 }
 ```
 
-Update all query methods to include `deletedAt: null` filter:
+Update all query methods to include `archivedAt: null` filter:
 
 ```java
 // Example filter for all queries
 Filters.and(
     existingFilters,
     Filters.or(
-        Filters.eq("deletedAt", null),
-        Filters.exists("deletedAt", false)
+        Filters.eq("archivedAt", null),
+        Filters.exists("archivedAt", false)
     )
 )
 ```
 
 ### 8. Test Infrastructure: Reusable SQL Assertion Steps
 
-To verify soft delete behavior at the database level, add reusable Cucumber steps for executing raw SQL queries and asserting results match expected tables. These steps will be useful beyond soft deletes for any database-level verification.
+To verify archive behavior at the database level, add reusable Cucumber steps for executing raw SQL queries and asserting results match expected tables. These steps will be useful beyond archives for any database-level verification.
 
 **File:** `memory-service/src/test/java/io/github/chirino/memory/cucumber/StepDefinitions.java`
 
@@ -547,23 +549,23 @@ public void theSqlResultColumnShouldBeNull(String column) {
 
 **File:** `memory-service/src/test/resources/features/conversations-rest.feature`
 
-Update delete scenario to verify soft delete behavior using the new SQL assertion steps:
+Update delete scenario to verify archive behavior using the new SQL assertion steps:
 
 ```gherkin
-Scenario: Delete a conversation performs soft delete
+Scenario: Delete a conversation performs archive
     Given I have a conversation with title "To Be Deleted"
     When I delete the conversation
     Then the response status should be 204
     # API should treat it as deleted
     When I get the conversation
     Then the response status should be 404
-    # But data should still exist in database with deleted_at set
+    # But data should still exist in database with archived_at set
     When I execute SQL query:
     """
-    SELECT id, deleted_at FROM conversations WHERE id = '${conversationId}'
+    SELECT id, archived_at FROM conversations WHERE id = '${conversationId}'
     """
     Then the SQL result should have 1 row
-    And the SQL result column "deleted_at" should be non-null
+    And the SQL result column "archived_at" should be non-null
 
 Scenario: Deleted conversation excluded from list
     Given I have a conversation with title "Active Conversation"
@@ -577,7 +579,7 @@ Scenario: Deleted conversation excluded from list
     # Verify both still exist in database
     When I execute SQL query:
     """
-    SELECT id, title, deleted_at FROM conversations ORDER BY created_at
+    SELECT id, title, archived_at FROM conversations ORDER BY created_at
     """
     Then the SQL result should have 2 rows
 
@@ -586,23 +588,23 @@ Scenario: Soft delete cascades to conversation group and memberships
     And set "groupId" to "${response.body.conversationGroupId}"
     When I delete the conversation
     Then the response status should be 204
-    # Verify conversation group is soft deleted
+    # Verify conversation group is archived
     When I execute SQL query:
     """
-    SELECT id, deleted_at FROM conversation_groups WHERE id = '${groupId}'
+    SELECT id, archived_at FROM conversation_groups WHERE id = '${groupId}'
     """
     Then the SQL result should have 1 row
-    And the SQL result column "deleted_at" should be non-null
-    # Verify membership is soft deleted
+    And the SQL result column "archived_at" should be non-null
+    # Verify membership is archived
     When I execute SQL query:
     """
-    SELECT conversation_group_id, user_id, deleted_at
+    SELECT conversation_group_id, user_id, archived_at
     FROM conversation_memberships
     WHERE conversation_group_id = '${groupId}'
     """
     Then the SQL result should have 1 row
-    And the SQL result column "deleted_at" should be non-null
-    # Verify messages still exist (not soft deleted, just orphaned by parent)
+    And the SQL result column "archived_at" should be non-null
+    # Verify messages still exist (not archived, just orphaned by parent)
     When I execute SQL query:
     """
     SELECT COUNT(*) as count FROM messages WHERE conversation_group_id = '${groupId}'
@@ -619,7 +621,7 @@ Add similar scenarios for gRPC API.
 **File:** `memory-service/src/test/resources/features/memberships-rest.feature`
 
 ```gherkin
-Scenario: Delete membership performs soft delete
+Scenario: Delete membership performs archive
     Given I have a conversation with title "Test Conversation"
     And the conversation is shared with user "bob" with access level "reader"
     When I delete membership for user "bob"
@@ -630,27 +632,27 @@ Scenario: Delete membership performs soft delete
     # But record should still exist in database
     When I execute SQL query:
     """
-    SELECT user_id, deleted_at
+    SELECT user_id, archived_at
     FROM conversation_memberships
     WHERE conversation_group_id = '${response.body.conversationGroupId}'
     AND user_id = 'bob'
     """
     Then the SQL result should have 1 row
-    And the SQL result column "deleted_at" should be non-null
+    And the SQL result column "archived_at" should be non-null
 ```
 
 ## Implementation Order
 
-1. **Database schema** - Add migration for `deleted_at` columns
-2. **Entity classes** - Add `deletedAt` field to JPA and MongoDB entities
-3. **Repository layer** - Update all queries to filter `deletedAt IS NULL`
-4. **PostgresMemoryStore** - Replace hard deletes with soft deletes
-5. **MongoMemoryStore** - Replace hard deletes with soft deletes
+1. **Database schema** - Add migration for `archived_at` columns
+2. **Entity classes** - Add `archivedAt` field to JPA and MongoDB entities
+3. **Repository layer** - Update all queries to filter `archivedAt IS NULL`
+4. **PostgresMemoryStore** - Replace hard deletes with archives
+5. **MongoMemoryStore** - Replace hard deletes with archives
 6. **Test infrastructure** - Add SQL assertion Cucumber steps
-7. **Tests** - Update Cucumber features and add soft delete verification
+7. **Tests** - Update Cucumber features and add archive verification
 8. **Compile and test** - Verify everything works
 
-Note: No vector store changes are required - the two-phase query pattern automatically excludes soft-deleted conversations.
+Note: No vector store changes are required - the two-phase query pattern automatically excludes archived conversations.
 
 ## Verification
 
@@ -663,8 +665,8 @@ After implementation:
 # Run tests
 ./mvnw test
 
-# Verify specific soft-delete behavior
-./mvnw test -Dcucumber.filter.tags="@soft-delete"
+# Verify specific archive behavior
+./mvnw test -Dcucumber.filter.tags="@archive"
 ```
 
 ## Files to Modify (Complete List)
@@ -699,7 +701,7 @@ Admin APIs are **out of scope** for this enhancement but will be implemented in 
 1. **Cross-user access**: Admins can view conversations owned by any user (not just their own)
 2. **Soft-deleted resource visibility**: Deleted resources will be included in responses
 3. **Hidden field exposure**: Additional fields not shown in user-facing APIs will be exposed, including:
-   - `deletedAt` - timestamp when the resource was soft-deleted
+   - `archivedAt` - timestamp when the resource was archived
    - `deletedBy` - (if tracked) the user who performed the deletion
    - Other internal/audit fields as needed
 
@@ -720,12 +722,12 @@ The `/v1/admin/*` APIs will mirror the existing `/v1/*` user-facing APIs:
 
 ```yaml
 # Filter by deletion status
-?includeDeleted=true    # Include soft-deleted resources (default: false)
-?onlyDeleted=true       # Show only soft-deleted resources
+?includeArchived=true    # Include archived resources (default: false)
+?onlyArchived=true       # Show only archived resources
 
 # Filter by deletion time range (for audit queries)
-?deletedAfter=2024-01-01T00:00:00Z
-?deletedBefore=2024-02-01T00:00:00Z
+?archivedAfter=2024-01-01T00:00:00Z
+?archivedBefore=2024-02-01T00:00:00Z
 
 # Filter by user (admins can view any user's data)
 ?userId=alice
@@ -740,28 +742,28 @@ The `/v1/admin/*` APIs will mirror the existing `/v1/*` user-facing APIs:
   "ownerUserId": "alice",
   "createdAt": "2024-01-15T10:00:00Z",
   "updatedAt": "2024-01-15T12:00:00Z",
-  "deletedAt": "2024-01-20T08:30:00Z",  // Hidden from user APIs
+  "archivedAt": "2024-01-20T08:30:00Z",  // Hidden from user APIs
   "conversationGroupId": "..."
 }
 ```
 
 ### Hard Delete / Purge (Planned Follow-up)
 
-A separate enhancement will implement a batch job for data retention policies that performs actual hard deletes of soft-deleted resources after a configurable retention period. This addresses:
+A separate enhancement will implement a batch job for data retention policies that performs actual hard deletes of archived resources after a configurable retention period. This addresses:
 
 - **GDPR "right to be forgotten"**: Legal requirement to permanently delete personal data upon request
-- **Storage management**: Prevent unbounded growth of soft-deleted records
+- **Storage management**: Prevent unbounded growth of archived records
 - **Compliance**: Meet organizational data retention policy requirements
 
-The retention policy batch job is explicitly **out of scope** for this enhancement but is a planned follow-up. This enhancement only implements the soft delete mechanism; the purge mechanism will be added separately.
+The retention policy batch job is explicitly **out of scope** for this enhancement but is a planned follow-up. This enhancement only implements the archive mechanism; the purge mechanism will be added separately.
 
 ```java
 // Planned for future enhancement:
-// Scheduled job to purge records where deletedAt < (now - retentionPeriod)
+// Scheduled job to purge records where archivedAt < (now - retentionPeriod)
 @Scheduled(cron = "${data.retention.purge.cron:0 0 2 * * ?}")  // Default: 2 AM daily
-void purgeExpiredSoftDeletedRecords() {
+void purgeExpiredArchivedRecords() {
     OffsetDateTime cutoff = OffsetDateTime.now().minus(retentionPeriod);
-    // Hard delete: conversation_groups WHERE deleted_at < cutoff
+    // Hard delete: conversation_groups WHERE archived_at < cutoff
     // Cascade will remove conversations, messages, memberships, etc.
 }
 ```
@@ -778,6 +780,6 @@ POST /v1/admin/conversations/{id}/restore
 ## Notes
 
 - No backward compatibility concerns per CLAUDE.md - this is pre-release development
-- The API contract (OpenAPI spec) does not need changes; soft deletes are transparent to clients
-- Existing data remains unaffected; `deletedAt` will be NULL for all existing records
-- Performance impact is minimal due to partial indexes on `deleted_at IS NULL`
+- The API contract (OpenAPI spec) does not need changes; archives are transparent to clients
+- Existing data remains unaffected; `archivedAt` will be NULL for all existing records
+- Performance impact is minimal due to partial indexes on `archived_at IS NULL`

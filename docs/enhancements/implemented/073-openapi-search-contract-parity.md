@@ -5,6 +5,8 @@ status: implemented
 # Enhancement 073: Go Search OpenAPI Contract Parity
 
 > **Status**: Implemented.
+>
+> **Current Contract Note**: Admin conversation search archive filtering now follows [094](./094-archive-operations.md). References below to `includeArchived` are historical; the current contract uses `archived=exclude|include|only`.
 
 ## Summary
 
@@ -23,7 +25,7 @@ Current parity gaps:
 | `POST /v1/conversations/search` | `afterCursor` request pagination | ignored on request; semantic path always returns `afterCursor: null` |
 | `POST /v1/conversations/search` | `501 SearchTypeUnavailable` for unavailable requested type | currently returns fallback result or `503 search_disabled` |
 | `POST /v1/admin/conversations/search` | `afterCursor` | ignored |
-| `POST /v1/admin/conversations/search` | `includeDeleted` | ignored |
+| `POST /v1/admin/conversations/search` | `includeArchived` | ignored |
 | `POST /v1/admin/conversations/search` | response `afterCursor` | not returned |
 
 This mismatch causes client confusion and breaks frontend expectations for safe pagination/search mode selection.
@@ -145,13 +147,13 @@ type AdminSearchQuery struct {
     UserID         *string
     Limit          int
     IncludeEntry   bool
-    IncludeDeleted bool
+    IncludeArchived bool
     AfterCursor    *string
 }
 ```
 
 Behavior changes:
-- honor `includeDeleted` in admin search filters
+- honor `includeArchived` in admin search filters
 - honor `afterCursor` with deterministic ordering and `limit+1`
 - include response `afterCursor` for paging
 - validate `1 <= limit <= 1000`
@@ -187,8 +189,8 @@ Scenario: Agent search honors groupByConversation default true
   """
   Then only the best-scoring entry per conversation is returned
 
-Scenario: Admin search includeDeleted false excludes deleted conversations
-Scenario: Admin search includeDeleted true includes deleted conversations
+Scenario: Admin search includeArchived false excludes deleted conversations
+Scenario: Admin search includeArchived true includes deleted conversations
 Scenario: Admin search returns afterCursor when more results exist
 ```
 
@@ -199,7 +201,7 @@ Scenario: Admin search returns afterCursor when more results exist
 - Postgres fulltext grouped query returns one row per conversation in score order.
 - Postgres cursor pagination remains stable under tie scores (`entry_id` tie-breaker).
 - Mongo grouped pipeline preserves deterministic ordering for pagination.
-- Admin search filters soft-deleted rows based on `includeDeleted`.
+- Admin search filters archived rows based on `includeArchived`.
 
 ### BDD Coverage
 
@@ -210,7 +212,7 @@ Scenario: Admin search returns afterCursor when more results exist
   - per-type limit behavior for multi-type requests
   - `groupByConversation` true/false behavior
   - request `afterCursor` paging behavior
-- Extend admin REST feature for `includeDeleted` and admin search pagination.
+- Extend admin REST feature for `includeArchived` and admin search pagination.
 - Run both Postgres and Mongo/Qdrant BDD suites.
 
 ## Tasks
@@ -223,7 +225,7 @@ Scenario: Admin search returns afterCursor when more results exist
 - [x] Implement grouped and paginated fulltext search in Mongo store.
 - [x] Add semantic result grouping and per-type cursor pagination in Go route path.
 - [x] Implement multi-type result composition with per-type `limit` and composite cursor encoding/decoding.
-- [x] Extend admin search query model with `includeDeleted` and `afterCursor`.
+- [x] Extend admin search query model with `includeArchived` and `afterCursor`.
 - [x] Implement admin search deleted filtering + pagination in Postgres and Mongo stores.
 - [x] Return `afterCursor` from `POST /v1/admin/conversations/search` responses.
 - [x] Add/adjust BDD scenarios for all newly enforced OpenAPI behaviors.
@@ -238,10 +240,10 @@ Scenario: Admin search returns afterCursor when more results exist
 | `internal/registry/store/plugin.go` | Extend search query method signatures and `AdminSearchQuery` fields |
 | `internal/plugin/store/postgres/postgres.go` | Add grouped search + cursor support for user and admin search; include deleted filtering for admin |
 | `internal/plugin/store/mongo/mongo.go` | Add grouped search + cursor support for user and admin search; include deleted filtering for admin |
-| `internal/plugin/route/admin/admin.go` | Parse `includeDeleted` + `afterCursor` for admin search and return response cursor |
+| `internal/plugin/route/admin/admin.go` | Parse `includeArchived` + `afterCursor` for admin search and return response cursor |
 | `internal/bdd/testdata/features/index-rest.feature` | Add agent search parity scenarios (`groupByConversation`, pagination cursor) |
 | `internal/bdd/testdata/features/validation-rest.feature` | Add invalid `searchType` and out-of-range limit validation scenarios |
-| `internal/bdd/testdata/features/admin-rest.feature` | Add admin `includeDeleted` and `afterCursor` scenarios |
+| `internal/bdd/testdata/features/admin-rest.feature` | Add admin `includeArchived` and `afterCursor` scenarios |
 | `internal/bdd/testdata/features-qdrant/search-mongo-qdrant.feature` | Add semantic mode and pagination/grouping checks for Mongo+Qdrant |
 | `site/src/pages/docs/*search*.mdx` | Update docs to reflect enforced semantics and error behavior |
 

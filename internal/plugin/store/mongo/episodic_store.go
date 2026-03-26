@@ -99,7 +99,7 @@ func (m *mongoEpisodicMigrator) Migrate(ctx context.Context) error {
 		{Keys: bson.D{
 			{Key: "namespace", Value: 1},
 			{Key: "key", Value: 1},
-			{Key: "deleted_at", Value: 1},
+			{Key: "archived_at", Value: 1},
 		}},
 		{
 			Keys:    bson.D{{Key: "expires_at", Value: 1}},
@@ -122,7 +122,7 @@ func (m *mongoEpisodicMigrator) Migrate(ctx context.Context) error {
 		{
 			Keys: bson.D{
 				{Key: "namespace", Value: 1},
-				{Key: "deleted_at", Value: 1},
+				{Key: "archived_at", Value: 1},
 				{Key: "_id", Value: 1},
 			},
 			Options: options.Index().SetPartialFilterExpression(bson.M{"deleted_reason": bson.M{"$in": bson.A{1, 2}}}),
@@ -209,7 +209,7 @@ type memoryDoc struct {
 	Kind             int32                  `bson:"kind"` // 0=add, 1=update
 	CreatedAt        time.Time              `bson:"created_at"`
 	ExpiresAt        *time.Time             `bson:"expires_at,omitempty"`
-	DeletedAt        *time.Time             `bson:"deleted_at,omitempty"`
+	ArchivedAt       *time.Time             `bson:"archived_at,omitempty"`
 	DeletedReason    *int32                 `bson:"deleted_reason,omitempty"` // nil=active, 0=updated, 1=deleted, 2=expired
 	IndexedAt        *time.Time             `bson:"indexed_at,omitempty"`
 }
@@ -219,6 +219,7 @@ type memoryVectorDoc struct {
 	MemoryID         string                 `bson:"memory_id"`
 	FieldName        string                 `bson:"field_name"`
 	Namespace        string                 `bson:"namespace"`
+	Archived         bool                   `bson:"archived"`
 	PolicyAttributes map[string]interface{} `bson:"policy_attributes,omitempty"`
 	Embedding        []float32              `bson:"embedding"`
 }
@@ -258,7 +259,38 @@ func nsPrefixFilter(nsEncoded string) bson.M {
 	}}
 }
 
-// PutMemory upserts a memory. The previous active row is soft-deleted first.
+func matchesMemoryArchiveFilter(archivedAt *time.Time, deletedReason *int32, archived registryepisodic.ArchiveFilter) bool {
+	if archivedAt == nil {
+		return archived != registryepisodic.ArchiveFilterOnly
+	}
+	if deletedReason == nil {
+		return false
+	}
+	switch *deletedReason {
+	case 1:
+		return archived != registryepisodic.ArchiveFilterExclude
+	case 2:
+		return false
+	default:
+		return false
+	}
+}
+
+func mongoMemoryArchiveMatch(archived registryepisodic.ArchiveFilter) bson.M {
+	switch archived {
+	case registryepisodic.ArchiveFilterInclude:
+		return bson.M{"$or": bson.A{
+			bson.M{"archived_at": bson.M{"$exists": false}},
+			bson.M{"deleted_reason": int32(1)},
+		}}
+	case registryepisodic.ArchiveFilterOnly:
+		return bson.M{"deleted_reason": int32(1)}
+	default:
+		return bson.M{"archived_at": bson.M{"$exists": false}}
+	}
+}
+
+// PutMemory upserts a memory. The previous active row is archived first.
 func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
 	nsEncoded, err := encodeNS(req.Namespace)
 	if err != nil {
@@ -291,19 +323,19 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 	// Set deleted_reason=0 (superseded by update) and reset indexed_at.
 	deletedReason0 := int32(0)
 	activeFilter := bson.M{
-		"namespace":  nsEncoded,
-		"key":        req.Key,
-		"deleted_at": bson.M{"$exists": false},
+		"namespace":   nsEncoded,
+		"key":         req.Key,
+		"archived_at": bson.M{"$exists": false},
 	}
 	updateResult, err := s.col.UpdateMany(ctx, activeFilter, bson.M{
-		"$set":   bson.M{"deleted_at": now, "deleted_reason": deletedReason0},
+		"$set":   bson.M{"archived_at": now, "deleted_reason": deletedReason0},
 		"$unset": bson.M{"indexed_at": ""},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("soft-delete previous memory: %w", err)
+		return nil, fmt.Errorf("archive previous memory: %w", err)
 	}
 
-	// kind=0 (add) if no previous row existed; kind=1 (update) if one was soft-deleted.
+	// kind=0 (add) if no previous row existed; kind=1 (update) if one was archived.
 	var kind int32
 	if updateResult.ModifiedCount > 0 {
 		kind = 1
@@ -336,24 +368,26 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 	}, nil
 }
 
-// GetMemory retrieves the active (non-deleted) memory for the given (namespace, key).
-func (s *mongoEpisodicStore) GetMemory(ctx context.Context, namespace []string, key string) (*registryepisodic.MemoryItem, error) {
+// GetMemory retrieves the current memory for the given (namespace, key).
+func (s *mongoEpisodicStore) GetMemory(ctx context.Context, namespace []string, key string, archived registryepisodic.ArchiveFilter) (*registryepisodic.MemoryItem, error) {
 	nsEncoded, err := encodeNS(namespace)
 	if err != nil {
 		return nil, err
 	}
 
-	filter := bson.M{
-		"namespace":  nsEncoded,
-		"key":        key,
-		"deleted_at": bson.M{"$exists": false},
-	}
 	var doc memoryDoc
-	if err := s.col.FindOne(ctx, filter).Decode(&doc); err != nil {
+	if err := s.col.FindOne(
+		ctx,
+		bson.M{"namespace": nsEncoded, "key": key},
+		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}),
+	).Decode(&doc); err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get memory: %w", err)
+	}
+	if !matchesMemoryArchiveFilter(doc.ArchivedAt, doc.DeletedReason, archived) {
+		return nil, nil
 	}
 	return s.docToItem(doc, namespace)
 }
@@ -482,8 +516,8 @@ func (s *mongoEpisodicStore) ListTopMemoryUsage(ctx context.Context, req registr
 	return out, cursor.Err()
 }
 
-// DeleteMemory soft-deletes the active memory for the given (namespace, key).
-func (s *mongoEpisodicStore) DeleteMemory(ctx context.Context, namespace []string, key string) error {
+// ArchiveMemory archives the active memory for the given (namespace, key).
+func (s *mongoEpisodicStore) ArchiveMemory(ctx context.Context, namespace []string, key string) error {
 	nsEncoded, err := encodeNS(namespace)
 	if err != nil {
 		return err
@@ -491,34 +525,46 @@ func (s *mongoEpisodicStore) DeleteMemory(ctx context.Context, namespace []strin
 
 	deletedReason1 := int32(1)
 	filter := bson.M{
-		"namespace":  nsEncoded,
-		"key":        key,
-		"deleted_at": bson.M{"$exists": false},
+		"namespace":   nsEncoded,
+		"key":         key,
+		"archived_at": bson.M{"$exists": false},
 	}
 	_, err = s.col.UpdateMany(ctx, filter, bson.M{
-		"$set":   bson.M{"deleted_at": time.Now(), "deleted_reason": deletedReason1},
+		"$set":   bson.M{"archived_at": time.Now(), "deleted_reason": deletedReason1},
 		"$unset": bson.M{"indexed_at": ""},
 	})
 	return err
 }
 
 // SearchMemories performs attribute-filter-only search within the namespace prefix.
-func (s *mongoEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix []string, filter map[string]interface{}, limit, offset int) ([]registryepisodic.MemoryItem, error) {
+func (s *mongoEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix []string, filter map[string]interface{}, limit, offset int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	nsEncoded, err := encodeNS(namespacePrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	f := nsPrefixFilter(nsEncoded)
-	f["deleted_at"] = bson.M{"$exists": false}
-	applyMongoFilter(f, filter)
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: nsPrefixFilter(nsEncoded)}},
+		{{Key: "$sort", Value: bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: bson.D{{Key: "namespace", Value: "$namespace"}, {Key: "key", Value: "$key"}}},
+			{Key: "doc", Value: bson.D{{Key: "$first", Value: "$$ROOT"}}},
+		}}},
+		{{Key: "$replaceRoot", Value: bson.D{{Key: "newRoot", Value: "$doc"}}}},
+		{{Key: "$match", Value: mongoMemoryArchiveMatch(archived)}},
+	}
+	if len(filter) > 0 {
+		match := bson.M{}
+		applyMongoFilter(match, filter)
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: match}})
+	}
+	pipeline = append(pipeline,
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}}},
+		bson.D{{Key: "$skip", Value: int64(offset)}},
+		bson.D{{Key: "$limit", Value: int64(limit)}},
+	)
 
-	opts := options.Find().
-		SetSort(bson.D{{Key: "created_at", Value: -1}}).
-		SetSkip(int64(offset)).
-		SetLimit(int64(limit))
-
-	cursor, err := s.col.Find(ctx, f, opts)
+	cursor, err := s.col.Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, fmt.Errorf("search memories: %w", err)
 	}
@@ -542,21 +588,45 @@ func (s *mongoEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix
 	return items, cursor.Err()
 }
 
-// ListNamespaces returns distinct active namespaces matching the prefix/suffix constraints.
+// ListNamespaces returns distinct current namespaces matching the prefix/suffix constraints.
 func (s *mongoEpisodicStore) ListNamespaces(ctx context.Context, req registryepisodic.ListNamespacesRequest) ([][]string, error) {
-	prefixFilter := bson.M{}
+	pipeline := mongo.Pipeline{}
 	if len(req.Prefix) > 0 {
 		nsEncoded, err := encodeNS(req.Prefix)
 		if err != nil {
 			return nil, err
 		}
-		prefixFilter = nsPrefixFilter(nsEncoded)
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: nsPrefixFilter(nsEncoded)}})
 	}
-	prefixFilter["deleted_at"] = bson.M{"$exists": false}
+	pipeline = append(pipeline,
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}}},
+		bson.D{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: bson.D{{Key: "namespace", Value: "$namespace"}, {Key: "key", Value: "$key"}}},
+			{Key: "doc", Value: bson.D{{Key: "$first", Value: "$$ROOT"}}},
+		}}},
+		bson.D{{Key: "$replaceRoot", Value: bson.D{{Key: "newRoot", Value: "$doc"}}}},
+		bson.D{{Key: "$match", Value: mongoMemoryArchiveMatch(req.Archived)}},
+		bson.D{{Key: "$project", Value: bson.M{"namespace": 1}}},
+	)
 
-	var rawNS []string
-	if err := s.col.Distinct(ctx, "namespace", prefixFilter).Decode(&rawNS); err != nil && err != mongo.ErrNoDocuments {
+	cursor, err := s.col.Aggregate(ctx, pipeline)
+	if err != nil {
 		return nil, fmt.Errorf("list namespaces: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	rawNS := []string{}
+	for cursor.Next(ctx) {
+		var row struct {
+			Namespace string `bson:"namespace"`
+		}
+		if err := cursor.Decode(&row); err != nil {
+			continue
+		}
+		rawNS = append(rawNS, row.Namespace)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, err
 	}
 
 	seen := make(map[string]bool)
@@ -585,7 +655,8 @@ func (s *mongoEpisodicStore) ListNamespaces(ctx context.Context, req registryepi
 }
 
 // FindMemoriesPendingIndexing returns memories where indexed_at is absent.
-// Value is decrypted for active rows; nil for soft-deleted rows.
+// Archived rows remain eligible so the indexer can either preserve archived-search vectors
+// or remove vectors for expired/superseded rows based on deleted_reason.
 func (s *mongoEpisodicStore) FindMemoriesPendingIndexing(ctx context.Context, limit int) ([]registryepisodic.PendingMemory, error) {
 	filter := bson.M{"indexed_at": bson.M{"$exists": false}}
 	opts := options.Find().SetLimit(int64(limit))
@@ -607,7 +678,8 @@ func (s *mongoEpisodicStore) FindMemoriesPendingIndexing(ctx context.Context, li
 			Namespace:        doc.Namespace,
 			PolicyAttributes: doc.PolicyAttributes,
 			IndexedContent:   doc.IndexedContent,
-			DeletedAt:        doc.DeletedAt,
+			ArchivedAt:       doc.ArchivedAt,
+			DeletedReason:    doc.DeletedReason,
 		}
 		id, err := uuid.Parse(doc.ID)
 		if err != nil {
@@ -644,6 +716,7 @@ func (s *mongoEpisodicStore) UpsertMemoryVectors(ctx context.Context, items []re
 				MemoryID:         item.MemoryID.String(),
 				FieldName:        item.FieldName,
 				Namespace:        item.Namespace,
+				Archived:         item.Archived,
 				PolicyAttributes: item.PolicyAttributes,
 				Embedding:        item.Embedding,
 			},
@@ -665,15 +738,21 @@ func (s *mongoEpisodicStore) DeleteMemoryVectors(ctx context.Context, memoryID u
 }
 
 // SearchMemoryVectors searches memory_vectors using in-memory cosine scoring.
-func (s *mongoEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int) ([]registryepisodic.MemoryVectorSearch, error) {
+func (s *mongoEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
 	if s.qdrant != nil {
-		return s.qdrant.SearchMemoryVectors(ctx, namespacePrefix, embedding, filter, limit)
+		return s.qdrant.SearchMemoryVectors(ctx, namespacePrefix, embedding, filter, limit, archived)
 	}
 	if limit <= 0 || len(embedding) == 0 {
 		return nil, nil
 	}
 	f := nsPrefixFilter(namespacePrefix)
 	applyMongoFilter(f, filter)
+	switch archived {
+	case registryepisodic.ArchiveFilterOnly:
+		f["archived"] = true
+	case registryepisodic.ArchiveFilterExclude:
+		f["archived"] = false
+	}
 
 	cursor, err := s.vectors.Find(ctx, f)
 	if err != nil {
@@ -717,8 +796,8 @@ func (s *mongoEpisodicStore) SearchMemoryVectors(ctx context.Context, namespaceP
 	return results, nil
 }
 
-// GetMemoriesByIDs retrieves active memories by UUID.
-func (s *mongoEpisodicStore) GetMemoriesByIDs(ctx context.Context, ids []uuid.UUID) ([]registryepisodic.MemoryItem, error) {
+// GetMemoriesByIDs retrieves current memories by UUID.
+func (s *mongoEpisodicStore) GetMemoriesByIDs(ctx context.Context, ids []uuid.UUID, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -727,8 +806,7 @@ func (s *mongoEpisodicStore) GetMemoriesByIDs(ctx context.Context, ids []uuid.UU
 		strIDs[i] = id.String()
 	}
 	filter := bson.M{
-		"_id":        bson.M{"$in": strIDs},
-		"deleted_at": bson.M{"$exists": false},
+		"_id": bson.M{"$in": strIDs},
 	}
 	cursor, err := s.col.Find(ctx, filter)
 	if err != nil {
@@ -743,6 +821,9 @@ func (s *mongoEpisodicStore) GetMemoriesByIDs(ctx context.Context, ids []uuid.UU
 			log.Warn("Decode memory by id", "err", err)
 			continue
 		}
+		if !matchesMemoryArchiveFilter(doc.ArchivedAt, doc.DeletedReason, archived) {
+			continue
+		}
 		ns, _ := episodic.DecodeNamespace(doc.Namespace)
 		item, err := s.docToItem(doc, ns)
 		if err != nil {
@@ -754,16 +835,16 @@ func (s *mongoEpisodicStore) GetMemoriesByIDs(ctx context.Context, ids []uuid.UU
 	return items, cursor.Err()
 }
 
-// ExpireMemories soft-deletes memories whose TTL has elapsed.
+// ExpireMemories archives memories whose TTL has elapsed.
 func (s *mongoEpisodicStore) ExpireMemories(ctx context.Context) (int64, error) {
 	now := time.Now()
 	deletedReason2 := int32(2)
 	filter := bson.M{
-		"expires_at": bson.M{"$lte": now},
-		"deleted_at": bson.M{"$exists": false},
+		"expires_at":  bson.M{"$lte": now},
+		"archived_at": bson.M{"$exists": false},
 	}
 	result, err := s.col.UpdateMany(ctx, filter, bson.M{
-		"$set":   bson.M{"deleted_at": now, "deleted_reason": deletedReason2},
+		"$set":   bson.M{"archived_at": now, "deleted_reason": deletedReason2},
 		"$unset": bson.M{"indexed_at": ""},
 	})
 	if err != nil {
@@ -780,7 +861,7 @@ func (s *mongoEpisodicStore) HardDeleteEvictableUpdates(ctx context.Context, lim
 		"indexed_at":     bson.M{"$exists": true},
 	}
 	opts := options.Find().
-		SetSort(bson.D{{Key: "deleted_at", Value: 1}}).
+		SetSort(bson.D{{Key: "archived_at", Value: 1}}).
 		SetLimit(int64(limit)).
 		SetProjection(bson.M{"_id": 1})
 
@@ -821,7 +902,7 @@ func (s *mongoEpisodicStore) TombstoneDeletedMemories(ctx context.Context, limit
 		"value_encrypted": bson.M{"$exists": true},
 	}
 	opts := options.Find().
-		SetSort(bson.D{{Key: "deleted_at", Value: 1}}).
+		SetSort(bson.D{{Key: "archived_at", Value: 1}}).
 		SetLimit(int64(limit)).
 		SetProjection(bson.M{"_id": 1})
 
@@ -862,10 +943,10 @@ func (s *mongoEpisodicStore) HardDeleteExpiredTombstones(ctx context.Context, ol
 	filter := bson.M{
 		"deleted_reason":  bson.M{"$in": bson.A{int32(1), int32(2)}},
 		"value_encrypted": bson.M{"$exists": false},
-		"deleted_at":      bson.M{"$lte": olderThan},
+		"archived_at":     bson.M{"$lte": olderThan},
 	}
 	opts := options.Find().
-		SetSort(bson.D{{Key: "deleted_at", Value: 1}}).
+		SetSort(bson.D{{Key: "archived_at", Value: 1}}).
 		SetLimit(int64(limit)).
 		SetProjection(bson.M{"_id": 1})
 
@@ -898,7 +979,7 @@ func (s *mongoEpisodicStore) HardDeleteExpiredTombstones(ctx context.Context, ol
 }
 
 // ListMemoryEvents returns a paginated, time-ordered stream of memory lifecycle events.
-// Write events come from rows with kind IN (0,1); delete/expired events from deleted_reason IN (1,2).
+// Write events come from rows with kind IN (0,1); archive updates/expired events come from deleted_reason IN (1,2).
 // Uses two separate queries merged and sorted in memory.
 func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registryepisodic.ListEventsRequest) (*registryepisodic.MemoryEventPage, error) {
 	limit := req.Limit
@@ -924,17 +1005,15 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 	}
 
 	// Determine which kinds to include.
-	includeAdd, includeUpdate, includeDelete, includeExpired := true, true, true, true
+	includeAdd, includeUpdate, includeExpired := true, true, true
 	if len(req.Kinds) > 0 {
-		includeAdd, includeUpdate, includeDelete, includeExpired = false, false, false, false
+		includeAdd, includeUpdate, includeExpired = false, false, false
 		for _, k := range req.Kinds {
 			switch k {
 			case registryepisodic.EventKindAdd:
 				includeAdd = true
 			case registryepisodic.EventKindUpdate:
 				includeUpdate = true
-			case registryepisodic.EventKindDelete:
-				includeDelete = true
 			case registryepisodic.EventKindExpired:
 				includeExpired = true
 			}
@@ -1051,35 +1130,27 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 		}
 	}
 
-	// Query delete/expired events.
-	deleteReasons := bson.A{}
-	if includeDelete {
-		deleteReasons = append(deleteReasons, int32(1))
-	}
-	if includeExpired {
-		deleteReasons = append(deleteReasons, int32(2))
-	}
-	if len(deleteReasons) > 0 {
-		deleteFilter := mergeBsonM(
-			bson.M{"deleted_reason": bson.M{"$in": deleteReasons}},
-			buildTimeCond("deleted_at"),
-			buildCursorCond("deleted_at"),
+	if includeUpdate {
+		updateFilter := mergeBsonM(
+			bson.M{"deleted_reason": int32(1)},
+			buildTimeCond("archived_at"),
+			buildCursorCond("archived_at"),
 		)
 		if nsPrefixF != nil {
-			deleteFilter = mergeBsonM(deleteFilter, nsPrefixF)
+			updateFilter = mergeBsonM(updateFilter, nsPrefixF)
 		}
-		deleteCursor, err := s.col.Find(ctx, deleteFilter,
+		updateCursor, err := s.col.Find(ctx, updateFilter,
 			options.Find().
-				SetSort(bson.D{{Key: "deleted_at", Value: 1}, {Key: "_id", Value: 1}}).
+				SetSort(bson.D{{Key: "archived_at", Value: 1}, {Key: "_id", Value: 1}}).
 				SetLimit(int64(fetchN)),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("list delete events: %w", err)
+			return nil, fmt.Errorf("list archive-update events: %w", err)
 		}
-		defer deleteCursor.Close(ctx)
-		for deleteCursor.Next(ctx) {
+		defer updateCursor.Close(ctx)
+		for updateCursor.Next(ctx) {
 			var doc memoryDoc
-			if err := deleteCursor.Decode(&doc); err != nil {
+			if err := updateCursor.Decode(&doc); err != nil {
 				continue
 			}
 			id, err := uuid.Parse(doc.ID)
@@ -1087,16 +1158,50 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 				continue
 			}
 			ns, _ := episodic.DecodeNamespace(doc.Namespace)
-			kindStr := registryepisodic.EventKindDelete
-			if doc.DeletedReason != nil && *doc.DeletedReason == 2 {
-				kindStr = registryepisodic.EventKindExpired
-			}
 			allItems = append(allItems, eventItem{
-				id: id, namespace: ns, key: doc.Key, kind: kindStr,
-				occurredAt: *doc.DeletedAt, expiresAt: doc.ExpiresAt,
+				id: id, namespace: ns, key: doc.Key, kind: registryepisodic.EventKindUpdate,
+				occurredAt: *doc.ArchivedAt, valueEnc: doc.ValueEncrypted,
+				attrs: doc.PolicyAttributes, expiresAt: doc.ExpiresAt,
 			})
 		}
-		if err := deleteCursor.Err(); err != nil {
+		if err := updateCursor.Err(); err != nil {
+			return nil, err
+		}
+	}
+	if includeExpired {
+		expiredFilter := mergeBsonM(
+			bson.M{"deleted_reason": int32(2)},
+			buildTimeCond("archived_at"),
+			buildCursorCond("archived_at"),
+		)
+		if nsPrefixF != nil {
+			expiredFilter = mergeBsonM(expiredFilter, nsPrefixF)
+		}
+		expiredCursor, err := s.col.Find(ctx, expiredFilter,
+			options.Find().
+				SetSort(bson.D{{Key: "archived_at", Value: 1}, {Key: "_id", Value: 1}}).
+				SetLimit(int64(fetchN)),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("list expired events: %w", err)
+		}
+		defer expiredCursor.Close(ctx)
+		for expiredCursor.Next(ctx) {
+			var doc memoryDoc
+			if err := expiredCursor.Decode(&doc); err != nil {
+				continue
+			}
+			id, err := uuid.Parse(doc.ID)
+			if err != nil {
+				continue
+			}
+			ns, _ := episodic.DecodeNamespace(doc.Namespace)
+			allItems = append(allItems, eventItem{
+				id: id, namespace: ns, key: doc.Key, kind: registryepisodic.EventKindExpired,
+				occurredAt: *doc.ArchivedAt, expiresAt: doc.ExpiresAt,
+			})
+		}
+		if err := expiredCursor.Err(); err != nil {
 			return nil, err
 		}
 	}
@@ -1158,7 +1263,7 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 	}, nil
 }
 
-// AdminGetMemoryByID retrieves any memory (active or soft-deleted) by UUID.
+// AdminGetMemoryByID retrieves any memory (active or archived) by UUID.
 func (s *mongoEpisodicStore) AdminGetMemoryByID(ctx context.Context, memoryID uuid.UUID) (*registryepisodic.MemoryItem, error) {
 	var doc memoryDoc
 	if err := s.col.FindOne(ctx, bson.M{"_id": memoryID.String()}).Decode(&doc); err != nil {
@@ -1209,6 +1314,7 @@ func (s *mongoEpisodicStore) docToItem(doc memoryDoc, namespace []string) (*regi
 		Attributes: doc.PolicyAttributes,
 		CreatedAt:  doc.CreatedAt,
 		ExpiresAt:  doc.ExpiresAt,
+		ArchivedAt: doc.ArchivedAt,
 	}, nil
 }
 

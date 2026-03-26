@@ -12,6 +12,26 @@ import (
 	"github.com/google/uuid"
 )
 
+func ConversationDeletedEvents(groups []registrystore.DeletedConversationGroup) []registryeventbus.Event {
+	events := make([]registryeventbus.Event, 0)
+	for _, group := range groups {
+		for _, conversationID := range group.ConversationIDs {
+			events = append(events, registryeventbus.Event{
+				Event: "deleted",
+				Kind:  "conversation",
+				Data: map[string]any{
+					"conversation":       conversationID,
+					"conversation_group": group.ConversationGroupID,
+					"members":            group.MemberUserIDs,
+				},
+				ConversationGroupID: group.ConversationGroupID,
+				UserIDs:             append([]string(nil), group.MemberUserIDs...),
+			})
+		}
+	}
+	return events
+}
+
 // AppendOutboxEvents writes normalized business events into the store-backed
 // outbox when the datastore supports that optional capability.
 func AppendOutboxEvents(ctx context.Context, store registrystore.MemoryStore, events ...registryeventbus.Event) ([]registryeventbus.Event, bool, error) {

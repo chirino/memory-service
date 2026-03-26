@@ -25,7 +25,7 @@ Frontend assets are served from `frontends/chat-frontend/dist` (override with `C
 - `GET /v1/conversations/{conversation_id}/resume`
 - `POST /v1/conversations/{conversation_id}/cancel`
 - `GET /v1/conversations`
-- `GET|PATCH|DELETE /v1/conversations/{conversation_id}`
+- `GET|PATCH /v1/conversations/{conversation_id}`
 - `GET /v1/conversations/{conversation_id}/entries`
 - `GET /v1/conversations/{conversation_id}/forks`
 - `GET|POST /v1/conversations/{conversation_id}/memberships`

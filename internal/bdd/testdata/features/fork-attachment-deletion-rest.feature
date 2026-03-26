@@ -32,8 +32,8 @@ Feature: Fork with attachment deletion edge cases REST API
     # Upload a NEW attachment (not linked to any entry yet), then DELETE it
     When I upload a file "deleted.png" with content type "image/png" and content "deleted-data"
     Then the response status should be 201
-    And set "deletedAttachmentId" to the json response field "id"
-    When I call DELETE "/v1/attachments/${deletedAttachmentId}"
+    And set "archivedAttachmentId" to the json response field "id"
+    When I call DELETE "/v1/attachments/${archivedAttachmentId}"
     Then the response status should be 204
 
     # Try to create an entry referencing the deleted attachment — should fail with 404
@@ -45,7 +45,7 @@ Feature: Fork with attachment deletion edge cases REST API
       "content": [{
         "role": "USER",
         "text": "Reference deleted file",
-        "attachments": [{"attachmentId": "${deletedAttachmentId}", "contentType": "image/png", "name": "deleted.png"}]
+        "attachments": [{"attachmentId": "${archivedAttachmentId}", "contentType": "image/png", "name": "deleted.png"}]
       }]
     }
     """

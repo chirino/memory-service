@@ -518,7 +518,7 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Sources:     cli.EnvVars("MEMORY_SERVICE_EPISODIC_EVICTION_BATCH_SIZE"),
 			Destination: &cfg.EpisodicEvictionBatchSize,
 			Value:       cfg.EpisodicEvictionBatchSize,
-			Usage:       "Max soft-deleted rows processed per episodic eviction pass",
+			Usage:       "Max archived rows processed per episodic eviction pass",
 		},
 		&cli.DurationFlag{
 			Name:        "episodic-tombstone-retention",

@@ -26,7 +26,7 @@ That leaves a gap for operational questions that are about current persisted sta
 - how many outbox rows are retained right now?
 - how old is the oldest retained outbox row?
 - how many conversation groups, conversations, entries, and memories exist right now?
-- how many soft-deleted conversation groups and memories are still awaiting retention cleanup?
+- how many archived conversation groups and memories are still awaiting retention cleanup?
 
 Those values should come from the configured datastores directly, not from Prometheus queries, because:
 
@@ -60,8 +60,8 @@ Return:
 {
   "conversationGroups": {
     "total": 120,
-    "softDeleted": 7,
-    "oldestSoftDeletedAt": "2026-03-25T09:15:00Z"
+    "archived": 7,
+    "oldestArchivedAt": "2026-03-25T09:15:00Z"
   },
   "conversations": {
     "total": 185
@@ -71,8 +71,8 @@ Return:
   },
   "memories": {
     "total": 93,
-    "softDeleted": 11,
-    "oldestSoftDeletedAt": "2026-03-25T09:45:00Z"
+    "archived": 11,
+    "oldestArchivedAt": "2026-03-25T09:45:00Z"
   },
   "outboxEvents": {
     "total": 422,
@@ -85,14 +85,14 @@ Field semantics:
 
 | Field | Meaning |
 | --- | --- |
-| `conversationGroups.total` | Active conversation groups where `deleted_at` is not set |
-| `conversationGroups.softDeleted` | Conversation groups where `deleted_at` is set |
-| `conversationGroups.oldestSoftDeletedAt` | Oldest `updatedAt` timestamp among soft-deleted conversations, or `null` when none are soft-deleted |
-| `conversations.total` | Active conversations where `deleted_at` is not set |
+| `conversationGroups.total` | Active conversation groups where `archived_at` is not set |
+| `conversationGroups.archived` | Conversation groups where `archived_at` is set |
+| `conversationGroups.oldestArchivedAt` | Oldest `updatedAt` timestamp among archived conversations, or `null` when none are archived |
+| `conversations.total` | Active conversations where `archived_at` is not set |
 | `entries.total` | Total stored entry rows |
-| `memories.total` | Active episodic memory rows where `deleted_at` is not set |
-| `memories.softDeleted` | Soft-deleted episodic memory rows where `deleted_at` is set |
-| `memories.oldestSoftDeletedAt` | Oldest memory soft-delete timestamp, or `null` when no memories are soft-deleted |
+| `memories.total` | Active episodic memory rows where `archived_at` is not set |
+| `memories.archived` | Soft-deleted episodic memory rows where `archived_at` is set |
+| `memories.oldestArchivedAt` | Oldest memory archive timestamp, or `null` when no memories are archived |
 | `outboxEvents.total` | Total retained outbox rows |
 | `outboxEvents.oldestAt` | RFC 3339 timestamp of the oldest retained outbox row, or `null` when the outbox is empty |
 
@@ -112,8 +112,8 @@ Memory-store summary interface:
 type AdminStatsSummary struct {
     ConversationGroups struct {
         Total               int64
-        SoftDeleted         int64
-        OldestSoftDeletedAt *time.Time
+        Archived         int64
+        OldestArchivedAt *time.Time
     }
     Conversations struct {
         Total int64
@@ -137,7 +137,7 @@ Episodic-store summary interface:
 ```go
 type AdminMemoryStatsSummary struct {
     MemoriesTotal       int64
-    MemoriesSoftDeleted int64
+    MemoriesArchived int64
 }
 
 type AdminMemoryStatsSummaryProvider interface {
@@ -188,11 +188,11 @@ Feature: Admin stats summary REST API
     When I call GET "/v1/admin/stats/summary"
     Then the response status should be 200
     And the response body field "conversationGroups.total" should not be null
-    And the response body field "conversationGroups.softDeleted" should not be null
+    And the response body field "conversationGroups.archived" should not be null
     And the response body field "conversations.total" should not be null
     And the response body field "entries.total" should not be null
     And the response body field "memories.total" should not be null
-    And the response body field "memories.softDeleted" should not be null
+    And the response body field "memories.archived" should not be null
 
   Scenario: Auditor can fetch summary stats
     Given I am authenticated as auditor user "charlie"
@@ -216,7 +216,7 @@ Feature: Admin stats summary REST API
 - PostgreSQL memory-store summary query returns expected counts
 - SQLite memory-store summary query returns expected counts
 - Mongo memory-store summary query returns expected counts
-- episodic summary queries distinguish active vs soft-deleted memories
+- episodic summary queries distinguish active vs archived memories
 - outbox summary returns `oldestAt = null` when the outbox is empty
 - summary response returns `outboxEvents = null` when outbox support is disabled or unavailable
 - metrics wrapper forwards the optional summary interfaces

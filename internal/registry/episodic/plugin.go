@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,6 +44,7 @@ type MemoryItem struct {
 	Usage      *MemoryUsage           `json:"usage,omitempty"`
 	CreatedAt  time.Time              `json:"createdAt"`
 	ExpiresAt  *time.Time             `json:"expiresAt"`
+	ArchivedAt *time.Time             `json:"archivedAt,omitempty"`
 }
 
 // MemoryUsage stores usage counters for one (namespace, key) pair.
@@ -52,9 +54,9 @@ type MemoryUsage struct {
 }
 
 type AdminMemoryStats struct {
-	Total               int64      `json:"total"`
-	SoftDeleted         int64      `json:"softDeleted"`
-	OldestSoftDeletedAt *time.Time `json:"oldestSoftDeletedAt"`
+	Total            int64      `json:"total"`
+	Archived         int64      `json:"archived"`
+	OldestArchivedAt *time.Time `json:"oldestArchivedAt"`
 }
 
 type AdminStatsSummary struct {
@@ -115,6 +117,8 @@ type SearchRequest struct {
 	Limit int `json:"limit,omitempty"`
 	// Offset is the pagination offset (attribute-only mode only).
 	Offset int `json:"offset,omitempty"`
+	// Archived controls whether archived memories are excluded, included, or returned exclusively.
+	Archived ArchiveFilter `json:"archived,omitempty"`
 }
 
 // ListNamespacesRequest is the input for GET /v1/memories/namespaces.
@@ -122,6 +126,29 @@ type ListNamespacesRequest struct {
 	Prefix   []string
 	Suffix   []string
 	MaxDepth int
+	Archived ArchiveFilter
+}
+
+type ArchiveFilter string
+
+const (
+	ArchiveFilterExclude ArchiveFilter = "exclude"
+	ArchiveFilterInclude ArchiveFilter = "include"
+	ArchiveFilterOnly    ArchiveFilter = "only"
+)
+
+func ParseArchiveFilter(raw string) (ArchiveFilter, error) {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	switch ArchiveFilter(value) {
+	case "", ArchiveFilterExclude:
+		return ArchiveFilterExclude, nil
+	case ArchiveFilterInclude:
+		return ArchiveFilterInclude, nil
+	case ArchiveFilterOnly:
+		return ArchiveFilterOnly, nil
+	default:
+		return "", fmt.Errorf("invalid archive filter %q; expected exclude, include, or only", raw)
+	}
 }
 
 // MemoryVectorUpsert holds the data for upserting a vector embedding.
@@ -130,6 +157,7 @@ type MemoryVectorUpsert struct {
 	FieldName        string
 	Namespace        string // RS-encoded
 	PolicyAttributes map[string]interface{}
+	Archived         bool
 	Embedding        []float32
 }
 
@@ -145,14 +173,14 @@ type PendingMemory struct {
 	Namespace        string // RS-encoded
 	PolicyAttributes map[string]interface{}
 	IndexedContent   map[string]string
-	DeletedAt        *time.Time
+	ArchivedAt       *time.Time
+	DeletedReason    *int32
 }
 
 // Event kind constants for MemoryEvent.Kind.
 const (
 	EventKindAdd     = "add"
 	EventKindUpdate  = "update"
-	EventKindDelete  = "delete"
 	EventKindExpired = "expired"
 )
 
@@ -183,10 +211,10 @@ type MemoryEvent struct {
 	ID         uuid.UUID
 	Namespace  []string
 	Key        string
-	Kind       string                 // "add", "update", "delete", "expired"
-	OccurredAt time.Time              // created_at for add/update; deleted_at for delete/expired
-	Value      map[string]interface{} // nil for delete/expired tombstones
-	Attributes map[string]interface{} // nil for delete/expired tombstones
+	Kind       string                 // "add", "update", "expired"
+	OccurredAt time.Time              // created_at for add/update; archived_at for archive/expired
+	Value      map[string]interface{} // nil for expired tombstones
+	Attributes map[string]interface{} // nil for expired tombstones
 	ExpiresAt  *time.Time
 }
 
@@ -204,12 +232,12 @@ type EpisodicStore interface {
 	// InWriteTx runs fn in a write transaction scope.
 	InWriteTx(ctx context.Context, fn func(context.Context) error) error
 
-	// PutMemory upserts a memory. On update, the previous active row is soft-deleted.
+	// PutMemory upserts a memory. On update, the previous active row is archived.
 	PutMemory(ctx context.Context, req PutMemoryRequest) (*MemoryWriteResult, error)
 
-	// GetMemory retrieves the active (non-deleted) memory for the given (namespace, key).
-	// Returns nil, nil if no active row exists.
-	GetMemory(ctx context.Context, namespace []string, key string) (*MemoryItem, error)
+	// GetMemory retrieves the current memory for the given (namespace, key), filtered by archive state.
+	// Returns nil, nil if no matching current row exists.
+	GetMemory(ctx context.Context, namespace []string, key string, archived ArchiveFilter) (*MemoryItem, error)
 
 	// IncrementMemoryLoads increments direct-fetch usage counters for one or more memory keys.
 	IncrementMemoryLoads(ctx context.Context, keys []MemoryKey, fetchedAt time.Time) error
@@ -221,15 +249,15 @@ type EpisodicStore interface {
 	// ListTopMemoryUsage returns ranked usage rows under an optional namespace prefix.
 	ListTopMemoryUsage(ctx context.Context, req ListTopMemoryUsageRequest) ([]TopMemoryUsageItem, error)
 
-	// DeleteMemory soft-deletes the active memory for the given (namespace, key).
+	// ArchiveMemory archives the active memory for the given (namespace, key).
 	// Returns nil if no active row exists (idempotent).
-	DeleteMemory(ctx context.Context, namespace []string, key string) error
+	ArchiveMemory(ctx context.Context, namespace []string, key string) error
 
 	// SearchMemories performs an attribute-filter-only search within the namespace prefix.
 	// filter is a parsed attribute filter map (nil = no filter).
-	SearchMemories(ctx context.Context, namespacePrefix []string, filter map[string]interface{}, limit, offset int) ([]MemoryItem, error)
+	SearchMemories(ctx context.Context, namespacePrefix []string, filter map[string]interface{}, limit, offset int, archived ArchiveFilter) ([]MemoryItem, error)
 
-	// ListNamespaces returns the distinct active namespaces that match the prefix/suffix constraints.
+	// ListNamespaces returns the distinct current namespaces that match the prefix/suffix constraints.
 	ListNamespaces(ctx context.Context, req ListNamespacesRequest) ([][]string, error)
 
 	// --- Background indexer support ---
@@ -250,14 +278,14 @@ type EpisodicStore interface {
 
 	// SearchMemoryVectors performs ANN search within the namespace prefix,
 	// optionally filtered by policy_attributes. Returns memory IDs ranked by score.
-	SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int) ([]MemoryVectorSearch, error)
+	SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int, archived ArchiveFilter) ([]MemoryVectorSearch, error)
 
-	// GetMemoriesByIDs retrieves active memories by UUID, decrypting values.
-	GetMemoriesByIDs(ctx context.Context, ids []uuid.UUID) ([]MemoryItem, error)
+	// GetMemoriesByIDs retrieves current memories by UUID, decrypting values and filtering by archive state.
+	GetMemoriesByIDs(ctx context.Context, ids []uuid.UUID, archived ArchiveFilter) ([]MemoryItem, error)
 
 	// --- TTL / eviction ---
 
-	// ExpireMemories soft-deletes memories whose expires_at <= NOW() and sets indexed_at = NULL.
+	// ExpireMemories archives memories whose expires_at <= NOW() and sets indexed_at = NULL.
 	ExpireMemories(ctx context.Context) (int64, error)
 
 	// HardDeleteEvictableUpdates hard-deletes rows with deleted_reason=0 (superseded by update)
@@ -269,7 +297,7 @@ type EpisodicStore interface {
 	TombstoneDeletedMemories(ctx context.Context, limit int) (int64, error)
 
 	// HardDeleteExpiredTombstones hard-deletes tombstone rows (deleted_reason IN (1,2),
-	// value_encrypted IS NULL) whose deleted_at is older than olderThan. Returns the number deleted.
+	// value_encrypted IS NULL) whose archived_at is older than olderThan. Returns the number deleted.
 	HardDeleteExpiredTombstones(ctx context.Context, olderThan time.Time, limit int) (int64, error)
 
 	// --- Event timeline ---
@@ -279,7 +307,7 @@ type EpisodicStore interface {
 
 	// --- Admin ---
 
-	// AdminGetMemoryByID retrieves any memory (active or soft-deleted) by UUID.
+	// AdminGetMemoryByID retrieves any memory (active or archived) by UUID.
 	AdminGetMemoryByID(ctx context.Context, memoryID uuid.UUID) (*MemoryItem, error)
 
 	// AdminForceDeleteMemory hard-deletes a memory by UUID regardless of state.

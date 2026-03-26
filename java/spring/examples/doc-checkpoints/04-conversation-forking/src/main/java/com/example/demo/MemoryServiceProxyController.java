@@ -41,8 +41,9 @@ class MemoryServiceProxyController {
             @RequestParam(value = "mode", required = false) String mode,
             @RequestParam(value = "afterCursor", required = false) String afterCursor,
             @RequestParam(value = "limit", required = false) Integer limit,
-            @RequestParam(value = "query", required = false) String query) {
-        return proxy.listConversations(mode, afterCursor, limit, query);
+            @RequestParam(value = "query", required = false) String query,
+            @RequestParam(value = "archived", required = false) String archived) {
+        return proxy.listConversations(mode, afterCursor, limit, query, archived);
     }
 
     @GetMapping("/{conversationId}/forks")

@@ -255,6 +255,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
       afterCursor?: string | null;
       limit?: number | null;
       query?: string | null;
+      archived?: string | null;
     }): Promise<Response> {
       const qs = compactQuery(query);
       return memoryServiceRequest("GET", `/v1/conversations${qs}`, options);
