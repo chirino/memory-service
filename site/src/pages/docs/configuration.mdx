@@ -551,12 +551,12 @@ For semantic search capabilities, configure a vector store backend. The vector s
 
 > **Note:** A vector store requires an embedding provider. When a vector store is enabled, configure <Cfg p="--embedding-kind" e="MEMORY_SERVICE_EMBEDDING_KIND" /> to a value other than `none`. See [Embedding Configuration](#embedding-configuration).
 
-| Flag / Env Var                                           | Values                                 | Default | Description                            |
-| -------------------------------------------------------- | -------------------------------------- | ------- | -------------------------------------- |
-| <Cfg p="--vector-kind" e="MEMORY_SERVICE_VECTOR_KIND" /> | `none`, `pgvector`, `qdrant`, `sqlite` | `none`  | Vector store backend                   |
-| `MEMORY_SERVICE_VECTOR_MIGRATE_AT_START`                 | `true`, `false`                        | `true`  | Run vector store migrations at startup |
-| `MEMORY_SERVICE_SEARCH_SEMANTIC_ENABLED`                 | `true`, `false`                        | `true`  | Enable semantic (vector) search        |
-| `MEMORY_SERVICE_SEARCH_FULLTEXT_ENABLED`                 | `true`, `false`                        | `true`  | Enable full-text search                |
+| Flag / Env Var                                           | Values                                               | Default | Description                            |
+| -------------------------------------------------------- | ---------------------------------------------------- | ------- | -------------------------------------- |
+| <Cfg p="--vector-kind" e="MEMORY_SERVICE_VECTOR_KIND" /> | `none`, `pgvector`, `qdrant`, `sqlite`, `infinispan` | `none`  | Vector store backend                   |
+| `MEMORY_SERVICE_VECTOR_MIGRATE_AT_START`                 | `true`, `false`                                      | `true`  | Run vector store migrations at startup |
+| `MEMORY_SERVICE_SEARCH_SEMANTIC_ENABLED`                 | `true`, `false`                                      | `true`  | Enable semantic (vector) search        |
+| `MEMORY_SERVICE_SEARCH_FULLTEXT_ENABLED`                 | `true`, `false`                                      | `true`  | Enable full-text search                |
 
 ### Vector Store: pgvector Configuration
 
@@ -593,6 +593,37 @@ MEMORY_SERVICE_VECTOR_QDRANT_HOST=localhost:6334`}
 />
 
 By default, memory-service derives the collection name as `memory-service_<model>-<dimensions>`, for example `memory-service_openai-text-embedding-3-small-1536`. Set `MEMORY_SERVICE_VECTOR_QDRANT_COLLECTION_NAME` to force a specific collection.
+
+### Vector Store: Infinispan Configuration
+
+The `infinispan` vector backend uses the Infinispan REST API v3 for vector search. It is separate from the RESP-based cache and event-bus integration, so vector search uses its own URL and optional auth settings even when you already use Infinispan elsewhere in the service.
+
+- Requires Infinispan `16.1` or later for vector search support.
+- The default URL is `http://localhost:11222`.
+- If `MEMORY_SERVICE_VECTOR_INFINISPAN_CACHE_NAME` is unset, memory-service derives a cache name from the embedding model and dimensions.
+- `MEMORY_SERVICE_VECTOR_INFINISPAN_URL`, `MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME`, and `MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD` also accept the shared `MEMORY_SERVICE_INFINISPAN_*` connection values as fallbacks.
+
+| Flag / Env Var                                                                             | Default                  | Description                                     |
+| ------------------------------------------------------------------------------------------ | ------------------------ | ----------------------------------------------- |
+| <Cfg p="--vector-infinispan-url" e="MEMORY_SERVICE_VECTOR_INFINISPAN_URL" />               | `http://localhost:11222` | Infinispan REST endpoint URL                    |
+| <Cfg p="--vector-infinispan-cache-name" e="MEMORY_SERVICE_VECTOR_INFINISPAN_CACHE_NAME" /> | _(auto)_                 | Optional explicit cache name override           |
+| <Cfg p="--vector-infinispan-username" e="MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME" />     | _(none)_                 | Authentication username                         |
+| <Cfg p="--vector-infinispan-password" e="MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD" />     | _(none)_                 | Authentication password                         |
+| <Cfg p="--vector-infinispan-auth-type" e="MEMORY_SERVICE_VECTOR_INFINISPAN_AUTH_TYPE" />   | `digest`                 | Auth mechanism: `basic` or `digest`             |
+| <Cfg p="--vector-infinispan-use-tls" e="MEMORY_SERVICE_VECTOR_INFINISPAN_USE_TLS" />       | `false`                  | Enable TLS for the Infinispan vector connection |
+
+<ConfigBlock
+  property={`# Infinispan vector store
+--vector-kind=infinispan
+--vector-infinispan-url=http://localhost:11222
+--vector-infinispan-username=admin
+--vector-infinispan-password=password`}
+  env={`# Infinispan vector store
+MEMORY_SERVICE_VECTOR_KIND=infinispan
+MEMORY_SERVICE_VECTOR_INFINISPAN_URL=http://localhost:11222
+MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME=admin
+MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD=password`}
+/>
 
 ### Vector Store: SQLite Configuration
 
