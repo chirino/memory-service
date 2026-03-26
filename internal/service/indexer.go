@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/knowledge"
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/google/uuid"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
@@ -114,10 +115,10 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 		return
 	}
 
-	// Mark each entry as indexed and collect affected user IDs.
+	// Mark each entry as indexed and collect affected conversation group IDs.
 	now := time.Now()
 	count := 0
-	affectedUsers := map[string]bool{}
+	affectedGroups := map[uuid.UUID]bool{}
 	for _, c := range candidates {
 		if err := b.store.InWriteTx(ctx, func(writeCtx context.Context) error {
 			return b.store.SetIndexedAt(writeCtx, c.entry.ID, c.entry.ConversationGroupID, now)
@@ -126,21 +127,19 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 			continue
 		}
 		count++
-		if c.entry.UserID != nil {
-			affectedUsers[*c.entry.UserID] = true
-		}
+		affectedGroups[c.entry.ConversationGroupID] = true
 	}
 
 	if count > 0 {
 		log.Info("Indexer: indexed entries", "count", count)
 	}
 
-	// Trigger clustering for affected users.
-	if b.clusterer != nil && len(affectedUsers) > 0 {
-		userIDs := make([]string, 0, len(affectedUsers))
-		for uid := range affectedUsers {
-			userIDs = append(userIDs, uid)
+	// Trigger clustering for owners of affected conversations.
+	if b.clusterer != nil && len(affectedGroups) > 0 {
+		groupIDs := make([]uuid.UUID, 0, len(affectedGroups))
+		for gid := range affectedGroups {
+			groupIDs = append(groupIDs, gid)
 		}
-		b.clusterer.ClusterUsers(ctx, userIDs)
+		b.clusterer.ClusterByConversationGroups(ctx, groupIDs)
 	}
 }

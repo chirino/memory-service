@@ -240,6 +240,20 @@ func (s *PostgresKnowledgeStore) LoadTextsForSourceIDs(ctx context.Context, sour
 	return result, nil
 }
 
+func (s *PostgresKnowledgeStore) ResolveOwnersByConversationGroupIDs(ctx context.Context, groupIDs []uuid.UUID) ([]string, error) {
+	if len(groupIDs) == 0 {
+		return nil, nil
+	}
+	var users []string
+	err := s.db.WithContext(ctx).Raw(`
+		SELECT DISTINCT cm.user_id
+		FROM conversation_memberships cm
+		WHERE cm.conversation_group_id IN ?
+		AND cm.access_level = 'owner'
+	`, groupIDs).Scan(&users).Error
+	return users, err
+}
+
 func (s *PostgresKnowledgeStore) insertMembers(ctx context.Context, clusterID uuid.UUID, members []StoredClusterMember, now time.Time) error {
 	if len(members) == 0 {
 		return nil

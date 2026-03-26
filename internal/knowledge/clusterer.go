@@ -86,12 +86,20 @@ func (c *Clusterer) Trigger(ctx context.Context) (ClusterRunStats, error) {
 	return stats, nil
 }
 
-// ClusterUsers runs DBSCAN for a specific set of user IDs.
+// ClusterByConversationGroups resolves the owner user IDs for the given
+// conversation group IDs, then runs DBSCAN for each affected user.
 // Called by the BackgroundIndexer after new embeddings are created.
-func (c *Clusterer) ClusterUsers(ctx context.Context, userIDs []string) {
-	if c == nil || c.store == nil || len(userIDs) == 0 {
+func (c *Clusterer) ClusterByConversationGroups(ctx context.Context, groupIDs []uuid.UUID) {
+	if c == nil || c.store == nil || len(groupIDs) == 0 {
 		return
 	}
+
+	userIDs, err := c.store.ResolveOwnersByConversationGroupIDs(ctx, groupIDs)
+	if err != nil {
+		log.Warn("Knowledge clusterer: resolve owners failed", "err", err)
+		return
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

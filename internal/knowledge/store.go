@@ -61,4 +61,9 @@ type KnowledgeStore interface {
 	// LoadTextsForSourceIDs returns the indexed text content for the given source IDs.
 	// Used for c-TF-IDF keyword extraction after clustering.
 	LoadTextsForSourceIDs(ctx context.Context, sourceIDs []uuid.UUID) (map[uuid.UUID]string, error)
+
+	// ResolveOwnersByConversationGroupIDs returns distinct owner user IDs for the
+	// given conversation group IDs. Used by the indexer to determine which users
+	// need re-clustering after new embeddings are created.
+	ResolveOwnersByConversationGroupIDs(ctx context.Context, groupIDs []uuid.UUID) ([]string, error)
 }
