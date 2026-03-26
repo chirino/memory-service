@@ -7,10 +7,10 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/knowledge"
 	"github.com/chirino/memory-service/internal/model"
-	"github.com/google/uuid"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
+	"github.com/google/uuid"
 )
 
 // BackgroundIndexer polls for unindexed entries, generates embeddings, stores them,
