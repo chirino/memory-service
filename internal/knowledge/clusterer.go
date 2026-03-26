@@ -10,11 +10,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// Clusterer runs DBSCAN clustering on user embeddings in the background.
+// Clusterer runs DBSCAN clustering on user embeddings.
+// It is triggered by the BackgroundIndexer after new embeddings are created,
+// or manually via the admin trigger endpoint.
 type Clusterer struct {
 	store         KnowledgeStore
 	cfg           DBSCANConfig
-	interval      time.Duration
 	decay         time.Duration
 	keywordsCount int
 	mu            sync.Mutex
@@ -29,56 +30,35 @@ type ClusterRunStats struct {
 	Failures        int `json:"failures"`
 }
 
-// NewClusterer creates a new background clusterer.
-func NewClusterer(store KnowledgeStore, interval time.Duration, decay time.Duration, keywordsCount int, cfg DBSCANConfig) *Clusterer {
+// NewClusterer creates a new clusterer.
+func NewClusterer(store KnowledgeStore, decay time.Duration, keywordsCount int, cfg DBSCANConfig) *Clusterer {
 	if keywordsCount <= 0 {
 		keywordsCount = 10
 	}
 	return &Clusterer{
 		store:         store,
 		cfg:           cfg,
-		interval:      interval,
 		decay:         decay,
 		keywordsCount: keywordsCount,
 	}
 }
 
-// Start runs the clusterer until ctx is cancelled.
-func (c *Clusterer) Start(ctx context.Context) {
-	if c == nil || c.store == nil || c.interval <= 0 {
-		return
-	}
-	ticker := time.NewTicker(c.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			_, _ = c.Trigger(ctx)
-		}
-	}
-}
-
-// Trigger runs one clustering cycle synchronously.
+// Trigger runs one full clustering cycle for all users with embeddings.
+// Used by the admin trigger endpoint.
 func (c *Clusterer) Trigger(ctx context.Context) (ClusterRunStats, error) {
 	if c == nil || c.store == nil {
 		return ClusterRunStats{}, nil
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.runOnce(ctx), nil
-}
 
-func (c *Clusterer) runOnce(ctx context.Context) ClusterRunStats {
 	stats := ClusterRunStats{}
 
 	users, err := c.store.ListUsersWithEmbeddings(ctx)
 	if err != nil {
 		log.Error("Knowledge clusterer: list users failed", "err", err)
 		stats.Failures++
-		return stats
+		return stats, err
 	}
 
 	for _, userID := range users {
@@ -103,7 +83,23 @@ func (c *Clusterer) runOnce(ctx context.Context) ClusterRunStats {
 		)
 	}
 
-	return stats
+	return stats, nil
+}
+
+// ClusterUsers runs DBSCAN for a specific set of user IDs.
+// Called by the BackgroundIndexer after new embeddings are created.
+func (c *Clusterer) ClusterUsers(ctx context.Context, userIDs []string) {
+	if c == nil || c.store == nil || len(userIDs) == 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, userID := range userIDs {
+		if _, _, _, err := c.clusterUser(ctx, userID); err != nil {
+			log.Warn("Knowledge clusterer: user clustering failed", "user", userID, "err", err)
+		}
+	}
 }
 
 func (c *Clusterer) clusterUser(ctx context.Context, userID string) (born, updated, died int, err error) {

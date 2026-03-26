@@ -50,9 +50,8 @@ func TestFeaturesPgClustering(t *testing.T) {
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false
 
-	// Enable clustering with fast interval for testing.
+	// Enable clustering — runs inside the BackgroundIndexer after each batch.
 	cfg.KnowledgeClusteringEnabled = true
-	cfg.KnowledgeClusteringInterval = 5 * time.Second
 	cfg.KnowledgeClusteringEpsilon = 0.3
 	cfg.KnowledgeClusteringMinPts = 1
 	cfg.KnowledgeClusteringDecay = 24 * time.Hour

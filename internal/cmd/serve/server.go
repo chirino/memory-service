@@ -267,7 +267,8 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 	go episodicIdx.Start(ctx)
 
-	// Start knowledge clustering goroutine (if enabled).
+	// Set up knowledge clustering (if enabled). Clustering runs inside the
+	// BackgroundIndexer after each embedding batch — no separate goroutine.
 	if cfg.KnowledgeClusteringEnabled && cfg.DatastoreType == "postgres" && cfg.DBURL != "" && cfg.VectorType == "pgvector" && vectorStore != nil && vectorStore.IsEnabled() {
 		knowledgeStore, err := knowledge.OpenPostgresKnowledgeStore(cfg.DBURL)
 		if err != nil {
@@ -275,7 +276,6 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		} else {
 			clusterer := knowledge.NewClusterer(
 				knowledgeStore,
-				cfg.KnowledgeClusteringInterval,
 				cfg.KnowledgeClusteringDecay,
 				10, // keywords per cluster
 				knowledge.DBSCANConfig{
@@ -283,7 +283,7 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 					MinPoints: cfg.KnowledgeClusteringMinPts,
 				},
 			)
-			go clusterer.Start(ctx)
+			indexer.SetClusterer(clusterer)
 
 			// Register knowledge REST routes.
 			knowledgeHandler := &routeknowledge.Handler{
@@ -293,7 +293,6 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 			knowledgeHandler.RegisterRoutes(router, auth)
 
 			log.Info("Knowledge clustering enabled",
-				"interval", cfg.KnowledgeClusteringInterval,
 				"epsilon", cfg.KnowledgeClusteringEpsilon,
 				"minPts", cfg.KnowledgeClusteringMinPts,
 			)

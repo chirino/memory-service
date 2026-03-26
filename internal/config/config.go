@@ -238,11 +238,10 @@ type Config struct {
 	EpisodicPolicyDir          string        // Directory for OPA Rego policies (default: built-in)
 
 	// Knowledge clustering settings
-	KnowledgeClusteringEnabled  bool          // Feature gate (default false)
-	KnowledgeClusteringInterval time.Duration // How often the clustering goroutine runs (default 60s)
-	KnowledgeClusteringEpsilon  float64       // DBSCAN neighborhood radius in cosine distance (default 0.3)
-	KnowledgeClusteringMinPts   int           // DBSCAN minimum points to form a cluster (default 3)
-	KnowledgeClusteringDecay    time.Duration // Time with no new members before trend becomes decaying (default 30d)
+	KnowledgeClusteringEnabled bool          // Feature gate (default false)
+	KnowledgeClusteringEpsilon float64       // DBSCAN neighborhood radius in cosine distance (default 0.3)
+	KnowledgeClusteringMinPts  int           // DBSCAN minimum points to form a cluster (default 3)
+	KnowledgeClusteringDecay   time.Duration // Time with no new members before trend becomes decaying (default 30d)
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -320,11 +319,10 @@ func DefaultConfig() Config {
 		EpisodicTombstoneRetention: 90 * 24 * time.Hour,
 
 		// Knowledge clustering defaults
-		KnowledgeClusteringEnabled:  false,
-		KnowledgeClusteringInterval: 60 * time.Second,
-		KnowledgeClusteringEpsilon:  0.3,
-		KnowledgeClusteringMinPts:   3,
-		KnowledgeClusteringDecay:    30 * 24 * time.Hour,
+		KnowledgeClusteringEnabled: false,
+		KnowledgeClusteringEpsilon: 0.3,
+		KnowledgeClusteringMinPts:  3,
+		KnowledgeClusteringDecay:   30 * 24 * time.Hour,
 	}
 }
 

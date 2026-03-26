@@ -234,7 +234,6 @@ tasks:
       MEMORY_SERVICE_OPENAI_API_KEY: '{{.OPENAI_API_KEY | default "none"}}'
       # ── Knowledge clustering ────────────────────────────────────
       MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_ENABLED: "true"
-      MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_INTERVAL: 30s
     cmds:
       - docker compose up -d postgres redis keycloak prometheus minio minio-init
       - docker compose stop memory-service >/dev/null 2>&1 || true

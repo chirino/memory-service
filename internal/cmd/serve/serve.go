@@ -522,14 +522,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.KnowledgeClusteringEnabled,
 			Usage:       "Enable adaptive knowledge clustering on embeddings",
 		},
-		&cli.DurationFlag{
-			Name:        "knowledge-clustering-interval",
-			Category:    "Knowledge Clustering:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_INTERVAL"),
-			Destination: &cfg.KnowledgeClusteringInterval,
-			Value:       cfg.KnowledgeClusteringInterval,
-			Usage:       "How often the clustering goroutine runs (default 60s)",
-		},
 		&cli.Float64Flag{
 			Name:        "knowledge-clustering-epsilon",
 			Category:    "Knowledge Clustering:",
