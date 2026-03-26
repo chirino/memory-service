@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: infinispan
-          image: quay.io/infinispan/server:15.0
+          image: quay.io/infinispan/server:16.1
           ports:
             - name: infinispan
               containerPort: 11222

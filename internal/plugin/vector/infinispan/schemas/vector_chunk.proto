@@ -1,0 +1,32 @@
+syntax = "proto2";
+
+/**
+ * @Indexed
+ */
+message VectorItem{DIMENSION} {
+
+  /**
+   * @Keyword
+   */
+  optional string entry_id = 1;
+
+  /**
+   * @Vector(dimension={DIMENSION}, similarity=COSINE)
+   */
+  repeated float embedding = 2;
+
+  /**
+   * @Keyword
+   */
+  optional string conversation_id = 3;
+
+  /**
+   * @Keyword
+   */
+  optional string conversation_group_id = 4;
+
+  /**
+   * @Basic
+   */
+  optional string model = 5;
+}

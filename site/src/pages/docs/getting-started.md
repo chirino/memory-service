@@ -47,6 +47,7 @@ This will start:
 - **PostgreSQL** for data and vector storage (used by the memory service)
 - **Redis** for caching (used by the memory service)
 - **Qdrant** for vector search (used by the memory service)
+- **Infinispan** for caching and vector search (used by the memory service)
 - **MinIO** for S3-compatible object storage (used by the memory service for attachments)
 - **Prometheus** for metrics collection
 - **Grafana** for metrics dashboards

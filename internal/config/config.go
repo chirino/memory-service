@@ -112,6 +112,16 @@ type Config struct {
 	QdrantUseTLS           bool
 	QdrantStartupTimeout   time.Duration
 
+	// Infinispan vector store (REST API)
+	InfinispanVectorURL         string
+	InfinispanVectorCacheName   string
+	InfinispanVectorCachePrefix string
+	InfinispanVectorUsername    string
+	InfinispanVectorPassword    string
+	InfinispanVectorAuthType    string // "basic" or "digest"
+	InfinispanVectorUseTLS      bool
+	InfinispanVectorVerifySSL   bool
+
 	// Embedding type
 	EmbedType string // "none", "local", or "openai"
 
