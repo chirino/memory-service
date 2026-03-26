@@ -8,7 +8,7 @@ import (
 
 // Memory is a single namespaced episodic memory item.
 // Each row in the memories table represents one write event.
-// The active value of a (namespace, key) pair is the row where DeletedAt IS NULL.
+// The active value of a (namespace, key) pair is the row where ArchivedAt IS NULL.
 type Memory struct {
 	// ID is the primary key (UUID).
 	ID uuid.UUID `json:"id" gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
@@ -41,8 +41,8 @@ type Memory struct {
 	// ExpiresAt is the optional TTL expiry time. NULL means no expiry.
 	ExpiresAt *time.Time `json:"expiresAt" gorm:"column:expires_at"`
 
-	// DeletedAt is set when the row is soft-deleted (superseded or key deleted).
-	DeletedAt *time.Time `json:"-" gorm:"column:deleted_at"`
+	// ArchivedAt is set when the row is archived (superseded or key deleted).
+	ArchivedAt *time.Time `json:"-" gorm:"column:archived_at"`
 
 	// DeletedReason records why the row was deleted. NULL=active, 0=updated, 1=deleted, 2=expired.
 	DeletedReason *int16 `json:"-" gorm:"column:deleted_reason"`

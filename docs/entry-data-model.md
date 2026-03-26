@@ -13,7 +13,7 @@ erDiagram
     ConversationGroup {
         UUID id PK
         timestamp createdAt
-        timestamp deletedAt
+        timestamp archivedAt
     }
     Conversation {
         UUID id PK
@@ -26,7 +26,7 @@ erDiagram
         bytes title
         timestamp createdAt
         timestamp updatedAt
-        timestamp deletedAt
+        timestamp archivedAt
     }
     Entry {
         UUID id PK

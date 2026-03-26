@@ -211,7 +211,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	var membershipsToCopy []model.ConversationMembership
 	if forkedAtConversationID != nil {
 		var sourceConv model.Conversation
-		if err := db.Where("id = ? AND deleted_at IS NULL", *forkedAtConversationID).First(&sourceConv).Error; err != nil {
+		if err := db.Where("id = ? AND archived_at IS NULL", *forkedAtConversationID).First(&sourceConv).Error; err != nil {
 			return nil, &NotFoundError{Resource: "conversation", ID: forkedAtConversationID.String()}
 		}
 		// Verify user has access
@@ -228,7 +228,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		actualGroupID = sourceConv.ConversationGroupID
 	} else if startedByConversationID != nil {
 		var parentConv model.Conversation
-		findResult := db.Where("id = ? AND deleted_at IS NULL", *startedByConversationID).Limit(1).Find(&parentConv)
+		findResult := db.Where("id = ? AND archived_at IS NULL", *startedByConversationID).Limit(1).Find(&parentConv)
 		if findResult.Error != nil {
 			return nil, findResult.Error
 		}
@@ -313,7 +313,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	}
 	if createResult.RowsAffected == 0 {
 		var existing model.Conversation
-		result := db.Where("id = ? AND deleted_at IS NULL", convID).Limit(1).Find(&existing)
+		result := db.Where("id = ? AND archived_at IS NULL", convID).Limit(1).Find(&existing)
 		if result.Error != nil {
 			return nil, fmt.Errorf("failed to load existing conversation: %w", result.Error)
 		}
@@ -385,7 +385,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	}, nil
 }
 
-func (s *PostgresStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter) ([]registrystore.ConversationSummary, *string, error) {
+func (s *PostgresStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter) ([]registrystore.ConversationSummary, *string, error) {
 	requestedLimit := limit
 	queryStr := ""
 	if query != nil {
@@ -394,16 +394,29 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 
 	tx := s.db.WithContext(ctx).
 		Table("conversations c").
-		Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.deleted_at, cm.access_level").
+		Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, cm.access_level").
 		Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
-		Joins("JOIN conversation_groups cg ON cg.id = c.conversation_group_id AND cg.deleted_at IS NULL").
-		Where("c.deleted_at IS NULL")
+		Joins("JOIN conversation_groups cg ON cg.id = c.conversation_group_id")
+
+	switch archived {
+	case registrystore.ArchiveFilterInclude:
+	case registrystore.ArchiveFilterOnly:
+		tx = tx.Where("c.archived_at IS NOT NULL")
+	default:
+		tx = tx.Where("c.archived_at IS NULL")
+	}
 
 	switch mode {
 	case model.ListModeRoots:
 		tx = tx.Where("c.forked_at_conversation_id IS NULL")
 	case model.ListModeLatestFork:
-		tx = tx.Where("c.updated_at = (SELECT MAX(c2.updated_at) FROM conversations c2 WHERE c2.conversation_group_id = c.conversation_group_id AND c2.deleted_at IS NULL)")
+		subquery := "SELECT MAX(c2.updated_at) FROM conversations c2 WHERE c2.conversation_group_id = c.conversation_group_id"
+		if archived == registrystore.ArchiveFilterOnly {
+			subquery += " AND c2.archived_at IS NOT NULL"
+		} else if archived != registrystore.ArchiveFilterInclude {
+			subquery += " AND c2.archived_at IS NULL"
+		}
+		tx = tx.Where("c.updated_at = (" + subquery + ")")
 	}
 	switch ancestry {
 	case model.ConversationAncestryChildren:
@@ -444,7 +457,7 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
-		DeletedAt               *time.Time             `gorm:"column:deleted_at"`
+		ArchivedAt              *time.Time             `gorm:"column:archived_at"`
 		AccessLevel             model.AccessLevel      `gorm:"column:access_level"`
 	}
 	var rows []row
@@ -482,7 +495,7 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 			StartedByEntryID:        r.StartedByEntryID,
 			CreatedAt:               r.CreatedAt,
 			UpdatedAt:               r.UpdatedAt,
-			DeletedAt:               r.DeletedAt,
+			ArchivedAt:              r.ArchivedAt,
 			AccessLevel:             r.AccessLevel,
 		}
 	}
@@ -496,7 +509,7 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 }
 
 func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*registrystore.ConversationDetail, error) {
-	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -523,13 +536,14 @@ func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conv
 			StartedByEntryID:        conv.StartedByEntryID,
 			CreatedAt:               conv.CreatedAt,
 			UpdatedAt:               conv.UpdatedAt,
+			ArchivedAt:              conv.ArchivedAt,
 			AccessLevel:             access,
 		},
 	}, nil
 }
 
 func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, conversationID uuid.UUID, title *string, metadata map[string]interface{}) (*registrystore.ConversationDetail, error) {
-	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NULL", conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -561,8 +575,8 @@ func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, c
 	return s.GetConversation(ctx, userID, conversationID)
 }
 
-func (s *PostgresStore) DeleteConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
-	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+func (s *PostgresStore) ArchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NULL", conversationID)
 	if err != nil {
 		return err
 	}
@@ -582,27 +596,44 @@ func (s *PostgresStore) DeleteConversation(ctx context.Context, userID string, c
 		// Soft-delete the conversation group and all conversations in the fork tree.
 		if err := tx.Model(&model.ConversationGroup{}).
 			Where("id = ?", conv.ConversationGroupID).
-			Update("deleted_at", now).Error; err != nil {
-			return fmt.Errorf("failed to soft-delete group: %w", err)
+			Update("archived_at", now).Error; err != nil {
+			return fmt.Errorf("failed to archive group: %w", err)
 		}
 		if err := tx.Model(&model.Conversation{}).
-			Where("conversation_group_id = ? AND deleted_at IS NULL", conv.ConversationGroupID).
-			Update("deleted_at", now).Error; err != nil {
-			return fmt.Errorf("failed to soft-delete conversations: %w", err)
+			Where("conversation_group_id = ? AND archived_at IS NULL", conv.ConversationGroupID).
+			Update("archived_at", now).Error; err != nil {
+			return fmt.Errorf("failed to archive conversations: %w", err)
 		}
+		return nil
+	})
+}
 
-		// Java parity: memberships and entries are hard-deleted when a group is deleted.
-		if err := tx.Where("conversation_group_id = ?", conv.ConversationGroupID).
-			Delete(&model.ConversationMembership{}).Error; err != nil {
-			return fmt.Errorf("failed to delete memberships: %w", err)
+func (s *PostgresStore) UnarchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NOT NULL", conversationID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+	}
+	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
+		return err
+	}
+
+	db, err := s.writeDBFor(ctx, "unarchive conversation")
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.ConversationGroup{}).
+			Where("id = ?", conv.ConversationGroupID).
+			Update("archived_at", nil).Error; err != nil {
+			return fmt.Errorf("failed to unarchive group: %w", err)
 		}
-		if err := tx.Where("conversation_group_id = ?", conv.ConversationGroupID).
-			Delete(&model.Entry{}).Error; err != nil {
-			return fmt.Errorf("failed to delete entries: %w", err)
-		}
-		if err := tx.Where("conversation_group_id = ?", conv.ConversationGroupID).
-			Delete(&model.OwnershipTransfer{}).Error; err != nil {
-			return fmt.Errorf("failed to delete ownership transfers: %w", err)
+		if err := tx.Model(&model.Conversation{}).
+			Where("conversation_group_id = ? AND archived_at IS NOT NULL", conv.ConversationGroupID).
+			Update("archived_at", nil).Error; err != nil {
+			return fmt.Errorf("failed to unarchive conversations: %w", err)
 		}
 		return nil
 	})
@@ -744,14 +775,20 @@ func (s *PostgresStore) GetGroupMemberUserIDs(ctx context.Context, conversationG
 // --- Forks ---
 
 func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
-	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelReader)
+	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
+		return nil, nil, err
+	}
+	if !found {
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+	}
+	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, nil, err
 	}
 
 	tx := s.db.WithContext(ctx).
 		Table("conversations").
-		Where("conversation_group_id = ? AND deleted_at IS NULL", groupID).
+		Where("conversation_group_id = ?", conv.ConversationGroupID).
 		Order("created_at ASC")
 
 	if afterCursor != nil {
@@ -790,7 +827,7 @@ func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversati
 
 func (s *PostgresStore) ListChildConversations(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
 	var conv model.Conversation
-	findResult := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", conversationID).Limit(1).Find(&conv)
+	findResult := s.db.WithContext(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if findResult.Error != nil {
 		return nil, nil, findResult.Error
 	}
@@ -813,15 +850,15 @@ func (s *PostgresStore) ListChildConversations(ctx context.Context, userID strin
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
-		DeletedAt               *time.Time             `gorm:"column:deleted_at"`
+		ArchivedAt              *time.Time             `gorm:"column:archived_at"`
 		AccessLevel             model.AccessLevel      `gorm:"column:access_level"`
 	}
 	tx := s.db.WithContext(ctx).
 		Table("conversations c").
-		Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.deleted_at, cm.access_level").
+		Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, cm.access_level").
 		Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
-		Joins("JOIN conversation_groups cg ON cg.id = c.conversation_group_id AND cg.deleted_at IS NULL").
-		Where("c.deleted_at IS NULL AND c.started_by_conversation_id = ?", conversationID)
+		Joins("JOIN conversation_groups cg ON cg.id = c.conversation_group_id").
+		Where("c.started_by_conversation_id = ?", conversationID)
 	if afterCursor != nil {
 		tx = tx.Where("(c.created_at, c.id) > ((SELECT created_at FROM conversations WHERE id = ?), ?)", *afterCursor, *afterCursor)
 	}
@@ -848,7 +885,7 @@ func (s *PostgresStore) ListChildConversations(ctx context.Context, userID strin
 			StartedByEntryID:        r.StartedByEntryID,
 			CreatedAt:               r.CreatedAt,
 			UpdatedAt:               r.UpdatedAt,
-			DeletedAt:               r.DeletedAt,
+			ArchivedAt:              r.ArchivedAt,
 			AccessLevel:             r.AccessLevel,
 		}
 	}
@@ -929,7 +966,7 @@ func (s *PostgresStore) GetTransfer(ctx context.Context, userID string, transfer
 
 // resolveConversationID finds the primary (non-deleted) conversation ID for a group.
 func (s *PostgresStore) resolveConversationID(ctx context.Context, groupID uuid.UUID) uuid.UUID {
-	conv, found, _ := s.lookupConversation(ctx, "conversation_group_id = ? AND deleted_at IS NULL", groupID)
+	conv, found, _ := s.lookupConversation(ctx, "conversation_group_id = ? AND archived_at IS NULL", groupID)
 	if !found {
 		return uuid.Nil
 	}
@@ -937,7 +974,7 @@ func (s *PostgresStore) resolveConversationID(ctx context.Context, groupID uuid.
 }
 
 func (s *PostgresStore) CreateOwnershipTransfer(ctx context.Context, userID string, conversationID uuid.UUID, toUserID string) (*registrystore.OwnershipTransferDto, error) {
-	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NULL", conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -1032,7 +1069,7 @@ func (s *PostgresStore) AcceptTransfer(ctx context.Context, userID string, trans
 
 		// Update conversation owner
 		tx.Model(&model.Conversation{}).
-			Where("conversation_group_id = ? AND deleted_at IS NULL", t.ConversationGroupID).
+			Where("conversation_group_id = ? AND archived_at IS NULL", t.ConversationGroupID).
 			Update("owner_user_id", t.ToUserID)
 
 		// Delete the transfer record
@@ -1057,7 +1094,7 @@ func (s *PostgresStore) DeleteTransfer(ctx context.Context, userID string, trans
 
 func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
 	var conv model.Conversation
-	result := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", conversationID).Limit(1).Find(&conv)
+	result := s.db.WithContext(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -1164,7 +1201,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 		return nil, err
 	}
 	var conv model.Conversation
-	convResult := db.Where("id = ? AND deleted_at IS NULL", conversationID).Limit(1).Find(&conv)
+	convResult := db.Where("id = ? AND archived_at IS NULL", conversationID).Limit(1).Find(&conv)
 	if convResult.Error != nil {
 		return nil, convResult.Error
 	}
@@ -1206,7 +1243,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			loaded := false
 			for attempt := 0; attempt < 10; attempt++ {
 				convResult = db.
-					Where("id = ? AND deleted_at IS NULL", conversationID).
+					Where("id = ? AND archived_at IS NULL", conversationID).
 					Limit(1).
 					Find(&conv)
 				if convResult.Error != nil {
@@ -1356,7 +1393,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 
 	autoCreated := false
 	var conv model.Conversation
-	result := db.Where("id = ? AND deleted_at IS NULL", conversationID).Limit(1).Find(&conv)
+	result := db.Where("id = ? AND archived_at IS NULL", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -1648,7 +1685,7 @@ func (s *PostgresStore) FetchSearchResultDetails(ctx context.Context, userID str
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT e.id as entry_id, e.conversation_id, c.title as conversation_title, e.indexed_content
 		FROM entries e
-		JOIN conversations c ON c.id = e.conversation_id AND c.deleted_at IS NULL
+		JOIN conversations c ON c.id = e.conversation_id AND c.archived_at IS NULL
 		JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?
 		WHERE e.id IN ?
 	`, userID, entryIDs).Scan(&rows).Error
@@ -1750,7 +1787,7 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 		       ts_headline('english', e.indexed_content, to_tsquery('english', ?),
 		           'StartSel=**, StopSel=**, MaxWords=50, MinWords=20') as highlight
 		FROM entries e
-		JOIN conversations c ON c.id = e.conversation_id AND c.conversation_group_id = e.conversation_group_id AND c.deleted_at IS NULL
+		JOIN conversations c ON c.id = e.conversation_id AND c.conversation_group_id = e.conversation_group_id AND c.archived_at IS NULL
 		JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?
 		WHERE e.indexed_content_tsv @@ to_tsquery('english', ?)
 		ORDER BY score DESC, e.id ASC
@@ -1815,7 +1852,7 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 // --- Admin ---
 
 func (s *PostgresStore) AdminListConversations(ctx context.Context, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
-	const selectColumns = "c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.deleted_at, 'owner' as access_level"
+	const selectColumns = "c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level"
 
 	type row struct {
 		ID                      uuid.UUID              `gorm:"column:id"`
@@ -1829,26 +1866,27 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
-		DeletedAt               *time.Time             `gorm:"column:deleted_at"`
+		ArchivedAt              *time.Time             `gorm:"column:archived_at"`
 		AccessLevel             model.AccessLevel      `gorm:"column:access_level"`
 	}
 
 	base := s.db.WithContext(ctx).Table("conversations c")
 
-	if !query.IncludeDeleted && !query.OnlyDeleted {
-		base = base.Where("c.deleted_at IS NULL")
-	}
-	if query.OnlyDeleted {
-		base = base.Where("c.deleted_at IS NOT NULL")
+	switch query.Archived {
+	case registrystore.ArchiveFilterInclude:
+	case registrystore.ArchiveFilterOnly:
+		base = base.Where("c.archived_at IS NOT NULL")
+	default:
+		base = base.Where("c.archived_at IS NULL")
 	}
 	if query.UserID != nil {
 		base = base.Where("c.owner_user_id = ?", *query.UserID)
 	}
-	if query.DeletedAfter != nil {
-		base = base.Where("c.deleted_at >= ?", *query.DeletedAfter)
+	if query.ArchivedAfter != nil {
+		base = base.Where("c.archived_at >= ?", *query.ArchivedAfter)
 	}
-	if query.DeletedBefore != nil {
-		base = base.Where("c.deleted_at < ?", *query.DeletedBefore)
+	if query.ArchivedBefore != nil {
+		base = base.Where("c.archived_at < ?", *query.ArchivedBefore)
 	}
 	switch query.Ancestry {
 	case model.ConversationAncestryChildren:
@@ -1868,7 +1906,7 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 		ranked := base.Select(selectColumns + ", ROW_NUMBER() OVER (PARTITION BY c.conversation_group_id ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC) AS group_rank")
 		tx = s.db.WithContext(ctx).
 			Table("(?) AS ranked", ranked).
-			Select("id, title, owner_user_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, deleted_at, access_level").
+			Select("id, title, owner_user_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, archived_at, access_level").
 			Where("group_rank = 1")
 	default:
 		tx = base.Select(selectColumns)
@@ -1903,7 +1941,7 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 			StartedByEntryID:        r.StartedByEntryID,
 			CreatedAt:               r.CreatedAt,
 			UpdatedAt:               r.UpdatedAt,
-			DeletedAt:               r.DeletedAt,
+			ArchivedAt:              r.ArchivedAt,
 			AccessLevel:             r.AccessLevel,
 		}
 	}
@@ -1939,13 +1977,13 @@ func (s *PostgresStore) AdminGetConversation(ctx context.Context, conversationID
 			StartedByEntryID:        conv.StartedByEntryID,
 			CreatedAt:               conv.CreatedAt,
 			UpdatedAt:               conv.UpdatedAt,
-			DeletedAt:               conv.DeletedAt,
+			ArchivedAt:              conv.ArchivedAt,
 			AccessLevel:             model.AccessLevelOwner,
 		},
 	}, nil
 }
 
-func (s *PostgresStore) AdminDeleteConversation(ctx context.Context, conversationID uuid.UUID) error {
+func (s *PostgresStore) AdminSetConversationArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error {
 	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
 		return err
@@ -1953,9 +1991,17 @@ func (s *PostgresStore) AdminDeleteConversation(ctx context.Context, conversatio
 	if !found {
 		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
 	}
-	now := time.Now()
-	s.db.WithContext(ctx).Model(&model.ConversationGroup{}).Where("id = ?", conv.ConversationGroupID).Update("deleted_at", now)
-	s.db.WithContext(ctx).Model(&model.Conversation{}).Where("conversation_group_id = ? AND deleted_at IS NULL", conv.ConversationGroupID).Update("deleted_at", now)
+	if archived {
+		now := time.Now()
+		s.db.WithContext(ctx).Model(&model.ConversationGroup{}).Where("id = ?", conv.ConversationGroupID).Update("archived_at", now)
+		s.db.WithContext(ctx).Model(&model.Conversation{}).Where("conversation_group_id = ? AND archived_at IS NULL", conv.ConversationGroupID).Update("archived_at", now)
+		return nil
+	}
+	if conv.ArchivedAt == nil {
+		return &ConflictError{Message: "conversation is not archived"}
+	}
+	s.db.WithContext(ctx).Model(&model.ConversationGroup{}).Where("id = ?", conv.ConversationGroupID).Update("archived_at", nil)
+	s.db.WithContext(ctx).Model(&model.Conversation{}).Where("conversation_group_id = ?", conv.ConversationGroupID).Update("archived_at", nil)
 	return nil
 }
 
@@ -1972,12 +2018,12 @@ func (s *PostgresStore) AdminListChildConversations(ctx context.Context, convers
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
-		DeletedAt               *time.Time             `gorm:"column:deleted_at"`
+		ArchivedAt              *time.Time             `gorm:"column:archived_at"`
 		AccessLevel             model.AccessLevel      `gorm:"column:access_level"`
 	}
 	tx := s.db.WithContext(ctx).
 		Table("conversations c").
-		Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.deleted_at, 'owner' as access_level").
+		Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level").
 		Where("c.started_by_conversation_id = ?", conversationID)
 	if afterCursor != nil {
 		tx = tx.Where("(c.created_at, c.id) > ((SELECT created_at FROM conversations WHERE id = ?), ?)", *afterCursor, *afterCursor)
@@ -2005,7 +2051,7 @@ func (s *PostgresStore) AdminListChildConversations(ctx context.Context, convers
 			StartedByEntryID:        r.StartedByEntryID,
 			CreatedAt:               r.CreatedAt,
 			UpdatedAt:               r.UpdatedAt,
-			DeletedAt:               r.DeletedAt,
+			ArchivedAt:              r.ArchivedAt,
 			AccessLevel:             r.AccessLevel,
 		}
 	}
@@ -2015,22 +2061,6 @@ func (s *PostgresStore) AdminListChildConversations(ctx context.Context, convers
 		cursor = &c
 	}
 	return summaries, cursor, nil
-}
-
-func (s *PostgresStore) AdminRestoreConversation(ctx context.Context, conversationID uuid.UUID) error {
-	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
-	}
-	if conv.DeletedAt == nil {
-		return &ConflictError{Message: "conversation is not deleted"}
-	}
-	s.db.WithContext(ctx).Model(&model.ConversationGroup{}).Where("id = ?", conv.ConversationGroupID).Update("deleted_at", nil)
-	s.db.WithContext(ctx).Model(&model.Conversation{}).Where("conversation_group_id = ?", conv.ConversationGroupID).Update("deleted_at", nil)
-	return nil
 }
 
 func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID uuid.UUID, query registrystore.AdminMessageQuery) (*registrystore.PagedEntries, error) {
@@ -2177,8 +2207,8 @@ func (s *PostgresStore) AdminSearchEntries(ctx context.Context, query registryst
 		WHERE e.indexed_content_tsv @@ to_tsquery('english', ?)
 	`
 	args := []interface{}{prefixQuery, prefixQuery, prefixQuery}
-	if !query.IncludeDeleted {
-		sql += " AND c.deleted_at IS NULL"
+	if !query.IncludeArchived {
+		sql += " AND c.archived_at IS NULL"
 	}
 
 	if query.UserID != nil {
@@ -2242,7 +2272,7 @@ func (s *PostgresStore) AdminListAttachments(ctx context.Context, query registry
 	}
 
 	tx := s.db.WithContext(ctx).Table("attachments AS a").
-		Select("a.*, (SELECT COUNT(*) FROM attachments a2 WHERE a2.storage_key = a.storage_key AND a2.deleted_at IS NULL) AS ref_count")
+		Select("a.*, (SELECT COUNT(*) FROM attachments a2 WHERE a2.storage_key = a.storage_key AND a2.archived_at IS NULL) AS ref_count")
 
 	if query.UserID != nil {
 		tx = tx.Where("a.user_id = ?", *query.UserID)
@@ -2306,7 +2336,7 @@ func (s *PostgresStore) AdminGetAttachment(ctx context.Context, attachmentID uui
 
 	var r row
 	err := s.db.WithContext(ctx).Table("attachments AS a").
-		Select("a.*, (SELECT COUNT(*) FROM attachments a2 WHERE a2.storage_key = a.storage_key AND a2.deleted_at IS NULL) AS ref_count").
+		Select("a.*, (SELECT COUNT(*) FROM attachments a2 WHERE a2.storage_key = a.storage_key AND a2.archived_at IS NULL) AS ref_count").
 		Where("a.id = ?", attachmentID).
 		Take(&r).Error
 	if err != nil {
@@ -2339,7 +2369,7 @@ func (s *PostgresStore) FindEvictableGroupIDs(ctx context.Context, cutoff time.T
 	var ids []uuid.UUID
 	err := s.db.WithContext(ctx).
 		Model(&model.ConversationGroup{}).
-		Where("deleted_at IS NOT NULL AND deleted_at < ?", cutoff).
+		Where("archived_at IS NOT NULL AND archived_at < ?", cutoff).
 		Limit(limit).
 		Pluck("id", &ids).Error
 	return ids, err
@@ -2349,9 +2379,56 @@ func (s *PostgresStore) CountEvictableGroups(ctx context.Context, cutoff time.Ti
 	var count int64
 	err := s.db.WithContext(ctx).
 		Model(&model.ConversationGroup{}).
-		Where("deleted_at IS NOT NULL AND deleted_at < ?", cutoff).
+		Where("archived_at IS NOT NULL AND archived_at < ?", cutoff).
 		Count(&count).Error
 	return count, err
+}
+
+func (s *PostgresStore) LoadDeletedConversationGroups(ctx context.Context, groupIDs []uuid.UUID) ([]registrystore.DeletedConversationGroup, error) {
+	if len(groupIDs) == 0 {
+		return nil, nil
+	}
+
+	type conversationRow struct {
+		ConversationGroupID uuid.UUID `gorm:"column:conversation_group_id"`
+		ID                  uuid.UUID `gorm:"column:id"`
+	}
+	var conversations []conversationRow
+	if err := s.db.WithContext(ctx).
+		Model(&model.Conversation{}).
+		Select("conversation_group_id, id").
+		Where("conversation_group_id IN ?", groupIDs).
+		Order("created_at ASC, id ASC").
+		Scan(&conversations).Error; err != nil {
+		return nil, err
+	}
+
+	var memberships []model.ConversationMembership
+	if err := s.db.WithContext(ctx).
+		Where("conversation_group_id IN ?", groupIDs).
+		Order("created_at ASC, user_id ASC").
+		Find(&memberships).Error; err != nil {
+		return nil, err
+	}
+
+	groupMap := make(map[uuid.UUID]*registrystore.DeletedConversationGroup, len(groupIDs))
+	for _, groupID := range groupIDs {
+		groupMap[groupID] = &registrystore.DeletedConversationGroup{ConversationGroupID: groupID}
+	}
+	for _, row := range conversations {
+		groupMap[row.ConversationGroupID].ConversationIDs = append(groupMap[row.ConversationGroupID].ConversationIDs, row.ID)
+	}
+	for _, membership := range memberships {
+		groupMap[membership.ConversationGroupID].MemberUserIDs = append(groupMap[membership.ConversationGroupID].MemberUserIDs, membership.UserID)
+	}
+
+	result := make([]registrystore.DeletedConversationGroup, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if group, ok := groupMap[groupID]; ok {
+			result = append(result, *group)
+		}
+	}
+	return result, nil
 }
 
 func (s *PostgresStore) HardDeleteConversationGroups(ctx context.Context, groupIDs []uuid.UUID) error {
@@ -2447,8 +2524,8 @@ func (s *PostgresStore) AdminGetAttachmentByStorageKey(ctx context.Context, stor
 
 	var r row
 	err := s.db.WithContext(ctx).Table("attachments AS a").
-		Select("a.*, (SELECT COUNT(*) FROM attachments a2 WHERE a2.storage_key = a.storage_key AND a2.deleted_at IS NULL) AS ref_count").
-		Where("a.storage_key = ? AND a.deleted_at IS NULL", storageKey).
+		Select("a.*, (SELECT COUNT(*) FROM attachments a2 WHERE a2.storage_key = a.storage_key AND a2.archived_at IS NULL) AS ref_count").
+		Where("a.storage_key = ? AND a.archived_at IS NULL", storageKey).
 		Take(&r).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -2584,7 +2661,7 @@ func (s *PostgresStore) listEntriesForGroup(ctx context.Context, groupID uuid.UU
 func (s *PostgresStore) buildAncestryStack(ctx context.Context, target model.Conversation) ([]forkAncestor, error) {
 	var conversations []model.Conversation
 	if err := s.dbFor(ctx).
-		Where("conversation_group_id = ? AND deleted_at IS NULL", target.ConversationGroupID).
+		Where("conversation_group_id = ?", target.ConversationGroupID).
 		Find(&conversations).Error; err != nil {
 		return nil, fmt.Errorf("failed to load fork ancestry: %w", err)
 	}
@@ -2922,7 +2999,7 @@ func (s *PostgresStore) CreateAttachment(ctx context.Context, userID string, con
 
 func (s *PostgresStore) UpdateAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, update registrystore.AttachmentUpdate) (*model.Attachment, error) {
 	var attachment model.Attachment
-	if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ? AND archived_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
 		return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 	if attachment.UserID != userID {
@@ -2964,14 +3041,14 @@ func (s *PostgresStore) UpdateAttachment(ctx context.Context, userID string, att
 		}
 	}
 
-	if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ? AND archived_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
 		return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 	return &attachment, nil
 }
 
 func (s *PostgresStore) ListAttachments(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.Attachment, *string, error) {
-	tx := s.db.WithContext(ctx).Where("deleted_at IS NULL")
+	tx := s.db.WithContext(ctx).Where("archived_at IS NULL")
 
 	if conversationID == uuid.Nil {
 		// Contract path does not include conversation id; list caller-owned unlinked attachments.
@@ -3011,7 +3088,7 @@ func (s *PostgresStore) ListAttachments(ctx context.Context, userID string, conv
 
 func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachmentID uuid.UUID) (*model.Attachment, error) {
 	var attachment model.Attachment
-	if err := s.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ? AND archived_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
 		return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 
@@ -3094,7 +3171,7 @@ func (s *PostgresStore) lookupConversation(ctx context.Context, where string, ar
 }
 
 func (s *PostgresStore) getGroupID(ctx context.Context, userID string, conversationID uuid.UUID, minLevel model.AccessLevel) (uuid.UUID, error) {
-	conv, found, err := s.lookupConversation(ctx, "id = ? AND deleted_at IS NULL", conversationID)
+	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NULL", conversationID)
 	if err != nil {
 		return uuid.Nil, err
 	}

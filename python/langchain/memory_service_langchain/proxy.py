@@ -113,6 +113,7 @@ class MemoryServiceProxy:
         after_cursor: str | None = None,
         limit: int | None = None,
         query: str | None = None,
+        archived: str | None = None,
     ) -> httpx.Response:
         return await self._request(
             "GET",
@@ -123,6 +124,7 @@ class MemoryServiceProxy:
                     "afterCursor": after_cursor,
                     "limit": limit,
                     "query": query,
+                    "archived": archived,
                 }
             ),
         )
@@ -157,7 +159,11 @@ class MemoryServiceProxy:
         )
 
     async def delete_conversation(self, conversation_id: str) -> httpx.Response:
-        return await self._request("DELETE", f"/v1/conversations/{conversation_id}")
+        return await self._request(
+            "PATCH",
+            f"/v1/conversations/{conversation_id}",
+            json_body={"archived": True},
+        )
 
     async def list_conversation_entries(
         self,

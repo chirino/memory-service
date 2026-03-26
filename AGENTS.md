@@ -47,6 +47,8 @@ When you discover something meaningful about this project during your work—arc
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).
 - Fork creation is implicit on first append to a new conversation ID using `forkedAtConversationId` + `forkedAtEntryId`; `POST /v1/conversations/{conversationId}/entries/{entryId}/fork` is obsolete.
 - Entry listing uses `forks=all` to return entries from all branches in a fork tree (not `allForks=true`).
+- Conversation archive semantics: user/admin conversation deletes are replaced by PATCH/update with synthetic `archived`; conversation list filters now use `archived=exclude|include|only`; archived conversations remain readable until eviction hard-deletes them.
+- Historical enhancement docs `013`, `014`, `017`, `062`, `068`, `073`, and `090` still contain pre-094 delete/archive terminology in their body text; use `docs/enhancements/implemented/094-archive-operations.md`, current OpenAPI/proto contracts, and current site docs as the source of truth for archive behavior.
 - Enhancement doc `implemented/007-multi-agent-support.md` is older agent-scoped memory work; do not treat it as the design for parent/child agent conversations or conversation-lineage APIs.
 - Current `clientId` semantics are app/system identity, not logical agent identity; multi-agent apps may need multiple `agentId` values under one authenticated client.
 - Conversation `clientId` is internal/admin-only metadata: user-facing REST conversation payloads must not expose it, while admin conversation APIs may.

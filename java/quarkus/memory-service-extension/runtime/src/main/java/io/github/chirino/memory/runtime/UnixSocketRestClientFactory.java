@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.api.ConversationsApi;
 import io.github.chirino.memory.client.api.SearchApi;
 import io.github.chirino.memory.client.api.SharingApi;
+import io.github.chirino.memory.client.model.UpdateConversationRequest;
 import io.github.chirino.memory.runtime.UnixSocketHttpClient.HttpResponseData;
 import jakarta.ws.rs.core.Response;
 import java.io.IOException;
@@ -80,7 +81,12 @@ final class UnixSocketRestClientFactory {
                 case "createConversation" ->
                         json("POST", "/v1/conversations", null, args[0], method);
                 case "deleteConversation" ->
-                        response("DELETE", path("/v1/conversations/%s", args[0]), null, null);
+                        json(
+                                "PATCH",
+                                path("/v1/conversations/%s", args[0]),
+                                null,
+                                new UpdateConversationRequest().archived(Boolean.TRUE),
+                                method);
                 case "deleteConversationResponse" ->
                         response(
                                 "DELETE",
@@ -124,7 +130,8 @@ final class UnixSocketRestClientFactory {
                                         "ancestry", args[1],
                                         "afterCursor", args[2],
                                         "limit", args[3],
-                                        "query", args[4]),
+                                        "query", args[4],
+                                        "archived", args[5]),
                                 null,
                                 method);
                 case "syncConversationContext" ->

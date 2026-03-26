@@ -18,7 +18,7 @@ The current pagination implementation has grown organically and contains several
    - Most endpoints use `after` (request) and `nextCursor` (response) — two different names for the same concept.
    - `GET /v1/conversations/unindexed` uses `cursor` for both request and response — a third convention.
    - Developers must memorize which name to use where.
-2. **Ambiguity with timestamp filters**: The admin conversations endpoint has both `after` (pagination cursor) and `deletedAfter` (timestamp filter) as query parameters. The similar names make it easy to confuse a cursor with a date filter.
+2. **Ambiguity with timestamp filters**: The admin conversations endpoint has both `after` (pagination cursor) and `archivedAfter` (timestamp filter) as query parameters. The similar names make it easy to confuse a cursor with a date filter.
 3. **Missing cursor in admin list conversations**: `GET /v1/admin/conversations` accepts `after` and `limit` parameters but does not include a cursor in the response schema, so clients cannot reliably page through results.
 4. **Unbounded list endpoints**: Several endpoints return all results with no pagination support:
    - `GET /v1/conversations/{id}/memberships`
@@ -44,13 +44,13 @@ Use **`afterCursor`** as both the input parameter name and the output response f
 **Why same name for input and output:**
 - Zero cognitive overhead — copy the value from the response and pass it in the next request under the same key.
 - No mapping between different field names (`after` → `nextCursor` → `after`).
-- Self-documenting: the `Cursor` suffix makes it unambiguous (can't be confused with timestamp filters like `deletedAfter`).
+- Self-documenting: the `Cursor` suffix makes it unambiguous (can't be confused with timestamp filters like `archivedAfter`).
 
 **Why `afterCursor` over alternatives:**
 - As an **output field**, `afterCursor` means "use this cursor to get items after this page" — clear.
 - As an **input parameter**, `afterCursor` means "give me items after this cursor" — equally clear.
 - Extends naturally to reverse paging: `beforeCursor` (output = "use this to go backward", input = "give me items before this cursor").
-- Disambiguates from `deletedAfter`/`deletedBefore` timestamp filters on admin endpoints.
+- Disambiguates from `archivedAfter`/`archivedBefore` timestamp filters on admin endpoints.
 
 **Comparison of approaches considered:**
 
@@ -389,7 +389,7 @@ cd frontends/chat-frontend && npm run generate && npm run lint && npm run build
 ## Design Decisions
 
 1. **Same name for input and output (`afterCursor`)**: Eliminates the cognitive overhead of mapping between `after` (input) and `nextCursor` (output). Copy the value from the response field directly into the next request parameter.
-2. **`afterCursor` over `cursor`**: The `after` prefix makes the direction explicit and avoids collision with generic "cursor" concepts. It also disambiguates from timestamp filter parameters like `deletedAfter`.
+2. **`afterCursor` over `cursor`**: The `after` prefix makes the direction explicit and avoids collision with generic "cursor" concepts. It also disambiguates from timestamp filter parameters like `archivedAfter`.
 3. **`afterCursor` over `nextCursor`**: As an input parameter, `afterCursor` reads naturally ("give me items after this cursor") while `nextCursor` would be awkward ("give me items... next cursor?").
 4. **Future-proof for `beforeCursor`**: The naming pattern extends cleanly to reverse paging without any renaming of existing fields.
 5. **Search endpoints stay POST**: The search endpoints are designed to be safely proxied to frontend SPAs. With GET, search queries would leak through browser history, `Referer` headers to third-party domains, and infrastructure access logs (CDNs, reverse proxies, load balancers). POST keeps the query in the request body, which is not logged by default infrastructure and never leaks through referrer headers. The trade-off is that `afterCursor` and `limit` live in the body for search — a justified exception for frontend safety.

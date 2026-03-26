@@ -99,20 +99,34 @@ Response:
 }
 ```
 
-The value is decrypted on read. Returns `404` if no active record exists for the key, `403` if the caller lacks access.
+The value is decrypted on read. Returns `404` if no matching record exists for the requested archive mode, `403` if the caller lacks access.
 
-### Deleting a Memory
+Use the optional `archived` query parameter to control which version is readable:
+
+| Value     | Meaning                        |
+| --------- | ------------------------------ |
+| `exclude` | Active memories only (default) |
+| `include` | Active and archived memories   |
+| `only`    | Archived memories only         |
+
+### Archiving a Memory
 
 ```bash
-curl -X DELETE "http://localhost:8080/v1/memories?ns=user&ns=alice&ns=notes&key=python_tip" \
-  -H "Authorization: Bearer <token>"
+curl -X PATCH http://localhost:8080/v1/memories \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "namespace": ["user", "alice", "notes"],
+    "key": "python_tip",
+    "archived": true
+  }'
 ```
 
-Returns `204 No Content`. The background indexer removes the corresponding vector entry on its next cycle.
+Returns `204 No Content`. Archiving is recorded as a memory update, and semantic search respects the memory's archive state via vector-store metadata plus datastore post-filtering.
 
 ## Searching Memories
 
-`POST /v1/memories/search` supports two modes depending on whether a `query` string is provided.
+`POST /v1/memories/search` supports two modes depending on whether a `query` string is provided. Both modes honor the same `archived` selector used by direct reads: `exclude` (default), `include`, or `only`.
 
 ### Attribute-Filter Search
 
@@ -162,7 +176,7 @@ Response:
 }
 ```
 
-`score` is `null` for attribute-only results and a cosine similarity value (0–1) for semantic results.
+`score` is `null` for attribute-only results and a cosine similarity value (0–1) for semantic results. Semantic search pre-filters by archive state in the vector store and then re-checks the hydrated memory rows before returning results.
 
 ### Search Parameters
 
@@ -171,6 +185,7 @@ Response:
 | `namespace_prefix` | `string[]` | yes      | Restricts results to this namespace subtree |
 | `query`            | `string`   | no       | If set, enables vector similarity search    |
 | `filter`           | `object`   | no       | Attribute filter expressions (see below)    |
+| `archived`         | `string`   | no       | `exclude` (default), `include`, or `only`   |
 | `limit`            | `integer`  | no       | Max results, default 10, max 100            |
 | `offset`           | `integer`  | no       | Pagination offset (attribute-only mode)     |
 
@@ -210,6 +225,7 @@ Response:
 | ----------- | -------------------------------------------------------------------- |
 | `prefix`    | Repeated per segment; only namespaces under this prefix are returned |
 | `suffix`    | Only return namespaces ending with this suffix                       |
+| `archived`  | `exclude` (default), `include`, or `only`                            |
 | `max_depth` | Truncate returned namespaces to this depth                           |
 
 ## Memory Event Timeline
@@ -246,25 +262,25 @@ curl "http://localhost:8080/v1/memories/events?ns=user&ns=alice&limit=50" \
       "id": "c3d4e5f6-...",
       "namespace": ["user", "alice", "notes"],
       "key": "python_tip",
-      "kind": "delete",
+      "kind": "update",
       "occurred_at": "2026-01-03T00:00:00Z",
-      "value": null,
-      "attributes": null
+      "value": { "text": "Alice prefers list comprehensions over map/filter." },
+      "attributes": { "namespace": "user", "sub": "alice" }
     }
   ],
   "after_cursor": "<opaque cursor>"
 }
 ```
 
-| Parameter          | Description                                                             |
-| ------------------ | ----------------------------------------------------------------------- |
-| `ns`               | Repeated per segment; filters to a namespace prefix                     |
-| `kinds`            | Filter by event kind: `add`, `update`, `delete`, `expired`; default all |
-| `after` / `before` | ISO 8601 timestamp bounds on `occurred_at`                              |
-| `after_cursor`     | Opaque cursor for paginating through results                            |
-| `limit`            | Max events per page; default 50, max 200                                |
+| Parameter          | Description                                                   |
+| ------------------ | ------------------------------------------------------------- |
+| `ns`               | Repeated per segment; filters to a namespace prefix           |
+| `kinds`            | Filter by event kind: `add`, `update`, `expired`; default all |
+| `after` / `before` | ISO 8601 timestamp bounds on `occurred_at`                    |
+| `after_cursor`     | Opaque cursor for paginating through results                  |
+| `limit`            | Max events per page; default 50, max 200                      |
 
-The same OPA access control that governs memory reads applies here — callers only see events for namespaces they can access. `value` and `attributes` are `null` for `delete` and `expired` events.
+The same OPA access control that governs memory reads applies here — callers only see events for namespaces they can access. `value` and `attributes` are `null` for `expired` events; archive operations appear as `update` events.
 
 ## Memory Properties
 
@@ -479,14 +495,14 @@ An async variant (`AsyncMemoryServiceStore`) is also available for use in async 
 
 ## API Operations
 
-| Method   | Path                      | Purpose                                                 |
-| -------- | ------------------------- | ------------------------------------------------------- |
-| `PUT`    | `/v1/memories`            | Upsert a memory                                         |
-| `GET`    | `/v1/memories`            | Get a single memory by namespace + key                  |
-| `DELETE` | `/v1/memories`            | Delete a memory by namespace + key                      |
-| `POST`   | `/v1/memories/search`     | Attribute filter and/or semantic search                 |
-| `GET`    | `/v1/memories/namespaces` | List namespaces under a prefix                          |
-| `GET`    | `/v1/memories/events`     | Paginated event timeline (add, update, delete, expired) |
+| Method  | Path                      | Purpose                                                 |
+| ------- | ------------------------- | ------------------------------------------------------- |
+| `PUT`   | `/v1/memories`            | Upsert a memory                                         |
+| `GET`   | `/v1/memories`            | Get a single memory by namespace + key and archive mode |
+| `PATCH` | `/v1/memories`            | Archive or unarchive a memory                           |
+| `POST`  | `/v1/memories/search`     | Attribute filter and/or semantic search                 |
+| `GET`   | `/v1/memories/namespaces` | List namespaces under a prefix and archive mode         |
+| `GET`   | `/v1/memories/events`     | Paginated event timeline (add, update, expired)         |
 
 ## Next Steps
 

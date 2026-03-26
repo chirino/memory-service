@@ -31,7 +31,7 @@ The docstring payload is JSON with variable expansion (`${...}`) before executio
   "collection": "conversations",
   "operation": "find",
   "filter": { "_id": "${conversationId}" },
-  "projection": { "_id": 1, "deleted_at": 1 },
+  "projection": { "_id": 1, "archived_at": 1 },
   "sort": { "created_at": 1 },
   "limit": 10
 }
@@ -86,10 +86,10 @@ Pattern:
 ```gherkin
 When I execute SQL query:
 """
-SELECT id, deleted_at FROM conversation_groups WHERE id = '${groupId}'
+SELECT id, archived_at FROM conversation_groups WHERE id = '${groupId}'
 """
 Then the SQL result should have 1 row
-And the SQL result column "deleted_at" should be non-null
+And the SQL result column "archived_at" should be non-null
 
 When I execute MongoDB query:
 """
@@ -97,11 +97,11 @@ When I execute MongoDB query:
   "collection": "conversation_groups",
   "operation": "find",
   "filter": { "_id": "${groupId}" },
-  "projection": { "_id": 1, "deleted_at": 1 }
+  "projection": { "_id": 1, "archived_at": 1 }
 }
 """
 Then the MongoDB result should have 1 row
-And the MongoDB result column "deleted_at" should be non-null
+And the MongoDB result column "archived_at" should be non-null
 ```
 
 This keeps one shared feature file while enabling each backend to run its native assertions.

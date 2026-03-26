@@ -14,26 +14,26 @@ import (
 )
 
 func (s *MongoStore) AdminStatsSummary(ctx context.Context) (*registrystore.AdminStatsSummary, error) {
-	conversationGroupsTotal, err := s.groups().CountDocuments(ctx, bson.M{"deleted_at": bson.M{"$exists": false}})
+	conversationGroupsTotal, err := s.groups().CountDocuments(ctx, bson.M{"archived_at": bson.M{"$exists": false}})
 	if err != nil {
 		return nil, fmt.Errorf("count active conversation groups: %w", err)
 	}
-	conversationGroupsSoftDeleted, err := s.groups().CountDocuments(ctx, bson.M{"deleted_at": bson.M{"$exists": true}})
+	conversationGroupsArchived, err := s.groups().CountDocuments(ctx, bson.M{"archived_at": bson.M{"$exists": true}})
 	if err != nil {
-		return nil, fmt.Errorf("count soft-deleted conversation groups: %w", err)
+		return nil, fmt.Errorf("count archived conversation groups: %w", err)
 	}
-	findOldestSoftDeletedConversation := s.conversations().FindOne(ctx, bson.M{"deleted_at": bson.M{"$exists": true}}, options.FindOne().SetSort(bson.D{{Key: "updated_at", Value: 1}, {Key: "_id", Value: 1}}))
-	var oldestSoftDeletedConversation struct {
+	findOldestArchivedConversation := s.conversations().FindOne(ctx, bson.M{"archived_at": bson.M{"$exists": true}}, options.FindOne().SetSort(bson.D{{Key: "updated_at", Value: 1}, {Key: "_id", Value: 1}}))
+	var oldestArchivedConversation struct {
 		UpdatedAt time.Time `bson:"updated_at"`
 	}
-	var oldestSoftDeletedAt *time.Time
-	if err := findOldestSoftDeletedConversation.Decode(&oldestSoftDeletedConversation); err == nil {
-		t := oldestSoftDeletedConversation.UpdatedAt.UTC()
-		oldestSoftDeletedAt = &t
+	var oldestArchivedAt *time.Time
+	if err := findOldestArchivedConversation.Decode(&oldestArchivedConversation); err == nil {
+		t := oldestArchivedConversation.UpdatedAt.UTC()
+		oldestArchivedAt = &t
 	} else if err != nil && err != mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("load oldest soft-deleted conversation: %w", err)
+		return nil, fmt.Errorf("load oldest archived conversation: %w", err)
 	}
-	conversationsTotal, err := s.conversations().CountDocuments(ctx, bson.M{"deleted_at": bson.M{"$exists": false}})
+	conversationsTotal, err := s.conversations().CountDocuments(ctx, bson.M{"archived_at": bson.M{"$exists": false}})
 	if err != nil {
 		return nil, fmt.Errorf("count active conversations: %w", err)
 	}
@@ -60,9 +60,9 @@ func (s *MongoStore) AdminStatsSummary(ctx context.Context) (*registrystore.Admi
 
 	return &registrystore.AdminStatsSummary{
 		ConversationGroups: registrystore.AdminConversationGroupStats{
-			Total:               conversationGroupsTotal,
-			SoftDeleted:         conversationGroupsSoftDeleted,
-			OldestSoftDeletedAt: oldestSoftDeletedAt,
+			Total:            conversationGroupsTotal,
+			Archived:         conversationGroupsArchived,
+			OldestArchivedAt: oldestArchivedAt,
 		},
 		Conversations: registrystore.AdminTotalStats{
 			Total: conversationsTotal,

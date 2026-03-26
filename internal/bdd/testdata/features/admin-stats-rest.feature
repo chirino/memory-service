@@ -51,7 +51,7 @@ Feature: Admin Stats REST API
 
   # Serial today only because this feature shares the serial stats runner; this scenario only checks that summary fields are present and appears parallel-safe.
   Scenario: Admin can fetch datastore-backed summary stats
-    And there is a conversation owned by "bob" with title "Summary soft-delete probe"
+    And there is a conversation owned by "bob" with title "Summary archive probe"
     And set "summaryConversationId" to "${conversationId}"
     Given I am authenticated as user "alice"
     And I call PUT "/v1/memories" with body:
@@ -62,25 +62,31 @@ Feature: Admin Stats REST API
       "value": { "x": 1 }
     }
     """
-    And I call DELETE "/v1/memories?ns=user&ns=alice&ns=summary&key=to-delete"
-    And I am authenticated as admin user "alice"
-    When I call DELETE "/v1/admin/conversations/${summaryConversationId}" with body:
+    And I call PATCH "/v1/memories?ns=user&ns=alice&ns=summary&key=to-delete" with body:
     """
     {
+      "archived": true
+    }
+    """
+    And I am authenticated as admin user "alice"
+    When I call PATCH "/v1/admin/conversations/${summaryConversationId}" with body:
+    """
+    {
+      "archived": true,
       "justification": "Create deleted data for summary stats"
     }
     """
-    Then the response status should be 204
+    Then the response status should be 200
     When I call GET "/v1/admin/stats/summary"
     Then the response status should be 200
     And the response body field "conversationGroups.total" should not be null
-    And the response body field "conversationGroups.softDeleted" should not be null
-    And the response body field "conversationGroups.oldestSoftDeletedAt" should not be null
+    And the response body field "conversationGroups.archived" should not be null
+    And the response body field "conversationGroups.oldestArchivedAt" should not be null
     And the response body field "conversations.total" should not be null
     And the response body field "entries.total" should not be null
     And the response body field "memories.total" should not be null
-    And the response body field "memories.softDeleted" should not be null
-    And the response body field "memories.oldestSoftDeletedAt" should not be null
+    And the response body field "memories.archived" should not be null
+    And the response body field "memories.oldestArchivedAt" should not be null
     And the response body field "outboxEvents" should be null
 
   # Serial today only because this feature shares the serial stats runner; this scenario only checks that summary fields are present and appears parallel-safe.

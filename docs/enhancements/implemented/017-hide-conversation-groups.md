@@ -8,6 +8,8 @@ supersedes:
 
 > **Status**: Implemented. Refines the public API surface from
 > [001](../partial/001-conversation-forking-design.md).
+>
+> **Current Contract Note**: Conversation archival is now defined by [094](./094-archive-operations.md). References below to conversation `DELETE` endpoints should be read as archive behavior now exposed through conversation `PATCH` with the synthetic `archived` field.
 
 ## Summary
 
@@ -84,7 +86,7 @@ This is consistent with how the API already works - all membership endpoints alr
 
 ### 4. Deletion semantics: Document cascade behavior
 
-Currently, deleting a conversation soft-deletes the entire conversation group (root + all forks). With `conversationGroupId` hidden, this cascade needs to be clearly documented:
+Currently, deleting a conversation archives the entire conversation group (root + all forks). With `conversationGroupId` hidden, this cascade needs to be clearly documented:
 
 > **Deleting a conversation deletes all conversations in the same fork tree** (the root conversation and all its forks). Memberships and messages associated with these conversations are also deleted.
 
@@ -197,7 +199,7 @@ Six feature files and the step definitions class reference `conversationGroupId`
 Specific scenarios:
 - **"Evict conversation groups past retention period"** (line 8): `set "oldGroupId" to "${conversationGroupId}"`
 - **"Cascade deletes child records"** (line 116): `set "groupId" to "${conversationGroupId}"`
-- **"Evict soft-deleted memberships"** (line 138): `set "groupId" to "${conversationGroupId}"`
+- **"Evict archived memberships"** (line 138): `set "groupId" to "${conversationGroupId}"`
 - **"Evict multiple resource types in single request"** (lines 178, 181): `set "groupAId" / "groupBId" to "${conversationGroupId}"`
 - **"Cascade deletes memberships and ownership transfers"** (line 248): `set "groupId" to "${conversationGroupId}"`
 - **"Vector store task contains correct group ID"** (line 279): `set "groupId" to "${conversationGroupId}"`
@@ -210,7 +212,7 @@ These can continue to work as-is if the step definition still populates `convers
 
 **Line 226** — `contextVariables.put("conversationGroupId", conversation.getConversationGroupId())`:
 After removal from the DTO, `ConversationDto.getConversationGroupId()` will no longer exist. The step definition needs to resolve the group ID from the database directly. Options:
-1. Query `conversation_groups` by conversation ID to get the group ID and put it in `contextVariables` (only needed for eviction/soft-delete SQL assertions).
+1. Query `conversation_groups` by conversation ID to get the group ID and put it in `contextVariables` (only needed for eviction/archive SQL assertions).
 2. Add an internal helper on the store that returns the group ID for a conversation (test-only, not exposed in API).
 
 This keeps `${conversationGroupId}` available as a test-infrastructure variable for SQL-level assertions while removing it from the API contract.

@@ -252,7 +252,7 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	indexer := service.NewBackgroundIndexer(store, embedder, vectorStore, cfg.VectorIndexerBatchSize)
 	go indexer.Start(ctx)
 
-	evictionSvc := service.NewEvictionService(store, cfg.EvictionBatchSize, cfg.EvictionBatchDelay)
+	evictionSvc := service.NewEvictionService(store, eventBus, cfg.EvictionBatchSize, cfg.EvictionBatchDelay)
 	go evictionSvc.Start(ctx)
 
 	taskProc := service.NewTaskProcessor(store, vectorStore)

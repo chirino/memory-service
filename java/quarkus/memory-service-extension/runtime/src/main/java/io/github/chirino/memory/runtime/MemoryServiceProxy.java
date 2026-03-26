@@ -62,11 +62,26 @@ public class MemoryServiceProxy {
 
     public Response listConversations(
             String mode, String ancestry, String afterCursor, Integer limit, String query) {
+        return listConversations(mode, ancestry, afterCursor, limit, query, "exclude");
+    }
+
+    public Response listConversations(
+            String mode,
+            String ancestry,
+            String afterCursor,
+            Integer limit,
+            String query,
+            String archived) {
         return execute(
                 () ->
                         conversationsApi()
                                 .listConversations(
-                                        mode, ancestry, toUuid(afterCursor), limit, query),
+                                        mode,
+                                        ancestry,
+                                        toUuid(afterCursor),
+                                        limit,
+                                        query,
+                                        archived),
                 OK,
                 "Error listing conversations");
     }
@@ -95,9 +110,11 @@ public class MemoryServiceProxy {
     }
 
     public Response deleteConversation(String conversationId) {
-        return executeVoid(
-                () -> conversationsApi().deleteConversation(toUuid(conversationId)),
-                NO_CONTENT,
+        UpdateConversationRequest request = new UpdateConversationRequest();
+        request.setArchived(Boolean.TRUE);
+        return execute(
+                () -> conversationsApi().updateConversation(toUuid(conversationId), request),
+                OK,
                 "Error deleting history %s",
                 conversationId);
     }

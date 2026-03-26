@@ -160,12 +160,12 @@ func TestEpisodicIndexer_SkipsWhenIndexedContentMissing(t *testing.T) {
 
 func TestEpisodicIndexer_DeletesVectorsForDeletedMemory(t *testing.T) {
 	memoryID := uuid.New()
-	deletedAt := time.Now().Add(-time.Minute)
+	archivedAt := time.Now().Add(-time.Minute)
 	store := &fakeEpisodicStore{
 		pending: []registryepisodic.PendingMemory{
 			{
 				ID:             memoryID,
-				DeletedAt:      &deletedAt,
+				ArchivedAt:     &archivedAt,
 				Namespace:      "user\u001falice",
 				IndexedContent: map[string]string{"title": "should not embed"},
 			},

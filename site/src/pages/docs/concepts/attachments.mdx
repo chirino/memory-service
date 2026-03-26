@@ -277,11 +277,11 @@ Once referenced in an entry, the attachment's expiration is cleared. It persists
 
 ### Shared Blobs
 
-When multiple attachment records share a blob (from forking), the file is only deleted when the last record is removed. A soft-delete protocol ensures crash safety:
+When multiple attachment records share a blob (from forking), the file is only deleted when the last record is removed. A archive protocol ensures crash safety:
 
 1. Lock all records sharing the same storage key
 2. If other active records remain — hard-delete this record only (blob stays)
-3. If this is the last record — soft-delete, delete the file, then hard-delete the record
+3. If this is the last record — archive, delete the file, then hard-delete the record
 
 All attachment settings (max file size, TTLs, cleanup interval, storage backend) are configured via environment variables. See the [Attachment Storage](/docs/configuration/#attachment-storage) section of the configuration guide.
 

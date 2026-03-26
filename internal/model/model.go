@@ -67,9 +67,9 @@ const (
 
 // ConversationGroup is the root of a fork tree.
 type ConversationGroup struct {
-	ID        uuid.UUID  `json:"id"                  gorm:"primaryKey;type:uuid"`
-	CreatedAt time.Time  `json:"createdAt"           gorm:"not null;default:now()"`
-	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	ID         uuid.UUID  `json:"id"                   gorm:"primaryKey;type:uuid"`
+	CreatedAt  time.Time  `json:"createdAt"            gorm:"not null;default:now()"`
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
 func (ConversationGroup) TableName() string { return "conversation_groups" }
@@ -91,7 +91,7 @@ type Conversation struct {
 	CreatedAt               time.Time              `json:"createdAt"                         gorm:"not null;default:now()"`
 	UpdatedAt               time.Time              `json:"updatedAt"                         gorm:"not null;default:now()"`
 	VectorizedAt            *time.Time             `json:"vectorizedAt,omitempty"`
-	DeletedAt               *time.Time             `json:"deletedAt,omitempty"`
+	ArchivedAt              *time.Time             `json:"archivedAt,omitempty"`
 }
 
 func (Conversation) TableName() string { return "conversations" }
@@ -225,7 +225,7 @@ type Attachment struct {
 	SourceURL   *string    `json:"sourceUrl,omitempty"`
 	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
 	CreatedAt   time.Time  `json:"createdAt"            gorm:"not null;default:now()"`
-	DeletedAt   *time.Time `json:"deletedAt,omitempty"`
+	ArchivedAt  *time.Time `json:"archivedAt,omitempty"`
 }
 
 func (Attachment) TableName() string { return "attachments" }

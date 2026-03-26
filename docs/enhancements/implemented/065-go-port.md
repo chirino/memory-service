@@ -77,7 +77,7 @@ All `error` returns must be either returned to the caller, wrapped with context 
 - Forking is only permitted on `HISTORY` channel entries originating from a `USER` role. Forks on other channels or roles are rejected with 422. [001]
 - Individual entries cannot be deleted; they are only removed via cascade when the parent conversation/group is deleted. [001]
 - Entries are immutable once created — no update path. New content requires a new entry. [001, 021]
-- All user-facing read queries must include `WHERE deleted_at IS NULL`. Soft-deleted rows must be invisible to the Agent API and return 404. [013]
+- All user-facing read queries must include `WHERE archived_at IS NULL`. Soft-deleted rows must be invisible to the Agent API and return 404. [013]
 - Hard deletes (eviction) must rely on `ON DELETE CASCADE` at the Postgres level, or explicit ordered deletion (entries → conversations → memberships → transfers → groups) for MongoDB. [016]
 - Vector store index entries for a conversation must be queued for cleanup **before** the conversation group is hard-deleted, not after. [015, 016]
 
@@ -137,8 +137,8 @@ gRPC services must map domain errors to gRPC status codes consistently: [003]
 
 ### Eviction / hard-delete behaviour
 
-- Eviction processes soft-deleted records in configurable batches (default 1 000 rows) with a configurable inter-batch delay (default 100 ms) to reduce lock contention. [016]
-- Eviction and normal user queries operate on disjoint row sets (`deleted_at IS NULL` vs `deleted_at IS NOT NULL`) — eviction cannot block reads. [016]
+- Eviction processes archived records in configurable batches (default 1 000 rows) with a configurable inter-batch delay (default 100 ms) to reduce lock contention. [016]
+- Eviction and normal user queries operate on disjoint row sets (`archived_at IS NULL` vs `archived_at IS NOT NULL`) — eviction cannot block reads. [016]
 - The `POST /v1/admin/evict` endpoint supports `Accept: text/event-stream` for SSE progress streaming on long-running evictions. [016]
 
 ### Encryption at rest
@@ -617,7 +617,7 @@ ENTRYPOINT ["/memory-service"]
 
 ### Phase 9: Background tasks & eviction
 
-- [x] Implement `internal/service/eviction.go` — periodic soft-delete cleanup
+- [x] Implement `internal/service/eviction.go` — periodic archive cleanup
 - [x] Implement `internal/service/indexer.go` — background embedding indexer (goroutine + ticker)
 - [x] `POST /v1/admin/evict` endpoint supports both sync and SSE streaming modes
 
@@ -669,7 +669,7 @@ ENTRYPOINT ["/memory-service"]
 - [x] Port admin auth-role client mapping scenarios: API-key + `X-Client-ID`-driven admin/auditor role assignment parity for admin route guards.
 - [x] Port an additional Java scenario batch to Go BDD parity tests for `conversations-rest.feature`, `sharing-rest.feature`, `ownership-transfers-rest.feature`, `update-conversation-rest.feature`, and `validation-rest.feature` (status/behavior parity assertions).
 - [x] Fix membership response-shape parity in agent routes: membership create/list/update now return `conversationId` and do not expose `conversationGroupId`.
-- [x] Fix delete-conversation parity behavior in Postgres store: deleting a conversation now soft-deletes the conversation/group tree and hard-deletes memberships, entries, and pending ownership transfers for that group.
+- [x] Fix delete-conversation parity behavior in Postgres store: deleting a conversation now archives the conversation/group tree and hard-deletes memberships, entries, and pending ownership transfers for that group.
 - [x] ~~Continue porting remaining Java scenarios (not yet fully covered)~~ — **superseded by Phase 13 godog migration**.
 
 ### Phase 13: Godog BDD migration (replaces hand-rolled test porting)
@@ -690,7 +690,7 @@ internal/testutil/cucumber/           # Generic godog framework
 internal/bdd/                         # Memory-service godog tests (replaces hand-rolled tests)
 ├── cucumber_test.go                  # Test runner: Postgres setup, HTTP+gRPC server boot, feature file discovery
 ├── mock_prometheus.go                # Mock Prometheus server for admin stats tests
-├── steps_admin.go                    # Admin API: list/get/delete/restore conversations
+├── steps_admin.go                    # Admin API: list/get/archive conversations
 ├── steps_admin_stats.go              # Admin stats: Prometheus-backed metrics endpoints
 ├── steps_attachments.go              # Attachment upload/download/delete (REST)
 ├── steps_auth.go                     # Auth steps: user/admin/agent/auditor/indexer authentication
@@ -750,7 +750,7 @@ internal/bdd/                         # Memory-service godog tests (replaces han
   - Features covered: `conversations-rest`, `entries-rest`, `sharing-rest`, `ownership-transfers-rest`, `update-conversation-rest`, `validation-rest`, `forking-rest`, `multi-agent-memory-rest`
 
 - [x] **Step definitions — Phase B (admin + search, ~50 scenarios)**:
-  - `steps_admin.go` — admin list/get/delete/restore
+  - `steps_admin.go` — admin list/get/archive
   - `steps_eviction.go` — eviction sync/async/concurrent/role-gated
   - `steps_admin_stats.go` — Prometheus-backed stats, 501/503 error behaviors
   - `steps_sql.go` — SQL execution and result assertions

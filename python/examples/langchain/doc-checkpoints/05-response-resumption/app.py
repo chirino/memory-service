@@ -165,6 +165,7 @@ async def list_conversations(request: Request):
         after_cursor=request.query_params.get("afterCursor"),
         limit=parse_optional_int(request.query_params.get("limit")),
         query=request.query_params.get("query"),
+        archived=request.query_params.get("archived"),
     )
     return to_fastapi_response(response)
 

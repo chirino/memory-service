@@ -170,11 +170,6 @@ class ConversationsServiceStub(object):
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.UpdateConversationRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
                 _registered_method=True)
-        self.DeleteConversation = channel.unary_unary(
-                '/memory.v1.ConversationsService/DeleteConversation',
-                request_serializer=memory_dot_v1_dot_memory__service__pb2.DeleteConversationRequest.SerializeToString,
-                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
-                _registered_method=True)
         self.ListForks = channel.unary_unary(
                 '/memory.v1.ConversationsService/ListForks',
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.ListForksRequest.SerializeToString,
@@ -217,13 +212,6 @@ class ConversationsServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def DeleteConversation(self, request, context):
-        """DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def ListForks(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -258,11 +246,6 @@ def add_ConversationsServiceServicer_to_server(servicer, server):
                     servicer.UpdateConversation,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.UpdateConversationRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.Conversation.SerializeToString,
-            ),
-            'DeleteConversation': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteConversation,
-                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.DeleteConversationRequest.FromString,
-                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
             'ListForks': grpc.unary_unary_rpc_method_handler(
                     servicer.ListForks,
@@ -383,33 +366,6 @@ class ConversationsService(object):
             '/memory.v1.ConversationsService/UpdateConversation',
             memory_dot_v1_dot_memory__service__pb2.UpdateConversationRequest.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def DeleteConversation(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/memory.v1.ConversationsService/DeleteConversation',
-            memory_dot_v1_dot_memory__service__pb2.DeleteConversationRequest.SerializeToString,
-            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1262,9 +1218,9 @@ class MemoriesServiceStub(object):
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.GetMemoryRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.MemoryItem.FromString,
                 _registered_method=True)
-        self.DeleteMemory = channel.unary_unary(
-                '/memory.v1.MemoriesService/DeleteMemory',
-                request_serializer=memory_dot_v1_dot_memory__service__pb2.DeleteMemoryRequest.SerializeToString,
+        self.UpdateMemory = channel.unary_unary(
+                '/memory.v1.MemoriesService/UpdateMemory',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.UpdateMemoryRequest.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
         self.SearchMemories = channel.unary_unary(
@@ -1309,7 +1265,7 @@ class MemoriesServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def DeleteMemory(self, request, context):
+    def UpdateMemory(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -1361,9 +1317,9 @@ def add_MemoriesServiceServicer_to_server(servicer, server):
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.GetMemoryRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.MemoryItem.SerializeToString,
             ),
-            'DeleteMemory': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteMemory,
-                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.DeleteMemoryRequest.FromString,
+            'UpdateMemory': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateMemory,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.UpdateMemoryRequest.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
             'SearchMemories': grpc.unary_unary_rpc_method_handler(
@@ -1457,7 +1413,7 @@ class MemoriesService(object):
             _registered_method=True)
 
     @staticmethod
-    def DeleteMemory(request,
+    def UpdateMemory(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1470,8 +1426,8 @@ class MemoriesService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/memory.v1.MemoriesService/DeleteMemory',
-            memory_dot_v1_dot_memory__service__pb2.DeleteMemoryRequest.SerializeToString,
+            '/memory.v1.MemoriesService/UpdateMemory',
+            memory_dot_v1_dot_memory__service__pb2.UpdateMemoryRequest.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,

@@ -9,7 +9,7 @@ import (
 )
 
 // EpisodicTTLService runs background passes on a configurable interval:
-//  1. Expiry pass — soft-deletes memories whose TTL has elapsed (deleted_reason=2).
+//  1. Expiry pass — archives memories whose TTL has elapsed (deleted_reason=2).
 //  2. Eviction pass A — hard-deletes superseded-update rows (deleted_reason=0) once re-indexed.
 //  3. Eviction pass B — tombstones delete/expired rows (deleted_reason IN (1,2)) once re-indexed,
 //     clearing encrypted data while keeping the row for event history.

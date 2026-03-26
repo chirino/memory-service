@@ -8,7 +8,7 @@ For detailed design specifications on specific features, see:
 
 - **[Architecture](architecture.md)**: System context, component overview, store abstractions, request flows, and module structure.
 - **[Entry Data Model](entry-data-model.md)**: Detailed documentation of how entries are stored and retrieved, including channels, memory epochs, conversation forking, and conversation-level client/agent identity.
-- **[Database Design](db-design.md)**: PostgreSQL schema UML diagram, table descriptions, and key design patterns (access control, soft deletes, encryption, full-text search).
+- **[Database Design](db-design.md)**: PostgreSQL schema UML diagram, table descriptions, and key design patterns (access control, archives, encryption, full-text search).
 
 ## High-level Responsibilities
 
@@ -74,8 +74,10 @@ The HTTP API is defined in `openapi.yml` (OpenAPI 3.1) for the main API and `ope
 - `GET /v1/conversations/{conversationId}`
   - Returns a `Conversation` if the user has access.
 
-- `DELETE /v1/conversations/{conversationId}`
-  - Deletes a conversation and all conversations in the same fork tree (the root and all its forks), along with their entries and memberships.
+- `PATCH /v1/conversations/{conversationId}`
+  - Updates conversation metadata and archive state.
+  - Setting `archived=true` archives the conversation and all conversations in the same fork tree (the root and all its forks).
+  - Archived conversations remain readable until hard-deleted by eviction.
 
 ---
 
@@ -268,10 +270,9 @@ The admin API (`openapi-admin.yml`) provides system-wide access to conversations
 
 Key endpoints:
 
-- `GET /v1/admin/conversations` - List all conversations with filters (userId, deleted status, date ranges).
-- `GET /v1/admin/conversations/{id}` - Get any conversation including soft-deleted.
-- `DELETE /v1/admin/conversations/{id}` - Soft-delete a conversation.
-- `POST /v1/admin/conversations/{id}/restore` - Restore a soft-deleted conversation.
+- `GET /v1/admin/conversations` - List all conversations with filters (userId, archive state, date ranges).
+- `GET /v1/admin/conversations/{id}` - Get any conversation including archived.
+- `PATCH /v1/admin/conversations/{id}` - Archive or unarchive a conversation.
 - `GET /v1/admin/conversations/{id}/entries` - Get entries from any conversation.
 - `GET /v1/admin/conversations/{id}/memberships` - Get memberships for any conversation.
 - `GET /v1/admin/conversations/{id}/forks` - List forks for any conversation.

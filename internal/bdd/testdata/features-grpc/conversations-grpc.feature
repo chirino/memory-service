@@ -1,7 +1,7 @@
 Feature: Conversations gRPC API
   As a client of the memory service
   I want to manage conversations via gRPC
-  So that I can create, list, get, and delete conversations using gRPC
+  So that I can create, list, get, and archive conversations using gRPC
 
   Background:
     Given I am authenticated as user "alice"
@@ -144,33 +144,24 @@ Feature: Conversations gRPC API
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
 
-  Scenario: Delete a conversation via gRPC
+  Scenario: Archived conversations can be listed via archive filter
     Given I have a conversation with title "To Be Deleted"
-    When I send gRPC request "ConversationsService/DeleteConversation" with body:
+    And I send gRPC request "ConversationsService/UpdateConversation" with body:
     """
     conversation_id: "${conversationId | uuid_to_hex_string}"
+    archived: true
     """
     Then the gRPC response should not have an error
-    When I send gRPC request "ConversationsService/GetConversation" with body:
+    When I send gRPC request "ConversationsService/ListConversations" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    archived: ARCHIVE_FILTER_ONLY
+    page {
+      page_size: 10
+    }
     """
-    Then the gRPC response should have status "NOT_FOUND"
-
-  Scenario: Delete non-existent conversation via gRPC
-    When I send gRPC request "ConversationsService/DeleteConversation" with body:
-    """
-    conversation_id: "${"00000000-0000-0000-0000-000000000000" | uuid_to_hex_string}"
-    """
-    Then the gRPC response should have status "NOT_FOUND"
-
-  Scenario: Delete conversation without access via gRPC
-    Given there is a conversation owned by "bob"
-    When I send gRPC request "ConversationsService/DeleteConversation" with body:
-    """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
-    """
-    Then the gRPC response should have status "PERMISSION_DENIED"
+    Then the gRPC response should not have an error
+    And the gRPC response field "conversations" should have size 1
+    And the gRPC response field "conversations[0].archived" should be true
 
   Scenario: Conversation response does not contain conversation_group_id via gRPC
     When I send gRPC request "ConversationsService/CreateConversation" with body:
@@ -180,7 +171,7 @@ Feature: Conversations gRPC API
     Then the gRPC response should not have an error
     And the gRPC response should not contain field "conversationGroupId"
 
-  Scenario: Deleting a conversation deletes all forks via gRPC
+  Scenario: Archiving a conversation archives all forks via gRPC
     Given I have a conversation with title "Root Conversation"
     And set "rootConversationId" to "${conversationId}"
     And I append an entry to the conversation:
@@ -193,18 +184,21 @@ Feature: Conversations gRPC API
     And set "entryId" to "${response.body.id}"
     When I fork the conversation at entry "${entryId}"
     And set "forkConversationId" to "${response.body.id}"
-    When I send gRPC request "ConversationsService/DeleteConversation" with body:
+    When I send gRPC request "ConversationsService/UpdateConversation" with body:
     """
     conversation_id: "${rootConversationId | uuid_to_hex_string}"
+    archived: true
     """
     Then the gRPC response should not have an error
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
     conversation_id: "${rootConversationId | uuid_to_hex_string}"
     """
-    Then the gRPC response should have status "NOT_FOUND"
+    Then the gRPC response should not have an error
+    And the gRPC response field "archived" should be true
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
     conversation_id: "${forkConversationId | uuid_to_hex_string}"
     """
-    Then the gRPC response should have status "NOT_FOUND"
+    Then the gRPC response should not have an error
+    And the gRPC response field "archived" should be true

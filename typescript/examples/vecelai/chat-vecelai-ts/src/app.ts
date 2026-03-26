@@ -129,6 +129,7 @@ app.get("/v1/conversations", async (req, res) => {
       afterCursor: (req.query.afterCursor as string | undefined) ?? null,
       limit: asNumber(req.query.limit),
       query: (req.query.query as string | undefined) ?? null,
+      archived: (req.query.archived as string | undefined) ?? null,
     }),
   );
 });

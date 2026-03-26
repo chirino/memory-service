@@ -59,9 +59,6 @@ func (a *apiServerAdapter) SearchConversations(c *gin.Context) {
 func (a *apiServerAdapter) ListUnindexedEntries(c *gin.Context, _ generatedapi.ListUnindexedEntriesParams) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) DeleteConversation(c *gin.Context, _ openapi_types.UUID) {
-	notImplemented(c)
-}
 func (a *apiServerAdapter) GetConversation(c *gin.Context, _ openapi_types.UUID) {
 	notImplemented(c)
 }
@@ -99,8 +96,8 @@ func (a *apiServerAdapter) DeleteConversationResponse(c *gin.Context, _ openapi_
 	notImplemented(c)
 }
 
-func (a *apiServerAdapter) DeleteMemory(c *gin.Context, params generatedapi.DeleteMemoryParams) {
-	deleteMemoryWithParams(c, a.store, a.policy, a.cfg, params)
+func (a *apiServerAdapter) UpdateMemory(c *gin.Context, params generatedapi.UpdateMemoryParams) {
+	updateMemoryWithParams(c, a.store, a.policy, a.cfg, params)
 }
 
 func (a *apiServerAdapter) GetMemory(c *gin.Context, params generatedapi.GetMemoryParams) {

@@ -287,6 +287,17 @@ type ConversationsServer struct {
 	Store registrystore.MemoryStore
 }
 
+func protoArchiveFilterToEpisodic(filter pb.ArchiveFilter) registryepisodic.ArchiveFilter {
+	switch filter {
+	case pb.ArchiveFilter_ARCHIVE_FILTER_INCLUDE:
+		return registryepisodic.ArchiveFilterInclude
+	case pb.ArchiveFilter_ARCHIVE_FILTER_ONLY:
+		return registryepisodic.ArchiveFilterOnly
+	default:
+		return registryepisodic.ArchiveFilterExclude
+	}
+}
+
 func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.ListConversationsRequest) (*pb.ListConversationsResponse, error) {
 	userID := getUserID(ctx)
 	if userID == "" {
@@ -306,6 +317,13 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 		ancestry = model.ConversationAncestryChildren
 	case pb.ConversationAncestryFilter_CONVERSATION_ANCESTRY_FILTER_ALL:
 		ancestry = model.ConversationAncestryAll
+	}
+	archived := registrystore.ArchiveFilterExclude
+	switch req.GetArchived() {
+	case pb.ArchiveFilter_ARCHIVE_FILTER_INCLUDE:
+		archived = registrystore.ArchiveFilterInclude
+	case pb.ArchiveFilter_ARCHIVE_FILTER_ONLY:
+		archived = registrystore.ArchiveFilterOnly
 	}
 
 	var afterCursor *string
@@ -331,7 +349,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 			cursor    *string
 		}
 		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
-			summaries, cursor, err := s.Store.ListConversations(txCtx, userID, query, afterCursor, limit, mode, ancestry)
+			summaries, cursor, err := s.Store.ListConversations(txCtx, userID, query, afterCursor, limit, mode, ancestry, archived)
 			return result{summaries: summaries, cursor: cursor}, err
 		})
 		return out.summaries, out.cursor, err
@@ -351,6 +369,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 			CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
 			UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 			AccessLevel: mapAccessLevel(cs.AccessLevel),
+			Archived:    cs.ArchivedAt != nil,
 		})
 		if cs.StartedByConversationID != nil {
 			resp.Conversations[len(resp.Conversations)-1].StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
@@ -422,33 +441,37 @@ func (s *ConversationsServer) UpdateConversation(ctx context.Context, req *pb.Up
 	if req.Title != nil {
 		title = req.Title
 	}
+	var archived *bool
+	if req.Archived != nil {
+		archived = req.Archived
+	}
 
 	conv, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+		if archived != nil {
+			conv, err := s.Store.GetConversation(txCtx, userID, convID)
+			if err != nil {
+				return nil, err
+			}
+			if *archived {
+				if err := s.Store.ArchiveConversation(txCtx, userID, convID); err != nil {
+					return nil, err
+				}
+				now := time.Now().UTC()
+				conv.ArchivedAt = &now
+			} else {
+				if err := s.Store.UnarchiveConversation(txCtx, userID, convID); err != nil {
+					return nil, err
+				}
+				conv.ArchivedAt = nil
+			}
+			return conv, nil
+		}
 		return s.Store.UpdateConversation(txCtx, userID, convID, title, nil)
 	})
 	if err != nil {
 		return nil, mapError(err)
 	}
 	return conversationToProto(conv), nil
-}
-
-func (s *ConversationsServer) DeleteConversation(ctx context.Context, req *pb.DeleteConversationRequest) (*emptypb.Empty, error) {
-	userID := getUserID(ctx)
-	if userID == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
-	}
-
-	convID, err := bytesToUUID(req.GetConversationId())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
-	}
-
-	if err := inMemoryWrite(ctx, s.Store, func(txCtx context.Context) error {
-		return s.Store.DeleteConversation(txCtx, userID, convID)
-	}); err != nil {
-		return nil, mapError(err)
-	}
-	return &emptypb.Empty{}, nil
 }
 
 func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRequest) (*pb.ListForksResponse, error) {
@@ -553,6 +576,7 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 			CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
 			UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 			AccessLevel: mapAccessLevel(cs.AccessLevel),
+			Archived:    cs.ArchivedAt != nil,
 		}
 		if cs.StartedByEntryID != nil {
 			item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
@@ -573,6 +597,7 @@ func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversatio
 		CreatedAt:   conv.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:   conv.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		AccessLevel: mapAccessLevel(conv.AccessLevel),
+		Archived:    conv.ArchivedAt != nil,
 	}
 	if conv.ForkedAtEntryID != nil {
 		c.ForkedAtEntryId = uuidToBytes(*conv.ForkedAtEntryID)
@@ -1414,6 +1439,7 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 	if key == "" {
 		return nil, status.Error(codes.InvalidArgument, "key is required")
 	}
+	archived := protoArchiveFilterToEpisodic(req.GetArchived())
 
 	if s.Policy != nil {
 		decision, err := s.Policy.EvaluateAuthz(ctx, "read", namespace, key, nil, nil, memoryPolicyContext(ctx))
@@ -1429,7 +1455,7 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 	}
 
 	item, err := withEpisodicWrite(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryItem, error) {
-		item, err := s.Store.GetMemory(txCtx, namespace, key)
+		item, err := s.Store.GetMemory(txCtx, namespace, key, archived)
 		if err != nil {
 			return nil, err
 		}
@@ -1469,7 +1495,7 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 	return resp, nil
 }
 
-func (s *MemoriesServer) DeleteMemory(ctx context.Context, req *pb.DeleteMemoryRequest) (*emptypb.Empty, error) {
+func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryRequest) (*emptypb.Empty, error) {
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
@@ -1486,9 +1512,12 @@ func (s *MemoriesServer) DeleteMemory(ctx context.Context, req *pb.DeleteMemoryR
 	if key == "" {
 		return nil, status.Error(codes.InvalidArgument, "key is required")
 	}
+	if req.Archived == nil || !req.GetArchived() {
+		return nil, status.Error(codes.InvalidArgument, "archived must be true")
+	}
 
 	if s.Policy != nil {
-		decision, err := s.Policy.EvaluateAuthz(ctx, "delete", namespace, key, nil, nil, memoryPolicyContext(ctx))
+		decision, err := s.Policy.EvaluateAuthz(ctx, "update", namespace, key, nil, nil, memoryPolicyContext(ctx))
 		if err != nil {
 			return nil, episodicInternalError("policy evaluation error", err)
 		}
@@ -1501,9 +1530,9 @@ func (s *MemoriesServer) DeleteMemory(ctx context.Context, req *pb.DeleteMemoryR
 	}
 
 	if err := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
-		return s.Store.DeleteMemory(txCtx, namespace, key)
+		return s.Store.ArchiveMemory(txCtx, namespace, key)
 	}); err != nil {
-		return nil, episodicInternalError("failed to delete memory", err)
+		return nil, episodicInternalError("failed to archive memory", err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -1534,6 +1563,7 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	if req.GetFilter() != nil {
 		filter = req.GetFilter().AsMap()
 	}
+	archived := protoArchiveFilterToEpisodic(req.GetArchived())
 	effectivePrefix := req.GetNamespacePrefix()
 	if s.Policy != nil {
 		var err error
@@ -1546,7 +1576,7 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	query := strings.TrimSpace(req.GetQuery())
 	if query != "" && s.Embedder != nil {
 		items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
-			return semanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, filter, query, limit)
+			return semanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, filter, query, limit, archived)
 		})
 		if err != nil {
 			return nil, episodicInternalError("semantic search error", err)
@@ -1565,7 +1595,7 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	}
 
 	items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
-		return s.Store.SearchMemories(txCtx, effectivePrefix, filter, limit, offset)
+		return s.Store.SearchMemories(txCtx, effectivePrefix, filter, limit, offset, archived)
 	})
 	if err != nil {
 		return nil, episodicInternalError("failed to search memories", err)
@@ -1609,6 +1639,8 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 		}
 	}
 
+	archived := protoArchiveFilterToEpisodic(req.GetArchived())
+
 	if s.Policy != nil {
 		var err error
 		prefix, _, err = s.Policy.InjectFilter(ctx, prefix, nil, memoryPolicyContext(ctx))
@@ -1622,6 +1654,7 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 			Prefix:   prefix,
 			Suffix:   suffix,
 			MaxDepth: maxDepth,
+			Archived: archived,
 		})
 	})
 	if err != nil {
@@ -1825,6 +1858,7 @@ func memoryItemToProto(item registryepisodic.MemoryItem) (*pb.MemoryItem, error)
 		Key:       item.Key,
 		Value:     value,
 		CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339),
+		Archived:  item.ArchivedAt != nil,
 	}
 	if item.Attributes != nil {
 		attrs, err := structpb.NewStruct(item.Attributes)
@@ -1876,7 +1910,7 @@ func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.Epis
 	}
 }
 
-func semanticSearchMemories(ctx context.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter map[string]interface{}, query string, limit int) ([]registryepisodic.MemoryItem, error) {
+func semanticSearchMemories(ctx context.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter map[string]interface{}, query string, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	embeddings, err := embedder.EmbedTexts(ctx, []string{query})
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
@@ -1889,7 +1923,7 @@ func semanticSearchMemories(ctx context.Context, store registryepisodic.Episodic
 	if err != nil {
 		return nil, err
 	}
-	vectorResults, err := store.SearchMemoryVectors(ctx, nsEncoded, embeddings[0], filter, limit)
+	vectorResults, err := store.SearchMemoryVectors(ctx, nsEncoded, embeddings[0], filter, limit, archived)
 	if err != nil {
 		return nil, fmt.Errorf("search memory vectors: %w", err)
 	}
@@ -1911,7 +1945,7 @@ func semanticSearchMemories(ctx context.Context, store registryepisodic.Episodic
 		return nil, nil
 	}
 
-	items, err := store.GetMemoriesByIDs(ctx, orderedIDs)
+	items, err := store.GetMemoriesByIDs(ctx, orderedIDs, archived)
 	if err != nil {
 		return nil, fmt.Errorf("get memories by ids: %w", err)
 	}

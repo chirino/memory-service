@@ -4,7 +4,7 @@ title: Admin APIs
 description: Administrative APIs for cross-user access, audit logging, and data lifecycle management in the Memory Service.
 ---
 
-Admin APIs give platform administrators and auditors elevated access to Memory Service data — across all users, including soft-deleted resources. They are available under the `/v1/admin/` path prefix and require the `admin` or `auditor` role.
+Admin APIs give platform administrators and auditors elevated access to Memory Service data — across all users, including archived resources. They are available under the `/v1/admin/` path prefix and require the `admin` or `auditor` role.
 
 ## How Admin APIs Differ from Regular APIs
 
@@ -12,13 +12,13 @@ The regular Agent APIs are scoped to the authenticated caller: a user can only s
 
 Key differences:
 
-| Aspect            | Regular APIs           | Admin APIs                            |
-| ----------------- | ---------------------- | ------------------------------------- |
-| Scope             | Caller's own resources | All users                             |
-| Deleted resources | Hidden                 | Visible (with `includeDeleted`)       |
-| Role required     | Any authenticated user | `admin` or `auditor`                  |
-| Audit logging     | No                     | Yes — every call is logged            |
-| Justification     | Not applicable         | Optional (or required, if configured) |
+| Aspect             | Regular APIs           | Admin APIs                            |
+| ------------------ | ---------------------- | ------------------------------------- |
+| Scope              | Caller's own resources | All users                             |
+| Archived resources | Hidden                 | Visible (with `archived=include`)     |
+| Role required      | Any authenticated user | `admin` or `auditor`                  |
+| Audit logging      | No                     | Yes — every call is logged            |
+| Justification      | Not applicable         | Optional (or required, if configured) |
 
 ## Roles
 
@@ -46,10 +46,10 @@ curl "http://localhost:8080/v1/admin/conversations?justification=Support+ticket+
   -H "Authorization: Bearer <admin-token>"
 
 # Request body (write requests)
-curl -X DELETE "http://localhost:8080/v1/admin/conversations/{id}" \
+curl -X PATCH "http://localhost:8080/v1/admin/conversations/{id}" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <admin-token>" \
-  -d '{"justification": "User requested account deletion per GDPR request #789"}'
+  -d '{"archived": true, "justification": "User requested account cleanup per support ticket #789"}'
 ```
 
 ### Requiring Justification
@@ -85,37 +85,37 @@ curl "http://localhost:8080/v1/admin/conversations" \
 curl "http://localhost:8080/v1/admin/conversations?userId=alice" \
   -H "Authorization: Bearer <admin-token>"
 
-# Include soft-deleted conversations
-curl "http://localhost:8080/v1/admin/conversations?includeDeleted=true" \
+# Include archived conversations alongside active ones
+curl "http://localhost:8080/v1/admin/conversations?archived=include" \
   -H "Authorization: Bearer <admin-token>"
 
-# Show only deleted conversations
-curl "http://localhost:8080/v1/admin/conversations?onlyDeleted=true" \
+# Show only archived conversations
+curl "http://localhost:8080/v1/admin/conversations?archived=only" \
   -H "Authorization: Bearer <admin-token>"
 ```
 
-Similarly, entries, memberships, forks, attachments, and semantic search all have admin counterparts that bypass ownership checks. The response schemas are the same as the regular APIs, with a few additions (such as `deletedAt` timestamps on conversations and attachments).
+Similarly, entries, memberships, forks, attachments, and semantic search all have admin counterparts that bypass ownership checks. Admin conversation payloads expose an `archived` boolean so clients can distinguish archived records without depending on storage timestamps.
 
-## Restoring Soft-Deleted Conversations
+## Archiving And Unarchiving Conversations
 
-Admins can restore conversations that have been soft-deleted:
+Admins archive and unarchive conversations by patching the conversation resource:
 
 ```bash
-curl -X POST "http://localhost:8080/v1/admin/conversations/{id}/restore" \
+curl -X PATCH "http://localhost:8080/v1/admin/conversations/{id}" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <admin-token>" \
-  -d '{"justification": "User accidentally deleted — support ticket #456"}'
+  -d '{"archived": false, "justification": "User accidentally archived the conversation — support ticket #456"}'
 ```
 
-Returns the restored conversation object, or `409 Conflict` if the conversation is not currently deleted.
+Set `archived` to `true` to archive the fork tree or `false` to unarchive it. The response is the updated conversation object.
 
-## Eviction: Permanently Removing Soft-Deleted Data
+## Eviction: Permanently Removing Archived Data
 
-Soft-deletion keeps data recoverable. **Eviction** permanently removes resources that have been soft-deleted for longer than a specified retention period. This operation is irreversible and requires the `admin` role.
+Archiving keeps data recoverable. **Eviction** permanently removes resources that have been archived for longer than a specified retention period. This operation is irreversible and requires the `admin` role.
 
 ### When to Use Eviction
 
-- Enforcing a data retention policy (e.g., purge conversations deleted more than 90 days ago)
+- Enforcing a data retention policy (e.g., purge conversations archived more than 90 days ago)
 - Satisfying a GDPR/right-to-erasure request
 - Reclaiming storage after bulk deletes
 
@@ -136,12 +136,12 @@ curl -X POST "http://localhost:8080/v1/admin/evict" \
 
 The `retentionPeriod` is an ISO 8601 duration. Common values:
 
-| Value   | Meaning                        |
-| ------- | ------------------------------ |
-| `P90D`  | 90 days                        |
-| `P1Y`   | 1 year                         |
-| `PT24H` | 24 hours                       |
-| `P0D`   | Immediately (all soft-deleted) |
+| Value   | Meaning                    |
+| ------- | -------------------------- |
+| `P90D`  | 90 days                    |
+| `P1Y`   | 1 year                     |
+| `PT24H` | 24 hours                   |
+| `P0D`   | Immediately (all archived) |
 
 ### Streaming Eviction (SSE)
 
@@ -188,7 +188,7 @@ Admins can list, inspect, download, and delete attachments across all users:
 curl "http://localhost:8080/v1/admin/attachments?userId=alice&status=unlinked" \
   -H "Authorization: Bearer <admin-token>"
 
-# Get a specific attachment's metadata (including soft-deleted)
+# Get a specific attachment's metadata (including archived)
 curl "http://localhost:8080/v1/admin/attachments/{id}" \
   -H "Authorization: Bearer <admin-token>"
 
@@ -233,7 +233,7 @@ The response includes nested totals for:
 - `memories`
 - `outboxEvents`
 
-`conversationGroups.oldestSoftDeletedAt` is the oldest `updatedAt` timestamp among soft-deleted conversations. `memories.oldestSoftDeletedAt` is the oldest memory soft-delete timestamp. `outboxEvents` is `null` when the outbox feature is disabled or unsupported for the active datastore.
+`conversationGroups.oldestArchivedAt` is the oldest `updatedAt` timestamp among archived conversations. `memories.oldestArchivedAt` is the oldest memory archive timestamp. `outboxEvents` is `null` when the outbox feature is disabled or unsupported for the active datastore.
 
 ## Next Steps
 

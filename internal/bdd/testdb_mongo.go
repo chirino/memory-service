@@ -273,14 +273,14 @@ func normalizeMongoValue(v interface{}) interface{} {
 	}
 }
 
-func (m *MongoTestDB) SoftDeleteConversation(ctx context.Context, conversationID string, days int) error {
+func (m *MongoTestDB) ArchiveConversation(ctx context.Context, conversationID string, days int) error {
 	client, db, err := m.db(ctx)
 	if err != nil {
 		return err
 	}
 	defer client.Disconnect(ctx)
 
-	deletedAt := time.Now().AddDate(0, 0, -days)
+	archivedAt := time.Now().AddDate(0, 0, -days)
 
 	// Find the conversation to get its group ID
 	var conv struct {
@@ -293,33 +293,33 @@ func (m *MongoTestDB) SoftDeleteConversation(ctx context.Context, conversationID
 
 	// Soft-delete the conversation group
 	_, err = db.Collection("conversation_groups").UpdateByID(ctx, conv.ConversationGroupID,
-		bson.M{"$set": bson.M{"deleted_at": deletedAt}})
+		bson.M{"$set": bson.M{"archived_at": archivedAt}})
 	if err != nil {
-		return fmt.Errorf("failed to soft-delete conversation group: %w", err)
+		return fmt.Errorf("failed to archive conversation group: %w", err)
 	}
 
 	// Soft-delete the conversation
 	_, err = db.Collection("conversations").UpdateByID(ctx, conversationID,
-		bson.M{"$set": bson.M{"deleted_at": deletedAt}})
+		bson.M{"$set": bson.M{"archived_at": archivedAt}})
 	if err != nil {
-		return fmt.Errorf("failed to soft-delete conversation: %w", err)
+		return fmt.Errorf("failed to archive conversation: %w", err)
 	}
 	return nil
 }
 
-func (m *MongoTestDB) SoftDeleteConversationOnly(ctx context.Context, conversationID string, days int) error {
+func (m *MongoTestDB) ArchiveConversationOnly(ctx context.Context, conversationID string, days int) error {
 	client, db, err := m.db(ctx)
 	if err != nil {
 		return err
 	}
 	defer client.Disconnect(ctx)
 
-	deletedAt := time.Now().AddDate(0, 0, -days)
+	archivedAt := time.Now().AddDate(0, 0, -days)
 
 	_, err = db.Collection("conversations").UpdateByID(ctx, conversationID,
-		bson.M{"$set": bson.M{"deleted_at": deletedAt}})
+		bson.M{"$set": bson.M{"archived_at": archivedAt}})
 	if err != nil {
-		return fmt.Errorf("failed to soft-delete conversation: %w", err)
+		return fmt.Errorf("failed to archive conversation: %w", err)
 	}
 	return nil
 }

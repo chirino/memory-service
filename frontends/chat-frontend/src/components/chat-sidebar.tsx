@@ -1,11 +1,13 @@
 import type { ConversationSummary } from "@/client";
-import { Plus, Search } from "lucide-react";
+import { Archive, ArchiveRestore, Plus, Search } from "lucide-react";
 
 type ChatSidebarProps = {
   conversations: ConversationSummary[];
+  archiveFilter: "exclude" | "include" | "only";
   selectedConversationId: string | null;
   onSelectConversation: (conversation: ConversationSummary) => void;
   onSelectConversationId: (conversationId: string) => void;
+  onArchiveFilterChange: (value: "exclude" | "include" | "only") => void;
   onNewChat: () => void;
   onOpenSearch: () => void;
   statusMessage?: string | null;
@@ -46,9 +48,11 @@ function formatRelativeTime(value?: string): string {
 
 export function ChatSidebar({
   conversations,
+  archiveFilter,
   selectedConversationId,
   onSelectConversation,
   onSelectConversationId,
+  onArchiveFilterChange,
   onNewChat,
   onOpenSearch,
   statusMessage,
@@ -57,6 +61,8 @@ export function ChatSidebar({
   selectedRootConversationId = null,
   selectedConversationLineage = new Set(),
 }: ChatSidebarProps) {
+  const showingArchived = archiveFilter === "only";
+
   const renderConversationItem = (conversation: ConversationSummary, depth = 0, animationDelay?: string) => {
     const conversationId = conversation.id ?? null;
     const isSelected = conversationId === selectedConversationId;
@@ -118,17 +124,21 @@ export function ChatSidebar({
       <header className="border-b border-stone/10 px-6 py-5">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="font-serif text-2xl tracking-tight">Conversations</h1>
-            <p className="mt-0.5 text-sm text-stone">Your recent chats</p>
+            <h1 className="font-serif text-2xl tracking-tight">{showingArchived ? "Archived" : "Conversations"}</h1>
+            <p className="mt-0.5 text-sm text-stone">
+              {showingArchived ? "Previously archived chats" : "Your recent chats"}
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={onNewChat}
-            className="group flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-medium text-cream transition-all hover:bg-ink/90 hover:shadow-lg hover:shadow-ink/10"
-          >
-            <Plus className="h-4 w-4 transition-transform group-hover:rotate-90" />
-            New
-          </button>
+          {!showingArchived && (
+            <button
+              type="button"
+              onClick={onNewChat}
+              className="group flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-medium text-cream transition-all hover:bg-ink/90 hover:shadow-lg hover:shadow-ink/10"
+            >
+              <Plus className="h-4 w-4 transition-transform group-hover:rotate-90" />
+              New
+            </button>
+          )}
         </div>
       </header>
 
@@ -148,7 +158,11 @@ export function ChatSidebar({
 
       {/* Conversation List */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        {conversations.length === 0 && <p className="px-4 text-sm text-stone">No conversations yet.</p>}
+        {conversations.length === 0 && (
+          <p className="px-4 text-sm text-stone">
+            {showingArchived ? "No archived conversations." : "No conversations yet."}
+          </p>
+        )}
 
         <div className="space-y-1">
           {conversations.map((conversation, index) => {
@@ -157,6 +171,27 @@ export function ChatSidebar({
           })}
         </div>
       </nav>
+
+      {/* Archive toggle at bottom */}
+      <div className="border-t border-stone/10 px-5 py-3">
+        <button
+          type="button"
+          onClick={() => onArchiveFilterChange(showingArchived ? "exclude" : "only")}
+          className="flex w-full items-center justify-center gap-2 rounded-lg py-1.5 text-xs text-stone transition-colors hover:text-ink"
+        >
+          {showingArchived ? (
+            <>
+              <ArchiveRestore className="h-3.5 w-3.5" />
+              Back to conversations
+            </>
+          ) : (
+            <>
+              <Archive className="h-3.5 w-3.5" />
+              View archived
+            </>
+          )}
+        </button>
+      </div>
     </aside>
   );
 }

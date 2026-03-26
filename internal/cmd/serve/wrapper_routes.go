@@ -118,7 +118,6 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodPost, "/v1/conversations/index", apiWrapper.IndexConversations)
 	register(http.MethodPost, "/v1/conversations/search", apiWrapper.SearchConversations)
 	register(http.MethodGet, "/v1/conversations/unindexed", apiWrapper.ListUnindexedEntries)
-	register(http.MethodDelete, "/v1/conversations/:conversationId", apiWrapper.DeleteConversation)
 	register(http.MethodGet, "/v1/conversations/:conversationId", apiWrapper.GetConversation)
 	register(http.MethodPatch, "/v1/conversations/:conversationId", apiWrapper.UpdateConversation)
 	register(http.MethodGet, "/v1/conversations/:conversationId/children", apiWrapper.ListConversationChildren)
@@ -131,7 +130,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodDelete, "/v1/conversations/:conversationId/memberships/:userId", apiWrapper.DeleteConversationMembership)
 	register(http.MethodPatch, "/v1/conversations/:conversationId/memberships/:userId", apiWrapper.UpdateConversationMembership)
 	register(http.MethodDelete, "/v1/conversations/:conversationId/response", apiWrapper.DeleteConversationResponse)
-	register(http.MethodDelete, "/v1/memories", memoriesWrapper.DeleteMemory)
+	register(http.MethodPatch, "/v1/memories", memoriesWrapper.UpdateMemory)
 	register(http.MethodGet, "/v1/memories", memoriesWrapper.GetMemory)
 	register(http.MethodPut, "/v1/memories", memoriesWrapper.PutMemory)
 	register(http.MethodGet, "/v1/memories/events", memoriesWrapper.ListMemoryEvents)
@@ -159,13 +158,12 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodGet, "/v1/admin/attachments/:id/download-url", adminWrapper.AdminGetAttachmentDownloadUrl)
 	register(http.MethodGet, "/v1/admin/conversations", adminWrapper.AdminListConversations)
 	register(http.MethodPost, "/v1/admin/conversations/search", adminWrapper.AdminSearchConversations)
-	register(http.MethodDelete, "/v1/admin/conversations/:id", adminWrapper.AdminDeleteConversation)
 	register(http.MethodGet, "/v1/admin/conversations/:id", adminWrapper.AdminGetConversation)
+	register(http.MethodPatch, "/v1/admin/conversations/:id", adminWrapper.AdminUpdateConversation)
 	register(http.MethodGet, "/v1/admin/conversations/:id/children", adminWrapper.AdminListChildConversations)
 	register(http.MethodGet, "/v1/admin/conversations/:id/entries", adminWrapper.AdminGetEntries)
 	register(http.MethodGet, "/v1/admin/conversations/:id/forks", adminWrapper.AdminListForks)
 	register(http.MethodGet, "/v1/admin/conversations/:id/memberships", adminWrapper.AdminGetMemberships)
-	register(http.MethodPost, "/v1/admin/conversations/:id/restore", adminWrapper.AdminRestoreConversation)
 	register(http.MethodPost, "/v1/admin/evict", adminWrapper.AdminEvict)
 	register(http.MethodGet, "/v1/admin/stats/cache-hit-rate", adminWrapper.GetCacheHitRate)
 	register(http.MethodGet, "/v1/admin/stats/db-pool-utilization", adminWrapper.GetDbPoolUtilization)
@@ -233,9 +231,6 @@ func (p *proxyAPIServer) SearchConversations(c *gin.Context) {
 func (p *proxyAPIServer) ListUnindexedEntries(c *gin.Context, _ generatedapi.ListUnindexedEntriesParams) {
 	routesearch.HandleListUnindexed(c, p.store)
 }
-func (p *proxyAPIServer) DeleteConversation(c *gin.Context, _ openapi_types.UUID) {
-	routeconversations.HandleDeleteConversation(c, p.store, p.eventBus)
-}
 func (p *proxyAPIServer) GetConversation(c *gin.Context, _ openapi_types.UUID) {
 	routeconversations.HandleGetConversation(c, p.store)
 }
@@ -272,8 +267,8 @@ func (p *proxyAPIServer) UpdateConversationMembership(c *gin.Context, _ openapi_
 func (p *proxyAPIServer) DeleteConversationResponse(c *gin.Context, _ openapi_types.UUID) {
 	routeconversations.HandleCancelResponse(c, p.store, p.resumer, p.resumerEnabled)
 }
-func (p *proxyAPIServer) DeleteMemory(c *gin.Context, _ generatedapi.DeleteMemoryParams) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "DeleteMemory is handled by memories wrapper"})
+func (p *proxyAPIServer) UpdateMemory(c *gin.Context, _ generatedapi.UpdateMemoryParams) {
+	c.JSON(http.StatusNotImplemented, gin.H{"error": "UpdateMemory is handled by memories wrapper"})
 }
 func (p *proxyAPIServer) GetMemory(c *gin.Context, _ generatedapi.GetMemoryParams) {
 	c.JSON(http.StatusNotImplemented, gin.H{"error": "GetMemory is handled by memories wrapper"})
@@ -425,11 +420,11 @@ func (p *proxyAdminServer) AdminSearchConversations(c *gin.Context, _ generateda
 	}
 	routeadmin.HandleAdminSearchConversations(c, p.store)
 }
-func (p *proxyAdminServer) AdminDeleteConversation(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAdminServer) AdminUpdateConversation(c *gin.Context, _ openapi_types.UUID) {
 	if !p.authorize(c) {
 		return
 	}
-	routeadmin.HandleAdminDeleteConversation(c, p.store)
+	routeadmin.HandleAdminUpdateConversation(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetConversation(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetConversationParams) {
 	if !p.authorize(c) {
@@ -461,17 +456,11 @@ func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, _ openapi_types.U
 	}
 	routeadmin.HandleAdminGetMemberships(c, p.store)
 }
-func (p *proxyAdminServer) AdminRestoreConversation(c *gin.Context, _ openapi_types.UUID) {
-	if !p.authorize(c) {
-		return
-	}
-	routeadmin.HandleAdminRestoreConversation(c, p.store)
-}
 func (p *proxyAdminServer) AdminEvict(c *gin.Context, _ generatedadmin.AdminEvictParams) {
 	if !p.authorize(c) {
 		return
 	}
-	routeadmin.HandleAdminEvict(c, p.store)
+	routeadmin.HandleAdminEvict(c, p.store, p.eventBus)
 }
 func (p *proxyAdminServer) GetCacheHitRate(c *gin.Context, _ generatedadmin.GetCacheHitRateParams) {
 	if !p.authorize(c) {

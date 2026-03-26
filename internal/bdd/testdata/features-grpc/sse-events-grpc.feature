@@ -67,13 +67,13 @@ Feature: Event Stream gRPC API
     And "bob" should receive a gRPC event with kind "membership" and event "created"
     And the gRPC event data should contain "user"
 
-  Scenario: Deleted conversations are delivered to prior members via gRPC
-    Given I have a conversation with title "gRPC Delete Visibility"
+  Scenario: Archived conversations are delivered to prior members via gRPC
+    Given I have a conversation with title "gRPC Archive Visibility"
     And I share the conversation with user "bob" and access level "reader"
     And "bob" is connected to the gRPC event stream
-    When I delete the conversation
-    Then the response status should be 204
-    And "bob" should receive a gRPC event with kind "conversation" and event "deleted"
+    When I archive the conversation
+    Then the response status should be 200
+    And "bob" should receive a gRPC event with kind "conversation" and event "updated"
     And the gRPC event data should contain "conversation"
 
   Scenario: Filter gRPC events by kind

@@ -7,10 +7,10 @@ Feature: Data Eviction
   Scenario: Evict conversation groups past retention period (default response)
     Given I have a conversation with title "Old Conversation"
     And set "oldGroupId" to "${conversationGroupId}"
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     And I have a conversation with title "Recent Conversation"
     And set "recentGroupId" to "${conversationGroupId}"
-    And the conversation was soft-deleted 10 days ago
+    And the conversation was archived 10 days ago
     When I call POST "/v1/admin/evict" with body:
       """
       {
@@ -87,7 +87,7 @@ Feature: Data Eviction
   # Serial required: this scenario runs a datastore-wide eviction sweep that can hard-delete records created by other scenarios.
   Scenario: Evict with SSE progress stream via Accept header
     Given I have a conversation with title "To Evict"
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     When I call POST "/v1/admin/evict" with Accept "text/event-stream" and body:
       """
       {
@@ -103,7 +103,7 @@ Feature: Data Eviction
   # Serial required: this scenario runs a datastore-wide eviction sweep that can hard-delete records created by other scenarios.
   Scenario: Evict with SSE progress stream via async=true
     Given I have a conversation with title "To Evict Async"
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     When I call POST "/v1/admin/evict?async=true" with body:
       """
       {
@@ -116,9 +116,9 @@ Feature: Data Eviction
     And the SSE stream should contain progress events
     And the final progress should be 100
 
-  # Serial required: this scenario intentionally runs multiple eviction requests against the shared datastore and would interfere with any other scenario's soft-deleted records.
+  # Serial required: this scenario intentionally runs multiple eviction requests against the shared datastore and would interfere with any other scenario's archived records.
   Scenario: Concurrent eviction is safe
-    Given I have 100 conversations soft-deleted 100 days ago
+    Given I have 100 conversations archived 100 days ago
     When I call POST "/v1/admin/evict" concurrently 3 times with body:
       """
       {
@@ -129,10 +129,10 @@ Feature: Data Eviction
     Then all responses should have status 204
     # Verify all conversations were deleted exactly once
     # Note: With concurrent eviction, all 100 conversations should be hard-deleted
-    # We check that there are no soft-deleted conversations remaining
+    # We check that there are no archived conversations remaining
     When I execute SQL query:
       """
-      SELECT COUNT(*) as count FROM conversations WHERE deleted_at IS NOT NULL
+      SELECT COUNT(*) as count FROM conversations WHERE archived_at IS NOT NULL
       """
     Then the SQL result should match:
       | count |
@@ -143,7 +143,7 @@ Feature: Data Eviction
         "collection": "conversations",
         "operation": "count",
         "filter": {
-          "deleted_at": {
+          "archived_at": {
             "$ne": null
           }
         }
@@ -192,7 +192,7 @@ Feature: Data Eviction
     Given I have a conversation with title "Parent Conversation"
     And set "groupId" to "${conversationGroupId}"
     And the conversation has entries
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     When I call POST "/v1/admin/evict" with body:
       """
       {
@@ -230,7 +230,7 @@ Feature: Data Eviction
   Scenario: Evict multiple conversations in single request
     Given I have a conversation with title "Group To Evict"
     And set "groupAId" to "${conversationGroupId}"
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     And I have a conversation with title "Another Group"
     And set "groupBId" to "${conversationGroupId}"
     When I call POST "/v1/admin/evict" with body:
@@ -295,9 +295,9 @@ Feature: Data Eviction
       """
     Then the response status should be 204
 
-  # Serial required: this scenario runs a datastore-wide eviction sweep over many records and would interfere with other scenarios' soft-deleted data.
+  # Serial required: this scenario runs a datastore-wide eviction sweep over many records and would interfere with other scenarios' archived data.
   Scenario: Batching evicts all records
-    Given I have 25 conversations soft-deleted 100 days ago
+    Given I have 25 conversations archived 100 days ago
     When I call POST "/v1/admin/evict" with body:
       """
       {
@@ -309,7 +309,7 @@ Feature: Data Eviction
     # All 25 should be gone (batch-size=10 exercises 3 batches)
     When I execute SQL query:
       """
-      SELECT COUNT(*) as count FROM conversations WHERE deleted_at IS NOT NULL
+      SELECT COUNT(*) as count FROM conversations WHERE archived_at IS NOT NULL
       """
     Then the SQL result should match:
       | count |
@@ -320,7 +320,7 @@ Feature: Data Eviction
         "collection": "conversations",
         "operation": "count",
         "filter": {
-          "deleted_at": {
+          "archived_at": {
             "$ne": null
           }
         }
@@ -336,7 +336,7 @@ Feature: Data Eviction
     And set "groupId" to "${conversationGroupId}"
     And the conversation is shared with user "bob"
     And the conversation has a pending ownership transfer to user "bob"
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     When I call POST "/v1/admin/evict" with body:
       """
       {
@@ -392,7 +392,7 @@ Feature: Data Eviction
   Scenario: Vector store task contains correct group ID
     Given I have a conversation with title "Vector Cleanup"
     And set "groupId" to "${conversationGroupId}"
-    And the conversation was soft-deleted 100 days ago
+    And the conversation was archived 100 days ago
     When I call POST "/v1/admin/evict" with body:
       """
       {

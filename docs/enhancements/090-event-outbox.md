@@ -5,6 +5,8 @@ status: implemented
 # Enhancement 090: Event Outbox for Reliable Delivery
 
 > **Status**: Implemented, with Mongo transactional replay guarantees deferred to [091](091-mongo-outbox-transactions.md) and tracked in [TODO.md](../../TODO.md).
+>
+> **Current Contract Note**: Archive event semantics now follow [implemented/094-archive-operations.md](implemented/094-archive-operations.md). Conversation and memory archive operations emit `updated`; `deleted` is reserved for hard-delete or close semantics.
 
 ## Summary
 
@@ -81,7 +83,7 @@ All event `data` payloads **must** include a `conversation_group` field for acce
 |-------|------|-------------|
 | 0 | `created` | A new entity was created (conversation, entry, membership, response recording session) |
 | 1 | `updated` | An existing entity was modified (conversation metadata, membership role) |
-| 2 | `deleted` | An entity was deleted or closed (conversation soft-delete, membership removed, response recording completed or failed) |
+| 2 | `deleted` | An entity was hard-deleted or closed (membership removed, response recording completed or failed, eviction hard delete) |
 | 3 | `evicted` | A stream connection was evicted (slow consumer or replaced) |
 | 4 | `invalidate` | Pub/sub disruption — clients should treat cached state as stale |
 | 5 | `shutdown` | An SSE session disconnected (internal only) |
@@ -811,7 +813,7 @@ Feature: Event Outbox via /v1/events
 
   Scenario: Full detail silently skips evicted source entities
     Given an entry is appended to a conversation
-    And the conversation is soft-deleted
+    And the conversation is archived
     And the conversation group is evicted via admin eviction
     When I connect to the /v1/events SSE stream with detail "full"
     Then the event for the evicted entry should not be received

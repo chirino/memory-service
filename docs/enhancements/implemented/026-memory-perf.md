@@ -79,8 +79,8 @@ JOIN conversation_groups g ON c.conversation_group_id = g.id
 WHERE m.conversation_id = :conversationId
   AND m.channel = 'MEMORY'
   AND m.client_id = :clientId
-  AND c.deleted_at IS NULL
-  AND g.deleted_at IS NULL
+  AND c.archived_at IS NULL
+  AND g.archived_at IS NULL
 ```
 
 **Index Used**: `idx_entries_conversation_channel_client_epoch_created_at`
@@ -108,8 +108,8 @@ WHERE m.conversation_id = :conversationId
   AND m.channel = 'MEMORY'
   AND m.client_id = :clientId
   AND m.epoch = :latestEpoch
-  AND c.deleted_at IS NULL
-  AND g.deleted_at IS NULL
+  AND c.archived_at IS NULL
+  AND g.archived_at IS NULL
 ORDER BY m.created_at, m.id
 LIMIT :limit
 ```
@@ -173,8 +173,8 @@ WHERE m.conversation_id = :conversationId
   AND m.channel = 'MEMORY'
   AND m.client_id = :clientId
   AND m.epoch = :latestEpoch
-  AND c.deleted_at IS NULL
-  AND g.deleted_at IS NULL
+  AND c.archived_at IS NULL
+  AND g.archived_at IS NULL
 ORDER BY m.created_at, m.id
 ```
 
@@ -332,7 +332,7 @@ CREATE INDEX idx_entries_group_created_at
 |--------|-------------|
 | Read amplification | Sync reads all entries even when only checking for no-op |
 | Index coverage | Primary index covers conversation+channel+client+epoch+created_at |
-| Join overhead | Every query joins conversations + conversation_groups for soft-delete check |
+| Join overhead | Every query joins conversations + conversation_groups for archive check |
 | Content decryption | All entries are decrypted in memory for comparison |
 
 ---
@@ -653,8 +653,8 @@ WHERE e.conversation_id = :conversationId
       AND channel = 'MEMORY'
       AND client_id = :clientId
   )
-  AND c.deleted_at IS NULL
-  AND g.deleted_at IS NULL
+  AND c.archived_at IS NULL
+  AND g.archived_at IS NULL
 ORDER BY e.created_at, e.id
 LIMIT :limit
 ```
@@ -728,8 +728,8 @@ WHERE e.conversation_id = :conversationId
       AND channel = 'MEMORY'
       AND client_id = :clientId
   )
-  AND c.deleted_at IS NULL
-  AND g.deleted_at IS NULL
+  AND c.archived_at IS NULL
+  AND g.archived_at IS NULL
 ORDER BY e.created_at, e.id
 LIMIT :limit
 ```
@@ -1626,7 +1626,7 @@ void initMetrics() {
 *(To be analyzed in follow-up phases)*
 
 - Add content hash for quick no-op detection without full comparison
-- Evaluate if soft-delete joins can be eliminated for memory-only queries
+- Evaluate if archive joins can be eliminated for memory-only queries
 - Consider cache warming strategies for predictable access patterns
 
 ---

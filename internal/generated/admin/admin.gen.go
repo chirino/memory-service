@@ -75,6 +75,13 @@ const (
 	AdminListConversationsParamsAncestryRoots    AdminListConversationsParamsAncestry = "roots"
 )
 
+// Defines values for AdminListConversationsParamsArchived.
+const (
+	Exclude AdminListConversationsParamsArchived = "exclude"
+	Include AdminListConversationsParamsArchived = "include"
+	Only    AdminListConversationsParamsArchived = "only"
+)
+
 // Defines values for AdminGetEntriesParamsForks.
 const (
 	AdminGetEntriesParamsForksAll  AdminGetEntriesParamsForks = "all"
@@ -96,11 +103,21 @@ type AdminActionRequest struct {
 	Justification *string `json:"justification,omitempty"`
 }
 
+// AdminArchivedTotalStats defines model for AdminArchivedTotalStats.
+type AdminArchivedTotalStats struct {
+	Archived int64 `json:"archived"`
+
+	// OldestArchivedAt Oldest archive timestamp for that resource type.
+	OldestArchivedAt *time.Time `json:"oldestArchivedAt"`
+	Total            int64      `json:"total"`
+}
+
 // AdminAttachment defines model for AdminAttachment.
 type AdminAttachment struct {
+	// Archived Synthetic archive flag derived from the internal archived timestamp.
+	Archived    *bool               `json:"archived,omitempty"`
 	ContentType *string             `json:"contentType,omitempty"`
 	CreatedAt   *time.Time          `json:"createdAt,omitempty"`
-	DeletedAt   *time.Time          `json:"deletedAt"`
 	EntryId     *openapi_types.UUID `json:"entryId"`
 	ExpiresAt   *time.Time          `json:"expiresAt"`
 	Filename    *string             `json:"filename,omitempty"`
@@ -118,10 +135,10 @@ type AdminAttachment struct {
 type AdminChildConversationSummary struct {
 	// AccessLevel Access level of a user for a conversation.
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
-	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
 
-	// DeletedAt Timestamp when the conversation was soft-deleted.
-	DeletedAt *time.Time `json:"deletedAt"`
+	// Archived Synthetic archive flag derived from the internal archived timestamp.
+	Archived  *bool      `json:"archived,omitempty"`
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// Id Unique identifier for the child conversation.
 	Id                 *openapi_types.UUID `json:"id,omitempty"`
@@ -137,11 +154,11 @@ type AdminConversation struct {
 	// AccessLevel Access level of a user for a conversation.
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
 	AgentId     *string      `json:"agentId"`
-	ClientId    *string      `json:"clientId"`
-	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
 
-	// DeletedAt Timestamp when the conversation was soft-deleted.
-	DeletedAt *time.Time `json:"deletedAt"`
+	// Archived Synthetic archive flag derived from the internal archived timestamp.
+	Archived  *bool      `json:"archived,omitempty"`
+	ClientId  *string    `json:"clientId"`
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// ForkedAtConversationId Conversation ID from which this conversation was forked.
 	ForkedAtConversationId *openapi_types.UUID `json:"forkedAtConversationId"`
@@ -161,10 +178,11 @@ type AdminConversation struct {
 
 // AdminConversationGroupStats defines model for AdminConversationGroupStats.
 type AdminConversationGroupStats struct {
-	// OldestSoftDeletedAt Oldest `updatedAt` timestamp among soft-deleted conversations.
-	OldestSoftDeletedAt *time.Time `json:"oldestSoftDeletedAt"`
-	SoftDeleted         int64      `json:"softDeleted"`
-	Total               int64      `json:"total"`
+	Archived int64 `json:"archived"`
+
+	// OldestArchivedAt Oldest `updatedAt` timestamp among archived conversations.
+	OldestArchivedAt *time.Time `json:"oldestArchivedAt"`
+	Total            int64      `json:"total"`
 }
 
 // AdminConversationSummary defines model for AdminConversationSummary.
@@ -172,11 +190,11 @@ type AdminConversationSummary struct {
 	// AccessLevel Access level of a user for a conversation.
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
 	AgentId     *string      `json:"agentId"`
-	ClientId    *string      `json:"clientId"`
-	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
 
-	// DeletedAt Timestamp when the conversation was soft-deleted.
-	DeletedAt *time.Time `json:"deletedAt"`
+	// Archived Synthetic archive flag derived from the internal archived timestamp.
+	Archived  *bool      `json:"archived,omitempty"`
+	ClientId  *string    `json:"clientId"`
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// Id Unique identifier for the conversation.
 	Id                      *openapi_types.UUID `json:"id,omitempty"`
@@ -209,8 +227,8 @@ type AdminSearchEntriesRequest struct {
 	// AfterCursor Cursor for pagination; returns items after this result.
 	AfterCursor *string `json:"afterCursor"`
 
-	// IncludeDeleted Include entries from soft-deleted conversations.
-	IncludeDeleted *bool `json:"includeDeleted,omitempty"`
+	// IncludeArchived Include entries from archived conversations.
+	IncludeArchived *bool `json:"includeArchived,omitempty"`
 
 	// IncludeEntry Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.
 	IncludeEntry *bool `json:"includeEntry,omitempty"`
@@ -225,26 +243,27 @@ type AdminSearchEntriesRequest struct {
 	UserId *string `json:"userId"`
 }
 
-// AdminSoftDeletedTotalStats defines model for AdminSoftDeletedTotalStats.
-type AdminSoftDeletedTotalStats struct {
-	// OldestSoftDeletedAt Oldest soft-delete timestamp for that resource type.
-	OldestSoftDeletedAt *time.Time `json:"oldestSoftDeletedAt"`
-	SoftDeleted         int64      `json:"softDeleted"`
-	Total               int64      `json:"total"`
-}
-
 // AdminStatsSummaryResponse defines model for AdminStatsSummaryResponse.
 type AdminStatsSummaryResponse struct {
 	ConversationGroups AdminConversationGroupStats `json:"conversationGroups"`
 	Conversations      AdminTotalStats             `json:"conversations"`
 	Entries            AdminTotalStats             `json:"entries"`
-	Memories           AdminSoftDeletedTotalStats  `json:"memories"`
+	Memories           AdminArchivedTotalStats     `json:"memories"`
 	OutboxEvents       *AdminOutboxStats           `json:"outboxEvents"`
 }
 
 // AdminTotalStats defines model for AdminTotalStats.
 type AdminTotalStats struct {
 	Total int64 `json:"total"`
+}
+
+// AdminUpdateConversationRequest defines model for AdminUpdateConversationRequest.
+type AdminUpdateConversationRequest struct {
+	// Archived Set to `true` to archive or `false` to unarchive the conversation fork tree.
+	Archived *bool `json:"archived,omitempty"`
+
+	// Justification Reason for the admin action (for audit log).
+	Justification *string `json:"justification,omitempty"`
 }
 
 // Channel Logical channel of the entry within the conversation.
@@ -320,10 +339,10 @@ type EvictRequest struct {
 	Justification *string `json:"justification,omitempty"`
 
 	// ResourceTypes Which resource types to evict.
-	// - conversations: Soft-deleted conversations past retention.
+	// - conversations: Archived conversations past retention.
 	ResourceTypes []EvictRequestResourceTypes `json:"resourceTypes"`
 
-	// RetentionPeriod ISO 8601 duration. Resources soft-deleted longer than this are hard-deleted.
+	// RetentionPeriod ISO 8601 duration. Resources archived longer than this are hard-deleted.
 	// Examples: P90D (90 days), P1Y (1 year), PT24H (24 hours).
 	RetentionPeriod string `json:"retentionPeriod"`
 }
@@ -532,17 +551,14 @@ type AdminListConversationsParams struct {
 	// UserId Filter conversations owned by this user.
 	UserId *string `form:"userId,omitempty" json:"userId,omitempty"`
 
-	// IncludeDeleted Include soft-deleted conversations in results.
-	IncludeDeleted *bool `form:"includeDeleted,omitempty" json:"includeDeleted,omitempty"`
+	// Archived Controls whether archived conversations are excluded, included, or returned exclusively.
+	Archived *AdminListConversationsParamsArchived `form:"archived,omitempty" json:"archived,omitempty"`
 
-	// OnlyDeleted Show only soft-deleted conversations.
-	OnlyDeleted *bool `form:"onlyDeleted,omitempty" json:"onlyDeleted,omitempty"`
+	// ArchivedAfter Filter: archived at or after this time (ISO 8601).
+	ArchivedAfter *time.Time `form:"archivedAfter,omitempty" json:"archivedAfter,omitempty"`
 
-	// DeletedAfter Filter: deleted at or after this time (ISO 8601).
-	DeletedAfter *time.Time `form:"deletedAfter,omitempty" json:"deletedAfter,omitempty"`
-
-	// DeletedBefore Filter: deleted before this time (ISO 8601).
-	DeletedBefore *time.Time `form:"deletedBefore,omitempty" json:"deletedBefore,omitempty"`
+	// ArchivedBefore Filter: archived before this time (ISO 8601).
+	ArchivedBefore *time.Time `form:"archivedBefore,omitempty" json:"archivedBefore,omitempty"`
 
 	// AfterCursor Cursor for pagination (UUID format).
 	AfterCursor *openapi_types.UUID `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
@@ -559,6 +575,9 @@ type AdminListConversationsParamsMode string
 
 // AdminListConversationsParamsAncestry defines parameters for AdminListConversations.
 type AdminListConversationsParamsAncestry string
+
+// AdminListConversationsParamsArchived defines parameters for AdminListConversations.
+type AdminListConversationsParamsArchived string
 
 // AdminSearchConversationsParams defines parameters for AdminSearchConversations.
 type AdminSearchConversationsParams struct {
@@ -741,11 +760,8 @@ type AdminDeleteAttachmentJSONRequestBody = AdminActionRequest
 // AdminSearchConversationsJSONRequestBody defines body for AdminSearchConversations for application/json ContentType.
 type AdminSearchConversationsJSONRequestBody = AdminSearchEntriesRequest
 
-// AdminDeleteConversationJSONRequestBody defines body for AdminDeleteConversation for application/json ContentType.
-type AdminDeleteConversationJSONRequestBody = AdminActionRequest
-
-// AdminRestoreConversationJSONRequestBody defines body for AdminRestoreConversation for application/json ContentType.
-type AdminRestoreConversationJSONRequestBody = AdminActionRequest
+// AdminUpdateConversationJSONRequestBody defines body for AdminUpdateConversation for application/json ContentType.
+type AdminUpdateConversationJSONRequestBody = AdminUpdateConversationRequest
 
 // AdminEvictJSONRequestBody defines body for AdminEvict for application/json ContentType.
 type AdminEvictJSONRequestBody = EvictRequest
@@ -794,12 +810,12 @@ type ServerInterface interface {
 	// System-wide semantic search (admin/auditor)
 	// (POST /v1/admin/conversations/search)
 	AdminSearchConversations(c *gin.Context, params AdminSearchConversationsParams)
-	// Soft-delete any conversation (admin only)
-	// (DELETE /v1/admin/conversations/{id})
-	AdminDeleteConversation(c *gin.Context, id openapi_types.UUID)
 	// Get any conversation (admin/auditor)
 	// (GET /v1/admin/conversations/{id})
 	AdminGetConversation(c *gin.Context, id openapi_types.UUID, params AdminGetConversationParams)
+	// Update any conversation (admin only)
+	// (PATCH /v1/admin/conversations/{id})
+	AdminUpdateConversation(c *gin.Context, id openapi_types.UUID)
 	// List direct child conversations
 	// (GET /v1/admin/conversations/{id}/children)
 	AdminListChildConversations(c *gin.Context, id openapi_types.UUID, params AdminListChildConversationsParams)
@@ -812,13 +828,10 @@ type ServerInterface interface {
 	// Get memberships for any conversation (admin/auditor)
 	// (GET /v1/admin/conversations/{id}/memberships)
 	AdminGetMemberships(c *gin.Context, id openapi_types.UUID, params AdminGetMembershipsParams)
-	// Restore a soft-deleted conversation (admin only)
-	// (POST /v1/admin/conversations/{id}/restore)
-	AdminRestoreConversation(c *gin.Context, id openapi_types.UUID)
 	// Subscribe to all real-time events (admin SSE)
 	// (GET /v1/admin/events)
 	AdminSubscribeEvents(c *gin.Context, params AdminSubscribeEventsParams)
-	// Hard-delete soft-deleted resources past retention period
+	// Hard-delete archived resources past retention period
 	// (POST /v1/admin/evict)
 	AdminEvict(c *gin.Context, params AdminEvictParams)
 	// Get cache hit rate percentage over time
@@ -1278,35 +1291,27 @@ func (siw *ServerInterfaceWrapper) AdminListConversations(c *gin.Context) {
 		return
 	}
 
-	// ------------- Optional query parameter "includeDeleted" -------------
+	// ------------- Optional query parameter "archived" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "includeDeleted", c.Request.URL.Query(), &params.IncludeDeleted)
+	err = runtime.BindQueryParameter("form", true, false, "archived", c.Request.URL.Query(), &params.Archived)
 	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter includeDeleted: %w", err), http.StatusBadRequest)
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter archived: %w", err), http.StatusBadRequest)
 		return
 	}
 
-	// ------------- Optional query parameter "onlyDeleted" -------------
+	// ------------- Optional query parameter "archivedAfter" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "onlyDeleted", c.Request.URL.Query(), &params.OnlyDeleted)
+	err = runtime.BindQueryParameter("form", true, false, "archivedAfter", c.Request.URL.Query(), &params.ArchivedAfter)
 	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter onlyDeleted: %w", err), http.StatusBadRequest)
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter archivedAfter: %w", err), http.StatusBadRequest)
 		return
 	}
 
-	// ------------- Optional query parameter "deletedAfter" -------------
+	// ------------- Optional query parameter "archivedBefore" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "deletedAfter", c.Request.URL.Query(), &params.DeletedAfter)
+	err = runtime.BindQueryParameter("form", true, false, "archivedBefore", c.Request.URL.Query(), &params.ArchivedBefore)
 	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deletedAfter: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "deletedBefore" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "deletedBefore", c.Request.URL.Query(), &params.DeletedBefore)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deletedBefore: %w", err), http.StatusBadRequest)
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter archivedBefore: %w", err), http.StatusBadRequest)
 		return
 	}
 
@@ -1372,32 +1377,6 @@ func (siw *ServerInterfaceWrapper) AdminSearchConversations(c *gin.Context) {
 	siw.Handler.AdminSearchConversations(c, params)
 }
 
-// AdminDeleteConversation operation middleware
-func (siw *ServerInterfaceWrapper) AdminDeleteConversation(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "id" -------------
-	var id openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.AdminDeleteConversation(c, id)
-}
-
 // AdminGetConversation operation middleware
 func (siw *ServerInterfaceWrapper) AdminGetConversation(c *gin.Context) {
 
@@ -1433,6 +1412,32 @@ func (siw *ServerInterfaceWrapper) AdminGetConversation(c *gin.Context) {
 	}
 
 	siw.Handler.AdminGetConversation(c, id, params)
+}
+
+// AdminUpdateConversation operation middleware
+func (siw *ServerInterfaceWrapper) AdminUpdateConversation(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminUpdateConversation(c, id)
 }
 
 // AdminListChildConversations operation middleware
@@ -1653,32 +1658,6 @@ func (siw *ServerInterfaceWrapper) AdminGetMemberships(c *gin.Context) {
 	}
 
 	siw.Handler.AdminGetMemberships(c, id, params)
-}
-
-// AdminRestoreConversation operation middleware
-func (siw *ServerInterfaceWrapper) AdminRestoreConversation(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "id" -------------
-	var id openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.AdminRestoreConversation(c, id)
 }
 
 // AdminSubscribeEvents operation middleware
@@ -2138,13 +2117,12 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/v1/admin/attachments/:id/download-url", wrapper.AdminGetAttachmentDownloadUrl)
 	router.GET(options.BaseURL+"/v1/admin/conversations", wrapper.AdminListConversations)
 	router.POST(options.BaseURL+"/v1/admin/conversations/search", wrapper.AdminSearchConversations)
-	router.DELETE(options.BaseURL+"/v1/admin/conversations/:id", wrapper.AdminDeleteConversation)
 	router.GET(options.BaseURL+"/v1/admin/conversations/:id", wrapper.AdminGetConversation)
+	router.PATCH(options.BaseURL+"/v1/admin/conversations/:id", wrapper.AdminUpdateConversation)
 	router.GET(options.BaseURL+"/v1/admin/conversations/:id/children", wrapper.AdminListChildConversations)
 	router.GET(options.BaseURL+"/v1/admin/conversations/:id/entries", wrapper.AdminGetEntries)
 	router.GET(options.BaseURL+"/v1/admin/conversations/:id/forks", wrapper.AdminListForks)
 	router.GET(options.BaseURL+"/v1/admin/conversations/:id/memberships", wrapper.AdminGetMemberships)
-	router.POST(options.BaseURL+"/v1/admin/conversations/:id/restore", wrapper.AdminRestoreConversation)
 	router.GET(options.BaseURL+"/v1/admin/events", wrapper.AdminSubscribeEvents)
 	router.POST(options.BaseURL+"/v1/admin/evict", wrapper.AdminEvict)
 	router.GET(options.BaseURL+"/v1/admin/stats/cache-hit-rate", wrapper.GetCacheHitRate)
@@ -2651,44 +2629,6 @@ func (response AdminSearchConversationsdefaultJSONResponse) VisitAdminSearchConv
 	return json.NewEncoder(w).Encode(response.Body)
 }
 
-type AdminDeleteConversationRequestObject struct {
-	Id   openapi_types.UUID `json:"id"`
-	Body *AdminDeleteConversationJSONRequestBody
-}
-
-type AdminDeleteConversationResponseObject interface {
-	VisitAdminDeleteConversationResponse(w http.ResponseWriter) error
-}
-
-type AdminDeleteConversation204Response struct {
-}
-
-func (response AdminDeleteConversation204Response) VisitAdminDeleteConversationResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
-	return nil
-}
-
-type AdminDeleteConversation404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response AdminDeleteConversation404JSONResponse) VisitAdminDeleteConversationResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type AdminDeleteConversationdefaultJSONResponse struct {
-	Body       ErrorResponse
-	StatusCode int
-}
-
-func (response AdminDeleteConversationdefaultJSONResponse) VisitAdminDeleteConversationResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-
-	return json.NewEncoder(w).Encode(response.Body)
-}
-
 type AdminGetConversationRequestObject struct {
 	Id     openapi_types.UUID `json:"id"`
 	Params AdminGetConversationParams
@@ -2722,6 +2662,45 @@ type AdminGetConversationdefaultJSONResponse struct {
 }
 
 func (response AdminGetConversationdefaultJSONResponse) VisitAdminGetConversationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AdminUpdateConversationRequestObject struct {
+	Id   openapi_types.UUID `json:"id"`
+	Body *AdminUpdateConversationJSONRequestBody
+}
+
+type AdminUpdateConversationResponseObject interface {
+	VisitAdminUpdateConversationResponse(w http.ResponseWriter) error
+}
+
+type AdminUpdateConversation200JSONResponse AdminConversation
+
+func (response AdminUpdateConversation200JSONResponse) VisitAdminUpdateConversationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminUpdateConversation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AdminUpdateConversation404JSONResponse) VisitAdminUpdateConversationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminUpdateConversationdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminUpdateConversationdefaultJSONResponse) VisitAdminUpdateConversationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.StatusCode)
 
@@ -2881,54 +2860,6 @@ type AdminGetMembershipsdefaultJSONResponse struct {
 }
 
 func (response AdminGetMembershipsdefaultJSONResponse) VisitAdminGetMembershipsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-
-	return json.NewEncoder(w).Encode(response.Body)
-}
-
-type AdminRestoreConversationRequestObject struct {
-	Id   openapi_types.UUID `json:"id"`
-	Body *AdminRestoreConversationJSONRequestBody
-}
-
-type AdminRestoreConversationResponseObject interface {
-	VisitAdminRestoreConversationResponse(w http.ResponseWriter) error
-}
-
-type AdminRestoreConversation200JSONResponse AdminConversation
-
-func (response AdminRestoreConversation200JSONResponse) VisitAdminRestoreConversationResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type AdminRestoreConversation404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response AdminRestoreConversation404JSONResponse) VisitAdminRestoreConversationResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type AdminRestoreConversation409JSONResponse ErrorResponse
-
-func (response AdminRestoreConversation409JSONResponse) VisitAdminRestoreConversationResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type AdminRestoreConversationdefaultJSONResponse struct {
-	Body       ErrorResponse
-	StatusCode int
-}
-
-func (response AdminRestoreConversationdefaultJSONResponse) VisitAdminRestoreConversationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.StatusCode)
 
@@ -3491,12 +3422,12 @@ type StrictServerInterface interface {
 	// System-wide semantic search (admin/auditor)
 	// (POST /v1/admin/conversations/search)
 	AdminSearchConversations(ctx context.Context, request AdminSearchConversationsRequestObject) (AdminSearchConversationsResponseObject, error)
-	// Soft-delete any conversation (admin only)
-	// (DELETE /v1/admin/conversations/{id})
-	AdminDeleteConversation(ctx context.Context, request AdminDeleteConversationRequestObject) (AdminDeleteConversationResponseObject, error)
 	// Get any conversation (admin/auditor)
 	// (GET /v1/admin/conversations/{id})
 	AdminGetConversation(ctx context.Context, request AdminGetConversationRequestObject) (AdminGetConversationResponseObject, error)
+	// Update any conversation (admin only)
+	// (PATCH /v1/admin/conversations/{id})
+	AdminUpdateConversation(ctx context.Context, request AdminUpdateConversationRequestObject) (AdminUpdateConversationResponseObject, error)
 	// List direct child conversations
 	// (GET /v1/admin/conversations/{id}/children)
 	AdminListChildConversations(ctx context.Context, request AdminListChildConversationsRequestObject) (AdminListChildConversationsResponseObject, error)
@@ -3509,13 +3440,10 @@ type StrictServerInterface interface {
 	// Get memberships for any conversation (admin/auditor)
 	// (GET /v1/admin/conversations/{id}/memberships)
 	AdminGetMemberships(ctx context.Context, request AdminGetMembershipsRequestObject) (AdminGetMembershipsResponseObject, error)
-	// Restore a soft-deleted conversation (admin only)
-	// (POST /v1/admin/conversations/{id}/restore)
-	AdminRestoreConversation(ctx context.Context, request AdminRestoreConversationRequestObject) (AdminRestoreConversationResponseObject, error)
 	// Subscribe to all real-time events (admin SSE)
 	// (GET /v1/admin/events)
 	AdminSubscribeEvents(ctx context.Context, request AdminSubscribeEventsRequestObject) (AdminSubscribeEventsResponseObject, error)
-	// Hard-delete soft-deleted resources past retention period
+	// Hard-delete archived resources past retention period
 	// (POST /v1/admin/evict)
 	AdminEvict(ctx context.Context, request AdminEvictRequestObject) (AdminEvictResponseObject, error)
 	// Get cache hit rate percentage over time
@@ -3956,41 +3884,6 @@ func (sh *strictHandler) AdminSearchConversations(ctx *gin.Context, params Admin
 	}
 }
 
-// AdminDeleteConversation operation middleware
-func (sh *strictHandler) AdminDeleteConversation(ctx *gin.Context, id openapi_types.UUID) {
-	var request AdminDeleteConversationRequestObject
-
-	request.Id = id
-
-	var body AdminDeleteConversationJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.AdminDeleteConversation(ctx, request.(AdminDeleteConversationRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "AdminDeleteConversation")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(AdminDeleteConversationResponseObject); ok {
-		if err := validResponse.VisitAdminDeleteConversationResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
 // AdminGetConversation operation middleware
 func (sh *strictHandler) AdminGetConversation(ctx *gin.Context, id openapi_types.UUID, params AdminGetConversationParams) {
 	var request AdminGetConversationRequestObject
@@ -4012,6 +3905,41 @@ func (sh *strictHandler) AdminGetConversation(ctx *gin.Context, id openapi_types
 		ctx.Status(http.StatusInternalServerError)
 	} else if validResponse, ok := response.(AdminGetConversationResponseObject); ok {
 		if err := validResponse.VisitAdminGetConversationResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminUpdateConversation operation middleware
+func (sh *strictHandler) AdminUpdateConversation(ctx *gin.Context, id openapi_types.UUID) {
+	var request AdminUpdateConversationRequestObject
+
+	request.Id = id
+
+	var body AdminUpdateConversationJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminUpdateConversation(ctx, request.(AdminUpdateConversationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminUpdateConversation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminUpdateConversationResponseObject); ok {
+		if err := validResponse.VisitAdminUpdateConversationResponse(ctx.Writer); err != nil {
 			ctx.Error(err)
 		}
 	} else if response != nil {
@@ -4124,41 +4052,6 @@ func (sh *strictHandler) AdminGetMemberships(ctx *gin.Context, id openapi_types.
 		ctx.Status(http.StatusInternalServerError)
 	} else if validResponse, ok := response.(AdminGetMembershipsResponseObject); ok {
 		if err := validResponse.VisitAdminGetMembershipsResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// AdminRestoreConversation operation middleware
-func (sh *strictHandler) AdminRestoreConversation(ctx *gin.Context, id openapi_types.UUID) {
-	var request AdminRestoreConversationRequestObject
-
-	request.Id = id
-
-	var body AdminRestoreConversationJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.AdminRestoreConversation(ctx, request.(AdminRestoreConversationRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "AdminRestoreConversation")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(AdminRestoreConversationResponseObject); ok {
-		if err := validResponse.VisitAdminRestoreConversationResponse(ctx.Writer); err != nil {
 			ctx.Error(err)
 		}
 	} else if response != nil {
@@ -4470,135 +4363,135 @@ func (sh *strictHandler) GetHealth(ctx *gin.Context) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"m0o/lW9zqsr3/Gx+/fT1vwIAAP//1fqxdKm6AAA=",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

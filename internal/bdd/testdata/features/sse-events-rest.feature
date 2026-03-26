@@ -32,12 +32,12 @@ Feature: SSE Event Stream
     And "alice" should receive an SSE event with kind "conversation" and event "updated"
     And the SSE event data should contain "conversation"
 
-  Scenario: Receive conversation deleted event
-    Given I have a conversation with title "Delete Test"
+  Scenario: Receive conversation archived event
+    Given I have a conversation with title "Archive Test"
     And "alice" is connected to the SSE event stream
-    When I delete the conversation
-    Then the response status should be 204
-    And "alice" should receive an SSE event with kind "conversation" and event "deleted"
+    When I archive the conversation
+    Then the response status should be 200
+    And "alice" should receive an SSE event with kind "conversation" and event "updated"
     And the SSE event data should contain "conversation"
 
   Scenario: Receive entry created event

@@ -79,24 +79,36 @@ func TestListConversations(t *testing.T) {
 	require.NoError(t, err)
 
 	// List conversations
-	summaries, cursor, err := store.ListConversations(ctx, "user2", nil, nil, 10, model.ListModeAll, model.ConversationAncestryAll)
+	summaries, cursor, err := store.ListConversations(ctx, "user2", nil, nil, 10, model.ListModeAll, model.ConversationAncestryAll, registrystore.ArchiveFilterExclude)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(summaries), 2)
 	_ = cursor
 }
 
-func TestDeleteConversation(t *testing.T) {
+func TestArchiveConversation(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	conv, err := store.CreateConversation(ctx, "user3", "", "To Delete", nil, nil, nil, nil)
+	conv, err := store.CreateConversation(ctx, "user3", "", "To Archive", nil, nil, nil, nil)
 	require.NoError(t, err)
 
-	err = store.DeleteConversation(ctx, "user3", conv.ID)
+	err = store.ArchiveConversation(ctx, "user3", conv.ID)
 	require.NoError(t, err)
 
-	// Should return not found after delete
-	_, err = store.GetConversation(ctx, "user3", conv.ID)
-	assert.Error(t, err)
+	// Archived conversations remain readable until eviction.
+	archived, err := store.GetConversation(ctx, "user3", conv.ID)
+	require.NoError(t, err)
+	require.NotNil(t, archived.ArchivedAt)
+
+	// Default listing excludes archived conversations.
+	summaries, _, err := store.ListConversations(ctx, "user3", nil, nil, 10, model.ListModeAll, model.ConversationAncestryAll, registrystore.ArchiveFilterExclude)
+	require.NoError(t, err)
+	assert.Empty(t, summaries)
+
+	// Archived-only listing returns the archived conversation.
+	summaries, _, err = store.ListConversations(ctx, "user3", nil, nil, 10, model.ListModeAll, model.ConversationAncestryAll, registrystore.ArchiveFilterOnly)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, conv.ID, summaries[0].ID)
 }
 
 func TestAppendAndGetEntries(t *testing.T) {
@@ -180,26 +192,26 @@ func TestOwnershipTransfers(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAdminRestoreConversationConflictAndSuccess(t *testing.T) {
+func TestAdminSetConversationArchivedConflictAndSuccess(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
-	conv, err := store.CreateConversation(ctx, "admin-user", "", "Admin Restore", nil, nil, nil, nil)
+	conv, err := store.CreateConversation(ctx, "admin-user", "", "Admin Archive", nil, nil, nil, nil)
 	require.NoError(t, err)
 
-	err = store.AdminRestoreConversation(ctx, conv.ID)
+	err = store.AdminSetConversationArchived(ctx, conv.ID, false)
 	require.Error(t, err)
 	var conflict *registrystore.ConflictError
 	require.True(t, errors.As(err, &conflict), "expected conflict error, got %T", err)
 
-	err = store.AdminDeleteConversation(ctx, conv.ID)
+	err = store.AdminSetConversationArchived(ctx, conv.ID, true)
 	require.NoError(t, err)
 
-	err = store.AdminRestoreConversation(ctx, conv.ID)
+	err = store.AdminSetConversationArchived(ctx, conv.ID, false)
 	require.NoError(t, err)
 
-	restored, err := store.AdminGetConversation(ctx, conv.ID)
+	convState, err := store.AdminGetConversation(ctx, conv.ID)
 	require.NoError(t, err)
-	assert.Nil(t, restored.DeletedAt)
+	assert.Nil(t, convState.ArchivedAt)
 }
 
 func TestAdminGetEntriesForkModes(t *testing.T) {
@@ -297,7 +309,7 @@ func TestSearchEntriesGroupByConversation(t *testing.T) {
 	require.Len(t, seen, 2)
 }
 
-func TestAdminSearchEntriesIncludeDeletedAndAfterCursor(t *testing.T) {
+func TestAdminSearchEntriesIncludeArchivedAndAfterCursor(t *testing.T) {
 	store, ctx := setupTestStore(t)
 
 	activeConv, err := store.CreateConversation(ctx, "admin-search-user", "", "Active", nil, nil, nil, nil)
@@ -331,14 +343,14 @@ func TestAdminSearchEntriesIncludeDeletedAndAfterCursor(t *testing.T) {
 	}, nil, nil, nil)
 	require.NoError(t, err)
 
-	err = store.AdminDeleteConversation(ctx, deletedConv.ID)
+	err = store.AdminSetConversationArchived(ctx, deletedConv.ID, true)
 	require.NoError(t, err)
 
 	withoutDeleted, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
-		Query:          "admin-search-token",
-		Limit:          20,
-		IncludeEntry:   false,
-		IncludeDeleted: false,
+		Query:           "admin-search-token",
+		Limit:           20,
+		IncludeEntry:    false,
+		IncludeArchived: false,
 	})
 	require.NoError(t, err)
 	for _, r := range withoutDeleted.Data {
@@ -346,10 +358,10 @@ func TestAdminSearchEntriesIncludeDeletedAndAfterCursor(t *testing.T) {
 	}
 
 	withDeleted, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
-		Query:          "admin-search-token",
-		Limit:          20,
-		IncludeEntry:   false,
-		IncludeDeleted: true,
+		Query:           "admin-search-token",
+		Limit:           20,
+		IncludeEntry:    false,
+		IncludeArchived: true,
 	})
 	require.NoError(t, err)
 	foundDeleted := false
@@ -359,24 +371,24 @@ func TestAdminSearchEntriesIncludeDeletedAndAfterCursor(t *testing.T) {
 			break
 		}
 	}
-	require.True(t, foundDeleted, "expected deleted conversation in includeDeleted search results")
+	require.True(t, foundDeleted, "expected deleted conversation in includeArchived search results")
 
 	firstPage, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
-		Query:          "admin-search-token",
-		Limit:          1,
-		IncludeEntry:   false,
-		IncludeDeleted: true,
+		Query:           "admin-search-token",
+		Limit:           1,
+		IncludeEntry:    false,
+		IncludeArchived: true,
 	})
 	require.NoError(t, err)
 	require.Len(t, firstPage.Data, 1)
 	require.NotNil(t, firstPage.AfterCursor)
 
 	secondPage, err := store.AdminSearchEntries(ctx, registrystore.AdminSearchQuery{
-		Query:          "admin-search-token",
-		Limit:          1,
-		IncludeEntry:   false,
-		IncludeDeleted: true,
-		AfterCursor:    firstPage.AfterCursor,
+		Query:           "admin-search-token",
+		Limit:           1,
+		IncludeEntry:    false,
+		IncludeArchived: true,
+		AfterCursor:     firstPage.AfterCursor,
 	})
 	require.NoError(t, err)
 	require.Len(t, secondPage.Data, 1)

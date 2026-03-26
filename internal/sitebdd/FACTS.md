@@ -71,7 +71,9 @@ and can be lowered with `SITE_TEST_SCENARIO_CONCURRENCY`.
 Before running scenarios, `TestSiteDocs` installs Java checkpoint dependencies into
 the local Maven repo (`:memory-service-extension-deployment` and
 `:memory-service-spring-boot-starter`). This avoids parallel checkpoint builds
-failing to resolve `999-SNAPSHOT` artifacts.
+failing to resolve `999-SNAPSHOT` artifacts. That bootstrap now runs `clean install`
+because removed OpenAPI/proto models can leave stale generated Java sources in
+module `target/` directories and break later site-doc builds.
 
 Scenario execution is wave-gated. Up to `siteScenarioConcurrency()` scenarios are
 admitted into a wave, and those scenarios can build and start checkpoints concurrently.

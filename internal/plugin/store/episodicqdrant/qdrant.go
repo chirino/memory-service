@@ -60,6 +60,7 @@ func (c *Client) UpsertMemoryVectors(ctx context.Context, items []registryepisod
 			"memory_id":  stringValue(item.MemoryID.String()),
 			"field_name": stringValue(item.FieldName),
 			"namespace":  stringValue(item.Namespace),
+			"archived":   boolValue(item.Archived),
 		}
 		ancestors := namespaceAncestors(item.Namespace)
 		if len(ancestors) > 0 {
@@ -122,7 +123,7 @@ func (c *Client) DeleteMemoryVectors(ctx context.Context, memoryID uuid.UUID) er
 }
 
 // SearchMemoryVectors searches vectors using namespace_ancestors + attribute filter.
-func (c *Client) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int) ([]registryepisodic.MemoryVectorSearch, error) {
+func (c *Client) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
 	if c == nil || limit <= 0 || len(embedding) == 0 {
 		return nil, nil
 	}
@@ -131,6 +132,12 @@ func (c *Client) SearchMemoryVectors(ctx context.Context, namespacePrefix string
 		matchKeywordCondition("kind", "memory"),
 		// Qdrant matches keyword against array elements, so this enforces prefix by exact ancestor match.
 		matchKeywordCondition("namespace_ancestors", namespacePrefix),
+	}
+	switch archived {
+	case registryepisodic.ArchiveFilterExclude:
+		must = append(must, matchBoolCondition("archived", false))
+	case registryepisodic.ArchiveFilterOnly:
+		must = append(must, matchBoolCondition("archived", true))
 	}
 	must = append(must, filterConditions(filter)...)
 
@@ -421,6 +428,10 @@ func stringValue(v string) *pb.Value {
 	return &pb.Value{Kind: &pb.Value_StringValue{StringValue: v}}
 }
 
+func boolValue(v bool) *pb.Value {
+	return &pb.Value{Kind: &pb.Value_BoolValue{BoolValue: v}}
+}
+
 func stringListValue(values []string) *pb.Value {
 	list := make([]*pb.Value, 0, len(values))
 	for _, value := range values {
@@ -440,6 +451,19 @@ func matchKeywordCondition(key, value string) *pb.Condition {
 				Key: key,
 				Match: &pb.Match{
 					MatchValue: &pb.Match_Keyword{Keyword: value},
+				},
+			},
+		},
+	}
+}
+
+func matchBoolCondition(key string, value bool) *pb.Condition {
+	return &pb.Condition{
+		ConditionOneOf: &pb.Condition_Field{
+			Field: &pb.FieldCondition{
+				Key: key,
+				Match: &pb.Match{
+					MatchValue: &pb.Match_Boolean{Boolean: value},
 				},
 			},
 		},

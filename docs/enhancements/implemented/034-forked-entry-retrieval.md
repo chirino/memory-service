@@ -61,8 +61,8 @@ The entry fetching code in `EntryRepository` queries only by `m.conversation.id 
 ```java
 // EntryRepository.listByChannel()
 String baseQuery =
-    "from EntryEntity m where m.conversation.id = ?1 and m.conversation.deletedAt IS"
-            + " NULL and m.conversation.conversationGroup.deletedAt IS NULL";
+    "from EntryEntity m where m.conversation.id = ?1 and m.conversation.archivedAt IS"
+            + " NULL and m.conversation.conversationGroup.archivedAt IS NULL";
 ```
 
 The fork metadata is stored on `ConversationEntity`:
@@ -290,7 +290,7 @@ message GetEntriesRequest {
 
        // Single query: get all conversations in the group
        List<ConversationEntity> allConversations = conversationRepository
-           .find("conversationGroup.id = ?1 and deletedAt is null", groupId)
+           .find("conversationGroup.id = ?1 and archivedAt is null", groupId)
            .list();
 
        // Build lookup map
@@ -536,7 +536,7 @@ SELECT e.*
 FROM entries e
 JOIN conversations c ON c.id = e.conversation_id
 WHERE c.conversation_group_id = ?1
-  AND c.deleted_at IS NULL
+  AND c.archived_at IS NULL
   AND e.channel = ?2
 ORDER BY e.created_at, e.id
 ```
@@ -547,7 +547,7 @@ SELECT e.*
 FROM entries e
 JOIN conversations c ON c.id = e.conversation_id
 WHERE c.conversation_group_id = ?1
-  AND c.deleted_at IS NULL
+  AND c.archived_at IS NULL
   AND e.channel = 'MEMORY'
   AND e.client_id = ?3
 ORDER BY e.created_at, e.id
@@ -971,8 +971,8 @@ When creating a fork, the `forkedAtEntryId` should be stored as the target entry
 
 MongoDB Panache uses different null-checking syntax than JPA/Hibernate:
 
-- **PostgreSQL (JPA)**: `deletedAt IS NULL`
-- **MongoDB Panache**: `deletedAt is null` (lowercase, no `IS`)
+- **PostgreSQL (JPA)**: `archivedAt IS NULL`
+- **MongoDB Panache**: `archivedAt is null` (lowercase, no `IS`)
 
 Both stores use `= null` for null comparisons in simple queries, but the `is null` form is required for explicit null checks in MongoDB Panache query strings.
 

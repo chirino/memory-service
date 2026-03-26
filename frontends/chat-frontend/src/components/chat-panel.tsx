@@ -18,7 +18,7 @@ import type { ApiError, Conversation as ApiConversation, ConversationForkSummary
 import { ConversationsService } from "@/client";
 import { useSseStream } from "@/hooks/useSseStream";
 import type { StreamAttachmentRef, StreamStartParams } from "@/hooks/useStreamTypes";
-import { Check, Copy, Menu, Paperclip, Pencil, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Check, Copy, Menu, Paperclip, Pencil } from "lucide-react";
 import { useAttachments } from "@/hooks/useAttachments";
 import { ShareButton } from "@/components/sharing";
 import { UserAvatar } from "@/components/user-avatar";
@@ -45,7 +45,8 @@ type ChatPanelProps = {
   onSelectConversationId?: (conversationId: string) => void;
   resumableConversationIds?: Set<string>;
   knownConversationIds?: Set<string>;
-  onDeleteConversation?: (conversationId: string) => void;
+  onArchiveConversation?: (conversationId: string) => void;
+  onUnarchiveConversation?: (conversationId: string) => void;
   currentUserId?: string | null;
   currentUser?: AuthUser | null;
 };
@@ -397,7 +398,8 @@ type ChatPanelContentProps = {
   onSelectConversationId?: (conversationId: string) => void;
   queryClient: ReturnType<typeof useQueryClient>;
   canceling: boolean;
-  onDeleteConversation?: (conversationId: string) => void;
+  onArchiveConversation?: (conversationId: string) => void;
+  onUnarchiveConversation?: (conversationId: string) => void;
   currentUserId?: string | null;
   currentUser?: AuthUser | null;
 };
@@ -427,7 +429,8 @@ function ChatPanelContent({
   forksQuery,
   conversationQuery,
   entriesWithForks,
-  onDeleteConversation,
+  onArchiveConversation,
+  onUnarchiveConversation,
   currentUserId,
   currentUser,
 }: ChatPanelContentProps & {
@@ -830,6 +833,8 @@ function ChatPanelContent({
   const isReader = conversationQuery.data?.accessLevel === "reader";
   const composerDisabled = isBusy || canceling || isReader;
 
+  const isArchived = conversationQuery.data?.archived === true;
+
   // Get conversation title and start time
   const conversationTitle = conversationQuery.data?.title || "Untitled conversation";
   const conversationStartTime = conversationQuery.data?.createdAt
@@ -931,15 +936,28 @@ function ChatPanelContent({
                       type="button"
                       onClick={() => {
                         if (conversationId) {
-                          onDeleteConversation?.(conversationId);
+                          if (isArchived) {
+                            onUnarchiveConversation?.(conversationId);
+                          } else {
+                            onArchiveConversation?.(conversationId);
+                          }
                         }
                         setMenuOpen(false);
                       }}
-                      disabled={!conversationId || messages.length === 0}
+                      disabled={!conversationId || (!isArchived && messages.length === 0)}
                       className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink transition-colors hover:bg-mist disabled:opacity-50"
                     >
-                      <Trash2 className="h-4 w-4 text-terracotta" />
-                      Delete conversation
+                      {isArchived ? (
+                        <>
+                          <ArchiveRestore className="h-4 w-4 text-sage" />
+                          Unarchive
+                        </>
+                      ) : (
+                        <>
+                          <Archive className="h-4 w-4 text-terracotta" />
+                          Archive
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1150,7 +1168,8 @@ export function ChatPanel({
   onSelectConversationId,
   knownConversationIds,
   resumableConversationIds,
-  onDeleteConversation,
+  onArchiveConversation,
+  onUnarchiveConversation,
   currentUserId,
   currentUser,
 }: ChatPanelProps) {
@@ -1481,7 +1500,8 @@ export function ChatPanel({
         forksQuery={forksQuery}
         conversationQuery={conversationQuery}
         entriesWithForks={entriesWithForks}
-        onDeleteConversation={onDeleteConversation}
+        onArchiveConversation={onArchiveConversation}
+        onUnarchiveConversation={onUnarchiveConversation}
         currentUserId={currentUserId}
         currentUser={currentUser}
       />

@@ -1,7 +1,7 @@
 Feature: Update Conversation gRPC API
   As a client of the memory service
   I want to update conversation properties via gRPC
-  So that I can rename conversations to keep my history organized
+  So that I can rename or archive conversations to keep my history organized
 
   Background:
     Given I am authenticated as user "alice"
@@ -68,5 +68,37 @@ Feature: Update Conversation gRPC API
     """
     conversation_id: "${conversationId | uuid_to_hex_string}"
     title: "Reader Title"
+    """
+    Then the gRPC response should have status "PERMISSION_DENIED"
+
+  Scenario: Archive conversation via gRPC and keep it readable
+    When I send gRPC request "ConversationsService/UpdateConversation" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    archived: true
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "archived" should be true
+    When I send gRPC request "ConversationsService/GetConversation" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "archived" should be true
+
+  Scenario: Reader cannot archive via gRPC
+    When I share the conversation with user "charlie" with request:
+    """
+    {
+      "userId": "charlie",
+      "accessLevel": "reader"
+    }
+    """
+    Then the response status should be 201
+    Given I am authenticated as user "charlie"
+    When I send gRPC request "ConversationsService/UpdateConversation" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    archived: true
     """
     Then the gRPC response should have status "PERMISSION_DENIED"

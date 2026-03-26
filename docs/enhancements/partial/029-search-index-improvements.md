@@ -8,6 +8,8 @@ superseded-by:
 
 > **Status**: Partial. Index model further redesigned to per-entry indexing by
 > [030](../implemented/030-index-design.md).
+>
+> **Current Contract Note**: Admin conversation search archive filtering now follows [../implemented/094-archive-operations.md](../implemented/094-archive-operations.md). References below to `includeArchived` are historical; the current admin search filter is `archived=exclude|include|only`.
 
 ## Motivation
 
@@ -171,7 +173,7 @@ AdminSearchEntriesRequest:
     after: string (cursor)
     limit: integer (default 20)
     userId: string (filter by owner)
-    includeDeleted: boolean (default false)
+    includeArchived: boolean (default false)
     includeEntry: boolean (default true)
 ```
 

@@ -497,7 +497,7 @@ Only **accepted** transfers are preserved in the database as a historical record
 
 ### Memberships: Hard Delete (Recommended)
 
-Given that all membership operations are audit logged, **soft deletes are not recommended** for memberships:
+Given that all membership operations are audit logged, **archives are not recommended** for memberships:
 
 | Approach | Pros | Cons |
 |----------|------|------|
@@ -507,10 +507,10 @@ Given that all membership operations are audit logged, **soft deletes are not re
 **Recommendation**: Use hard deletes for memberships because:
 1. The audit log captures the full history of who had access and when
 2. Restoring access is as simple as re-adding the member
-3. Simpler queries without `WHERE deleted_at IS NULL` everywhere
+3. Simpler queries without `WHERE archived_at IS NULL` everywhere
 4. The audit log is the authoritative source for "who had access when"
 
-If historical membership queries are needed (e.g., "who had access on date X"), query the audit log rather than maintaining soft-deleted records.
+If historical membership queries are needed (e.g., "who had access on date X"), query the audit log rather than maintaining archived records.
 
 ## UI Integration
 
@@ -549,7 +549,7 @@ The following existing Cucumber feature files need updates to reflect API change
 
 | File | Changes Needed |
 |------|----------------|
-| `sharing-rest.feature` | Update membership tests for hard delete behavior; remove soft delete expectations |
+| `sharing-rest.feature` | Update membership tests for hard delete behavior; remove archive expectations |
 | `conversations-rest.feature` | May need updates if conversation delete behavior changes |
 
 ### New Cucumber Feature Files
@@ -799,7 +799,7 @@ Feature: Sharing Audit Logging
 - [ ] Update member access level - success
 - [ ] Update member - manager cannot update other managers
 - [ ] Remove member - success
-- [ ] Remove member - hard deletes (not soft delete)
+- [ ] Remove member - hard deletes (not archive)
 - [ ] Remove member - manager cannot remove other managers
 
 #### Audit Log Tests
@@ -827,7 +827,7 @@ Feature: Sharing Audit Logging
 
 ## Impact on Data Eviction (Enhancement 016)
 
-Since memberships will use **hard deletes** (not soft deletes), the eviction API and implementation need to be updated:
+Since memberships will use **hard deletes** (not archives), the eviction API and implementation need to be updated:
 
 ### Changes Required
 
@@ -857,7 +857,7 @@ Since memberships will use **hard deletes** (not soft deletes), the eviction API
 
 ### Rationale
 
-- With audit logging capturing all membership changes, soft deletes provide no additional value
+- With audit logging capturing all membership changes, archives provide no additional value
 - Hard deletes simplify the data model and queries
 - Eviction becomes simpler with only one resource type to handle
 

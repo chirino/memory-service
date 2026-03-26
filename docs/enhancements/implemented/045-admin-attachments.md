@@ -103,7 +103,7 @@ All filter parameters correspond to indexed columns to ensure predictable query 
       "entryId": "entry-456",
       "expiresAt": null,
       "createdAt": "2024-01-15T10:00:00Z",
-      "deletedAt": null
+      "archivedAt": null
     }
   ],
   "nextCursor": "eyJpZCI6..."
@@ -116,7 +116,7 @@ All filter parameters correspond to indexed columns to ensure predictable query 
 GET /v1/admin/attachments/{id}?justification=support+ticket+1234
 ```
 
-Returns the same schema as a single item in the list response. Unlike the user-facing endpoint, this returns metadata (not binary content) and does not enforce ownership checks. Includes soft-deleted attachments.
+Returns the same schema as a single item in the list response. Unlike the user-facing endpoint, this returns metadata (not binary content) and does not enforce ownership checks. Includes archived attachments.
 
 #### Response
 
@@ -132,7 +132,7 @@ Returns the same schema as a single item in the list response. Unlike the user-f
   "entryId": "entry-456",
   "expiresAt": null,
   "createdAt": "2024-01-15T10:00:00Z",
-  "deletedAt": null,
+  "archivedAt": null,
   "refCount": 2
 }
 ```
@@ -148,7 +148,7 @@ GET /v1/admin/attachments/{id}/content?justification=compliance+review
 Streams the binary file content. Bypasses ownership checks -- any attachment can be downloaded by an auditor or admin.
 
 **Behavior:**
-1. Look up the attachment (including soft-deleted records, but `storageKey` must exist).
+1. Look up the attachment (including archived records, but `storageKey` must exist).
 2. If the file store supports signed URLs (S3), return a `302` redirect to the signed URL.
 3. Otherwise, stream the binary content with appropriate `Content-Type`, `Content-Length`, and `Content-Disposition` headers.
 
@@ -191,7 +191,7 @@ Content-Type: application/json
 ```
 
 **Behavior:**
-1. Look up the attachment (including soft-deleted records).
+1. Look up the attachment (including archived records).
 2. If the attachment is linked to an entry, clear the `entryId` first (unlink it so `AttachmentDeletionService` can proceed).
 3. Delete using the existing `AttachmentDeletionService.deleteAttachment()` protocol (reference-counting safe).
 4. Return `204 No Content`.
@@ -228,7 +228,7 @@ public interface AttachmentStore {
 
     // Admin methods
     List<AttachmentDto> adminList(AdminAttachmentQuery query);
-    Optional<AttachmentDto> adminFindById(String id);  // no ownership filter, includes soft-deleted
+    Optional<AttachmentDto> adminFindById(String id);  // no ownership filter, includes archived
     long adminCount(AdminAttachmentQuery query);
     void adminUnlinkFromEntry(String attachmentId);    // clear entryId, set expiresAt (for admin delete of linked attachments)
 }
@@ -265,7 +265,7 @@ public interface AttachmentRepository {
 
     // Admin queries
     List<AttachmentEntity> adminFind(/* dynamic criteria */);
-    Optional<AttachmentEntity> adminFindById(UUID id);   // no deletedAt filter
+    Optional<AttachmentEntity> adminFindById(UUID id);   // no archivedAt filter
 }
 ```
 
@@ -321,7 +321,7 @@ components:
         createdAt:
           type: string
           format: date-time
-        deletedAt:
+        archivedAt:
           type: string
           format: date-time
         refCount:
@@ -424,13 +424,13 @@ Feature: Admin Attachments REST API
     And the response body field "filename" should be "secret.jpg"
     And the response body field "userId" should be "bob"
 
-  Scenario: Admin can see soft-deleted attachment metadata
+  Scenario: Admin can see archived attachment metadata
     Given "bob" uploads an attachment
-    And the attachment is soft-deleted
+    And the attachment is archived
     When I am authenticated as admin user "alice"
     And I call GET "/v1/admin/attachments/{attachmentId}"
     Then the response status should be 200
-    And the response body field "deletedAt" should not be null
+    And the response body field "archivedAt" should not be null
 
   # --- Download ---
 

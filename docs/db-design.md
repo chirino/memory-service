@@ -1,7 +1,7 @@
 # Database Design
 
 Memory Service uses a relational schema designed around conversation groups as the unit of access control,
-with support for soft deletes, encrypted content, full-text search, and optional vector search.
+with support for archives, encrypted content, full-text search, and optional vector search.
 
 ## Entity Relationship Diagram
 
@@ -10,7 +10,7 @@ erDiagram
     conversation_groups {
         UUID id PK
         TIMESTAMPTZ created_at
-        TIMESTAMPTZ deleted_at
+        TIMESTAMPTZ archived_at
     }
 
     conversations {
@@ -24,7 +24,7 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
         TIMESTAMPTZ vectorized_at
-        TIMESTAMPTZ deleted_at
+        TIMESTAMPTZ archived_at
     }
 
     conversation_memberships {
@@ -61,7 +61,7 @@ erDiagram
         UUID entry_id FK
         TIMESTAMPTZ expires_at
         TIMESTAMPTZ created_at
-        TIMESTAMPTZ deleted_at
+        TIMESTAMPTZ archived_at
     }
 
     conversation_ownership_transfers {
@@ -111,7 +111,7 @@ The top-level grouping entity. Every conversation belongs to exactly one group, 
 (memberships) is defined at the group level. When a conversation is forked, the fork shares the same
 group as the original, so all members retain access to the entire fork tree.
 
-- Soft-deleted via `deleted_at`.
+- Soft-deleted via `archived_at`.
 
 ### conversations
 
@@ -121,7 +121,7 @@ The `metadata` column is a free-form `JSONB` field for agent-defined tags and pr
 - `conversation_group_id` links to the owning group.
 - `forked_at_conversation_id` and `forked_at_entry_id` record the fork point when a conversation is created by forking.
 - `vectorized_at` tracks when entries were last sent for vector embedding.
-- Soft-deleted via `deleted_at`.
+- Soft-deleted via `archived_at`.
 
 ### conversation_memberships
 
@@ -130,7 +130,7 @@ Per-user access grants scoped to a conversation group. The composite primary key
 
 - `access_level` is one of: `owner`, `manager`, `writer`, `reader`.
 - Exactly one `owner` row must exist per group.
-- Hard-deleted (not soft-deleted) with audit logging.
+- Hard-deleted (not archived) with audit logging.
 
 ### entries
 
@@ -149,7 +149,7 @@ File attachments linked to entries.
 - `storage_key` references the file in the configured blob store.
 - `expires_at` enables automatic cleanup of temporary uploads.
 - `sha256` provides integrity verification.
-- Soft-deleted via `deleted_at`.
+- Soft-deleted via `archived_at`.
 
 ### conversation_ownership_transfers
 
@@ -186,9 +186,9 @@ automatically inherits all access grants from the group.
 
 ### Soft Deletes with Retention Indexes
 
-Conversations, conversation groups, and attachments use a `deleted_at` timestamp for soft deletion.
-Partial indexes on `deleted_at IS NULL` and `deleted_at IS NOT NULL` keep queries efficient for
-both active-record lookups and retention/eviction jobs that clean up expired soft-deleted rows.
+Conversations, conversation groups, and attachments use a `archived_at` timestamp for soft deletion.
+Partial indexes on `archived_at IS NULL` and `archived_at IS NOT NULL` keep queries efficient for
+both active-record lookups and retention/eviction jobs that clean up expired archived rows.
 
 ### Encrypted Content Storage
 

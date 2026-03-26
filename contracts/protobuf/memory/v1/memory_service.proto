@@ -49,6 +49,13 @@ enum ConversationAncestryFilter {
   CONVERSATION_ANCESTRY_FILTER_ALL = 3;
 }
 
+enum ArchiveFilter {
+  ARCHIVE_FILTER_UNSPECIFIED = 0;
+  ARCHIVE_FILTER_EXCLUDE = 1;
+  ARCHIVE_FILTER_INCLUDE = 2;
+  ARCHIVE_FILTER_ONLY = 3;
+}
+
 enum AccessLevel {
   ACCESS_LEVEL_UNSPECIFIED = 0;
   OWNER = 1;
@@ -74,6 +81,7 @@ message ConversationSummary {
   AccessLevel access_level = 7;
   bytes started_by_conversation_id = 8;
   bytes started_by_entry_id = 9;
+  bool archived = 10;
 }
 
 message ChildConversationSummary {
@@ -86,6 +94,7 @@ message ChildConversationSummary {
   string last_message_preview = 6;
   AccessLevel access_level = 7;
   bytes started_by_entry_id = 8;
+  bool archived = 9;
 }
 
 message Conversation {
@@ -105,6 +114,7 @@ message Conversation {
   bytes started_by_conversation_id = 11;
   bytes started_by_entry_id = 12;
   string agent_id = 13;
+  bool archived = 14;
 }
 
 message ConversationMembership {
@@ -142,6 +152,7 @@ message ListConversationsRequest {
   string query = 2;
   PageRequest page = 3;
   ConversationAncestryFilter ancestry = 4;
+  ArchiveFilter archived = 5;
 }
 
 message ListConversationsResponse {
@@ -158,11 +169,7 @@ message UpdateConversationRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
   optional string title = 2;
-}
-
-message DeleteConversationRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  optional bool archived = 3;
 }
 
 message ListForksRequest {
@@ -443,11 +450,13 @@ message GetMemoryRequest {
   repeated string namespace = 1;
   string key = 2;
   bool include_usage = 3;
+  ArchiveFilter archived = 4;
 }
 
-message DeleteMemoryRequest {
+message UpdateMemoryRequest {
   repeated string namespace = 1;
   string key = 2;
+  optional bool archived = 3;
 }
 
 message MemoryItem {
@@ -461,6 +470,7 @@ message MemoryItem {
   string created_at = 7;
   optional string expires_at = 8;
   optional MemoryUsage usage = 9;
+  bool archived = 10;
 }
 
 message SearchMemoriesRequest {
@@ -470,6 +480,7 @@ message SearchMemoriesRequest {
   int32 limit = 4;
   int32 offset = 5;
   bool include_usage = 6;
+  ArchiveFilter archived = 7;
 }
 
 message SearchMemoriesResponse {
@@ -480,6 +491,7 @@ message ListMemoryNamespacesRequest {
   repeated string prefix = 1;
   repeated string suffix = 2;
   int32 max_depth = 3;
+  ArchiveFilter archived = 4;
 }
 
 message MemoryNamespace {
@@ -582,8 +594,6 @@ service ConversationsService {
   rpc CreateConversation(CreateConversationRequest) returns (Conversation);
   rpc GetConversation(GetConversationRequest) returns (Conversation);
   rpc UpdateConversation(UpdateConversationRequest) returns (Conversation);
-  // DeleteConversation deletes a conversation. Deleting a conversation deletes all conversations in the same fork tree (the root conversation and all its forks). Memberships and entries associated with these conversations are also deleted.
-  rpc DeleteConversation(DeleteConversationRequest) returns (google.protobuf.Empty);
   rpc ListForks(ListForksRequest) returns (ListForksResponse);
   rpc ListChildConversations(ListChildConversationsRequest) returns (ListChildConversationsResponse);
 }
@@ -625,7 +635,7 @@ service SearchService {
 service MemoriesService {
   rpc PutMemory(PutMemoryRequest) returns (MemoryWriteResult);
   rpc GetMemory(GetMemoryRequest) returns (MemoryItem);
-  rpc DeleteMemory(DeleteMemoryRequest) returns (google.protobuf.Empty);
+  rpc UpdateMemory(UpdateMemoryRequest) returns (google.protobuf.Empty);
   rpc SearchMemories(SearchMemoriesRequest) returns (SearchMemoriesResponse);
   rpc ListMemoryNamespaces(ListMemoryNamespacesRequest) returns (ListMemoryNamespacesResponse);
   // Admin-only: returns count of memories with pending index synchronization.

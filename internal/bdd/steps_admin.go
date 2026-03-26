@@ -16,15 +16,19 @@ func init() {
 		// Admin conversation setup steps
 		ctx.Step(`^there is a conversation owned by "([^"]*)" with title "([^"]*)"$`, a.thereIsAConversationOwnedByWithTitle)
 		ctx.Step(`^the conversation owned by "([^"]*)" has an entry "([^"]*)"$`, a.theConversationOwnedByHasAnEntry)
-		ctx.Step(`^the conversation owned by "([^"]*)" is deleted$`, a.theConversationOwnedByIsDeleted)
-		ctx.Step(`^I soft-delete conversation "([^"]*)" directly in storage$`, a.iSoftDeleteConversationDirectlyInStorage)
+		ctx.Step(`^the conversation owned by "([^"]*)" is archived$`, a.theConversationOwnedByIsArchived)
+		ctx.Step(`^the conversation owned by "([^"]*)" is deleted$`, a.theConversationOwnedByIsArchived)
+		ctx.Step(`^I archive conversation "([^"]*)" directly in storage$`, a.iArchiveConversationDirectlyInStorage)
 
 		// Admin conversation assertion steps
 		ctx.Step(`^all conversations should have ownerUserId "([^"]*)"$`, a.allConversationsShouldHaveOwnerUserId)
-		ctx.Step(`^all conversations should have deletedAt set$`, a.allConversationsShouldHaveDeletedAtSet)
-		ctx.Step(`^the conversation should be soft-deleted$`, a.theConversationShouldBeSoftDeleted)
-		ctx.Step(`^the conversation should not be deleted$`, a.theConversationShouldNotBeDeleted)
-		ctx.Step(`^the response should contain at least (\d+) conversations? with deletedAt set$`, a.theResponseShouldContainAtLeastConversationsWithDeletedAtSet)
+		ctx.Step(`^all conversations should be archived$`, a.allConversationsShouldBeArchived)
+		ctx.Step(`^all conversations should have archivedAt set$`, a.allConversationsShouldBeArchived)
+		ctx.Step(`^the conversation should be archived$`, a.theConversationShouldBeArchived)
+		ctx.Step(`^the conversation should not be archived$`, a.theConversationShouldNotBeArchived)
+		ctx.Step(`^the conversation should not be deleted$`, a.theConversationShouldNotBeArchived)
+		ctx.Step(`^the response should contain at least (\d+) conversations? that are archived$`, a.theResponseShouldContainAtLeastArchivedConversations)
+		ctx.Step(`^the response should contain at least (\d+) conversations? with archivedAt set$`, a.theResponseShouldContainAtLeastArchivedConversations)
 		ctx.Step(`^all search results should have conversation owned by "([^"]*)"$`, a.allSearchResultsShouldHaveConversationOwnedBy)
 
 		// Conversation title assertion
@@ -93,21 +97,21 @@ func (a *adminSteps) theConversationOwnedByHasAnEntry(owner, content string) err
 	return err
 }
 
-func (a *adminSteps) theConversationOwnedByIsDeleted(owner string) error {
+func (a *adminSteps) theConversationOwnedByIsArchived(owner string) error {
 	savedAuth := snapshotAuthState(a.s)
 	auth := &authSteps{s: a.s}
-	// Use an admin user to do the admin delete (soft-delete only, preserves entries/memberships)
+	// Use an admin user to do the admin delete (archive only, preserves entries/memberships)
 	_ = auth.iAmAuthenticatedAsAdminUser("alice")
 
 	// Use owner-qualified conversationId
 	convID := fmt.Sprintf("%v", a.s.Variables[owner+"ConversationId"])
-	body := `{"justification": "test setup deletion"}`
-	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("DELETE", "/v1/admin/conversations/"+convID, &godog.DocString{Content: body}, false, true)
+	body := `{"archived": true, "justification": "test setup archive"}`
+	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("PATCH", "/v1/admin/conversations/"+convID, &godog.DocString{Content: body}, false, true)
 	restoreAuthState(a.s, savedAuth)
 	return err
 }
 
-func (a *adminSteps) iSoftDeleteConversationDirectlyInStorage(conversationID string) error {
+func (a *adminSteps) iArchiveConversationDirectlyInStorage(conversationID string) error {
 	if a.s.TestDB() == nil {
 		return fmt.Errorf("no TestDB configured")
 	}
@@ -115,7 +119,7 @@ func (a *adminSteps) iSoftDeleteConversationDirectlyInStorage(conversationID str
 	if err != nil {
 		return err
 	}
-	return a.s.TestDB().SoftDeleteConversationOnly(context.Background(), expanded, 0)
+	return a.s.TestDB().ArchiveConversationOnly(context.Background(), expanded, 0)
 }
 
 func (a *adminSteps) allConversationsShouldHaveOwnerUserId(expected string) error {
@@ -142,7 +146,7 @@ func (a *adminSteps) allConversationsShouldHaveOwnerUserId(expected string) erro
 	return nil
 }
 
-func (a *adminSteps) allConversationsShouldHaveDeletedAtSet() error {
+func (a *adminSteps) allConversationsShouldBeArchived() error {
 	session := a.s.Session()
 	respJSON, err := session.RespJSON()
 	if err != nil {
@@ -158,21 +162,21 @@ func (a *adminSteps) allConversationsShouldHaveDeletedAtSet() error {
 		if !ok {
 			continue
 		}
-		if m["deletedAt"] == nil {
-			return fmt.Errorf("conversation at index %d does not have deletedAt set", i)
+		if archived, _ := m["archived"].(bool); !archived {
+			return fmt.Errorf("conversation at index %d is not archived", i)
 		}
 	}
 	return nil
 }
 
-func (a *adminSteps) theConversationShouldBeSoftDeleted() error {
+func (a *adminSteps) theConversationShouldBeArchived() error {
 	// After a DELETE 204 there is no response body, so we need to GET the conversation
 	convID := fmt.Sprintf("%v", a.s.Variables["conversationId"])
 	savedAuth := snapshotAuthState(a.s)
 	auth := &authSteps{s: a.s}
 	_ = auth.iAmAuthenticatedAsAdminUser("alice")
 
-	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("GET", "/v1/admin/conversations/"+convID+"?includeDeleted=true", nil, false, true)
+	err := a.s.SendHTTPRequestWithJSONBodyAndStyle("GET", "/v1/admin/conversations/"+convID+"?includeArchived=true", nil, false, true)
 	restoreAuthState(a.s, savedAuth)
 	if err != nil {
 		return err
@@ -183,14 +187,14 @@ func (a *adminSteps) theConversationShouldBeSoftDeleted() error {
 	if err != nil {
 		return err
 	}
-	deletedAt := jsonPathGet(respJSON, "deletedAt")
-	if deletedAt == nil {
-		return fmt.Errorf("conversation does not have deletedAt set. Response: %s", string(session.RespBytes))
+	archived, _ := jsonPathGet(respJSON, "archived").(bool)
+	if !archived {
+		return fmt.Errorf("conversation is not archived. Response: %s", string(session.RespBytes))
 	}
 	return nil
 }
 
-func (a *adminSteps) theConversationShouldNotBeDeleted() error {
+func (a *adminSteps) theConversationShouldNotBeArchived() error {
 	// GET the conversation via admin API to check delete status
 	convID := fmt.Sprintf("%v", a.s.Variables["conversationId"])
 	savedAuth := snapshotAuthState(a.s)
@@ -208,14 +212,14 @@ func (a *adminSteps) theConversationShouldNotBeDeleted() error {
 	if err != nil {
 		return err
 	}
-	deletedAt := jsonPathGet(respJSON, "deletedAt")
-	if deletedAt != nil {
-		return fmt.Errorf("conversation has deletedAt set but shouldn't. Response: %s", string(session.RespBytes))
+	archived, _ := jsonPathGet(respJSON, "archived").(bool)
+	if archived {
+		return fmt.Errorf("conversation is archived but should not be. Response: %s", string(session.RespBytes))
 	}
 	return nil
 }
 
-func (a *adminSteps) theResponseShouldContainAtLeastConversationsWithDeletedAtSet(minCount int) error {
+func (a *adminSteps) theResponseShouldContainAtLeastArchivedConversations(minCount int) error {
 	session := a.s.Session()
 	respJSON, err := session.RespJSON()
 	if err != nil {
@@ -232,12 +236,12 @@ func (a *adminSteps) theResponseShouldContainAtLeastConversationsWithDeletedAtSe
 		if !ok {
 			continue
 		}
-		if m["deletedAt"] != nil {
+		if archived, _ := m["archived"].(bool); archived {
 			count++
 		}
 	}
 	if count < minCount {
-		return fmt.Errorf("expected at least %d conversations with deletedAt set, got %d", minCount, count)
+		return fmt.Errorf("expected at least %d archived conversations, got %d", minCount, count)
 	}
 	return nil
 }

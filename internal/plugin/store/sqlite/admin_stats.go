@@ -12,13 +12,13 @@ import (
 )
 
 type sqliteAdminStatsRow struct {
-	ConversationGroupsTotal               int64   `gorm:"column:conversation_groups_total"`
-	ConversationGroupsSoftDeleted         int64   `gorm:"column:conversation_groups_soft_deleted"`
-	ConversationGroupsOldestSoftDeletedAt *string `gorm:"column:conversation_groups_oldest_soft_deleted_at"`
-	ConversationsTotal                    int64   `gorm:"column:conversations_total"`
-	EntriesTotal                          int64   `gorm:"column:entries_total"`
-	OutboxEventsTotal                     int64   `gorm:"column:outbox_events_total"`
-	OldestOutboxAt                        *string `gorm:"column:oldest_outbox_at"`
+	ConversationGroupsTotal    int64   `gorm:"column:conversation_groups_total"`
+	ConversationGroupsArchived int64   `gorm:"column:conversation_groups_archived"`
+	ConversationGroupsOldestAt *string `gorm:"column:conversation_groups_oldest_archived_at"`
+	ConversationsTotal         int64   `gorm:"column:conversations_total"`
+	EntriesTotal               int64   `gorm:"column:entries_total"`
+	OutboxEventsTotal          int64   `gorm:"column:outbox_events_total"`
+	OldestOutboxAt             *string `gorm:"column:oldest_outbox_at"`
 }
 
 func (s *SQLiteStore) AdminStatsSummary(ctx context.Context) (*registrystore.AdminStatsSummary, error) {
@@ -26,10 +26,10 @@ func (s *SQLiteStore) AdminStatsSummary(ctx context.Context) (*registrystore.Adm
 	var row sqliteAdminStatsRow
 	if err := db.Raw(`
 		SELECT
-			(SELECT COUNT(*) FROM conversation_groups WHERE deleted_at IS NULL) AS conversation_groups_total,
-			(SELECT COUNT(*) FROM conversation_groups WHERE deleted_at IS NOT NULL) AS conversation_groups_soft_deleted,
-			(SELECT MIN(updated_at) FROM conversations WHERE deleted_at IS NOT NULL) AS conversation_groups_oldest_soft_deleted_at,
-			(SELECT COUNT(*) FROM conversations WHERE deleted_at IS NULL) AS conversations_total,
+			(SELECT COUNT(*) FROM conversation_groups WHERE archived_at IS NULL) AS conversation_groups_total,
+			(SELECT COUNT(*) FROM conversation_groups WHERE archived_at IS NOT NULL) AS conversation_groups_archived,
+			(SELECT MIN(updated_at) FROM conversations WHERE archived_at IS NOT NULL) AS conversation_groups_oldest_archived_at,
+			(SELECT COUNT(*) FROM conversations WHERE archived_at IS NULL) AS conversations_total,
 			(SELECT COUNT(*) FROM entries) AS entries_total,
 			(SELECT COUNT(*) FROM outbox_events) AS outbox_events_total,
 			(SELECT MIN(created_at) FROM outbox_events) AS oldest_outbox_at
@@ -37,9 +37,9 @@ func (s *SQLiteStore) AdminStatsSummary(ctx context.Context) (*registrystore.Adm
 		return nil, fmt.Errorf("admin stats summary: %w", err)
 	}
 
-	oldestSoftDeletedAt, err := parseSQLiteSummaryTime(row.ConversationGroupsOldestSoftDeletedAt)
+	oldestArchivedAt, err := parseSQLiteSummaryTime(row.ConversationGroupsOldestAt)
 	if err != nil {
-		return nil, fmt.Errorf("parse oldest soft-deleted conversation timestamp: %w", err)
+		return nil, fmt.Errorf("parse oldest archived conversation timestamp: %w", err)
 	}
 	oldestOutboxAt, err := parseSQLiteSummaryTime(row.OldestOutboxAt)
 	if err != nil {
@@ -48,9 +48,9 @@ func (s *SQLiteStore) AdminStatsSummary(ctx context.Context) (*registrystore.Adm
 
 	return &registrystore.AdminStatsSummary{
 		ConversationGroups: registrystore.AdminConversationGroupStats{
-			Total:               row.ConversationGroupsTotal,
-			SoftDeleted:         row.ConversationGroupsSoftDeleted,
-			OldestSoftDeletedAt: oldestSoftDeletedAt,
+			Total:            row.ConversationGroupsTotal,
+			Archived:         row.ConversationGroupsArchived,
+			OldestArchivedAt: oldestArchivedAt,
 		},
 		Conversations: registrystore.AdminTotalStats{
 			Total: row.ConversationsTotal,

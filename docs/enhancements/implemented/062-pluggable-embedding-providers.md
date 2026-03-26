@@ -5,6 +5,8 @@ status: implemented
 # Enhancement 062: Pluggable Embedding Providers & Vector Search Backends
 
 > **Status**: Implemented — All phases complete. Includes interface split to `VectorSearchStore` + `FullTextSearchStore` and caller-level search orchestration.
+>
+> **Current Contract Note**: Admin conversation search archive filtering now follows [094](./094-archive-operations.md). References below to `includeArchived` describe the older admin search contract; the current filter is `archived=exclude|include|only`.
 
 ## Summary
 
@@ -224,12 +226,12 @@ private List<EmbeddingMatch<TextSegment>> groupByConversation(
 
 #### Admin Search
 
-Admin search has no membership restrictions but supports optional `userId` filter and `includeDeleted` flag. These fields (`owner_user_id`, `deleted_at`) are conversation-level attributes not stored in the vector store metadata.
+Admin search has no membership restrictions but supports optional `userId` filter and `includeArchived` flag. These fields (`owner_user_id`, `archived_at`) are conversation-level attributes not stored in the vector store metadata.
 
 Strategy:
 - **No userId filter**: Search with `model` filter only, no membership restriction.
 - **With userId filter**: Pre-query the user's conversation group IDs from the active primary datastore and filter in the vector store.
-- **includeDeleted**: Apply deleted filtering in the active primary datastore when building result DTOs. Overfetch from the vector store to account for filtered-out results.
+- **includeArchived**: Apply deleted filtering in the active primary datastore when building result DTOs. Overfetch from the vector store to account for filtered-out results.
 
 #### Full-Text Search
 

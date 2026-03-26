@@ -66,7 +66,7 @@ Feature: Episodic Memory REST API
     When I call GET "/v1/memories?ns=user&ns=alice&key=does-not-exist"
     Then the response status should be 404
 
-  Scenario: Delete a memory makes it unavailable
+  Scenario: Archive a memory keeps it readable with archive filters
     Given I call PUT "/v1/memories" with body:
     """
     {
@@ -75,10 +75,21 @@ Feature: Episodic Memory REST API
       "value": { "x": 1 }
     }
     """
-    When I call DELETE "/v1/memories?ns=user&ns=alice&ns=tmp&key=to-delete"
+    When I call PATCH "/v1/memories?ns=user&ns=alice&ns=tmp&key=to-delete" with body:
+    """
+    {
+      "archived": true
+    }
+    """
     Then the response status should be 204
     When I call GET "/v1/memories?ns=user&ns=alice&ns=tmp&key=to-delete"
     Then the response status should be 404
+    When I call GET "/v1/memories?ns=user&ns=alice&ns=tmp&key=to-delete&archived=include"
+    Then the response status should be 200
+    And the response body field "archived" should be "true"
+    When I call GET "/v1/memories?ns=user&ns=alice&ns=tmp&key=to-delete&archived=only"
+    Then the response status should be 200
+    And the response body field "archived" should be "true"
 
   Scenario: Search memories within namespace prefix
     Given I call PUT "/v1/memories" with body:
@@ -106,6 +117,69 @@ Feature: Episodic Memory REST API
     """
     Then the response status should be 200
     And the response body "items" should have at least 2 items
+
+  Scenario: Memory search and namespace listing honor archive filters
+    Given I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "archive-search"],
+      "key": "active-note",
+      "value": { "text": "still active" }
+    }
+    """
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "archive-search"],
+      "key": "archived-note",
+      "value": { "text": "only archived" }
+    }
+    """
+    And I call PATCH "/v1/memories?ns=user&ns=alice&ns=archive-search&key=archived-note" with body:
+    """
+    {
+      "archived": true
+    }
+    """
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "archive-search"],
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body "items" should have at least 1 items
+    And the response body should contain "active-note"
+    And the response body should not contain "archived-note"
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "archive-search"],
+      "archived": "include",
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body should contain "active-note"
+    And the response body should contain "archived-note"
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "archive-search"],
+      "archived": "only",
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body should contain "archived-note"
+    And the response body should not contain "active-note"
+    When I call GET "/v1/memories/namespaces?prefix=user&prefix=alice&prefix=archive-search"
+    Then the response status should be 200
+    And the response body "namespaces" should have at least 1 items
+    When I call GET "/v1/memories/namespaces?prefix=user&prefix=alice&prefix=archive-search&archived=only"
+    Then the response status should be 200
+    And the response body "namespaces" should have at least 1 items
 
   Scenario: Get memory with include_usage returns usage counters
     Given I call PUT "/v1/memories" with body:
@@ -261,7 +335,7 @@ Feature: Episodic Memory REST API
     }
     """
 
-  Scenario: Event timeline records delete event
+  Scenario: Event timeline records archive as update
     Given I call PUT "/v1/memories" with body:
     """
     {
@@ -271,9 +345,14 @@ Feature: Episodic Memory REST API
     }
     """
     And the response status should be 200
-    When I call DELETE "/v1/memories?ns=user&ns=alice&ns=events-del&key=del-key"
+    When I call PATCH "/v1/memories?ns=user&ns=alice&ns=events-del&key=del-key" with body:
+    """
+    {
+      "archived": true
+    }
+    """
     Then the response status should be 204
-    When I call GET "/v1/memories/events?ns=user&ns=alice&ns=events-del&kinds=add&kinds=delete"
+    When I call GET "/v1/memories/events?ns=user&ns=alice&ns=events-del&kinds=add&kinds=update"
     Then the response status should be 200
     And the response body "events" should have at least 2 items
     And the response body should contain json:
@@ -281,7 +360,7 @@ Feature: Episodic Memory REST API
     {
       "events": [
         { "key": "del-key", "kind": "add"    },
-        { "key": "del-key", "kind": "delete" }
+        { "key": "del-key", "kind": "update" }
       ]
     }
     """

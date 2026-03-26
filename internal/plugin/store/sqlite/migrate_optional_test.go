@@ -80,7 +80,7 @@ func TestSQLiteEpisodicVectorsNoOpWhenExtensionUnavailable(t *testing.T) {
 	}}))
 	require.NoError(t, store.DeleteMemoryVectors(context.Background(), uuid.New()))
 
-	results, err := store.SearchMemoryVectors(context.Background(), "users\x1e123", []float32{1, 0}, nil, 10)
+	results, err := store.SearchMemoryVectors(context.Background(), "users\x1e123", []float32{1, 0}, nil, 10, registryepisodic.ArchiveFilterExclude)
 	require.NoError(t, err)
 	require.Empty(t, results)
 }

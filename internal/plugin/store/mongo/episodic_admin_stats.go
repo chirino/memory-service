@@ -14,31 +14,31 @@ import (
 )
 
 func (s *mongoEpisodicStore) AdminStatsSummary(ctx context.Context) (*registryepisodic.AdminStatsSummary, error) {
-	memoriesTotal, err := s.col.CountDocuments(ctx, bson.M{"deleted_at": bson.M{"$exists": false}})
+	memoriesTotal, err := s.col.CountDocuments(ctx, bson.M{"archived_at": bson.M{"$exists": false}})
 	if err != nil {
 		return nil, fmt.Errorf("count active memories: %w", err)
 	}
-	memoriesSoftDeleted, err := s.col.CountDocuments(ctx, bson.M{"deleted_at": bson.M{"$exists": true}})
+	memoriesArchived, err := s.col.CountDocuments(ctx, bson.M{"archived_at": bson.M{"$exists": true}})
 	if err != nil {
-		return nil, fmt.Errorf("count soft-deleted memories: %w", err)
+		return nil, fmt.Errorf("count archived memories: %w", err)
 	}
-	findOldestSoftDeleted := s.col.FindOne(ctx, bson.M{"deleted_at": bson.M{"$exists": true}}, options.FindOne().SetSort(bson.D{{Key: "deleted_at", Value: 1}, {Key: "_id", Value: 1}}))
+	findOldestArchived := s.col.FindOne(ctx, bson.M{"archived_at": bson.M{"$exists": true}}, options.FindOne().SetSort(bson.D{{Key: "archived_at", Value: 1}, {Key: "_id", Value: 1}}))
 	var oldestDeleted struct {
-		DeletedAt time.Time `bson:"deleted_at"`
+		ArchivedAt time.Time `bson:"archived_at"`
 	}
-	var oldestSoftDeletedAt *time.Time
-	if err := findOldestSoftDeleted.Decode(&oldestDeleted); err == nil {
-		t := oldestDeleted.DeletedAt.UTC()
-		oldestSoftDeletedAt = &t
+	var oldestArchivedAt *time.Time
+	if err := findOldestArchived.Decode(&oldestDeleted); err == nil {
+		t := oldestDeleted.ArchivedAt.UTC()
+		oldestArchivedAt = &t
 	} else if err != nil && err != mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("load oldest soft-deleted memory: %w", err)
+		return nil, fmt.Errorf("load oldest archived memory: %w", err)
 	}
 
 	return &registryepisodic.AdminStatsSummary{
 		Memories: registryepisodic.AdminMemoryStats{
-			Total:               memoriesTotal,
-			SoftDeleted:         memoriesSoftDeleted,
-			OldestSoftDeletedAt: oldestSoftDeletedAt,
+			Total:            memoriesTotal,
+			Archived:         memoriesArchived,
+			OldestArchivedAt: oldestArchivedAt,
 		},
 	}, nil
 }

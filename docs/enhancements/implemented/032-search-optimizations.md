@@ -299,10 +299,10 @@ WITH accessible_ranked AS (
         AND cm.user_id = :userId
     JOIN conversations c
         ON c.id = ee.conversation_id
-        AND c.deleted_at IS NULL
+        AND c.archived_at IS NULL
     JOIN conversation_groups cg
         ON cg.id = ee.conversation_group_id
-        AND cg.deleted_at IS NULL
+        AND cg.archived_at IS NULL
 )
 SELECT entry_id, conversation_id, conversation_title, score
 FROM accessible_ranked

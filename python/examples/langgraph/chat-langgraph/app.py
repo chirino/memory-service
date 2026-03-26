@@ -203,6 +203,7 @@ async def list_conversations(request: Request):
         after_cursor=request.query_params.get("afterCursor"),
         limit=parse_optional_int(request.query_params.get("limit")),
         query=request.query_params.get("query"),
+        archived=request.query_params.get("archived"),
     )
     return to_fastapi_response(response)
 
@@ -219,12 +220,6 @@ async def update_conversation(conversation_id: str, request: Request):
     if not isinstance(payload, dict):
         raise HTTPException(400, "Invalid request body")
     response = await proxy.update_conversation(conversation_id, payload)
-    return to_fastapi_response(response)
-
-
-@app.delete("/v1/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str):
-    response = await proxy.delete_conversation(conversation_id)
     return to_fastapi_response(response)
 
 

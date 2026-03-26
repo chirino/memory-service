@@ -102,7 +102,7 @@ Feature: Forked Attachments REST API
     Then the response status should be 201
     And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
 
-  Scenario: Blob survives when one referencing record is deleted
+  Scenario: Blob survives when one referencing conversation is archived
     # Upload and link to first entry
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists
@@ -143,9 +143,14 @@ Feature: Forked Attachments REST API
     """
     Then the response status should be 201
     And set "newAttachmentHref" to the json response field "content[0].attachments[0].href"
-    # Delete the forked conversation (which deletes the second reference)
-    When I call DELETE "/v1/conversations/${forkedConversationId}"
-    Then the response status should be 204
+    # Archive the forked conversation; the remaining reference should still keep the blob accessible.
+    When I call PATCH "/v1/conversations/${forkedConversationId}" with body:
+    """
+    {
+      "archived": true
+    }
+    """
+    Then the response status should be 200
     # The original attachment should still be accessible
     When I call GET "/v1/attachments/${originalAttachmentId}" expecting binary
     Then the response status should be 200

@@ -101,6 +101,7 @@ function ChatSidebarLoading() {
 function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [archiveFilter, setArchiveFilter] = useState<"exclude" | "include" | "only">("exclude");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const pendingUrlLookupRef = useRef<string | null>(null);
   const [resolvedConversationIds, setResolvedConversationIds] = useState<Set<string>>(new Set());
@@ -115,9 +116,10 @@ function App() {
   const streamingConversations = useStreamingConversations();
 
   const conversationsQuery = useQuery<ConversationSummary[], ApiError, ConversationSummary[]>({
-    queryKey: ["conversations"],
+    queryKey: ["conversations", archiveFilter],
     queryFn: async (): Promise<ConversationSummary[]> => {
       const response = (await ConversationsService.listConversations({
+        archived: archiveFilter,
         limit: 20,
         mode: "roots",
       })) as unknown as ListUserConversationsResponse;
@@ -317,10 +319,13 @@ function App() {
     }
   }, [selectedConversationId, conversationsQuery.data, markResolvedConversation]);
 
-  const deleteConversationMutation = useMutation({
+  const archiveConversationMutation = useMutation({
     mutationFn: async (conversationId: string) => {
-      await ConversationsService.deleteConversation({
+      await ConversationsService.updateConversation({
         conversationId,
+        requestBody: {
+          archived: true,
+        },
       });
     },
     onSuccess: (_, conversationId) => {
@@ -343,12 +348,29 @@ function App() {
       void queryClient.removeQueries({ queryKey: ["conversation-forks", conversationId] });
       void queryClient.removeQueries({ queryKey: ["conversation-path-messages", conversationId] });
       void queryClient.invalidateQueries({ queryKey: ["resume-check"] });
-      // Clear status message on successful delete
       setStatusMessage(null);
     },
     onError: () => {
-      // Set error status message on delete failure
-      setStatusMessage("Failed to delete conversation. Please try again.");
+      setStatusMessage("Failed to archive conversation. Please try again.");
+    },
+  });
+
+  const unarchiveConversationMutation = useMutation({
+    mutationFn: async (conversationId: string) => {
+      await ConversationsService.updateConversation({
+        conversationId,
+        requestBody: {
+          archived: false,
+        },
+      });
+    },
+    onSuccess: (_, conversationId) => {
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      void queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+      setStatusMessage(null);
+    },
+    onError: () => {
+      setStatusMessage("Failed to unarchive conversation. Please try again.");
     },
   });
 
@@ -380,12 +402,20 @@ function App() {
     [markResolvedConversation],
   );
 
-  const handleDeleteConversationById = useCallback(
+  const handleArchiveConversationById = useCallback(
     (conversationId: string) => {
       setStatusMessage(null);
-      deleteConversationMutation.mutate(conversationId);
+      archiveConversationMutation.mutate(conversationId);
     },
-    [deleteConversationMutation],
+    [archiveConversationMutation],
+  );
+
+  const handleUnarchiveConversationById = useCallback(
+    (conversationId: string) => {
+      setStatusMessage(null);
+      unarchiveConversationMutation.mutate(conversationId);
+    },
+    [unarchiveConversationMutation],
   );
 
   useEffect(() => {
@@ -418,9 +448,11 @@ function App() {
   ) : (
     <ChatSidebar
       conversations={conversations}
+      archiveFilter={archiveFilter}
       selectedConversationId={selectedConversationId}
       onSelectConversation={handleSelectConversation}
       onSelectConversationId={handleSelectConversationId}
+      onArchiveFilterChange={setArchiveFilter}
       onNewChat={handleNewChat}
       onOpenSearch={() => setIsSearchOpen(true)}
       statusMessage={statusMessage}
@@ -441,7 +473,8 @@ function App() {
           onSelectConversationId={handleSelectConversationId}
           knownConversationIds={resolvedConversationIds}
           resumableConversationIds={resumableConversationIds}
-          onDeleteConversation={handleDeleteConversationById}
+          onArchiveConversation={handleArchiveConversationById}
+          onUnarchiveConversation={handleUnarchiveConversationById}
           currentUserId={currentUserId}
           currentUser={currentUser}
         />

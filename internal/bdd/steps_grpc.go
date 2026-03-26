@@ -341,15 +341,10 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.GetConversation(ctx, req.(*pb.GetConversationRequest))
 				})
-		case "UpdateConversation":
+		case "UpdateConversation", "DeleteConversation":
 			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.UpdateConversationRequest{} },
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.UpdateConversation(ctx, req.(*pb.UpdateConversationRequest))
-				})
-		case "DeleteConversation":
-			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.DeleteConversationRequest{} },
-				func(ctx context.Context, req proto.Message) (proto.Message, error) {
-					return client.DeleteConversation(ctx, req.(*pb.DeleteConversationRequest))
 				})
 		case "ListConversations":
 			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.ListConversationsRequest{} },
@@ -471,10 +466,10 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.GetMemory(ctx, req.(*pb.GetMemoryRequest))
 				})
-		case "DeleteMemory":
-			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.DeleteMemoryRequest{} },
+		case "UpdateMemory", "DeleteMemory":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.UpdateMemoryRequest{} },
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
-					return client.DeleteMemory(ctx, req.(*pb.DeleteMemoryRequest))
+					return client.UpdateMemory(ctx, req.(*pb.UpdateMemoryRequest))
 				})
 		case "SearchMemories":
 			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.SearchMemoriesRequest{} },
