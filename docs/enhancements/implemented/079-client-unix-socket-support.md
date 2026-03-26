@@ -479,7 +479,7 @@ Scenario: Concept page local stack starts Memory Service on a Unix socket
 ./java/mvnw -f java/pom.xml compile -pl quarkus/memory-service-extension -am
 
 # Python package verification
-python3 -m compileall python/langchain/memory_service_langchain python/langgraph/memory_service_langgraph
+python3 -m compileall python/langchain/memory_service_langchain
 
 # TypeScript package build
 cd typescript/vercelai && npm run build

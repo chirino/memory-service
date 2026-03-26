@@ -1,10 +1,10 @@
 ---
 layout: ../../../layouts/DocsLayout.astro
 title: Client Configuration
-description: Configure the memory-service-langgraph Python package — explicit config, environment variables, and from_env() convenience.
+description: Configure the memory-service-langchain Python package — explicit config, environment variables, and from_env() convenience.
 ---
 
-This page documents how to configure the `memory-service-langgraph` package when connecting to Memory Service.
+This page documents how to configure the `memory-service-langchain` package when connecting to Memory Service.
 
 ## Configuration Approaches
 
@@ -15,7 +15,7 @@ The package supports two configuration styles:
 Pass all connection settings directly to the constructor:
 
 ```python
-from memory_service_langgraph import MemoryServiceStore, AsyncMemoryServiceStore
+from memory_service_langchain.langgraph import MemoryServiceStore, AsyncMemoryServiceStore
 
 store = MemoryServiceStore(
     base_url="http://memory-service:8082",

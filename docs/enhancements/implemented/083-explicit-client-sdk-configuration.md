@@ -71,9 +71,9 @@ Dedicated package unit-test suites were not added as part of this change.
 | `python/langchain/memory_service_langchain/response_recording_manager.py` | Explicit constructor + `from_env()` |
 | `python/langchain/memory_service_langchain/proxy.py` | Explicit constructor + `from_env()` + UDS passthrough |
 | `python/langchain/memory_service_langchain/request_context.py` | Remove default API-key fallback and support explicit UDS config |
-| `python/langgraph/memory_service_langgraph/transport.py` | Centralize env resolution and make transport helpers pure |
-| `python/langgraph/memory_service_langgraph/store.py` | Explicit constructor + `from_env()` |
-| `python/langgraph/memory_service_langgraph/async_store.py` | Explicit constructor + `from_env()` |
+| `python/langchain/memory_service_langchain/langgraph/transport.py` | Centralize env resolution and make transport helpers pure |
+| `python/langchain/memory_service_langchain/langgraph/store.py` | Explicit constructor + `from_env()` |
+| `python/langchain/memory_service_langchain/langgraph/async_store.py` | Explicit constructor + `from_env()` |
 | `typescript/vercelai/src/index.ts` | Add explicit config type/env factory and update REST/gRPC helpers |
 | `python/examples/...` | Switch examples to `from_env()` |
 | `typescript/examples/...` | Switch examples to `memoryServiceConfigFromEnv()` |
@@ -84,7 +84,7 @@ Dedicated package unit-test suites were not added as part of this change.
 ## Verification
 
 ```bash
-find python/langchain/memory_service_langchain python/langgraph/memory_service_langgraph python/examples/langchain python/examples/langgraph \
+find python/langchain/memory_service_langchain python/examples/langchain python/examples/langgraph \
   \( -name .venv -o -name __pycache__ \) -prune -o -name '*.py' -print0 | xargs -0 python3 -m py_compile
 
 cd typescript/vercelai && npm run build

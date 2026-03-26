@@ -24,13 +24,6 @@ Make sure you've completed:
 - [LangGraph Getting Started](/docs/python-langgraph/getting-started/) — checkpointing and conversation memory
 - [LangGraph Conversation History](/docs/python-langgraph/conversation-history/) — history recording
 
-Also build both local wheels before starting (temporary until the packages are released):
-
-```bash
-cd python/langchain && uv build && export UV_FIND_LINKS="$PWD/dist"
-cd python/langgraph && uv build && export UV_FIND_LINKS="$UV_FIND_LINKS:$PWD/dist"
-```
-
 ## How Episodic Memory Works
 
 The Memory Service provides a LangGraph `BaseStore` implementation (`AsyncMemoryServiceStore`) that stores and retrieves arbitrary key-value memories, namespaced per user.
@@ -47,7 +40,7 @@ Memories are:
 
 Checkpoint `30` adds episodic memories on top of the existing checkpointing and history recording. The five key changes:
 
-1. Import `AsyncMemoryServiceStore` from `memory_service_langgraph`
+1. Import `AsyncMemoryServiceStore` from `memory_service_langchain.langgraph`
 2. Make `call_model` async; extract `user_id` and `token` from config
 3. Recall per-user memories before the model call, inject them into the system prompt
 4. Save the user's message as a new memory after the response
@@ -57,9 +50,9 @@ Checkpoint `30` adds episodic memories on top of the existing checkpointing and 
 
 <CodeFromFile file="python/examples/langgraph/doc-checkpoints/30-memories/app.py" lang="python" lines="1-20" />
 
-**What changed**: `RunnableConfig` is imported from `langchain_core.runnables` and `AsyncMemoryServiceStore` is imported from `memory_service_langgraph`. `uuid` is also imported to generate unique memory keys.
+**What changed**: `RunnableConfig` is imported from `langchain_core.runnables` and `AsyncMemoryServiceStore` is imported from `memory_service_langchain.langgraph`. `uuid` is also imported to generate unique memory keys.
 
-**Why**: `AsyncMemoryServiceStore` is a LangGraph `BaseStore` implementation backed by Memory Service. It is imported from a separate `memory_service_langgraph` package (distinct from `memory_service_langchain`) because it implements the async LangGraph store interface rather than the LangChain checkpoint interface. `RunnableConfig` is needed so the `call_model` node can receive `user_id` and `token` from the graph's `configurable` dict.
+**Why**: `AsyncMemoryServiceStore` is a LangGraph `BaseStore` implementation backed by Memory Service. It implements the async LangGraph store interface. `RunnableConfig` is needed so the `call_model` node can receive `user_id` and `token` from the graph's `configurable` dict.
 
 `AsyncMemoryServiceStore` reads the Memory Service base URL from the environment:
 
@@ -193,4 +186,4 @@ Semantic search requires the background vector indexer to have processed the mem
 ## Next Steps
 
 - See [Memories](/docs/concepts/memories/) for the full episodic memory data model, OPA policy reference, TTL configuration, and admin API.
-- Explore the [`AsyncMemoryServiceStore`](https://github.com/chirino/memory-service/tree/main/python/langgraph) source to understand all supported `BaseStore` operations: `aput`, `aget`, `adelete`, `asearch`, `alist_namespaces`.
+- Explore the [`AsyncMemoryServiceStore`](https://github.com/chirino/memory-service/tree/main/python/langchain/memory_service_langchain/langgraph) source to understand all supported `BaseStore` operations: `aput`, `aget`, `adelete`, `asearch`, `alist_namespaces`.

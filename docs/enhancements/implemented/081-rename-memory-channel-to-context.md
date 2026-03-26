@@ -183,7 +183,7 @@ Feature: Context channel naming
 | `java/quarkus/memory-service-extension/runtime/**` | Update `Channel` usage and docs/comments in Quarkus integration |
 | `java/spring/memory-service-spring-boot-autoconfigure/**` | Update `Channel` usage and docs/comments in Spring integration |
 | `python/langchain/memory_service_langchain/**` | Update checkpoint saver and helper code to use `context` |
-| `python/langgraph/memory_service_langgraph/**` | Update any channel-specific docs/examples if needed |
+| `python/langchain/memory_service_langchain/langgraph/**` | Update any channel-specific docs/examples if needed |
 | `internal/bdd/steps_entries.go` and `internal/bdd/testdata/features*.feature` | Rename BDD steps/scenarios/fixtures from memory-channel wording to context-channel wording |
 | `internal/sitebdd/testdata/curl-examples/**` | Update generated curl example payloads/assertions that mention the old channel |
 | `site/src/pages/docs/**` | Replace conversation-channel documentation and examples with `context` terminology |

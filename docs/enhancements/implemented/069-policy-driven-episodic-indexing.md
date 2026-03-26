@@ -296,7 +296,7 @@ Python shape:
 
 ```python
 from typing import Any
-from memory_service_langgraph import MemoryServiceStore
+from memory_service_langchain.langgraph import MemoryServiceStore
 
 def redact(path: str, text: str, value: dict[str, Any]) -> str | None:
     if path.endswith("ssn"):
@@ -408,9 +408,9 @@ Feature: Application-provided index content with policy guardrails
 | `internal/plugin/store/postgres/episodic_store.go` | Persist/load `indexed_content` and updated structs |
 | `internal/plugin/store/mongo/episodic_store.go` | Persist/load `indexed_content` and migration/backfill behavior |
 | `site/src/pages/docs/concepts/memories.md` | Document `index` request contract and authz deny reason behavior |
-| `python/langgraph/memory_service_langgraph/store.py` | Send `index` payload in sync writes; add user controls (`index_builder`, `index_redactor`) |
-| `python/langgraph/memory_service_langgraph/async_store.py` | Send `index` payload in async writes; add user controls (`index_builder`, `index_redactor`) |
-| `python/langgraph/memory_service_langgraph/__init__.py` | Export LangGraph index control types/hooks |
+| `python/langchain/memory_service_langchain/langgraph/store.py` | Send `index` payload in sync writes; add user controls (`index_builder`, `index_redactor`) |
+| `python/langchain/memory_service_langchain/langgraph/async_store.py` | Send `index` payload in async writes; add user controls (`index_builder`, `index_redactor`) |
+| `python/langchain/memory_service_langchain/langgraph/__init__.py` | Export LangGraph index control types/hooks |
 
 ## Verification
 

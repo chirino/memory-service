@@ -17,7 +17,7 @@ from memory_service_langchain import (
     memory_service_scope,
     to_fastapi_response,
 )
-from memory_service_langgraph import AsyncMemoryServiceStore
+from memory_service_langchain.langgraph import AsyncMemoryServiceStore
 
 
 openai_base_url = os.getenv("OPENAI_BASE_URL")

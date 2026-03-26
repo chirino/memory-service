@@ -461,7 +461,6 @@ func (s *SiteScenario) buildCheckpoint(extraArgs ...string) error {
 		// or reference local registries that require UV_FIND_LINKS.
 		cmd = exec.Command("uv", "sync",
 			"--reinstall-package", "memory-service-langchain",
-			"--reinstall-package", "memory-service-langgraph",
 		)
 		cmd.Dir = s.CheckpointPath
 		cmd.Env = pythonBuildEnv(s.ProjectRoot)

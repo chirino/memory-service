@@ -8,17 +8,19 @@ import CodeFromFile from "../../../components/CodeFromFile.astro";
 
 Use [`uv`](https://docs.astral.sh/uv/getting-started/installation/) for deterministic Python environments and lockfile-driven installs. Use Docker for dependency services (memory-service, Keycloak, databases), not as your day-to-day Python package workflow.
 
-## Step 1 (Temporary): Build Local Package Wheel
-
-Until `memory-service-langchain` is published, build it locally and point `uv` to the local wheel directory:
+## Install the Package
 
 ```bash
-cd python/langchain
-uv build
-export UV_FIND_LINKS="$PWD/dist"
+pip install memory-service-langchain
 ```
 
-This is temporary. After the package is released, you can remove `UV_FIND_LINKS`.
+Or with `uv`:
+
+```bash
+uv add memory-service-langchain
+```
+
+This single package includes both LangChain helpers (checkpointing, history middleware, FastAPI integration) and the LangGraph `BaseStore` implementation for episodic memories.
 
 ## Baseline Runtime
 
@@ -27,7 +29,6 @@ This is temporary. After the package is released, you can remove `UV_FIND_LINKS`
 <CodeFromFile file="python/examples/langchain/doc-checkpoints/02-with-memory/pyproject.toml" lang="toml" />
 
 This is the minimum dependency set users need to run Memory Service-backed Python examples.
-Until the package is released, `memory-service-langchain` is resolved from the local wheel built in Step 1 (`UV_FIND_LINKS`).
 
 ## Local Workflow
 

@@ -475,10 +475,10 @@ Admin-configurable indexing settings:
 
 ## LangGraph Compatibility
 
-The `memory-service-langgraph` Python package implements LangGraph's `BaseStore` interface by calling the Memory Service REST API. This lets any LangGraph agent use the Memory Service as a drop-in persistent store without changing agent code.
+The `memory-service-langchain` Python package implements LangGraph's `BaseStore` interface by calling the Memory Service REST API. This lets any LangGraph agent use the Memory Service as a drop-in persistent store without changing agent code.
 
 ```python
-from memory_service_langgraph import MemoryServiceStore
+from memory_service_langchain.langgraph import MemoryServiceStore
 
 store = MemoryServiceStore(
     url="http://localhost:8080",
