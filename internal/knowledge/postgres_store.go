@@ -224,7 +224,7 @@ func (s *PostgresKnowledgeStore) LoadTextsForSourceIDs(ctx context.Context, sour
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT id, indexed_content
 		FROM entries
-		WHERE id = ANY(?)
+		WHERE id IN ?
 		AND indexed_content IS NOT NULL
 	`, sourceIDs).Scan(&rows).Error
 	if err != nil {
