@@ -5,19 +5,23 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/chirino/memory-service/internal/knowledge"
 	"github.com/chirino/memory-service/internal/model"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
+	"github.com/google/uuid"
 )
 
-// BackgroundIndexer polls for unindexed entries, generates embeddings, and stores them.
+// BackgroundIndexer polls for unindexed entries, generates embeddings, stores them,
+// and triggers knowledge clustering for affected users.
 type BackgroundIndexer struct {
-	store    registrystore.MemoryStore
-	embedder registryembed.Embedder
-	vector   registryvector.VectorStore
-	interval time.Duration
-	batch    int
+	store     registrystore.MemoryStore
+	embedder  registryembed.Embedder
+	vector    registryvector.VectorStore
+	clusterer *knowledge.Clusterer
+	interval  time.Duration
+	batch     int
 }
 
 // NewBackgroundIndexer creates a new indexer.
@@ -29,6 +33,12 @@ func NewBackgroundIndexer(store registrystore.MemoryStore, embedder registryembe
 		interval: 30 * time.Second,
 		batch:    batchSize,
 	}
+}
+
+// SetClusterer attaches a knowledge clusterer to the indexer.
+// When set, clustering runs automatically after each indexing batch.
+func (b *BackgroundIndexer) SetClusterer(c *knowledge.Clusterer) {
+	b.clusterer = c
 }
 
 // Start begins the background indexing loop. Returns when ctx is cancelled.
@@ -105,9 +115,10 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 		return
 	}
 
-	// Mark each entry as indexed.
+	// Mark each entry as indexed and collect affected conversation group IDs.
 	now := time.Now()
 	count := 0
+	affectedGroups := map[uuid.UUID]bool{}
 	for _, c := range candidates {
 		if err := b.store.InWriteTx(ctx, func(writeCtx context.Context) error {
 			return b.store.SetIndexedAt(writeCtx, c.entry.ID, c.entry.ConversationGroupID, now)
@@ -116,9 +127,19 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 			continue
 		}
 		count++
+		affectedGroups[c.entry.ConversationGroupID] = true
 	}
 
 	if count > 0 {
 		log.Info("Indexer: indexed entries", "count", count)
+	}
+
+	// Trigger clustering for owners of affected conversations.
+	if b.clusterer != nil && len(affectedGroups) > 0 {
+		groupIDs := make([]uuid.UUID, 0, len(affectedGroups))
+		for gid := range affectedGroups {
+			groupIDs = append(groupIDs, gid)
+		}
+		b.clusterer.ClusterByConversationGroups(ctx, groupIDs)
 	}
 }
