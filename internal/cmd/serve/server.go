@@ -248,6 +248,14 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// Register generated wrappers on the public router.
 	registerAPIRoutes(router, auth, cfg, store, attachStore, attachSigningKeys, embedder, vectorStore, resumer, resumerEnabled, episodicStore, episodicPolicy, episodicIdx, memoriesAdapter, eventBus)
 
+	if starter, ok := store.(interface {
+		StartOutboxRelay(context.Context, registryeventbus.EventBus) error
+	}); ok {
+		if err := starter.StartOutboxRelay(ctx, eventBus); err != nil {
+			return nil, fmt.Errorf("failed to start outbox relay: %w", err)
+		}
+	}
+
 	// Start background services
 	indexer := service.NewBackgroundIndexer(store, embedder, vectorStore, cfg.VectorIndexerBatchSize)
 	go indexer.Start(ctx)

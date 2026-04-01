@@ -28,6 +28,7 @@ func init() {
 		ctx.Step(`^"([^"]*)" should receive a gRPC event with kind "([^"]*)" and event "([^"]*)"$`, e.userShouldReceiveGRPCEventDefault)
 		ctx.Step(`^"([^"]*)" should not receive any gRPC event within (\d+) seconds$`, e.userShouldNotReceiveGRPCEvent)
 		ctx.Step(`^the gRPC event cursor should be saved as "([^"]*)"$`, e.saveGRPCEventCursor)
+		ctx.Step(`^the gRPC event cursor should match the Postgres outbox format$`, e.grpcEventCursorShouldMatchPostgresOutboxFormat)
 		ctx.Step(`^the gRPC event data should contain "([^"]*)"$`, e.grpcEventDataShouldContain)
 		ctx.Step(`^the gRPC event data "([^"]*)" should be "([^"]*)"$`, e.grpcEventDataFieldShouldBe)
 
@@ -232,6 +233,20 @@ func (e *grpcEventSteps) saveGRPCEventCursor(varName string) error {
 		return fmt.Errorf("gRPC event has no cursor: %v", e.lastEvent)
 	}
 	e.s.Variables[varName] = cursor
+	return nil
+}
+
+func (e *grpcEventSteps) grpcEventCursorShouldMatchPostgresOutboxFormat() error {
+	if e.lastEvent == nil {
+		return fmt.Errorf("no gRPC event captured for assertion")
+	}
+	cursor, ok := e.lastEvent["cursor"].(string)
+	if !ok || strings.TrimSpace(cursor) == "" {
+		return fmt.Errorf("gRPC event has no cursor: %v", e.lastEvent)
+	}
+	if !postgresOutboxCursorPattern.MatchString(cursor) {
+		return fmt.Errorf("gRPC event cursor %q does not match Postgres outbox format <commit_lsn>:<tx_seq>", cursor)
+	}
 	return nil
 }
 

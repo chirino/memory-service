@@ -1,6 +1,6 @@
 module github.com/chirino/memory-service
 
-go 1.24.6
+go 1.25.0
 
 require (
 	github.com/4meepo/tagalign v1.4.3
@@ -19,8 +19,10 @@ require (
 	github.com/go-task/task/v3 v3.48.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/vault/api v1.22.0
+	github.com/icholy/digest v1.1.0
 	github.com/itchyny/gojq v0.12.18
-	github.com/jackc/pgx/v5 v5.7.2
+	github.com/jackc/pglogrepl v0.0.0-20260401131349-e37c41485510
+	github.com/jackc/pgx/v5 v5.9.1
 	github.com/mark3labs/mcp-go v0.45.0
 	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/oapi-codegen/oapi-codegen/v2 v2.5.1
@@ -176,9 +178,9 @@ require (
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
-	github.com/icholy/digest v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/itchyny/timefmt-go v0.1.7 // indirect
+	github.com/jackc/pgio v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -294,14 +296,14 @@ require (
 	golang.org/x/arch v0.20.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/mod v0.32.0 // indirect
+	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/term v0.40.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	golang.org/x/tools v0.41.0 // indirect
+	golang.org/x/tools v0.42.0 // indirect
 	google.golang.org/api v0.256.0 // indirect
 	google.golang.org/genproto v0.0.0-20250922171735-9219d122eba9 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect

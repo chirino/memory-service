@@ -5,14 +5,16 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"strings"
 	"time"
 
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
+	"github.com/jackc/pglogrepl"
 )
 
 type postgresOutboxRow struct {
-	Seq       int64     `gorm:"column:seq;primaryKey;autoIncrement"`
+	TxSeq     int64     `gorm:"column:tx_seq;primaryKey;autoIncrement"`
+	CommitLSN *string   `gorm:"column:commit_lsn;type:pg_lsn"`
 	Event     string    `gorm:"column:event"`
 	Kind      string    `gorm:"column:kind"`
 	Data      string    `gorm:"column:data"`
@@ -21,19 +23,28 @@ type postgresOutboxRow struct {
 
 func (postgresOutboxRow) TableName() string { return "outbox_events" }
 
-func parsePostgresOutboxCursor(cursor string) (int64, error) {
+func parsePostgresOutboxCursor(cursor string) (pglogrepl.LSN, int64, error) {
 	if cursor == "" || cursor == "start" {
-		return 0, nil
+		return 0, 0, nil
 	}
-	seq, err := strconv.ParseInt(cursor, 10, 64)
-	if err != nil || seq < 0 {
-		return 0, registrystore.ErrStaleOutboxCursor
+	lsnPart, txSeqPart, ok := strings.Cut(strings.TrimSpace(cursor), ":")
+	if !ok {
+		return 0, 0, registrystore.ErrStaleOutboxCursor
 	}
-	return seq, nil
+	lsn, err := pglogrepl.ParseLSN(lsnPart)
+	if err != nil {
+		return 0, 0, registrystore.ErrStaleOutboxCursor
+	}
+	var txSeq int64
+	_, err = fmt.Sscanf(txSeqPart, "%d", &txSeq)
+	if err != nil || txSeq < 0 {
+		return 0, 0, registrystore.ErrStaleOutboxCursor
+	}
+	return lsn, txSeq, nil
 }
 
-func formatPostgresOutboxCursor(seq int64) string {
-	return strconv.FormatInt(seq, 10)
+func formatPostgresOutboxCursor(lsn pglogrepl.LSN, txSeq int64) string {
+	return fmt.Sprintf("%s:%d", lsn.String(), txSeq)
 }
 
 func (s *PostgresStore) AppendOutboxEvents(ctx context.Context, events []registrystore.OutboxWrite) ([]registrystore.OutboxEvent, error) {
@@ -63,7 +74,6 @@ func (s *PostgresStore) AppendOutboxEvents(ctx context.Context, events []registr
 	out := make([]registrystore.OutboxEvent, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, registrystore.OutboxEvent{
-			Cursor:    formatPostgresOutboxCursor(row.Seq),
 			Event:     row.Event,
 			Kind:      row.Kind,
 			Data:      []byte(row.Data),
@@ -74,14 +84,14 @@ func (s *PostgresStore) AppendOutboxEvents(ctx context.Context, events []registr
 }
 
 func (s *PostgresStore) ListOutboxEvents(ctx context.Context, query registrystore.OutboxQuery) (*registrystore.OutboxPage, error) {
-	afterSeq, err := parsePostgresOutboxCursor(query.AfterCursor)
+	afterLSN, afterTxSeq, err := parsePostgresOutboxCursor(query.AfterCursor)
 	if err != nil {
 		return nil, err
 	}
 	db := s.dbFor(ctx)
 	if query.AfterCursor != "" && query.AfterCursor != "start" {
 		var marker postgresOutboxRow
-		result := db.Where("seq = ?", afterSeq).Limit(1).Find(&marker)
+		result := db.Where("commit_lsn = ?::pg_lsn AND tx_seq = ?", afterLSN.String(), afterTxSeq).Limit(1).Find(&marker)
 		if result.Error != nil {
 			return nil, fmt.Errorf("check outbox cursor: %w", result.Error)
 		}
@@ -93,9 +103,9 @@ func (s *PostgresStore) ListOutboxEvents(ctx context.Context, query registrystor
 	if limit <= 0 {
 		limit = 1000
 	}
-	tx := db.Order("seq ASC").Limit(limit + 1)
-	if afterSeq > 0 {
-		tx = tx.Where("seq > ?", afterSeq)
+	tx := db.Where("commit_lsn IS NOT NULL").Order("commit_lsn ASC, tx_seq ASC").Limit(limit + 1)
+	if afterLSN > 0 || afterTxSeq > 0 {
+		tx = tx.Where("(commit_lsn > ?::pg_lsn OR (commit_lsn = ?::pg_lsn AND tx_seq > ?))", afterLSN.String(), afterLSN.String(), afterTxSeq)
 	}
 	if len(query.Kinds) > 0 {
 		tx = tx.Where("kind IN ?", query.Kinds)
@@ -110,8 +120,15 @@ func (s *PostgresStore) ListOutboxEvents(ctx context.Context, query registrystor
 	}
 	events := make([]registrystore.OutboxEvent, 0, len(rows))
 	for _, row := range rows {
+		if row.CommitLSN == nil {
+			continue
+		}
+		commitLSN, err := pglogrepl.ParseLSN(*row.CommitLSN)
+		if err != nil {
+			return nil, fmt.Errorf("list outbox events: invalid commit_lsn %q for tx_seq %d: %w", *row.CommitLSN, row.TxSeq, err)
+		}
 		events = append(events, registrystore.OutboxEvent{
-			Cursor:    formatPostgresOutboxCursor(row.Seq),
+			Cursor:    formatPostgresOutboxCursor(commitLSN, row.TxSeq),
 			Event:     row.Event,
 			Kind:      row.Kind,
 			Data:      []byte(row.Data),
@@ -130,11 +147,11 @@ func (s *PostgresStore) EvictOutboxEventsBefore(ctx context.Context, before time
 		limit = 1000
 	}
 	subquery := db.Model(&postgresOutboxRow{}).
-		Select("seq").
+		Select("ctid").
 		Where("created_at < ?", before).
-		Order("seq ASC").
+		Order("created_at ASC, tx_seq ASC").
 		Limit(limit)
-	result := db.Where("seq IN (?)", subquery).Delete(&postgresOutboxRow{})
+	result := db.Where("ctid IN (?)", subquery).Delete(&postgresOutboxRow{})
 	if result.Error != nil {
 		return 0, fmt.Errorf("evict outbox events: %w", result.Error)
 	}

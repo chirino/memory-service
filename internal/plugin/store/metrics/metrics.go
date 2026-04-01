@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/chirino/memory-service/internal/model"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	"github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/google/uuid"
@@ -342,6 +343,21 @@ func (m *metricsStore) EvictOutboxEventsBefore(ctx context.Context, before time.
 func (m *metricsStore) OutboxEnabled() bool {
 	provider, ok := m.inner.(store.OutboxEnabledProvider)
 	return ok && provider.OutboxEnabled()
+}
+
+func (m *metricsStore) RelayPublishesOutboxEvents() bool {
+	provider, ok := m.inner.(interface{ RelayPublishesOutboxEvents() bool })
+	return ok && provider.RelayPublishesOutboxEvents()
+}
+
+func (m *metricsStore) StartOutboxRelay(ctx context.Context, bus registryeventbus.EventBus) error {
+	starter, ok := m.inner.(interface {
+		StartOutboxRelay(context.Context, registryeventbus.EventBus) error
+	})
+	if !ok {
+		return nil
+	}
+	return starter.StartOutboxRelay(ctx, bus)
 }
 
 func (m *metricsStore) AdminStatsSummary(ctx context.Context) (*store.AdminStatsSummary, error) {

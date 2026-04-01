@@ -22,6 +22,11 @@ func StartPostgres(tb testing.TB) string {
 		postgres.WithDatabase("postgres"),
 		postgres.WithUsername("postgres"),
 		postgres.WithPassword("postgres"),
+		testcontainers.WithCmdArgs(
+			"-c", "wal_level=logical",
+			"-c", "max_replication_slots=8",
+			"-c", "max_wal_senders=8",
+		),
 		testcontainers.WithWaitStrategy(
 			wait.ForAll(
 				wait.ForListeningPort("5432/tcp"),
