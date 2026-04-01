@@ -287,6 +287,15 @@ When `MEMORY_SERVICE_OUTBOX_ENABLED=true`:
 - Admin SSE supports `GET /v1/admin/events?after=<cursor>`
 - gRPC supports `SubscribeEvents.after_cursor`
 - Consumers can store the opaque cursor and resume from the last processed event
+- PostgreSQL deployments must run with logical replication enabled because the outbox relay uses `pgoutput`
+
+For PostgreSQL, enabling the outbox requires the database server to start with at least:
+
+- `wal_level=logical`
+- `max_replication_slots >= 1`
+- `max_wal_senders >= 1`
+
+If those settings are missing, memory-service startup fails while creating the PostgreSQL logical replication slot for the outbox relay.
 
 When it is disabled, the event stream still works for live delivery, but replay is unavailable.
 

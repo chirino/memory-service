@@ -12,6 +12,10 @@ import (
 	"github.com/google/uuid"
 )
 
+type relayOwnedOutboxPublisher interface {
+	RelayPublishesOutboxEvents() bool
+}
+
 func ConversationDeletedEvents(groups []registrystore.DeletedConversationGroup) []registryeventbus.Event {
 	events := make([]registryeventbus.Event, 0)
 	for _, group := range groups {
@@ -75,6 +79,9 @@ func AppendOutboxEvents(ctx context.Context, store registrystore.MemoryStore, ev
 // PublishEvents publishes committed events using their routing metadata.
 func PublishEvents(ctx context.Context, store registrystore.MemoryStore, bus registryeventbus.EventBus, events ...registryeventbus.Event) error {
 	if bus == nil || len(events) == 0 {
+		return nil
+	}
+	if relayOwner, ok := store.(relayOwnedOutboxPublisher); ok && relayOwner.RelayPublishesOutboxEvents() {
 		return nil
 	}
 	for _, event := range events {

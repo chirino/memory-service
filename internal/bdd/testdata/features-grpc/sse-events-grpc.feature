@@ -19,6 +19,23 @@ Feature: Event Stream gRPC API
     And the gRPC event data should contain "conversation"
     And the gRPC event data should contain "conversation_group"
 
+  Scenario: Live gRPC tail uses Postgres outbox cursor format
+    Given "alice" is connected to the gRPC event stream
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/11111111-1111-4111-8111-111111111196/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "gRPC Postgres cursor format"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should receive a gRPC event with kind "conversation" and event "created"
+    And the gRPC event cursor should match the Postgres outbox format
+    And "alice" should receive a gRPC event with kind "entry" and event "created"
+    And the gRPC event cursor should match the Postgres outbox format
+
   Scenario: Replay gRPC events after a cursor with full detail
     Given "alice" is connected to the gRPC event stream
     And I have a conversation with title "gRPC Replay Conversation"

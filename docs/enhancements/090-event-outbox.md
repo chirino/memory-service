@@ -7,6 +7,8 @@ status: implemented
 > **Status**: Implemented, with Mongo transactional replay guarantees deferred to [091](091-mongo-outbox-transactions.md) and tracked in [TODO.md](../../TODO.md).
 >
 > **Current Contract Note**: Archive event semantics now follow [implemented/094-archive-operations.md](implemented/094-archive-operations.md). Conversation and memory archive operations emit `updated`; `deleted` is reserved for hard-delete or close semantics.
+>
+> **PostgreSQL Cursor Note**: PostgreSQL commit-ordered relay cursors now follow [095](implemented/095-postgres-commit-ordered-outbox-cursor.md): replay/tail cursors are `<commit_lsn>:<tx_seq>`, request-path durable publishes are suppressed, and the `pgoutput` relay is the authoritative live publisher.
 
 ## Summary
 

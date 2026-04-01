@@ -217,7 +217,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name
 ------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS outbox_events (
-    seq         BIGSERIAL PRIMARY KEY,
+    tx_seq      BIGSERIAL PRIMARY KEY,
+    commit_lsn  pg_lsn,
     event       TEXT NOT NULL,
     kind        TEXT NOT NULL,
     data        JSONB NOT NULL,
@@ -226,8 +227,10 @@ CREATE TABLE IF NOT EXISTS outbox_events (
 
 CREATE INDEX IF NOT EXISTS idx_outbox_events_created_at
     ON outbox_events (created_at);
-CREATE INDEX IF NOT EXISTS idx_outbox_events_kind_seq
-    ON outbox_events (kind, seq);
+CREATE INDEX IF NOT EXISTS idx_outbox_events_commit_lsn_tx_seq
+    ON outbox_events (commit_lsn, tx_seq);
+CREATE INDEX IF NOT EXISTS idx_outbox_events_kind_commit_lsn_tx_seq
+    ON outbox_events (kind, commit_lsn, tx_seq);
 
 ------------------------------------------------------------
 -- Attachments

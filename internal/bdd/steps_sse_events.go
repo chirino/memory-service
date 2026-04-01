@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ func init() {
 		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)" where data "([^"]*)" is "([^"]*)"$`, e.userShouldReceiveSSEEventWithDataField)
 		ctx.Step(`^"([^"]*)" should not receive any SSE event within (\d+) seconds$`, e.userShouldNotReceiveSSEEvent)
 		ctx.Step(`^the SSE event cursor should be saved as "([^"]*)"$`, e.saveSSEEventCursor)
+		ctx.Step(`^the SSE event cursor should match the Postgres outbox format$`, e.sseEventCursorShouldMatchPostgresOutboxFormat)
 		ctx.Step(`^the SSE event data should contain "([^"]*)"$`, e.sseEventDataShouldContain)
 		ctx.Step(`^the SSE event data "([^"]*)" should be "([^"]*)"$`, e.sseEventDataFieldShouldBe)
 
@@ -58,6 +60,8 @@ type sseEventSteps struct {
 	lastEvent map[string]any        // last matched event for further assertions
 	mu        sync.Mutex
 }
+
+var postgresOutboxCursorPattern = regexp.MustCompile(`^[0-9A-F]+/[0-9A-F]+:[1-9][0-9]*$`)
 
 func (e *sseEventSteps) openSSEStream(userID, path string) error {
 	e.mu.Lock()
@@ -273,6 +277,20 @@ func (e *sseEventSteps) saveSSEEventCursor(varName string) error {
 		return fmt.Errorf("SSE event has no cursor: %v", e.lastEvent)
 	}
 	e.s.Variables[varName] = cursor
+	return nil
+}
+
+func (e *sseEventSteps) sseEventCursorShouldMatchPostgresOutboxFormat() error {
+	if e.lastEvent == nil {
+		return fmt.Errorf("no SSE event captured for assertion")
+	}
+	cursor, ok := e.lastEvent["cursor"].(string)
+	if !ok || strings.TrimSpace(cursor) == "" {
+		return fmt.Errorf("SSE event has no cursor: %v", e.lastEvent)
+	}
+	if !postgresOutboxCursorPattern.MatchString(cursor) {
+		return fmt.Errorf("SSE event cursor %q does not match Postgres outbox format <commit_lsn>:<tx_seq>", cursor)
+	}
 	return nil
 }
 
