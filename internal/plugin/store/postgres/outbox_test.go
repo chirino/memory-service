@@ -16,6 +16,7 @@ import (
 	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
 	"github.com/jackc/pglogrepl"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -113,4 +114,17 @@ func TestPostgresOutboxReplayUsesCommitOrder(t *testing.T) {
 	require.JSONEq(t, string(firstPayload), string(page.Events[1].Data))
 	require.Contains(t, page.Events[0].Cursor, ":")
 	require.Contains(t, page.Events[1].Cursor, ":")
+}
+
+func TestExplainOutboxRelaySetupErrorWalLevel(t *testing.T) {
+	err := explainOutboxRelaySetupError("create replication slot", &pgconn.PgError{
+		Code:    "55000",
+		Message: `logical decoding requires "wal_level" >= "logical"`,
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "PostgreSQL is not configured for logical replication")
+	require.ErrorContains(t, err, "wal_level=logical")
+	require.ErrorContains(t, err, "max_replication_slots >= 1")
+	require.ErrorContains(t, err, "max_wal_senders >= 1")
+	require.ErrorContains(t, err, "disable MEMORY_SERVICE_OUTBOX_ENABLED")
 }

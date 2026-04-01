@@ -252,7 +252,7 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		StartOutboxRelay(context.Context, registryeventbus.EventBus) error
 	}); ok {
 		if err := starter.StartOutboxRelay(ctx, eventBus); err != nil {
-			return nil, fmt.Errorf("failed to start outbox relay: %w", err)
+			return nil, fmt.Errorf("Failed to start outbox relay: %w", err)
 		}
 	}
 

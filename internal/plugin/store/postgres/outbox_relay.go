@@ -133,7 +133,7 @@ func (r *postgresOutboxRelay) runLeader(ctx context.Context, lockConn *sql.Conn,
 		if ready != nil {
 			ready <- err
 		}
-		if !relayStopping(ctx, err) {
+		if ready == nil && !relayStopping(ctx, err) {
 			log.Warn("Postgres outbox relay stopped", "err", err)
 		}
 		return
@@ -144,7 +144,7 @@ func (r *postgresOutboxRelay) runLeader(ctx context.Context, lockConn *sql.Conn,
 		if ready != nil {
 			ready <- err
 		}
-		if !relayStopping(ctx, err) {
+		if ready == nil && !relayStopping(ctx, err) {
 			log.Warn("Postgres outbox relay stopped", "err", err)
 		}
 		return
@@ -161,7 +161,7 @@ func (r *postgresOutboxRelay) runLeader(ctx context.Context, lockConn *sql.Conn,
 		if ready != nil {
 			ready <- err
 		}
-		if !relayStopping(ctx, err) {
+		if ready == nil && !relayStopping(ctx, err) {
 			log.Warn("Postgres outbox relay stopped", "err", err)
 		}
 		return
@@ -289,7 +289,7 @@ func (r *postgresOutboxRelay) ensurePublication(ctx context.Context) error {
 func (r *postgresOutboxRelay) ensureReplicationSlot(ctx context.Context) (*pgconn.PgConn, pglogrepl.LSN, error) {
 	replConn, err := connectReplication(ctx, r.store.cfg.DBURL)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, explainOutboxRelaySetupError("connect replication", err)
 	}
 
 	startLSN, exists, err := currentSlotLSN(ctx, r.store.db, postgresOutboxSlotName)
@@ -301,7 +301,7 @@ func (r *postgresOutboxRelay) ensureReplicationSlot(ctx context.Context) (*pgcon
 		result, err := pglogrepl.CreateReplicationSlot(ctx, replConn, postgresOutboxSlotName, "pgoutput", pglogrepl.CreateReplicationSlotOptions{})
 		if err != nil {
 			replConn.Close(context.Background())
-			return nil, 0, fmt.Errorf("postgres outbox relay create replication slot: %w", err)
+			return nil, 0, explainOutboxRelaySetupError("create replication slot", err)
 		}
 		startLSN, err = pglogrepl.ParseLSN(result.ConsistentPoint)
 		if err != nil {
@@ -516,4 +516,37 @@ func relayStopping(ctx context.Context, err error) bool {
 		strings.Contains(message, "unexpected eof") ||
 		strings.Contains(message, "broken pipe") ||
 		strings.Contains(message, "use of closed network connection")
+}
+
+func explainOutboxRelaySetupError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		message := strings.ToLower(pgErr.Message)
+		switch {
+		case pgErr.Code == "55000" && strings.Contains(message, `logical decoding requires "wal_level" >= "logical"`):
+			return fmt.Errorf(
+				"postgres outbox relay %s: PostgreSQL is not configured for logical replication; set wal_level=logical, max_replication_slots >= 1, and max_wal_senders >= 1, then restart PostgreSQL, or disable MEMORY_SERVICE_OUTBOX_ENABLED if durable replay is not needed: %w",
+				operation,
+				err,
+			)
+		case pgErr.Code == "53400" && strings.Contains(message, "all replication slots are in use"):
+			return fmt.Errorf(
+				"postgres outbox relay %s: PostgreSQL has no free replication slots; increase max_replication_slots and restart PostgreSQL, or disable MEMORY_SERVICE_OUTBOX_ENABLED if durable replay is not needed: %w",
+				operation,
+				err,
+			)
+		case pgErr.Code == "53300" && strings.Contains(message, "number of requested standby connections exceeds max_wal_senders"):
+			return fmt.Errorf(
+				"postgres outbox relay %s: PostgreSQL has no free WAL sender capacity; increase max_wal_senders and restart PostgreSQL, or disable MEMORY_SERVICE_OUTBOX_ENABLED if durable replay is not needed: %w",
+				operation,
+				err,
+			)
+		}
+	}
+
+	return fmt.Errorf("postgres outbox relay %s: %w", operation, err)
 }

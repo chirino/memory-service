@@ -1,6 +1,14 @@
 services:
   postgres:
     image: pgvector/pgvector:pg18
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=8
+      - -c
+      - max_wal_senders=8
     ports:
       - "5432:5432"
     environment:
