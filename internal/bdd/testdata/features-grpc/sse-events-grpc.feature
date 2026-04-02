@@ -19,7 +19,7 @@ Feature: Event Stream gRPC API
     And the gRPC event data should contain "conversation"
     And the gRPC event data should contain "conversation_group"
 
-  Scenario: Live gRPC tail uses Postgres outbox cursor format
+  Scenario: Live gRPC tail uses Postgres numeric outbox cursor format
     Given "alice" is connected to the gRPC event stream
     And I am authenticated as agent with API key "test-agent-key"
     When I call POST "/v1/conversations/11111111-1111-4111-8111-111111111196/entries" with body:
@@ -27,7 +27,7 @@ Feature: Event Stream gRPC API
     {
       "channel": "HISTORY",
       "contentType": "history",
-      "content": [{"role": "USER", "text": "gRPC Postgres cursor format"}]
+      "content": [{"role": "USER", "text": "gRPC Postgres numeric cursor format"}]
     }
     """
     Then the response status should be 201

@@ -5,6 +5,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/chirino/memory-service/internal/testutil/testpg"
 	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
-	"github.com/jackc/pglogrepl"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
@@ -45,13 +45,11 @@ func setupPostgresOutboxStore(t *testing.T) (*PostgresStore, context.Context) {
 }
 
 func TestPostgresOutboxCursorRoundTrip(t *testing.T) {
-	lsn := pglogrepl.LSN(0x16B3740)
-	cursor := formatPostgresOutboxCursor(lsn, 42)
+	cursor := formatPostgresOutboxCursor(42)
 
-	parsedLSN, parsedTxSeq, err := parsePostgresOutboxCursor(cursor)
+	eventSeq, err := parsePostgresOutboxCursor(cursor)
 	require.NoError(t, err)
-	require.Equal(t, lsn, parsedLSN)
-	require.Equal(t, int64(42), parsedTxSeq)
+	require.Equal(t, int64(42), eventSeq)
 }
 
 func TestPostgresOutboxReplayUsesCommitOrder(t *testing.T) {
@@ -112,8 +110,12 @@ func TestPostgresOutboxReplayUsesCommitOrder(t *testing.T) {
 	require.Len(t, page.Events, 2)
 	require.JSONEq(t, string(secondPayload), string(page.Events[0].Data))
 	require.JSONEq(t, string(firstPayload), string(page.Events[1].Data))
-	require.Contains(t, page.Events[0].Cursor, ":")
-	require.Contains(t, page.Events[1].Cursor, ":")
+	firstSeq, err := strconv.ParseInt(page.Events[0].Cursor, 10, 64)
+	require.NoError(t, err)
+	secondSeq, err := strconv.ParseInt(page.Events[1].Cursor, 10, 64)
+	require.NoError(t, err)
+	require.Greater(t, firstSeq, int64(0))
+	require.Greater(t, secondSeq, firstSeq)
 }
 
 func TestExplainOutboxRelaySetupErrorWalLevel(t *testing.T) {

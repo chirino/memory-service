@@ -245,7 +245,7 @@ func (e *grpcEventSteps) grpcEventCursorShouldMatchPostgresOutboxFormat() error 
 		return fmt.Errorf("gRPC event has no cursor: %v", e.lastEvent)
 	}
 	if !postgresOutboxCursorPattern.MatchString(cursor) {
-		return fmt.Errorf("gRPC event cursor %q does not match Postgres outbox format <commit_lsn>:<tx_seq>", cursor)
+		return fmt.Errorf("gRPC event cursor %q does not match Postgres outbox numeric cursor format", cursor)
 	}
 	return nil
 }

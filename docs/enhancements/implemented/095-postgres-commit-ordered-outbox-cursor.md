@@ -5,6 +5,8 @@ status: implemented
 # Enhancement 095: PostgreSQL Commit-Ordered Outbox Cursor
 
 > **Status**: Implemented.
+>
+> **Current Implementation Note**: PostgreSQL relay cursors were later simplified by [096](096-postgres-relay-event-seq-cursor.md). This document remains the historical design record for the intermediate `commit_lsn` + `tx_seq` implementation.
 
 ## Summary
 

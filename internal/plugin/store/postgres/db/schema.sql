@@ -218,19 +218,51 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name
 
 CREATE TABLE IF NOT EXISTS outbox_events (
     tx_seq      BIGSERIAL PRIMARY KEY,
-    commit_lsn  pg_lsn,
+    event_seq   BIGINT,
     event       TEXT NOT NULL,
     kind        TEXT NOT NULL,
     data        JSONB NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE outbox_events
+    ADD COLUMN IF NOT EXISTS event_seq BIGINT;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'outbox_events'
+          AND column_name = 'commit_lsn'
+    ) THEN
+        WITH ranked AS (
+            SELECT
+                tx_seq,
+                COALESCE((SELECT MAX(event_seq) FROM outbox_events), 0) +
+                    ROW_NUMBER() OVER (ORDER BY commit_lsn ASC, tx_seq ASC) AS next_event_seq
+            FROM outbox_events
+            WHERE event_seq IS NULL
+              AND commit_lsn IS NOT NULL
+        )
+        UPDATE outbox_events AS o
+        SET event_seq = ranked.next_event_seq
+        FROM ranked
+        WHERE o.tx_seq = ranked.tx_seq;
+    END IF;
+END $$;
+
+DROP INDEX IF EXISTS idx_outbox_events_commit_lsn_tx_seq;
+DROP INDEX IF EXISTS idx_outbox_events_kind_commit_lsn_tx_seq;
+ALTER TABLE outbox_events DROP COLUMN IF EXISTS commit_lsn;
+
 CREATE INDEX IF NOT EXISTS idx_outbox_events_created_at
     ON outbox_events (created_at);
-CREATE INDEX IF NOT EXISTS idx_outbox_events_commit_lsn_tx_seq
-    ON outbox_events (commit_lsn, tx_seq);
-CREATE INDEX IF NOT EXISTS idx_outbox_events_kind_commit_lsn_tx_seq
-    ON outbox_events (kind, commit_lsn, tx_seq);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_events_event_seq
+    ON outbox_events (event_seq) WHERE event_seq IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_outbox_events_kind_event_seq
+    ON outbox_events (kind, event_seq) WHERE event_seq IS NOT NULL;
 
 ------------------------------------------------------------
 -- Attachments
