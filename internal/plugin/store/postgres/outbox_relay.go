@@ -38,6 +38,12 @@ type relayOutboxRecord struct {
 	Data  json.RawMessage
 }
 
+type materializedOutboxRecord struct {
+	Ord      int   `gorm:"column:ord"`
+	TxSeq    int64 `gorm:"column:tx_seq"`
+	EventSeq int64 `gorm:"column:event_seq"`
+}
+
 type postgresOutboxRelay struct {
 	store         *PostgresStore
 	bus           registryeventbus.EventBus
@@ -171,6 +177,13 @@ func (r *postgresOutboxRelay) runLeader(ctx context.Context, lockConn *sql.Conn,
 		ready <- nil
 	}
 	log.Info("Postgres outbox relay active", "slot", postgresOutboxSlotName, "publication", postgresOutboxPublicationName, "lsn", startLSN.String())
+	lastEventSeq, err := r.loadLastEventSeq(ctx)
+	if err != nil {
+		if !relayStopping(ctx, err) {
+			log.Warn("Postgres outbox relay stopped", "err", err)
+		}
+		return
+	}
 
 	relations := map[uint32]*pglogrepl.RelationMessage{}
 	pending := make([]relayOutboxRecord, 0, 8)
@@ -252,11 +265,11 @@ func (r *postgresOutboxRelay) runLeader(ctx context.Context, lockConn *sql.Conn,
 					pending = append(pending, record)
 				}
 			case *pglogrepl.CommitMessage:
-				for _, record := range pending {
-					if err := r.materializeAndPublish(ctx, logicalMsg.CommitLSN, record); err != nil {
-						log.Warn("Postgres outbox relay publish failed", "commitLSN", logicalMsg.CommitLSN.String(), "txSeq", record.TxSeq, "err", err)
-						return
-					}
+				var err error
+				lastEventSeq, err = r.materializeAndPublishBatch(ctx, lastEventSeq, pending)
+				if err != nil {
+					log.Warn("Postgres outbox relay publish failed", "commitLSN", logicalMsg.CommitLSN.String(), "err", err)
+					return
 				}
 				pending = pending[:0]
 				if logicalMsg.TransactionEndLSN > processedLSN {
@@ -400,42 +413,107 @@ func decodeOutboxInsert(rel *pglogrepl.RelationMessage, insert *pglogrepl.Insert
 	return record, true, nil
 }
 
-func (r *postgresOutboxRelay) materializeAndPublish(ctx context.Context, commitLSN pglogrepl.LSN, record relayOutboxRecord) error {
-	result := r.store.db.WithContext(ctx).Exec(
-		"UPDATE outbox_events SET commit_lsn = ?::pg_lsn WHERE tx_seq = ? AND commit_lsn IS NULL",
-		commitLSN.String(),
-		record.TxSeq,
-	)
-	if result.Error != nil {
-		return fmt.Errorf("set commit_lsn for tx_seq %d: %w", record.TxSeq, result.Error)
+func (r *postgresOutboxRelay) loadLastEventSeq(ctx context.Context) (int64, error) {
+	var lastEventSeq sql.NullInt64
+	row := r.store.db.WithContext(ctx).Raw("SELECT COALESCE(MAX(event_seq), 0) FROM outbox_events").Row()
+	if err := row.Scan(&lastEventSeq); err != nil {
+		return 0, fmt.Errorf("load last event_seq: %w", err)
 	}
-	if result.RowsAffected == 0 {
-		var existing sql.NullString
-		row := r.store.db.WithContext(ctx).Raw("SELECT commit_lsn::text FROM outbox_events WHERE tx_seq = ?", record.TxSeq).Row()
-		if err := row.Scan(&existing); err != nil {
-			return fmt.Errorf("load existing commit_lsn for tx_seq %d: %w", record.TxSeq, err)
-		}
-		if !existing.Valid || existing.String != commitLSN.String() {
-			return fmt.Errorf("tx_seq %d already materialized with commit_lsn %q", record.TxSeq, existing.String)
-		}
-	}
-
-	event, err := relayEvent(record, commitLSN)
-	if err != nil {
-		return err
-	}
-
-	switch {
-	case len(event.UserIDs) > 0:
-		return eventing.PublishToUsers(ctx, r.bus, event.UserIDs, event)
-	case event.ConversationGroupID != uuid.Nil:
-		return eventing.PublishToGroup(ctx, r.store, r.bus, event.ConversationGroupID, event)
-	default:
-		return r.bus.Publish(ctx, event)
-	}
+	return lastEventSeq.Int64, nil
 }
 
-func relayEvent(record relayOutboxRecord, commitLSN pglogrepl.LSN) (registryeventbus.Event, error) {
+func (r *postgresOutboxRelay) materializeAndPublishBatch(ctx context.Context, lastEventSeq int64, pending []relayOutboxRecord) (int64, error) {
+	if len(pending) == 0 {
+		return lastEventSeq, nil
+	}
+
+	materialized, err := r.materializeEventSeqBatch(ctx, lastEventSeq, pending)
+	if err != nil {
+		return lastEventSeq, err
+	}
+
+	nextEventSeq := lastEventSeq + int64(len(pending))
+	for i, row := range materialized {
+		if row.EventSeq > nextEventSeq {
+			nextEventSeq = row.EventSeq
+		}
+		record := pending[i]
+		if row.TxSeq != record.TxSeq {
+			return lastEventSeq, fmt.Errorf("materialized outbox row order mismatch at index %d: got tx_seq %d, expected %d", i, row.TxSeq, record.TxSeq)
+		}
+		event, err := relayEvent(record, row.EventSeq)
+		if err != nil {
+			return lastEventSeq, err
+		}
+		switch {
+		case len(event.UserIDs) > 0:
+			if err := eventing.PublishToUsers(ctx, r.bus, event.UserIDs, event); err != nil {
+				return lastEventSeq, err
+			}
+		case event.ConversationGroupID != uuid.Nil:
+			if err := eventing.PublishToGroup(ctx, r.store, r.bus, event.ConversationGroupID, event); err != nil {
+				return lastEventSeq, err
+			}
+		default:
+			if err := r.bus.Publish(ctx, event); err != nil {
+				return lastEventSeq, err
+			}
+		}
+	}
+
+	return nextEventSeq, nil
+}
+
+func (r *postgresOutboxRelay) materializeEventSeqBatch(ctx context.Context, lastEventSeq int64, pending []relayOutboxRecord) ([]materializedOutboxRecord, error) {
+	if len(pending) == 0 {
+		return nil, nil
+	}
+
+	values := make([]string, 0, len(pending))
+	args := make([]any, 0, len(pending)*3)
+	for i, record := range pending {
+		values = append(values, "(?::integer, ?::bigint, ?::bigint)")
+		args = append(args, i, record.TxSeq, lastEventSeq+int64(i)+1)
+	}
+
+	query := fmt.Sprintf(`
+WITH candidates(ord, tx_seq, candidate_event_seq) AS (
+	VALUES %s
+),
+updated AS (
+	UPDATE outbox_events AS o
+	SET event_seq = c.candidate_event_seq
+	FROM candidates AS c
+	WHERE o.tx_seq = c.tx_seq
+	  AND o.event_seq IS NULL
+	RETURNING o.tx_seq, o.event_seq
+)
+SELECT c.ord, c.tx_seq, COALESCE(u.event_seq, o.event_seq) AS event_seq
+FROM candidates AS c
+LEFT JOIN updated AS u ON u.tx_seq = c.tx_seq
+LEFT JOIN outbox_events AS o ON o.tx_seq = c.tx_seq AND u.tx_seq IS NULL
+ORDER BY c.ord ASC
+`, strings.Join(values, ","))
+
+	var rows []materializedOutboxRecord
+	if err := r.store.db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("materialize event_seq batch: %w", err)
+	}
+	if len(rows) != len(pending) {
+		return nil, fmt.Errorf("materialize event_seq batch: expected %d rows, got %d", len(pending), len(rows))
+	}
+	for i, row := range rows {
+		if row.EventSeq <= 0 {
+			return nil, fmt.Errorf("materialize event_seq batch: tx_seq %d has invalid event_seq %d", row.TxSeq, row.EventSeq)
+		}
+		if row.Ord != i {
+			return nil, fmt.Errorf("materialize event_seq batch: unexpected ord %d at index %d", row.Ord, i)
+		}
+	}
+	return rows, nil
+}
+
+func relayEvent(record relayOutboxRecord, eventSeq int64) (registryeventbus.Event, error) {
 	var payload map[string]any
 	if err := json.Unmarshal(record.Data, &payload); err != nil {
 		return registryeventbus.Event{}, fmt.Errorf("decode outbox payload for tx_seq %d: %w", record.TxSeq, err)
@@ -445,7 +523,7 @@ func relayEvent(record relayOutboxRecord, commitLSN pglogrepl.LSN) (registryeven
 		Event:        record.Event,
 		Kind:         record.Kind,
 		Data:         payload,
-		OutboxCursor: formatPostgresOutboxCursor(commitLSN, record.TxSeq),
+		OutboxCursor: formatPostgresOutboxCursor(eventSeq),
 	}
 
 	if groupID, ok := uuidFromPayload(payload["conversation_group"]); ok {

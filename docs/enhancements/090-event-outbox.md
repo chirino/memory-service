@@ -8,7 +8,7 @@ status: implemented
 >
 > **Current Contract Note**: Archive event semantics now follow [implemented/094-archive-operations.md](implemented/094-archive-operations.md). Conversation and memory archive operations emit `updated`; `deleted` is reserved for hard-delete or close semantics.
 >
-> **PostgreSQL Cursor Note**: PostgreSQL commit-ordered relay cursors now follow [095](implemented/095-postgres-commit-ordered-outbox-cursor.md): replay/tail cursors are `<commit_lsn>:<tx_seq>`, request-path durable publishes are suppressed, and the `pgoutput` relay is the authoritative live publisher.
+> **PostgreSQL Cursor Note**: PostgreSQL relay cursors now follow [096](implemented/096-postgres-relay-event-seq-cursor.md): replay/tail cursors are opaque numeric `event_seq` values assigned by the relay, request-path durable publishes are suppressed, and the `pgoutput` relay is the authoritative live publisher.
 
 ## Summary
 
@@ -191,7 +191,7 @@ The `previous_role` field preserves the access level the user had before removal
 
 **Why commit-ordered cursors instead of auto-increment sequences?** Auto-increment sequences (PostgreSQL `BIGSERIAL`, MongoDB counters) are allocated at INSERT time within a transaction, not at commit time. With concurrent transactions, a higher sequence number can become visible before a lower one commits — making cursor-based resume miss events. The cursor must reflect commit order to provide reliable resume semantics:
 
-- **PostgreSQL**: Logical decoding is the recommended source of truth. PostgreSQL emits committed transactions in commit order and exposes a commit LSN in the decoding stream. The public cursor should therefore be derived by the relay from `(commit_lsn, row identity)` rather than from `pg_current_wal_lsn()` alone.
+- **PostgreSQL**: Logical decoding is the recommended source of truth. PostgreSQL emits committed transactions in commit order and exposes enough relay ordering information to assign a stable per-event cursor after commit. The current implementation uses a relay-assigned numeric `event_seq`, not a write-path sequence and not `pg_current_wal_lsn()` alone.
 - **MongoDB**: Change streams expose a per-event resume token on the change event `_id`. The relay should use that token directly with `resumeAfter` / `startAfter` rather than inventing a numeric sequence.
 - **SQLite**: Auto-increment integers are safe because SQLite serializes all writes — allocation order *is* commit order. There is no concurrent transaction reordering.
 

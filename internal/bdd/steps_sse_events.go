@@ -61,7 +61,7 @@ type sseEventSteps struct {
 	mu        sync.Mutex
 }
 
-var postgresOutboxCursorPattern = regexp.MustCompile(`^[0-9A-F]+/[0-9A-F]+:[1-9][0-9]*$`)
+var postgresOutboxCursorPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 func (e *sseEventSteps) openSSEStream(userID, path string) error {
 	e.mu.Lock()
@@ -289,7 +289,7 @@ func (e *sseEventSteps) sseEventCursorShouldMatchPostgresOutboxFormat() error {
 		return fmt.Errorf("SSE event has no cursor: %v", e.lastEvent)
 	}
 	if !postgresOutboxCursorPattern.MatchString(cursor) {
-		return fmt.Errorf("SSE event cursor %q does not match Postgres outbox format <commit_lsn>:<tx_seq>", cursor)
+		return fmt.Errorf("SSE event cursor %q does not match Postgres outbox numeric cursor format", cursor)
 	}
 	return nil
 }

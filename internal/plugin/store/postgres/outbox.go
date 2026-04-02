@@ -5,16 +5,16 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
-	"github.com/jackc/pglogrepl"
 )
 
 type postgresOutboxRow struct {
 	TxSeq     int64     `gorm:"column:tx_seq;primaryKey;autoIncrement"`
-	CommitLSN *string   `gorm:"column:commit_lsn;type:pg_lsn"`
+	EventSeq  *int64    `gorm:"column:event_seq"`
 	Event     string    `gorm:"column:event"`
 	Kind      string    `gorm:"column:kind"`
 	Data      string    `gorm:"column:data"`
@@ -23,28 +23,19 @@ type postgresOutboxRow struct {
 
 func (postgresOutboxRow) TableName() string { return "outbox_events" }
 
-func parsePostgresOutboxCursor(cursor string) (pglogrepl.LSN, int64, error) {
+func parsePostgresOutboxCursor(cursor string) (int64, error) {
 	if cursor == "" || cursor == "start" {
-		return 0, 0, nil
+		return 0, nil
 	}
-	lsnPart, txSeqPart, ok := strings.Cut(strings.TrimSpace(cursor), ":")
-	if !ok {
-		return 0, 0, registrystore.ErrStaleOutboxCursor
+	eventSeq, err := strconv.ParseInt(strings.TrimSpace(cursor), 10, 64)
+	if err != nil || eventSeq < 0 {
+		return 0, registrystore.ErrStaleOutboxCursor
 	}
-	lsn, err := pglogrepl.ParseLSN(lsnPart)
-	if err != nil {
-		return 0, 0, registrystore.ErrStaleOutboxCursor
-	}
-	var txSeq int64
-	_, err = fmt.Sscanf(txSeqPart, "%d", &txSeq)
-	if err != nil || txSeq < 0 {
-		return 0, 0, registrystore.ErrStaleOutboxCursor
-	}
-	return lsn, txSeq, nil
+	return eventSeq, nil
 }
 
-func formatPostgresOutboxCursor(lsn pglogrepl.LSN, txSeq int64) string {
-	return fmt.Sprintf("%s:%d", lsn.String(), txSeq)
+func formatPostgresOutboxCursor(eventSeq int64) string {
+	return strconv.FormatInt(eventSeq, 10)
 }
 
 func (s *PostgresStore) AppendOutboxEvents(ctx context.Context, events []registrystore.OutboxWrite) ([]registrystore.OutboxEvent, error) {
@@ -84,14 +75,14 @@ func (s *PostgresStore) AppendOutboxEvents(ctx context.Context, events []registr
 }
 
 func (s *PostgresStore) ListOutboxEvents(ctx context.Context, query registrystore.OutboxQuery) (*registrystore.OutboxPage, error) {
-	afterLSN, afterTxSeq, err := parsePostgresOutboxCursor(query.AfterCursor)
+	afterEventSeq, err := parsePostgresOutboxCursor(query.AfterCursor)
 	if err != nil {
 		return nil, err
 	}
 	db := s.dbFor(ctx)
 	if query.AfterCursor != "" && query.AfterCursor != "start" {
 		var marker postgresOutboxRow
-		result := db.Where("commit_lsn = ?::pg_lsn AND tx_seq = ?", afterLSN.String(), afterTxSeq).Limit(1).Find(&marker)
+		result := db.Where("event_seq = ?", afterEventSeq).Limit(1).Find(&marker)
 		if result.Error != nil {
 			return nil, fmt.Errorf("check outbox cursor: %w", result.Error)
 		}
@@ -103,9 +94,9 @@ func (s *PostgresStore) ListOutboxEvents(ctx context.Context, query registrystor
 	if limit <= 0 {
 		limit = 1000
 	}
-	tx := db.Where("commit_lsn IS NOT NULL").Order("commit_lsn ASC, tx_seq ASC").Limit(limit + 1)
-	if afterLSN > 0 || afterTxSeq > 0 {
-		tx = tx.Where("(commit_lsn > ?::pg_lsn OR (commit_lsn = ?::pg_lsn AND tx_seq > ?))", afterLSN.String(), afterLSN.String(), afterTxSeq)
+	tx := db.Where("event_seq IS NOT NULL").Order("event_seq ASC").Limit(limit + 1)
+	if afterEventSeq > 0 {
+		tx = tx.Where("event_seq > ?", afterEventSeq)
 	}
 	if len(query.Kinds) > 0 {
 		tx = tx.Where("kind IN ?", query.Kinds)
@@ -120,15 +111,11 @@ func (s *PostgresStore) ListOutboxEvents(ctx context.Context, query registrystor
 	}
 	events := make([]registrystore.OutboxEvent, 0, len(rows))
 	for _, row := range rows {
-		if row.CommitLSN == nil {
+		if row.EventSeq == nil {
 			continue
 		}
-		commitLSN, err := pglogrepl.ParseLSN(*row.CommitLSN)
-		if err != nil {
-			return nil, fmt.Errorf("list outbox events: invalid commit_lsn %q for tx_seq %d: %w", *row.CommitLSN, row.TxSeq, err)
-		}
 		events = append(events, registrystore.OutboxEvent{
-			Cursor:    formatPostgresOutboxCursor(commitLSN, row.TxSeq),
+			Cursor:    formatPostgresOutboxCursor(*row.EventSeq),
 			Event:     row.Event,
 			Kind:      row.Kind,
 			Data:      []byte(row.Data),
