@@ -11,7 +11,9 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	grpcserver "github.com/chirino/memory-service/internal/grpc"
+	"github.com/chirino/memory-service/internal/knowledge"
 	"github.com/chirino/memory-service/internal/plugin/attach/encrypt"
+	routeknowledge "github.com/chirino/memory-service/internal/plugin/route/knowledge"
 	routememories "github.com/chirino/memory-service/internal/plugin/route/memories"
 	routesystem "github.com/chirino/memory-service/internal/plugin/route/system"
 	storemetrics "github.com/chirino/memory-service/internal/plugin/store/metrics"
@@ -272,6 +274,38 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	go episodicTTL.Start(ctx)
 
 	go episodicIdx.Start(ctx)
+
+	// Set up knowledge clustering (if enabled). Clustering runs inside the
+	// BackgroundIndexer after each embedding batch — no separate goroutine.
+	if cfg.KnowledgeClusteringEnabled && cfg.DatastoreType == "postgres" && cfg.DBURL != "" && cfg.VectorType == "pgvector" && vectorStore != nil && vectorStore.IsEnabled() {
+		knowledgeStore, err := knowledge.OpenPostgresKnowledgeStore(cfg.DBURL)
+		if err != nil {
+			log.Warn("Knowledge clustering: failed to open store", "err", err)
+		} else {
+			clusterer := knowledge.NewClusterer(
+				knowledgeStore,
+				cfg.KnowledgeClusteringDecay,
+				10, // keywords per cluster
+				knowledge.DBSCANConfig{
+					Epsilon:   cfg.KnowledgeClusteringEpsilon,
+					MinPoints: cfg.KnowledgeClusteringMinPts,
+				},
+			)
+			indexer.SetClusterer(clusterer)
+
+			// Register knowledge REST routes.
+			knowledgeHandler := &routeknowledge.Handler{
+				Store:     knowledgeStore,
+				Clusterer: clusterer,
+			}
+			knowledgeHandler.RegisterRoutes(router, auth)
+
+			log.Info("Knowledge clustering enabled",
+				"epsilon", cfg.KnowledgeClusteringEpsilon,
+				"minPts", cfg.KnowledgeClusteringMinPts,
+			)
+		}
+	}
 
 	// Set up gRPC server with auth interceptors.
 	grpcServer := grpc.NewServer(

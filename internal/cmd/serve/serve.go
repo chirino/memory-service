@@ -529,6 +529,40 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Usage:       "How long to retain delete/expired tombstones for event history (default 90d)",
 		},
 
+		// ── Knowledge Clustering ──────────────────────────────────
+		&cli.BoolFlag{
+			Name:        "knowledge-clustering-enabled",
+			Category:    "Knowledge Clustering:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_ENABLED"),
+			Destination: &cfg.KnowledgeClusteringEnabled,
+			Value:       cfg.KnowledgeClusteringEnabled,
+			Usage:       "Enable adaptive knowledge clustering on embeddings",
+		},
+		&cli.Float64Flag{
+			Name:        "knowledge-clustering-epsilon",
+			Category:    "Knowledge Clustering:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_EPSILON"),
+			Destination: &cfg.KnowledgeClusteringEpsilon,
+			Value:       cfg.KnowledgeClusteringEpsilon,
+			Usage:       "DBSCAN neighborhood radius in cosine distance (default 0.3)",
+		},
+		&cli.IntFlag{
+			Name:        "knowledge-clustering-min-points",
+			Category:    "Knowledge Clustering:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_MIN_POINTS"),
+			Destination: &cfg.KnowledgeClusteringMinPts,
+			Value:       cfg.KnowledgeClusteringMinPts,
+			Usage:       "DBSCAN minimum points to form a cluster (default 3)",
+		},
+		&cli.DurationFlag{
+			Name:        "knowledge-clustering-decay",
+			Category:    "Knowledge Clustering:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_KNOWLEDGE_CLUSTERING_DECAY"),
+			Destination: &cfg.KnowledgeClusteringDecay,
+			Value:       cfg.KnowledgeClusteringDecay,
+			Usage:       "Time with no new members before cluster trend becomes decaying (default 30d)",
+		},
+
 		// ── Monitoring ────────────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "prometheus-url",
