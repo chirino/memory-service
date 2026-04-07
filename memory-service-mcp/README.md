@@ -12,7 +12,13 @@ Alternatively, the main `memory-service` binary includes an `mcp` subcommand:
 
 ```bash
 go install github.com/chirino/memory-service@latest
-memory-service mcp
+memory-service mcp remote
+```
+
+For a single-process local setup, use:
+
+```bash
+memory-service mcp embedded --db-url ./memory.db
 ```
 
 ## Configuration
@@ -44,6 +50,8 @@ Add the following to your project's `.mcp.json`:
 ```
 
 Make sure `$GOPATH/bin` (usually `~/go/bin`) is in your `PATH`, and the environment variables are set in your shell or `.env` file.
+
+`memory-service-mcp` remains the single-command remote wrapper. The main binary uses explicit subcommands: `memory-service mcp remote` and `memory-service mcp embedded`.
 
 ## Available Tools
 

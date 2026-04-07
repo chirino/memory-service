@@ -7,26 +7,31 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/plugin/store/postgres"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/chirino/memory-service/internal/testutil/testinfinispan"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
 	"github.com/chirino/memory-service/internal/testutil/tests3"
 	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
-
-	// Import plugins to trigger init() registration
-	_ "github.com/chirino/memory-service/internal/plugin/attach/s3store"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/infinispan"
-	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
-	_ "github.com/chirino/memory-service/internal/plugin/route/system"
-	_ "github.com/chirino/memory-service/internal/plugin/vector/pgvector"
 )
 
 func TestFeaturesPgS3(t *testing.T) {
-	_ = postgres.ForceImport
+	var missing []string
+	if !buildcaps.PostgreSQL {
+		missing = append(missing, "postgresql")
+	}
+	if !buildcaps.Infinispan {
+		missing = append(missing, "infinispan")
+	}
+	if !buildcaps.S3 {
+		missing = append(missing, "s3")
+	}
+	if len(missing) > 0 {
+		requireCapabilities(t, missing...)
+	}
 
 	dbURL := testpg.StartPostgres(t)
 	prom := NewMockPrometheus(t)

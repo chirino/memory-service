@@ -20,10 +20,15 @@ func runBDDFeaturesWithConcurrency(t *testing.T, suiteName string, featureFiles 
 }
 
 func runBDDFeaturesWithScenarioSetup(t *testing.T, suiteName string, featureFiles []string, apiURL, grpcAddr string, cfg *config.Config, db cucumber.TestDB, extra map[string]interface{}, setup cucumber.ScenarioSetupFunc, concurrency int) {
+	runBDDFeaturesWithScenarioSetupAndTags(t, suiteName, featureFiles, apiURL, grpcAddr, cfg, db, extra, setup, concurrency, "")
+}
+
+func runBDDFeaturesWithScenarioSetupAndTags(t *testing.T, suiteName string, featureFiles []string, apiURL, grpcAddr string, cfg *config.Config, db cucumber.TestDB, extra map[string]interface{}, setup cucumber.ScenarioSetupFunc, concurrency int, tags string) {
 	t.Helper()
 
 	opts := cucumber.DefaultOptions()
 	opts.Concurrency = concurrency
+	opts.Tags = tags
 	for _, arg := range os.Args[1:] {
 		if arg == "-test.v=true" || arg == "-test.v" || arg == "-v" {
 			opts.Format = "pretty"

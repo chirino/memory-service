@@ -310,6 +310,7 @@ Feature: Entries REST API
     Then the response status should be 403
     And the response should contain error code "forbidden"
 
+  @requires-sqlite-fts5
   Scenario: Agent can append entry with inline indexed content
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation exists

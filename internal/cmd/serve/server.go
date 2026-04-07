@@ -48,13 +48,15 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.closeManagement != nil {
 		_ = s.closeManagement(ctx)
 	}
-	return s.Running.Close(ctx)
+	if s.Running != nil {
+		return s.Running.Close(ctx)
+	}
+	return nil
 }
 
-// StartServer initializes all subsystems and starts HTTP+gRPC on a single port.
-// Use cfg.HTTPPort=0 for a random port. Actual port: Server.Running.Port.
-func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
-	log.Info("Starting memory service",
+// BuildServer initializes all subsystems without binding any network listeners.
+func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
+	log.Info("Initializing memory service",
 		"httpPort", cfg.Listener.Port,
 		"httpSocket", strings.TrimSpace(cfg.Listener.UnixSocket),
 		"db", cfg.DatastoreType,
@@ -343,60 +345,84 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		Config:   cfg,
 	})
 
-	// Mount management route plugins. If a dedicated management port is configured,
-	// run them on a bare gin engine served by the management server. Otherwise,
-	// mount them on the main router so existing single-port behaviour is unchanged.
-	var closeManagement func(context.Context) error
-	if cfg.ManagementListenerEnabled {
-		mgmtRouter := gin.New()
-		mgmtRouter.Use(gin.Recovery())
-		if cfg.ManagementAccessLog {
-			mgmtRouter.Use(security.AccessLogMiddleware())
-		}
-		for _, loader := range registryroute.ManagementRouteLoaders() {
-			if err := loader(mgmtRouter); err != nil {
-				return nil, fmt.Errorf("failed to load management routes: %w", err)
-			}
-		}
-		// Management listener shares TLS cert/key with the main listener.
-		mgmtCfg := cfg.ManagementListener
-		mgmtCfg.TLSCertFile = cfg.Listener.TLSCertFile
-		mgmtCfg.TLSKeyFile = cfg.Listener.TLSKeyFile
-		_, closeManagement, err = startManagementServer(mgmtCfg, mgmtRouter)
-		if err != nil {
-			return nil, fmt.Errorf("failed to start management server: %w", err)
-		}
-	} else {
-		for _, loader := range registryroute.ManagementRouteLoaders() {
-			if err := loader(router); err != nil {
-				return nil, fmt.Errorf("failed to load management routes: %w", err)
-			}
-		}
-	}
+	return &Server{
+		Config:     cfg,
+		Store:      store,
+		Router:     router,
+		GRPCServer: grpcServer,
+	}, nil
+}
 
-	// Start single-port HTTP+gRPC
-	running, err := StartSinglePortHTTPAndGRPC(ctx, cfg.Listener, router, grpcServer)
+// StartServer initializes all subsystems and starts HTTP+gRPC on a single port.
+// Use cfg.HTTPPort=0 for a random port. Actual port: Server.Running.Port.
+func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
+	srv, err := BuildServer(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	if cfg.ManagementListenerEnabled {
+		closeManagement, err := startManagementRoutes(cfg)
+		if err != nil {
+			return nil, err
+		}
+		srv.closeManagement = closeManagement
+	} else {
+		if err := loadManagementRoutes(srv.Router); err != nil {
+			return nil, err
+		}
+	}
+
+	// Start single-port HTTP+gRPC
+	running, err := StartSinglePortHTTPAndGRPC(ctx, cfg.Listener, srv.Router, srv.GRPCServer)
+	if err != nil {
+		return nil, err
+	}
+	srv.Running = running
+
 	log.Info("Server listening",
-		"addr", running.Endpoint,
-		"network", running.Network,
-		"port", running.Port,
+		"addr", srv.Running.Endpoint,
+		"network", srv.Running.Network,
+		"port", srv.Running.Port,
 		"plaintext", cfg.Listener.EnablePlainText,
 		"tls", cfg.Listener.EnableTLS,
 	)
 
 	routesystem.MarkReady()
-	return &Server{
-		Config:          cfg,
-		Store:           store,
-		Router:          router,
-		GRPCServer:      grpcServer,
-		Running:         running,
-		closeManagement: closeManagement,
-	}, nil
+	return srv, nil
+}
+
+func startManagementRoutes(cfg *config.Config) (func(context.Context) error, error) {
+	if !cfg.ManagementListenerEnabled {
+		return nil, nil
+	}
+
+	mgmtRouter := gin.New()
+	mgmtRouter.Use(gin.Recovery())
+	if cfg.ManagementAccessLog {
+		mgmtRouter.Use(security.AccessLogMiddleware())
+	}
+	if err := loadManagementRoutes(mgmtRouter); err != nil {
+		return nil, err
+	}
+	// Management listener shares TLS cert/key with the main listener.
+	mgmtCfg := cfg.ManagementListener
+	mgmtCfg.TLSCertFile = cfg.Listener.TLSCertFile
+	mgmtCfg.TLSKeyFile = cfg.Listener.TLSKeyFile
+	_, closeManagement, err := startManagementServer(mgmtCfg, mgmtRouter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start management server: %w", err)
+	}
+	return closeManagement, nil
+}
+
+func loadManagementRoutes(router *gin.Engine) error {
+	for _, loader := range registryroute.ManagementRouteLoaders() {
+		if err := loader(router); err != nil {
+			return fmt.Errorf("failed to load management routes: %w", err)
+		}
+	}
+	return nil
 }
 
 // initEpisodic initializes the episodic memory store and OPA policy engine.

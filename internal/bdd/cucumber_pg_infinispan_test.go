@@ -1,5 +1,3 @@
-//go:build !noinfinispan
-
 package bdd
 
 import (
@@ -11,26 +9,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/plugin/store/postgres"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
 	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
-
-	// Import plugins to trigger init() registration
-	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/local"
-	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
-	_ "github.com/chirino/memory-service/internal/plugin/route/system"
-	_ "github.com/chirino/memory-service/internal/plugin/vector/infinispan"
 )
 
 func TestFeaturesPgInfinispan(t *testing.T) {
-	_ = postgres.ForceImport
+	var missing []string
+	if !buildcaps.PostgreSQL {
+		missing = append(missing, "postgresql")
+	}
+	if !buildcaps.Infinispan {
+		missing = append(missing, "infinispan")
+	}
+	if len(missing) > 0 {
+		requireCapabilities(t, missing...)
+	}
 
 	dbURL := testpg.StartPostgres(t)
 	infinispanURL := startInfinispanForVectorSearch(t)

@@ -96,11 +96,17 @@ tasks:
       - test:go
       - test:java
 
+  install:go:
+    desc: install go binary
+    cmds:
+      - |
+        CGO_ENABLED=1 go install -tags='sqlite_fts5' . {{.CLI_ARGS}}
+
   test:go:
     desc: Test go
     cmds:
       - |
-        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race ./... {{.CLI_ARGS}}
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='sqlite_fts5' ./... {{.CLI_ARGS}}
 
   test:java:
     desc: Test java

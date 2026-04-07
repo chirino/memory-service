@@ -8,22 +8,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
-	mongoplugin "github.com/chirino/memory-service/internal/plugin/store/mongo"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/chirino/memory-service/internal/testutil/testmongo"
 	"github.com/chirino/memory-service/internal/testutil/testqdrant"
 	"github.com/chirino/memory-service/internal/testutil/testredis"
 	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
-
-	// Import plugins to trigger init() registration
-	_ "github.com/chirino/memory-service/internal/plugin/attach/mongostore"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/redis"
-	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
-	_ "github.com/chirino/memory-service/internal/plugin/route/system"
-	_ "github.com/chirino/memory-service/internal/plugin/vector/qdrant"
 )
 
 // mongoSkipFeatures lists feature files that cannot run on MongoDB.
@@ -33,7 +26,19 @@ var mongoSkipFeatures = map[string]bool{
 }
 
 func TestFeaturesMongo(t *testing.T) {
-	_ = mongoplugin.ForceImport
+	var missing []string
+	if !buildcaps.MongoDB {
+		missing = append(missing, "mongo")
+	}
+	if !buildcaps.Redis {
+		missing = append(missing, "redis")
+	}
+	if !buildcaps.Qdrant {
+		missing = append(missing, "qdrant")
+	}
+	if len(missing) > 0 {
+		requireCapabilities(t, missing...)
+	}
 
 	mongoURL := testmongo.StartMongo(t)
 	redisURL := testredis.StartRedis(t)
