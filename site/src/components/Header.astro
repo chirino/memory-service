@@ -1,4 +1,15 @@
 ---
+interface Props {
+  docsNav?: boolean;
+  headings?: { depth: number; slug: string; text: string }[];
+}
+
+import DocsSidebar from "./DocsSidebar.astro";
+import VersionSelector from "./VersionSelector.astro";
+import TableOfContents from "./TableOfContents.astro";
+
+const { docsNav = false, headings = [] } = Astro.props;
+
 const navLinks = [
   { href: "/", label: "Home" },
   { href: "/docs/", label: "Docs" },
@@ -16,6 +27,8 @@ function isActive(href: string) {
   }
   return currentPath.startsWith(fullHref);
 }
+
+const toc = headings.filter((h) => h.depth >= 2 && h.depth <= 3);
 ---
 
 <header
@@ -23,6 +36,29 @@ function isActive(href: string) {
 >
   <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
     <div class="flex items-center justify-between h-16">
+      <!-- Mobile menu button (left side) -->
+      <button
+        id="mobile-menu-toggle"
+        class="md:hidden p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+        aria-label="Toggle menu"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            id="menu-icon"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 6h16M4 12h16M4 18h16"></path>
+          <path
+            id="close-icon"
+            class="hidden"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+
       <!-- Logo -->
       <a href={basePath} class="flex items-center gap-2 font-bold text-xl">
         <svg class="w-8 h-8 text-primary-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -66,32 +102,44 @@ function isActive(href: string) {
         }
       </div>
 
-      <!-- Mobile menu button -->
-      <button
-        id="mobile-menu-toggle"
-        class="md:hidden p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-        aria-label="Toggle menu"
-      >
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            id="menu-icon"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 6h16M4 12h16M4 18h16"></path>
-          <path
-            id="close-icon"
-            class="hidden"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M6 18L18 6M6 6l12 12"></path>
-        </svg>
-      </button>
+      <!-- Mobile ToC button (right side, only when headings exist) -->
+      {
+        toc.length > 0 ? (
+          <button
+            id="mobile-toc-toggle"
+            class="md:hidden p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+            aria-label="Table of contents"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                id="toc-icon"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 6h16M4 10h16M4 14h10M4 18h10"
+              />
+              <path
+                id="toc-close-icon"
+                class="hidden"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        ) : (
+          <div class="w-10 md:hidden" />
+        )
+      }
     </div>
 
-    <!-- Mobile Navigation -->
-    <div id="mobile-menu" class="hidden md:hidden pb-4">
+    <!-- Mobile Navigation (fixed overlay below header bar) -->
+    <div
+      id="mobile-menu"
+      class="hidden md:hidden fixed left-0 right-0 top-16 z-50 pb-4 max-h-[calc(100vh-4rem)] overflow-y-auto bg-white dark:bg-surface-950 border-b border-gray-200 dark:border-gray-800 shadow-lg"
+    >
+      <!-- Site nav links -->
       <div class="flex flex-col gap-2">
         {
           navLinks.map((link) => (
@@ -111,19 +159,81 @@ function isActive(href: string) {
           ))
         }
       </div>
+
+      {/* Docs sidebar navigation (only on docs pages) */}
+      {
+        docsNav && (
+          <>
+            <hr class="my-3 border-gray-200 dark:border-gray-700" />
+            <div class="px-2">
+              <VersionSelector />
+            </div>
+            <div class="mt-2">
+              <DocsSidebar />
+            </div>
+          </>
+        )
+      }
     </div>
+
+    {/* Mobile ToC panel (fixed overlay, right side) */}
+    {
+      toc.length > 0 && (
+        <div
+          id="mobile-toc"
+          class="hidden md:hidden fixed right-0 top-16 z-50 w-72 max-h-[calc(100vh-4rem)] overflow-y-auto pb-20 bg-white dark:bg-surface-950 border-l border-b border-gray-200 dark:border-gray-800 shadow-lg"
+        >
+          <div class="px-4 pt-4">
+            <TableOfContents headings={headings} />
+          </div>
+        </div>
+      )
+    }
   </nav>
 </header>
 
 <script>
-  const toggle = document.getElementById("mobile-menu-toggle");
+  const menuToggle = document.getElementById("mobile-menu-toggle");
   const menu = document.getElementById("mobile-menu");
   const menuIcon = document.getElementById("menu-icon");
   const closeIcon = document.getElementById("close-icon");
 
-  toggle?.addEventListener("click", () => {
+  const tocToggle = document.getElementById("mobile-toc-toggle");
+  const toc = document.getElementById("mobile-toc");
+  const tocIcon = document.getElementById("toc-icon");
+  const tocCloseIcon = document.getElementById("toc-close-icon");
+
+  function closeMenu() {
+    menu?.classList.add("hidden");
+    menuIcon?.classList.remove("hidden");
+    closeIcon?.classList.add("hidden");
+  }
+
+  function closeToc() {
+    toc?.classList.add("hidden");
+    tocIcon?.classList.remove("hidden");
+    tocCloseIcon?.classList.add("hidden");
+  }
+
+  menuToggle?.addEventListener("click", () => {
+    closeToc();
     menu?.classList.toggle("hidden");
     menuIcon?.classList.toggle("hidden");
     closeIcon?.classList.toggle("hidden");
+  });
+
+  tocToggle?.addEventListener("click", () => {
+    closeMenu();
+    toc?.classList.toggle("hidden");
+    tocIcon?.classList.toggle("hidden");
+    tocCloseIcon?.classList.toggle("hidden");
+  });
+
+  // Close menus when a link is clicked
+  menu?.querySelectorAll("a").forEach((link) => {
+    link.addEventListener("click", closeMenu);
+  });
+  toc?.querySelectorAll("a").forEach((link) => {
+    link.addEventListener("click", closeToc);
   });
 </script>
