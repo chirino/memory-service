@@ -9,24 +9,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/plugin/store/postgres"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
 	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
-
-	// Import plugins to trigger init() registration
-	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/local"
-	_ "github.com/chirino/memory-service/internal/plugin/embed/local"
-	_ "github.com/chirino/memory-service/internal/plugin/route/system"
-	_ "github.com/chirino/memory-service/internal/plugin/vector/pgvector"
 )
 
 func TestFeaturesPgClustering(t *testing.T) {
-	_ = postgres.ForceImport
+	if !buildcaps.PostgreSQL {
+		requireCapabilities(t, "postgresql")
+	}
 
 	dbURL := testpg.StartPostgres(t)
 	prom := NewMockPrometheus(t)

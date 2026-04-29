@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	cmd := mcp.Command()
+	cmd := mcp.RemoteCommand()
 	cmd.Name = "memory-service-mcp"
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

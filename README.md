@@ -39,7 +39,13 @@ Or use the `mcp` subcommand of the main binary:
 
 ```bash
 go install github.com/chirino/memory-service@latest
-memory-service mcp
+memory-service mcp remote
+```
+
+For an embedded local-memory setup:
+
+```bash
+memory-service mcp embedded --db-url ./memory.db
 ```
 
 See [memory-service-mcp/README.md](memory-service-mcp/README.md) for full configuration and usage details.

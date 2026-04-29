@@ -1,15 +1,18 @@
-//go:build sqlite_fts5
-
 package bdd
 
 import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/config"
 )
 
 func TestFeaturesSQLiteLocal(t *testing.T) {
+	if !buildcaps.SQLite {
+		requireCapabilities(t, "sqlite")
+	}
+
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DatastoreType = "sqlite"
@@ -30,5 +33,5 @@ func TestFeaturesSQLiteLocal(t *testing.T) {
 		filepath.Join("testdata", "features", "memory-cache-rest.feature"),
 		filepath.Join("testdata", "features", "response-recorder-grpc.feature"),
 	}
-	runBDDFeaturesWithScenarioSetup(t, "sqlite-local", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency())
+	runBDDFeaturesWithScenarioSetupAndTags(t, "sqlite-local", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency(), sqliteTagFilter())
 }

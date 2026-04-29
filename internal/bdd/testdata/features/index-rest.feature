@@ -8,6 +8,7 @@ Feature: Index Entries REST API
     And I have a conversation with title "Test Conversation"
     And the conversation has an entry "Order status question"
 
+  @requires-sqlite-fts5
   Scenario: Indexer can index entries and user can search them
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
@@ -152,6 +153,7 @@ Feature: Index Entries REST API
     When I call GET "/v1/conversations/unindexed"
     Then the response status should be 403
 
+  @requires-sqlite-fts5
   Scenario: Search conversations with pagination
     Given I am authenticated as user "alice"
     And I have a conversation with title "Conversation A"
@@ -216,6 +218,7 @@ Feature: Index Entries REST API
     And the search response should contain 2 results
     And the response should have an afterCursor
 
+  @requires-sqlite-fts5
   Scenario: Search result includes entryId at top level
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
@@ -238,6 +241,7 @@ Feature: Index Entries REST API
     And search result at index 0 should have conversationTitle "Test Conversation"
     And the response body field "data[0].highlights" should not be null
 
+  @requires-sqlite-fts5
   Scenario: Search conversations without entry content
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"

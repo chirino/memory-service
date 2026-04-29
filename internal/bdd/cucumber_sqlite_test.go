@@ -1,14 +1,18 @@
-//go:build sqlite_fts5
-
 package bdd
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/config"
 )
 
 func TestFeaturesSQLite(t *testing.T) {
+	if !buildcaps.SQLite {
+		requireCapabilities(t, "sqlite")
+	}
+
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DatastoreType = "sqlite"
@@ -26,15 +30,17 @@ func TestFeaturesSQLite(t *testing.T) {
 	cfg.Listener.EnableTLS = false
 
 	featureFiles := collectSQLiteRESTFeatures(t)
-	runBDDFeaturesWithScenarioSetup(t, "sqlite-rest", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency())
+	runBDDFeaturesWithScenarioSetupAndTags(t, "sqlite-rest", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency(), sqliteTagFilter())
 }
 
 func collectSQLiteRESTFeatures(t *testing.T) []string {
 	t.Helper()
 
-	return collectRESTFeatureFiles(t, "testdata", map[string]bool{
+	featureFiles := collectRESTFeatureFiles(t, "testdata", map[string]bool{
 		"memory-cache-rest.feature":      true,
 		"sse-events-rest.feature":        true,
 		"sse-events-replay-rest.feature": true,
 	})
+	featureFiles = append(featureFiles, filepath.Join("testdata", "features-sqlite", "mcp-sqlite.feature"))
+	return featureFiles
 }

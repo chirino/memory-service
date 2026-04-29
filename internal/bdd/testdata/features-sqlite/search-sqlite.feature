@@ -1,3 +1,4 @@
+@requires-sqlite-fts5
 Feature: Search with SQLite datastore and sqlite vector store
   As a user in sqlite+sqlite mode
   I want semantic conversation search to work through the SQLite vector backend

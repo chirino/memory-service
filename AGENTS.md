@@ -42,6 +42,8 @@ When you discover something meaningful about this project during your work—arc
 - `internal/sitebdd/` - Documentation test module (MDX `<TestScenario>/<CurlTest>` to Go/Cucumber pipeline)
 - `internal/cmd/mcp/` - MCP server integrated into main binary (`./memory-service mcp`)
 - `memory-service-mcp/` - Standalone MCP binary wrapper (build with `cd memory-service-mcp && go build -o mcp-server .`; `.mcp.json` uses `${PWD}` for portable paths)
+- Current Go MCP implementation is HTTP/OpenAPI-based through `internal/generated/apiclient`; it does not use gRPC today, so embedded MCP designs only need an in-process HTTP path unless they explicitly add new gRPC consumers.
+- MCP CLI split: main binary now uses explicit `./memory-service mcp remote` and `./memory-service mcp embedded` subcommands, while `memory-service-mcp` remains a single-command remote wrapper.
 
 **API gotchas**:
 - Conversation search endpoint is `/v1/conversations/search` (not `/v1/search`).

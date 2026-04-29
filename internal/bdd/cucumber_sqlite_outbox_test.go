@@ -1,15 +1,18 @@
-//go:build sqlite_fts5
-
 package bdd
 
 import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/config"
 )
 
 func TestFeaturesSQLiteOutbox(t *testing.T) {
+	if !buildcaps.SQLite {
+		requireCapabilities(t, "sqlite")
+	}
+
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DatastoreType = "sqlite"
@@ -31,5 +34,5 @@ func TestFeaturesSQLiteOutbox(t *testing.T) {
 		filepath.Join("testdata", "features", "sse-events-rest.feature"),
 		filepath.Join("testdata", "features", "sse-events-replay-rest.feature"),
 	}
-	runBDDFeaturesWithScenarioSetup(t, "sqlite-outbox", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency())
+	runBDDFeaturesWithScenarioSetupAndTags(t, "sqlite-outbox", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency(), sqliteTagFilter())
 }

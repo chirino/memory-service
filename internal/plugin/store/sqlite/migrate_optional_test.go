@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSQLiteMigratorCreatesCoreTables(t *testing.T) {
+func TestSQLiteMigratorCreatesCoreTablesWithoutOptionalExtensions(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{

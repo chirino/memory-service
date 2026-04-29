@@ -8,26 +8,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/plugin/store/postgres"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
 	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
-
-	// Import plugins to trigger init() registration
-	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/noop"
-	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
-	_ "github.com/chirino/memory-service/internal/plugin/route/system"
 )
 
 // testEncryptionKey is a 64-hex-char (32-byte) AES-256 key for testing.
 const testEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestFeaturesPgEncrypted(t *testing.T) {
-	_ = postgres.ForceImport
+	if !buildcaps.PostgreSQL {
+		requireCapabilities(t, "postgresql")
+	}
 
 	dbURL := testpg.StartPostgres(t)
 	prom := NewMockPrometheus(t)

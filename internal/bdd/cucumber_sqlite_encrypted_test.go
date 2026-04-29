@@ -1,5 +1,3 @@
-//go:build sqlite_fts5
-
 package bdd
 
 import (
@@ -7,10 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/config"
 )
 
 func TestFeaturesSQLiteEncrypted(t *testing.T) {
+	if !buildcaps.SQLite {
+		requireCapabilities(t, "sqlite")
+	}
+
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DatastoreType = "sqlite"
@@ -37,5 +40,5 @@ func TestFeaturesSQLiteEncrypted(t *testing.T) {
 		t.Fatalf("No encrypted feature files found in %s", encryptedDir)
 	}
 
-	runBDDFeaturesWithScenarioSetup(t, "sqlite-encrypted", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency())
+	runBDDFeaturesWithScenarioSetupAndTags(t, "sqlite-encrypted", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency(), sqliteTagFilter())
 }

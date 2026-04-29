@@ -1,5 +1,3 @@
-//go:build sqlite_fts5
-
 package mcp
 
 import (
@@ -11,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/generated/apiclient"
@@ -24,6 +23,9 @@ const testEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef01234
 
 func setupTestServer(t *testing.T) *mcpServer {
 	t.Helper()
+	if !buildcaps.SQLite {
+		t.Skip("required build capabilities missing: sqlite")
+	}
 
 	dbURL := filepath.Join(t.TempDir(), "memory.db")
 
@@ -59,6 +61,43 @@ func setupTestServer(t *testing.T) *mcpServer {
 			return nil
 		}),
 	)
+	require.NoError(t, err)
+
+	return &mcpServer{client: client}
+}
+
+func setupEmbeddedTestServer(t *testing.T) *mcpServer {
+	t.Helper()
+	if !buildcaps.SQLite {
+		t.Skip("required build capabilities missing: sqlite")
+	}
+
+	dbURL := filepath.Join(t.TempDir(), "memory.db")
+
+	cfg := config.DefaultConfig()
+	cfg.Mode = config.ModeTesting
+	cfg.DatastoreType = "sqlite"
+	cfg.DBURL = dbURL
+	cfg.CacheType = "none"
+	cfg.AttachType = "fs"
+	cfg.VectorType = "none"
+	cfg.SearchSemanticEnabled = false
+	cfg.EncryptionKey = testEncryptionKey
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
+
+	ensureEmbeddedAuth(&cfg)
+
+	ctx := config.WithContext(context.Background(), &cfg)
+	runCtx, cancel := context.WithCancel(ctx)
+	srv, err := serve.BuildServer(runCtx, &cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+	})
+
+	client, err := newInProcessClient(srv.Router)
 	require.NoError(t, err)
 
 	return &mcpServer{client: client}
@@ -102,6 +141,25 @@ func TestSaveAndGetSession(t *testing.T) {
 	assert.Contains(t, getResult, "Test session")
 	assert.Contains(t, getResult, "These are test notes about a bugfix.")
 	assert.Contains(t, getResult, "Tags: test,bugfix")
+}
+
+func TestSaveAndGetSessionEmbedded(t *testing.T) {
+	s := setupEmbeddedTestServer(t)
+
+	saveResult := callTool(t, s, s.handleSaveSessionNotes, map[string]any{
+		"title": "Embedded session",
+		"notes": "These notes were saved through the embedded handler transport.",
+		"tags":  "embedded,test",
+	})
+	assert.Contains(t, saveResult, "Session notes saved")
+
+	convID := extractConversationID(t, saveResult)
+	getResult := callTool(t, s, s.handleGetSession, map[string]any{
+		"conversation_id": convID,
+	})
+	assert.Contains(t, getResult, "Embedded session")
+	assert.Contains(t, getResult, "embedded handler transport")
+	assert.Contains(t, getResult, "Tags: embedded,test")
 }
 
 func TestAppendNote(t *testing.T) {
@@ -159,6 +217,10 @@ func TestListSessionsEmpty(t *testing.T) {
 }
 
 func TestSearchSessions(t *testing.T) {
+	if !buildcaps.SQLiteFTS5 {
+		t.Skip("required build capabilities missing: sqlite_fts5")
+	}
+
 	s := setupTestServer(t)
 
 	// Save a session with indexedContent so FTS5 can find it without a background indexer.

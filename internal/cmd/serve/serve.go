@@ -30,13 +30,25 @@ import (
 	_ "github.com/chirino/memory-service/internal/plugin/route/system"
 )
 
+type FlagState struct {
+	ReadHeaderTimeoutSecs int
+	CacheLocalMaxBytes    string
+	CacheLocalNumCounters int
+	CacheLocalBufferItems int
+}
+
+func NewFlagState(cfg *config.Config) *FlagState {
+	return &FlagState{
+		ReadHeaderTimeoutSecs: 5,
+		CacheLocalNumCounters: int(cfg.CacheLocalNumCounters),
+		CacheLocalBufferItems: int(cfg.CacheLocalBufferItems),
+	}
+}
+
 // Command returns the serve sub-command.
 func Command() *cli.Command {
 	cfg := config.DefaultConfig()
-	var readHeaderTimeoutSecs int = 5
-	var cacheLocalMaxBytes string
-	var cacheLocalNumCounters int
-	var cacheLocalBufferItems int
+	flagState := NewFlagState(&cfg)
 	return &cli.Command{
 		Name:  "serve",
 		Usage: "Start the memory service HTTP and gRPC servers",
@@ -48,56 +60,118 @@ func Command() *cli.Command {
    MEMORY_SERVICE_API_KEYS_AGENT_A=secret-key-1
    MEMORY_SERVICE_API_KEYS_AGENT_B=key-one,key-two
 `,
-		Flags: flags(&cfg, &readHeaderTimeoutSecs, &cacheLocalMaxBytes, &cacheLocalNumCounters, &cacheLocalBufferItems),
+		Flags: Flags(&cfg, flagState),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			if err := cfg.ApplyJavaCompatFromEnv(); err != nil {
+			if err := ApplyParsedFlags(&cfg, cmd, flagState, true); err != nil {
 				return err
 			}
-			// Let plugins apply post-parse transformations (e.g. env var forwarding).
-			registrystore.ApplyAll(&cfg, cmd)
-			registrycache.ApplyAll(&cfg, cmd)
-			registryvector.ApplyAll(&cfg, cmd)
-			registryembed.ApplyAll(&cfg, cmd)
-			registryattach.ApplyAll(&cfg, cmd)
-			registryeventbus.ApplyAll(&cfg, cmd)
-			encrypt.ApplyAll(&cfg, cmd)
-			if strings.TrimSpace(cacheLocalMaxBytes) != "" {
-				size, err := config.ParseMemorySize(cacheLocalMaxBytes)
-				if err != nil {
-					return err
-				}
-				cfg.CacheLocalMaxBytes = size
-			}
-			if cmd.IsSet("cache-local-num-counters") {
-				cfg.CacheLocalNumCounters = int64(cacheLocalNumCounters)
-			}
-			if cmd.IsSet("cache-local-buffer-items") {
-				cfg.CacheLocalBufferItems = int64(cacheLocalBufferItems)
-			}
-			cfg.Listener.ReadHeaderTimeout = time.Duration(readHeaderTimeoutSecs) * time.Second
-			cfg.ManagementListener.ReadHeaderTimeout = cfg.Listener.ReadHeaderTimeout
-			selections := listenerSelections{
-				mainPortExplicit:       cmd.IsSet("port"),
-				mainUnixSocketExplicit: cmd.IsSet("unix-socket"),
-				mgmtPortExplicit:       cmd.IsSet("management-port"),
-				mgmtUnixSocketExplicit: cmd.IsSet("management-unix-socket"),
-			}
-			if err := validateListenerSelections(cfg, selections); err != nil {
-				return err
-			}
-			cfg.ManagementListenerEnabled = selections.mgmtPortExplicit || selections.mgmtUnixSocketExplicit
-			cfg.AttachTypeExplicit = cmd.IsSet("attachments-kind")
 			return run(config.WithContext(ctx, &cfg), cfg)
 		},
 	}
 }
 
-func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *string, cacheLocalNumCounters *int, cacheLocalBufferItems *int) []cli.Flag {
-	*cacheLocalNumCounters = int(cfg.CacheLocalNumCounters)
-	*cacheLocalBufferItems = int(cfg.CacheLocalBufferItems)
-	coreFlags := []cli.Flag{
+type flagSetOptions struct {
+	includeServer        bool
+	includeListeners     bool
+	includeDatabase      bool
+	includeCache         bool
+	includeEventBus      bool
+	includeAttachments   bool
+	includeEncryption    bool
+	includeVector        bool
+	includeEmbedding     bool
+	includeAuthorization bool
+	includeEpisodic      bool
+	includeClustering    bool
+	includeMonitoring    bool
+}
 
-		// ── Server ────────────────────────────────────────────────
+func Flags(cfg *config.Config, state *FlagState) []cli.Flag {
+	return flagsFor(cfg, state, flagSetOptions{
+		includeServer:        true,
+		includeListeners:     true,
+		includeDatabase:      true,
+		includeCache:         true,
+		includeEventBus:      true,
+		includeAttachments:   true,
+		includeEncryption:    true,
+		includeVector:        true,
+		includeEmbedding:     true,
+		includeAuthorization: true,
+		includeEpisodic:      true,
+		includeClustering:    true,
+		includeMonitoring:    true,
+	})
+}
+
+func EmbeddedFlags(cfg *config.Config, state *FlagState) []cli.Flag {
+	flags := embeddedServerFlags(cfg)
+	flags = append(flags, flagsFor(cfg, state, flagSetOptions{
+		includeDatabase:    true,
+		includeCache:       true,
+		includeAttachments: true,
+		includeEncryption:  true,
+		includeVector:      true,
+		includeEmbedding:   true,
+		includeEpisodic:    true,
+		includeClustering:  true,
+	})...)
+	return flags
+}
+
+func flagsFor(cfg *config.Config, state *FlagState, opts flagSetOptions) []cli.Flag {
+	var flags []cli.Flag
+	if opts.includeServer {
+		flags = append(flags, serverFlags(cfg, state)...)
+	}
+	if opts.includeListeners {
+		flags = append(flags, listenerFlags(cfg)...)
+	}
+	if opts.includeDatabase {
+		flags = append(flags, databaseFlags(cfg)...)
+		flags = append(flags, registrystore.PluginFlags(cfg)...)
+	}
+	if opts.includeCache {
+		flags = append(flags, cacheFlags(cfg, state)...)
+		flags = append(flags, registrycache.PluginFlags(cfg)...)
+	}
+	if opts.includeEventBus {
+		flags = append(flags, eventBusFlags(cfg)...)
+		flags = append(flags, registryeventbus.PluginFlags(cfg)...)
+	}
+	if opts.includeAttachments {
+		flags = append(flags, attachmentFlags(cfg)...)
+		flags = append(flags, registryattach.PluginFlags(cfg)...)
+	}
+	if opts.includeEncryption {
+		flags = append(flags, encryptionFlags(cfg)...)
+		flags = append(flags, encrypt.PluginFlags(cfg)...)
+	}
+	if opts.includeVector {
+		flags = append(flags, vectorFlags(cfg)...)
+		flags = append(flags, registryvector.PluginFlags(cfg)...)
+	}
+	if opts.includeEmbedding {
+		flags = append(flags, embeddingFlags(cfg)...)
+		flags = append(flags, registryembed.PluginFlags(cfg)...)
+	}
+	if opts.includeAuthorization {
+		flags = append(flags, authorizationFlags(cfg)...)
+	}
+	if opts.includeEpisodic {
+		flags = append(flags, episodicFlags(cfg)...)
+	}
+	if opts.includeClustering {
+		flags = append(flags, clusteringFlags(cfg)...)
+	}
+	if opts.includeMonitoring {
+		flags = append(flags, monitoringFlags(cfg)...)
+	}
+	return flags
+}
+
+func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "tls-cert-file",
 			Category:    "Server:",
@@ -123,8 +197,8 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Name:        "read-header-timeout-seconds",
 			Category:    "Server:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS"),
-			Destination: readHeaderTimeoutSecs,
-			Value:       *readHeaderTimeoutSecs,
+			Destination: &state.ReadHeaderTimeoutSecs,
+			Value:       state.ReadHeaderTimeoutSecs,
 			Usage:       "HTTP read header timeout in seconds",
 		},
 		&cli.StringFlag{
@@ -148,8 +222,23 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Destination: &cfg.RequireJustification,
 			Usage:       "Require justification for admin API calls",
 		},
+	}
+}
 
-		// ── Network Listener ──────────────────────────────────────
+func embeddedServerFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:        "temp-dir",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_TEMP_DIR"),
+			Destination: &cfg.TempDir,
+			Usage:       "Directory for temporary files; defaults to OS temp directory",
+		},
+	}
+}
+
+func listenerFlags(cfg *config.Config) []cli.Flag {
+	flags := []cli.Flag{
 		&cli.BoolFlag{
 			Name:        "plain-text",
 			Category:    "Network Listener:",
@@ -166,8 +255,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.Listener.EnableTLS,
 			Usage:       "Enable TLS HTTP/1.1 + HTTP/2 + gRPC",
 		},
-
-		// ── Network Listener: Management ─────────────────────────
 		&cli.BoolFlag{
 			Name:        "management-plain-text",
 			Category:    "Network Listener: Management:",
@@ -184,8 +271,14 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.ManagementListener.EnableTLS,
 			Usage:       "Enable TLS for management server",
 		},
+	}
+	flags = append(flags, tcpListenerFlags(cfg)...)
+	flags = append(flags, udsListenerFlags(cfg)...)
+	return flags
+}
 
-		// ── Database ───────────────────────────────────────────────
+func databaseFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "db-kind",
 			Category:    "Database:",
@@ -218,8 +311,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.DBMaxIdleConns,
 			Usage:       "Maximum number of idle database connections",
 		},
+	}
+}
 
-		// ── Cache ─────────────────────────────────────────────────
+func cacheFlags(cfg *config.Config, state *FlagState) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "cache-kind",
 			Category:    "Cache:",
@@ -232,27 +328,30 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Name:        "cache-local-max-bytes",
 			Category:    "Cache:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_CACHE_LOCAL_MAX_BYTES"),
-			Destination: cacheLocalMaxBytes,
+			Destination: &state.CacheLocalMaxBytes,
 			Usage:       "Process-local memory cache budget (for example 64M, 512K, 1G)",
 		},
 		&cli.IntFlag{
 			Name:        "cache-local-num-counters",
 			Category:    "Cache:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_CACHE_LOCAL_NUM_COUNTERS"),
-			Destination: cacheLocalNumCounters,
-			Value:       *cacheLocalNumCounters,
+			Destination: &state.CacheLocalNumCounters,
+			Value:       state.CacheLocalNumCounters,
 			Usage:       "Ristretto counter count for the process-local cache",
 		},
 		&cli.IntFlag{
 			Name:        "cache-local-buffer-items",
 			Category:    "Cache:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_CACHE_LOCAL_BUFFER_ITEMS"),
-			Destination: cacheLocalBufferItems,
-			Value:       *cacheLocalBufferItems,
+			Destination: &state.CacheLocalBufferItems,
+			Value:       state.CacheLocalBufferItems,
 			Usage:       "Ristretto buffer size for the process-local cache",
 		},
+	}
+}
 
-		// ── Event Bus ─────────────────────────────────────────────
+func eventBusFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "eventbus-kind",
 			Category:    "Event Bus:",
@@ -325,8 +424,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.OutboxReplayBatchSize,
 			Usage:       "Replay page size used by outbox-backed event streams",
 		},
+	}
+}
 
-		// ── Attachment Storage ────────────────────────────────────
+func attachmentFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "attachments-kind",
 			Category:    "Attachment Storage:",
@@ -349,7 +451,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Destination: &cfg.AllowPrivateSourceURLs,
 			Usage:       "Allow sourceUrl attachment downloads from private/loopback network addresses (unsafe)",
 		},
-		// ── Encryption ────────────────────────────────────────────
+	}
+}
+
+func encryptionFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "encryption-kind",
 			Category:    "Encryption:",
@@ -372,8 +478,6 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Destination: &cfg.EncryptionAttachmentsDisabled,
 			Usage:       "Disable at-rest encryption for the attachment store even when encryption is configured",
 		},
-
-		// ── Encryption: DEK ───────────────────────────────────────
 		&cli.StringFlag{
 			Name:        "encryption-dek-key",
 			Category:    "Encryption: DEK:",
@@ -381,8 +485,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Destination: &cfg.EncryptionKey,
 			Usage:       "Comma-separated AES keys for the 'dek' provider (hex or base64, 32 bytes). First is primary; additional keys are legacy (decryption-only key rotation). Also derives attachment URL signing keys.",
 		},
+	}
+}
 
-		// ── Vector Store ──────────────────────────────────────────
+func vectorFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "vector-kind",
 			Category:    "Vector Store:",
@@ -399,7 +506,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.VectorIndexerBatchSize,
 			Usage:       "Number of entries to embed and index per background indexer tick",
 		},
-		// ── Embedding ─────────────────────────────────────────────
+	}
+}
+
+func embeddingFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "embedding-kind",
 			Category:    "Embedding:",
@@ -408,7 +519,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.EmbedType,
 			Usage:       "Embedding provider (" + strings.Join(registryembed.Names(), "|") + ")",
 		},
-		// ── Authorization ─────────────────────────────────────────
+	}
+}
+
+func authorizationFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "oidc-issuer",
 			Category:    "Authorization:",
@@ -488,7 +603,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Destination: &cfg.IndexerClients,
 			Usage:       "Comma-separated API client IDs with indexer permissions",
 		},
-		// ── Episodic Memory ───────────────────────────────────────
+	}
+}
+
+func episodicFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.IntFlag{
 			Name:        "episodic-max-depth",
 			Category:    "Episodic Memory:",
@@ -528,8 +647,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.EpisodicTombstoneRetention,
 			Usage:       "How long to retain delete/expired tombstones for event history (default 90d)",
 		},
+	}
+}
 
-		// ── Knowledge Clustering ──────────────────────────────────
+func clusteringFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.BoolFlag{
 			Name:        "knowledge-clustering-enabled",
 			Category:    "Knowledge Clustering:",
@@ -562,8 +684,11 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Value:       cfg.KnowledgeClusteringDecay,
 			Usage:       "Time with no new members before cluster trend becomes decaying (default 30d)",
 		},
+	}
+}
 
-		// ── Monitoring ────────────────────────────────────────────
+func monitoringFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "prometheus-url",
 			Category:    "Monitoring:",
@@ -580,21 +705,53 @@ func flags(cfg *config.Config, readHeaderTimeoutSecs *int, cacheLocalMaxBytes *s
 			Usage:       "Comma-separated key=value pairs added as constant labels to all Prometheus metrics. Supports ${VAR} expansion.",
 		},
 	}
+}
 
-	// Append flags contributed by registered plugins.
-	// Append listener flags contributed by conditional build-tag files.
-	coreFlags = append(coreFlags, tcpListenerFlags(cfg)...)
-	coreFlags = append(coreFlags, udsListenerFlags(cfg)...)
+func ApplyParsedFlags(cfg *config.Config, cmd *cli.Command, state *FlagState, validateListeners bool) error {
+	if err := cfg.ApplyJavaCompatFromEnv(); err != nil {
+		return err
+	}
+	// Let plugins apply post-parse transformations (e.g. env var forwarding).
+	registrystore.ApplyAll(cfg, cmd)
+	registrycache.ApplyAll(cfg, cmd)
+	registryvector.ApplyAll(cfg, cmd)
+	registryembed.ApplyAll(cfg, cmd)
+	registryattach.ApplyAll(cfg, cmd)
+	registryeventbus.ApplyAll(cfg, cmd)
+	encrypt.ApplyAll(cfg, cmd)
+	if strings.TrimSpace(state.CacheLocalMaxBytes) != "" {
+		size, err := config.ParseMemorySize(state.CacheLocalMaxBytes)
+		if err != nil {
+			return err
+		}
+		cfg.CacheLocalMaxBytes = size
+	}
+	if cmd.IsSet("cache-local-num-counters") {
+		cfg.CacheLocalNumCounters = int64(state.CacheLocalNumCounters)
+	}
+	if cmd.IsSet("cache-local-buffer-items") {
+		cfg.CacheLocalBufferItems = int64(state.CacheLocalBufferItems)
+	}
+	cfg.Listener.ReadHeaderTimeout = time.Duration(state.ReadHeaderTimeoutSecs) * time.Second
+	cfg.ManagementListener.ReadHeaderTimeout = cfg.Listener.ReadHeaderTimeout
+	cfg.AttachTypeExplicit = cmd.IsSet("attachments-kind")
 
-	// Append flags contributed by registered plugins.
-	coreFlags = append(coreFlags, registrystore.PluginFlags(cfg)...)
-	coreFlags = append(coreFlags, registrycache.PluginFlags(cfg)...)
-	coreFlags = append(coreFlags, registryeventbus.PluginFlags(cfg)...)
-	coreFlags = append(coreFlags, registryvector.PluginFlags(cfg)...)
-	coreFlags = append(coreFlags, registryembed.PluginFlags(cfg)...)
-	coreFlags = append(coreFlags, registryattach.PluginFlags(cfg)...)
-	coreFlags = append(coreFlags, encrypt.PluginFlags(cfg)...)
-	return coreFlags
+	if !validateListeners {
+		cfg.ManagementListenerEnabled = false
+		return nil
+	}
+
+	selections := listenerSelections{
+		mainPortExplicit:       cmd.IsSet("port"),
+		mainUnixSocketExplicit: cmd.IsSet("unix-socket"),
+		mgmtPortExplicit:       cmd.IsSet("management-port"),
+		mgmtUnixSocketExplicit: cmd.IsSet("management-unix-socket"),
+	}
+	if err := validateListenerSelections(*cfg, selections); err != nil {
+		return err
+	}
+	cfg.ManagementListenerEnabled = selections.mgmtPortExplicit || selections.mgmtUnixSocketExplicit
+	return nil
 }
 
 func run(ctx context.Context, cfg config.Config) error {

@@ -295,6 +295,7 @@ Feature: Admin REST API
     And the response should contain at least 1 memberships
 
   # Serial today only because this feature shares the serial admin runner; this scenario searches for a scenario-unique marker and appears parallel-safe.
+  @requires-sqlite-fts5
   Scenario: Admin can perform system-wide semantic search
     Given the conversation owned by "bob" has an entry "Searchable content"
     When I call POST "/v1/admin/conversations/search" with body:
@@ -307,6 +308,7 @@ Feature: Admin REST API
     And the response should contain at least 1 items
 
   # Serial today only because this feature shares the serial admin runner; this scenario scopes the search to the scenario-local user ID and appears parallel-safe.
+  @requires-sqlite-fts5
   Scenario: Admin search can filter by userId
     Given the conversation owned by "bob" has an entry "Bob's entry"
     Given the conversation owned by "alice" has an entry "Alice's entry"
@@ -321,6 +323,7 @@ Feature: Admin REST API
     And all search results should have conversation owned by "bob"
 
   # Serial today only because this feature shares the serial admin runner; this scenario searches for a scenario-unique marker and appears parallel-safe.
+  @requires-sqlite-fts5
   Scenario: Admin search can include deleted conversations when requested
     Given the conversation owned by "bob" has an entry "Deleted-only search marker"
     And the conversation owned by "bob" is deleted
@@ -344,6 +347,7 @@ Feature: Admin REST API
     And the response should contain at least 1 items
 
   # Serial today only because this feature shares the serial admin runner; this scenario paginates over scenario-unique search markers and appears parallel-safe.
+  @requires-sqlite-fts5
   Scenario: Admin search supports afterCursor pagination
     Given the conversation owned by "bob" has an entry "Admin cursor marker one"
     Given the conversation owned by "alice" has an entry "Admin cursor marker two"

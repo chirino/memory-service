@@ -7,24 +7,20 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/plugin/store/postgres"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/chirino/memory-service/internal/testutil/testkeycloak"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
 	"github.com/cucumber/godog"
 	"github.com/stretchr/testify/require"
-
-	// Import plugins to trigger init() registration.
-	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
-	_ "github.com/chirino/memory-service/internal/plugin/cache/noop"
-	_ "github.com/chirino/memory-service/internal/plugin/embed/disabled"
-	_ "github.com/chirino/memory-service/internal/plugin/route/system"
 )
 
 func TestFeaturesPgKeycloak(t *testing.T) {
-	_ = postgres.ForceImport
+	if !buildcaps.PostgreSQL {
+		requireCapabilities(t, "postgresql")
+	}
 
 	dbURL := testpg.StartPostgres(t)
 	keycloak := testkeycloak.StartKeycloak(t)
