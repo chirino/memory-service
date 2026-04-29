@@ -80,6 +80,14 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 		adminEvict(c, store, eventBus)
 	})
 
+	// Client checkpoints
+	g.GET("/checkpoints/:clientId", requireAdmin, func(c *gin.Context) {
+		adminGetCheckpoint(c, store)
+	})
+	g.PUT("/checkpoints/:clientId", requireAdmin, func(c *gin.Context) {
+		adminPutCheckpoint(c, store)
+	})
+
 	// Stats (Prometheus-backed parity with Java admin stats behavior)
 	stats := newPrometheusStatsHandler(cfg)
 	g.GET("/stats/request-rate", stats.rangeHandler(requestRateQuery, "request_rate", "requests/sec"))

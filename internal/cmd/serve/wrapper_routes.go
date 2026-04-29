@@ -156,6 +156,8 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodGet, "/v1/admin/attachments/:id", adminWrapper.AdminGetAttachment)
 	register(http.MethodGet, "/v1/admin/attachments/:id/content", adminWrapper.AdminGetAttachmentContent)
 	register(http.MethodGet, "/v1/admin/attachments/:id/download-url", adminWrapper.AdminGetAttachmentDownloadUrl)
+	register(http.MethodGet, "/v1/admin/checkpoints/:clientId", adminWrapper.AdminGetCheckpoint)
+	register(http.MethodPut, "/v1/admin/checkpoints/:clientId", adminWrapper.AdminPutCheckpoint)
 	register(http.MethodGet, "/v1/admin/conversations", adminWrapper.AdminListConversations)
 	register(http.MethodPost, "/v1/admin/conversations/search", adminWrapper.AdminSearchConversations)
 	register(http.MethodGet, "/v1/admin/conversations/:id", adminWrapper.AdminGetConversation)
@@ -341,6 +343,18 @@ func (p *proxyAdminServer) AdminSubscribeEvents(c *gin.Context, _ generatedadmin
 		return
 	}
 	routeadmin.HandleAdminSSEEvents(c, p.store, p.eventBus, p.cfg)
+}
+func (p *proxyAdminServer) AdminGetCheckpoint(c *gin.Context, _ string) {
+	if !p.authorize(c) {
+		return
+	}
+	routeadmin.HandleAdminGetCheckpoint(c, p.store)
+}
+func (p *proxyAdminServer) AdminPutCheckpoint(c *gin.Context, _ string) {
+	if !p.authorize(c) {
+		return
+	}
+	routeadmin.HandleAdminPutCheckpoint(c, p.store)
 }
 func (p *proxyAdminServer) AdminTriggerMemoryIndex(c *gin.Context) {
 	if !p.authorize(c) {

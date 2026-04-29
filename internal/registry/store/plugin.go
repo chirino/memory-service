@@ -197,6 +197,18 @@ type AdminStatsSummaryProvider interface {
 	AdminStatsSummary(ctx context.Context) (*AdminStatsSummary, error)
 }
 
+type ClientCheckpoint struct {
+	ClientID    string          `json:"clientId"`
+	ContentType string          `json:"contentType"`
+	Value       json.RawMessage `json:"value"`
+	UpdatedAt   time.Time       `json:"updatedAt"`
+}
+
+type AdminCheckpointStore interface {
+	AdminGetCheckpoint(ctx context.Context, clientID string) (*ClientCheckpoint, error)
+	AdminPutCheckpoint(ctx context.Context, checkpoint ClientCheckpoint) (*ClientCheckpoint, error)
+}
+
 type DeletedConversationGroup struct {
 	ConversationGroupID uuid.UUID
 	ConversationIDs     []uuid.UUID

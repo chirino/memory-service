@@ -787,6 +787,74 @@ paths:
       security:
         - BearerAuth: []
 
+  /v1/admin/checkpoints/{clientId}:
+    get:
+      tags: [Admin]
+      summary: Get an admin client checkpoint
+      description: Returns the checkpoint for an admin client. When the caller has an authenticated client ID, it must match the path clientId.
+      operationId: adminGetCheckpoint
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Client checkpoint
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCheckpoint'
+        '401':
+          description: Authentication required.
+        '403':
+          description: Admin role required.
+        '404':
+          description: Checkpoint not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - BearerAuth: []
+    put:
+      tags: [Admin]
+      summary: Upsert an admin client checkpoint
+      description: Persists an encrypted JSON checkpoint for an admin client. When the caller has an authenticated client ID, it must match the path clientId.
+      operationId: adminPutCheckpoint
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCheckpointPutRequest'
+      responses:
+        '200':
+          description: Client checkpoint updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCheckpoint'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required.
+        '403':
+          description: Admin role required.
+      security:
+        - BearerAuth: []
+
   ############################################################
   # Admin Attachments
   ############################################################
@@ -1391,6 +1459,29 @@ components:
         details:
           type: object
           additionalProperties: true
+
+    AdminCheckpoint:
+      type: object
+      required: [clientId, contentType, value, updatedAt]
+      properties:
+        clientId:
+          type: string
+        contentType:
+          type: string
+        value:
+          description: Processor-defined JSON payload for this client checkpoint. Stored encrypted at rest.
+        updatedAt:
+          type: string
+          format: date-time
+
+    AdminCheckpointPutRequest:
+      type: object
+      required: [contentType, value]
+      properties:
+        contentType:
+          type: string
+        value:
+          description: Processor-defined JSON payload to persist for this client checkpoint. Stored encrypted at rest.
 
     MemoryPolicyBundle:
       type: object
