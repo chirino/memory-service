@@ -139,6 +139,17 @@ Feature: Admin checkpoint REST API
     Then the response status should be 200
     Given I am authenticated as admin user "alice"
     And I am authenticated as admin client with API key "test-agent-key-b"
+    And set "otherClientId" to the current client ID
+    When I call GET "/v1/admin/checkpoints/${ownerClientId}"
+    Then the response status should be 404
+    When I call PUT "/v1/admin/checkpoints/${otherClientId}" with body:
+      """
+      {
+        "contentType": "application/example+json",
+        "value": { "cursor": "other-client" }
+      }
+      """
+    Then the response status should be 200
     When I call GET "/v1/admin/checkpoints/${ownerClientId}"
     Then the response status should be 404
 ```

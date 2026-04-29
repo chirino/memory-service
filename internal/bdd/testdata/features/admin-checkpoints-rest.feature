@@ -109,6 +109,7 @@ Feature: Admin checkpoint REST API
     Then the response status should be 200
     Given I am authenticated as admin user "alice"
     And I am authenticated as admin client with API key "test-agent-key-b"
+    And set "otherClientId" to the current client ID
     When I call GET "/v1/admin/checkpoints/${ownerClientId}"
     Then the response status should be 404
     When I call PUT "/v1/admin/checkpoints/${ownerClientId}" with body:
@@ -121,12 +122,30 @@ Feature: Admin checkpoint REST API
     }
     """
     Then the response status should be 404
+    When I call PUT "/v1/admin/checkpoints/${otherClientId}" with body:
+    """
+    {
+      "contentType": "application/example+json",
+      "value": {
+        "cursor": "other-client"
+      }
+    }
+    """
+    Then the response status should be 200
+    And the response body field "clientId" should be "${otherClientId}"
+    When I call GET "/v1/admin/checkpoints/${otherClientId}"
+    Then the response status should be 200
+    And the response body field "value.cursor" should be "other-client"
+    When I call GET "/v1/admin/checkpoints/${ownerClientId}"
+    Then the response status should be 404
     Given I am authenticated as admin user "alice"
     And I am authenticated as admin client with API key "test-agent-key"
     When I call GET "/v1/admin/checkpoints/${ownerClientId}"
     Then the response status should be 200
     And the response body field "clientId" should be "${ownerClientId}"
     And the response body field "value.cursor" should be "owner-client"
+    When I call GET "/v1/admin/checkpoints/${otherClientId}"
+    Then the response status should be 404
 
   Scenario: Admin gets not found for an unknown checkpoint
     When I call GET "/v1/admin/checkpoints/missing-client"
