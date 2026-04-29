@@ -213,6 +213,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name
     ON tasks (task_name) WHERE task_name IS NOT NULL;
 
 ------------------------------------------------------------
+-- Admin client checkpoints
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS admin_checkpoints (
+    client_id   TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL,
+    value       BYTEA NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+------------------------------------------------------------
 -- Event outbox
 ------------------------------------------------------------
 

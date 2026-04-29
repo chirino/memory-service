@@ -308,6 +308,24 @@ func (m *metricsStore) FailTask(ctx context.Context, taskID uuid.UUID, errMsg st
 	return m.inner.FailTask(ctx, taskID, errMsg, retryDelay)
 }
 
+func (m *metricsStore) AdminGetCheckpoint(ctx context.Context, clientID string) (*store.ClientCheckpoint, error) {
+	checkpoints, ok := m.inner.(store.AdminCheckpointStore)
+	if !ok {
+		return nil, &store.NotFoundError{Resource: "checkpoint", ID: clientID}
+	}
+	defer observe("admin_get_checkpoint", time.Now())
+	return checkpoints.AdminGetCheckpoint(ctx, clientID)
+}
+
+func (m *metricsStore) AdminPutCheckpoint(ctx context.Context, checkpoint store.ClientCheckpoint) (*store.ClientCheckpoint, error) {
+	checkpoints, ok := m.inner.(store.AdminCheckpointStore)
+	if !ok {
+		return nil, &store.ValidationError{Field: "checkpoint", Message: "checkpoint storage unavailable"}
+	}
+	defer observe("admin_put_checkpoint", time.Now())
+	return checkpoints.AdminPutCheckpoint(ctx, checkpoint)
+}
+
 func (m *metricsStore) AdminGetAttachmentByStorageKey(ctx context.Context, storageKey string) (*store.AdminAttachment, error) {
 	defer observe("admin_get_attachment_by_storage_key", time.Now())
 	return m.inner.AdminGetAttachmentByStorageKey(ctx, storageKey)
@@ -372,3 +390,4 @@ func (m *metricsStore) AdminStatsSummary(ctx context.Context) (*store.AdminStats
 var _ store.EventOutboxStore = (*metricsStore)(nil)
 var _ store.OutboxEnabledProvider = (*metricsStore)(nil)
 var _ store.AdminStatsSummaryProvider = (*metricsStore)(nil)
+var _ store.AdminCheckpointStore = (*metricsStore)(nil)

@@ -106,6 +106,13 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_ready
     ON tasks(task_type, retry_at);
 
+CREATE TABLE IF NOT EXISTS admin_checkpoints (
+    client_id TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL,
+    value BLOB NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS outbox_events (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     event TEXT NOT NULL,

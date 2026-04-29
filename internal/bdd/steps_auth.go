@@ -15,6 +15,7 @@ func init() {
 		ctx.Step(`^I am authenticated as indexer user "([^"]*)"$`, a.iAmAuthenticatedAsIndexerUser)
 		ctx.Step(`^I am not authenticated$`, a.iAmNotAuthenticated)
 		ctx.Step(`^I authenticate as user "([^"]*)"$`, a.iAmAuthenticatedAsUser)
+		ctx.Step(`^set "([^"]*)" to the current client ID$`, a.setToCurrentClientID)
 	})
 }
 
@@ -124,5 +125,10 @@ func (a *authSteps) iAmNotAuthenticated() error {
 	session.Header.Del("X-Client-ID")
 	session.TestUser = nil
 	a.s.CurrentUser = ""
+	return nil
+}
+
+func (a *authSteps) setToCurrentClientID(name string) error {
+	a.s.Variables[name] = a.s.Session().Header.Get("X-Client-ID")
 	return nil
 }
