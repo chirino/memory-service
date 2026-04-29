@@ -56,6 +56,7 @@ const toc = headings.filter((h) => h.depth >= 2 && h.depth <= 3);
       if (index === activeIndex) {
         link.classList.add("text-primary-600", "dark:text-primary-400", "font-medium");
         link.classList.remove("text-gray-600", "dark:text-gray-400");
+        link.scrollIntoView({ block: "nearest" });
       } else {
         link.classList.remove("text-primary-600", "dark:text-primary-400", "font-medium");
         link.classList.add("text-gray-600", "dark:text-gray-400");
