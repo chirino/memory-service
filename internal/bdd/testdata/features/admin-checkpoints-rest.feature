@@ -94,38 +94,39 @@ Feature: Admin checkpoint REST API
     And the response body field "value.mode" should be "full"
     And the response body field "value.cursor" should be null
 
-  Scenario: Admin client IDs scope checkpoint ownership
-    Given I am authenticated as agent with API key "test-agent-key"
-    And set "currentClientId" to the current client ID
-    When I call PUT "/v1/admin/checkpoints/${currentClientId}" with body:
+  Scenario: Admin clients can only access checkpoints for their own client ID
+    Given I am authenticated as admin client with API key "test-agent-key"
+    And set "ownerClientId" to the current client ID
+    When I call PUT "/v1/admin/checkpoints/${ownerClientId}" with body:
     """
     {
       "contentType": "application/example+json",
       "value": {
-        "cursor": "client-a"
+        "cursor": "owner-client"
       }
     }
     """
     Then the response status should be 200
     Given I am authenticated as admin user "alice"
-    And I am authenticated as agent with API key "test-agent-key-b"
-    When I call GET "/v1/admin/checkpoints/${currentClientId}"
+    And I am authenticated as admin client with API key "test-agent-key-b"
+    When I call GET "/v1/admin/checkpoints/${ownerClientId}"
     Then the response status should be 404
-    When I call PUT "/v1/admin/checkpoints/${currentClientId}" with body:
+    When I call PUT "/v1/admin/checkpoints/${ownerClientId}" with body:
     """
     {
       "contentType": "application/example+json",
       "value": {
-        "cursor": "client-b"
+        "cursor": "other-client"
       }
     }
     """
     Then the response status should be 404
     Given I am authenticated as admin user "alice"
-    And I am authenticated as agent with API key "test-agent-key"
-    When I call GET "/v1/admin/checkpoints/${currentClientId}"
+    And I am authenticated as admin client with API key "test-agent-key"
+    When I call GET "/v1/admin/checkpoints/${ownerClientId}"
     Then the response status should be 200
-    And the response body field "value.cursor" should be "client-a"
+    And the response body field "clientId" should be "${ownerClientId}"
+    And the response body field "value.cursor" should be "owner-client"
 
   Scenario: Admin gets not found for an unknown checkpoint
     When I call GET "/v1/admin/checkpoints/missing-client"

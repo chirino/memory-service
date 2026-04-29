@@ -125,21 +125,21 @@ Feature: Admin checkpoint REST API
     When I call GET "/v1/admin/checkpoints/checkpoint-processor"
     Then the response status should be 403
 
-  Scenario: Admin client IDs scope checkpoint ownership
+  Scenario: Admin clients can only access checkpoints for their own client ID
     Given I am authenticated as admin user "alice"
-    And I am authenticated as agent with API key "test-agent-key"
-    And set "currentClientId" to the current client ID
-    When I call PUT "/v1/admin/checkpoints/${currentClientId}" with body:
+    And I am authenticated as admin client with API key "test-agent-key"
+    And set "ownerClientId" to the current client ID
+    When I call PUT "/v1/admin/checkpoints/${ownerClientId}" with body:
       """
       {
         "contentType": "application/example+json",
-        "value": { "cursor": "client-a" }
+        "value": { "cursor": "owner-client" }
       }
       """
     Then the response status should be 200
     Given I am authenticated as admin user "alice"
-    And I am authenticated as agent with API key "test-agent-key-b"
-    When I call GET "/v1/admin/checkpoints/${currentClientId}"
+    And I am authenticated as admin client with API key "test-agent-key-b"
+    When I call GET "/v1/admin/checkpoints/${ownerClientId}"
     Then the response status should be 404
 ```
 

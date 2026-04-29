@@ -11,6 +11,7 @@ func init() {
 		ctx.Step(`^I am authenticated as user "([^"]*)"$`, a.iAmAuthenticatedAsUser)
 		ctx.Step(`^I am authenticated as admin user "([^"]*)"$`, a.iAmAuthenticatedAsAdminUser)
 		ctx.Step(`^I am authenticated as agent with API key "([^"]*)"$`, a.iAmAuthenticatedAsAgentWithAPIKey)
+		ctx.Step(`^I am authenticated as admin client with API key "([^"]*)"$`, a.iAmAuthenticatedAsAdminClientWithAPIKey)
 		ctx.Step(`^I am authenticated as auditor user "([^"]*)"$`, a.iAmAuthenticatedAsAuditorUser)
 		ctx.Step(`^I am authenticated as indexer user "([^"]*)"$`, a.iAmAuthenticatedAsIndexerUser)
 		ctx.Step(`^I am not authenticated$`, a.iAmNotAuthenticated)
@@ -103,6 +104,10 @@ func (a *authSteps) iAmAuthenticatedAsAgentWithAPIKey(apiKey string) error {
 	session := a.s.Session()
 	session.Header.Set("X-Client-ID", a.s.IsolatedClientID(apiKey))
 	return nil
+}
+
+func (a *authSteps) iAmAuthenticatedAsAdminClientWithAPIKey(apiKey string) error {
+	return a.iAmAuthenticatedAsAgentWithAPIKey(apiKey)
 }
 
 func (a *authSteps) iAmAuthenticatedAsAuditorUser(userID string) error {
