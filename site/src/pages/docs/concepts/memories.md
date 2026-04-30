@@ -187,19 +187,21 @@ Response:
 | `filter`           | `object`   | no       | Attribute filter expressions (see below)    |
 | `archived`         | `string`   | no       | `exclude` (default), `include`, or `only`   |
 | `limit`            | `integer`  | no       | Max results, default 10, max 100            |
-| `offset`           | `integer`  | no       | Pagination offset (attribute-only mode)     |
 
 ### Attribute Filter Expressions
 
-Filters are a flat JSON object where each key is an attribute field name. Three expression forms are supported:
+Filters are a flat JSON object where each key is an attribute field name. Search returns a bounded top-k result set; it is not pageable, and request fields such as `offset`, `order`, or `after_cursor` are rejected.
 
-| Form                             | Meaning                 | Example                              |
-| -------------------------------- | ----------------------- | ------------------------------------ |
-| Bare scalar                      | Equality                | `{"topic": "python"}`                |
-| `{"in": [...]}`                  | Set membership          | `{"lang": {"in": ["python", "go"]}}` |
-| `{"gt"/"gte"/"lt"/"lte": value}` | Numeric/timestamp range | `{"score": {"gte": 0.5}}`            |
+The filter language uses positive, pushdownable predicates only:
 
-All conditions in the object are ANDed.
+| Form                              | Meaning                 | Example                               |
+| --------------------------------- | ----------------------- | ------------------------------------- |
+| Bare scalar or `{"$eq": value}`   | Equality                | `{"topic": "python"}`                 |
+| Array or `{"$in": [...]}`         | Set membership          | `{"lang": {"$in": ["python", "go"]}}` |
+| `{"$gte"/"$lte": value}`          | Numeric/timestamp range | `{"score": {"$gte": 0.5}}`            |
+| `{"$exists": true}`               | Present non-null value  | `{"sourceHash": {"$exists": true}}`   |
+
+All conditions in the object are ANDed. `$ne`, `$nin`, `$exists: false`, old unprefixed operators such as `{"in": [...]}`, and arbitrary datastore query operators are rejected.
 
 ## Listing Namespaces
 

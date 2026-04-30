@@ -3814,7 +3814,6 @@ type SearchMemoriesRequest struct {
 	Query           string                 `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"`
 	Filter          *structpb.Struct       `protobuf:"bytes,3,opt,name=filter,proto3,oneof" json:"filter,omitempty"`
 	Limit           int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
-	Offset          int32                  `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
 	IncludeUsage    bool                   `protobuf:"varint,6,opt,name=include_usage,json=includeUsage,proto3" json:"include_usage,omitempty"`
 	Archived        ArchiveFilter          `protobuf:"varint,7,opt,name=archived,proto3,enum=memory.v1.ArchiveFilter" json:"archived,omitempty"`
 	Actor           *RequestActor          `protobuf:"bytes,9,opt,name=actor,proto3,oneof" json:"actor,omitempty"`
@@ -3876,13 +3875,6 @@ func (x *SearchMemoriesRequest) GetFilter() *structpb.Struct {
 func (x *SearchMemoriesRequest) GetLimit() int32 {
 	if x != nil {
 		return x.Limit
-	}
-	return 0
-}
-
-func (x *SearchMemoriesRequest) GetOffset() int32 {
-	if x != nil {
-		return x.Offset
 	}
 	return 0
 }
@@ -6472,18 +6464,17 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\v_attributesB\b\n" +
 	"\x06_scoreB\r\n" +
 	"\v_expires_atB\b\n" +
-	"\x06_usage\"\xe0\x02\n" +
+	"\x06_usage\"\xce\x02\n" +
 	"\x15SearchMemoriesRequest\x12)\n" +
 	"\x10namespace_prefix\x18\x01 \x03(\tR\x0fnamespacePrefix\x12\x14\n" +
 	"\x05query\x18\x02 \x01(\tR\x05query\x124\n" +
 	"\x06filter\x18\x03 \x01(\v2\x17.google.protobuf.StructH\x00R\x06filter\x88\x01\x01\x12\x14\n" +
-	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x05 \x01(\x05R\x06offset\x12#\n" +
+	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12#\n" +
 	"\rinclude_usage\x18\x06 \x01(\bR\fincludeUsage\x124\n" +
 	"\barchived\x18\a \x01(\x0e2\x18.memory.v1.ArchiveFilterR\barchived\x122\n" +
 	"\x05actor\x18\t \x01(\v2\x17.memory.v1.RequestActorH\x01R\x05actor\x88\x01\x01B\t\n" +
 	"\a_filterB\b\n" +
-	"\x06_actor\"E\n" +
+	"\x06_actorJ\x04\b\x05\x10\x06\"E\n" +
 	"\x16SearchMemoriesResponse\x12+\n" +
 	"\x05items\x18\x01 \x03(\v2\x15.memory.v1.MemoryItemR\x05items\"\xde\x01\n" +
 	"\x1bListMemoryNamespacesRequest\x12\x16\n" +

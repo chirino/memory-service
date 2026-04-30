@@ -692,7 +692,6 @@ type SearchMemoriesRequest struct {
 	IncludeUsage    *bool                          `json:"include_usage,omitempty"`
 	Limit           *int                           `json:"limit,omitempty"`
 	NamespacePrefix []string                       `json:"namespace_prefix"`
-	Offset          *int                           `json:"offset,omitempty"`
 	Query           *string                        `json:"query,omitempty"`
 }
 

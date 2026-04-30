@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +19,9 @@ import (
 
 var ErrAdminStatsSummaryUnsupported = errors.New("admin stats summary unsupported")
 var ErrMemoryRevisionConflict = errors.New("memory revision conflict")
+var ErrSemanticSearchUnavailable = errors.New("semantic search unavailable")
+
+var attributeFilterFieldPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 // PutMemoryRequest is the input for creating or updating a memory.
 type PutMemoryRequest struct {
@@ -120,10 +126,224 @@ type SearchRequest struct {
 	Filter json.RawMessage `json:"filter,omitempty"`
 	// Limit is the maximum number of results (default 10, max 100).
 	Limit int `json:"limit,omitempty"`
-	// Offset is the pagination offset (attribute-only mode only).
-	Offset int `json:"offset,omitempty"`
 	// Archived controls whether archived memories are excluded, included, or returned exclusively.
 	Archived ArchiveFilter `json:"archived,omitempty"`
+}
+
+type AttributeFilterOp string
+
+const (
+	AttributeFilterOpEq     AttributeFilterOp = "$eq"
+	AttributeFilterOpIn     AttributeFilterOp = "$in"
+	AttributeFilterOpExists AttributeFilterOp = "$exists"
+	AttributeFilterOpGte    AttributeFilterOp = "$gte"
+	AttributeFilterOpLte    AttributeFilterOp = "$lte"
+)
+
+type AttributeFilterRangeKind string
+
+const (
+	AttributeFilterRangeNumber AttributeFilterRangeKind = "number"
+	AttributeFilterRangeTime   AttributeFilterRangeKind = "time"
+)
+
+type AttributeFilterValue struct {
+	Raw  interface{}
+	Text string
+}
+
+type AttributeFilterCondition struct {
+	Field     string
+	Op        AttributeFilterOp
+	Values    []AttributeFilterValue
+	RangeKind AttributeFilterRangeKind
+}
+
+type AttributeFilter struct {
+	Conditions []AttributeFilterCondition
+}
+
+func (f AttributeFilter) Empty() bool {
+	return len(f.Conditions) == 0
+}
+
+func NormalizeAttributeFilters(filters ...map[string]interface{}) (AttributeFilter, error) {
+	var out AttributeFilter
+	rangeKindByField := map[string]AttributeFilterRangeKind{}
+	for _, filter := range filters {
+		for field, expr := range filter {
+			if err := validateAttributeFilterField(field); err != nil {
+				return AttributeFilter{}, err
+			}
+			conditions, err := normalizeAttributeFilterField(field, expr)
+			if err != nil {
+				return AttributeFilter{}, err
+			}
+			for _, cond := range conditions {
+				if cond.RangeKind != "" {
+					if existing := rangeKindByField[cond.Field]; existing != "" && existing != cond.RangeKind {
+						return AttributeFilter{}, fmt.Errorf("invalid filter for %q: cannot mix numeric and timestamp range bounds", cond.Field)
+					}
+					rangeKindByField[cond.Field] = cond.RangeKind
+				}
+				out.Conditions = append(out.Conditions, cond)
+			}
+		}
+	}
+	return out, nil
+}
+
+func validateAttributeFilterField(field string) error {
+	if field == "" || strings.HasPrefix(field, "$") || !attributeFilterFieldPattern.MatchString(field) {
+		return fmt.Errorf("invalid attribute filter field %q", field)
+	}
+	return nil
+}
+
+func normalizeAttributeFilterField(field string, expr interface{}) ([]AttributeFilterCondition, error) {
+	switch typed := expr.(type) {
+	case map[string]interface{}:
+		if len(typed) == 0 {
+			return nil, fmt.Errorf("invalid filter for %q: empty operator object", field)
+		}
+		conditions := make([]AttributeFilterCondition, 0, len(typed))
+		for op, raw := range typed {
+			switch AttributeFilterOp(op) {
+			case AttributeFilterOpEq:
+				value, err := normalizeAttributeFilterScalar(raw)
+				if err != nil {
+					return nil, fmt.Errorf("invalid $eq filter for %q: %w", field, err)
+				}
+				conditions = append(conditions, AttributeFilterCondition{Field: field, Op: AttributeFilterOpEq, Values: []AttributeFilterValue{value}})
+			case AttributeFilterOpIn:
+				values, err := normalizeAttributeFilterList(raw)
+				if err != nil {
+					return nil, fmt.Errorf("invalid $in filter for %q: %w", field, err)
+				}
+				conditions = append(conditions, AttributeFilterCondition{Field: field, Op: AttributeFilterOpIn, Values: values})
+			case AttributeFilterOpExists:
+				exists, ok := raw.(bool)
+				if !ok || !exists {
+					return nil, fmt.Errorf("invalid $exists filter for %q: only true is supported", field)
+				}
+				conditions = append(conditions, AttributeFilterCondition{Field: field, Op: AttributeFilterOpExists})
+			case AttributeFilterOpGte, AttributeFilterOpLte:
+				value, kind, err := normalizeAttributeFilterRange(raw)
+				if err != nil {
+					return nil, fmt.Errorf("invalid %s filter for %q: %w", op, field, err)
+				}
+				conditions = append(conditions, AttributeFilterCondition{Field: field, Op: AttributeFilterOp(op), Values: []AttributeFilterValue{value}, RangeKind: kind})
+			default:
+				return nil, fmt.Errorf("unsupported filter operator %q for %q", op, field)
+			}
+		}
+		return conditions, nil
+	case []interface{}:
+		values, err := normalizeAttributeFilterList(typed)
+		if err != nil {
+			return nil, fmt.Errorf("invalid $in filter for %q: %w", field, err)
+		}
+		return []AttributeFilterCondition{{Field: field, Op: AttributeFilterOpIn, Values: values}}, nil
+	default:
+		value, err := normalizeAttributeFilterScalar(typed)
+		if err != nil {
+			return nil, fmt.Errorf("invalid $eq filter for %q: %w", field, err)
+		}
+		return []AttributeFilterCondition{{Field: field, Op: AttributeFilterOpEq, Values: []AttributeFilterValue{value}}}, nil
+	}
+}
+
+func normalizeAttributeFilterList(raw interface{}) ([]AttributeFilterValue, error) {
+	list, ok := raw.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("expected array")
+	}
+	if len(list) == 0 {
+		return nil, fmt.Errorf("expected non-empty array")
+	}
+	values := make([]AttributeFilterValue, 0, len(list))
+	for _, item := range list {
+		value, err := normalizeAttributeFilterScalar(item)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func normalizeAttributeFilterRange(raw interface{}) (AttributeFilterValue, AttributeFilterRangeKind, error) {
+	value, err := normalizeAttributeFilterScalar(raw)
+	if err != nil {
+		return AttributeFilterValue{}, "", err
+	}
+	switch value.Raw.(type) {
+	case int64, float64:
+		return value, AttributeFilterRangeNumber, nil
+	case string:
+		if _, err := time.Parse(time.RFC3339, value.Text); err != nil {
+			return AttributeFilterValue{}, "", fmt.Errorf("expected numeric value or RFC3339 timestamp string")
+		}
+		return value, AttributeFilterRangeTime, nil
+	default:
+		return AttributeFilterValue{}, "", fmt.Errorf("expected numeric value or RFC3339 timestamp string")
+	}
+}
+
+func normalizeAttributeFilterScalar(raw interface{}) (AttributeFilterValue, error) {
+	switch typed := raw.(type) {
+	case nil:
+		return AttributeFilterValue{}, fmt.Errorf("null values are not supported")
+	case string:
+		return AttributeFilterValue{Raw: typed, Text: typed}, nil
+	case bool:
+		if typed {
+			return AttributeFilterValue{Raw: typed, Text: "true"}, nil
+		}
+		return AttributeFilterValue{Raw: typed, Text: "false"}, nil
+	case int:
+		return AttributeFilterValue{Raw: int64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+	case int8:
+		return AttributeFilterValue{Raw: int64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+	case int16:
+		return AttributeFilterValue{Raw: int64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+	case int32:
+		return AttributeFilterValue{Raw: int64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+	case int64:
+		return AttributeFilterValue{Raw: typed, Text: fmt.Sprintf("%d", typed)}, nil
+	case uint:
+		return AttributeFilterValue{Raw: int64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+	case uint8:
+		return AttributeFilterValue{Raw: int64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+	case uint16:
+		return AttributeFilterValue{Raw: int64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+	case uint32:
+		return AttributeFilterValue{Raw: int64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+	case uint64:
+		if typed > math.MaxInt64 {
+			return AttributeFilterValue{Raw: float64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+		}
+		return AttributeFilterValue{Raw: int64(typed), Text: fmt.Sprintf("%d", typed)}, nil
+	case float32:
+		return AttributeFilterValue{Raw: float64(typed), Text: formatAttributeFilterFloat(float64(typed))}, nil
+	case float64:
+		return AttributeFilterValue{Raw: typed, Text: formatAttributeFilterFloat(typed)}, nil
+	case json.Number:
+		if i, err := typed.Int64(); err == nil {
+			return AttributeFilterValue{Raw: i, Text: typed.String()}, nil
+		}
+		f, err := typed.Float64()
+		if err != nil {
+			return AttributeFilterValue{}, fmt.Errorf("invalid number")
+		}
+		return AttributeFilterValue{Raw: f, Text: typed.String()}, nil
+	default:
+		return AttributeFilterValue{}, fmt.Errorf("expected scalar value")
+	}
+}
+
+func formatAttributeFilterFloat(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 // ListNamespacesRequest is the input for GET /v1/memories/namespaces.
@@ -260,7 +480,7 @@ type EpisodicStore interface {
 
 	// SearchMemories performs an attribute-filter-only search within the namespace prefix.
 	// filter is a parsed attribute filter map (nil = no filter).
-	SearchMemories(ctx context.Context, namespacePrefix []string, filter map[string]interface{}, limit, offset int, archived ArchiveFilter) ([]MemoryItem, error)
+	SearchMemories(ctx context.Context, namespacePrefix []string, filter AttributeFilter, limit int, archived ArchiveFilter) ([]MemoryItem, error)
 
 	// ListNamespaces returns the distinct current namespaces that match the prefix/suffix constraints.
 	ListNamespaces(ctx context.Context, req ListNamespacesRequest) ([][]string, error)
@@ -283,7 +503,7 @@ type EpisodicStore interface {
 
 	// SearchMemoryVectors performs ANN search within the namespace prefix,
 	// optionally filtered by policy_attributes. Returns memory IDs ranked by score.
-	SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int, archived ArchiveFilter) ([]MemoryVectorSearch, error)
+	SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter AttributeFilter, limit int, archived ArchiveFilter) ([]MemoryVectorSearch, error)
 
 	// GetMemoriesByIDs retrieves current memories by UUID, decrypting values and filtering by archive state.
 	GetMemoriesByIDs(ctx context.Context, ids []uuid.UUID, archived ArchiveFilter) ([]MemoryItem, error)

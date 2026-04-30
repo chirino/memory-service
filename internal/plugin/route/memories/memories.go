@@ -1,8 +1,12 @@
 package memories
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -270,6 +274,10 @@ func updateMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore
 }
 
 func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, embedder registryembed.Embedder) {
+	if err := rejectObsoleteSearchFields(c); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	var req generatedapi.SearchMemoriesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -282,10 +290,6 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 	limit := 10
 	if req.Limit != nil && *req.Limit > 0 && *req.Limit <= 100 {
 		limit = *req.Limit
-	}
-	offset := 0
-	if req.Offset != nil {
-		offset = *req.Offset
 	}
 	includeUsage := req.IncludeUsage != nil && *req.IncludeUsage
 	if err := validateNamespace(req.NamespacePrefix, cfg.EpisodicMaxDepth); err != nil {
@@ -308,47 +312,57 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 	}
 
 	effectivePrefix := req.NamespacePrefix
+	policyFilter := map[string]interface{}{}
 
 	// OPA: inject filter constraints.
 	if policy != nil {
 		pc := policyContext(c)
 		var err error
-		effectivePrefix, filter, err = policy.InjectFilter(c.Request.Context(), req.NamespacePrefix, filter, pc)
+		effectivePrefix, policyFilter, err = policy.InjectFilterParts(c.Request.Context(), req.NamespacePrefix, filter, pc)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "filter injection error"})
 			return
 		}
 	}
+	normalizedFilter, err := registryepisodic.NormalizeAttributeFilters(filter, policyFilter)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	query := ""
 	if req.Query != nil {
-		query = *req.Query
+		query = strings.TrimSpace(*req.Query)
 	}
-	if query != "" && embedder != nil {
+	if query != "" {
+		if embedder == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
+			return
+		}
 		if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
-			items, err := semanticSearch(c, store, embedder, effectivePrefix, filter, query, limit, archived)
+			items, err := semanticSearch(c, store, embedder, effectivePrefix, normalizedFilter, query, limit, archived)
 			if err != nil {
 				return err
 			}
 			if includeUsage {
 				enrichMemoryItemsWithUsage(ctx, store, items)
 			}
-			if len(items) > 0 {
-				respItems := toAPIMemoryItems(items)
-				c.JSON(http.StatusOK, generatedapi.SearchMemoriesResponse{Items: &respItems})
-			}
+			respItems := toAPIMemoryItems(items)
+			c.JSON(http.StatusOK, generatedapi.SearchMemoriesResponse{Items: &respItems})
 			return nil
 		}); err != nil {
+			if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
+				return
+			}
 			handleError(c, err)
 			return
 		}
-		if c.Writer.Written() {
-			return
-		}
+		return
 	}
 
 	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
-		items, err := store.SearchMemories(ctx, effectivePrefix, filter, limit, offset, archived)
+		items, err := store.SearchMemories(ctx, effectivePrefix, normalizedFilter, limit, archived)
 		if err != nil {
 			return err
 		}
@@ -362,6 +376,24 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 	}); err != nil {
 		handleError(c, err)
 	}
+}
+
+func rejectObsoleteSearchFields(c *gin.Context) error {
+	body, err := c.GetRawData()
+	if err != nil {
+		return err
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	var raw map[string]interface{}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil
+	}
+	for _, key := range []string{"offset", "order", "after_cursor"} {
+		if _, ok := raw[key]; ok {
+			return fmt.Errorf("%s is not supported for memory search", key)
+		}
+	}
+	return nil
 }
 
 func listNamespaces(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
@@ -935,7 +967,7 @@ func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.Epis
 	}
 }
 
-func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter map[string]interface{}, query string, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
+func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter registryepisodic.AttributeFilter, query string, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	embeddings, err := embedder.EmbedTexts(c.Request.Context(), []string{query})
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)

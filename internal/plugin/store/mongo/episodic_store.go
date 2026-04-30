@@ -575,7 +575,7 @@ func (s *mongoEpisodicStore) ArchiveMemory(ctx context.Context, namespace []stri
 }
 
 // SearchMemories performs attribute-filter-only search within the namespace prefix.
-func (s *mongoEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix []string, filter map[string]interface{}, limit, offset int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
+func (s *mongoEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix []string, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	nsEncoded, err := encodeNS(namespacePrefix)
 	if err != nil {
 		return nil, err
@@ -591,14 +591,13 @@ func (s *mongoEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix
 		{{Key: "$replaceRoot", Value: bson.D{{Key: "newRoot", Value: "$doc"}}}},
 		{{Key: "$match", Value: mongoMemoryArchiveMatch(archived)}},
 	}
-	if len(filter) > 0 {
+	if !filter.Empty() {
 		match := bson.M{}
 		applyMongoFilter(match, filter)
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: match}})
 	}
 	pipeline = append(pipeline,
 		bson.D{{Key: "$sort", Value: bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}}},
-		bson.D{{Key: "$skip", Value: int64(offset)}},
 		bson.D{{Key: "$limit", Value: int64(limit)}},
 	)
 
@@ -776,7 +775,7 @@ func (s *mongoEpisodicStore) DeleteMemoryVectors(ctx context.Context, memoryID u
 }
 
 // SearchMemoryVectors searches memory_vectors using in-memory cosine scoring.
-func (s *mongoEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
+func (s *mongoEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
 	if s.qdrant != nil {
 		return s.qdrant.SearchMemoryVectors(ctx, namespacePrefix, embedding, filter, limit, archived)
 	}
@@ -1383,37 +1382,40 @@ func cosineSimilarity(a, b []float32) float64 {
 
 // applyMongoFilter merges an attribute filter into an existing bson.M filter document.
 // Keys are matched against the policy_attributes subdocument.
-func applyMongoFilter(dst bson.M, filter map[string]interface{}) {
-	if len(filter) == 0 {
+func applyMongoFilter(dst bson.M, filter registryepisodic.AttributeFilter) {
+	if filter.Empty() {
 		return
 	}
-	for key, val := range filter {
-		safeKey := "policy_attributes." + strings.ReplaceAll(key, "$", "")
-		switch v := val.(type) {
-		case map[string]interface{}:
-			cond := bson.M{}
-			if members, ok := v["in"]; ok {
-				if list, ok := members.([]interface{}); ok {
-					cond["$in"] = list
-				}
+	for _, cond := range filter.Conditions {
+		safeKey := "policy_attributes." + strings.ReplaceAll(cond.Field, "$", "")
+		switch cond.Op {
+		case registryepisodic.AttributeFilterOpEq:
+			appendMongoAnd(dst, bson.M{safeKey: cond.Values[0].Raw})
+		case registryepisodic.AttributeFilterOpIn:
+			values := make([]interface{}, 0, len(cond.Values))
+			for _, value := range cond.Values {
+				values = append(values, value.Raw)
 			}
-			for op, rhs := range v {
-				switch op {
-				case "gt":
-					cond["$gt"] = rhs
-				case "gte":
-					cond["$gte"] = rhs
-				case "lt":
-					cond["$lt"] = rhs
-				case "lte":
-					cond["$lte"] = rhs
-				}
+			appendMongoAnd(dst, bson.M{safeKey: bson.M{"$in": values}})
+		case registryepisodic.AttributeFilterOpExists:
+			appendMongoAnd(dst, bson.M{safeKey: bson.M{"$exists": true, "$ne": nil, "$not": bson.M{"$size": 0}}})
+		case registryepisodic.AttributeFilterOpGte, registryepisodic.AttributeFilterOpLte:
+			op := "$gte"
+			if cond.Op == registryepisodic.AttributeFilterOpLte {
+				op = "$lte"
 			}
-			if len(cond) > 0 {
-				dst[safeKey] = cond
-			}
-		default:
-			dst[safeKey] = v
+			appendMongoAnd(dst, bson.M{safeKey: bson.M{op: cond.Values[0].Raw}})
 		}
 	}
+}
+
+func appendMongoAnd(dst bson.M, condition bson.M) {
+	if len(condition) == 0 {
+		return
+	}
+	existing, ok := dst["$and"].([]bson.M)
+	if !ok {
+		existing = []bson.M{}
+	}
+	dst["$and"] = append(existing, condition)
 }

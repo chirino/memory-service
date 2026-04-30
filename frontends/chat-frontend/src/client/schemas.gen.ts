@@ -620,10 +620,6 @@ export const $SearchMemoriesRequest = {
       minimum: 1,
       maximum: 100,
     },
-    offset: {
-      type: "integer",
-      minimum: 0,
-    },
     include_usage: {
       type: "boolean",
       default: false,

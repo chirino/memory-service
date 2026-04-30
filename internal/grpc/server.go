@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1592,7 +1593,6 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	if limit <= 0 || limit > 100 {
 		limit = 10
 	}
-	offset := int(req.GetOffset())
 
 	filter := map[string]interface{}{}
 	if req.GetFilter() != nil {
@@ -1604,20 +1604,31 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	if err != nil {
 		return nil, err
 	}
+	policyFilter := map[string]interface{}{}
 	if s.Policy != nil {
 		var err error
-		effectivePrefix, filter, err = s.Policy.InjectFilter(ctx, req.GetNamespacePrefix(), filter, pc)
+		effectivePrefix, policyFilter, err = s.Policy.InjectFilterParts(ctx, req.GetNamespacePrefix(), filter, pc)
 		if err != nil {
 			return nil, episodicInternalError("filter injection error", err)
 		}
 	}
+	normalizedFilter, err := registryepisodic.NormalizeAttributeFilters(filter, policyFilter)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 
 	query := strings.TrimSpace(req.GetQuery())
-	if query != "" && s.Embedder != nil {
+	if query != "" {
+		if s.Embedder == nil {
+			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+		}
 		items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
-			return semanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, filter, query, limit, archived)
+			return semanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, normalizedFilter, query, limit, archived)
 		})
 		if err != nil {
+			if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
+				return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+			}
 			return nil, episodicInternalError("semantic search error", err)
 		}
 		if req.GetIncludeUsage() {
@@ -1628,13 +1639,11 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 				return nil, episodicInternalError("failed to enrich memory usage", err)
 			}
 		}
-		if len(items) > 0 {
-			return memoryItemsToSearchResponse(items)
-		}
+		return memoryItemsToSearchResponse(items)
 	}
 
 	items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
-		return s.Store.SearchMemories(txCtx, effectivePrefix, filter, limit, offset, archived)
+		return s.Store.SearchMemories(txCtx, effectivePrefix, normalizedFilter, limit, archived)
 	})
 	if err != nil {
 		return nil, episodicInternalError("failed to search memories", err)
@@ -1965,7 +1974,7 @@ func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.Epis
 	}
 }
 
-func semanticSearchMemories(ctx context.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter map[string]interface{}, query string, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
+func semanticSearchMemories(ctx context.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter registryepisodic.AttributeFilter, query string, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	embeddings, err := embedder.EmbedTexts(ctx, []string{query})
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
@@ -2018,6 +2027,12 @@ func semanticSearchMemories(ctx context.Context, store registryepisodic.Episodic
 		score := scoreByID[id]
 		item.Score = &score
 		results = append(results, item)
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		return *results[i].Score > *results[j].Score
+	})
+	if len(results) > limit {
+		results = results[:limit]
 	}
 	return results, nil
 }

@@ -415,7 +415,7 @@ func (e *postgresEpisodicStore) ArchiveMemory(ctx context.Context, namespace []s
 }
 
 // SearchMemories performs attribute-filter-only search within the namespace prefix.
-func (e *postgresEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix []string, filter map[string]interface{}, limit, offset int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
+func (e *postgresEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix []string, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	nsEncoded, err := e.encodeNS(namespacePrefix)
 	if err != nil {
 		return nil, err
@@ -438,10 +438,9 @@ func (e *postgresEpisodicStore) SearchMemories(ctx context.Context, namespacePre
 		).
 		Where(postgresMemoryArchiveWhere("m", archived)).
 		Order("m.created_at DESC, m.id DESC").
-		Limit(limit).
-		Offset(offset)
+		Limit(limit)
 
-	if len(filter) > 0 {
+	if !filter.Empty() {
 		clause, args := buildSQLFilter(filter)
 		if clause != "" {
 			q = q.Where(clause, args...)
@@ -605,7 +604,7 @@ func (e *postgresEpisodicStore) DeleteMemoryVectors(ctx context.Context, memoryI
 
 // SearchMemoryVectors performs ANN search via pgvector (raw SQL).
 // This is a fallback; the indexer service calls the vector store directly for ANN.
-func (e *postgresEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
+func (e *postgresEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
 	if e.qdrant != nil {
 		return e.qdrant.SearchMemoryVectors(ctx, namespacePrefix, embedding, filter, limit, archived)
 	}
@@ -617,7 +616,7 @@ func (e *postgresEpisodicStore) SearchMemoryVectors(ctx context.Context, namespa
 	var whereFilter string
 	var args []interface{}
 	args = append(args, vec, namespacePrefix, episodic.NamespacePrefixPattern(namespacePrefix))
-	if len(filter) > 0 {
+	if !filter.Empty() {
 		clause, filterArgs := buildSQLFilter(filter)
 		if clause != "" {
 			clause = strings.ReplaceAll(clause, "policy_attributes", "mv.policy_attributes")
@@ -985,78 +984,47 @@ func (e *postgresEpisodicStore) rowToItem(row memoryRow, namespace []string) (*r
 
 // buildSQLFilter builds a WHERE clause fragment using the shared helper.
 // Returns the clause and args, ready for gorm.DB.Where(clause, args...).
-func buildSQLFilter(filter map[string]interface{}) (string, []interface{}) {
-	if len(filter) == 0 {
+func buildSQLFilter(filter registryepisodic.AttributeFilter) (string, []interface{}) {
+	if filter.Empty() {
 		return "", nil
 	}
-	// Use the episodic package helper but we need positional args compatible with GORM.
-	// GORM uses ? placeholders, but episodic.BuildSQLFilter uses $N.
-	// Build our own here.
 	var clauses []string
 	var args []interface{}
-
-	for key, val := range filter {
-		safeKey := strings.ReplaceAll(key, "'", "''")
-		switch v := val.(type) {
-		case map[string]interface{}:
-			if members, ok := v["in"]; ok {
-				list := toIfaceSlice(members)
-				if len(list) > 0 {
-					ph := make([]string, len(list))
-					for i, m := range list {
-						ph[i] = "?"
-						args = append(args, jsonScalarStr(m))
-					}
-					clauses = append(clauses,
-						fmt.Sprintf("policy_attributes->>'%s' = ANY(ARRAY[%s]::text[])", safeKey, strings.Join(ph, ",")))
-				}
+	for _, cond := range filter.Conditions {
+		switch cond.Op {
+		case registryepisodic.AttributeFilterOpEq:
+			value := cond.Values[0]
+			arrayJSON, _ := json.Marshal([]interface{}{value.Raw})
+			clauses = append(clauses, "((jsonb_typeof(policy_attributes -> ?) <> 'array' AND policy_attributes->>? = ?) OR (jsonb_typeof(policy_attributes -> ?) = 'array' AND (policy_attributes -> ?) @> ?::jsonb))")
+			args = append(args, cond.Field, cond.Field, value.Text, cond.Field, cond.Field, string(arrayJSON))
+		case registryepisodic.AttributeFilterOpIn:
+			var parts []string
+			for _, value := range cond.Values {
+				arrayJSON, _ := json.Marshal([]interface{}{value.Raw})
+				parts = append(parts, "((jsonb_typeof(policy_attributes -> ?) <> 'array' AND policy_attributes->>? = ?) OR (jsonb_typeof(policy_attributes -> ?) = 'array' AND (policy_attributes -> ?) @> ?::jsonb))")
+				args = append(args, cond.Field, cond.Field, value.Text, cond.Field, cond.Field, string(arrayJSON))
 			}
-			for op, rhs := range v {
-				var sqlOp string
-				switch op {
-				case "gt":
-					sqlOp = ">"
-				case "gte":
-					sqlOp = ">="
-				case "lt":
-					sqlOp = "<"
-				case "lte":
-					sqlOp = "<="
-				default:
-					continue
-				}
-				args = append(args, rhs)
-				clauses = append(clauses, fmt.Sprintf("(policy_attributes->>'%s')::numeric %s ?", safeKey, sqlOp))
+			clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
+		case registryepisodic.AttributeFilterOpExists:
+			clauses = append(clauses, "((policy_attributes -> ?) IS NOT NULL AND (policy_attributes -> ?) <> 'null'::jsonb AND (jsonb_typeof(policy_attributes -> ?) <> 'array' OR jsonb_array_length(policy_attributes -> ?) > 0))")
+			args = append(args, cond.Field, cond.Field, cond.Field, cond.Field)
+		case registryepisodic.AttributeFilterOpGte, registryepisodic.AttributeFilterOpLte:
+			sqlOp := ">="
+			if cond.Op == registryepisodic.AttributeFilterOpLte {
+				sqlOp = "<="
 			}
-		default:
-			args = append(args, jsonScalarStr(v))
-			clauses = append(clauses, fmt.Sprintf("policy_attributes->>'%s' = ?", safeKey))
+			value := cond.Values[0]
+			if cond.RangeKind == registryepisodic.AttributeFilterRangeTime {
+				clauses = append(clauses, fmt.Sprintf("(jsonb_typeof(policy_attributes -> ?) = 'string' AND (policy_attributes->>?)::timestamptz %s ?::timestamptz)", sqlOp))
+				args = append(args, cond.Field, cond.Field, value.Text)
+			} else {
+				clauses = append(clauses, fmt.Sprintf("(jsonb_typeof(policy_attributes -> ?) = 'number' AND (policy_attributes->>?)::double precision %s ?)", sqlOp))
+				args = append(args, cond.Field, cond.Field, value.Raw)
+			}
 		}
 	}
 	if len(clauses) == 0 {
 		return "", nil
 	}
 	return strings.Join(clauses, " AND "), args
-}
-
-func jsonScalarStr(v interface{}) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case bool:
-		if t {
-			return "true"
-		}
-		return "false"
-	default:
-		b, _ := json.Marshal(t)
-		return strings.Trim(string(b), `"`)
-	}
-}
-
-func toIfaceSlice(v interface{}) []interface{} {
-	if s, ok := v.([]interface{}); ok {
-		return s
-	}
-	return nil
 }

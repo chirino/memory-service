@@ -172,6 +172,170 @@ Feature: Episodic Memory gRPC API
     Then the gRPC response should not have an error
     And the gRPC response field "items" should have size 2
 
+  Scenario: SearchMemories supports enhanced attribute filters via gRPC
+    Given I am authenticated as admin user "alice"
+    And I call PUT "/admin/v1/memories/policies" with body:
+    """
+    {
+      "authz": "package memories.authz\nimport future.keywords.if\ndefault decision = {\"allow\": false, \"reason\": \"access denied\"}\ndecision = {\"allow\": true} if { input.namespace[0] == \"user\"; input.namespace[1] == input.context.user_id }",
+      "attributes": "package memories.attributes\nimport future.keywords.if\ndefault attributes = {}\nbase := {\"namespace\": input.namespace[0], \"sub\": input.namespace[1]}\nextra := {k: v | k := [\"topic\", \"confidence\", \"sourceHash\"][_]; v := input.value[k]; v != null}\nattributes = object.union(base, extra) if { count(input.namespace) >= 2 }",
+      "filter": "package memories.filter\nimport future.keywords.if\nimport future.keywords.in\nuser_prefix := [\"user\", input.context.user_id]\nis_admin if { \"admin\" in input.context.jwt_claims.roles }\nnamespace_prefix := input.namespace_prefix if { is_admin }\nnamespace_prefix := user_prefix if { not is_admin }\nattribute_filter := {} if { is_admin }\nattribute_filter := {\"namespace\": \"user\", \"sub\": input.context.user_id} if { not is_admin }"
+    }
+    """
+    Then the response status should be 204
+    Given I am authenticated as user "alice"
+    And I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-filter-ops"
+    key: "grpc-alpha"
+    value {
+      fields { key: "topic" value { string_value: "python" } }
+      fields { key: "confidence" value { number_value: 0.9 } }
+      fields { key: "sourceHash" value { string_value: "sha-alpha" } }
+    }
+    """
+    And I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-filter-ops"
+    key: "grpc-beta"
+    value {
+      fields { key: "topic" value { string_value: "go" } }
+      fields { key: "confidence" value { number_value: 0.4 } }
+      fields { key: "sourceHash" value { string_value: "sha-beta" } }
+    }
+    """
+    And I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-filter-ops"
+    key: "grpc-gamma"
+    value {
+      fields { key: "topic" value { string_value: "python" } }
+      fields { key: "confidence" value { number_value: 0.2 } }
+    }
+    """
+    When I send gRPC request "MemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "grpc-filter-ops"
+    filter {
+      fields {
+        key: "topic"
+        value {
+          struct_value {
+            fields {
+              key: "\u0024eq"
+              value { string_value: "python" }
+            }
+          }
+        }
+      }
+    }
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 2
+    When I send gRPC request "MemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "grpc-filter-ops"
+    filter {
+      fields {
+        key: "topic"
+        value {
+          struct_value {
+            fields {
+              key: "\u0024in"
+              value {
+                list_value {
+                  values { string_value: "go" }
+                  values { string_value: "rust" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 1
+    And the gRPC response field "items[0].key" should be "grpc-beta"
+    When I send gRPC request "MemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "grpc-filter-ops"
+    filter {
+      fields {
+        key: "sourceHash"
+        value {
+          struct_value {
+            fields {
+              key: "\u0024exists"
+              value { bool_value: true }
+            }
+          }
+        }
+      }
+    }
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 2
+    When I send gRPC request "MemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "grpc-filter-ops"
+    filter {
+      fields {
+        key: "confidence"
+        value {
+          struct_value {
+            fields {
+              key: "\u0024gte"
+              value { number_value: 0.8 }
+            }
+          }
+        }
+      }
+    }
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 1
+    And the gRPC response field "items[0].key" should be "grpc-alpha"
+    When I send gRPC request "MemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "grpc-filter-ops"
+    filter {
+      fields {
+        key: "topic"
+        value {
+          struct_value {
+            fields {
+              key: "\u0024unknown"
+              value { string_value: "python" }
+            }
+          }
+        }
+      }
+    }
+    limit: 10
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
   Scenario: Search memories and list namespaces honor archive filters
     Given I send gRPC request "MemoriesService/PutMemory" with body:
     """

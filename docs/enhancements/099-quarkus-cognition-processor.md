@@ -104,9 +104,11 @@ Implementation details:
 
 - A `GrpcAdminEventClient` consumes `EventStreamService.SubscribeEvents` with admin scope, exponential backoff, and resume-from-cursor semantics.
 - The processor must use gRPC checkpoint APIs from [101](101-grpc-api-parity-for-cognition.md) to persist its event progress. On startup it calls `AdminCheckpointService.GetCheckpoint` and, when a checkpoint exists, subscribes with `after_cursor=<lastEventCursor>` so restart catch-up begins near the last processed event instead of replaying the full retained window. A missing checkpoint means first run; subscribe from the configured bootstrap position.
-- After events are accepted into the coalesced scope-job queue, the processor writes a checkpoint with `AdminCheckpointService.PutCheckpoint`. The checkpoint value includes at least `lastEventCursor`, `updatedAt`, `runtimeId`, `runtimeVersion`, and the highest event timestamp observed. `{workerId}` is supplied by `cognition.worker.id` and identifies one logical processor instance, not one container replica.
-- Checkpoint writes may be batched on a configurable cadence, but shutdown and idle transitions should flush the latest accepted cursor. The processor must not advance the checkpoint past an event that has not been reduced into a durable or retryable job, or restart could skip work.
-- Incoming events are reduced to `ScopeJob` records keyed by conversation ID and pushed onto a singleton task queue (`Map<UUID, ScopeJob>` guarded by a serializable `Mutiny` workflow). Duplicate events for the same conversation while a job is pending coalesce into the existing job.
+- After events are accepted into dirty debounce state or a dispatchable scope-job queue, the processor writes a checkpoint with `AdminCheckpointService.PutCheckpoint`. The checkpoint value includes at least `lastEventCursor`, `updatedAt`, `runtimeId`, `runtimeVersion`, the highest event timestamp observed, and the current bounded set of dirty conversation debounce windows. `{workerId}` is supplied by `cognition.worker.id` and identifies one logical processor instance, not one container replica.
+- Checkpoint writes may be batched on a configurable cadence, but shutdown and idle transitions should flush the latest accepted cursor plus any open debounce windows. The processor must not advance the checkpoint past an event that has not been reduced into durable checkpoint state, a durable/retryable job, or a completed scope job, or restart could skip work.
+- Incoming events are reduced to dirty conversation debounce windows keyed by conversation ID. Each window records the first and latest accepted event cursors, first and latest source entry IDs when available, entry count, first observed time, latest observed time, and the due time computed from the debounce configuration. Duplicate events for the same conversation extend the existing window rather than creating an immediate LLM job.
+- A debounce scheduler promotes dirty conversation windows into `ScopeJob` records after `cognition.scheduler.debounce-delay`, when `cognition.scheduler.max-batch-age` is reached, or when `cognition.scheduler.max-batch-entries` is reached. This lets active conversations batch several new entries into one extraction/verifier cycle while bounding cognition freshness lag.
+- Checkpoint-embedded debounce windows are intentionally bounded. If the serialized checkpoint would exceed `cognition.scheduler.max-checkpoint-windows`, the processor should promote the oldest due windows before accepting more event cursors rather than letting checkpoint state grow without limit.
 - Scope jobs are dispatched on virtual threads (`@RunOnVirtualThread`) so blocking gRPC calls do not consume reactive event-loop capacity.
 - `@Scheduled` triggers run optional periodic sweeps and rebuild requests.
 
@@ -391,7 +393,7 @@ The processor surface is intentionally small at first.
 - retrieve cognition-produced memories through the enhanced memory search contract defined by [100](100-enhanced-memory-search.md)
 - operational status, rebuild triggers, and retrieval-debug output remain local Quarkus processor concerns, not Memory Service substrate APIs
 
-The search request/response shape, filter language, cursor semantics, and safe retrieval attributes are owned by [100](100-enhanced-memory-search.md). This processor writes memory values compatible with that generic retrieval API.
+The search request/response shape, pushdownable positive filter language, bounded result semantics, and safe retrieval attributes are owned by [100](100-enhanced-memory-search.md). This processor writes memory values compatible with that generic retrieval API and expresses retrieval as positive allow-lists, such as allowed `memoryKind`, `confidence`, and `freshness` values, rather than negative exclusion filters.
 
 ### Configuration
 
@@ -415,6 +417,13 @@ cognition.evidence.delta.max-entries=12
 cognition.evidence.delta.max-tokens=1500
 cognition.evidence.episodic.max-memories=20
 cognition.consolidation.max-revision-retries=3
+
+# Dirty conversation debounce / batching
+cognition.scheduler.debounce-delay=PT1M
+cognition.scheduler.max-batch-age=PT5M
+cognition.scheduler.max-batch-entries=24
+cognition.scheduler.max-checkpoint-windows=1000
+cognition.scheduler.max-concurrent-jobs=8
 
 # Debug-only: persist assembled evidence packs to the cognition cache for inspection
 cognition.debug.persist-evidence=false
@@ -501,6 +510,18 @@ Feature: Quarkus cognition processor
     When the same admin event window is replayed again
     Then no duplicate active cognition memory rows are created
 
+  Scenario: Debounced conversation window batches entry events
+    Given conversation "conv-5" receives three entry events within the configured debounce delay
+    When the debounce window becomes due
+    Then the processor runs one scope job for "conv-5"
+    And the evidence pack includes all three new entries
+
+  Scenario: Checkpoint restores open debounce windows
+    Given conversation "conv-6" has an open debounce window recorded in the processor checkpoint
+    When the cognition processor restarts before the window becomes due
+    Then it restores the open debounce window from the checkpoint
+    And it processes "conv-6" after the configured debounce delay
+
   Scenario: Weak evidence is not promoted
     Given conversation "conv-2" contains one speculative assistant message without user confirmation
     When the processor runs
@@ -509,7 +530,7 @@ Feature: Quarkus cognition processor
   Scenario: Memory search prefers relevant durable cognition memory over cache notes
     Given durable cognition memories exist for deployment troubleshooting
     And short-lived cognition cache memories exist for "conv-3"
-    When memory search is called with query "deployment fix" across the cognition namespaces
+    When memory search is called with query "deployment fix" across the cognition namespaces and positive filters for retrievable kinds and freshness states
     Then the response contains at least one item
     And the first item value field "kind" should equal "procedure"
 
@@ -534,7 +555,7 @@ Feature: Quarkus cognition processor
 - `EvidenceCompactor` creates a cited `evidence-base:<conversation-id>` cache entry, advances the base cursor, and keeps later extraction requests to the configured delta bounds.
 - `Consolidator` merges duplicates by stable natural key, supersedes contradicted memories, and produces no-op writes on identical `source_hash` replays.
 - Cache-only `bridge` and `topic` notes are written under the cognition cache namespace with the configured TTLs and surface in memory search.
-- The gRPC event consumer loads its checkpoint with `AdminCheckpointService.GetCheckpoint`, resumes `EventStreamService.SubscribeEvents` after the saved `lastEventCursor`, persists progress with `AdminCheckpointService.PutCheckpoint`, coalesces bursts into singleton scope jobs, and does not lose events across reconnect.
+- The gRPC event consumer loads its checkpoint with `AdminCheckpointService.GetCheckpoint`, resumes `EventStreamService.SubscribeEvents` after the saved `lastEventCursor`, restores checkpoint-embedded debounce windows, persists progress with `AdminCheckpointService.PutCheckpoint`, coalesces bursts into singleton scope jobs, and does not lose events across reconnect.
 - A Quarkus dev-services-backed integration test boots the full stack (memory-service container plus the processor) and verifies an end-to-end extraction-to-search flow against a `TestChatModel` that mimics the LangChain4j contract used in `chat-quarkus`.
 
 ## Tasks
@@ -543,7 +564,7 @@ Feature: Quarkus cognition processor
 - [ ] Define the `CognitionProcessor` contract and `ScopeJob` types.
 - [ ] Wire the LangChain4j dependency and add named model configurations for durable extraction, verification, and topic summarization.
 - [ ] Implement the gRPC event consumer with checkpointed replay against `EventStreamService.SubscribeEvents` and `AdminCheckpointService` from [101](101-grpc-api-parity-for-cognition.md).
-- [ ] Implement the singleton-per-conversation scope-job queue running on virtual threads.
+- [ ] Implement checkpoint-backed dirty conversation debounce windows and the singleton-per-conversation scope-job queue running on virtual threads.
 - [ ] Implement the evidence pack builder registry over transcript, `context`, episodic memory, and optional knowledge-cluster sources.
 - [ ] Implement the compacted conversation evidence base with TTL-backed cache storage, source citations, base cursor tracking, and recompaction triggers.
 - [ ] Implement the `DurableMemoryExtractor` AiService with strict structured output for fact, preference, procedure, problem_solution, and decision candidates.
