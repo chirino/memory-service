@@ -344,6 +344,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		EventBus: eventBus,
 		Config:   cfg,
 	})
+	pb.RegisterAdminCheckpointServiceServer(grpcServer, &grpcserver.AdminCheckpointServer{Store: store})
 
 	return &Server{
 		Config:     cfg,

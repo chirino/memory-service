@@ -2228,3 +2228,144 @@ var EventStreamService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "memory/v1/memory_service.proto",
 }
+
+const (
+	AdminCheckpointService_GetCheckpoint_FullMethodName = "/memory.v1.AdminCheckpointService/GetCheckpoint"
+	AdminCheckpointService_PutCheckpoint_FullMethodName = "/memory.v1.AdminCheckpointService/PutCheckpoint"
+)
+
+// AdminCheckpointServiceClient is the client API for AdminCheckpointService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type AdminCheckpointServiceClient interface {
+	GetCheckpoint(ctx context.Context, in *GetCheckpointRequest, opts ...grpc.CallOption) (*AdminCheckpoint, error)
+	PutCheckpoint(ctx context.Context, in *PutCheckpointRequest, opts ...grpc.CallOption) (*AdminCheckpoint, error)
+}
+
+type adminCheckpointServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAdminCheckpointServiceClient(cc grpc.ClientConnInterface) AdminCheckpointServiceClient {
+	return &adminCheckpointServiceClient{cc}
+}
+
+func (c *adminCheckpointServiceClient) GetCheckpoint(ctx context.Context, in *GetCheckpointRequest, opts ...grpc.CallOption) (*AdminCheckpoint, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminCheckpoint)
+	err := c.cc.Invoke(ctx, AdminCheckpointService_GetCheckpoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminCheckpointServiceClient) PutCheckpoint(ctx context.Context, in *PutCheckpointRequest, opts ...grpc.CallOption) (*AdminCheckpoint, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminCheckpoint)
+	err := c.cc.Invoke(ctx, AdminCheckpointService_PutCheckpoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AdminCheckpointServiceServer is the server API for AdminCheckpointService service.
+// All implementations must embed UnimplementedAdminCheckpointServiceServer
+// for forward compatibility.
+type AdminCheckpointServiceServer interface {
+	GetCheckpoint(context.Context, *GetCheckpointRequest) (*AdminCheckpoint, error)
+	PutCheckpoint(context.Context, *PutCheckpointRequest) (*AdminCheckpoint, error)
+	mustEmbedUnimplementedAdminCheckpointServiceServer()
+}
+
+// UnimplementedAdminCheckpointServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAdminCheckpointServiceServer struct{}
+
+func (UnimplementedAdminCheckpointServiceServer) GetCheckpoint(context.Context, *GetCheckpointRequest) (*AdminCheckpoint, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCheckpoint not implemented")
+}
+func (UnimplementedAdminCheckpointServiceServer) PutCheckpoint(context.Context, *PutCheckpointRequest) (*AdminCheckpoint, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutCheckpoint not implemented")
+}
+func (UnimplementedAdminCheckpointServiceServer) mustEmbedUnimplementedAdminCheckpointServiceServer() {
+}
+func (UnimplementedAdminCheckpointServiceServer) testEmbeddedByValue() {}
+
+// UnsafeAdminCheckpointServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AdminCheckpointServiceServer will
+// result in compilation errors.
+type UnsafeAdminCheckpointServiceServer interface {
+	mustEmbedUnimplementedAdminCheckpointServiceServer()
+}
+
+func RegisterAdminCheckpointServiceServer(s grpc.ServiceRegistrar, srv AdminCheckpointServiceServer) {
+	// If the following call panics, it indicates UnimplementedAdminCheckpointServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AdminCheckpointService_ServiceDesc, srv)
+}
+
+func _AdminCheckpointService_GetCheckpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCheckpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminCheckpointServiceServer).GetCheckpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminCheckpointService_GetCheckpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminCheckpointServiceServer).GetCheckpoint(ctx, req.(*GetCheckpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminCheckpointService_PutCheckpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutCheckpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminCheckpointServiceServer).PutCheckpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminCheckpointService_PutCheckpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminCheckpointServiceServer).PutCheckpoint(ctx, req.(*PutCheckpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// AdminCheckpointService_ServiceDesc is the grpc.ServiceDesc for AdminCheckpointService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AdminCheckpointService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "memory.v1.AdminCheckpointService",
+	HandlerType: (*AdminCheckpointServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetCheckpoint",
+			Handler:    _AdminCheckpointService_GetCheckpoint_Handler,
+		},
+		{
+			MethodName: "PutCheckpoint",
+			Handler:    _AdminCheckpointService_PutCheckpoint_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "memory/v1/memory_service.proto",
+}

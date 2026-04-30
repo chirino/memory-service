@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS memories (
     policy_attributes TEXT,
     indexed_content TEXT,
     kind INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 1,
     deleted_reason INTEGER,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at DATETIME,

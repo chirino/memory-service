@@ -109,6 +109,11 @@ func (m *mongoEpisodicMigrator) Migrate(ctx context.Context) error {
 			Keys:    bson.D{{Key: "indexed_at", Value: 1}},
 			Options: options.Index().SetSparse(true),
 		},
+		{Keys: bson.D{
+			{Key: "namespace", Value: 1},
+			{Key: "key", Value: 1},
+			{Key: "revision", Value: 1},
+		}},
 		// Event timeline — write events (kind IN (0,1))
 		{
 			Keys: bson.D{
@@ -207,6 +212,7 @@ type memoryDoc struct {
 	PolicyAttributes map[string]interface{} `bson:"policy_attributes,omitempty"`
 	IndexedContent   map[string]string      `bson:"indexed_content,omitempty"`
 	Kind             int32                  `bson:"kind"` // 0=add, 1=update
+	Revision         int64                  `bson:"revision"`
 	CreatedAt        time.Time              `bson:"created_at"`
 	ExpiresAt        *time.Time             `bson:"expires_at,omitempty"`
 	ArchivedAt       *time.Time             `bson:"archived_at,omitempty"`
@@ -319,6 +325,29 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 		indexedContent = map[string]string{}
 	}
 
+	var active memoryDoc
+	hasActive := false
+	if err := s.col.FindOne(
+		ctx,
+		bson.M{"namespace": nsEncoded, "key": req.Key, "archived_at": bson.M{"$exists": false}},
+		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}),
+	).Decode(&active); err != nil {
+		if err != mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("load active memory: %w", err)
+		}
+	} else {
+		hasActive = true
+	}
+	if req.ExpectedRevision != nil {
+		if !hasActive || active.Revision != *req.ExpectedRevision {
+			return nil, registryepisodic.ErrMemoryRevisionConflict
+		}
+	}
+	revision := int64(1)
+	if hasActive {
+		revision = active.Revision + 1
+	}
+
 	// Soft-delete the current active row for (namespace, key).
 	// Set deleted_reason=0 (superseded by update) and reset indexed_at.
 	deletedReason0 := int32(0)
@@ -350,6 +379,7 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 		PolicyAttributes: req.PolicyAttributes,
 		IndexedContent:   indexedContent,
 		Kind:             kind,
+		Revision:         revision,
 		CreatedAt:        now,
 		ExpiresAt:        expiresAt,
 		// IndexedAt omitted = pending vector sync
@@ -365,6 +395,7 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 		Attributes: req.PolicyAttributes,
 		CreatedAt:  now,
 		ExpiresAt:  expiresAt,
+		Revision:   revision,
 	}, nil
 }
 
@@ -517,7 +548,7 @@ func (s *mongoEpisodicStore) ListTopMemoryUsage(ctx context.Context, req registr
 }
 
 // ArchiveMemory archives the active memory for the given (namespace, key).
-func (s *mongoEpisodicStore) ArchiveMemory(ctx context.Context, namespace []string, key string) error {
+func (s *mongoEpisodicStore) ArchiveMemory(ctx context.Context, namespace []string, key string, expectedRevision *int64) error {
 	nsEncoded, err := encodeNS(namespace)
 	if err != nil {
 		return err
@@ -529,10 +560,17 @@ func (s *mongoEpisodicStore) ArchiveMemory(ctx context.Context, namespace []stri
 		"key":         key,
 		"archived_at": bson.M{"$exists": false},
 	}
-	_, err = s.col.UpdateMany(ctx, filter, bson.M{
+	if expectedRevision != nil {
+		filter["revision"] = *expectedRevision
+	}
+	result, err := s.col.UpdateMany(ctx, filter, bson.M{
 		"$set":   bson.M{"archived_at": time.Now(), "deleted_reason": deletedReason1},
+		"$inc":   bson.M{"revision": int64(1)},
 		"$unset": bson.M{"indexed_at": ""},
 	})
+	if err == nil && expectedRevision != nil && result.ModifiedCount == 0 {
+		return registryepisodic.ErrMemoryRevisionConflict
+	}
 	return err
 }
 
@@ -1315,6 +1353,7 @@ func (s *mongoEpisodicStore) docToItem(doc memoryDoc, namespace []string) (*regi
 		CreatedAt:  doc.CreatedAt,
 		ExpiresAt:  doc.ExpiresAt,
 		ArchivedAt: doc.ArchivedAt,
+		Revision:   doc.Revision,
 	}, nil
 }
 

@@ -4,6 +4,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,6 +78,9 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 	if _, err := handle.sqlDB.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("migration: failed to execute schema: %w", err)
 	}
+	if err := sqliteEnsureColumn(ctx, handle.sqlDB, "memories", "revision", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return fmt.Errorf("migration: failed to add memories.revision: %w", err)
+	}
 	if handle.fts5Enabled {
 		if _, err := handle.sqlDB.ExecContext(ctx, ftsSchemaSQL); err != nil {
 			return fmt.Errorf("migration: failed to execute fts schema: %w", err)
@@ -84,6 +88,35 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 	}
 	log.Info("SQLite schema migration complete", "fts5Enabled", handle.fts5Enabled)
 	return nil
+}
+
+func sqliteEnsureColumn(ctx context.Context, db interface {
+	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+}, table, column, definition string) error {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var defaultValue interface{}
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		if strings.EqualFold(name, column) {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition))
+	return err
 }
 
 // SQLiteStore implements MemoryStore using GORM + SQLite.

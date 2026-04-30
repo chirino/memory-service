@@ -95,6 +95,7 @@ type memoryRow struct {
 	PolicyAttributes map[string]interface{} `gorm:"type:jsonb;serializer:json;column:policy_attributes"`
 	IndexedContent   map[string]string      `gorm:"type:jsonb;serializer:json;column:indexed_content"`
 	Kind             int16                  `gorm:"not null;default:0;column:kind"`
+	Revision         int64                  `gorm:"not null;default:1;column:revision"`
 	DeletedReason    *int16                 `gorm:"column:deleted_reason"`
 	CreatedAt        time.Time              `gorm:"not null;column:created_at"`
 	ExpiresAt        *time.Time             `gorm:"column:expires_at"`
@@ -181,7 +182,28 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 	}
 
 	var kind int16
+	revision := int64(1)
 	err = e.writeDBFor(ctx, "sqlite episodic store put memory").Transaction(func(tx *gorm.DB) error {
+		var active []memoryRow
+		if err := tx.Raw(`
+			SELECT *
+			FROM memories
+			WHERE namespace = ? AND key = ? AND archived_at IS NULL
+			ORDER BY created_at DESC, id DESC
+			LIMIT 1`,
+			nsEncoded, req.Key,
+		).Scan(&active).Error; err != nil {
+			return fmt.Errorf("load active row: %w", err)
+		}
+		if req.ExpectedRevision != nil {
+			if len(active) == 0 || active[0].Revision != *req.ExpectedRevision {
+				return registryepisodic.ErrMemoryRevisionConflict
+			}
+		}
+		if len(active) > 0 {
+			revision = active[0].Revision + 1
+		}
+
 		// Soft-delete the current active row for this (namespace, key), if any.
 		// Set deleted_reason=0 (superseded by update) and reset indexed_at so the indexer
 		// removes the old vector entry.
@@ -209,6 +231,7 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 			PolicyAttributes: req.PolicyAttributes,
 			IndexedContent:   indexedContent,
 			Kind:             kind,
+			Revision:         revision,
 			CreatedAt:        now,
 			ExpiresAt:        expiresAt,
 			// IndexedAt NULL = pending vector sync
@@ -226,6 +249,7 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 		Attributes: req.PolicyAttributes,
 		CreatedAt:  now,
 		ExpiresAt:  expiresAt,
+		Revision:   revision,
 	}, nil
 }
 
@@ -380,18 +404,31 @@ func (e *sqliteEpisodicStore) ListTopMemoryUsage(ctx context.Context, req regist
 }
 
 // ArchiveMemory archives the active memory for (namespace, key).
-func (e *sqliteEpisodicStore) ArchiveMemory(ctx context.Context, namespace []string, key string) error {
+func (e *sqliteEpisodicStore) ArchiveMemory(ctx context.Context, namespace []string, key string, expectedRevision *int64) error {
 	nsEncoded, err := e.encodeNS(namespace)
 	if err != nil {
 		return err
 	}
 	deletedReason := int16(1)
-	return e.writeDBFor(ctx, "sqlite episodic store delete memory").Exec(`
+	args := []interface{}{time.Now().UTC(), deletedReason, nsEncoded, key}
+	where := "namespace = ? AND key = ? AND archived_at IS NULL"
+	if expectedRevision != nil {
+		where += " AND revision = ?"
+		args = append(args, *expectedRevision)
+	}
+	result := e.writeDBFor(ctx, "sqlite episodic store delete memory").Exec(`
 		UPDATE memories
-		SET archived_at = ?, indexed_at = NULL, deleted_reason = ?
-		WHERE namespace = ? AND key = ? AND archived_at IS NULL`,
-		time.Now().UTC(), deletedReason, nsEncoded, key,
-	).Error
+		SET archived_at = ?, indexed_at = NULL, deleted_reason = ?, revision = revision + 1
+		WHERE `+where,
+		args...,
+	)
+	if result.Error != nil {
+		return result.Error
+	}
+	if expectedRevision != nil && result.RowsAffected == 0 {
+		return registryepisodic.ErrMemoryRevisionConflict
+	}
+	return nil
 }
 
 // SearchMemories performs attribute-filter-only search within the namespace prefix.
@@ -976,6 +1013,7 @@ func (e *sqliteEpisodicStore) rowToItem(row memoryRow, namespace []string) (*reg
 		CreatedAt:  row.CreatedAt,
 		ExpiresAt:  row.ExpiresAt,
 		ArchivedAt: row.ArchivedAt,
+		Revision:   row.Revision,
 	}, nil
 }
 

@@ -15,6 +15,7 @@ import (
 )
 
 var ErrAdminStatsSummaryUnsupported = errors.New("admin stats summary unsupported")
+var ErrMemoryRevisionConflict = errors.New("memory revision conflict")
 
 // PutMemoryRequest is the input for creating or updating a memory.
 type PutMemoryRequest struct {
@@ -31,6 +32,8 @@ type PutMemoryRequest struct {
 	Index map[string]string `json:"index,omitempty"`
 	// PolicyAttributes are the OPA-extracted plaintext attributes (set by the handler).
 	PolicyAttributes map[string]interface{} `json:"-"`
+	// ExpectedRevision gates the write with optimistic concurrency when non-nil.
+	ExpectedRevision *int64 `json:"-"`
 }
 
 // MemoryItem is the external representation of an active memory (returned by GET / search).
@@ -45,6 +48,7 @@ type MemoryItem struct {
 	CreatedAt  time.Time              `json:"createdAt"`
 	ExpiresAt  *time.Time             `json:"expiresAt"`
 	ArchivedAt *time.Time             `json:"archivedAt,omitempty"`
+	Revision   int64                  `json:"revision"`
 }
 
 // MemoryUsage stores usage counters for one (namespace, key) pair.
@@ -103,6 +107,7 @@ type MemoryWriteResult struct {
 	Attributes map[string]interface{} `json:"attributes,omitempty"`
 	CreatedAt  time.Time              `json:"createdAt"`
 	ExpiresAt  *time.Time             `json:"expiresAt"`
+	Revision   int64                  `json:"revision"`
 }
 
 // SearchRequest is the input for POST /v1/memories/search.
@@ -251,7 +256,7 @@ type EpisodicStore interface {
 
 	// ArchiveMemory archives the active memory for the given (namespace, key).
 	// Returns nil if no active row exists (idempotent).
-	ArchiveMemory(ctx context.Context, namespace []string, key string) error
+	ArchiveMemory(ctx context.Context, namespace []string, key string, expectedRevision *int64) error
 
 	// SearchMemories performs an attribute-filter-only search within the namespace prefix.
 	// filter is a parsed attribute filter map (nil = no filter).

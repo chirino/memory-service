@@ -68,6 +68,7 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		require.EqualValues(t, 1, result.Revision)
 		firstID = result.ID.String()
 
 		result, err = store.PutMemory(writeCtx, registryepisodic.PutMemoryRequest{
@@ -80,6 +81,7 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		require.EqualValues(t, 2, result.Revision)
 		updatedID = result.ID.String()
 		return nil
 	})
@@ -99,6 +101,7 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, item)
 		require.Equal(t, "owner", item.Value["role"])
+		require.EqualValues(t, 2, item.Revision)
 		require.Equal(t, "acme", item.Attributes["tenant"])
 
 		usage, err := store.GetMemoryUsage(readCtx, []string{"users", "alice"}, "profile")
@@ -129,7 +132,7 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	err = store.InWriteTx(ctx, func(writeCtx context.Context) error {
-		return store.ArchiveMemory(writeCtx, []string{"users", "alice"}, "profile")
+		return store.ArchiveMemory(writeCtx, []string{"users", "alice"}, "profile", nil)
 	})
 	require.NoError(t, err)
 
@@ -152,6 +155,72 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 		require.Len(t, events.Events, 3)
 		require.Equal(t, registryepisodic.EventKindUpdate, events.Events[2].Kind)
 		require.NotNil(t, events.Events[2].Value)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestSQLiteEpisodicStoreRevisionConflicts(t *testing.T) {
+	t.Parallel()
+
+	store, ctx := newSQLiteEpisodicStore(t)
+	var revision int64
+
+	err := store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		result, err := store.PutMemory(writeCtx, registryepisodic.PutMemoryRequest{
+			Namespace: []string{"users", "alice"},
+			Key:       "profile",
+			Value:     map[string]interface{}{"name": "Alice"},
+		})
+		require.NoError(t, err)
+		revision = result.Revision
+		return nil
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, revision)
+
+	stale := revision - 1
+	err = store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		_, err := store.PutMemory(writeCtx, registryepisodic.PutMemoryRequest{
+			Namespace:        []string{"users", "alice"},
+			Key:              "profile",
+			Value:            map[string]interface{}{"name": "Alice stale"},
+			ExpectedRevision: &stale,
+		})
+		return err
+	})
+	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict)
+
+	err = store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		result, err := store.PutMemory(writeCtx, registryepisodic.PutMemoryRequest{
+			Namespace:        []string{"users", "alice"},
+			Key:              "profile",
+			Value:            map[string]interface{}{"name": "Alice current"},
+			ExpectedRevision: &revision,
+		})
+		require.NoError(t, err)
+		revision = result.Revision
+		return nil
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, revision)
+
+	stale = 1
+	err = store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		return store.ArchiveMemory(writeCtx, []string{"users", "alice"}, "profile", &stale)
+	})
+	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict)
+
+	err = store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		return store.ArchiveMemory(writeCtx, []string{"users", "alice"}, "profile", &revision)
+	})
+	require.NoError(t, err)
+
+	err = store.InReadTx(ctx, func(readCtx context.Context) error {
+		item, err := store.GetMemory(readCtx, []string{"users", "alice"}, "profile", registryepisodic.ArchiveFilterOnly)
+		require.NoError(t, err)
+		require.NotNil(t, item)
+		require.EqualValues(t, 3, item.Revision)
 		return nil
 	})
 	require.NoError(t, err)
