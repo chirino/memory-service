@@ -8,7 +8,7 @@ status: proposed
 
 ## Summary
 
-Enhance `POST /v1/memories/search` so clients can filter by safe policy attributes with a small operator language and page deterministically with opaque cursors. This gives cognition processors and agent applications a governed retrieval surface for durable and TTL-backed memory items under a shared namespace prefix.
+Enhance memory search in both REST and gRPC so clients can filter by safe policy attributes with a small operator language and page deterministically with opaque cursors. This gives cognition processors and agent applications a governed retrieval surface for durable and TTL-backed memory items under a shared namespace prefix.
 
 ## Motivation
 
@@ -21,7 +21,7 @@ The current episodic memory search API is optimized for simple namespace-prefix 
 
 Without these improvements, applications either over-fetch broad search results and filter them client-side, or a separate cognition-specific retrieval API has to wrap memory search. The better substrate boundary is to make `/v1/memories/search` expressive enough for these retrieval patterns while keeping memory data under the existing governance, archive, indexing, and encryption model.
 
-[099](099-quarkus-cognition-processor.md) depends on this substrate enhancement for cognition-memory retrieval, but the API remains generic and is not coupled to that processor.
+[099](099-quarkus-cognition-processor.md) depends on this substrate enhancement for cognition-memory retrieval, and [101](101-grpc-api-parity-for-cognition.md) depends on this document for the memory-search portion of gRPC parity. The API remains generic and is not coupled to either processor.
 
 ## Design
 
@@ -91,7 +91,7 @@ Example response:
 
 ### gRPC Contract
 
-The gRPC `SearchMemoriesRequest` must stay semantically aligned with REST:
+The gRPC `SearchMemoriesRequest` must stay semantically aligned with REST. The same validation, defaults, OPA filter injection, safe attributes, ordering, cursor binding, archive filtering, TTL visibility, and usage metadata behavior apply to both transports:
 
 ```protobuf
 message SearchMemoriesRequest {
@@ -142,7 +142,7 @@ The default and example memory policies should document how cognition deployment
 | Attribute | Source | Purpose |
 | --- | --- | --- |
 | `memoryKind` | `value.kind` | Filter facts, preferences, procedures, decisions, summaries, bridge notes, and topic notes. |
-| `runtimeId` | `value.runtime.id` | Isolate active, shadow, or benchmark processor outputs. |
+| `runtimeId` | `value.runtime.id` | Isolate active, replay, or benchmark processor outputs. |
 | `runtimeVersion` | `value.runtime.version` | Debug and benchmark processor versions. |
 | `confidence` | `value.confidence` | Filter weak or medium-confidence candidates. |
 | `freshness` | `value.freshness` | Exclude stale or contradicted memories from retrieval. |
@@ -164,6 +164,18 @@ The route executes a search under one authorized namespace prefix:
 6. Return up to `limit` rows plus `afterCursor` when more rows are available.
 
 Cursor state should include the request hash and enough ordering keys to resume deterministically under the same effective prefix.
+
+### Archive, TTL, and Usage Parity
+
+Memory search behavior must be identical for REST and gRPC:
+
+- omitted `archived` defaults to `exclude`
+- `archived=exclude|include|only` maps to the same `ArchiveFilter` behavior in both transports
+- TTL-backed memories are searchable before expiry and excluded after expiry
+- TTL-backed memories expose `expires_at` in search results before expiry
+- OPA attributes are extracted from TTL-backed memory values/index payloads the same way as durable memories
+- `include_usage=true` returns usage metadata but does not increment usage counters
+- search never exposes raw encrypted memory values outside the existing response shape or any policy-disallowed internal metadata
 
 ## Design Decisions
 
@@ -213,6 +225,18 @@ Feature: Enhanced episodic memory search
   Scenario: Unsupported filter operators are rejected
     When POST /v1/memories/search filters memoryKind with {"$regex":"proc.*"}
     Then the response status should be 400
+
+  Scenario: gRPC search matches REST archive filtering
+    Given a memory is archived
+    When SearchMemories is called over gRPC with archived ONLY
+    Then the archived memory is returned
+    When SearchMemories is called over gRPC with archived EXCLUDE
+    Then the archived memory is not returned
+
+  Scenario: TTL-backed memories are searchable before expiry
+    Given a memory is written with ttl_seconds 3600 and index text "deployment cache"
+    When SearchMemories is called over REST and gRPC with query "deployment cache"
+    Then both responses include the memory with expires_at set
 ```
 
 ### Unit / Integration Tests
@@ -222,13 +246,14 @@ Feature: Enhanced episodic memory search
 - Search returns deterministic order across repeated calls.
 - OPA filter injection runs for the requested prefix and does not leak inaccessible rows.
 - `include_usage` enriches results without incrementing usage counters.
-- REST and gRPC request/response shapes remain semantically aligned.
+- REST and gRPC request/response shapes remain semantically aligned, including archive filters and TTL-backed memory visibility.
 
 ## Tasks
 
 - [ ] Add memory search filter operators `$eq`, `$ne`, `$in`, `$nin`, `$exists`, `$gte`, and `$lte`.
 - [ ] Add deterministic result ordering and opaque `after_cursor` pagination.
 - [ ] Align gRPC `SearchMemoriesRequest` and `SearchMemoriesResponse` with the REST contract.
+- [ ] Verify REST and gRPC search share archive-filter defaults, TTL visibility, safe attributes, and usage metadata behavior.
 - [ ] Update memory policy docs/examples so cognition memories can expose safe filter attributes.
 - [ ] Regenerate REST and gRPC clients.
 - [ ] Add BDD and store/route tests for authorization, operators, deterministic ordering, and cursor binding.
@@ -259,6 +284,9 @@ task generate:go
 
 # Regenerate Java REST clients after OpenAPI changes
 ./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus -am clean compile
+
+# Compile Java gRPC stubs after protobuf changes
+./java/mvnw -f java/pom.xml -pl quarkus/memory-service-proto-quarkus -am compile
 
 # Build affected Go packages after search changes
 go build ./internal/registry/episodic ./internal/plugin/route/memories ./internal/plugin/store/postgres ./internal/plugin/store/sqlite ./internal/plugin/store/mongo ./internal/cmd/serve
