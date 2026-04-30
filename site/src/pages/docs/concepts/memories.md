@@ -194,12 +194,12 @@ Filters are a flat JSON object where each key is an attribute field name. Search
 
 The filter language uses positive, pushdownable predicates only:
 
-| Form                              | Meaning                 | Example                               |
-| --------------------------------- | ----------------------- | ------------------------------------- |
-| Bare scalar or `{"$eq": value}`   | Equality                | `{"topic": "python"}`                 |
-| Array or `{"$in": [...]}`         | Set membership          | `{"lang": {"$in": ["python", "go"]}}` |
-| `{"$gte"/"$lte": value}`          | Numeric/timestamp range | `{"score": {"$gte": 0.5}}`            |
-| `{"$exists": true}`               | Present non-null value  | `{"sourceHash": {"$exists": true}}`   |
+| Form                            | Meaning                 | Example                               |
+| ------------------------------- | ----------------------- | ------------------------------------- |
+| Bare scalar or `{"$eq": value}` | Equality                | `{"topic": "python"}`                 |
+| Array or `{"$in": [...]}`       | Set membership          | `{"lang": {"$in": ["python", "go"]}}` |
+| `{"$gte"/"$lte": value}`        | Numeric/timestamp range | `{"score": {"$gte": 0.5}}`            |
+| `{"$exists": true}`             | Present non-null value  | `{"sourceHash": {"$exists": true}}`   |
 
 All conditions in the object are ANDed. `$ne`, `$nin`, `$exists: false`, old unprefixed operators such as `{"in": [...]}`, and arbitrary datastore query operators are rejected.
 

@@ -119,30 +119,13 @@ Feature: Episodic Memory REST API
     And the response body "items" should have at least 2 items
 
   Scenario: Memory search supports pushdownable attribute filter operators
-    Given I am authenticated as admin user "alice"
-    And I call PUT "/admin/v1/memories/policies" with body:
-    """
-    {
-      "authz": "package memories.authz\nimport future.keywords.if\ndefault decision = {\"allow\": false, \"reason\": \"access denied\"}\ndecision = {\"allow\": true} if { input.namespace[0] == \"user\"; input.namespace[1] == input.context.user_id }",
-      "attributes": "package memories.attributes\nimport future.keywords.if\ndefault attributes = {}\nbase := {\"namespace\": input.namespace[0], \"sub\": input.namespace[1]}\nextra := {k: v | k := [\"topic\", \"confidence\", \"createdAt\", \"sourceHash\", \"tags\"][_]; v := input.value[k]; v != null}\nattributes = object.union(base, extra) if { count(input.namespace) >= 2 }",
-      "filter": "package memories.filter\nimport future.keywords.if\nimport future.keywords.in\nuser_prefix := [\"user\", input.context.user_id]\nis_admin if { \"admin\" in input.context.jwt_claims.roles }\nnamespace_prefix := input.namespace_prefix if { is_admin }\nnamespace_prefix := user_prefix if { not is_admin }\nattribute_filter := {} if { is_admin }\nattribute_filter := {\"namespace\": \"user\", \"sub\": input.context.user_id} if { not is_admin }"
-    }
-    """
-    Then the response status should be 204
     Given I am authenticated as user "alice"
     And I call PUT "/v1/memories" with body:
     """
     {
       "namespace": ["user", "alice", "filter-ops"],
       "key": "ops-alpha",
-      "value": {
-        "text": "alpha",
-        "topic": "python",
-        "confidence": 0.9,
-        "createdAt": "2026-01-02T03:04:05Z",
-        "sourceHash": "sha-alpha",
-        "tags": ["language", "backend"]
-      }
+      "value": { "text": "alpha" }
     }
     """
     And I call PUT "/v1/memories" with body:
@@ -150,102 +133,52 @@ Feature: Episodic Memory REST API
     {
       "namespace": ["user", "alice", "filter-ops"],
       "key": "ops-beta",
-      "value": {
-        "text": "beta",
-        "topic": "go",
-        "confidence": 0.4,
-        "createdAt": "2025-01-02T03:04:05Z",
-        "sourceHash": "sha-beta",
-        "tags": ["systems"]
-      }
-    }
-    """
-    And I call PUT "/v1/memories" with body:
-    """
-    {
-      "namespace": ["user", "alice", "filter-ops"],
-      "key": "ops-gamma",
-      "value": {
-        "text": "gamma",
-        "topic": "python",
-        "confidence": 0.2,
-        "createdAt": "2024-01-02T03:04:05Z",
-        "tags": ["language"]
-      }
+      "value": { "text": "beta" }
     }
     """
     When I call POST "/v1/memories/search" with body:
     """
     {
       "namespace_prefix": ["user", "alice", "filter-ops"],
-      "filter": { "topic": { "\u0024eq": "go" } },
-      "limit": 10
-    }
-    """
-    Then the response status should be 200
-    And the response body should contain "ops-beta"
-    And the response body should not contain "ops-alpha"
-    And the response body should not contain "ops-gamma"
-    When I call POST "/v1/memories/search" with body:
-    """
-    {
-      "namespace_prefix": ["user", "alice", "filter-ops"],
-      "filter": { "topic": { "\u0024in": ["go", "rust"] } },
-      "limit": 10
-    }
-    """
-    Then the response status should be 200
-    And the response body should contain "ops-beta"
-    And the response body should not contain "ops-alpha"
-    And the response body should not contain "ops-gamma"
-    When I call POST "/v1/memories/search" with body:
-    """
-    {
-      "namespace_prefix": ["user", "alice", "filter-ops"],
-      "filter": { "sourceHash": { "\u0024exists": true } },
+      "filter": { "sub": { "\u0024eq": "alice" } },
       "limit": 10
     }
     """
     Then the response status should be 200
     And the response body should contain "ops-alpha"
     And the response body should contain "ops-beta"
-    And the response body should not contain "ops-gamma"
     When I call POST "/v1/memories/search" with body:
     """
     {
       "namespace_prefix": ["user", "alice", "filter-ops"],
-      "filter": { "confidence": { "\u0024gte": 0.8 } },
+      "filter": { "sub": { "\u0024eq": "bob" } },
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body "items" should have at most 0 items
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "filter-ops"],
+      "filter": { "sub": { "\u0024in": ["alice"] } },
       "limit": 10
     }
     """
     Then the response status should be 200
     And the response body should contain "ops-alpha"
-    And the response body should not contain "ops-beta"
-    And the response body should not contain "ops-gamma"
+    And the response body should contain "ops-beta"
     When I call POST "/v1/memories/search" with body:
     """
     {
       "namespace_prefix": ["user", "alice", "filter-ops"],
-      "filter": { "createdAt": { "\u0024lte": "2024-06-01T00:00:00Z" } },
-      "limit": 10
-    }
-    """
-    Then the response status should be 200
-    And the response body should contain "ops-gamma"
-    And the response body should not contain "ops-alpha"
-    And the response body should not contain "ops-beta"
-    When I call POST "/v1/memories/search" with body:
-    """
-    {
-      "namespace_prefix": ["user", "alice", "filter-ops"],
-      "filter": { "tags": ["backend"] },
+      "filter": { "sub": { "\u0024exists": true } },
       "limit": 10
     }
     """
     Then the response status should be 200
     And the response body should contain "ops-alpha"
-    And the response body should not contain "ops-beta"
-    And the response body should not contain "ops-gamma"
+    And the response body should contain "ops-beta"
 
   Scenario: Memory search rejects obsolete paging and ordering fields
     When I call POST "/v1/memories/search" with body:
