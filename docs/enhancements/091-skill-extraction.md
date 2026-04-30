@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: partial
 ---
 
 # Enhancement 091: Skill Extraction from Knowledge Clusters
 
-> **Status**: Proposed.
+> **Status**: Partial — Quarkus implementation scaffolded.
 
 ## Summary
 
@@ -518,3 +518,37 @@ Skills are derived from clusters. If a cluster dies (its entries are deleted or 
 4. **User feedback loop**: Should users be able to thumbs-up/thumbs-down extracted skills to improve future extraction? This would require storing feedback and adjusting the prompt or post-processing.
 
 5. **Cost guardrails**: Should there be a per-user or per-cycle token budget for skill extraction LLM calls? This prevents runaway costs for users with many rapidly-changing clusters.
+
+## Implementation Notes (Actual Approach)
+
+The original design proposed a Go-embedded implementation with a new `knowledge_skills` PostgreSQL table and dedicated REST/MCP endpoints. The actual implementation diverges in several key ways:
+
+### Quarkus Standalone Application
+
+Skills are extracted by a standalone Quarkus application (`java/quarkus/skill-extractor-quarkus/`) rather than being embedded in the Go memory-service. This follows the cognition processor architecture from [099](099-quarkus-cognition-processor.md) and `docs/memory-cognition.md`, keeping the substrate and cognition layers separate.
+
+### Verification Step Added
+
+A verification LLM call was added between extraction and storage (not in the original design). The extractor produces candidate skills; a separate verifier checks that each candidate is supported by the representative entry evidence and rejects unsupported or low-confidence candidates. This improves precision over the original single-pass design.
+
+### Storage via Episodic Memories
+
+Instead of a new `knowledge_skills` table, skills are stored as episodic memories under `["user", <userId>, "cognition.v1", "skills"]` via `PUT /v1/memories`. This reuses existing encryption, namespace scoping, archive semantics, and vector search. Skills are queried through the existing `POST /v1/memories/search` API.
+
+### Go-Side Additions
+
+A cluster detail endpoint (`GET /admin/v1/knowledge/clusters/{id}`) was added to the Go admin API, returning cluster members and representative text content for the entries closest to the centroid. This is how the Quarkus processor consumes cluster data.
+
+### No Dedicated Skill REST API or MCP Tools
+
+Skills are read through the existing memory APIs using namespace filtering. Dedicated `/v1/knowledge/skills/*` endpoints and MCP tools are deferred — the existing memory surface is sufficient for phase 1.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `java/quarkus/skill-extractor-quarkus/` | Quarkus skill extractor module |
+| `internal/knowledge/store.go` | `LoadClusterByID` interface addition |
+| `internal/knowledge/postgres_store.go` | PostgreSQL implementation |
+| `internal/plugin/route/knowledge/knowledge.go` | Cluster detail endpoint |
+| `contracts/openapi/openapi-admin.yml` | Knowledge cluster endpoint schemas |

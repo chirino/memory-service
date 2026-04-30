@@ -162,6 +162,44 @@ func (s *PostgresKnowledgeStore) LoadClustersForUser(ctx context.Context, userID
 	return clusters, nil
 }
 
+func (s *PostgresKnowledgeStore) LoadClusterByID(ctx context.Context, id uuid.UUID) (*StoredCluster, error) {
+	var row knowledgeClusterRow
+	result := s.db.WithContext(ctx).Limit(1).Find(&row, "id = ?", id)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+
+	var memberRows []knowledgeClusterMemberRow
+	if err := s.db.WithContext(ctx).Where("cluster_id = ?", id).Find(&memberRows).Error; err != nil {
+		return nil, err
+	}
+
+	sc := &StoredCluster{
+		ID:          row.ID,
+		UserID:      row.UserID,
+		Label:       row.Label,
+		Keywords:    decodeJSONStringSlice(row.Keywords),
+		Centroid:    decodeFloat64Slice(row.Centroid),
+		MemberCount: row.MemberCount,
+		Trend:       int(row.Trend),
+		SourceType:  int(row.SourceType),
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+	}
+	for _, m := range memberRows {
+		sc.Members = append(sc.Members, StoredClusterMember{
+			ClusterID:  m.ClusterID,
+			SourceID:   m.SourceID,
+			SourceType: int(m.SourceType),
+			Distance:   m.Distance,
+		})
+	}
+	return sc, nil
+}
+
 func (s *PostgresKnowledgeStore) SaveCluster(ctx context.Context, cluster StoredCluster, members []StoredClusterMember) error {
 	now := time.Now()
 	row := knowledgeClusterRow{

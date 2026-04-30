@@ -11,6 +11,8 @@ tags:
     description: Administrative APIs for system-wide access to conversations and entries.
   - name: Admin Stats
     description: Operational statistics endpoints for admin dashboards, including Prometheus-backed time series and datastore-backed summaries.
+  - name: Knowledge
+    description: Knowledge clustering admin endpoints.
   - name: System
     description: Health Endpoints
 paths:
@@ -852,6 +854,98 @@ paths:
           description: Authentication required.
         '403':
           description: Admin role required.
+      security:
+        - BearerAuth: []
+
+  ############################################################
+  # Knowledge Clustering
+  ############################################################
+
+  /admin/v1/knowledge/clusters:
+    get:
+      tags: [Knowledge]
+      summary: List knowledge clusters
+      description: Lists knowledge clusters across all users or filtered by user ID.
+      operationId: adminListKnowledgeClusters
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: string
+          description: Filter clusters by user ID.
+      responses:
+        '200':
+          description: Cluster list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clusters:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KnowledgeCluster'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /admin/v1/knowledge/clusters/{id}:
+    get:
+      tags: [Knowledge]
+      summary: Get cluster detail
+      description: |-
+        Returns a single cluster with its members and representative text content
+        for the entries closest to the cluster centroid.
+      operationId: adminGetKnowledgeCluster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: representative_count
+          in: query
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 50
+          description: Number of representative entries (closest to centroid) to include text for.
+      responses:
+        '200':
+          description: Cluster detail with members and representative texts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeClusterDetail'
+        '404':
+          description: Cluster not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /admin/v1/knowledge/trigger:
+    post:
+      tags: [Knowledge]
+      summary: Trigger clustering cycle
+      description: Forces a clustering cycle for all users with embeddings.
+      operationId: adminTriggerKnowledgeClustering
+      responses:
+        '200':
+          description: Clustering cycle results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterRunStats'
+        default:
+          $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
 
@@ -2105,3 +2199,75 @@ components:
         expiresIn:
           type: integer
           description: URL validity duration in seconds.
+
+    KnowledgeCluster:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        label:
+          type: string
+        keywords:
+          type: array
+          items:
+            type: string
+        member_count:
+          type: integer
+        trend:
+          type: string
+          enum: [growing, stable, decaying]
+        source_type:
+          type: string
+          enum: [entries, memories, mixed]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    KnowledgeClusterDetail:
+      allOf:
+        - $ref: '#/components/schemas/KnowledgeCluster'
+        - type: object
+          properties:
+            members:
+              type: array
+              items:
+                $ref: '#/components/schemas/KnowledgeClusterMember'
+            representative_texts:
+              type: object
+              additionalProperties:
+                type: string
+              description: Map of source ID to indexed text content for the closest-to-centroid members.
+
+    KnowledgeClusterMember:
+      type: object
+      properties:
+        source_id:
+          type: string
+          format: uuid
+        source_type:
+          type: string
+          enum: [entries, memories]
+        distance:
+          type: number
+          format: float
+          description: Cosine distance from cluster centroid.
+
+    ClusterRunStats:
+      type: object
+      properties:
+        users_processed:
+          type: integer
+        clusters_born:
+          type: integer
+        clusters_updated:
+          type: integer
+        clusters_died:
+          type: integer
+        failures:
+          type: integer
