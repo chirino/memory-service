@@ -61,6 +61,7 @@ func TestFeaturesPgClustering(t *testing.T) {
 
 	featureFiles := []string{
 		filepath.Join("testdata", "features-clustering", "clustering-rest.feature"),
+		filepath.Join("testdata", "features-clustering", "clustering-detail-rest.feature"),
 	}
 
 	opts := cucumber.DefaultOptions()
