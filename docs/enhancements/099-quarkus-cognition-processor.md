@@ -2,7 +2,7 @@
 status: proposed
 ---
 
-# Enhancement 097: Quarkus + LangChain4j Cognition Processor
+# Enhancement 099: Quarkus + LangChain4j Cognition Processor
 
 > **Status**: Proposed.
 
@@ -40,7 +40,7 @@ Build the reference processor as a **standalone Quarkus application** (`java/qua
 - **Worker mode** (default): subscribes to `/v1/admin/events`, persists a replay cursor, processes coalesced scope jobs, and writes derived memories through `/v1/memories`.
 - **Replay/shadow mode**: reprocesses an event window or runs extraction/scoring without affecting production cognition memories.
 
-Durable facts, preferences, procedures, decisions, rolling summaries, bridge notes, topic notes, and any cached retrieval candidates are all stored as memory items under fixed cognition namespaces. Agent applications fetch the next-turn memory material with `/v1/memories/search`, using substrate-level retrieval improvements described below. This keeps cognition responsible for producing better memory, while the Memory Service remains the single retrieval API for memory products.
+Durable facts, preferences, procedures, decisions, rolling summaries, bridge notes, topic notes, and any cached retrieval candidates are all stored as memory items under fixed cognition namespaces. Agent applications fetch the next-turn memory material with `/v1/memories/search`, using the substrate-level retrieval improvements defined by [100](100-enhanced-memory-search.md). This keeps cognition responsible for producing better memory, while the Memory Service remains the single retrieval API for memory products.
 
 The standalone worker authenticates as a dedicated **service principal** (admin API key `cognition-processor`) and writes cognition memories through the public episodic memory API on behalf of conversation owners. The built-in episodic memory policy only allows `["user", <subject>, ...]` access for the authenticated subject, so deploying this processor requires a custom episodic-memory policy that allows the cognition service principal to write under the configured cognition namespaces. That policy is a Phase 1 prerequisite, not optional later hardening.
 
@@ -105,7 +105,9 @@ Phase 1 does not depend on episodic memory lifecycle events as a primary trigger
 Implementation details:
 
 - A `ReactiveAdminEventClient` consumes `/v1/admin/events` using JAX-RS SSE (`SseEventSource`) with exponential backoff and resume-from-cursor semantics.
-- The current cursor is persisted to `/v1/admin/checkpoints/{workerId}` on a configurable cadence, where `{workerId}` is supplied by `cognition.worker.id` and identifies one logical processor instance.
+- The processor must use the admin checkpoint APIs to persist its event progress. On startup it calls `GET /v1/admin/checkpoints/{workerId}` and, when a checkpoint exists, subscribes to `/v1/admin/events?after=<lastEventCursor>` so restart catch-up begins near the last processed event instead of replaying the full retained window. A missing checkpoint means first run; subscribe from the configured bootstrap position.
+- After events are accepted into the coalesced scope-job queue, the processor writes a checkpoint with `PUT /v1/admin/checkpoints/{workerId}`. The checkpoint value includes at least `lastEventCursor`, `updatedAt`, `runtimeId`, `runtimeVersion`, and the highest event timestamp observed. `{workerId}` is supplied by `cognition.worker.id` and identifies one logical processor instance, not one container replica.
+- Checkpoint writes may be batched on a configurable cadence, but shutdown and idle transitions should flush the latest accepted cursor. The processor must not advance the checkpoint past an event that has not been reduced into a durable or retryable job, or restart could skip work.
 - Incoming events are reduced to `ScopeJob` records keyed by conversation ID and pushed onto a singleton task queue (`Map<UUID, ScopeJob>` guarded by a serializable `Mutiny` workflow). Duplicate events for the same conversation while a job is pending coalesce into the existing job.
 - Scope jobs are dispatched on virtual threads (`@RunOnVirtualThread`) so blocking REST calls do not consume reactive event-loop capacity.
 - `@Scheduled` triggers run optional periodic sweeps and rebuild requests.
@@ -247,11 +249,11 @@ The processor reuses the existing substrate instead of creating a separate deriv
 Derived durable memories are stored under fixed user-owned namespaces so existing governance, namespace-depth limits, archive semantics, and vector indexing still apply:
 
 ```text
-["user", <sub>, "cognition.v1.facts"]
-["user", <sub>, "cognition.v1.preferences"]
-["user", <sub>, "cognition.v1.procedures"]
-["user", <sub>, "cognition.v1.problem_solutions"]
-["user", <sub>, "cognition.v1.decisions"]
+["user", <sub>, "cognition.v1", "facts"]
+["user", <sub>, "cognition.v1", "preferences"]
+["user", <sub>, "cognition.v1", "procedures"]
+["user", <sub>, "cognition.v1", "problem_solutions"]
+["user", <sub>, "cognition.v1", "decisions"]
 ```
 
 `runtime.id` remains part of the stored memory payload for attribution and debugging, but it does not partition the namespace layout.
@@ -302,10 +304,10 @@ Short-lived cognition cache entries hold rolling conversation summaries, retriev
 API-compatible cache namespace shape:
 
 ```text
-["user", <sub>, "cognition.v1.cache"]
+["user", <sub>, "cognition.v1", "cache"]
 ```
 
-Key prefixes are `summary:<conversation-id>`, `bridge:<conversation-id>`, `topic:<conversation-id>`, and `candidate:<conversation-id>`. The fixed `cognition.v1.*` layout keeps cognition storage within the default episodic namespace-depth limits without needing a runtime-specific segment.
+Key prefixes are `summary:<conversation-id>`, `bridge:<conversation-id>`, `topic:<conversation-id>`, and `candidate:<conversation-id>`. The shared `["user", <sub>, "cognition.v1"]` prefix lets agents retrieve all cognition output with one `/v1/memories/search` request while keeping each memory kind in a distinct child namespace. The four-segment layout stays within the default `EpisodicMaxDepth=5`.
 
 External Quarkus workers cannot generically write conversation `context` through today's agent APIs, because context reads/writes are authorized by the conversation's stored `clientId` and the service does not support admin impersonation. The Quarkus processor therefore does not mirror summaries into `context`.
 
@@ -366,162 +368,10 @@ The public surface is intentionally small at first.
 
 - no new user-facing CRUD API for cognition memories
 - inspect durable outputs through existing `/v1/memories` APIs under cognition namespaces
+- retrieve cognition-produced memories through the enhanced `/v1/memories/search` contract defined by [100](100-enhanced-memory-search.md)
 - admin/debug endpoints for runtime status and rebuilds at `/admin/v1/cognition/status`, `/admin/v1/cognition/rebuild`, and `/admin/v1/cognition/conversations/{conversationId}/retrieval`
 
-Instead, improve `POST /v1/memories/search` enough that agent applications can request cognition-produced memories directly. Replace the single `namespace_prefix` request field with required `namespace_prefixes`; single-prefix callers send a one-element array.
-
-```json
-{
-  "namespace_prefixes": [
-    ["user", "alice", "cognition.v1.preferences"],
-    ["user", "alice", "cognition.v1.procedures"],
-    ["user", "alice", "cognition.v1.cache"]
-  ],
-  "query": "help me continue the deployment fix",
-  "filter": {
-    "conversationIds": {"$in": ["uuid"]},
-    "memoryKind": ["preference", "procedure", "summary", "bridge", "topic"],
-    "runtimeId": "quarkus-reference-v1"
-  },
-  "limit": 12,
-  "order": "relevance",
-  "include_usage": true,
-  "after_cursor": null
-}
-```
-
-Example response:
-
-```json
-{
-  "items": [
-    {
-      "id": "uuid",
-      "namespace": ["user", "alice", "cognition.v1.procedures"],
-      "key": "procedure:deployment-debugging",
-      "value": {
-        "kind": "procedure",
-        "statement": "User usually debugs deployments by checking logs, then environment drift, then rollout history.",
-        "provenance": {
-          "entry_ids": ["uuid"]
-        },
-        "runtime": {
-          "id": "quarkus-reference-v1",
-          "version": 1
-        }
-      },
-      "score": 0.87
-    }
-  ],
-  "afterCursor": "opaque-cursor-or-null"
-}
-```
-
-#### Enhanced Search Contract
-
-`SearchMemoriesRequest` becomes:
-
-| Field | Required | Notes |
-| --- | --- | --- |
-| `namespace_prefixes` | yes | Non-empty array of up to 10 namespace prefixes. Each prefix is independently validated against `EpisodicMaxDepth` and independently passed through OPA filter injection. Empty segments are invalid. |
-| `query` | no | Free text semantic query. When present and an embedder is configured, search uses vector retrieval per effective prefix, then merges results. |
-| `filter` | no | Attribute filter expression. Existing flat equality filters still work; operator form is added below. |
-| `limit` | no | Default 10, maximum 100, applied after merging results across prefixes. |
-| `order` | no | `relevance` (default when `query` is set), `createdAtDesc`, or `createdAtAsc`. `relevance` without `query` falls back to `createdAtDesc`. |
-| `include_usage` | no | Includes usage metadata without incrementing usage counters, matching current search behavior. |
-| `archived` | no | Existing `exclude|include|only` archive filter, applied consistently to every prefix. |
-| `after_cursor` | no | Opaque cursor for the selected order. `offset` is removed because it is ambiguous after multi-prefix merge. |
-
-`SearchMemoriesResponse` adds nullable `afterCursor`. The cursor is opaque to clients. The server may encode a request hash, order keys, effective prefix position, and the last memory ID, but clients must only replay it with the same request fields except `after_cursor`. A cursor replayed with different search fields returns `400`.
-
-The gRPC `SearchMemoriesRequest` must stay semantically aligned with REST. Because protobuf cannot represent a repeated list of repeated strings directly, add a small message:
-
-```protobuf
-message MemoryNamespacePrefix {
-  repeated string segments = 1;
-}
-
-message SearchMemoriesRequest {
-  repeated MemoryNamespacePrefix namespace_prefixes = 1;
-  string query = 2;
-  optional google.protobuf.Struct filter = 3;
-  int32 limit = 4;
-  bool include_usage = 5;
-  ArchiveFilter archived = 6;
-  string order = 7;
-  optional string after_cursor = 8;
-}
-
-message SearchMemoriesResponse {
-  repeated MemoryItem items = 1;
-  optional string after_cursor = 2;
-}
-```
-
-The old protobuf `namespace_prefix` and `offset` fields are removed under the repo's pre-release no-compatibility rule.
-
-#### Filter Expression
-
-The filter language stays intentionally small and maps to plaintext policy attributes, not encrypted memory values. A field may be:
-
-- a scalar, equivalent to `$eq`
-- an array, equivalent to `$in`
-- an operator object with one of `$eq`, `$ne`, `$in`, `$nin`, `$exists`, `$gte`, `$lte`
-
-Example:
-
-```json
-{
-  "memoryKind": {"$in": ["procedure", "summary", "bridge"]},
-  "runtimeId": "quarkus-reference-v1",
-  "conversationIds": {"$in": ["uuid"]},
-  "confidence": {"$in": ["medium", "high"]},
-  "freshness": {"$ne": "stale"}
-}
-```
-
-Unsupported operators return `400`. Type mismatches simply do not match rows. OPA filter injection receives the parsed filter and may narrow it, but may not broaden it.
-
-#### Cognition Attributes
-
-The processor's memory policy must extract these safe attributes for every cognition memory:
-
-| Attribute | Source | Purpose |
-| --- | --- | --- |
-| `memoryKind` | `value.kind` | Filter facts, preferences, procedures, decisions, summaries, bridge notes, and topic notes. |
-| `runtimeId` | `value.runtime.id` | Isolate active, shadow, or benchmark processor outputs. |
-| `runtimeVersion` | `value.runtime.version` | Debug and benchmark processor versions. |
-| `confidence` | `value.confidence` | Filter weak or medium-confidence candidates. |
-| `freshness` | `value.freshness` | Exclude stale or contradicted memories from retrieval. |
-| `conversationIds` | `value.provenance.conversation_ids` | Retrieve items related to a conversation lineage. |
-| `entryIds` | `value.provenance.entry_ids` | Audit and targeted debug lookups. |
-| `sourceHash` | `value.provenance.source_hash` | Idempotent replay and debug lookup. |
-
-These attributes are safe to expose as `MemoryItem.attributes`; they must not contain raw evidence text, `clientId`, provider prompts, or provider cache keys.
-
-#### Multi-Prefix Execution
-
-The route executes each requested prefix as an independent authorized search and then merges the results:
-
-1. Validate all prefixes and reject malformed requests with `400`.
-2. For each prefix, call `policy.InjectFilter` with that prefix and the requested filter.
-3. If policy narrows a prefix to no accessible namespace, that prefix contributes zero rows. Do not leak whether inaccessible rows exist.
-4. Run semantic or attribute search for each effective prefix.
-5. Deduplicate by memory `id`; if a memory appears through multiple prefixes, keep the highest score and most specific namespace match.
-6. Sort the merged set by the selected order. For `relevance`, sort by score descending, then `createdAt` descending, then `id` ascending for deterministic ties.
-7. Return up to `limit` rows plus `afterCursor` when more rows are available.
-
-The implementation may over-fetch per prefix to produce a stable merged page. Start with `min(limit * 3, 100)` per prefix and tune only if tests show poor recall.
-
-Needed `/v1/memories/search` improvements:
-
-- accept multiple namespace prefixes in one request while preserving OPA filter injection for each prefix
-- support filter operators for the extracted memory attributes used by cognition (`memoryKind`, `conversationIds`, `runtimeId`, `confidence`, `freshness`)
-- return stable relevance scores for semantic results and deterministic secondary ordering
-- optionally return usage metadata without incrementing counters, matching the current search behavior
-- keep `clientId` internal; cognition memory values and search responses must not expose it
-
-This is the middle ground between a bespoke cognition endpoint and forcing every agent app to hand-code many memory queries. The API remains a generic memory retrieval surface, while cognition remains an external producer of better memory items.
+The search request/response shape, filter language, cursor semantics, and safe retrieval attributes are owned by [100](100-enhanced-memory-search.md). This processor writes memory values compatible with that generic retrieval API.
 
 #### Admin Debug Endpoints
 
@@ -599,9 +449,9 @@ LangChain4j gives us declarative AiService interfaces, structured output, prompt
 
 This keeps governance, indexing, archive semantics, and encryption aligned with the rest of the system. Adding substrate extensions is deferred until the current memory primitives prove too weak.
 
-### Improve `/v1/memories/search`
+### Reuse Enhanced `/v1/memories/search`
 
-The proposed cognition outputs are already stored as memory items. The generic memory search API should be strong enough to retrieve cognition-produced facts, preferences, procedures, summaries, bridge notes, and topic notes through the same governed surface as any other memory.
+The proposed cognition outputs are already stored as memory items. This processor depends on [100](100-enhanced-memory-search.md) so cognition-produced facts, preferences, procedures, summaries, bridge notes, and topic notes can be retrieved through the same governed surface as any other memory.
 
 The tradeoff is that agent applications remain responsible for assembling the final LLM prompt from returned memory items and recent conversation entries. That is preferable for now because prompt assembly is application-specific, while retrieval of relevant memory products is a substrate responsibility.
 
@@ -615,7 +465,7 @@ The existing replayable admin SSE stream is sufficient as long as cognition jobs
 
 ### Use Fixed Versioned Cognition Namespaces
 
-The default episodic API validates namespaces against `EpisodicMaxDepth=5`. Using fixed third-segment namespaces such as `["user", sub, "cognition.v1.cache"]` keeps cognition storage well within that limit while avoiding a generic `["user", sub, "cognition", ...]` prefix that would invite broad queries across processor-specific shapes.
+The default episodic API validates namespaces against `EpisodicMaxDepth=5`. Using a shared versioned prefix plus kind segment, such as `["user", sub, "cognition.v1", "preferences"]`, keeps cognition storage within that limit and allows a single search under `["user", sub, "cognition.v1"]` to retrieve all cognition memory products.
 
 ### Service Principal With Custom Episodic Policy
 
@@ -631,7 +481,7 @@ Feature: Quarkus cognition processor
     Given conversation "conv-1" contains turns showing user preference for "neovim"
     And the cognition processor is running in active mode
     When the processor replays admin events for "conv-1"
-    Then a memory exists under namespace ["user","alice","cognition.v1.preferences"]
+    Then a memory exists under namespace ["user","alice","cognition.v1","preferences"]
     And the memory value field "statement" contains "Neovim"
     And the memory value field "provenance.entry_ids[0]" is not null
 
@@ -653,29 +503,9 @@ Feature: Quarkus cognition processor
     And the response body field "items[0].value.kind" should equal "procedure"
 
   Scenario: Cognition writes are scoped to the configured namespaces
-    Given the cognition service principal is configured for namespaces under "cognition.v1.*"
+    Given the cognition service principal is configured for namespaces under ["user", "*", "cognition.v1"]
     When the processor attempts to write outside those namespaces
     Then the episodic memory API rejects the write with 403
-
-  Scenario: Multi-prefix memory search applies authorization per prefix
-    Given Alice can read ["user","alice","cognition.v1.preferences"]
-    And Alice cannot read ["user","bob","cognition.v1.preferences"]
-    When Alice searches both namespace prefixes in one /v1/memories/search request
-    Then the response status should be 200
-    And every returned item namespace should start with ["user","alice"]
-
-  Scenario: Cognition filters support operator expressions
-    Given cognition memories exist with kinds "procedure", "bridge", and "decision"
-    When POST /v1/memories/search filters memoryKind with {"$in":["procedure","bridge"]}
-    Then the response status should be 200
-    And no returned item should have memoryKind "decision"
-
-  Scenario: Multi-prefix search pagination uses an opaque cursor
-    Given more than 12 cognition memories match query "deployment fix"
-    When POST /v1/memories/search is called with limit 12
-    Then the response body field "afterCursor" should not be null
-    When POST /v1/memories/search is called again with the same request and that after_cursor
-    Then the second page should not repeat memory ids from the first page
 ```
 
 ### Unit / Quarkus Integration Tests
@@ -685,10 +515,7 @@ Feature: Quarkus cognition processor
 - `EvidencePackBuilder` deduplicates repeated content, drops fenced code blocks during the prose normalization step, and never exceeds the configured token cap.
 - `Consolidator` merges duplicates by stable natural key, supersedes contradicted memories, and produces no-op writes on identical `source_hash` replays.
 - Cache-only `bridge` and `topic` notes are written under the cognition cache namespace with the configured TTLs and surface in memory search.
-- The admin SSE consumer resumes from the persisted checkpoint, coalesces bursts into singleton scope jobs, and does not lose events across reconnect.
-- Memory search across cognition namespaces returns only memories authorized for the caller and does not expose internal `clientId` metadata.
-- Memory search rejects unsupported filter operators with `400`, treats type mismatches as non-matches, and returns deterministic order across repeated multi-prefix calls.
-- Search cursors are opaque, request-bound, and cannot be replayed with a different query/filter/order.
+- The admin SSE consumer loads its checkpoint with `GET /v1/admin/checkpoints/{workerId}`, resumes `/v1/admin/events` after the saved `lastEventCursor`, persists progress with `PUT /v1/admin/checkpoints/{workerId}`, coalesces bursts into singleton scope jobs, and does not lose events across reconnect.
 - A Quarkus dev-services-backed integration test boots the full stack (memory-service container plus the processor) and verifies an end-to-end extraction-to-search flow against a `TestChatModel` that mimics the LangChain4j contract used in `chat-quarkus`.
 
 ## Tasks
@@ -696,19 +523,17 @@ Feature: Quarkus cognition processor
 - [ ] Create the `java/quarkus/cognition-processor-quarkus` Maven module with parent wiring, packaging, and Dockerfile.
 - [ ] Define the `CognitionProcessor` contract and `ScopeJob` types.
 - [ ] Wire the LangChain4j dependency and add named model configurations for durable extraction, verification, and topic summarization.
-- [ ] Implement the admin SSE consumer with checkpointed replay against `/v1/admin/events`.
+- [ ] Implement the admin SSE consumer with checkpointed replay against `/v1/admin/events` using `GET`/`PUT /v1/admin/checkpoints/{workerId}` for the last accepted event cursor.
 - [ ] Implement the singleton-per-conversation scope-job queue running on virtual threads.
 - [ ] Implement the evidence pack builder registry over transcript, `context`, episodic memory, and optional knowledge-cluster sources.
 - [ ] Implement the `DurableMemoryExtractor` AiService with strict structured output for fact, preference, procedure, problem_solution, and decision candidates.
 - [ ] Implement the `DurableMemoryVerifier` AiService with batched citation checking and normalization.
 - [ ] Implement the `TopicSummaryExtractor` AiService and TTL-backed topic-summary cache writes.
 - [ ] Implement deterministic consolidation with stable natural keys, `source_hash`-based no-op replay, and supersede semantics.
-- [ ] Implement cache-only `bridge` and `topic` heuristic extractors writing under `cognition.v1.cache`.
+- [ ] Implement cache-only `bridge` and `topic` heuristic extractors writing under `["user", <sub>, "cognition.v1", "cache"]`.
 - [ ] Implement TTL-backed rolling summary and retrieval candidate cache entries.
-- [ ] Replace `POST /v1/memories/search` request field `namespace_prefix` with `namespace_prefixes`.
-- [ ] Add memory search filter operators `$eq`, `$ne`, `$in`, `$nin`, `$exists`, `$gte`, and `$lte`.
-- [ ] Add deterministic multi-prefix result merge, `order`, and opaque `after_cursor` pagination.
-- [ ] Update memory policy attribute extraction so cognition memories expose safe filter attributes.
+- [ ] Use the enhanced memory search contract from [100](100-enhanced-memory-search.md) for retrieval examples and integration tests.
+- [ ] Update the cognition memory policy so cognition memories expose safe filter attributes.
 - [ ] Implement admin status / rebuild / retrieval-debug endpoints.
 - [ ] Add the configurable `cognition.profile` selector for evidence/extractor/verifier registry filtering.
 - [ ] Add the replay/shadow benchmark harness and scenario format.
@@ -721,19 +546,10 @@ Feature: Quarkus cognition processor
 
 | File | Change |
 | --- | --- |
-| `docs/enhancements/097-quarkus-cognition-processor.md` | This enhancement doc |
+| `docs/enhancements/099-quarkus-cognition-processor.md` | This enhancement doc |
 | `docs/memory-cognition.md` | Add a pointer to this enhancement under "Relationship to Existing Enhancement Work" |
-| `contracts/openapi/openapi.yml` | Extend `POST /v1/memories/search` with multi-prefix retrieval and richer filter/order options |
 | `contracts/openapi/openapi-admin.yml` | Add `/admin/v1/cognition/status`, `/admin/v1/cognition/rebuild`, and `/admin/v1/cognition/conversations/{conversationId}/retrieval` |
-| `contracts/protobuf/memory/v1/memory_service.proto` | Align `SearchMemoriesRequest`/`SearchMemoriesResponse` with multi-prefix search and cursor pagination |
-| `internal/generated/api/` and generated clients | Regenerate from OpenAPI after memory search and admin cognition contract changes |
-| `internal/generated/pb/` and generated gRPC clients | Regenerate from protobuf after `SearchMemories` contract changes |
-| `internal/registry/episodic/plugin.go` | Update search request/store contracts for multi-prefix search, operator filters, order, and cursor semantics |
-| `internal/plugin/route/memories/memories.go` | Parse enhanced search requests, apply per-prefix OPA injection, merge results, and emit `afterCursor` |
-| `internal/plugin/store/postgres/episodic_store.go` | Support operator filters and deterministic ordered memory search |
-| `internal/plugin/store/sqlite/episodic_store.go` | Support operator filters and deterministic ordered memory search |
-| `internal/plugin/store/mongo/episodic_store.go` | Support operator filters and deterministic ordered memory search |
-| `internal/episodic/policy.go` and configured `attributes.rego` examples | Extract safe cognition attributes from memory values/index payloads |
+| `internal/episodic/policy.go` and configured `attributes.rego` examples | Extract safe cognition attributes from cognition memory values/index payloads |
 | `java/pom.xml` | Register the new Quarkus cognition module in the reactor |
 | `java/quarkus/pom.xml` | Add the cognition processor module to the Quarkus reactor |
 | `java/quarkus/cognition-processor-quarkus/pom.xml` | New module with Quarkus + LangChain4j + memory-service-contracts dependencies |
@@ -746,6 +562,7 @@ Feature: Quarkus cognition processor
 | `java/quarkus/cognition-processor-quarkus/src/main/java/.../retrieval/*.java` | Search payload shaping and retrieval metadata |
 | `java/quarkus/cognition-processor-quarkus/src/main/java/.../cache/*.java` | Cognition cache namespace helpers and TTL writes |
 | `java/quarkus/cognition-processor-quarkus/src/main/java/.../remote/*.java` | Admin SSE client, episodic memory client, conversation/entry loader |
+| `java/quarkus/cognition-processor-quarkus/src/main/java/.../remote/AdminCheckpointClient.java` | Client wrapper for `GET`/`PUT /v1/admin/checkpoints/{workerId}` |
 | `java/quarkus/cognition-processor-quarkus/src/main/java/.../admin/CognitionAdminResource.java` | Admin status/rebuild/retrieval-debug endpoints |
 | `java/quarkus/cognition-processor-quarkus/src/main/java/.../config/CognitionConfig.java` | `@ConfigMapping` types for the `cognition.*` prefix |
 | `java/quarkus/cognition-processor-quarkus/src/main/resources/application.properties` | Default config and named LangChain4j model bindings |
@@ -757,25 +574,12 @@ Feature: Quarkus cognition processor
 ## Verification
 
 ```bash
-# Regenerate Go/OpenAPI/protobuf artifacts touched by contract changes
-task generate:go
-
-# Regenerate Java REST clients after OpenAPI changes
-./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus -am clean compile
-
 # Compile the new module
 ./java/mvnw -f java/pom.xml -pl quarkus/cognition-processor-quarkus -am compile
-
-# Build affected Go packages after OpenAPI/search changes
-go build ./internal/registry/episodic ./internal/plugin/route/memories ./internal/plugin/store/postgres ./internal/plugin/store/sqlite ./internal/plugin/store/mongo ./internal/cmd/serve
 
 # Run unit tests
 ./java/mvnw -f java/pom.xml -pl quarkus/cognition-processor-quarkus -am test > test.log 2>&1
 # Search for failures using Grep tool on test.log
-
-# Run focused Go tests for memory search behavior
-go test ./internal/plugin/route/memories ./internal/plugin/store/postgres ./internal/plugin/store/sqlite ./internal/plugin/store/mongo > go-test.log 2>&1
-# Search for failures using Grep tool on go-test.log
 
 # Build the runnable jar / native dev image
 ./java/mvnw -f java/pom.xml -pl quarkus/cognition-processor-quarkus -am package -DskipTests
@@ -798,7 +602,7 @@ docker compose up cognition-processor
 - derived memories must remain under the same effective user scope as their evidence
 - durable writes must preserve provenance so incorrect memories can be audited and rebuilt
 - the Quarkus processor requires a dedicated `cognition-processor` admin API key and a tightly-scoped episodic-memory policy that only allows writes under the configured cognition namespaces; the built-in default policy is not sufficient
-- user-facing memory search responses must not expose internal `clientId` metadata
+- cognition memory values and extracted attributes must not include internal `clientId` metadata, raw evidence dumps, provider prompts, or provider cache keys
 - admin/debug cognition endpoints must remain admin-only because they expose runtime internals and evidence traces
 - LangChain4j prompt cache identifiers must be derived from stable, non-sensitive inputs so cache keys do not leak per-user evidence into provider logs
 
@@ -806,4 +610,4 @@ docker compose up cognition-processor
 
 - Provider prompt-prefix caching must remain disabled by default until the benchmark harness shows a net benefit for a specific stage and provider. The benchmark must report cache hit rate, cache write/read token cost, and end-to-end latency before any stage's `prompt-cache.enabled` flag flips to `true`.
 
-All other Phase 1 interface choices are intentionally decided in this document: use per-memory writes first, use opaque cursor pagination for multi-prefix search, and do not add Quarkus dev-service automation until the processor module exists and local developer friction is measured.
+All other Phase 1 interface choices are intentionally decided in this document: use per-memory writes first, and do not add Quarkus dev-service automation until the processor module exists and local developer friction is measured.

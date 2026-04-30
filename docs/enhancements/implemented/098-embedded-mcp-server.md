@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: implemented
 ---
 
-# Enhancement 097: Embedded Memory Service in `mcp embedded`
+# Enhancement 098: Embedded Memory Service in `mcp embedded`
 
-> **Status**: Proposed.
+> **Status**: Implemented.
 
 ## Summary
 

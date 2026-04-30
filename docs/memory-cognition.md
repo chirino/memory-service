@@ -19,7 +19,7 @@ The next layer is memory cognition. This is the layer that interprets, organizes
 
 This document describes that cognition layer as a pluggable system that runs on top of the existing Memory Service substrate.
 
-For a concrete proposed implementation, see [Quarkus + LangChain4j Cognition Processor](enhancements/097-quarkus-cognition-processor.md).
+For a concrete proposed implementation, see [Quarkus + LangChain4j Cognition Processor](enhancements/099-quarkus-cognition-processor.md).
 
 ## Summary
 
@@ -139,6 +139,7 @@ Every cognition runtime should fit the same basic contract.
 
 - substrate event stream for new conversation and memory activity
 - replay or cursor-based catch-up so runtimes can resume after downtime
+- durable admin checkpoints via `GET`/`PUT /v1/admin/checkpoints/{clientId}` so processors can store the last accepted event cursor and resume quickly after restart
 - substrate read APIs for conversation windows, `context`, episodic memories, and search
 - optional periodic reprocessing triggers for backfills, rescoring, or global consolidation
 
@@ -307,9 +308,9 @@ Likely enhancements include:
 - richer query filters on derived memories, including type, confidence, freshness, provenance, and runtime id
 - graph-style access patterns for entity relationships, citations, and memory-to-memory links
 - first-class provenance fields instead of encoding source references only inside opaque payloads
-- multi-prefix and richer filtered memory search so runtimes can expose cognition outputs through `/v1/memories`
+- richer filtered memory search so runtimes can expose cognition outputs through `/v1/memories`
 
-Event replay and cursoring are especially important. A cognition runtime must be able to stop, resume, rebuild, and backfill without losing correctness.
+Event replay and cursoring are especially important. A cognition runtime must be able to stop, resume, rebuild, and backfill without losing correctness. Processors should persist their last accepted admin event cursor through the admin checkpoint APIs and use that checkpoint to reconnect to the event stream near their previous position instead of replaying from the beginning on every restart.
 
 ## Relationship to Existing Enhancement Work
 
@@ -317,7 +318,8 @@ This document is the top-level architecture for cognition. Existing enhancement 
 
 - [Adaptive Knowledge Clustering](enhancements/090-adaptive-knowledge-clustering.md) is one example of a cognition-stage implementation for organizing memory without LLM-heavy extraction.
 - [Skill Extraction](enhancements/partial/091-skill-extraction.md) is one example of a cognition-stage implementation that turns verified procedural memories into reusable user-facing skills.
-- [Quarkus + LangChain4j Cognition Processor](enhancements/097-quarkus-cognition-processor.md) is the concrete reference strategy for building a high-quality extraction, verification, consolidation, and memory-retrieval runtime on top of the substrate.
+- [Quarkus + LangChain4j Cognition Processor](enhancements/099-quarkus-cognition-processor.md) is the concrete reference strategy for building a high-quality extraction, verification, consolidation, and memory-retrieval runtime on top of the substrate.
+- [Enhanced Episodic Memory Search](enhancements/100-enhanced-memory-search.md) defines the generic `/v1/memories/search` improvements that cognition runtimes use for governed retrieval.
 
 Those enhancements describe specific cognition capabilities. This document defines the layer they belong to.
 
