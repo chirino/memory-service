@@ -145,7 +145,9 @@ services:
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
+      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: cognition-processor
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
+      MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR: cognition-api-key-1
 
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_CORS_ENABLED: "true"
@@ -269,6 +271,23 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+
+  skill-extractor:
+    image: ghcr.io/chirino/memory-service-skill-extractor:latest
+    build:
+      context: .
+      dockerfile: ./java/quarkus/skill-extractor-quarkus/Dockerfile
+    environment:
+      MEMORY_SERVICE_URL: http://memory-service:8080
+      SKILL_EXTRACTOR_API_KEY: cognition-api-key-1
+      SKILL_EXTRACTOR_CLIENT_ID: cognition-processor
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-none}
+      SKILL_EXTRACTOR_MODEL: ${SKILL_EXTRACTOR_MODEL:-gpt-4o-mini}
+    depends_on:
+      memory-service:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
 
   chat-quarkus:
     image: ghcr.io/chirino/memory-service-chat-quarkus:latest
