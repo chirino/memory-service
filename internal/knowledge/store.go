@@ -49,6 +49,9 @@ type KnowledgeStore interface {
 	// LoadClustersForUser returns all stored clusters (with members) for a user.
 	LoadClustersForUser(ctx context.Context, userID string) ([]StoredCluster, error)
 
+	// LoadClusterByID returns a single cluster with its members, or nil if not found.
+	LoadClusterByID(ctx context.Context, id uuid.UUID) (*StoredCluster, error)
+
 	// SaveCluster creates a new cluster with its members.
 	SaveCluster(ctx context.Context, cluster StoredCluster, members []StoredClusterMember) error
 

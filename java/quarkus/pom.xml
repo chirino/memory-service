@@ -18,6 +18,7 @@
     <module>memory-service-proto-quarkus</module>
     <module>memory-service-extension</module>
     <module>quarkus-data-encryption</module>
+    <module>skill-extractor-quarkus</module>
     <module>examples</module>
   </modules>
 </project>
