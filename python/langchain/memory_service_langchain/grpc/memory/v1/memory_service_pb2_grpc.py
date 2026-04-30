@@ -2059,3 +2059,118 @@ class EventStreamService(object):
             timeout,
             metadata,
             _registered_method=True)
+
+
+class AdminCheckpointServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.GetCheckpoint = channel.unary_unary(
+                '/memory.v1.AdminCheckpointService/GetCheckpoint',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.GetCheckpointRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpoint.FromString,
+                _registered_method=True)
+        self.PutCheckpoint = channel.unary_unary(
+                '/memory.v1.AdminCheckpointService/PutCheckpoint',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.PutCheckpointRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpoint.FromString,
+                _registered_method=True)
+
+
+class AdminCheckpointServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def GetCheckpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PutCheckpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_AdminCheckpointServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'GetCheckpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetCheckpoint,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.GetCheckpointRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpoint.SerializeToString,
+            ),
+            'PutCheckpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.PutCheckpoint,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.PutCheckpointRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpoint.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'memory.v1.AdminCheckpointService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('memory.v1.AdminCheckpointService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class AdminCheckpointService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def GetCheckpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminCheckpointService/GetCheckpoint',
+            memory_dot_v1_dot_memory__service__pb2.GetCheckpointRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.AdminCheckpoint.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PutCheckpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminCheckpointService/PutCheckpoint',
+            memory_dot_v1_dot_memory__service__pb2.PutCheckpointRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.AdminCheckpoint.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

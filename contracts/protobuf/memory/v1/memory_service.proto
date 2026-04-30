@@ -56,6 +56,12 @@ enum ArchiveFilter {
   ARCHIVE_FILTER_ONLY = 3;
 }
 
+enum EventScope {
+  EVENT_SCOPE_UNSPECIFIED = 0;
+  EVENT_SCOPE_AUTHORIZED = 1;
+  EVENT_SCOPE_ADMIN = 2;
+}
+
 enum AccessLevel {
   ACCESS_LEVEL_UNSPECIFIED = 0;
   OWNER = 1;
@@ -434,6 +440,8 @@ message PutMemoryRequest {
   google.protobuf.Struct value = 3;
   int32 ttl_seconds = 4;
   map<string, string> index = 5;
+  optional int64 expected_revision = 6;
+  optional RequestActor actor = 7;
 }
 
 message MemoryWriteResult {
@@ -444,6 +452,7 @@ message MemoryWriteResult {
   optional google.protobuf.Struct attributes = 4;
   string created_at = 5;
   optional string expires_at = 6;
+  int64 revision = 7;
 }
 
 message GetMemoryRequest {
@@ -451,12 +460,15 @@ message GetMemoryRequest {
   string key = 2;
   bool include_usage = 3;
   ArchiveFilter archived = 4;
+  optional RequestActor actor = 5;
 }
 
 message UpdateMemoryRequest {
   repeated string namespace = 1;
   string key = 2;
   optional bool archived = 3;
+  optional int64 expected_revision = 4;
+  optional RequestActor actor = 5;
 }
 
 message MemoryItem {
@@ -471,6 +483,7 @@ message MemoryItem {
   optional string expires_at = 8;
   optional MemoryUsage usage = 9;
   bool archived = 10;
+  int64 revision = 11;
 }
 
 message SearchMemoriesRequest {
@@ -481,6 +494,7 @@ message SearchMemoriesRequest {
   int32 offset = 5;
   bool include_usage = 6;
   ArchiveFilter archived = 7;
+  optional RequestActor actor = 9;
 }
 
 message SearchMemoriesResponse {
@@ -492,6 +506,11 @@ message ListMemoryNamespacesRequest {
   repeated string suffix = 2;
   int32 max_depth = 3;
   ArchiveFilter archived = 4;
+  optional RequestActor actor = 5;
+}
+
+message RequestActor {
+  optional string on_behalf_of_user_id = 1;
 }
 
 message MemoryNamespace {
@@ -789,6 +808,28 @@ service EventStreamService {
   rpc SubscribeEvents(SubscribeEventsRequest) returns (stream EventNotification);
 }
 
+service AdminCheckpointService {
+  rpc GetCheckpoint(GetCheckpointRequest) returns (AdminCheckpoint);
+  rpc PutCheckpoint(PutCheckpointRequest) returns (AdminCheckpoint);
+}
+
+message GetCheckpointRequest {
+  string client_id = 1;
+}
+
+message PutCheckpointRequest {
+  string client_id = 1;
+  string content_type = 2;
+  google.protobuf.Value value = 3;
+}
+
+message AdminCheckpoint {
+  string client_id = 1;
+  string content_type = 2;
+  google.protobuf.Value value = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
 message SubscribeEventsRequest {
   // Optional: subscribe to specific conversation IDs only.
   repeated bytes conversation_ids = 1;
@@ -798,6 +839,10 @@ message SubscribeEventsRequest {
   optional string after_cursor = 3;
   // Optional: event detail mode. Supported values are "summary" and "full".
   optional string detail = 4;
+  // Optional: event scope. Defaults to caller-authorized membership scope.
+  optional EventScope scope = 5;
+  // Optional: admin/auditor justification, logged for admin scope.
+  optional string justification = 6;
 }
 
 message EventNotification {

@@ -259,7 +259,7 @@ func updateMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore
 	}
 
 	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
-		if err := store.ArchiveMemory(ctx, ns, key); err != nil {
+		if err := store.ArchiveMemory(ctx, ns, key, nil); err != nil {
 			return err
 		}
 		c.Status(http.StatusNoContent)

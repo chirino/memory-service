@@ -347,6 +347,7 @@ CREATE TABLE IF NOT EXISTS memories (
     policy_attributes JSONB,                  -- plaintext OPA-extracted attributes for filtering
     indexed_content   JSONB       NOT NULL DEFAULT '{}'::JSONB, -- caller-provided redacted index text
     kind              SMALLINT    NOT NULL DEFAULT 0,  -- 0=add, 1=update — set at write time, never changed
+    revision          BIGINT      NOT NULL DEFAULT 1,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at        TIMESTAMPTZ,            -- NULL = no TTL
     archived_at       TIMESTAMPTZ,            -- NULL = active; non-NULL = superseded or archived
@@ -385,7 +386,8 @@ ALTER TABLE memories
     DROP COLUMN IF EXISTS attributes,
     DROP COLUMN IF EXISTS index_fields,
     DROP COLUMN IF EXISTS index_disabled,
-    ADD COLUMN IF NOT EXISTS indexed_content JSONB NOT NULL DEFAULT '{}'::JSONB;
+    ADD COLUMN IF NOT EXISTS indexed_content JSONB NOT NULL DEFAULT '{}'::JSONB,
+    ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 1;
 
 ------------------------------------------------------------
 -- Episodic Memory Usage Stats

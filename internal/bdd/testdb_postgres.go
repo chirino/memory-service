@@ -177,9 +177,10 @@ func (p *PostgresTestDB) CreateTask(ctx context.Context, id, taskType, body stri
 		return err
 	}
 	defer conn.Close(ctx)
+	now := time.Now().UTC()
 	_, err = conn.Exec(ctx,
-		"INSERT INTO tasks (id, task_type, task_body, created_at, retry_at, retry_count) VALUES ($1, $2, $3::jsonb, NOW(), NOW(), 0)",
-		id, taskType, body)
+		"INSERT INTO tasks (id, task_type, task_body, created_at, retry_at, retry_count) VALUES ($1, $2, $3::jsonb, $4, $4, 0)",
+		id, taskType, body, now)
 	return err
 }
 
@@ -189,10 +190,11 @@ func (p *PostgresTestDB) CreateFailedTask(ctx context.Context, id, taskType, bod
 		return err
 	}
 	defer conn.Close(ctx)
+	now := time.Now().UTC()
 	_, err = conn.Exec(ctx,
 		`INSERT INTO tasks (id, task_type, task_body, created_at, retry_at, retry_count, last_error)
-		 VALUES ($1, $2, $3::jsonb, NOW(), NOW() - INTERVAL '1 hour', 1, 'previous failure')`,
-		id, taskType, body)
+		 VALUES ($1, $2, $3::jsonb, $4, $5, 1, 'previous failure')`,
+		id, taskType, body, now, now.Add(-time.Hour))
 	return err
 }
 
@@ -203,7 +205,8 @@ func (p *PostgresTestDB) ClaimReadyTasks(ctx context.Context, limit int) ([]cucu
 	}
 	defer conn.Close(ctx)
 	rows, err := conn.Query(ctx,
-		"SELECT id, task_type, task_body::text FROM tasks WHERE retry_at <= NOW() ORDER BY created_at LIMIT $1", limit)
+		"SELECT id, task_type, task_body::text FROM tasks WHERE retry_at <= $1 ORDER BY created_at LIMIT $2",
+		time.Now().UTC(), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -235,9 +238,10 @@ func (p *PostgresTestDB) FailTask(ctx context.Context, id, errMsg string) error 
 		return err
 	}
 	defer conn.Close(ctx)
+	retryAt := time.Now().UTC().Add(30 * time.Second)
 	_, err = conn.Exec(ctx,
-		"UPDATE tasks SET retry_count = retry_count + 1, retry_at = NOW() + INTERVAL '30 seconds', last_error = $1 WHERE id = $2",
-		errMsg, id)
+		"UPDATE tasks SET retry_count = retry_count + 1, retry_at = $1, last_error = $2 WHERE id = $3",
+		retryAt, errMsg, id)
 	return err
 }
 

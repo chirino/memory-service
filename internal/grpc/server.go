@@ -86,6 +86,25 @@ func getClientID(ctx context.Context) string {
 	return ""
 }
 
+func requireGRPCIdentity(ctx context.Context) (*security.Identity, error) {
+	id := security.IdentityFromContext(ctx)
+	if id == nil || (strings.TrimSpace(id.UserID) == "" && strings.TrimSpace(id.ClientID) == "") {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	return id, nil
+}
+
+func hasGRPCRole(ctx context.Context, role string) bool {
+	if id := security.IdentityFromContext(ctx); id != nil {
+		return id.Roles[role]
+	}
+	return false
+}
+
+func hasGRPCAdminEventAccess(ctx context.Context) bool {
+	return hasGRPCRole(ctx, security.RoleAdmin) || hasGRPCRole(ctx, security.RoleAuditor)
+}
+
 func mapAccessLevel(level model.AccessLevel) pb.AccessLevel {
 	switch level {
 	case model.AccessLevelOwner:
@@ -126,6 +145,8 @@ func mapError(err error) error {
 	var conflict *registrystore.ConflictError
 
 	switch {
+	case errors.Is(err, registryepisodic.ErrMemoryRevisionConflict):
+		return status.Error(codes.Aborted, err.Error())
 	case errors.As(err, &notFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.As(err, &forbidden):
@@ -1356,9 +1377,8 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	userID := getUserID(ctx)
-	if userID == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	if _, err := requireGRPCIdentity(ctx); err != nil {
+		return nil, err
 	}
 	if req.GetValue() == nil {
 		return nil, status.Error(codes.InvalidArgument, "value is required")
@@ -1382,7 +1402,10 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 		index = map[string]string{}
 	}
 
-	pc := memoryPolicyContext(ctx)
+	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	if err != nil {
+		return nil, err
+	}
 	policyAttrs := map[string]interface{}{}
 	if s.Policy != nil {
 		decision, err := s.Policy.EvaluateAuthz(ctx, "write", namespace, key, value, index, pc)
@@ -1410,9 +1433,13 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 			Index:            index,
 			TTLSeconds:       int(req.GetTtlSeconds()),
 			PolicyAttributes: policyAttrs,
+			ExpectedRevision: req.ExpectedRevision,
 		})
 	})
 	if err != nil {
+		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
+			return nil, status.Error(codes.Aborted, "memory revision conflict")
+		}
 		return nil, episodicInternalError("failed to store memory", err)
 	}
 	resp, err := memoryWriteResultToProto(result)
@@ -1426,9 +1453,8 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	userID := getUserID(ctx)
-	if userID == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	if _, err := requireGRPCIdentity(ctx); err != nil {
+		return nil, err
 	}
 
 	namespace := req.GetNamespace()
@@ -1440,9 +1466,13 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 		return nil, status.Error(codes.InvalidArgument, "key is required")
 	}
 	archived := protoArchiveFilterToEpisodic(req.GetArchived())
+	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	if err != nil {
+		return nil, err
+	}
 
 	if s.Policy != nil {
-		decision, err := s.Policy.EvaluateAuthz(ctx, "read", namespace, key, nil, nil, memoryPolicyContext(ctx))
+		decision, err := s.Policy.EvaluateAuthz(ctx, "read", namespace, key, nil, nil, pc)
 		if err != nil {
 			return nil, episodicInternalError("policy evaluation error", err)
 		}
@@ -1499,9 +1529,8 @@ func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryR
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	userID := getUserID(ctx)
-	if userID == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	if _, err := requireGRPCIdentity(ctx); err != nil {
+		return nil, err
 	}
 
 	namespace := req.GetNamespace()
@@ -1515,9 +1544,13 @@ func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryR
 	if req.Archived == nil || !req.GetArchived() {
 		return nil, status.Error(codes.InvalidArgument, "archived must be true")
 	}
+	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	if err != nil {
+		return nil, err
+	}
 
 	if s.Policy != nil {
-		decision, err := s.Policy.EvaluateAuthz(ctx, "update", namespace, key, nil, nil, memoryPolicyContext(ctx))
+		decision, err := s.Policy.EvaluateAuthz(ctx, "update", namespace, key, nil, nil, pc)
 		if err != nil {
 			return nil, episodicInternalError("policy evaluation error", err)
 		}
@@ -1530,8 +1563,11 @@ func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryR
 	}
 
 	if err := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
-		return s.Store.ArchiveMemory(txCtx, namespace, key)
+		return s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision)
 	}); err != nil {
+		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
+			return nil, status.Error(codes.Aborted, "memory revision conflict")
+		}
 		return nil, episodicInternalError("failed to archive memory", err)
 	}
 	return &emptypb.Empty{}, nil
@@ -1541,9 +1577,8 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	userID := getUserID(ctx)
-	if userID == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	if _, err := requireGRPCIdentity(ctx); err != nil {
+		return nil, err
 	}
 
 	if len(req.GetNamespacePrefix()) == 0 {
@@ -1565,9 +1600,13 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	}
 	archived := protoArchiveFilterToEpisodic(req.GetArchived())
 	effectivePrefix := req.GetNamespacePrefix()
+	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	if err != nil {
+		return nil, err
+	}
 	if s.Policy != nil {
 		var err error
-		effectivePrefix, filter, err = s.Policy.InjectFilter(ctx, req.GetNamespacePrefix(), filter, memoryPolicyContext(ctx))
+		effectivePrefix, filter, err = s.Policy.InjectFilter(ctx, req.GetNamespacePrefix(), filter, pc)
 		if err != nil {
 			return nil, episodicInternalError("filter injection error", err)
 		}
@@ -1615,9 +1654,8 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	userID := getUserID(ctx)
-	if userID == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	if _, err := requireGRPCIdentity(ctx); err != nil {
+		return nil, err
 	}
 
 	maxDepth := int(req.GetMaxDepth())
@@ -1640,10 +1678,14 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 	}
 
 	archived := protoArchiveFilterToEpisodic(req.GetArchived())
+	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	if err != nil {
+		return nil, err
+	}
 
 	if s.Policy != nil {
 		var err error
-		prefix, _, err = s.Policy.InjectFilter(ctx, prefix, nil, memoryPolicyContext(ctx))
+		prefix, _, err = s.Policy.InjectFilter(ctx, prefix, nil, pc)
 		if err != nil {
 			return nil, episodicInternalError("filter injection error", err)
 		}
@@ -1805,20 +1847,31 @@ func validateMemoryNamespace(ns []string, maxDepth int) error {
 	return nil
 }
 
-func memoryPolicyContext(ctx context.Context) episodic.PolicyContext {
+func (s *MemoriesServer) memoryPolicyContext(ctx context.Context, actor *pb.RequestActor) (episodic.PolicyContext, error) {
+	id, err := requireGRPCIdentity(ctx)
+	if err != nil {
+		return episodic.PolicyContext{}, err
+	}
 	roles := []string{}
-	if id := security.IdentityFromContext(ctx); id != nil {
-		if id.Roles[security.RoleAdmin] {
-			roles = append(roles, security.RoleAdmin)
+	if id.Roles[security.RoleAdmin] {
+		roles = append(roles, security.RoleAdmin)
+	}
+	if id.Roles[security.RoleAuditor] {
+		roles = append(roles, security.RoleAuditor)
+	}
+	userID := strings.TrimSpace(id.UserID)
+	if actor != nil {
+		if onBehalfOfUserID := strings.TrimSpace(actor.GetOnBehalfOfUserId()); onBehalfOfUserID != "" {
+			userID = onBehalfOfUserID
 		}
 	}
 	return episodic.PolicyContext{
-		UserID:   getUserID(ctx),
-		ClientID: getClientID(ctx),
+		UserID:   userID,
+		ClientID: strings.TrimSpace(id.ClientID),
 		JWTClaims: map[string]interface{}{
 			"roles": roles,
 		},
-	}
+	}, nil
 }
 
 func episodicInternalError(message string, err error) error {
@@ -1832,6 +1885,7 @@ func memoryWriteResultToProto(item *registryepisodic.MemoryWriteResult) (*pb.Mem
 		Namespace: append([]string(nil), item.Namespace...),
 		Key:       item.Key,
 		CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339),
+		Revision:  item.Revision,
 	}
 	if item.Attributes != nil {
 		attrs, err := structpb.NewStruct(item.Attributes)
@@ -1859,6 +1913,7 @@ func memoryItemToProto(item registryepisodic.MemoryItem) (*pb.MemoryItem, error)
 		Value:     value,
 		CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339),
 		Archived:  item.ArchivedAt != nil,
+		Revision:  item.Revision,
 	}
 	if item.Attributes != nil {
 		attrs, err := structpb.NewStruct(item.Attributes)
@@ -2559,6 +2614,120 @@ type EventStreamServer struct {
 	Config   *config.Config
 }
 
+type AdminCheckpointServer struct {
+	pb.UnimplementedAdminCheckpointServiceServer
+	Store registrystore.MemoryStore
+}
+
+func (s *AdminCheckpointServer) GetCheckpoint(ctx context.Context, req *pb.GetCheckpointRequest) (*pb.AdminCheckpoint, error) {
+	if !hasGRPCRole(ctx, security.RoleAdmin) {
+		return nil, status.Error(codes.PermissionDenied, "admin role required")
+	}
+	checkpoints, ok := s.Store.(registrystore.AdminCheckpointStore)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "checkpoint storage unavailable")
+	}
+	clientID := strings.TrimSpace(req.GetClientId())
+	if clientID == "" {
+		return nil, status.Error(codes.InvalidArgument, "client_id is required")
+	}
+	if !grpcAllowCheckpointClient(ctx, clientID) {
+		return nil, status.Error(codes.NotFound, "checkpoint not found")
+	}
+	var checkpoint *registrystore.ClientCheckpoint
+	err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
+		var err error
+		checkpoint, err = checkpoints.AdminGetCheckpoint(txCtx, clientID)
+		return err
+	})
+	if err != nil {
+		return nil, mapCheckpointError(err)
+	}
+	return checkpointToProto(checkpoint)
+}
+
+func (s *AdminCheckpointServer) PutCheckpoint(ctx context.Context, req *pb.PutCheckpointRequest) (*pb.AdminCheckpoint, error) {
+	if !hasGRPCRole(ctx, security.RoleAdmin) {
+		return nil, status.Error(codes.PermissionDenied, "admin role required")
+	}
+	checkpoints, ok := s.Store.(registrystore.AdminCheckpointStore)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "checkpoint storage unavailable")
+	}
+	clientID := strings.TrimSpace(req.GetClientId())
+	if clientID == "" {
+		return nil, status.Error(codes.InvalidArgument, "client_id is required")
+	}
+	if !grpcAllowCheckpointClient(ctx, clientID) {
+		return nil, status.Error(codes.NotFound, "checkpoint not found")
+	}
+	contentType := strings.TrimSpace(req.GetContentType())
+	if contentType == "" {
+		return nil, status.Error(codes.InvalidArgument, "content_type is required")
+	}
+	if req.GetValue() == nil {
+		return nil, status.Error(codes.InvalidArgument, "value is required")
+	}
+	raw, err := json.Marshal(req.GetValue().AsInterface())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "value must be valid JSON")
+	}
+	var checkpoint *registrystore.ClientCheckpoint
+	err = s.Store.InWriteTx(ctx, func(txCtx context.Context) error {
+		var err error
+		checkpoint, err = checkpoints.AdminPutCheckpoint(txCtx, registrystore.ClientCheckpoint{
+			ClientID:    clientID,
+			ContentType: contentType,
+			Value:       json.RawMessage(raw),
+		})
+		return err
+	})
+	if err != nil {
+		return nil, mapCheckpointError(err)
+	}
+	return checkpointToProto(checkpoint)
+}
+
+func grpcAllowCheckpointClient(ctx context.Context, clientID string) bool {
+	authenticatedClientID := strings.TrimSpace(getClientID(ctx))
+	return authenticatedClientID == "" || authenticatedClientID == clientID
+}
+
+func mapCheckpointError(err error) error {
+	var notFound *registrystore.NotFoundError
+	var validation *registrystore.ValidationError
+	switch {
+	case errors.As(err, &notFound):
+		return status.Error(codes.NotFound, "checkpoint not found")
+	case errors.As(err, &validation):
+		return status.Error(codes.InvalidArgument, validation.Error())
+	default:
+		return status.Error(codes.Internal, err.Error())
+	}
+}
+
+func checkpointToProto(checkpoint *registrystore.ClientCheckpoint) (*pb.AdminCheckpoint, error) {
+	if checkpoint == nil {
+		return nil, status.Error(codes.NotFound, "checkpoint not found")
+	}
+	var value any
+	if len(checkpoint.Value) > 0 {
+		if err := json.Unmarshal(checkpoint.Value, &value); err != nil {
+			return nil, status.Error(codes.Internal, "checkpoint value is invalid JSON")
+		}
+	}
+	pValue, err := structpb.NewValue(value)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "checkpoint value cannot be encoded")
+	}
+	return &pb.AdminCheckpoint{
+		ClientId:    checkpoint.ClientID,
+		ContentType: checkpoint.ContentType,
+		Value:       pValue,
+		UpdatedAt:   timestamppb.New(checkpoint.UpdatedAt.UTC()),
+	}, nil
+}
+
 func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stream pb.EventStreamService_SubscribeEventsServer) error {
 	if s.EventBus == nil {
 		return status.Error(codes.Unavailable, "event bus not available")
@@ -2573,8 +2742,29 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	if detail != "summary" && detail != "full" {
 		return status.Error(codes.InvalidArgument, "detail must be one of: summary, full")
 	}
+	adminScope := req.GetScope() == pb.EventScope_EVENT_SCOPE_ADMIN
+	switch req.GetScope() {
+	case pb.EventScope_EVENT_SCOPE_UNSPECIFIED, pb.EventScope_EVENT_SCOPE_AUTHORIZED, pb.EventScope_EVENT_SCOPE_ADMIN:
+	default:
+		return status.Error(codes.InvalidArgument, "invalid event scope")
+	}
+	if adminScope {
+		if !hasGRPCAdminEventAccess(stream.Context()) {
+			return status.Error(codes.PermissionDenied, "admin or auditor role required")
+		}
+		justification := strings.TrimSpace(req.GetJustification())
+		if s.Config != nil && s.Config.RequireJustification && justification == "" {
+			return status.Error(codes.InvalidArgument, "admin justification required")
+		}
+		if justification != "" {
+			log.Info("Admin gRPC event stream opened", "adminID", getUserID(stream.Context()), "clientID", getClientID(stream.Context()), "justification", justification)
+		}
+	}
 
 	userID := getUserID(stream.Context())
+	if !adminScope && userID == "" {
+		return status.Error(codes.Unauthenticated, "missing authorization")
+	}
 
 	// Parse kinds filter from request.
 	kindsFilter := make(map[string]bool)
@@ -2582,6 +2772,14 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		if k != "" {
 			kindsFilter[k] = true
 		}
+	}
+	conversationFilter := make(map[uuid.UUID]bool)
+	for _, raw := range req.GetConversationIds() {
+		id, err := bytesToUUID(raw)
+		if err != nil {
+			return status.Error(codes.InvalidArgument, "conversation_ids must contain 16-byte UUID values")
+		}
+		conversationFilter[id] = true
 	}
 
 	lastCursor := ""
@@ -2621,7 +2819,11 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 
 streamLoop:
 	for {
-		sub, err := s.EventBus.Subscribe(stream.Context(), userID)
+		subscribeUserID := userID
+		if adminScope {
+			subscribeUserID = ""
+		}
+		sub, err := s.EventBus.Subscribe(stream.Context(), subscribeUserID)
 		if err != nil {
 			return status.Error(codes.Internal, "failed to subscribe to event bus")
 		}
@@ -2630,7 +2832,13 @@ streamLoop:
 			if err := sendGRPCPhaseEvent(stream, "replay"); err != nil {
 				return err
 			}
-			outcome, err := s.replayGRPCEvents(stream, outbox, sub, resumeCursor, detail, userID, s.replayBatchSize(), kindsFilter, &lastCursor)
+			var outcome replayGRPCOutcome
+			var err error
+			if adminScope {
+				outcome, err = s.replayGRPCAdminEvents(stream, outbox, sub, resumeCursor, detail, s.replayBatchSize(), kindsFilter, conversationFilter, &lastCursor)
+			} else {
+				outcome, err = s.replayGRPCEvents(stream, outbox, sub, resumeCursor, detail, userID, s.replayBatchSize(), kindsFilter, conversationFilter, &lastCursor)
+			}
 			if err != nil {
 				return err
 			}
@@ -2685,6 +2893,9 @@ streamLoop:
 				if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
 					continue
 				}
+				if !grpcEventMatchesConversationFilter(event, conversationFilter) {
+					continue
+				}
 
 				// Stream events bypass membership filtering.
 				if event.Kind == "stream" {
@@ -2697,11 +2908,18 @@ streamLoop:
 				if event.OutboxCursor != "" {
 					lastCursor = event.OutboxCursor
 				}
-				enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
+				var enriched registryeventbus.Event
+				var enrichedOK bool
+				var err error
+				if adminScope {
+					enriched, enrichedOK, err = s.enrichGRPCAdminEvent(stream.Context(), detail, event)
+				} else {
+					enriched, enrichedOK, err = s.enrichGRPCEvent(stream.Context(), userID, detail, event)
+				}
 				if err != nil {
 					return status.Error(codes.Internal, "failed to enrich event")
 				}
-				if !ok {
+				if !enrichedOK {
 					continue
 				}
 				if err := sendGRPCEvent(stream, enriched); err != nil {
@@ -2748,7 +2966,7 @@ const (
 	replayGRPCRecover
 )
 
-func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail, userID string, batchSize int, kindsFilter map[string]bool, lastCursor *string) (replayGRPCOutcome, error) {
+func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail, userID string, batchSize int, kindsFilter map[string]bool, conversationFilter map[uuid.UUID]bool, lastCursor *string) (replayGRPCOutcome, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
@@ -2802,6 +3020,9 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			if !grpcUserCanReplayEvent(userID, visibleGroups, event) {
 				continue
 			}
+			if !grpcEventMatchesConversationFilter(event, conversationFilter) {
+				continue
+			}
 			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
 			if err != nil {
 				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
@@ -2836,7 +3057,113 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
 				continue
 			}
+			if !grpcEventMatchesConversationFilter(event, conversationFilter) {
+				continue
+			}
 			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
+			if err != nil {
+				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
+			}
+			if !ok {
+				continue
+			}
+			if err := sendGRPCEvent(stream, enriched); err != nil {
+				return replayGRPCClosed, err
+			}
+		default:
+			return replayGRPCContinue, nil
+		}
+	}
+}
+
+func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail string, batchSize int, kindsFilter map[string]bool, conversationFilter map[uuid.UUID]bool, lastCursor *string) (replayGRPCOutcome, error) {
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+	query := registrystore.OutboxQuery{
+		AfterCursor: afterCursor,
+		Limit:       batchSize,
+		Kinds:       grpcMapKeys(kindsFilter),
+	}
+	seen := map[string]struct{}{}
+	cursor := afterCursor
+
+	for {
+		query.AfterCursor = cursor
+		var page *registrystore.OutboxPage
+		err := s.Store.InReadTx(stream.Context(), func(txCtx context.Context) error {
+			var err error
+			page, err = outbox.ListOutboxEvents(txCtx, query)
+			return err
+		})
+		if err != nil {
+			if err == registrystore.ErrStaleOutboxCursor {
+				invalidateData, _ := json.Marshal(map[string]string{"reason": "cursor beyond retention window"})
+				_ = stream.Send(&pb.EventNotification{
+					Event: "invalidate",
+					Kind:  "stream",
+					Data:  invalidateData,
+				})
+				return replayGRPCClosed, nil
+			}
+			return replayGRPCClosed, status.Error(codes.Internal, "failed to replay outbox events")
+		}
+		if page == nil {
+			break
+		}
+		for _, replayEvent := range page.Events {
+			cursor = replayEvent.Cursor
+			event := registryeventbus.Event{
+				Event:        replayEvent.Event,
+				Kind:         replayEvent.Kind,
+				Data:         json.RawMessage(replayEvent.Data),
+				OutboxCursor: replayEvent.Cursor,
+			}
+			if replayEvent.Cursor != "" {
+				seen[replayEvent.Cursor] = struct{}{}
+				*lastCursor = replayEvent.Cursor
+			}
+			if !grpcEventMatchesConversationFilter(event, conversationFilter) {
+				continue
+			}
+			enriched, ok, err := s.enrichGRPCAdminEvent(stream.Context(), detail, event)
+			if err != nil {
+				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
+			}
+			if !ok {
+				continue
+			}
+			if err := sendGRPCEvent(stream, enriched); err != nil {
+				return replayGRPCClosed, err
+			}
+		}
+		if !page.HasMore || cursor == "" {
+			break
+		}
+	}
+
+	for {
+		select {
+		case event, ok := <-sub:
+			if !ok {
+				return replayGRPCRecover, nil
+			}
+			if event.Internal {
+				continue
+			}
+			if event.OutboxCursor != "" {
+				if _, ok := seen[event.OutboxCursor]; ok {
+					continue
+				}
+				*lastCursor = event.OutboxCursor
+			}
+			if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
+				continue
+			}
+			if !grpcEventMatchesConversationFilter(event, conversationFilter) {
+				continue
+			}
+			enriched, ok, err := s.enrichGRPCAdminEvent(stream.Context(), detail, event)
 			if err != nil {
 				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
 			}
@@ -2903,6 +3230,75 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID, detail 
 	default:
 		return event, true, nil
 	}
+}
+
+func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail string, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
+	if detail != "full" || event.Kind == "stream" {
+		return event, true, nil
+	}
+	data, ok := decodeGRPCEventData(event.Data)
+	if !ok {
+		return event, true, nil
+	}
+	switch event.Kind {
+	case "conversation":
+		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
+		if !ok {
+			return event, true, nil
+		}
+		conv, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+			return s.Store.AdminGetConversation(txCtx, conversationID)
+		})
+		if err != nil {
+			return event, false, nil
+		}
+		event.Data = conv
+		return event, true, nil
+	case "entry":
+		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
+		if !ok {
+			return event, true, nil
+		}
+		entryID, ok := decodeGRPCUUIDField(data, "entry")
+		if !ok {
+			return event, true, nil
+		}
+		page, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
+			return s.Store.AdminGetEntries(txCtx, conversationID, registrystore.AdminMessageQuery{
+				Limit:    5000,
+				AllForks: true,
+			})
+		})
+		if err != nil || page == nil {
+			return event, false, nil
+		}
+		for i := range page.Data {
+			if page.Data[i].ID == entryID {
+				event.Data = page.Data[i]
+				return event, true, nil
+			}
+		}
+		return event, false, nil
+	default:
+		return event, true, nil
+	}
+}
+
+func grpcEventMatchesConversationFilter(event registryeventbus.Event, filter map[uuid.UUID]bool) bool {
+	if len(filter) == 0 || event.Kind == "stream" {
+		return true
+	}
+	data, ok := decodeGRPCEventData(event.Data)
+	if !ok {
+		return false
+	}
+	if conversationID, ok := decodeGRPCUUIDField(data, "conversation"); ok && filter[conversationID] {
+		return true
+	}
+	if conversationID, ok := decodeGRPCUUIDField(data, "conversation_id"); ok && filter[conversationID] {
+		return true
+	}
+	return false
 }
 
 func decodeGRPCEventData(data any) (map[string]any, bool) {
