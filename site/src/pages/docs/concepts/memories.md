@@ -138,7 +138,7 @@ curl -X POST http://localhost:8080/v1/memories/search \
   -H "Authorization: Bearer <token>" \
   -d '{
     "namespace_prefix": ["user", "alice"],
-    "filter": {"topic": "python"},
+    "filter": {"sub": {"$eq": "alice"}},
     "limit": 10
   }'
 ```
