@@ -118,6 +118,106 @@ Feature: Episodic Memory REST API
     Then the response status should be 200
     And the response body "items" should have at least 2 items
 
+  Scenario: Memory search supports pushdownable attribute filter operators
+    Given I am authenticated as user "alice"
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "filter-ops"],
+      "key": "ops-alpha",
+      "value": { "text": "alpha" }
+    }
+    """
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "filter-ops"],
+      "key": "ops-beta",
+      "value": { "text": "beta" }
+    }
+    """
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "filter-ops"],
+      "filter": { "sub": { "\u0024eq": "alice" } },
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body should contain "ops-alpha"
+    And the response body should contain "ops-beta"
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "filter-ops"],
+      "filter": { "sub": { "\u0024eq": "bob" } },
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body "items" should have at most 0 items
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "filter-ops"],
+      "filter": { "sub": { "\u0024in": ["alice"] } },
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body should contain "ops-alpha"
+    And the response body should contain "ops-beta"
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "filter-ops"],
+      "filter": { "sub": { "\u0024exists": true } },
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body should contain "ops-alpha"
+    And the response body should contain "ops-beta"
+
+  Scenario: Memory search rejects obsolete paging and ordering fields
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice"],
+      "offset": 1
+    }
+    """
+    Then the response status should be 400
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice"],
+      "after_cursor": "cursor-1"
+    }
+    """
+    Then the response status should be 400
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice"],
+      "order": "createdAtAsc"
+    }
+    """
+    Then the response status should be 400
+
+  Scenario: Memory search rejects unsupported filter operators
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice"],
+      "filter": {
+        "topic": {"\u0024unknown": "python"}
+      }
+    }
+    """
+    Then the response status should be 400
+
   Scenario: Memory search and namespace listing honor archive filters
     Given I call PUT "/v1/memories" with body:
     """

@@ -502,7 +502,6 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "memory-service-langchain" },
-    { name = "memory-service-langgraph" },
     { name = "uvicorn" },
 ]
 
@@ -513,7 +512,6 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=1.0.0,<2.0.0" },
     { name = "langgraph", specifier = ">=1.0.0,<2.0.0" },
     { name = "memory-service-langchain" },
-    { name = "memory-service-langgraph" },
     { name = "uvicorn", specifier = ">=0.34.0,<1.0.0" },
 ]
 
@@ -579,19 +577,6 @@ dependencies = [
 sdist = { path = "memory_service_langchain-0.1.0.tar.gz" }
 wheels = [
     { path = "memory_service_langchain-0.1.0-py3-none-any.whl" },
-]
-
-[[package]]
-name = "memory-service-langgraph"
-version = "0.1.0"
-source = { registry = "../../../../dist" }
-dependencies = [
-    { name = "httpx" },
-    { name = "langgraph" },
-]
-sdist = { path = "memory_service_langgraph-0.1.0.tar.gz" }
-wheels = [
-    { path = "memory_service_langgraph-0.1.0-py3-none-any.whl" },
 ]
 
 [[package]]

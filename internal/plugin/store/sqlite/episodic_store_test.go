@@ -109,11 +109,13 @@ func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 		require.NotNil(t, usage)
 		require.EqualValues(t, 1, usage.FetchCount)
 
-		items, err := store.SearchMemories(readCtx, []string{"users"}, map[string]interface{}{
+		filter, err := registryepisodic.NormalizeAttributeFilters(map[string]interface{}{
 			"tenant":  "acme",
 			"enabled": true,
-			"score":   map[string]interface{}{"gte": 11.0},
-		}, 10, 0, registryepisodic.ArchiveFilterExclude)
+			"score":   map[string]interface{}{"$gte": 11.0},
+		})
+		require.NoError(t, err)
+		items, err := store.SearchMemories(readCtx, []string{"users"}, filter, 10, registryepisodic.ArchiveFilterExclude)
 		require.NoError(t, err)
 		require.Len(t, items, 1)
 		require.Equal(t, "profile", items[0].Key)
@@ -302,10 +304,12 @@ func TestSQLiteEpisodicStoreVectorSearch(t *testing.T) {
 	require.NoError(t, err)
 
 	err = store.InReadTx(ctx, func(readCtx context.Context) error {
-		results, err := store.SearchMemoryVectors(readCtx, namespacePrefix, []float32{1, 0}, map[string]interface{}{
+		filter, err := registryepisodic.NormalizeAttributeFilters(map[string]interface{}{
 			"tenant": "acme",
-			"rank":   map[string]interface{}{"gte": 5.0},
-		}, 10, registryepisodic.ArchiveFilterExclude)
+			"rank":   map[string]interface{}{"$gte": 5.0},
+		})
+		require.NoError(t, err)
+		results, err := store.SearchMemoryVectors(readCtx, namespacePrefix, []float32{1, 0}, filter, 10, registryepisodic.ArchiveFilterExclude)
 		require.NoError(t, err)
 		require.Len(t, results, 1)
 		require.Equal(t, firstID, results[0].MemoryID.String())

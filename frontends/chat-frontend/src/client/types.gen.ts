@@ -256,7 +256,6 @@ export type SearchMemoriesRequest = {
     [key: string]: unknown;
   };
   limit?: number;
-  offset?: number;
   include_usage?: boolean;
   archived?: "exclude" | "include" | "only";
 };

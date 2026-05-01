@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/chirino/memory-service/internal/config"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Client implements episodic vector operations against Qdrant.
@@ -66,11 +68,14 @@ func (c *Client) UpsertMemoryVectors(ctx context.Context, items []registryepisod
 		if len(ancestors) > 0 {
 			payload["namespace_ancestors"] = stringListValue(ancestors)
 		}
+		attrs := map[string]*pb.Value{}
 		for k, v := range item.PolicyAttributes {
-			key := "policy_attributes." + sanitizePayloadKey(k)
 			if pv := toQdrantValue(v); pv != nil {
-				payload[key] = pv
+				attrs[sanitizePayloadKey(k)] = pv
 			}
+		}
+		if len(attrs) > 0 {
+			payload["policy_attributes"] = pb.NewValueFromFields(attrs)
 		}
 
 		points = append(points, &pb.PointStruct{
@@ -123,7 +128,7 @@ func (c *Client) DeleteMemoryVectors(ctx context.Context, memoryID uuid.UUID) er
 }
 
 // SearchMemoryVectors searches vectors using namespace_ancestors + attribute filter.
-func (c *Client) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
+func (c *Client) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
 	if c == nil || limit <= 0 || len(embedding) == 0 {
 		return nil, nil
 	}
@@ -214,33 +219,27 @@ func namespaceAncestors(encoded string) []string {
 	return out
 }
 
-func filterConditions(filter map[string]interface{}) []*pb.Condition {
-	if len(filter) == 0 {
+func filterConditions(filter registryepisodic.AttributeFilter) []*pb.Condition {
+	if filter.Empty() {
 		return nil
 	}
-	keys := make([]string, 0, len(filter))
-	for k := range filter {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	out := make([]*pb.Condition, 0, len(keys))
-	for _, key := range keys {
-		value := filter[key]
-		payloadKey := "policy_attributes." + sanitizePayloadKey(key)
-
-		switch typed := value.(type) {
-		case map[string]interface{}:
-			if members, ok := typed["in"]; ok {
-				if cond := inCondition(payloadKey, members); cond != nil {
-					out = append(out, cond)
-				}
-			}
-			if cond := rangeCondition(payloadKey, typed); cond != nil {
+	out := make([]*pb.Condition, 0, len(filter.Conditions))
+	for _, item := range filter.Conditions {
+		payloadKey := "policy_attributes." + sanitizePayloadKey(item.Field)
+		switch item.Op {
+		case registryepisodic.AttributeFilterOpEq:
+			if cond := scalarMatchCondition(payloadKey, item.Values[0].Raw); cond != nil {
 				out = append(out, cond)
 			}
-		default:
-			if cond := scalarMatchCondition(payloadKey, typed); cond != nil {
+		case registryepisodic.AttributeFilterOpIn:
+			if cond := inCondition(payloadKey, item.Values); cond != nil {
+				out = append(out, cond)
+			}
+		case registryepisodic.AttributeFilterOpExists:
+			one := uint64(1)
+			out = append(out, pb.NewValuesCount(payloadKey, &pb.ValuesCount{Gte: &one}))
+		case registryepisodic.AttributeFilterOpGte, registryepisodic.AttributeFilterOpLte:
+			if cond := rangeCondition(payloadKey, item); cond != nil {
 				out = append(out, cond)
 			}
 		}
@@ -248,55 +247,51 @@ func filterConditions(filter map[string]interface{}) []*pb.Condition {
 	return out
 }
 
-func rangeCondition(key string, expr map[string]interface{}) *pb.Condition {
-	var r pb.Range
-	has := false
-	if v, ok := toFloat(expr["gt"]); ok {
-		r.Gt = &v
-		has = true
+func rangeCondition(key string, cond registryepisodic.AttributeFilterCondition) *pb.Condition {
+	value := cond.Values[0]
+	if cond.RangeKind == registryepisodic.AttributeFilterRangeTime {
+		parsed, err := time.Parse(time.RFC3339, value.Text)
+		if err != nil {
+			return nil
+		}
+		ts := timestamppb.New(parsed)
+		r := &pb.DatetimeRange{}
+		if cond.Op == registryepisodic.AttributeFilterOpGte {
+			r.Gte = ts
+		} else {
+			r.Lte = ts
+		}
+		return pb.NewDatetimeRange(key, r)
 	}
-	if v, ok := toFloat(expr["gte"]); ok {
-		r.Gte = &v
-		has = true
-	}
-	if v, ok := toFloat(expr["lt"]); ok {
-		r.Lt = &v
-		has = true
-	}
-	if v, ok := toFloat(expr["lte"]); ok {
-		r.Lte = &v
-		has = true
-	}
-	if !has {
+	v, ok := toFloat(value.Raw)
+	if !ok {
 		return nil
 	}
-	return &pb.Condition{
-		ConditionOneOf: &pb.Condition_Field{
-			Field: &pb.FieldCondition{
-				Key:   key,
-				Range: &r,
-			},
-		},
+	r := &pb.Range{}
+	if cond.Op == registryepisodic.AttributeFilterOpGte {
+		r.Gte = &v
+	} else {
+		r.Lte = &v
 	}
+	return pb.NewRange(key, r)
 }
 
-func inCondition(key string, members interface{}) *pb.Condition {
-	list, ok := members.([]interface{})
-	if !ok || len(list) == 0 {
+func inCondition(key string, members []registryepisodic.AttributeFilterValue) *pb.Condition {
+	if len(members) == 0 {
 		return nil
 	}
 
-	ints := make([]int64, 0, len(list))
-	strs := make([]string, 0, len(list))
+	ints := make([]int64, 0, len(members))
+	strs := make([]string, 0, len(members))
 	allInts := true
-	for _, item := range list {
-		if i, ok := toInt64(item); ok {
+	for _, item := range members {
+		if i, ok := toInt64(item.Raw); ok {
 			ints = append(ints, i)
 			strs = append(strs, strconv.FormatInt(i, 10))
 			continue
 		}
 		allInts = false
-		strs = append(strs, fmt.Sprintf("%v", item))
+		strs = append(strs, fmt.Sprintf("%v", item.Raw))
 	}
 	if allInts {
 		return &pb.Condition{

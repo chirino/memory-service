@@ -96,4 +96,6 @@
 
 **LangGraph episodic write contract**: `memory_service_langchain.langgraph` sends episodic write indexing via `index` (map of field-path to redacted text) instead of legacy `index_fields` / `index_disabled`.
 
+**LangGraph episodic search contract**: Memory search is bounded by `limit` and no longer accepts REST `offset`; `MemoryServiceStore` / `AsyncMemoryServiceStore` must omit `offset` when it is zero and reject non-zero offsets client-side instead of sending them to `/v1/memories/search`.
+
 **LangGraph index controls**: `MemoryServiceStore` and `AsyncMemoryServiceStore` accept user hooks `index_builder` (full payload override) or `index_redactor` (per-field mutate/drop in the default builder).

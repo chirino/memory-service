@@ -112,10 +112,11 @@ class MemoryServiceStore(BaseStore):
         offset: int = 0,
     ) -> list[SearchItem]:
         """Search memories by namespace prefix, optional query, and optional filter."""
+        if offset:
+            raise ValueError("Memory Service memory search does not support offset pagination")
         body: dict[str, Any] = {
             "namespace_prefix": list(namespace_prefix),
             "limit": min(limit, 100),
-            "offset": offset,
         }
         if query:
             body["query"] = query

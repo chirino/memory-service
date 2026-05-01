@@ -347,6 +347,25 @@ func (e *PolicyEngine) ExtractAttributes(ctx context.Context, namespace []string
 // InjectFilter evaluates the search filter injection policy and returns the
 // effective namespace_prefix and merged attribute_filter to use for search.
 func (e *PolicyEngine) InjectFilter(ctx context.Context, nsPrefix []string, filter map[string]interface{}, pc PolicyContext) ([]string, map[string]interface{}, error) {
+	effectivePrefix, policyFilter, err := e.InjectFilterParts(ctx, nsPrefix, filter, pc)
+	if err != nil {
+		return nsPrefix, filter, err
+	}
+	merged := make(map[string]interface{})
+	for k, v := range filter {
+		merged[k] = v
+	}
+	for k, v := range policyFilter {
+		merged[k] = v
+	}
+	return effectivePrefix, merged, nil
+}
+
+// InjectFilterParts evaluates the search filter injection policy and returns
+// the effective namespace_prefix plus policy-supplied attribute_filter without
+// merging it into the caller filter. Search paths that need to preserve
+// duplicate caller/policy constraints should normalize both filters together.
+func (e *PolicyEngine) InjectFilterParts(ctx context.Context, nsPrefix []string, filter map[string]interface{}, pc PolicyContext) ([]string, map[string]interface{}, error) {
 	e.mu.RLock()
 	q := *e.filterInject
 	e.mu.RUnlock()
@@ -358,14 +377,14 @@ func (e *PolicyEngine) InjectFilter(ctx context.Context, nsPrefix []string, filt
 	}
 	results, err := q.Eval(ctx, rego.EvalInput(input))
 	if err != nil {
-		return nsPrefix, filter, fmt.Errorf("episodic filter inject eval: %w", err)
+		return nsPrefix, nil, fmt.Errorf("episodic filter inject eval: %w", err)
 	}
 	if len(results) == 0 || len(results[0].Expressions) == 0 {
-		return nsPrefix, filter, nil
+		return nsPrefix, nil, nil
 	}
 	m, _ := results[0].Expressions[0].Value.(map[string]interface{})
 	if m == nil {
-		return nsPrefix, filter, nil
+		return nsPrefix, nil, nil
 	}
 
 	// Extract effective namespace_prefix.
@@ -374,17 +393,13 @@ func (e *PolicyEngine) InjectFilter(ctx context.Context, nsPrefix []string, filt
 		effectivePrefix = toStringSlice(raw)
 	}
 
-	// Merge attribute_filter into caller-supplied filter.
-	merged := make(map[string]interface{})
-	for k, v := range filter {
-		merged[k] = v
-	}
+	policyFilter := make(map[string]interface{})
 	if af, ok := m["attribute_filter"].(map[string]interface{}); ok {
 		for k, v := range af {
-			merged[k] = v
+			policyFilter[k] = v
 		}
 	}
-	return effectivePrefix, merged, nil
+	return effectivePrefix, policyFilter, nil
 }
 
 func policyContextToMap(pc PolicyContext) map[string]interface{} {

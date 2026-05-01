@@ -432,7 +432,7 @@ func (e *sqliteEpisodicStore) ArchiveMemory(ctx context.Context, namespace []str
 }
 
 // SearchMemories performs attribute-filter-only search within the namespace prefix.
-func (e *sqliteEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix []string, filter map[string]interface{}, limit, offset int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
+func (e *sqliteEpisodicStore) SearchMemories(ctx context.Context, namespacePrefix []string, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	nsEncoded, err := e.encodeNS(namespacePrefix)
 	if err != nil {
 		return nil, err
@@ -455,10 +455,9 @@ func (e *sqliteEpisodicStore) SearchMemories(ctx context.Context, namespacePrefi
 		).
 		Where(sqliteMemoryArchiveWhere("m", archived)).
 		Order("m.created_at DESC, m.id DESC").
-		Limit(limit).
-		Offset(offset)
+		Limit(limit)
 
-	if len(filter) > 0 {
+	if !filter.Empty() {
 		clause, args := buildSQLFilter(filter)
 		if clause != "" {
 			q = q.Where(clause, args...)
@@ -635,12 +634,12 @@ func (e *sqliteEpisodicStore) DeleteMemoryVectors(ctx context.Context, memoryID 
 
 // SearchMemoryVectors performs ANN search via pgvector (raw SQL).
 // This is a fallback; the indexer service calls the vector store directly for ANN.
-func (e *sqliteEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter map[string]interface{}, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
+func (e *sqliteEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
 	if e.qdrant != nil {
 		return e.qdrant.SearchMemoryVectors(ctx, namespacePrefix, embedding, filter, limit, archived)
 	}
 	if !e.localVectorEnabled() || limit <= 0 {
-		return nil, nil
+		return nil, registryepisodic.ErrSemanticSearchUnavailable
 	}
 	queryVector, err := vec.SerializeFloat32(embedding)
 	if err != nil {
@@ -650,7 +649,7 @@ func (e *sqliteEpisodicStore) SearchMemoryVectors(ctx context.Context, namespace
 	var whereFilter string
 	var args []interface{}
 	args = append(args, queryVector, namespacePrefix, episodic.NamespacePrefixPattern(namespacePrefix))
-	if len(filter) > 0 {
+	if !filter.Empty() {
 		clause, filterArgs := buildSQLFilter(filter)
 		if clause != "" {
 			clause = strings.ReplaceAll(clause, "policy_attributes", "mv.policy_attributes")
@@ -1019,64 +1018,54 @@ func (e *sqliteEpisodicStore) rowToItem(row memoryRow, namespace []string) (*reg
 
 // buildSQLFilter builds a WHERE clause fragment using the shared helper.
 // Returns the clause and args, ready for gorm.DB.Where(clause, args...).
-func buildSQLFilter(filter map[string]interface{}) (string, []interface{}) {
-	if len(filter) == 0 {
+func buildSQLFilter(filter registryepisodic.AttributeFilter) (string, []interface{}) {
+	if filter.Empty() {
 		return "", nil
 	}
 	var clauses []string
 	var args []interface{}
-
-	for key, val := range filter {
-		jsonPath := sqliteJSONPath(key)
-		switch v := val.(type) {
-		case map[string]interface{}:
-			if members, ok := v["in"]; ok {
-				list := toIfaceSlice(members)
-				if len(list) > 0 {
-					ph := make([]string, len(list))
-					inArgs := make([]interface{}, 0, len(list)+1)
-					inArgs = append(inArgs, jsonPath)
-					for i, m := range list {
-						ph[i] = "?"
-						inArgs = append(inArgs, sqliteJSONScalar(m))
-					}
-					clauses = append(clauses, fmt.Sprintf("json_extract(policy_attributes, ?) IN (%s)", strings.Join(ph, ",")))
-					args = append(args, inArgs...)
-				}
+	for _, cond := range filter.Conditions {
+		jsonPath := sqliteJSONPath(cond.Field)
+		switch cond.Op {
+		case registryepisodic.AttributeFilterOpEq:
+			value := cond.Values[0]
+			clauses = append(clauses, "(json_extract(policy_attributes, ?) = ? OR EXISTS (SELECT 1 FROM json_each(policy_attributes, ?) WHERE json_each.value = ?))")
+			args = append(args, jsonPath, sqliteJSONScalar(value.Raw), jsonPath, sqliteJSONScalar(value.Raw))
+		case registryepisodic.AttributeFilterOpIn:
+			ph := make([]string, len(cond.Values))
+			values := make([]interface{}, 0, len(cond.Values))
+			for i, value := range cond.Values {
+				ph[i] = "?"
+				values = append(values, sqliteJSONScalar(value.Raw))
 			}
-			for op, rhs := range v {
-				var sqlOp string
-				switch op {
-				case "gt":
-					sqlOp = ">"
-				case "gte":
-					sqlOp = ">="
-				case "lt":
-					sqlOp = "<"
-				case "lte":
-					sqlOp = "<="
-				default:
-					continue
-				}
-				clauses = append(clauses, fmt.Sprintf("CAST(json_extract(policy_attributes, ?) AS REAL) %s ?", sqlOp))
-				args = append(args, jsonPath, sqliteNumericScalar(rhs))
+			inList := strings.Join(ph, ",")
+			clauses = append(clauses, fmt.Sprintf("(json_extract(policy_attributes, ?) IN (%s) OR EXISTS (SELECT 1 FROM json_each(policy_attributes, ?) WHERE json_each.value IN (%s)))", inList, inList))
+			args = append(args, jsonPath)
+			args = append(args, values...)
+			args = append(args, jsonPath)
+			args = append(args, values...)
+		case registryepisodic.AttributeFilterOpExists:
+			clauses = append(clauses, "(json_type(policy_attributes, ?) IS NOT NULL AND json_type(policy_attributes, ?) <> 'null' AND (json_type(policy_attributes, ?) <> 'array' OR json_array_length(json_extract(policy_attributes, ?)) > 0))")
+			args = append(args, jsonPath, jsonPath, jsonPath, jsonPath)
+		case registryepisodic.AttributeFilterOpGte, registryepisodic.AttributeFilterOpLte:
+			sqlOp := ">="
+			if cond.Op == registryepisodic.AttributeFilterOpLte {
+				sqlOp = "<="
 			}
-		default:
-			args = append(args, jsonPath, sqliteJSONScalar(v))
-			clauses = append(clauses, "json_extract(policy_attributes, ?) = ?")
+			value := cond.Values[0]
+			if cond.RangeKind == registryepisodic.AttributeFilterRangeTime {
+				clauses = append(clauses, fmt.Sprintf("(json_type(policy_attributes, ?) = 'text' AND json_extract(policy_attributes, ?) %s ?)", sqlOp))
+				args = append(args, jsonPath, jsonPath, value.Text)
+			} else {
+				clauses = append(clauses, fmt.Sprintf("(json_type(policy_attributes, ?) IN ('integer', 'real') AND CAST(json_extract(policy_attributes, ?) AS REAL) %s ?)", sqlOp))
+				args = append(args, jsonPath, jsonPath, sqliteNumericScalar(value.Raw))
+			}
 		}
 	}
 	if len(clauses) == 0 {
 		return "", nil
 	}
 	return strings.Join(clauses, " AND "), args
-}
-
-func toIfaceSlice(v interface{}) []interface{} {
-	if s, ok := v.([]interface{}); ok {
-		return s
-	}
-	return nil
 }
 
 func marshalJSONText(v interface{}) (interface{}, error) {

@@ -13,7 +13,8 @@ Feature: Episodic memories with SQLite vector backend
     {
       "namespace": ["user", "alice", "facts"],
       "key": "k-alice",
-      "value": { "text": "alpha-token-only" }
+      "value": { "text": "alpha-token-only" },
+      "index": { "text": "alpha-token-only" }
     }
     """
     And I call PUT "/v1/memories" with body:
@@ -21,7 +22,8 @@ Feature: Episodic memories with SQLite vector backend
     {
       "namespace": ["user", "aliced", "facts"],
       "key": "k-aliced",
-      "value": { "text": "beta-token-only" }
+      "value": { "text": "beta-token-only" },
+      "index": { "text": "beta-token-only" }
     }
     """
     And I call POST "/admin/v1/memories/index/trigger" with body:
@@ -43,3 +45,52 @@ Feature: Episodic memories with SQLite vector backend
     And the response body "items" should have at least 1 items
     And the response body field "items.0.key" should be "k-alice"
     And the response body should not contain "k-aliced"
+
+  Scenario: Semantic memory search pushes attribute filters into vector search
+    Given I am authenticated as user "alice"
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "vector-filter"],
+      "key": "vector-alice",
+      "value": { "text": "shared-vector-token" },
+      "index": { "text": "shared-vector-token" }
+    }
+    """
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "vector-filter"],
+      "key": "vector-beta",
+      "value": { "text": "shared-vector-token" },
+      "index": { "text": "shared-vector-token" }
+    }
+    """
+    And I call POST "/admin/v1/memories/index/trigger" with body:
+    """
+    {}
+    """
+    Then the response status should be 200
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "vector-filter"],
+      "query": "shared-vector-token",
+      "filter": { "sub": { "\u0024eq": "alice" } },
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body "items" should have at least 1 items
+    And the response body should contain "vector-alice"
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "vector-filter"],
+      "query": "shared-vector-token",
+      "filter": { "sub": { "\u0024eq": "bob" } },
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body "items" should have at most 0 items

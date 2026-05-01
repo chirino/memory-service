@@ -491,7 +491,7 @@ message SearchMemoriesRequest {
   string query = 2;
   optional google.protobuf.Struct filter = 3;
   int32 limit = 4;
-  int32 offset = 5;
+  reserved 5;
   bool include_usage = 6;
   ArchiveFilter archived = 7;
   optional RequestActor actor = 9;
