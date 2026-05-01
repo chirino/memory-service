@@ -91,7 +91,15 @@ class AsyncMemoryServiceStore(BaseStore):
                     await self._aput(op.namespace, op.key, op.value, op.index)
                 results.append(None)
             elif isinstance(op, SearchOp):
-                results.append(await self._asearch(op.namespace_prefix, query=op.query, filter=op.filter, limit=op.limit, offset=op.offset))
+                results.append(
+                    await self._asearch(
+                        op.namespace_prefix,
+                        query=op.query,
+                        filter=op.filter,
+                        limit=op.limit,
+                        offset=op.offset,
+                    )
+                )
             elif isinstance(op, ListNamespacesOp):
                 results.append(await self._alist_namespaces(op))
             else:
@@ -150,10 +158,11 @@ class AsyncMemoryServiceStore(BaseStore):
         limit: int = 10,
         offset: int = 0,
     ) -> list[SearchItem]:
+        if offset:
+            raise ValueError("Memory Service memory search does not support offset pagination")
         body: dict[str, Any] = {
             "namespace_prefix": list(namespace_prefix),
             "limit": min(limit, 100),
-            "offset": offset,
         }
         if query:
             body["query"] = query
