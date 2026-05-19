@@ -61,6 +61,7 @@ func TestFeaturesPgOutbox(t *testing.T) {
 		filepath.Join("testdata", "features", "sse-events-replay-rest.feature"),
 		filepath.Join("testdata", "features-pg-outbox", "sse-events-pg-outbox-rest.feature"),
 		filepath.Join("testdata", "features-pg-outbox", "sse-events-pg-outbox-replay-rest.feature"),
+		filepath.Join("testdata", "features-pg-outbox", "turn-traces-processor.feature"),
 		filepath.Join("testdata", "features-grpc", "sse-events-grpc.feature"),
 	}
 	runBDDFeatures(t, "pg-outbox", featureFiles, apiURL, grpcAddr, &cfg, &PostgresTestDB{DBURL: dbURL}, map[string]interface{}{

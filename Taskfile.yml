@@ -170,8 +170,10 @@ tasks:
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
+      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: turn_traces_processor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1
+      MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: turn-traces-processor-key
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_CORS_ENABLED: "true"
       MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
@@ -197,9 +199,34 @@ tasks:
       MEMORY_SERVICE_EMBEDDING_KIND: '{{.MEMORY_SERVICE_EMBEDDING_KIND | default "openai"}}'
       MEMORY_SERVICE_OPENAI_API_KEY: '{{.OPENAI_API_KEY | default "none"}}'
     cmds:
-      - docker compose up -d qdrant postgres redis keycloak prometheus minio minio-init
+      - docker compose up -d qdrant postgres redis keycloak prometheus minio minio-init clickhouse langfuse-worker langfuse-web
       - docker compose stop memory-service >/dev/null 2>&1 || true
       - air -root . -c deploy/dev/air.toml
+
+  dev:turn-traces-processor:
+    desc: Run the turn-traces processor in dev mode.
+    env:
+      MEMORY_SERVICE_LOG_LEVEL: debug
+      MEMORY_SERVICE_GRPC_ENDPOINT: '{{.MEMORY_SERVICE_GRPC_ENDPOINT | default "localhost:8082"}}'
+      MEMORY_SERVICE_PROCESS_CLIENT_ID: turn_traces_processor
+      MEMORY_SERVICE_API_KEY: turn-traces-processor-key
+      MEMORY_SERVICE_BEARER_TOKEN: turn-traces-processor
+      MEMORY_SERVICE_PROCESS_SCOPE: admin
+      MEMORY_SERVICE_PROCESS_CHECKPOINT_INTERVAL: 5s
+      MEMORY_SERVICE_TURN_TRACES_LANGFUSE_NAME: '{{.MEMORY_SERVICE_TURN_TRACES_LANGFUSE_NAME | default "memory-service.turn"}}'
+      MEMORY_SERVICE_TURN_TRACES_LANGFUSE_SESSION_ID: conversation-group
+      MEMORY_SERVICE_TURN_TRACES_IDLE_TIMEOUT: 5m
+      MEMORY_SERVICE_TURN_TRACES_MAX_TURN_AGE: 30m
+      MEMORY_SERVICE_TURN_TRACES_MAX_OPEN_TURNS: 1000
+      MEMORY_SERVICE_AIR_FULL_BIN: ./bin/memory-service process turn-traces
+      OTEL_SERVICE_NAME: memory-service-turn-traces
+      OTEL_EXPORTER_OTLP_ENDPOINT: '{{.OTEL_EXPORTER_OTLP_ENDPOINT | default "http://localhost:3002/api/public/otel"}}'
+      OTEL_EXPORTER_OTLP_HEADERS: '{{.OTEL_EXPORTER_OTLP_HEADERS | default "Authorization=Basic bGZfcGtfZGV2X3R1cm5fdHJhY2VzOmxmX3NrX2Rldl90dXJuX3RyYWNlcw==,x-langfuse-ingestion-version=4"}}'
+      LANGFUSE_TRACING_ENVIRONMENT: '{{.LANGFUSE_TRACING_ENVIRONMENT | default "local-dev"}}'
+    cmds:
+      - docker compose up -d postgres redis qdrant infinispan keycloak prometheus minio minio-init clickhouse langfuse-worker langfuse-web memory-service
+      - docker compose stop turn-traces-processor >/dev/null 2>&1 || true
+      - air -root . -c deploy/dev/air.toml -tmp_dir /tmp/memory-service-turn-traces -build.log ./build-errors-turn-traces.log -build.kill_delay 5s
 
   dev:memory-service-pgvector:
     desc: Run the memory-service app in dev mode with pgvector (for knowledge clustering).

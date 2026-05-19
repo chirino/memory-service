@@ -3376,7 +3376,7 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID, detail 
 		if err != nil {
 			return event, false, nil
 		}
-		event.Data = conv
+		event.Data = grpcFullEventData(conv, data)
 		return event, true, nil
 	case "entry":
 		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
@@ -3398,7 +3398,7 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID, detail 
 		}
 		for i := range page.Data {
 			if page.Data[i].ID == entryID {
-				event.Data = page.Data[i]
+				event.Data = grpcFullEventData(page.Data[i], data)
 				return event, true, nil
 			}
 		}
@@ -3428,7 +3428,7 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 		if err != nil {
 			return event, false, nil
 		}
-		event.Data = conv
+		event.Data = grpcFullEventData(conv, data)
 		return event, true, nil
 	case "entry":
 		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
@@ -3450,7 +3450,7 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 		}
 		for i := range page.Data {
 			if page.Data[i].ID == entryID {
-				event.Data = page.Data[i]
+				event.Data = grpcFullEventData(page.Data[i], data)
 				return event, true, nil
 			}
 		}
@@ -3458,6 +3458,21 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 	default:
 		return event, true, nil
 	}
+}
+
+func grpcFullEventData(entity any, summary map[string]any) any {
+	raw, err := json.Marshal(entity)
+	if err != nil {
+		return entity
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return entity
+	}
+	if group, ok := summary["conversation_group"].(string); ok && strings.TrimSpace(group) != "" {
+		out["conversationGroupId"] = group
+	}
+	return out
 }
 
 func grpcEventMatchesConversationFilter(event registryeventbus.Event, filter map[uuid.UUID]bool) bool {

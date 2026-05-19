@@ -1,3 +1,46 @@
+name: memory-service
+
+x-langfuse-common-env: &langfuse-common-env
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/langfuse
+  NEXTAUTH_URL: http://localhost:3002
+  NEXTAUTH_SECRET: memory-service-langfuse-nextauth-secret
+  SALT: memory-service-langfuse-salt
+  ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: clickhouse
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  REDIS_TLS_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minioadmin
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: minioadmin
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: us-east-1
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minioadmin
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: minioadmin
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+  LANGFUSE_S3_BATCH_EXPORT_BUCKET: langfuse
+  LANGFUSE_S3_BATCH_EXPORT_PREFIX: exports/
+  LANGFUSE_S3_BATCH_EXPORT_REGION: us-east-1
+  LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: http://localhost:9000
+  LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: minioadmin
+  LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: minioadmin
+  LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
+  LANGFUSE_INGESTION_QUEUE_DELAY_MS: "1000"
+  LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS: "1000"
+
 services:
   postgres:
     image: pgvector/pgvector:pg18
@@ -38,7 +81,7 @@ services:
     environment:
       QDRANT__SERVICE__API_KEY: "${QDRANT_API_KEY:-change-me}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:6333/readyz"]
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333'"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -144,8 +187,10 @@ services:
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
+      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: turn_traces_processor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
+      MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: turn-traces-processor-key
 
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_CORS_ENABLED: "true"
@@ -198,6 +243,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
       infinispan:
         condition: service_healthy
       keycloak:
@@ -211,6 +258,39 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  turn-traces-processor:
+    image: ghcr.io/chirino/memory-service:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/memory-service"]
+    command: ["process", "turn-traces"]
+    environment:
+      MEMORY_SERVICE_LOG_LEVEL: debug
+      MEMORY_SERVICE_GRPC_ENDPOINT: memory-service:8080
+      MEMORY_SERVICE_PROCESS_CLIENT_ID: turn_traces_processor
+      MEMORY_SERVICE_API_KEY: turn-traces-processor-key
+      MEMORY_SERVICE_BEARER_TOKEN: turn-traces-processor
+      MEMORY_SERVICE_PROCESS_SCOPE: admin
+      MEMORY_SERVICE_PROCESS_CHECKPOINT_INTERVAL: 5s
+      MEMORY_SERVICE_TURN_TRACES_LANGFUSE_NAME: memory-service.turn
+      MEMORY_SERVICE_TURN_TRACES_LANGFUSE_SESSION_ID: conversation-group
+      MEMORY_SERVICE_TURN_TRACES_IDLE_TIMEOUT: 5m
+      MEMORY_SERVICE_TURN_TRACES_MAX_TURN_AGE: 30m
+      MEMORY_SERVICE_TURN_TRACES_MAX_OPEN_TURNS: 1000
+      OTEL_SERVICE_NAME: memory-service-turn-traces
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://langfuse-web:3000/api/public/otel
+      OTEL_EXPORTER_OTLP_HEADERS: Authorization=Basic bGZfcGtfZGV2X3R1cm5fdHJhY2VzOmxmX3NrX2Rldl90dXJuX3RyYWNlcw==,x-langfuse-ingestion-version=4
+      LANGFUSE_TRACING_ENVIRONMENT: docker-compose
+    depends_on:
+      memory-service:
+        condition: service_healthy
+      langfuse-web:
+        condition: service_healthy
+      langfuse-worker:
+        condition: service_healthy
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:latest
@@ -265,9 +345,90 @@ services:
       until mc alias set minio http://minio:9000 minioadmin minioadmin; do
         echo 'Waiting for MinIO...'; sleep 2;
       done;
-      mc mb --ignore-existing minio/memory-service-attachments"
+      mc mb --ignore-existing minio/memory-service-attachments;
+      mc mb --ignore-existing minio/langfuse"
     depends_on:
       minio:
+        condition: service_healthy
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    tmpfs:
+      - /var/lib/clickhouse
+      - /var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user clickhouse --password clickhouse --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    environment:
+      <<: *langfuse-common-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://$(hostname):3030/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    environment:
+      <<: *langfuse-common-env
+      LANGFUSE_INIT_ORG_ID: memory-service-dev
+      LANGFUSE_INIT_ORG_NAME: Memory Service Dev
+      LANGFUSE_INIT_PROJECT_ID: turn-traces
+      LANGFUSE_INIT_PROJECT_NAME: Turn Traces
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: lf_pk_dev_turn_traces
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: lf_sk_dev_turn_traces
+      LANGFUSE_INIT_USER_EMAIL: memory-service@example.com
+      LANGFUSE_INIT_USER_NAME: Memory Service
+      LANGFUSE_INIT_USER_PASSWORD: memory-service
+    ports:
+      - "3002:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://$(hostname):3000/api/public/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  langfuse-go-langchain-demo:
+    build:
+      context: .
+      dockerfile: deploy/examples/langfuse-go-langchain/Dockerfile
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://langfuse-web:3000/api/public/otel
+      OTEL_EXPORTER_OTLP_HEADERS: Authorization=Basic bGZfcGtfZGV2X3R1cm5fdHJhY2VzOmxmX3NrX2Rldl90dXJuX3RyYWNlcw==
+    ports:
+      - "8090:8080"
+    depends_on:
+      langfuse-web:
         condition: service_healthy
 
   chat-quarkus:
