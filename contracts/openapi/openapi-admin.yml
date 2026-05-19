@@ -276,6 +276,17 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: upToEntryId
+          in: query
+          required: false
+          description: |-
+            Upper-bound entry id (UUID format). When set, only entries at or
+            before this entry in the admin-visible conversation order are
+            returned.
+          schema:
+            type: string
+            format: uuid
+            nullable: true
         - name: limit
           in: query
           required: false
@@ -420,6 +431,13 @@ paths:
           description: Filter by entry channel.
           schema:
             $ref: '#/components/schemas/Channel'
+        - name: epoch
+          in: query
+          required: false
+          description: Optional epoch filter. Valid values are `latest`, `all`, or a numeric epoch identifier.
+          schema:
+            type: string
+            nullable: true
         - name: justification
           in: query
           required: false

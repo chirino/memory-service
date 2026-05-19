@@ -96,6 +96,65 @@ Feature: Entries gRPC API
     And the gRPC response should contain 1 entry
     And the gRPC response field "entries[0].content[0].text" should be "Epoch One"
 
+  Scenario: Agent can bound context entries by entry id via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a context entry "gRPC context before bound" with epoch 1 and contentType "test.v1"
+    And the conversation has an entry "gRPC history bound"
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    channel: HISTORY
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And set "grpcBoundEntryId" to the gRPC response field "entries[1].id"
+    And the conversation has a context entry "gRPC context after bound" with epoch 1 and contentType "test.v1"
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    channel: CONTEXT
+    epoch_filter: "1"
+    up_to_entry_id: "${grpcBoundEntryId | uuid_to_hex_string}"
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 1 entry
+    And the gRPC response field "entries[0].content[0].text" should be "gRPC context before bound"
+
+  Scenario: Admin can bound context entries by entry id via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a context entry "Admin gRPC context before bound" with epoch 1 and contentType "test.v1"
+    And the conversation has an entry "Admin gRPC history bound"
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    channel: HISTORY
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And set "adminGrpcBoundEntryId" to the gRPC response field "entries[1].id"
+    And the conversation has a context entry "Admin gRPC context after bound" with epoch 1 and contentType "test.v1"
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminEntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    channel: CONTEXT
+    epoch_filter: "1"
+    up_to_entry_id: "${adminGrpcBoundEntryId | uuid_to_hex_string}"
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 1 entry
+    And the gRPC response field "entries[0].content[0].text" should be "Admin gRPC context before bound"
+
   Scenario: Sync context entries via gRPC is no-op when there are no changes
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has a context entry "Stable gRPC epoch" with epoch 1 and contentType "test.v1"

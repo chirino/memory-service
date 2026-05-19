@@ -404,11 +404,20 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 	query := registrystore.AdminMessageQuery{
 		Limit:       queryInt(c, "limit", 20),
 		AfterCursor: queryPtr(c, "afterCursor"),
+		UpToEntryID: queryPtr(c, "upToEntryId"),
 		AllForks:    forks == "all",
 	}
 	if ch := c.Query("channel"); ch != "" {
 		v := model.Channel(ch)
 		query.Channel = &v
+	}
+	if epoch := c.Query("epoch"); epoch != "" {
+		filter, err := registrystore.ParseMemoryEpochFilter(epoch)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		query.EpochFilter = filter
 	}
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {

@@ -141,8 +141,10 @@ type AdminConversationQuery struct {
 // AdminMessageQuery holds parameters for admin entry listing.
 type AdminMessageQuery struct {
 	AfterCursor *string
+	UpToEntryID *string
 	Limit       int
 	Channel     *model.Channel
+	EpochFilter *MemoryEpochFilter
 	AllForks    bool
 }
 
@@ -275,7 +277,7 @@ type MemoryStore interface {
 	DeleteTransfer(ctx context.Context, userID string, transferID uuid.UUID) error
 
 	// Entries
-	GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*PagedEntries, error)
+	GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*PagedEntries, error)
 	AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error)
 	GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error)
 	SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry CreateEntryRequest, clientID string, agentID *string) (*SyncResult, error)

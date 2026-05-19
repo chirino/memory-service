@@ -666,6 +666,15 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 			limit = int(req.GetPage().GetPageSize())
 		}
 	}
+	var upToEntryID *string
+	if len(req.GetUpToEntryId()) > 0 {
+		id, err := bytesToUUID(req.GetUpToEntryId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid up_to_entry_id")
+		}
+		value := id.String()
+		upToEntryID = &value
+	}
 
 	channel := model.ChannelHistory
 	switch req.GetChannel() {
@@ -703,7 +712,77 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	allForks := req.GetForks() == "all"
 
 	result, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
-		return s.Store.GetEntries(txCtx, userID, convID, afterCursor, limit, &channel, epochFilter, clientIDPtr, agentIDPtr, allForks)
+		return s.Store.GetEntries(txCtx, userID, convID, afterCursor, upToEntryID, limit, &channel, epochFilter, clientIDPtr, agentIDPtr, allForks)
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	resp := &pb.ListEntriesResponse{PageInfo: &pb.PageInfo{}}
+	for _, e := range result.Data {
+		resp.Entries = append(resp.Entries, entryToProto(&e))
+	}
+	if result.AfterCursor != nil {
+		resp.PageInfo.NextPageToken = *result.AfterCursor
+	}
+	return resp, nil
+}
+
+type AdminEntriesServer struct {
+	pb.UnimplementedAdminEntriesServiceServer
+	Store registrystore.MemoryStore
+}
+
+func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListEntriesRequest) (*pb.ListEntriesResponse, error) {
+	if !hasGRPCAdminEventAccess(ctx) {
+		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
+	}
+
+	convID, err := bytesToUUID(req.GetConversationId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+	}
+
+	query := registrystore.AdminMessageQuery{Limit: 20}
+	if req.GetPage() != nil {
+		if req.GetPage().GetPageToken() != "" {
+			t := req.GetPage().GetPageToken()
+			query.AfterCursor = &t
+		}
+		if req.GetPage().GetPageSize() > 0 {
+			query.Limit = int(req.GetPage().GetPageSize())
+		}
+	}
+	if len(req.GetUpToEntryId()) > 0 {
+		id, err := bytesToUUID(req.GetUpToEntryId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid up_to_entry_id")
+		}
+		value := id.String()
+		query.UpToEntryID = &value
+	}
+	switch req.GetChannel() {
+	case pb.Channel_CONTEXT:
+		ch := model.ChannelContext
+		query.Channel = &ch
+	case pb.Channel_HISTORY:
+		ch := model.ChannelHistory
+		query.Channel = &ch
+	case pb.Channel_CHANNEL_UNSPECIFIED:
+	default:
+		return nil, status.Error(codes.InvalidArgument, "invalid channel")
+	}
+	if req.GetEpochFilter() != "" {
+		filter, err := registrystore.ParseMemoryEpochFilter(req.GetEpochFilter())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		query.EpochFilter = filter
+	}
+	query.AllForks = req.GetForks() == "all"
+
+	result, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
+		return s.Store.AdminGetEntries(txCtx, convID, query)
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -2878,7 +2957,7 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	userEntryLoader := func(ctx context.Context, conversationID, entryID uuid.UUID) (*model.Entry, error) {
 		var found *model.Entry
 		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
-			page, err := s.Store.GetEntries(txCtx, userID, conversationID, nil, 5000, nil, nil, nil, nil, true)
+			page, err := s.Store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, nil, nil, nil, nil, true)
 			if err != nil {
 				return err
 			}
@@ -3388,7 +3467,7 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID, detail 
 			return event, true, nil
 		}
 		page, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
-			return s.Store.GetEntries(txCtx, userID, conversationID, nil, 5000, nil, nil, nil, nil, true)
+			return s.Store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, nil, nil, nil, nil, true)
 		})
 		if err != nil {
 			return event, false, nil

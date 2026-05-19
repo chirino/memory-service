@@ -619,7 +619,7 @@ func readEntryDetail(ctx context.Context, store registrystore.MemoryStore, userI
 	var result *registrystore.PagedEntries
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
-		result, err = store.GetEntries(txCtx, userID, conversationID, nil, 5000, nil, nil, nil, nil, true)
+		result, err = store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, nil, nil, nil, nil, true)
 		return err
 	})
 	if err != nil {

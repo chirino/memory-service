@@ -288,6 +288,22 @@ Feature: Admin REST API
     Then the response status should be 200
     And the response should contain at least 1 items
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads entries for one scenario-local conversation and appears parallel-safe.
+  Scenario: Admin can bound context entries by entry id
+    Given I am authenticated as agent with API key "test-agent-key"
+    And set "conversationId" to "${aliceConversationId}"
+    And the conversation has a context entry "Admin context before bound" with epoch 1 and contentType "test.v1"
+    And the conversation has an entry "Admin history bound"
+    When I call GET "/v1/conversations/${aliceConversationId}/entries?channel=history"
+    Then the response status should be 200
+    And set "adminBoundEntryId" to the json response field "data[0].id"
+    And the conversation has a context entry "Admin context after bound" with epoch 1 and contentType "test.v1"
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations/${aliceConversationId}/entries?channel=context&epoch=1&upToEntryId=${adminBoundEntryId}"
+    Then the response status should be 200
+    And the response should contain 1 entry
+    And entry at index 0 should have content "Admin context before bound"
+
   # Serial today only because this feature shares the serial admin runner; this scenario reads memberships for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin can get memberships for any conversation
     When I call GET "/v1/admin/conversations/${bobConversationId}/memberships"

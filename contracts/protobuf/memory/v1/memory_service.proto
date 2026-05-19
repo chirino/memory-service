@@ -259,11 +259,27 @@ message ListEntriesRequest {
   // Controls which fork entries to include: "none" (default) follows ancestry,
   // "all" returns entries from all forks in the conversation group
   string forks = 5;
+  // Return entries at or before this entry in the caller-visible conversation order.
+  // Useful with channel=CONTEXT and epoch_filter to reconstruct context as of a history entry.
+  optional bytes up_to_entry_id = 6;
 }
 
 message ListEntriesResponse {
   repeated Entry entries = 1;
   PageInfo page_info = 2;
+}
+
+message AdminListEntriesRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  Channel channel = 2;
+  string epoch_filter = 3;
+  PageRequest page = 4;
+  // Controls which fork entries to include: "none" (default) follows ancestry,
+  // "all" returns entries from all forks in the conversation group
+  string forks = 5;
+  // Return entries at or before this entry in the admin-visible conversation order.
+  optional bytes up_to_entry_id = 6;
 }
 
 message Entry {
@@ -641,6 +657,10 @@ service EntriesService {
   rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
   rpc AppendEntry(AppendEntryRequest) returns (Entry);
   rpc SyncEntries(SyncEntriesRequest) returns (SyncEntriesResponse);
+}
+
+service AdminEntriesService {
+  rpc ListEntries(AdminListEntriesRequest) returns (ListEntriesResponse);
 }
 
 service SearchService {

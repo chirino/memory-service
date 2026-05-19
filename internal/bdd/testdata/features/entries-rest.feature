@@ -125,6 +125,19 @@ Feature: Entries REST API
     And the response should contain 1 entry
     And entry at index 0 should have content "First epoch entry"
 
+  Scenario: Agent can bound context entries by entry id
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a context entry "Context before bound" with epoch 1 and contentType "test.v1"
+    And the conversation has an entry "History bound"
+    When I list entries for the conversation with channel "HISTORY"
+    Then the response status should be 200
+    And set "boundEntryId" to the json response field "data[0].id"
+    And the conversation has a context entry "Context after bound" with epoch 1 and contentType "test.v1"
+    When I call GET "/v1/conversations/${conversationId}/entries?channel=CONTEXT&epoch=1&upToEntryId=${boundEntryId}"
+    Then the response status should be 200
+    And the response should contain 1 entry
+    And entry at index 0 should have content "Context before bound"
+
   Scenario: Sync context entries is no-op when there are no changes
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has a context entry "Stable epoch entry" with epoch 1 and contentType "test.v1"

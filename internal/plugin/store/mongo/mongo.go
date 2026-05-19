@@ -1371,7 +1371,7 @@ func (s *MongoStore) DeleteTransfer(ctx context.Context, userID string, transfer
 
 // --- Entries ---
 
-func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
+func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{"_id": uuidToStr(conversationID)}).Decode(&conv)
 	if err != nil {
@@ -1403,6 +1403,10 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 			return nil, err
 		}
 		filtered := filterEntriesForAllForksDocs(docs, effectiveChannel, clientID, agentID, epochFilter)
+		filtered, err = trimEntryDocsToVisiblePrefix(filtered, docs, upToEntryID)
+		if err != nil {
+			return nil, err
+		}
 		filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
 		entries := make([]model.Entry, len(filtered))
 		for i, d := range filtered {
@@ -1418,47 +1422,35 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		return nil, err
 	}
 
-	if effectiveChannel == model.ChannelContext {
-		if epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest {
-			// Use cache for the common latest-epoch case.
-			cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, valueOrEmpty(agentID))
-			if err != nil {
-				return nil, err
-			}
-			page, nextCursor := paginateEntriesModel(cachedEntries, afterEntryID, limit)
-			for i := range page {
-				if dec, err := s.decrypt(page[i].Content); err == nil {
-					page[i].Content = dec
-				}
-			}
-			return &registrystore.PagedEntries{Data: page, AfterCursor: nextCursor}, nil
-		}
-		docs, err := s.loadEntriesForGroup(ctx, conv.ConversationGroupID)
+	if effectiveChannel == model.ChannelContext && upToEntryID == nil && (epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest) {
+		// Use cache for the common latest-epoch case.
+		cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, valueOrEmpty(agentID))
 		if err != nil {
 			return nil, err
 		}
-		filtered := filterMemoryEntriesWithEpochDocs(docs, ancestry, *clientID, valueOrEmpty(agentID), epochFilter)
-		filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
-		entries := make([]model.Entry, len(filtered))
-		for i, d := range filtered {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		page, nextCursor := paginateEntriesModel(cachedEntries, afterEntryID, limit)
+		for i := range page {
+			if dec, err := s.decrypt(page[i].Content); err == nil {
+				page[i].Content = dec
+			}
 		}
-		return &registrystore.PagedEntries{Data: entries, AfterCursor: nextCursor}, nil
+		return &registrystore.PagedEntries{Data: page, AfterCursor: nextCursor}, nil
 	}
 
 	docs, err := s.loadEntriesForGroup(ctx, conv.ConversationGroupID)
 	if err != nil {
 		return nil, err
 	}
+	visible := filterEntriesByAncestryDocs(docs, ancestry)
 	var filtered []entryDoc
-	if effectiveChannel == "" && clientID != nil {
-		filtered = filterEntriesByAncestryDocs(docs, ancestry)
+	if effectiveChannel == model.ChannelContext {
+		filtered = filterMemoryEntriesWithEpochDocs(docs, ancestry, *clientID, valueOrEmpty(agentID), epochFilter)
+	} else if effectiveChannel == "" && clientID != nil {
+		filtered = visible
 	} else {
-		filtered = filterEntriesByAncestryDocs(docs, ancestry)
+		filtered = visible
 		if effectiveChannel != "" {
-			tmp := filtered[:0]
+			tmp := make([]entryDoc, 0, len(filtered))
 			for _, entry := range filtered {
 				if strings.EqualFold(entry.Channel, string(effectiveChannel)) {
 					tmp = append(tmp, entry)
@@ -1466,6 +1458,10 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 			}
 			filtered = tmp
 		}
+	}
+	filtered, err = trimEntryDocsToVisiblePrefix(filtered, visible, upToEntryID)
+	if err != nil {
+		return nil, err
 	}
 	filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
 	entries := make([]model.Entry, len(filtered))
@@ -2397,24 +2393,34 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID uuid.UU
 	}
 
 	var filtered []entryDoc
+	var visible []entryDoc
 	if query.AllForks {
 		filtered = docs
+		visible = docs
 	} else {
 		ancestry, err := s.buildAncestryStack(ctx, conv)
 		if err != nil {
 			return nil, err
 		}
 		filtered = filterEntriesByAncestryDocs(docs, ancestry)
+		visible = filtered
 	}
 	if query.Channel != nil {
 		ch := strings.ToLower(string(*query.Channel))
-		tmp := filtered[:0]
+		tmp := make([]entryDoc, 0, len(filtered))
 		for _, entry := range filtered {
 			if strings.ToLower(entry.Channel) == ch {
 				tmp = append(tmp, entry)
 			}
 		}
 		filtered = tmp
+	}
+	if query.EpochFilter != nil {
+		filtered = filterEntryDocsByEpoch(filtered, query.EpochFilter)
+	}
+	filtered, err = trimEntryDocsToVisiblePrefix(filtered, visible, query.UpToEntryID)
+	if err != nil {
+		return nil, err
 	}
 
 	filtered, nextCursor := paginateEntryDocs(filtered, query.AfterCursor, limit)
@@ -3423,6 +3429,63 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 	}
 
 	return result
+}
+
+func filterEntryDocsByEpoch(entries []entryDoc, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
+	epoch := normalizeEpochFilter(epochFilter)
+	result := make([]entryDoc, 0, len(entries))
+	maxEpochSeen := int64(0)
+	maxEpochInitialized := false
+	for _, entry := range entries {
+		entryEpoch := int64(0)
+		if entry.Epoch != nil {
+			entryEpoch = *entry.Epoch
+		}
+
+		switch epoch.Mode {
+		case registrystore.MemoryEpochModeAll:
+			result = append(result, entry)
+		case registrystore.MemoryEpochModeEpoch:
+			if epoch.Epoch != nil && entryEpoch == *epoch.Epoch {
+				result = append(result, entry)
+			}
+		default:
+			if !maxEpochInitialized || entryEpoch > maxEpochSeen {
+				result = result[:0]
+				maxEpochSeen = entryEpoch
+				maxEpochInitialized = true
+			}
+			if entryEpoch == maxEpochSeen {
+				result = append(result, entry)
+			}
+		}
+	}
+	return result
+}
+
+func trimEntryDocsToVisiblePrefix(entries []entryDoc, visible []entryDoc, upToEntryID *string) ([]entryDoc, error) {
+	if upToEntryID == nil || *upToEntryID == "" {
+		return entries, nil
+	}
+	visibleIDs := make(map[string]struct{})
+	found := false
+	for _, entry := range visible {
+		visibleIDs[entry.ID] = struct{}{}
+		if entry.ID == *upToEntryID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, &registrystore.NotFoundError{Resource: "entry", ID: *upToEntryID}
+	}
+	filtered := entries[:0]
+	for _, entry := range entries {
+		if _, ok := visibleIDs[entry.ID]; ok {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered, nil
 }
 
 // loadEntriesForGroup fetches all entries for a conversation group from MongoDB.
