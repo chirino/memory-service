@@ -43,3 +43,32 @@ Feature: SSE Event Stream Replay
     Given "alice" is connected to the admin SSE event stream with query "justification=BDD+admin+replay&after=${adminSseAfterCursor}&detail=full"
     Then "alice" should receive an SSE event with kind "conversation" and event "updated" where data "title" is "Admin Replay SSE Conversation Updated"
     And the SSE event data should contain "id"
+
+  Scenario: Replay SSE entry events honors entry channel filters
+    Given "alice" is connected to the SSE event stream
+    And I have a conversation with title "Entry Filter Replay"
+    Then the response status should be 201
+    And "alice" should receive an SSE event with kind "conversation" and event "created"
+    And the SSE event cursor should be saved as "entryFilterAfterCursor"
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [{"type": "text", "text": "Replay context"}]
+    }
+    """
+    Then the response status should be 201
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Replay history"}]
+    }
+    """
+    Then the response status should be 201
+    Given "alice" is connected to the SSE event stream with query "after=${entryFilterAfterCursor}&kinds=entry&entry_channels=context"
+    Then "alice" should receive an SSE event with kind "entry" and event "created" where data "entry_channel" is "context"
+    And "alice" should not receive an SSE event with kind "entry" and event "created" within 2 seconds

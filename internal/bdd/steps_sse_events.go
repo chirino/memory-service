@@ -32,6 +32,7 @@ func init() {
 		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)" within (\d+) seconds$`, e.userShouldReceiveSSEEvent)
 		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)"$`, e.userShouldReceiveSSEEventDefault)
 		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)" where data "([^"]*)" is "([^"]*)"$`, e.userShouldReceiveSSEEventWithDataField)
+		ctx.Step(`^"([^"]*)" should not receive an SSE event with kind "([^"]*)" and event "([^"]*)" within (\d+) seconds$`, e.userShouldNotReceiveSSEEventWithKind)
 		ctx.Step(`^"([^"]*)" should not receive any SSE event within (\d+) seconds$`, e.userShouldNotReceiveSSEEvent)
 		ctx.Step(`^the SSE event cursor should be saved as "([^"]*)"$`, e.saveSSEEventCursor)
 		ctx.Step(`^the SSE event cursor should match the Postgres outbox format$`, e.sseEventCursorShouldMatchPostgresOutboxFormat)
@@ -264,6 +265,30 @@ func (e *sseEventSteps) userShouldNotReceiveSSEEvent(userID string, timeoutSec i
 			return fmt.Errorf("expected no SSE event for %q within %ds, but received: %v", userID, timeoutSec, evt)
 		case <-timeout:
 			return nil // Good — no event received within the timeout.
+		}
+	}
+}
+
+func (e *sseEventSteps) userShouldNotReceiveSSEEventWithKind(userID, kind, eventType string, timeoutSec int) error {
+	e.mu.Lock()
+	stream, ok := e.streams[userID]
+	e.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no SSE stream open for user %q", userID)
+	}
+
+	timeout := time.After(time.Duration(timeoutSec) * time.Second)
+	for {
+		select {
+		case evt, ok := <-stream.events:
+			if !ok {
+				return nil
+			}
+			if evt["kind"] == kind && evt["event"] == eventType {
+				return fmt.Errorf("expected no SSE event kind=%q event=%q for %q within %ds, but received: %v", kind, eventType, userID, timeoutSec, evt)
+			}
+		case <-timeout:
+			return nil
 		}
 	}
 }

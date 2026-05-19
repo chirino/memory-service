@@ -97,3 +97,6 @@ To force re-recording all fixtures:
 ```bash
 SITE_TEST_RECORD=all OPENAI_API_KEY=sk-... task test:site
 ```
+# Site Module Facts
+
+**Event docs entry-filter parity**: `site/src/pages/docs/concepts/events.mdx` should document REST and gRPC entry filters together (`entry_channels`, `entry_content_types`, `entry_roles`). Framework event guides should call out that browser-facing proxies forward history-channel entry notifications only, while trusted processors may opt into context entries directly against Memory Service.

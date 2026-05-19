@@ -97,6 +97,10 @@ func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus r
 			}
 		}
 	}
+	entryFilter := eventstream.EntryEventFilterFromQuery(c.Request.URL.Query())
+	entryLoader := func(ctx context.Context, conversationID, entryID uuid.UUID) (*model.Entry, error) {
+		return readAdminEntryDetail(ctx, store, conversationID, entryID)
+	}
 
 	// Set SSE headers.
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -144,7 +148,7 @@ streamLoop:
 
 		if resumeCursor != "" {
 			writeAdminSSEPhaseEvent(c, "replay")
-			outcome := replayAdminSSEEvents(c, store, detail, outbox, sub, resumeCursor, replayBatchSize(cfg), kindsFilter, &lastCursor)
+			outcome := replayAdminSSEEvents(c, store, detail, outbox, sub, resumeCursor, replayBatchSize(cfg), kindsFilter, entryFilter, entryLoader, &lastCursor)
 			switch outcome {
 			case replayOutcomeClosed:
 				return
@@ -207,6 +211,14 @@ streamLoop:
 				if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
 					continue
 				}
+				matches, err := entryFilter.Matches(c.Request.Context(), event, entryLoader)
+				if err != nil {
+					log.Warn("Admin SSE entry filter failed", "err", err, "adminID", adminID)
+					continue
+				}
+				if !matches {
+					continue
+				}
 
 				if event.OutboxCursor != "" {
 					lastCursor = event.OutboxCursor
@@ -219,7 +231,7 @@ streamLoop:
 	}
 }
 
-func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, lastCursor *string) replayOutcome {
+func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) replayOutcome {
 	query := registrystore.OutboxQuery{
 		AfterCursor: after,
 		Limit:       batchSize,
@@ -263,6 +275,14 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 				Data:         json.RawMessage(replayEvent.Data),
 				OutboxCursor: replayEvent.Cursor,
 			}
+			matches, err := entryFilter.Matches(c.Request.Context(), event, entryLoader)
+			if err != nil {
+				log.Warn("Admin SSE replay entry filter failed", "err", err)
+				continue
+			}
+			if !matches {
+				continue
+			}
 			if enriched, ok := enrichAdminEvent(c.Request.Context(), store, detail, event); ok {
 				writeAdminSSEEvent(c, enriched)
 			}
@@ -288,6 +308,14 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 				*lastCursor = event.OutboxCursor
 			}
 			if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
+				continue
+			}
+			matches, err := entryFilter.Matches(c.Request.Context(), event, entryLoader)
+			if err != nil {
+				log.Warn("Admin SSE replay tail entry filter failed", "err", err)
+				continue
+			}
+			if !matches {
 				continue
 			}
 			if enriched, ok := enrichAdminEvent(c.Request.Context(), store, detail, event); ok {

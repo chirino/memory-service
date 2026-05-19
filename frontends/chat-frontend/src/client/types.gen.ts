@@ -1565,6 +1565,18 @@ export type $OpenApiTs = {
          */
         detail?: "summary" | "full";
         /**
+         * Comma-separated entry channels to deliver for entry events. Defaults to history.
+         */
+        entryChannels?: string;
+        /**
+         * Comma-separated entry content types to deliver for entry events. Omit to allow any.
+         */
+        entryContentTypes?: string;
+        /**
+         * Comma-separated entry roles to deliver for entry events. Omit to allow any.
+         */
+        entryRoles?: string;
+        /**
          * Comma-separated event kinds to filter (conversation, entry, response, membership).
          */
         kinds?: string;
@@ -1596,6 +1608,18 @@ export type $OpenApiTs = {
          * Event payload detail level.
          */
         detail?: "summary" | "full";
+        /**
+         * Comma-separated entry channels to deliver for entry events. Defaults to history.
+         */
+        entryChannels?: string;
+        /**
+         * Comma-separated entry content types to deliver for entry events. Omit to allow any.
+         */
+        entryContentTypes?: string;
+        /**
+         * Comma-separated entry roles to deliver for entry events. Omit to allow any.
+         */
+        entryRoles?: string;
         /**
          * Optional reason for subscribing, logged for audit when present. Servers configured to require admin justifications reject requests without one.
          */

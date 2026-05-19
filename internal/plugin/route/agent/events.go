@@ -281,6 +281,10 @@ func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus regist
 			}
 		}
 	}
+	entryFilter := eventstream.EntryEventFilterFromQuery(c.Request.URL.Query())
+	entryLoader := func(ctx context.Context, conversationID, entryID uuid.UUID) (*model.Entry, error) {
+		return readEntryDetail(ctx, store, userID, conversationID, entryID)
+	}
 
 	// Set SSE headers.
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -325,7 +329,7 @@ connectionLoop:
 
 		if resumeCursor != "" {
 			writeSSEPhaseEvent(c, "replay")
-			outcome := replaySSEEvents(c, store, userID, detail, outbox, sub, resumeCursor, cfg.OutboxReplayBatchSize, kindsFilter, &lastCursor, func(event registryeventbus.Event) bool {
+			outcome := replaySSEEvents(c, store, userID, detail, outbox, sub, resumeCursor, cfg.OutboxReplayBatchSize, kindsFilter, entryFilter, entryLoader, &lastCursor, func(event registryeventbus.Event) bool {
 				if event.Internal && event.Kind == "session" {
 					sessionTracker.handleSessionEvent(event)
 					return true
@@ -412,6 +416,14 @@ connectionLoop:
 				if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
 					continue
 				}
+				matches, err := entryFilter.Matches(c.Request.Context(), event, entryLoader)
+				if err != nil {
+					log.Warn("SSE entry filter failed", "err", err, "userID", userID)
+					continue
+				}
+				if !matches {
+					continue
+				}
 				if event.OutboxCursor != "" {
 					lastCursor = event.OutboxCursor
 				}
@@ -423,7 +435,7 @@ connectionLoop:
 	}
 }
 
-func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, lastCursor *string, skipBusEvent func(registryeventbus.Event) bool) replayOutcome {
+func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string, skipBusEvent func(registryeventbus.Event) bool) replayOutcome {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
@@ -480,6 +492,14 @@ func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID, de
 			if !userCanReplayEvent(userID, visibleGroups, event) {
 				continue
 			}
+			matches, err := entryFilter.Matches(c.Request.Context(), event, entryLoader)
+			if err != nil {
+				log.Warn("SSE replay entry filter failed", "err", err, "userID", userID)
+				continue
+			}
+			if !matches {
+				continue
+			}
 			if enriched, ok := enrichUserEvent(c.Request.Context(), store, userID, detail, event); ok {
 				writeSSEEvent(c, enriched)
 			}
@@ -505,6 +525,14 @@ func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID, de
 				*lastCursor = event.OutboxCursor
 			}
 			if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
+				continue
+			}
+			matches, err := entryFilter.Matches(c.Request.Context(), event, entryLoader)
+			if err != nil {
+				log.Warn("SSE replay tail entry filter failed", "err", err, "userID", userID)
+				continue
+			}
+			if !matches {
 				continue
 			}
 			if enriched, ok := enrichUserEvent(c.Request.Context(), store, userID, detail, event); ok {

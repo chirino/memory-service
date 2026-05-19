@@ -1583,6 +1583,25 @@ paths:
             enum: [summary, full]
             default: summary
           description: Event payload detail level.
+        - name: entry_channels
+          in: query
+          required: false
+          schema:
+            type: string
+            default: history
+          description: Comma-separated entry channels to deliver for entry events. Defaults to history.
+        - name: entry_content_types
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated entry content types to deliver for entry events. Omit to allow any.
+        - name: entry_roles
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated entry roles to deliver for entry events. Omit to allow any.
       responses:
         '200':
           description: SSE event stream opened successfully.
@@ -1641,6 +1660,25 @@ paths:
             enum: [summary, full]
             default: summary
           description: Event payload detail level.
+        - name: entry_channels
+          in: query
+          required: false
+          schema:
+            type: string
+            default: history
+          description: Comma-separated entry channels to deliver for entry events. Defaults to history.
+        - name: entry_content_types
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated entry content types to deliver for entry events. Omit to allow any.
+        - name: entry_roles
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated entry roles to deliver for entry events. Omit to allow any.
       responses:
         '200':
           description: SSE event stream opened successfully.

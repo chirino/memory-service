@@ -843,6 +843,12 @@ message SubscribeEventsRequest {
   optional EventScope scope = 5;
   // Optional: admin/auditor justification, logged for admin scope.
   optional string justification = 6;
+  // Optional: entry channel filter for entry events. Defaults to ["history"].
+  repeated string entry_channels = 7;
+  // Optional: entry content type filter for entry events. Empty means any.
+  repeated string entry_content_types = 8;
+  // Optional: entry role filter for entry events. Empty means any.
+  repeated string entry_roles = 9;
 }
 
 message EventNotification {

@@ -6016,6 +6016,12 @@ type SubscribeEventsRequest struct {
 	Scope *EventScope `protobuf:"varint,5,opt,name=scope,proto3,enum=memory.v1.EventScope,oneof" json:"scope,omitempty"`
 	// Optional: admin/auditor justification, logged for admin scope.
 	Justification *string `protobuf:"bytes,6,opt,name=justification,proto3,oneof" json:"justification,omitempty"`
+	// Optional: entry channel filter for entry events. Defaults to ["history"].
+	EntryChannels []string `protobuf:"bytes,7,rep,name=entry_channels,json=entryChannels,proto3" json:"entry_channels,omitempty"`
+	// Optional: entry content type filter for entry events. Empty means any.
+	EntryContentTypes []string `protobuf:"bytes,8,rep,name=entry_content_types,json=entryContentTypes,proto3" json:"entry_content_types,omitempty"`
+	// Optional: entry role filter for entry events. Empty means any.
+	EntryRoles    []string `protobuf:"bytes,9,rep,name=entry_roles,json=entryRoles,proto3" json:"entry_roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6090,6 +6096,27 @@ func (x *SubscribeEventsRequest) GetJustification() string {
 		return *x.Justification
 	}
 	return ""
+}
+
+func (x *SubscribeEventsRequest) GetEntryChannels() []string {
+	if x != nil {
+		return x.EntryChannels
+	}
+	return nil
+}
+
+func (x *SubscribeEventsRequest) GetEntryContentTypes() []string {
+	if x != nil {
+		return x.EntryContentTypes
+	}
+	return nil
+}
+
+func (x *SubscribeEventsRequest) GetEntryRoles() []string {
+	if x != nil {
+		return x.EntryRoles
+	}
+	return nil
 }
 
 type EventNotification struct {
@@ -6614,14 +6641,18 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12,\n" +
 	"\x05value\x18\x03 \x01(\v2\x16.google.protobuf.ValueR\x05value\x129\n" +
 	"\n" +
-	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xb3\x02\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xab\x03\n" +
 	"\x16SubscribeEventsRequest\x12)\n" +
 	"\x10conversation_ids\x18\x01 \x03(\fR\x0fconversationIds\x12\x14\n" +
 	"\x05kinds\x18\x02 \x03(\tR\x05kinds\x12&\n" +
 	"\fafter_cursor\x18\x03 \x01(\tH\x00R\vafterCursor\x88\x01\x01\x12\x1b\n" +
 	"\x06detail\x18\x04 \x01(\tH\x01R\x06detail\x88\x01\x01\x120\n" +
 	"\x05scope\x18\x05 \x01(\x0e2\x15.memory.v1.EventScopeH\x02R\x05scope\x88\x01\x01\x12)\n" +
-	"\rjustification\x18\x06 \x01(\tH\x03R\rjustification\x88\x01\x01B\x0f\n" +
+	"\rjustification\x18\x06 \x01(\tH\x03R\rjustification\x88\x01\x01\x12%\n" +
+	"\x0eentry_channels\x18\a \x03(\tR\rentryChannels\x12.\n" +
+	"\x13entry_content_types\x18\b \x03(\tR\x11entryContentTypes\x12\x1f\n" +
+	"\ventry_roles\x18\t \x03(\tR\n" +
+	"entryRolesB\x0f\n" +
 	"\r_after_cursorB\t\n" +
 	"\a_detailB\b\n" +
 	"\x06_scopeB\x10\n" +

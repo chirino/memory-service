@@ -810,6 +810,15 @@ type AdminSubscribeEventsParams struct {
 
 	// Detail Event payload detail level.
 	Detail *AdminSubscribeEventsParamsDetail `form:"detail,omitempty" json:"detail,omitempty"`
+
+	// EntryChannels Comma-separated entry channels to deliver for entry events. Defaults to history.
+	EntryChannels *string `form:"entry_channels,omitempty" json:"entry_channels,omitempty"`
+
+	// EntryContentTypes Comma-separated entry content types to deliver for entry events. Omit to allow any.
+	EntryContentTypes *string `form:"entry_content_types,omitempty" json:"entry_content_types,omitempty"`
+
+	// EntryRoles Comma-separated entry roles to deliver for entry events. Omit to allow any.
+	EntryRoles *string `form:"entry_roles,omitempty" json:"entry_roles,omitempty"`
 }
 
 // AdminSubscribeEventsParamsDetail defines parameters for AdminSubscribeEvents.
@@ -946,6 +955,15 @@ type SubscribeEventsParams struct {
 
 	// Detail Event payload detail level.
 	Detail *SubscribeEventsParamsDetail `form:"detail,omitempty" json:"detail,omitempty"`
+
+	// EntryChannels Comma-separated entry channels to deliver for entry events. Defaults to history.
+	EntryChannels *string `form:"entry_channels,omitempty" json:"entry_channels,omitempty"`
+
+	// EntryContentTypes Comma-separated entry content types to deliver for entry events. Omit to allow any.
+	EntryContentTypes *string `form:"entry_content_types,omitempty" json:"entry_content_types,omitempty"`
+
+	// EntryRoles Comma-separated entry roles to deliver for entry events. Omit to allow any.
+	EntryRoles *string `form:"entry_roles,omitempty" json:"entry_roles,omitempty"`
 }
 
 // SubscribeEventsParamsDetail defines parameters for SubscribeEvents.
@@ -2000,6 +2018,54 @@ func NewAdminSubscribeEventsRequest(server string, params *AdminSubscribeEventsP
 		if params.Detail != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "detail", runtime.ParamLocationQuery, *params.Detail); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EntryChannels != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "entry_channels", runtime.ParamLocationQuery, *params.EntryChannels); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EntryContentTypes != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "entry_content_types", runtime.ParamLocationQuery, *params.EntryContentTypes); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EntryRoles != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "entry_roles", runtime.ParamLocationQuery, *params.EntryRoles); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -3314,6 +3380,54 @@ func NewSubscribeEventsRequest(server string, params *SubscribeEventsParams) (*h
 		if params.Detail != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "detail", runtime.ParamLocationQuery, *params.Detail); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EntryChannels != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "entry_channels", runtime.ParamLocationQuery, *params.EntryChannels); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EntryContentTypes != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "entry_content_types", runtime.ParamLocationQuery, *params.EntryContentTypes); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EntryRoles != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "entry_roles", runtime.ParamLocationQuery, *params.EntryRoles); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

@@ -114,3 +114,68 @@ Feature: Event Stream gRPC API
     """
     Then the response status should be 201
     And "alice" should receive a gRPC event with kind "entry" and event "created"
+
+  Scenario: gRPC entry stream defaults to history entries
+    Given I have a conversation with title "gRPC Entry Filter Defaults"
+    And "alice" is connected to the gRPC event stream filtered to kinds "entry"
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [{"type": "text", "text": "Internal context over gRPC stream"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should not receive a gRPC event with kind "entry" and event "created" within 2 seconds
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Visible history over gRPC stream"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should receive a gRPC event with kind "entry" and event "created" where data "entry_channel" is "history"
+
+  Scenario: gRPC entry stream can opt into context entries
+    Given I have a conversation with title "gRPC Entry Context Filter"
+    And "alice" is connected to the gRPC event stream filtered to kinds "entry" and entry channels "context"
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [{"type": "text", "text": "Subscribed context over gRPC stream"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should receive a gRPC event with kind "entry" and event "created" where data "entry_channel" is "context"
+
+  Scenario: gRPC entry stream filters by content type and role
+    Given I have a conversation with title "gRPC Entry Metadata Filter"
+    And "alice" is connected to the gRPC event stream filtered to kinds "entry" entry channels "history" content types "history/lc4j" and roles "AI"
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Filtered user history over gRPC"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should not receive a gRPC event with kind "entry" and event "created" within 2 seconds
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history/lc4j",
+      "content": [{"role": "AI", "text": "Matched AI history over gRPC"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should receive a gRPC event with kind "entry" and event "created" where data "entry_role" is "AI"

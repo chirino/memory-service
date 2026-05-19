@@ -20,6 +20,14 @@ public class EventsResource {
     @GET
     @Produces(MediaType.SERVER_SENT_EVENTS)
     public Multi<EventNotification> streamEvents(@QueryParam("kinds") String kinds) {
-        return proxy.streamEvents(kinds);
+        return proxy.streamEvents(kinds).filter(EventsResource::isFrontendVisible);
+    }
+
+    private static boolean isFrontendVisible(EventNotification event) {
+        if (!"entry".equals(event.kind())) {
+            return true;
+        }
+        Object channel = event.data() == null ? null : event.data().get("entry_channel");
+        return "history".equals(channel);
     }
 }

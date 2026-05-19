@@ -1138,6 +1138,9 @@ export class EventsService {
    * @param data.kinds Comma-separated event kinds to filter (conversation, entry, response, membership).
    * @param data.after Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
    * @param data.detail Event payload detail level.
+   * @param data.entryChannels Comma-separated entry channels to deliver for entry events. Defaults to history.
+   * @param data.entryContentTypes Comma-separated entry content types to deliver for entry events. Omit to allow any.
+   * @param data.entryRoles Comma-separated entry roles to deliver for entry events. Omit to allow any.
    * @returns string SSE event stream opened successfully.
    * @throws ApiError
    */
@@ -1151,6 +1154,9 @@ export class EventsService {
         kinds: data.kinds,
         after: data.after,
         detail: data.detail,
+        entry_channels: data.entryChannels,
+        entry_content_types: data.entryContentTypes,
+        entry_roles: data.entryRoles,
       },
       errors: {
         401: "Authentication required.",
@@ -1173,6 +1179,9 @@ export class AdminService {
    * @param data.kinds Comma-separated event kinds to filter.
    * @param data.after Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
    * @param data.detail Event payload detail level.
+   * @param data.entryChannels Comma-separated entry channels to deliver for entry events. Defaults to history.
+   * @param data.entryContentTypes Comma-separated entry content types to deliver for entry events. Omit to allow any.
+   * @param data.entryRoles Comma-separated entry roles to deliver for entry events. Omit to allow any.
    * @returns string SSE event stream opened successfully.
    * @throws ApiError
    */
@@ -1187,6 +1196,9 @@ export class AdminService {
         kinds: data.kinds,
         after: data.after,
         detail: data.detail,
+        entry_channels: data.entryChannels,
+        entry_content_types: data.entryContentTypes,
+        entry_roles: data.entryRoles,
       },
       errors: {
         400: "Invalid request parameters, including missing justification when admin justification enforcement is enabled.",

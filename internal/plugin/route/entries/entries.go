@@ -33,7 +33,7 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.Handle
 		appendEntry(c, store, nil)
 	})
 	g.POST("/conversations/:conversationId/entries/sync", func(c *gin.Context) {
-		syncMemory(c, store)
+		syncMemory(c, store, nil)
 	})
 }
 
@@ -48,8 +48,8 @@ func HandleAppendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus
 }
 
 // HandleSyncMemory exposes sync-context handling for wrapper-native adapters.
-func HandleSyncMemory(c *gin.Context, store registrystore.MemoryStore) {
-	syncMemory(c, store)
+func HandleSyncMemory(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
+	syncMemory(c, store, eventBus)
 }
 
 func listEntries(c *gin.Context, store registrystore.MemoryStore) {
@@ -348,13 +348,9 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 			}
 			for _, entry := range result {
 				events = append(events, registryeventbus.Event{
-					Event: "created",
-					Kind:  "entry",
-					Data: map[string]any{
-						"conversation":       entry.ConversationID,
-						"conversation_group": groupID,
-						"entry":              entry.ID,
-					},
+					Event:               "created",
+					Kind:                "entry",
+					Data:                eventstream.EntryEventData(entry, groupID),
 					ConversationGroupID: groupID,
 				})
 			}
@@ -616,7 +612,7 @@ func handleAttachmentError(c *gin.Context, err error) {
 	handleError(c, err)
 }
 
-func syncMemory(c *gin.Context, store registrystore.MemoryStore) {
+func syncMemory(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
 	convID, err := uuid.Parse(c.Param("conversationId"))
 	if err != nil {
@@ -644,15 +640,57 @@ func syncMemory(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	if err := routetx.MemoryWrite(c, store, func(context.Context) error {
-		result, err := store.SyncAgentEntry(c.Request.Context(), userID, convID, req, clientID, req.AgentID)
+	var eventsToPublish []registryeventbus.Event
+	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+		existingConv, _ := store.GetConversation(ctx, userID, convID)
+		convExistedBefore := existingConv != nil
+		result, err := store.SyncAgentEntry(ctx, userID, convID, req, clientID, req.AgentID)
 		if err != nil {
 			return err
+		}
+		if eventBus != nil && result.Entry != nil {
+			groupID, err := store.GetEntryGroupID(ctx, result.Entry.ID)
+			if err != nil {
+				return err
+			}
+			events := make([]registryeventbus.Event, 0, 2)
+			if !convExistedBefore {
+				events = append(events, registryeventbus.Event{
+					Event: "created",
+					Kind:  "conversation",
+					Data: map[string]any{
+						"conversation":       convID,
+						"conversation_group": groupID,
+					},
+					ConversationGroupID: groupID,
+				})
+			}
+			events = append(events, registryeventbus.Event{
+				Event:               "created",
+				Kind:                "entry",
+				Data:                eventstream.EntryEventData(*result.Entry, groupID),
+				ConversationGroupID: groupID,
+			})
+			appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+			if err != nil {
+				return err
+			}
+			if used {
+				eventsToPublish = appended
+			} else {
+				eventsToPublish = events
+			}
 		}
 		c.JSON(http.StatusOK, result)
 		return nil
 	}); err != nil {
 		handleError(c, err)
+		return
+	}
+	if eventBus != nil && len(eventsToPublish) > 0 {
+		if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
+			log.Warn("Failed to publish sync entry events", "err", err)
+		}
 	}
 }
 

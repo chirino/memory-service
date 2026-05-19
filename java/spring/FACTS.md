@@ -2,6 +2,8 @@
 
 **Conversation channel naming**: Spring integrations should use `Channel.CONTEXT` for agent-managed conversation state and reserve `Channel.HISTORY` for user-visible turns.
 
+**Frontend event proxy boundary**: Keep `MemoryServiceProxy.streamEvents(...)` generic. Frontend-facing example handlers such as `EventsController` should enforce history-only entry visibility themselves by forwarding only `entry_channel=history` entry notifications.
+
 **Memory repository limit gotcha**: `listConversationEntries` limit must be `<=200` (contract max). Using `1000` causes upstream `400` errors during chat memory reads and surfaces as app `500`s.
 
 **Ownership transfer pagination parity**: `chat-spring` now forwards optional `afterCursor` and `limit` query params on `GET /v1/ownership-transfers` to `MemoryServiceProxy.listPendingTransfers(...)`.
