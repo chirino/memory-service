@@ -57,6 +57,89 @@ Feature: SSE Event Stream
     And the SSE event data should contain "conversation"
     And the SSE event data should contain "conversation_group"
     And the SSE event data should contain "entry"
+    And the SSE event data "entry_channel" should be "history"
+    And the SSE event data "entry_content_type" should be "history"
+    And the SSE event data "entry_role" should be "USER"
+
+  Scenario: Entry event stream defaults to history entries
+    Given I have a conversation with title "Entry Filter Defaults"
+    And "alice" is connected to the SSE event stream filtered to kinds "entry"
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [{"type": "text", "text": "Internal context"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should not receive an SSE event with kind "entry" and event "created" within 2 seconds
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Visible history"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should receive an SSE event with kind "entry" and event "created" where data "entry_channel" is "history"
+
+  Scenario: Entry event stream can opt into context entries
+    Given I have a conversation with title "Entry Context Filter"
+    And "alice" is connected to the SSE event stream with query "kinds=entry&entry_channels=context"
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [{"type": "text", "text": "Subscribed context"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should receive an SSE event with kind "entry" and event "created" where data "entry_channel" is "context"
+
+  Scenario: Entry event stream filters by content type and role
+    Given I have a conversation with title "Entry Metadata Filter"
+    And "alice" is connected to the SSE event stream with query "kinds=entry&entry_channels=history&entry_content_types=history/lc4j&entry_roles=AI"
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "Filtered user history"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should not receive an SSE event with kind "entry" and event "created" within 2 seconds
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history/lc4j",
+      "content": [{"role": "AI", "text": "Matched AI history"}]
+    }
+    """
+    Then the response status should be 201
+    And "alice" should receive an SSE event with kind "entry" and event "created" where data "entry_role" is "AI"
+
+  Scenario: Sync-created context entries are emitted and filterable
+    Given I have a conversation with title "Sync Context Events"
+    And "alice" is connected to the SSE event stream with query "kinds=entry&entry_channels=context"
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries/sync" with body:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "history/lc4j",
+      "content": [{"type": "text", "text": "Synced context"}]
+    }
+    """
+    Then the response status should be 200
+    And "alice" should receive an SSE event with kind "entry" and event "created" where data "entry_channel" is "context"
 
   Scenario: Events are filtered by access — no leakage
     Given I have a conversation with title "Private Conversation"

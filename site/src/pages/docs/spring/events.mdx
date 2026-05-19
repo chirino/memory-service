@@ -23,6 +23,8 @@ Checkpoint `03b` adds an events proxy endpoint that forwards SSE from Memory Ser
 
 **Why proxy?** The agent app sits between the frontend and Memory Service. Proxying the SSE stream lets the app forward the caller's Bearer token for authorization while injecting the agent's API key for service authentication. Frontends never talk directly to Memory Service.
 
+The checkpoint handler forwards only history-channel `entry` notifications to browser clients. Context-channel entries are agent-internal and can include prompt context, summaries, retrieval results, or tool payloads.
+
 ## Connecting
 
 Subscribe to events through the agent app:
@@ -38,6 +40,8 @@ Filter to specific event kinds:
 curl -N -H "Authorization: Bearer $(get-token)" \
   "http://localhost:9090/v1/events?kinds=conversation,entry"
 ```
+
+Trusted backend processors can subscribe directly to Memory Service with explicit entry filters such as `entry_channels=history,context`. Browser-facing Spring routes should keep their history-only entry forwarding rule.
 
 ## Next Steps
 

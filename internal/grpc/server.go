@@ -640,7 +640,8 @@ func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversatio
 
 type EntriesServer struct {
 	pb.UnimplementedEntriesServiceServer
-	Store registrystore.MemoryStore
+	Store    registrystore.MemoryStore
+	EventBus registryeventbus.EventBus
 }
 
 func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequest) (*pb.ListEntriesResponse, error) {
@@ -764,6 +765,13 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 		}
 	}
 
+	var convExistedBefore bool
+	_, _ = withMemoryRead(ctx, s.Store, func(txCtx context.Context) (struct{}, error) {
+		existing, _ := s.Store.GetConversation(txCtx, userID, convID)
+		convExistedBefore = existing != nil
+		return struct{}{}, nil
+	})
+
 	// Handle fork metadata: if conversation doesn't exist and fork metadata is provided, create it
 	if len(entry.GetForkedAtConversationId()) > 0 {
 		forkedAtConvID, ferr := bytesToUUID(entry.GetForkedAtConversationId())
@@ -795,8 +803,9 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 		content, _ = list.MarshalJSON()
 	}
 
+	var eventsToPublish []registryeventbus.Event
 	entries, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) ([]model.Entry, error) {
-		return s.Store.AppendEntries(txCtx, userID, convID, []registrystore.CreateEntryRequest{{
+		entries, err := s.Store.AppendEntries(txCtx, userID, convID, []registrystore.CreateEntryRequest{{
 			Content:                 content,
 			ContentType:             entry.GetContentType(),
 			Channel:                 ch,
@@ -804,6 +813,16 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 			StartedByConversationID: uuidFromBytesPtr(entry.GetStartedByConversationId()),
 			StartedByEntryID:        uuidFromBytesPtr(entry.GetStartedByEntryId()),
 		}}, &clientID, agentIDPtr, nil)
+		if err != nil {
+			return nil, err
+		}
+		if s.EventBus != nil && len(entries) > 0 {
+			eventsToPublish, err = s.entryEventsForCreatedEntries(txCtx, convID, entries, !convExistedBefore)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return entries, nil
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -811,6 +830,7 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 	if len(entries) == 0 {
 		return nil, status.Error(codes.Internal, "no entry created")
 	}
+	s.publishEntryEvents(ctx, eventsToPublish)
 	return entryToProto(&entries[0]), nil
 }
 
@@ -843,13 +863,26 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 		syncContent, _ = list.MarshalJSON()
 	}
 
+	var eventsToPublish []registryeventbus.Event
 	result, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.SyncResult, error) {
-		return s.Store.SyncAgentEntry(txCtx, userID, convID, registrystore.CreateEntryRequest{
+		existing, _ := s.Store.GetConversation(txCtx, userID, convID)
+		convExistedBefore := existing != nil
+		result, err := s.Store.SyncAgentEntry(txCtx, userID, convID, registrystore.CreateEntryRequest{
 			Content:     syncContent,
 			ContentType: entry.GetContentType(),
 			Channel:     string(model.ChannelContext),
 			AgentID:     stringPtrIfNotEmpty(entry.GetAgentId()),
 		}, clientID, stringPtrIfNotEmpty(entry.GetAgentId()))
+		if err != nil {
+			return nil, err
+		}
+		if s.EventBus != nil && result.Entry != nil {
+			eventsToPublish, err = s.entryEventsForCreatedEntries(txCtx, convID, []model.Entry{*result.Entry}, !convExistedBefore)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return result, nil
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -865,7 +898,52 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 	if result.Entry != nil {
 		resp.Entry = entryToProto(result.Entry)
 	}
+	s.publishEntryEvents(ctx, eventsToPublish)
 	return resp, nil
+}
+
+func (s *EntriesServer) entryEventsForCreatedEntries(ctx context.Context, convID uuid.UUID, entries []model.Entry, includeConversationCreated bool) ([]registryeventbus.Event, error) {
+	groupID, err := s.Store.GetEntryGroupID(ctx, entries[0].ID)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]registryeventbus.Event, 0, len(entries)+1)
+	if includeConversationCreated {
+		events = append(events, registryeventbus.Event{
+			Event: "created",
+			Kind:  "conversation",
+			Data: map[string]any{
+				"conversation":       convID,
+				"conversation_group": groupID,
+			},
+			ConversationGroupID: groupID,
+		})
+	}
+	for _, entry := range entries {
+		events = append(events, registryeventbus.Event{
+			Event:               "created",
+			Kind:                "entry",
+			Data:                eventstream.EntryEventData(entry, groupID),
+			ConversationGroupID: groupID,
+		})
+	}
+	appended, used, err := eventstream.AppendOutboxEvents(ctx, s.Store, events...)
+	if err != nil {
+		return nil, err
+	}
+	if used {
+		return appended, nil
+	}
+	return events, nil
+}
+
+func (s *EntriesServer) publishEntryEvents(ctx context.Context, events []registryeventbus.Event) {
+	if s.EventBus == nil || len(events) == 0 {
+		return
+	}
+	if err := eventstream.PublishEvents(ctx, s.Store, s.EventBus, events...); err != nil {
+		log.Warn("Failed to publish gRPC entry events", "err", err)
+	}
 }
 
 func entryToProto(e *model.Entry) *pb.Entry {
@@ -2796,6 +2874,50 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		}
 		conversationFilter[id] = true
 	}
+	entryFilter := eventstream.NewEntryEventFilter(req.GetEntryChannels(), req.GetEntryContentTypes(), req.GetEntryRoles())
+	userEntryLoader := func(ctx context.Context, conversationID, entryID uuid.UUID) (*model.Entry, error) {
+		var found *model.Entry
+		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
+			page, err := s.Store.GetEntries(txCtx, userID, conversationID, nil, 5000, nil, nil, nil, nil, true)
+			if err != nil {
+				return err
+			}
+			for i := range page.Data {
+				if page.Data[i].ID == entryID {
+					found = &page.Data[i]
+					return nil
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return found, nil
+	}
+	adminEntryLoader := func(ctx context.Context, conversationID, entryID uuid.UUID) (*model.Entry, error) {
+		var found *model.Entry
+		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
+			page, err := s.Store.AdminGetEntries(txCtx, conversationID, registrystore.AdminMessageQuery{
+				Limit:    5000,
+				AllForks: true,
+			})
+			if err != nil {
+				return err
+			}
+			for i := range page.Data {
+				if page.Data[i].ID == entryID {
+					found = &page.Data[i]
+					return nil
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return found, nil
+	}
 
 	lastCursor := ""
 	outbox, _ := s.Store.(registrystore.EventOutboxStore)
@@ -2850,9 +2972,9 @@ streamLoop:
 			var outcome replayGRPCOutcome
 			var err error
 			if adminScope {
-				outcome, err = s.replayGRPCAdminEvents(stream, outbox, sub, resumeCursor, detail, s.replayBatchSize(), kindsFilter, conversationFilter, &lastCursor)
+				outcome, err = s.replayGRPCAdminEvents(stream, outbox, sub, resumeCursor, detail, s.replayBatchSize(), kindsFilter, conversationFilter, entryFilter, adminEntryLoader, &lastCursor)
 			} else {
-				outcome, err = s.replayGRPCEvents(stream, outbox, sub, resumeCursor, detail, userID, s.replayBatchSize(), kindsFilter, conversationFilter, &lastCursor)
+				outcome, err = s.replayGRPCEvents(stream, outbox, sub, resumeCursor, detail, userID, s.replayBatchSize(), kindsFilter, conversationFilter, entryFilter, userEntryLoader, &lastCursor)
 			}
 			if err != nil {
 				return err
@@ -2909,6 +3031,17 @@ streamLoop:
 					continue
 				}
 				if !grpcEventMatchesConversationFilter(event, conversationFilter) {
+					continue
+				}
+				loader := userEntryLoader
+				if adminScope {
+					loader = adminEntryLoader
+				}
+				matches, filterErr := entryFilter.Matches(stream.Context(), event, loader)
+				if filterErr != nil {
+					return status.Error(codes.Internal, "failed to filter event")
+				}
+				if !matches {
 					continue
 				}
 
@@ -2981,7 +3114,7 @@ const (
 	replayGRPCRecover
 )
 
-func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail, userID string, batchSize int, kindsFilter map[string]bool, conversationFilter map[uuid.UUID]bool, lastCursor *string) (replayGRPCOutcome, error) {
+func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail, userID string, batchSize int, kindsFilter map[string]bool, conversationFilter map[uuid.UUID]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayGRPCOutcome, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
@@ -3038,6 +3171,13 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			if !grpcEventMatchesConversationFilter(event, conversationFilter) {
 				continue
 			}
+			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
+			if err != nil {
+				return replayGRPCClosed, status.Error(codes.Internal, "failed to filter replayed event")
+			}
+			if !matches {
+				continue
+			}
 			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
 			if err != nil {
 				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
@@ -3075,6 +3215,13 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			if !grpcEventMatchesConversationFilter(event, conversationFilter) {
 				continue
 			}
+			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
+			if err != nil {
+				return replayGRPCClosed, status.Error(codes.Internal, "failed to filter replayed event")
+			}
+			if !matches {
+				continue
+			}
 			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
 			if err != nil {
 				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
@@ -3091,7 +3238,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 	}
 }
 
-func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail string, batchSize int, kindsFilter map[string]bool, conversationFilter map[uuid.UUID]bool, lastCursor *string) (replayGRPCOutcome, error) {
+func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail string, batchSize int, kindsFilter map[string]bool, conversationFilter map[uuid.UUID]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayGRPCOutcome, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
@@ -3141,6 +3288,13 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 			if !grpcEventMatchesConversationFilter(event, conversationFilter) {
 				continue
 			}
+			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
+			if err != nil {
+				return replayGRPCClosed, status.Error(codes.Internal, "failed to filter replayed event")
+			}
+			if !matches {
+				continue
+			}
 			enriched, ok, err := s.enrichGRPCAdminEvent(stream.Context(), detail, event)
 			if err != nil {
 				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
@@ -3176,6 +3330,13 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 				continue
 			}
 			if !grpcEventMatchesConversationFilter(event, conversationFilter) {
+				continue
+			}
+			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
+			if err != nil {
+				return replayGRPCClosed, status.Error(codes.Internal, "failed to filter replayed event")
+			}
+			if !matches {
 				continue
 			}
 			enriched, ok, err := s.enrichGRPCAdminEvent(stream.Context(), detail, event)

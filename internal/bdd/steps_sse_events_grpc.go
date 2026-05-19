@@ -23,9 +23,13 @@ func init() {
 
 		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream$`, e.userIsConnectedToGRPCEventStream)
 		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream filtered to kinds "([^"]*)"$`, e.userIsConnectedToGRPCEventStreamFilteredToKinds)
+		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream filtered to kinds "([^"]*)" and entry channels "([^"]*)"$`, e.userIsConnectedToGRPCEventStreamFilteredToKindsAndEntryChannels)
+		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream filtered to kinds "([^"]*)" entry channels "([^"]*)" content types "([^"]*)" and roles "([^"]*)"$`, e.userIsConnectedToGRPCEventStreamWithEntryFilters)
 		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream after cursor "([^"]*)" with detail "([^"]*)"$`, e.userIsConnectedToGRPCEventStreamAfterCursorWithDetail)
 		ctx.Step(`^"([^"]*)" should receive a gRPC event with kind "([^"]*)" and event "([^"]*)" within (\d+) seconds$`, e.userShouldReceiveGRPCEvent)
 		ctx.Step(`^"([^"]*)" should receive a gRPC event with kind "([^"]*)" and event "([^"]*)"$`, e.userShouldReceiveGRPCEventDefault)
+		ctx.Step(`^"([^"]*)" should receive a gRPC event with kind "([^"]*)" and event "([^"]*)" where data "([^"]*)" is "([^"]*)"$`, e.userShouldReceiveGRPCEventWithDataField)
+		ctx.Step(`^"([^"]*)" should not receive a gRPC event with kind "([^"]*)" and event "([^"]*)" within (\d+) seconds$`, e.userShouldNotReceiveGRPCEventWithKind)
 		ctx.Step(`^"([^"]*)" should not receive any gRPC event within (\d+) seconds$`, e.userShouldNotReceiveGRPCEvent)
 		ctx.Step(`^the gRPC event cursor should be saved as "([^"]*)"$`, e.saveGRPCEventCursor)
 		ctx.Step(`^the gRPC event cursor should match the Postgres outbox format$`, e.grpcEventCursorShouldMatchPostgresOutboxFormat)
@@ -53,7 +57,7 @@ type grpcEventSteps struct {
 	mu        sync.Mutex
 }
 
-func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, afterCursor, detail *string) error {
+func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, entryChannels []string, entryContentTypes []string, entryRoles []string, afterCursor, detail *string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -79,9 +83,12 @@ func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, afte
 	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+subject))
 
 	stream, err := pb.NewEventStreamServiceClient(conn).SubscribeEvents(ctx, &pb.SubscribeEventsRequest{
-		Kinds:       kinds,
-		AfterCursor: afterCursor,
-		Detail:      detail,
+		Kinds:             kinds,
+		EntryChannels:     entryChannels,
+		EntryContentTypes: entryContentTypes,
+		EntryRoles:        entryRoles,
+		AfterCursor:       afterCursor,
+		Detail:            detail,
 	})
 	if err != nil {
 		cancel()
@@ -144,18 +151,30 @@ func (e *grpcEventSteps) closeAll() {
 }
 
 func (e *grpcEventSteps) userIsConnectedToGRPCEventStream(userID string) error {
-	return e.openGRPCEventStream(userID, nil, nil, nil)
+	return e.openGRPCEventStream(userID, nil, nil, nil, nil, nil, nil)
 }
 
 func (e *grpcEventSteps) userIsConnectedToGRPCEventStreamFilteredToKinds(userID, kinds string) error {
+	return e.openGRPCEventStream(userID, parseCSV(kinds), nil, nil, nil, nil, nil)
+}
+
+func (e *grpcEventSteps) userIsConnectedToGRPCEventStreamFilteredToKindsAndEntryChannels(userID, kinds, entryChannels string) error {
+	return e.openGRPCEventStream(userID, parseCSV(kinds), parseCSV(entryChannels), nil, nil, nil, nil)
+}
+
+func (e *grpcEventSteps) userIsConnectedToGRPCEventStreamWithEntryFilters(userID, kinds, entryChannels, entryContentTypes, entryRoles string) error {
+	return e.openGRPCEventStream(userID, parseCSV(kinds), parseCSV(entryChannels), parseCSV(entryContentTypes), parseCSV(entryRoles), nil, nil)
+}
+
+func parseCSV(raw string) []string {
 	var filter []string
-	for _, kind := range strings.Split(kinds, ",") {
-		kind = strings.TrimSpace(kind)
-		if kind != "" {
-			filter = append(filter, kind)
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			filter = append(filter, item)
 		}
 	}
-	return e.openGRPCEventStream(userID, filter, nil, nil)
+	return filter
 }
 
 func (e *grpcEventSteps) userIsConnectedToGRPCEventStreamAfterCursorWithDetail(userID, afterCursor, detail string) error {
@@ -167,7 +186,7 @@ func (e *grpcEventSteps) userIsConnectedToGRPCEventStreamAfterCursorWithDetail(u
 	if err != nil {
 		return err
 	}
-	return e.openGRPCEventStream(userID, nil, &expandedCursor, &expandedDetail)
+	return e.openGRPCEventStream(userID, nil, nil, nil, nil, &expandedCursor, &expandedDetail)
 }
 
 func (e *grpcEventSteps) userShouldReceiveGRPCEventDefault(userID, kind, event string) error {
@@ -199,6 +218,39 @@ func (e *grpcEventSteps) userShouldReceiveGRPCEvent(userID, kind, eventType stri
 	}
 }
 
+func (e *grpcEventSteps) userShouldReceiveGRPCEventWithDataField(userID, kind, eventType, field, expected string) error {
+	e.mu.Lock()
+	stream, ok := e.streams[userID]
+	e.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no gRPC event stream open for user %q", userID)
+	}
+
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case evt, ok := <-stream.events:
+			if !ok {
+				return fmt.Errorf("gRPC event stream for %q closed before receiving kind=%q event=%q with %s=%q", userID, kind, eventType, field, expected)
+			}
+			if evt["kind"] != kind || evt["event"] != eventType {
+				continue
+			}
+			data, ok := evt["data"].(map[string]any)
+			if !ok {
+				continue
+			}
+			if fmt.Sprintf("%v", data[field]) != expected {
+				continue
+			}
+			e.lastEvent = evt
+			return nil
+		case <-timeout:
+			return fmt.Errorf("timed out after 5s waiting for gRPC event kind=%q event=%q with %s=%q for user %q", kind, eventType, field, expected, userID)
+		}
+	}
+}
+
 func (e *grpcEventSteps) userShouldNotReceiveGRPCEvent(userID string, timeoutSec int) error {
 	e.mu.Lock()
 	stream, ok := e.streams[userID]
@@ -218,6 +270,30 @@ func (e *grpcEventSteps) userShouldNotReceiveGRPCEvent(userID string, timeoutSec
 				continue
 			}
 			return fmt.Errorf("expected no gRPC event for %q within %ds, but received: %v", userID, timeoutSec, evt)
+		case <-timeout:
+			return nil
+		}
+	}
+}
+
+func (e *grpcEventSteps) userShouldNotReceiveGRPCEventWithKind(userID, kind, eventType string, timeoutSec int) error {
+	e.mu.Lock()
+	stream, ok := e.streams[userID]
+	e.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no gRPC event stream open for user %q", userID)
+	}
+
+	timeout := time.After(time.Duration(timeoutSec) * time.Second)
+	for {
+		select {
+		case evt, ok := <-stream.events:
+			if !ok {
+				return nil
+			}
+			if evt["kind"] == kind && evt["event"] == eventType {
+				return fmt.Errorf("expected no gRPC event kind=%q event=%q for %q within %ds, but received: %v", kind, eventType, userID, timeoutSec, evt)
+			}
 		case <-timeout:
 			return nil
 		}

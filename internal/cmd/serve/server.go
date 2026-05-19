@@ -316,7 +316,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	)
 	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg})
 	pb.RegisterConversationsServiceServer(grpcServer, &grpcserver.ConversationsServer{Store: store})
-	pb.RegisterEntriesServiceServer(grpcServer, &grpcserver.EntriesServer{Store: store})
+	pb.RegisterEntriesServiceServer(grpcServer, &grpcserver.EntriesServer{Store: store, EventBus: eventBus})
 	pb.RegisterConversationMembershipsServiceServer(grpcServer, &grpcserver.MembershipsServer{Store: store})
 	pb.RegisterOwnershipTransfersServiceServer(grpcServer, &grpcserver.TransfersServer{Store: store})
 	pb.RegisterSearchServiceServer(grpcServer, &grpcserver.SearchServer{Store: store, Config: cfg})

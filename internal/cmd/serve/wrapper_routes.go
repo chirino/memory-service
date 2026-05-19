@@ -246,7 +246,7 @@ func (p *proxyAPIServer) AppendConversationEntry(c *gin.Context, _ openapi_types
 	routeentries.HandleAppendEntry(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, _ openapi_types.UUID) {
-	routeentries.HandleSyncMemory(c, p.store)
+	routeentries.HandleSyncMemory(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) ListConversationForks(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationForksParams) {
 	routeconversations.HandleListForks(c, p.store)

@@ -23,6 +23,7 @@ class EventsController {
     SseEmitter streamEvents(@RequestParam(required = false) String kinds) {
         SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
         proxy.streamEvents(kinds)
+                .filter(EventsController::isFrontendVisible)
                 .subscribe(
                         event -> {
                             try {
@@ -36,5 +37,13 @@ class EventsController {
                         emitter::completeWithError,
                         emitter::complete);
         return emitter;
+    }
+
+    private static boolean isFrontendVisible(MemoryServiceProxy.EventNotification event) {
+        if (!"entry".equals(event.kind())) {
+            return true;
+        }
+        Object channel = event.data() == null ? null : event.data().get("entry_channel");
+        return "history".equals(channel);
     }
 }

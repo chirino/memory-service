@@ -34,7 +34,7 @@ Use the reliable model when a worker, projector, or integration must avoid missi
 Each SSE message contains a JSON envelope on a single `data:` line:
 
 ```
-data: {"event":"created","kind":"entry","data":{"conversation":"<uuid>","conversation_group":"<uuid>","entry":"<uuid>"},"cursor":"<opaque-cursor>"}
+data: {"event":"created","kind":"entry","data":{"conversation":"<uuid>","conversation_group":"<uuid>","entry":"<uuid>","entry_channel":"history","entry_content_type":"history","entry_role":"USER"},"cursor":"<opaque-cursor>"}
 ```
 
 The envelope fields are:
@@ -91,20 +91,20 @@ For reliable consumers, choose:
 
 This table shows the default `detail=summary` payload shape.
 
-| Kind           | Event        | Summary `data` fields                                       | Notes                                                                                                                                                                     |
-| -------------- | ------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation` | `created`    | `conversation`, `conversation_group`                        | New conversation visible to the user                                                                                                                                      |
-| `conversation` | `updated`    | `conversation`, `conversation_group`                        | Title or metadata changed                                                                                                                                                 |
-| `conversation` | `deleted`    | `conversation`, `conversation_group`, `members`             | `members` may be included so affected users can be targeted                                                                                                               |
-| `entry`        | `created`    | `conversation`, `conversation_group`, `entry`               | New entry appended                                                                                                                                                        |
-| `response`     | `created`    | `conversation`, `conversation_group`, `recording`, `status` | `status` is currently `started`                                                                                                                                           |
-| `response`     | `deleted`    | `conversation`, `conversation_group`, `recording`, `status` | `status` is currently `completed` or `failed`                                                                                                                             |
-| `membership`   | `created`    | `conversation_group`, `user`, `role`                        | Access granted                                                                                                                                                            |
-| `membership`   | `updated`    | `conversation_group`, `user`, `role`                        | Access level changed                                                                                                                                                      |
-| `membership`   | `deleted`    | `conversation_group`, `user`                                | Access removed                                                                                                                                                            |
-| `stream`       | `phase`      | `phase`                                                     | Stream phase marker. `phase` is `replay` or `live`. Tail-only streams start at `live`. Replay streams emit `replay` before catch-up and `live` after they reach the tail. |
-| `stream`       | `evicted`    | `reason`                                                    | Connection closed, often for slow-consumer or replacement reasons                                                                                                         |
-| `stream`       | `invalidate` | `reason`                                                    | Caller must assume events may have been missed                                                                                                                            |
+| Kind           | Event        | Summary `data` fields                                                                              | Notes                                                                                                                                                                     |
+| -------------- | ------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversation` | `created`    | `conversation`, `conversation_group`                                                               | New conversation visible to the user                                                                                                                                      |
+| `conversation` | `updated`    | `conversation`, `conversation_group`                                                               | Title or metadata changed                                                                                                                                                 |
+| `conversation` | `deleted`    | `conversation`, `conversation_group`, `members`                                                    | `members` may be included so affected users can be targeted                                                                                                               |
+| `entry`        | `created`    | `conversation`, `conversation_group`, `entry`, `entry_channel`, `entry_content_type`, `entry_role` | New entry appended. `entry_role` is included when it can be derived from entry content.                                                                                   |
+| `response`     | `created`    | `conversation`, `conversation_group`, `recording`, `status`                                        | `status` is currently `started`                                                                                                                                           |
+| `response`     | `deleted`    | `conversation`, `conversation_group`, `recording`, `status`                                        | `status` is currently `completed` or `failed`                                                                                                                             |
+| `membership`   | `created`    | `conversation_group`, `user`, `role`                                                               | Access granted                                                                                                                                                            |
+| `membership`   | `updated`    | `conversation_group`, `user`, `role`                                                               | Access level changed                                                                                                                                                      |
+| `membership`   | `deleted`    | `conversation_group`, `user`                                                                       | Access removed                                                                                                                                                            |
+| `stream`       | `phase`      | `phase`                                                                                            | Stream phase marker. `phase` is `replay` or `live`. Tail-only streams start at `live`. Replay streams emit `replay` before catch-up and `live` after they reach the tail. |
+| `stream`       | `evicted`    | `reason`                                                                                           | Connection closed, often for slow-consumer or replacement reasons                                                                                                         |
+| `stream`       | `invalidate` | `reason`                                                                                           | Caller must assume events may have been missed                                                                                                                            |
 
 ## Frontend Cache Invalidation
 
@@ -120,6 +120,7 @@ curl -N -H "Authorization: Bearer $(get-token)" \
 Typical frontend behavior:
 
 - Filter with `kinds=...` if you only need a subset.
+- Browser-facing streams should keep the default history-only entry behavior, or explicitly set `entry_channels=history`, so internal context-channel entries are not exposed to end users.
 - On `conversation`, `entry`, `response`, or `membership`, invalidate the corresponding query cache and refetch.
 - On `stream/invalidate`, do a broad cache refresh.
 - On disconnect or `stream/evicted`, reconnect and refetch the visible data set.
@@ -164,6 +165,11 @@ Optional query parameters:
 - `kinds=conversation,entry,...` filters event kinds.
 - `detail=summary|full` controls payload enrichment.
 - `after=<cursor>` starts in replay mode and requires outbox support.
+- `entry_channels=history,context` filters `entry` events by channel. If omitted, entry events default to `history`.
+- `entry_content_types=history,history/lc4j` filters `entry` events by content type.
+- `entry_roles=USER,AI` filters `entry` events by role when the role can be derived from entry content.
+
+Entry filters apply only to `kind=entry` events. Non-entry events are delivered normally. The same filters are available on `/v1/admin/events`; admin streams still require admin or auditor access.
 
 Examples:
 
@@ -172,12 +178,19 @@ curl -N -H "Authorization: Bearer $(get-token)" \
   "http://localhost:9090/v1/events?kinds=conversation,entry"
 ```
 
+Subscribe to both user-visible history entries and trusted internal context entries:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-token)" \
+  "http://localhost:9090/v1/events?kinds=entry&entry_channels=history,context"
+```
+
 ```bash
 curl -N -H "Authorization: Bearer $(get-token)" \
   "http://localhost:9090/v1/events?after=${LAST_CURSOR}&detail=summary"
 ```
 
-The same concepts also exist on gRPC `EventStreamService.SubscribeEvents` using `after_cursor` and `detail`.
+The same concepts also exist on gRPC `EventStreamService.SubscribeEvents` using `after_cursor`, `detail`, `entry_channels`, `entry_content_types`, and `entry_roles`.
 
 ## Walkthrough
 
@@ -204,7 +217,7 @@ Terminal 1 shows a `conversation`/`created` event followed by an `entry`/`create
 ```
 data: {"event":"phase","kind":"stream","data":{"phase":"live"}}
 data: {"event":"created","kind":"conversation","data":{"conversation":"e2c9a1b0-0001-4000-8000-000000000001","conversation_group":"..."}}
-data: {"event":"created","kind":"entry","data":{"conversation":"e2c9a1b0-0001-4000-8000-000000000001","conversation_group":"...","entry":"..."}}
+data: {"event":"created","kind":"entry","data":{"conversation":"e2c9a1b0-0001-4000-8000-000000000001","conversation_group":"...","entry":"...","entry_channel":"history","entry_content_type":"history","entry_role":"USER"}}
 ```
 
 Update the conversation title:
@@ -290,6 +303,8 @@ User streams are filtered by conversation membership. Callers only receive event
 
 Admin streams use `/v1/admin/events`, require admin or auditor access, and bypass conversation-membership filtering. A `justification` may be supplied for audit logging and can be required if the server enables admin justification enforcement.
 
+Entry-channel filtering is not an authorization boundary by itself. Context-channel entries are agent-internal by convention and can include prompt context, summaries, retrieval results, or tool payloads. Frontend-facing agent apps should expose only history-channel entry notifications unless the user interface is explicitly intended for trusted operator or processor use.
+
 ## Connection Lifecycle
 
 **Keepalive**: a `: keepalive` comment is sent every 30 seconds.
@@ -308,8 +323,9 @@ Admin streams use `/v1/admin/events`, require admin or auditor access, and bypas
 
 - Keep the frontend path simple: treat events as hints, not as your only source of truth.
 - Prefer `detail=summary` for browser clients.
+- Keep frontend event proxies history-only for `entry` notifications. Trusted processors can opt into `entry_channels=context` or `entry_channels=history,context`.
 - Only add durable cursor handling when you actually need replay guarantees.
-- If you proxy the event stream through your agent app, keep the proxy transparent and let the frontend own cache invalidation behavior.
+- If you proxy the event stream through your agent app, let the frontend own cache invalidation behavior, but keep server-side forwarding rules explicit for internal entry channels.
 
 ## Next Steps
 
