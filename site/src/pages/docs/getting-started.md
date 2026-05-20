@@ -52,18 +52,11 @@ This will start:
 - **Prometheus** for metrics collection
 - **Grafana** for metrics dashboards
 - **Langfuse** for turn-trace observability, fed by the Memory Service turn-traces processor
-- **Langfuse Go LangChain Demo** for sending example traces directly to Langfuse
 
 Langfuse is available at `http://localhost:3002` with:
 
 - Email: `memory-service@example.com`
 - Password: `memory-service`
-
-To send a sample LangChain Go trace to Langfuse, set `OPENAI_API_KEY` before starting compose and call:
-
-```bash
-curl http://localhost:8090/chat
-```
 
 ### 4. Access the Demo Chat App
 

@@ -417,20 +417,6 @@ services:
       retries: 20
       start_period: 30s
 
-  langfuse-go-langchain-demo:
-    build:
-      context: .
-      dockerfile: deploy/examples/langfuse-go-langchain/Dockerfile
-    environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://langfuse-web:3000/api/public/otel
-      OTEL_EXPORTER_OTLP_HEADERS: Authorization=Basic bGZfcGtfZGV2X3R1cm5fdHJhY2VzOmxmX3NrX2Rldl90dXJuX3RyYWNlcw==
-    ports:
-      - "8090:8080"
-    depends_on:
-      langfuse-web:
-        condition: service_healthy
-
   chat-quarkus:
     image: ghcr.io/chirino/memory-service-chat-quarkus:latest
     build:
