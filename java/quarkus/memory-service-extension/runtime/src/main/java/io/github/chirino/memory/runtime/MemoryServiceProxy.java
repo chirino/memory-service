@@ -132,6 +132,7 @@ public class MemoryServiceProxy {
                                 .listConversationEntries(
                                         toUuid(conversationId),
                                         toUuid(afterCursor),
+                                        null,
                                         limit,
                                         channel,
                                         epoch,

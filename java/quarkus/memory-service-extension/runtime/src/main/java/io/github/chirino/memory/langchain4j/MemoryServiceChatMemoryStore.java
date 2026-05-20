@@ -65,6 +65,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                             .listConversationEntries(
                                     UUID.fromString(memoryId.toString()),
                                     null,
+                                    null,
                                     50,
                                     Channel.CONTEXT,
                                     null,
