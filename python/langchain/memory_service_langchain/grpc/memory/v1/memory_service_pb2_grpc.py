@@ -1039,6 +1039,78 @@ class EntriesService(object):
             _registered_method=True)
 
 
+class AdminEntriesServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.ListEntries = channel.unary_unary(
+                '/memory.v1.AdminEntriesService/ListEntries',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminListEntriesRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.ListEntriesResponse.FromString,
+                _registered_method=True)
+
+
+class AdminEntriesServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def ListEntries(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_AdminEntriesServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'ListEntries': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListEntries,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminListEntriesRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.ListEntriesResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'memory.v1.AdminEntriesService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('memory.v1.AdminEntriesService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class AdminEntriesService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def ListEntries(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminEntriesService/ListEntries',
+            memory_dot_v1_dot_memory__service__pb2.AdminListEntriesRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.ListEntriesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
 class SearchServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 

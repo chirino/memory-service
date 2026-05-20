@@ -857,6 +857,13 @@ export type $OpenApiTs = {
          */
         forks?: "none" | "all";
         limit?: number;
+        /**
+         * Upper-bound entry id (UUID format). When set, only entries at or
+         * before this entry in the caller-visible conversation order are
+         * returned. This is useful with `channel=context` and `epoch` to
+         * reconstruct the agent context as of a specific history entry.
+         */
+        upToEntryId?: string | null;
       };
       res: {
         /**

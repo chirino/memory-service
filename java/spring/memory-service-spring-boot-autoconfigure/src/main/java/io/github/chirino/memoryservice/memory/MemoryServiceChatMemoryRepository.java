@@ -74,6 +74,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
                             .listConversationEntries(
                                     UUID.fromString(conversationId),
                                     null,
+                                    null,
                                     LIST_ENTRIES_LIMIT,
                                     Channel.CONTEXT,
                                     null,

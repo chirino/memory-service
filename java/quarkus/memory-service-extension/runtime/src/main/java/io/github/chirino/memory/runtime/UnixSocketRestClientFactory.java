@@ -101,10 +101,11 @@ final class UnixSocketRestClientFactory {
                                 path("/v1/conversations/%s/entries", args[0]),
                                 query(
                                         "afterCursor", args[1],
-                                        "limit", args[2],
-                                        "channel", args[3],
-                                        "epoch", args[4],
-                                        "forks", args[5]),
+                                        "upToEntryId", args[2],
+                                        "limit", args[3],
+                                        "channel", args[4],
+                                        "epoch", args[5],
+                                        "forks", args[6]),
                                 null,
                                 method);
                 case "listConversationChildren" ->
