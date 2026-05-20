@@ -14,6 +14,9 @@ import (
 type Config struct {
 	ClientID           string
 	Kinds              []string
+	EntryChannels      []string
+	EntryContentTypes  []string
+	EntryRoles         []string
 	Scope              string
 	AfterCursor        string
 	Justification      string
@@ -76,11 +79,14 @@ func (r *Runtime) Run(ctx context.Context) error {
 			return nil
 		}
 		stream, err := r.Events.Subscribe(ctx, SubscribeRequest{
-			Kinds:         r.Config.Kinds,
-			Detail:        "full",
-			AfterCursor:   afterCursor,
-			Scope:         r.Config.Scope,
-			Justification: r.Config.Justification,
+			Kinds:             r.Config.Kinds,
+			Detail:            "full",
+			AfterCursor:       afterCursor,
+			Scope:             r.Config.Scope,
+			Justification:     r.Config.Justification,
+			EntryChannels:     r.Config.EntryChannels,
+			EntryContentTypes: r.Config.EntryContentTypes,
+			EntryRoles:        r.Config.EntryRoles,
 		})
 		if err != nil {
 			log.Warn("processor event subscription failed", "clientID", r.Config.ClientID, "scope", r.Config.Scope, "afterCursor", afterCursor, "err", err, "retryIn", backoff)
@@ -90,7 +96,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 			backoff = minDuration(backoff*2, maxBackoff)
 			continue
 		}
-		log.Info("processor event stream subscribed", "clientID", r.Config.ClientID, "scope", r.Config.Scope, "afterCursor", afterCursor, "kinds", r.Config.Kinds)
+		log.Info("processor event stream subscribed", "clientID", r.Config.ClientID, "scope", r.Config.Scope, "afterCursor", afterCursor, "kinds", r.Config.Kinds, "entryChannels", r.Config.EntryChannels, "entryContentTypes", r.Config.EntryContentTypes, "entryRoles", r.Config.EntryRoles)
 		backoff = defaultDuration(r.Config.ReconnectMin, time.Second)
 
 		ticker := time.NewTicker(defaultDuration(r.Config.CheckpointInterval, 5*time.Second))
@@ -137,8 +143,10 @@ func (r *Runtime) consume(ctx context.Context, stream EventStream, ticker *time.
 	for {
 		select {
 		case <-ctx.Done():
-			_ = r.Processor.Flush(ctx)
-			_, _ = r.save(ctx)
+			saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = r.Processor.Flush(saveCtx)
+			_, _ = r.save(saveCtx)
+			cancel()
 			return nil
 		case <-ticker.C:
 			if err := r.Processor.Flush(ctx); err != nil {

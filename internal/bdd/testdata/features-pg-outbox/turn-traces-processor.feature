@@ -36,6 +36,7 @@ Feature: Turn trace processor
       """
     Then the turn trace processor should emit a turn span for conversation "${conversationId}" with end reason "agent_history_entry" within 10 seconds
     And the last turn trace span should have context entry count 1
+    And the last turn trace span should have a Langfuse LLM generation span with input containing "The user likes precise BDD tests." and output "I will remember that."
     And the last turn trace span should use session "${conversationGroupId}"
     And the last turn trace span metadata "conversation_group_id" should be "${conversationGroupId}"
 
@@ -72,4 +73,5 @@ Feature: Turn trace processor
       """
     Then the turn trace processor should emit a turn span for conversation "${conversationId}" with end reason "agent_history_entry" within 10 seconds
     And the last turn trace span should have context entry count 1
+    And the last turn trace span should have a Langfuse LLM generation span with input containing "Checkpointed context before restart." and output "Complete the turn after restart."
     And the last turn trace span should use session "${conversationGroupId}"

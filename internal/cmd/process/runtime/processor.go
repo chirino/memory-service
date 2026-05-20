@@ -36,11 +36,14 @@ type EventClient interface {
 
 // SubscribeRequest is the runtime's transport-independent event request.
 type SubscribeRequest struct {
-	Kinds         []string
-	Detail        string
-	AfterCursor   string
-	Scope         string
-	Justification string
+	Kinds             []string
+	Detail            string
+	AfterCursor       string
+	Scope             string
+	Justification     string
+	EntryChannels     []string
+	EntryContentTypes []string
+	EntryRoles        []string
 }
 
 // CheckpointClient persists one processor checkpoint.

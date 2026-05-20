@@ -88,40 +88,60 @@ func TestOTELAttributesMapTurnTraceFieldsToLangfuse(t *testing.T) {
 
 func TestOTELLLMAttributesMapContextEntriesToGenerationObservation(t *testing.T) {
 	sink := &otelSink{}
-	attrs := sink.llmAttributes(SpanData{
+	span := SpanData{
+		Name:           defaultSpanName,
 		TurnID:         "turn-1",
 		ConversationID: "conv-1",
+		SessionID:      "session-1",
+		UserID:         "alice",
 		UserEntryID:    "user-entry-1",
 		AgentEntryID:   "agent-entry-1",
 		Output:         "I will remember that.",
 		ContextEntries: []ContextEntryData{
 			{
-				ID:   "context-entry-1",
-				Text: "The user likes precise BDD tests.",
+				ID:       "context-entry-1",
+				Text:     "The user likes precise BDD tests.",
+				Messages: []LLMMessage{{Role: "system", Content: "The user likes precise BDD tests."}},
 			},
 			{
-				ID:   "context-entry-2",
-				Text: "The user expects Langfuse spans.",
+				ID:       "context-entry-2",
+				Text:     "What should I remember?",
+				Messages: []LLMMessage{{Role: "user", Content: "What should I remember?"}},
+			},
+			{
+				ID:       "context-entry-3",
+				Text:     "I will remember that.",
+				Messages: []LLMMessage{{Role: "assistant", Content: "I will remember that."}},
 			},
 		},
 		Level: "DEFAULT",
-	})
+		Tags:  []string{"memory-service", "turn-trace", "end:agent_history_entry"},
+	}
+	attrs := sink.llmAttributes(span, llmInputValue(span), llmOutputValue(span))
 
 	values := attrMap(attrs)
-	expectedInput := "context-entry-1: The user likes precise BDD tests.\ncontext-entry-2: The user expects Langfuse spans."
+	expectedPrompt := "context-entry-1: The user likes precise BDD tests.\ncontext-entry-2: What should I remember?\ncontext-entry-3: I will remember that."
+	require.Equal(t, defaultSpanName, values["langfuse.trace.name"])
+	require.Equal(t, "session-1", values["langfuse.session.id"])
+	require.Equal(t, "session-1", values["session.id"])
+	require.Equal(t, "alice", values["langfuse.user.id"])
+	require.Equal(t, "alice", values["user.id"])
+	require.ElementsMatch(t, []string{"memory-service", "turn-trace", "end:agent_history_entry"}, values["langfuse.trace.tags"])
 	require.Equal(t, "generation", values["langfuse.observation.type"])
 	require.Equal(t, "DEFAULT", values["langfuse.observation.level"])
+	require.Equal(t, "chat", values["gen_ai.operation.name"])
+	require.Equal(t, "memory-service", values["gen_ai.system"])
 	require.Equal(t, "conv-1", values["langfuse.observation.metadata.conversation_id"])
 	require.Equal(t, "turn-1", values["langfuse.observation.metadata.turn_id"])
-	require.Equal(t, int64(2), values["langfuse.observation.metadata.context_entry_count"])
-	require.ElementsMatch(t, []string{"context-entry-1", "context-entry-2"}, values["langfuse.observation.metadata.context_entry_ids"])
+	require.Equal(t, int64(3), values["langfuse.observation.metadata.context_entry_count"])
+	require.ElementsMatch(t, []string{"context-entry-1", "context-entry-2", "context-entry-3"}, values["langfuse.observation.metadata.context_entry_ids"])
 	require.Equal(t, "user-entry-1", values["langfuse.observation.metadata.user_entry_id"])
 	require.Equal(t, "agent-entry-1", values["langfuse.observation.metadata.agent_entry_id"])
-	require.Equal(t, expectedInput, values["langfuse.observation.input"])
-	require.Equal(t, expectedInput, values["input.value"])
-	require.Equal(t, expectedInput, values["gen_ai.prompt"])
-	require.Equal(t, "I will remember that.", values["langfuse.observation.output"])
-	require.Equal(t, "I will remember that.", values["output.value"])
+	require.JSONEq(t, `[{"role":"system","content":"The user likes precise BDD tests."},{"role":"user","content":"What should I remember?"}]`, values["langfuse.observation.input"].(string))
+	require.JSONEq(t, `[{"role":"system","content":"The user likes precise BDD tests."},{"role":"user","content":"What should I remember?"}]`, values["input.value"].(string))
+	require.Equal(t, expectedPrompt, values["gen_ai.prompt"])
+	require.JSONEq(t, `{"role":"assistant","content":"I will remember that."}`, values["langfuse.observation.output"].(string))
+	require.JSONEq(t, `{"role":"assistant","content":"I will remember that."}`, values["output.value"].(string))
 	require.Equal(t, "I will remember that.", values["gen_ai.completion"])
 }
 

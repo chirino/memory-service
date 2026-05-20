@@ -25,6 +25,10 @@ type Config struct {
 	CheckpointWindowName string
 }
 
+type ContextFetcher interface {
+	FetchContextEntries(ctx context.Context, conversationID string, upToEntryID string) ([]ContextEntryData, error)
+}
+
 type SpanData struct {
 	Name           string
 	TurnID         string
@@ -54,8 +58,15 @@ type ContextEntryData struct {
 	ID          string
 	Cursor      string
 	ContentType string
+	Epoch       int64
 	Text        string
+	Messages    []LLMMessage
 	CreatedAt   time.Time
+}
+
+type LLMMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type SpanSink interface {

@@ -36,6 +36,7 @@ func TestStartProcessorWithInjectedClientsCanShutdown(t *testing.T) {
 		defer events.mu.Unlock()
 		return events.subscribed
 	}, time.Second, 10*time.Millisecond)
+	require.Equal(t, []string{"history", "context"}, events.subscribeRequest().EntryChannels)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -196,13 +197,21 @@ func (s *staticStream) Recv() (processruntime.EventEnvelope, error) {
 type blockingEventClient struct {
 	mu         sync.Mutex
 	subscribed bool
+	req        processruntime.SubscribeRequest
 }
 
-func (c *blockingEventClient) Subscribe(ctx context.Context, _ processruntime.SubscribeRequest) (processruntime.EventStream, error) {
+func (c *blockingEventClient) Subscribe(ctx context.Context, req processruntime.SubscribeRequest) (processruntime.EventStream, error) {
 	c.mu.Lock()
 	c.subscribed = true
+	c.req = req
 	c.mu.Unlock()
 	return blockingStream{ctx: ctx}, nil
+}
+
+func (c *blockingEventClient) subscribeRequest() processruntime.SubscribeRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.req
 }
 
 type blockingStream struct {

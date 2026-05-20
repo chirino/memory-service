@@ -15,10 +15,11 @@ import (
 )
 
 type Processor struct {
-	cfg   Config
-	sink  SpanSink
-	state checkpointState
-	nowFn func() time.Time
+	cfg            Config
+	sink           SpanSink
+	contextFetcher ContextFetcher
+	state          checkpointState
+	nowFn          func() time.Time
 }
 
 type checkpointState struct {
@@ -53,11 +54,13 @@ type openTurn struct {
 }
 
 type contextEntry struct {
-	ID          string    `json:"id"`
-	Cursor      string    `json:"cursor,omitempty"`
-	ContentType string    `json:"contentType,omitempty"`
-	Text        string    `json:"text,omitempty"`
-	CreatedAt   time.Time `json:"createdAt,omitempty"`
+	ID          string       `json:"id"`
+	Cursor      string       `json:"cursor,omitempty"`
+	ContentType string       `json:"contentType,omitempty"`
+	Epoch       int64        `json:"epoch,omitempty"`
+	Text        string       `json:"text,omitempty"`
+	Messages    []LLMMessage `json:"messages,omitempty"`
+	CreatedAt   time.Time    `json:"createdAt,omitempty"`
 }
 
 type entryEvent struct {
@@ -69,6 +72,7 @@ type entryEvent struct {
 	AgentID             string            `json:"agentId"`
 	Channel             string            `json:"channel"`
 	ContentType         string            `json:"contentType"`
+	Epoch               *int64            `json:"epoch,omitempty"`
 	Content             []json.RawMessage `json:"content"`
 	CreatedAt           time.Time         `json:"createdAt"`
 }
@@ -82,7 +86,7 @@ type conversationEvent struct {
 }
 
 // NewProcessor creates a turn-trace event processor.
-func NewProcessor(cfg Config, sink SpanSink) *Processor {
+func NewProcessor(cfg Config, sink SpanSink, fetchers ...ContextFetcher) *Processor {
 	if cfg.MaxOpenTurns <= 0 {
 		cfg.MaxOpenTurns = 1000
 	}
@@ -95,9 +99,14 @@ func NewProcessor(cfg Config, sink SpanSink) *Processor {
 	if cfg.RuntimeVersion == "" {
 		cfg.RuntimeVersion = "dev"
 	}
+	var fetcher ContextFetcher
+	if len(fetchers) > 0 {
+		fetcher = fetchers[0]
+	}
 	return &Processor{
-		cfg:  cfg,
-		sink: sink,
+		cfg:            cfg,
+		sink:           sink,
+		contextFetcher: fetcher,
 		state: checkpointState{
 			Version:            1,
 			RuntimeID:          "turn-traces",
@@ -257,7 +266,9 @@ func (p *Processor) handleEntry(ctx context.Context, event processruntime.EventE
 				ID:          entry.ID,
 				Cursor:      event.Cursor,
 				ContentType: entry.ContentType,
+				Epoch:       entryEpoch(entry),
 				Text:        entryText(entry),
+				Messages:    contextMessages(entry),
 				CreatedAt:   eventTime,
 			})
 		}
@@ -344,6 +355,26 @@ func (p *Processor) closeTurn(ctx context.Context, turn *openTurn, reason, endCu
 		userID = turn.UserID
 		userSource = "entry_user_id"
 	}
+	contextEntries := contextEntries(turn)
+	if reason == "agent_history_entry" && p.contextFetcher != nil && turn.AgentEntryID != "" {
+		fetched, err := p.contextFetcher.FetchContextEntries(ctx, turn.ConversationID, turn.AgentEntryID)
+		if err != nil {
+			log.Warn("failed to fetch bounded turn context",
+				"conversationID", turn.ConversationID,
+				"turnID", turn.TurnID,
+				"upToEntryID", turn.AgentEntryID,
+				"err", err,
+			)
+		} else {
+			contextEntries = latestContextEntries(fetched)
+			log.Debug("bounded turn context fetched",
+				"conversationID", turn.ConversationID,
+				"turnID", turn.TurnID,
+				"upToEntryID", turn.AgentEntryID,
+				"contextEntries", len(contextEntries),
+			)
+		}
+	}
 	span := SpanData{
 		Name:           p.cfg.LangfuseName,
 		TurnID:         turn.TurnID,
@@ -361,8 +392,8 @@ func (p *Processor) closeTurn(ctx context.Context, turn *openTurn, reason, endCu
 		StartTime:      turn.StartedAt,
 		EndTime:        coalesceTime(endTime, p.nowFn(), p.nowFn()),
 		EndReason:      reason,
-		ContextCount:   contextCount(turn),
-		ContextEntries: contextEntries(turn),
+		ContextCount:   len(contextEntries),
+		ContextEntries: contextEntries,
 		Level:          level,
 		StatusMessage:  statusMessage,
 		Tags:           []string{"memory-service", "turn-trace", "end:" + reason},
@@ -373,7 +404,7 @@ func (p *Processor) closeTurn(ctx context.Context, turn *openTurn, reason, endCu
 			"start_cursor":        turn.StartCursor,
 			"end_cursor":          endCursor,
 			"user_entry_id":       turn.UserEntryID,
-			"context_entry_count": fmt.Sprintf("%d", contextCount(turn)),
+			"context_entry_count": fmt.Sprintf("%d", len(contextEntries)),
 			"user_source":         userSource,
 		},
 	}
@@ -454,12 +485,19 @@ func entryText(entry entryEvent) string {
 	parts := make([]string, 0, len(entry.Content))
 	for _, raw := range entry.Content {
 		var block struct {
-			Text   string          `json:"text"`
-			Events json.RawMessage `json:"events"`
+			Text    string          `json:"text"`
+			Content string          `json:"content"`
+			Events  json.RawMessage `json:"events"`
 		}
-		if err := json.Unmarshal(raw, &block); err == nil && strings.TrimSpace(block.Text) != "" {
-			parts = append(parts, block.Text)
-			continue
+		if err := json.Unmarshal(raw, &block); err == nil {
+			if strings.TrimSpace(block.Text) != "" {
+				parts = append(parts, block.Text)
+				continue
+			}
+			if strings.TrimSpace(block.Content) != "" {
+				parts = append(parts, block.Content)
+				continue
+			}
 		}
 		if text := lc4jEventText(block.Events); text != "" {
 			parts = append(parts, text)
@@ -521,11 +559,108 @@ func contextEntries(turn *openTurn) []ContextEntryData {
 			ID:          entry.ID,
 			Cursor:      entry.Cursor,
 			ContentType: entry.ContentType,
+			Epoch:       entry.Epoch,
 			Text:        entry.Text,
+			Messages:    append([]LLMMessage(nil), entry.Messages...),
 			CreatedAt:   entry.CreatedAt,
 		})
 	}
 	return out
+}
+
+func entryEpoch(entry entryEvent) int64 {
+	if entry.Epoch == nil {
+		return 0
+	}
+	return *entry.Epoch
+}
+
+func latestContextEntries(entries []ContextEntryData) []ContextEntryData {
+	if len(entries) == 0 {
+		return nil
+	}
+	maxEpoch := entries[0].Epoch
+	for _, entry := range entries[1:] {
+		if entry.Epoch > maxEpoch {
+			maxEpoch = entry.Epoch
+		}
+	}
+	out := make([]ContextEntryData, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Epoch == maxEpoch {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+func contextMessages(entry entryEvent) []LLMMessage {
+	if !strings.EqualFold(entry.Channel, "context") {
+		return nil
+	}
+	messages := make([]LLMMessage, 0, len(entry.Content))
+	for _, raw := range entry.Content {
+		message, ok := contextMessage(raw)
+		if ok {
+			messages = append(messages, message)
+		}
+	}
+	return messages
+}
+
+func contextMessage(raw json.RawMessage) (LLMMessage, bool) {
+	var block struct {
+		Role     string `json:"role"`
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		Content  string `json:"content"`
+		Contents []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"contents"`
+	}
+	if err := json.Unmarshal(raw, &block); err != nil {
+		return LLMMessage{}, false
+	}
+	role := normalizeMessageRole(firstNonEmpty(block.Role, block.Type))
+	content := strings.TrimSpace(firstNonEmpty(block.Text, block.Content))
+	if content == "" {
+		parts := make([]string, 0, len(block.Contents))
+		for _, item := range block.Contents {
+			if strings.TrimSpace(item.Text) != "" {
+				parts = append(parts, item.Text)
+			}
+		}
+		content = strings.TrimSpace(strings.Join(parts, "\n"))
+	}
+	if role == "" || content == "" {
+		return LLMMessage{}, false
+	}
+	return LLMMessage{Role: role, Content: content}, true
+}
+
+func normalizeMessageRole(value string) string {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "SYSTEM":
+		return "system"
+	case "USER":
+		return "user"
+	case "AI", "ASSISTANT":
+		return "assistant"
+	case "TOOL":
+		return "tool"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func markSeen(turn *openTurn, cursor, entryID string) {

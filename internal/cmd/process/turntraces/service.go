@@ -27,9 +27,10 @@ type StartOptions struct {
 	TurnTraces         Config
 
 	// Tests may inject clients/sinks to run without a networked service or OTLP exporter.
-	Events      processruntime.EventClient
-	Checkpoints processruntime.CheckpointClient
-	Sink        SpanSink
+	Events         processruntime.EventClient
+	Checkpoints    processruntime.CheckpointClient
+	Sink           SpanSink
+	ContextFetcher ContextFetcher
 }
 
 // RunningProcessor is a started turn-trace processor.
@@ -79,6 +80,7 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 
 	events := opts.Events
 	checkpoints := opts.Checkpoints
+	contextFetcher := opts.ContextFetcher
 	var conn *grpc.ClientConn
 	if events == nil || checkpoints == nil {
 		var err error
@@ -106,10 +108,16 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 				Auth:   auth,
 			}
 		}
+		if contextFetcher == nil && scope == "admin" {
+			contextFetcher = grpcAdminContextFetcher{
+				client: pb.NewAdminEntriesServiceClient(conn),
+				auth:   auth,
+			}
+		}
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
-	processor := NewProcessor(cfg, sink)
+	processor := NewProcessor(cfg, sink, contextFetcher)
 	runner := processruntime.Runtime{
 		Events:      events,
 		Checkpoints: checkpoints,
@@ -117,6 +125,7 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 		Config: processruntime.Config{
 			ClientID:           opts.ClientID,
 			Kinds:              []string{"entry", "conversation"},
+			EntryChannels:      []string{"history", "context"},
 			Scope:              scope,
 			AfterCursor:        opts.AfterCursor,
 			Justification:      "turn-traces processor deriving conversation turn telemetry from event stream",

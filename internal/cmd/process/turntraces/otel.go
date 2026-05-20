@@ -2,9 +2,9 @@ package turntraces
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/log"
 	"go.opentelemetry.io/otel"
@@ -71,6 +71,8 @@ func (s *otelSink) EmitTurnSpan(ctx context.Context, span SpanData) error {
 		"sessionID", span.SessionID,
 		"turnID", span.TurnID,
 		"endReason", span.EndReason,
+		"traceID", otelSpan.SpanContext().TraceID().String(),
+		"spanID", otelSpan.SpanContext().SpanID().String(),
 	)
 	if len(span.ContextEntries) > 0 {
 		s.emitLLMSpan(spanCtx, span)
@@ -89,16 +91,16 @@ func (s *otelSink) EmitTurnSpan(ctx context.Context, span SpanData) error {
 }
 
 func (s *otelSink) emitLLMSpan(ctx context.Context, span SpanData) {
-	start := firstContextTime(span)
-	if start.IsZero() {
-		start = span.StartTime
-	}
+	start := span.StartTime
 	if start.IsZero() {
 		start = span.EndTime
 	}
+	parent := trace.SpanContextFromContext(ctx)
 	_, child := s.tracer.Start(ctx, "memory-service.llm", trace.WithTimestamp(start))
 	defer child.End(trace.WithTimestamp(span.EndTime))
-	child.SetAttributes(s.llmAttributes(span)...)
+	inputValue := llmInputValue(span)
+	outputValue := llmOutputValue(span)
+	child.SetAttributes(s.llmAttributes(span, inputValue, outputValue)...)
 	log.Info("otel span sent",
 		"name", "memory-service.llm",
 		"type", "generation",
@@ -106,6 +108,20 @@ func (s *otelSink) emitLLMSpan(ctx context.Context, span SpanData) {
 		"sessionID", span.SessionID,
 		"turnID", span.TurnID,
 		"contextEntries", len(span.ContextEntries),
+		"traceID", child.SpanContext().TraceID().String(),
+		"spanID", child.SpanContext().SpanID().String(),
+		"parentSpanID", parent.SpanID().String(),
+	)
+	log.Debug("llm span emitted",
+		"name", "memory-service.llm",
+		"conversationID", span.ConversationID,
+		"sessionID", span.SessionID,
+		"turnID", span.TurnID,
+		"contextEntries", len(span.ContextEntries),
+		"input", inputValue,
+		"output", outputValue,
+		"startTime", start,
+		"endTime", span.EndTime,
 	)
 }
 
@@ -187,15 +203,42 @@ func (s *otelSink) attributes(span SpanData) []attribute.KeyValue {
 	return attrs
 }
 
-func (s *otelSink) llmAttributes(span SpanData) []attribute.KeyValue {
+func (s *otelSink) llmAttributes(span SpanData, inputValue, outputValue string) []attribute.KeyValue {
 	contextText := contextInput(span.ContextEntries)
 	contextIDs := contextEntryIDs(span.ContextEntries)
 	attrs := []attribute.KeyValue{
+		attribute.String("langfuse.trace.name", span.Name),
+		attribute.String("langfuse.session.id", span.SessionID),
+		attribute.String("session.id", span.SessionID),
+		attribute.String("langfuse.version", "turn-traces-v1"),
 		attribute.String("langfuse.observation.type", "generation"),
 		attribute.String("langfuse.observation.level", span.Level),
 		attribute.String("langfuse.observation.metadata.conversation_id", span.ConversationID),
 		attribute.String("langfuse.observation.metadata.turn_id", span.TurnID),
 		attribute.Int("langfuse.observation.metadata.context_entry_count", len(span.ContextEntries)),
+		attribute.String("gen_ai.operation.name", "chat"),
+		attribute.String("gen_ai.system", "memory-service"),
+	}
+	if span.UserID != "" {
+		attrs = append(attrs,
+			attribute.String("langfuse.user.id", span.UserID),
+			attribute.String("user.id", span.UserID),
+		)
+	}
+	if s.cfg.RuntimeVersion != "" {
+		attrs = append(attrs, attribute.String("langfuse.release", s.cfg.RuntimeVersion))
+	}
+	if s.cfg.Environment != "" {
+		attrs = append(attrs, attribute.String("langfuse.environment", s.cfg.Environment))
+	}
+	if len(span.Tags) > 0 {
+		attrs = append(attrs, attribute.StringSlice("langfuse.trace.tags", span.Tags))
+	}
+	for key, value := range span.Metadata {
+		if value == "" {
+			continue
+		}
+		attrs = append(attrs, attribute.String("langfuse.trace.metadata."+key, value))
 	}
 	if len(contextIDs) > 0 {
 		attrs = append(attrs, attribute.StringSlice("langfuse.observation.metadata.context_entry_ids", contextIDs))
@@ -206,21 +249,68 @@ func (s *otelSink) llmAttributes(span SpanData) []attribute.KeyValue {
 	if span.AgentEntryID != "" {
 		attrs = append(attrs, attribute.String("langfuse.observation.metadata.agent_entry_id", span.AgentEntryID))
 	}
-	if contextText != "" {
+	if inputValue != "" {
 		attrs = append(attrs,
-			attribute.String("langfuse.observation.input", contextText),
-			attribute.String("input.value", contextText),
-			attribute.String("gen_ai.prompt", contextText),
+			attribute.String("langfuse.observation.input", inputValue),
+			attribute.String("input.value", inputValue),
+		)
+	}
+	if contextText != "" {
+		attrs = append(attrs, attribute.String("gen_ai.prompt", contextText))
+	}
+	if outputValue != "" {
+		attrs = append(attrs,
+			attribute.String("langfuse.observation.output", outputValue),
+			attribute.String("output.value", outputValue),
 		)
 	}
 	if span.Output != "" {
-		attrs = append(attrs,
-			attribute.String("langfuse.observation.output", span.Output),
-			attribute.String("output.value", span.Output),
-			attribute.String("gen_ai.completion", span.Output),
-		)
+		attrs = append(attrs, attribute.String("gen_ai.completion", span.Output))
 	}
 	return attrs
+}
+
+func llmInputValue(span SpanData) string {
+	messages, _ := llmMessages(span)
+	if len(messages) == 0 {
+		text := strings.TrimSpace(contextInput(span.ContextEntries))
+		if text == "" {
+			return ""
+		}
+		messages = []LLMMessage{{Role: "system", Content: text}}
+	}
+	return marshalJSONValue(messages)
+}
+
+func llmOutputValue(span SpanData) string {
+	_, output := llmMessages(span)
+	if strings.TrimSpace(output.Content) == "" {
+		return ""
+	}
+	return marshalJSONValue(output)
+}
+
+func llmMessages(span SpanData) ([]LLMMessage, LLMMessage) {
+	messages := make([]LLMMessage, 0)
+	for _, entry := range span.ContextEntries {
+		messages = append(messages, entry.Messages...)
+	}
+	if len(messages) > 0 && messages[len(messages)-1].Role == "assistant" {
+		output := messages[len(messages)-1]
+		return append([]LLMMessage(nil), messages[:len(messages)-1]...), output
+	}
+	if strings.TrimSpace(span.Output) == "" {
+		return messages, LLMMessage{}
+	}
+	return messages, LLMMessage{Role: "assistant", Content: span.Output}
+}
+
+func marshalJSONValue(value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 func contextInput(entries []ContextEntryData) string {
@@ -246,15 +336,6 @@ func contextEntryIDs(entries []ContextEntryData) []string {
 		}
 	}
 	return ids
-}
-
-func firstContextTime(span SpanData) time.Time {
-	for _, entry := range span.ContextEntries {
-		if !entry.CreatedAt.IsZero() {
-			return entry.CreatedAt
-		}
-	}
-	return time.Time{}
 }
 
 type dryRunSink struct{}

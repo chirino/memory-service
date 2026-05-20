@@ -206,7 +206,7 @@ tasks:
   dev:turn-traces-processor:
     desc: Run the turn-traces processor in dev mode.
     env:
-      MEMORY_SERVICE_LOG_LEVEL: debug
+      MEMORY_SERVICE_LOG_LEVEL: info
       MEMORY_SERVICE_GRPC_ENDPOINT: '{{.MEMORY_SERVICE_GRPC_ENDPOINT | default "localhost:8082"}}'
       MEMORY_SERVICE_PROCESS_CLIENT_ID: turn_traces_processor
       MEMORY_SERVICE_API_KEY: turn-traces-processor-key

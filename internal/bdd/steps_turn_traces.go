@@ -3,6 +3,7 @@ package bdd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ func init() {
 		ctx.Step(`^the turn trace processor is stopped$`, t.processorIsStopped)
 		ctx.Step(`^the turn trace processor should emit a turn span for conversation "([^"]*)" with end reason "([^"]*)" within (\d+) seconds$`, t.processorShouldEmitTurnSpan)
 		ctx.Step(`^the last turn trace span should have context entry count (\d+)$`, t.lastSpanShouldHaveContextEntryCount)
+		ctx.Step(`^the last turn trace span should have a Langfuse LLM generation span with input containing "([^"]*)" and output "([^"]*)"$`, t.lastSpanShouldHaveLLMGenerationSpan)
 		ctx.Step(`^the last turn trace span should use session "([^"]*)"$`, t.lastSpanShouldUseSession)
 		ctx.Step(`^the last turn trace span metadata "([^"]*)" should be "([^"]*)"$`, t.lastSpanMetadataShouldBe)
 
@@ -80,6 +82,7 @@ func (t *turnTraceSteps) processorIsRunningForUserWithScope(userID, scope string
 		ClientID:           clientID,
 		BearerToken:        subject,
 		Scope:              scope,
+		AfterCursor:        "start",
 		CheckpointInterval: 100 * time.Millisecond,
 		Sink:               t.sink,
 		TurnTraces: turntraces.Config{
@@ -146,6 +149,31 @@ func (t *turnTraceSteps) lastSpanShouldHaveContextEntryCount(expected int) error
 	return nil
 }
 
+func (t *turnTraceSteps) lastSpanShouldHaveLLMGenerationSpan(inputContains, output string) error {
+	if t.last == nil {
+		return fmt.Errorf("no turn trace span captured")
+	}
+	expectedInput, err := t.s.Expand(inputContains)
+	if err != nil {
+		return err
+	}
+	expectedOutput, err := t.s.Expand(output)
+	if err != nil {
+		return err
+	}
+	if len(t.last.ContextEntries) == 0 {
+		return fmt.Errorf("expected Langfuse LLM generation span, but the turn had no context entries")
+	}
+	actualInput := turnTraceContextInput(t.last.ContextEntries)
+	if !strings.Contains(actualInput, expectedInput) {
+		return fmt.Errorf("expected Langfuse LLM generation input to contain %q, got %q", expectedInput, actualInput)
+	}
+	if t.last.Output != expectedOutput {
+		return fmt.Errorf("expected Langfuse LLM generation output %q, got %q", expectedOutput, t.last.Output)
+	}
+	return nil
+}
+
 func (t *turnTraceSteps) lastSpanShouldUseSession(expected string) error {
 	if t.last == nil {
 		return fmt.Errorf("no turn trace span captured")
@@ -173,6 +201,21 @@ func (t *turnTraceSteps) lastSpanMetadataShouldBe(key, expected string) error {
 		return fmt.Errorf("expected turn trace metadata %q to be %q, got %q", key, expanded, actual)
 	}
 	return nil
+}
+
+func turnTraceContextInput(entries []turntraces.ContextEntryData) string {
+	parts := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if strings.TrimSpace(entry.Text) == "" {
+			continue
+		}
+		if entry.ID == "" {
+			parts = append(parts, entry.Text)
+			continue
+		}
+		parts = append(parts, entry.ID+": "+entry.Text)
+	}
+	return strings.Join(parts, "\n")
 }
 
 func summarizeTurnTraceSpans(spans []turntraces.SpanData) []map[string]string {

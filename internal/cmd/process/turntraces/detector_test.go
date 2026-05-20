@@ -34,6 +34,22 @@ func (s *captureSink) snapshot() []SpanData {
 	return append([]SpanData(nil), s.spans...)
 }
 
+type fakeContextFetcher struct {
+	conversationID string
+	upToEntryID    string
+	entries        []ContextEntryData
+	err            error
+}
+
+func (f *fakeContextFetcher) FetchContextEntries(_ context.Context, conversationID string, upToEntryID string) ([]ContextEntryData, error) {
+	f.conversationID = conversationID
+	f.upToEntryID = upToEntryID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]ContextEntryData(nil), f.entries...), nil
+}
+
 func TestDetectorCompletedTurn(t *testing.T) {
 	sink := &captureSink{}
 	processor := NewProcessor(Config{}, sink)
@@ -62,6 +78,62 @@ func TestDetectorCompletedTurn(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &state))
 	require.Equal(t, "cursor-3", state.LastEventCursor)
 	require.Empty(t, state.OpenTurns)
+}
+
+func TestDetectorFetchesBoundedLatestEpochContextForCompletedTurn(t *testing.T) {
+	sink := &captureSink{}
+	fetcher := &fakeContextFetcher{
+		entries: []ContextEntryData{
+			{
+				ID:       "ctx-old",
+				Epoch:    1,
+				Messages: []LLMMessage{{Role: "user", Content: "old prompt"}},
+			},
+			{
+				ID:       "ctx-system",
+				Epoch:    2,
+				Messages: []LLMMessage{{Role: "system", Content: "current system"}},
+			},
+			{
+				ID:       "ctx-user",
+				Epoch:    2,
+				Messages: []LLMMessage{{Role: "user", Content: "current prompt"}},
+			},
+			{
+				ID:       "ctx-assistant",
+				Epoch:    2,
+				Messages: []LLMMessage{{Role: "assistant", Content: "current answer"}},
+			},
+		},
+	}
+	processor := NewProcessor(Config{}, sink, fetcher)
+	base := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(t, processor.Handle(context.Background(), entryEnvelope("cursor-1", "entry-user", "conv-1", "history", "history", "USER", base)))
+	require.NoError(t, processor.Handle(context.Background(), entryEnvelope("cursor-2", "entry-ai", "conv-1", "history", "history", "AI", base.Add(time.Second))))
+
+	require.Equal(t, "conv-1", fetcher.conversationID)
+	require.Equal(t, "entry-ai", fetcher.upToEntryID)
+	require.Len(t, sink.spans, 1)
+	span := sink.spans[0]
+	require.Equal(t, 3, span.ContextCount)
+	require.Len(t, span.ContextEntries, 3)
+	require.Equal(t, []LLMMessage{{Role: "system", Content: "current system"}}, span.ContextEntries[0].Messages)
+	require.Equal(t, []LLMMessage{{Role: "user", Content: "current prompt"}}, span.ContextEntries[1].Messages)
+	require.Equal(t, []LLMMessage{{Role: "assistant", Content: "current answer"}}, span.ContextEntries[2].Messages)
+	require.Equal(t, "3", span.Metadata["context_entry_count"])
+}
+
+func TestContextMessageParsesRoleContentShape(t *testing.T) {
+	message, ok := contextMessage(json.RawMessage(`{"role":"assistant","content":"content field answer"}`))
+	require.True(t, ok)
+	require.Equal(t, LLMMessage{Role: "assistant", Content: "content field answer"}, message)
+
+	text := entryText(entryEvent{
+		Channel: "context",
+		Content: []json.RawMessage{json.RawMessage(`{"role":"user","content":"content field prompt"}`)},
+	})
+	require.Equal(t, "content field prompt", text)
 }
 
 func TestDetectorConversationGroupSessionMapping(t *testing.T) {

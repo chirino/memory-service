@@ -50,11 +50,14 @@ func (c GRPCEventClient) Subscribe(ctx context.Context, req SubscribeRequest) (E
 		scope = pb.EventScope_EVENT_SCOPE_AUTHORIZED
 	}
 	stream, err := c.Client.SubscribeEvents(withAuth(ctx, c.Auth), &pb.SubscribeEventsRequest{
-		Kinds:         req.Kinds,
-		AfterCursor:   optionalString(req.AfterCursor),
-		Detail:        optionalString(defaultString(req.Detail, "full")),
-		Scope:         &scope,
-		Justification: optionalString(req.Justification),
+		Kinds:             req.Kinds,
+		AfterCursor:       optionalString(req.AfterCursor),
+		Detail:            optionalString(defaultString(req.Detail, "full")),
+		Scope:             &scope,
+		Justification:     optionalString(req.Justification),
+		EntryChannels:     req.EntryChannels,
+		EntryContentTypes: req.EntryContentTypes,
+		EntryRoles:        req.EntryRoles,
 	})
 	if err != nil {
 		return nil, err
