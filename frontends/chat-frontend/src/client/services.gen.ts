@@ -171,6 +171,10 @@ export class ConversationsService {
    * @param data The data for the request.
    * @param data.conversationId Conversation identifier (UUID format).
    * @param data.afterCursor Cursor for pagination; returns entries after this entry id (UUID format).
+   * @param data.upToEntryId Upper-bound entry id (UUID format). When set, only entries at or
+   * before this entry in the caller-visible conversation order are
+   * returned. This is useful with `channel=context` and `epoch` to
+   * reconstruct the agent context as of a specific history entry.
    * @param data.limit
    * @param data.channel Channel of entries to return. Defaults to `history` for the
    * user-visible conversation; `context` returns agent-managed context entries
@@ -202,6 +206,7 @@ export class ConversationsService {
       },
       query: {
         afterCursor: data.afterCursor,
+        upToEntryId: data.upToEntryId,
         limit: data.limit,
         channel: data.channel,
         epoch: data.epoch,

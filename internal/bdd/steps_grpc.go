@@ -378,6 +378,16 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				})
 		}
 
+	case "AdminEntriesService":
+		client := pb.NewAdminEntriesServiceClient(conn)
+		switch method {
+		case "ListEntries":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminListEntriesRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListEntries(ctx, req.(*pb.AdminListEntriesRequest))
+				})
+		}
+
 	case "ConversationMembershipsService":
 		client := pb.NewConversationMembershipsServiceClient(conn)
 		switch method {

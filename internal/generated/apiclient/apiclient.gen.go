@@ -897,6 +897,12 @@ type ListConversationChildrenParams struct {
 type ListConversationEntriesParams struct {
 	// AfterCursor Cursor for pagination; returns entries after this entry id (UUID format).
 	AfterCursor *openapi_types.UUID `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
+
+	// UpToEntryId Upper-bound entry id (UUID format). When set, only entries at or
+	// before this entry in the caller-visible conversation order are
+	// returned. This is useful with `channel=context` and `epoch` to
+	// reconstruct the agent context as of a specific history entry.
+	UpToEntryId *openapi_types.UUID `form:"upToEntryId,omitempty" json:"upToEntryId,omitempty"`
 	Limit       *int                `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// Channel Channel of entries to return. Defaults to `history` for the
@@ -2821,6 +2827,22 @@ func NewListConversationEntriesRequest(server string, conversationId openapi_typ
 		if params.AfterCursor != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "afterCursor", runtime.ParamLocationQuery, *params.AfterCursor); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.UpToEntryId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "upToEntryId", runtime.ParamLocationQuery, *params.UpToEntryId); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

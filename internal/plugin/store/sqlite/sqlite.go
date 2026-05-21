@@ -1032,7 +1032,7 @@ func (s *SQLiteStore) DeleteTransfer(ctx context.Context, userID string, transfe
 
 // --- Entries ---
 
-func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
+func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
 	var conv model.Conversation
 	result := s.dbFor(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
@@ -1068,7 +1068,12 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, err
 		}
+		visible := entries
 		entries = filterEntriesForAllForks(entries, effectiveChannel, clientID, agentID, epochFilter)
+		entries, err = registrystore.TrimEntriesToVisiblePrefix(entries, visible, upToEntryID)
+		if err != nil {
+			return nil, err
+		}
 		entries, cursor := paginateEntries(entries, afterEntryID, limit)
 		decryptEntries(s, entries)
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: cursor}, nil
@@ -1077,6 +1082,21 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 	ancestry, err := s.buildAncestryStack(ctx, conv)
 	if err != nil {
 		return nil, err
+	}
+
+	var allEntries []model.Entry
+	var visible []model.Entry
+	ensureVisible := func() error {
+		if visible != nil {
+			return nil
+		}
+		var err error
+		allEntries, err = s.listEntriesForGroup(ctx, conv.ConversationGroupID)
+		if err != nil {
+			return err
+		}
+		visible = filterEntriesByAncestry(allEntries, ancestry)
+		return nil
 	}
 
 	var filtered []model.Entry
@@ -1089,25 +1109,23 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 				return nil, err
 			}
 		} else {
-			allEntries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
-			if err != nil {
+			if err := ensureVisible(); err != nil {
 				return nil, err
 			}
 			filtered = filterMemoryEntriesWithEpoch(allEntries, ancestry, *clientID, valueOrEmpty(agentID), epochFilter)
 		}
 	} else {
-		allEntries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
-		if err != nil {
+		if err := ensureVisible(); err != nil {
 			return nil, err
 		}
 		if effectiveChannel == "" && clientID != nil {
 			// All channels (agent without filter): return all entries in ancestry order.
-			filtered = filterEntriesByAncestry(allEntries, ancestry)
+			filtered = visible
 		} else {
 			// Single channel filter (or default history).
-			filtered = filterEntriesByAncestry(allEntries, ancestry)
+			filtered = visible
 			if effectiveChannel != "" {
-				tmp := filtered[:0]
+				tmp := make([]model.Entry, 0, len(filtered))
 				for _, entry := range filtered {
 					if entry.Channel == effectiveChannel {
 						tmp = append(tmp, entry)
@@ -1118,6 +1136,15 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		}
 	}
 
+	if upToEntryID != nil {
+		if err := ensureVisible(); err != nil {
+			return nil, err
+		}
+		filtered, err = registrystore.TrimEntriesToVisiblePrefix(filtered, visible, upToEntryID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	filtered, cursor := paginateEntries(filtered, afterEntryID, limit)
 	decryptEntries(s, filtered)
 	return &registrystore.PagedEntries{Data: filtered, AfterCursor: cursor}, nil
@@ -1960,24 +1987,34 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID uuid.U
 	}
 
 	var filtered []model.Entry
+	var visible []model.Entry
 	if query.AllForks {
 		filtered = allEntries
+		visible = allEntries
 	} else {
 		ancestry, err := s.buildAncestryStack(ctx, conv)
 		if err != nil {
 			return nil, err
 		}
 		filtered = filterEntriesByAncestry(allEntries, ancestry)
+		visible = filtered
 	}
 	if query.Channel != nil {
 		ch := *query.Channel
-		tmp := filtered[:0]
+		tmp := make([]model.Entry, 0, len(filtered))
 		for _, entry := range filtered {
 			if entry.Channel == ch {
 				tmp = append(tmp, entry)
 			}
 		}
 		filtered = tmp
+	}
+	if query.EpochFilter != nil {
+		filtered = filterEntriesByEpoch(filtered, query.EpochFilter)
+	}
+	filtered, err = registrystore.TrimEntriesToVisiblePrefix(filtered, visible, query.UpToEntryID)
+	if err != nil {
+		return nil, err
 	}
 
 	filtered, cursor := paginateEntries(filtered, query.AfterCursor, limit)
@@ -2871,6 +2908,38 @@ func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAnces
 
 	}
 
+	return result
+}
+
+func filterEntriesByEpoch(entries []model.Entry, epochFilter *registrystore.MemoryEpochFilter) []model.Entry {
+	epoch := normalizeEpochFilter(epochFilter)
+	result := make([]model.Entry, 0, len(entries))
+	maxEpochSeen := int64(0)
+	maxEpochInitialized := false
+	for _, entry := range entries {
+		entryEpoch := int64(0)
+		if entry.Epoch != nil {
+			entryEpoch = *entry.Epoch
+		}
+
+		switch epoch.Mode {
+		case registrystore.MemoryEpochModeAll:
+			result = append(result, entry)
+		case registrystore.MemoryEpochModeEpoch:
+			if epoch.Epoch != nil && entryEpoch == *epoch.Epoch {
+				result = append(result, entry)
+			}
+		default:
+			if !maxEpochInitialized || entryEpoch > maxEpochSeen {
+				result = result[:0]
+				maxEpochSeen = entryEpoch
+				maxEpochInitialized = true
+			}
+			if entryEpoch == maxEpochSeen {
+				result = append(result, entry)
+			}
+		}
+	}
 	return result
 }
 

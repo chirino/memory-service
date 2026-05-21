@@ -51,6 +51,12 @@ This will start:
 - **MinIO** for S3-compatible object storage (used by the memory service for attachments)
 - **Prometheus** for metrics collection
 - **Grafana** for metrics dashboards
+- **Langfuse** for turn-trace observability, fed by the Memory Service turn-traces processor
+
+Langfuse is available at `http://localhost:3002` with:
+
+- Email: `memory-service@example.com`
+- Password: `memory-service`
 
 ### 4. Access the Demo Chat App
 

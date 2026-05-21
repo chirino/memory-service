@@ -61,6 +61,7 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	afterCursor := queryPtr(c, "afterCursor")
+	upToEntryID := queryPtr(c, "upToEntryId")
 	limit := queryInt(c, "limit", 50)
 
 	clientIDParam := queryPtr(c, "clientId")
@@ -110,7 +111,7 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	if err := routetx.MemoryRead(c, store, func(context.Context) error {
-		result, err := store.GetEntries(c.Request.Context(), userID, convID, afterCursor, limit, channelPtr, epochFilter, clientIDParam, agentIDParam, allForks)
+		result, err := store.GetEntries(c.Request.Context(), userID, convID, afterCursor, upToEntryID, limit, channelPtr, epochFilter, clientIDParam, agentIDParam, allForks)
 		if err != nil {
 			return err
 		}

@@ -177,6 +177,7 @@ public class MemoryServiceProxy {
                         api.listConversationEntriesWithHttpInfo(
                                 toUuid(conversationId),
                                 toUuid(afterCursor),
+                                null,
                                 limit,
                                 channel,
                                 epoch,

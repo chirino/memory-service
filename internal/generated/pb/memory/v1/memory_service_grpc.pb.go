@@ -1118,6 +1118,108 @@ var EntriesService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	AdminEntriesService_ListEntries_FullMethodName = "/memory.v1.AdminEntriesService/ListEntries"
+)
+
+// AdminEntriesServiceClient is the client API for AdminEntriesService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type AdminEntriesServiceClient interface {
+	ListEntries(ctx context.Context, in *AdminListEntriesRequest, opts ...grpc.CallOption) (*ListEntriesResponse, error)
+}
+
+type adminEntriesServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAdminEntriesServiceClient(cc grpc.ClientConnInterface) AdminEntriesServiceClient {
+	return &adminEntriesServiceClient{cc}
+}
+
+func (c *adminEntriesServiceClient) ListEntries(ctx context.Context, in *AdminListEntriesRequest, opts ...grpc.CallOption) (*ListEntriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEntriesResponse)
+	err := c.cc.Invoke(ctx, AdminEntriesService_ListEntries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AdminEntriesServiceServer is the server API for AdminEntriesService service.
+// All implementations must embed UnimplementedAdminEntriesServiceServer
+// for forward compatibility.
+type AdminEntriesServiceServer interface {
+	ListEntries(context.Context, *AdminListEntriesRequest) (*ListEntriesResponse, error)
+	mustEmbedUnimplementedAdminEntriesServiceServer()
+}
+
+// UnimplementedAdminEntriesServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAdminEntriesServiceServer struct{}
+
+func (UnimplementedAdminEntriesServiceServer) ListEntries(context.Context, *AdminListEntriesRequest) (*ListEntriesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListEntries not implemented")
+}
+func (UnimplementedAdminEntriesServiceServer) mustEmbedUnimplementedAdminEntriesServiceServer() {}
+func (UnimplementedAdminEntriesServiceServer) testEmbeddedByValue()                             {}
+
+// UnsafeAdminEntriesServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AdminEntriesServiceServer will
+// result in compilation errors.
+type UnsafeAdminEntriesServiceServer interface {
+	mustEmbedUnimplementedAdminEntriesServiceServer()
+}
+
+func RegisterAdminEntriesServiceServer(s grpc.ServiceRegistrar, srv AdminEntriesServiceServer) {
+	// If the following call panics, it indicates UnimplementedAdminEntriesServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AdminEntriesService_ServiceDesc, srv)
+}
+
+func _AdminEntriesService_ListEntries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminListEntriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminEntriesServiceServer).ListEntries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminEntriesService_ListEntries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminEntriesServiceServer).ListEntries(ctx, req.(*AdminListEntriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// AdminEntriesService_ServiceDesc is the grpc.ServiceDesc for AdminEntriesService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AdminEntriesService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "memory.v1.AdminEntriesService",
+	HandlerType: (*AdminEntriesServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListEntries",
+			Handler:    _AdminEntriesService_ListEntries_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "memory/v1/memory_service.proto",
+}
+
+const (
 	SearchService_SearchConversations_FullMethodName  = "/memory.v1.SearchService/SearchConversations"
 	SearchService_IndexConversations_FullMethodName   = "/memory.v1.SearchService/IndexConversations"
 	SearchService_ListUnindexedEntries_FullMethodName = "/memory.v1.SearchService/ListUnindexedEntries"
