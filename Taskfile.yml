@@ -170,9 +170,10 @@ tasks:
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
-      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: turn_traces_processor
+      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1
+      MEMORY_SERVICE_API_KEYS_ADMIN: admin-api-key-1
       MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: turn-traces-processor-key
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_CORS_ENABLED: "true"
