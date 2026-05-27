@@ -642,11 +642,11 @@ New endpoints in `openapi-admin.yml`:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/admin/v1/memories/policies` | Download current active policy bundle |
-| `PUT` | `/admin/v1/memories/policies` | Upload and hot-reload policy bundle |
+| `GET` | `/admin/v1/memory-policies` | Download current active policy bundle |
+| `PUT` | `/admin/v1/memory-policies` | Upload and hot-reload policy bundle |
 | `DELETE` | `/admin/v1/memories/{id}` | Force-delete any memory by UUID |
-| `GET` | `/admin/v1/memories/index/status` | Indexing queue depth (pending) |
-| `POST` | `/admin/v1/memories/index/trigger` | Manually trigger one indexing cycle |
+| `GET` | `/admin/v1/memory-index/status` | Indexing queue depth (pending) |
+| `POST` | `/admin/v1/memory-index/trigger` | Manually trigger one indexing cycle |
 | `PUT` | `/admin/memories/settings` | Update namespace depth limit, indexing interval |
 
 ---
@@ -791,8 +791,8 @@ Feature: Namespaced Episodic Memory
 - [x] Integrate `query` field in `POST /v1/memories/search` (ANN + attribute filter, falls back to attribute-only)
 - [x] Qdrant prefix matching via `namespace_ancestors` equality filter
 - [x] Multi-field embedding and max-pool deduplication of search results
-- [x] Admin endpoint: `GET /admin/v1/memories/index/status`
-- [x] Admin endpoint: `POST /admin/v1/memories/index/trigger` (manual cycle trigger)
+- [x] Admin endpoint: `GET /admin/v1/memory-index/status`
+- [x] Admin endpoint: `POST /admin/v1/memory-index/trigger` (manual cycle trigger)
 
 ### Phase 6 — LangGraph Python Client
 

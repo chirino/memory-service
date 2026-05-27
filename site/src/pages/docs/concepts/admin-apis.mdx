@@ -4,7 +4,7 @@ title: Admin APIs
 description: Administrative APIs for cross-user access, audit logging, and data lifecycle management in the Memory Service.
 ---
 
-Admin APIs give platform administrators and auditors elevated access to Memory Service data — across all users, including archived resources. They are available under the `/v1/admin/` path prefix and require the `admin` or `auditor` role.
+Admin APIs give platform administrators and auditors elevated access to Memory Service data — across all users, including archived resources. Most administrative resources are available under the `/v1/admin/` path prefix. Episodic memory administration uses `/admin/v1/...` routes because memory APIs already reserve `/v1/memories` for agent-facing memory operations. Admin APIs require the `admin` or `auditor` role unless an endpoint documents a stricter role.
 
 ## How Admin APIs Differ from Regular APIs
 
@@ -24,11 +24,11 @@ Key differences:
 
 There are three admin roles, each granting a different level of privilege:
 
-| Role      | Access       | Description                                                                       |
-| --------- | ------------ | --------------------------------------------------------------------------------- |
-| `admin`   | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`.     |
-| `auditor` | Read-only    | View any user's conversations and search system-wide. Cannot modify data.         |
-| `indexer` | Index only   | Index any conversation's transcript for search. Cannot view or modify other data. |
+| Role      | Access       | Description                                                                                       |
+| --------- | ------------ | ------------------------------------------------------------------------------------------------- |
+| `admin`   | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`.                     |
+| `auditor` | Read-only    | View any user's conversations, attachments, and memories; search system-wide. Cannot modify data. |
+| `indexer` | Index only   | Index any conversation's transcript for search. Cannot view or modify other data.                 |
 
 Roles can be assigned via OIDC token roles, explicit user lists, or API key client IDs. See the [Admin Access Configuration](/docs/configuration/#admin-access-configuration) section of the configuration guide for details.
 
@@ -94,7 +94,24 @@ curl "http://localhost:8080/v1/admin/conversations?archived=only" \
   -H "Authorization: Bearer <admin-token>"
 ```
 
-Similarly, entries, memberships, forks, attachments, and semantic search all have admin counterparts that bypass ownership checks. Admin conversation payloads expose an `archived` boolean so clients can distinguish archived records without depending on storage timestamps.
+Similarly, entries, memberships, forks, attachments, episodic memories, and semantic search all have admin counterparts that bypass ownership checks. Admin conversation payloads expose an `archived` boolean so clients can distinguish archived records without depending on storage timestamps.
+
+## Episodic Memory Administration
+
+Episodic memory admin routes use `/admin/v1/...` instead of `/v1/admin/...`. Read-only exploration endpoints allow `admin` or `auditor`; operational and destructive endpoints require `admin`.
+
+| Endpoint                                                                    | Role             | Purpose                                          |
+| --------------------------------------------------------------------------- | ---------------- | ------------------------------------------------ |
+| `GET /admin/v1/memories`                                                    | admin or auditor | List latest memory rows across users             |
+| `GET /admin/v1/memories/{id}`                                               | admin or auditor | Read a retained memory row by UUID               |
+| `POST /admin/v1/memories/search`                                            | admin or auditor | Search memories across users or as a target user |
+| `GET /admin/v1/memory-namespaces`                                           | admin or auditor | Browse memory namespace trees                    |
+| `DELETE /admin/v1/memories/{id}`                                            | admin            | Delete or tombstone a memory row                 |
+| `GET /admin/v1/memory-policies` / `PUT /admin/v1/memory-policies`           | admin            | Read or update the memory policy bundle          |
+| `GET /admin/v1/memory-index/status` / `POST /admin/v1/memory-index/trigger` | admin            | Inspect or trigger memory vector indexing        |
+| `GET /admin/v1/memory-usage` / `GET /admin/v1/memory-usage/top`             | admin            | Inspect memory usage counters                    |
+
+See [Memories](/docs/concepts/memories/#admin-memory-exploration) for request parameters and examples.
 
 ## Archiving And Unarchiving Conversations
 

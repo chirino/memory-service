@@ -1531,6 +1531,14 @@ type MemoriesServer struct {
 	Embedder registryembed.Embedder
 }
 
+type AdminMemoriesServer struct {
+	pb.UnimplementedAdminMemoriesServiceServer
+	Store    registryepisodic.EpisodicStore
+	Policy   *episodic.PolicyEngine
+	Config   *config.Config
+	Embedder registryembed.Embedder
+}
+
 func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest) (*pb.MemoryWriteResult, error) {
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
@@ -1875,52 +1883,283 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 	return resp, nil
 }
 
-func (s *MemoriesServer) GetMemoryIndexStatus(ctx context.Context, _ *emptypb.Empty) (*pb.MemoryIndexStatusResponse, error) {
+func (s *AdminMemoriesServer) ListMemories(ctx context.Context, req *pb.AdminListMemoriesRequest) (*pb.AdminListMemoriesResponse, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	userID := getUserID(ctx)
-	if userID == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	prefix := req.GetNamespacePrefix()
+	if len(prefix) > 0 {
+		if err := validateMemoryNamespace(prefix, s.maxDepth()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 	}
-	id := security.IdentityFromContext(ctx)
-	if id == nil || !id.Roles[security.RoleAdmin] {
-		return nil, status.Error(codes.PermissionDenied, "admin role required")
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = 50
 	}
-
-	count, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (int64, error) {
-		return s.Store.AdminCountPendingIndexing(txCtx)
+	if limit > 200 {
+		return nil, status.Error(codes.InvalidArgument, "limit must be <= 200")
+	}
+	query := registryepisodic.AdminMemoryQuery{
+		NamespacePrefix: prefix,
+		KeyPrefix:       req.GetKeyPrefix(),
+		Archived:        protoArchiveFilterToEpisodic(req.GetArchived()),
+		Limit:           limit,
+		AfterCursor:     req.GetAfterCursor(),
+		IncludeUsage:    req.GetIncludeUsage(),
+	}
+	if req.GetCreatedAfter() != nil {
+		t := req.GetCreatedAfter().AsTime()
+		query.CreatedAfter = &t
+	}
+	if req.GetCreatedBefore() != nil {
+		t := req.GetCreatedBefore().AsTime()
+		query.CreatedBefore = &t
+	}
+	if req.GetExpiresBefore() != nil {
+		t := req.GetExpiresBefore().AsTime()
+		query.ExpiresBefore = &t
+	}
+	page, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (registryepisodic.AdminMemoryPage, error) {
+		return s.Store.AdminListMemories(txCtx, query)
 	})
 	if err != nil {
-		return nil, episodicInternalError("failed to read memory index status", err)
+		return nil, episodicInternalError("failed to list admin memories", err)
 	}
-	return &pb.MemoryIndexStatusResponse{Pending: count}, nil
+	if req.GetIncludeUsage() {
+		if err := inEpisodicRead(ctx, s.Store, func(txCtx context.Context) error {
+			enrichMemoryItemsWithUsage(txCtx, s.Store, page.Items)
+			return nil
+		}); err != nil {
+			return nil, episodicInternalError("failed to enrich memory usage", err)
+		}
+	}
+	resp := &pb.AdminListMemoriesResponse{AfterCursor: stringPtrIfNotEmpty(page.AfterCursor)}
+	for _, item := range page.Items {
+		pItem, err := adminMemoryItemToProto(item)
+		if err != nil {
+			return nil, episodicInternalError("failed to encode memory response", err)
+		}
+		resp.Items = append(resp.Items, pItem)
+	}
+	return resp, nil
 }
 
-func (s *MemoriesServer) GetMemoryUsage(ctx context.Context, req *pb.GetMemoryUsageRequest) (*pb.MemoryUsage, error) {
+func (s *AdminMemoriesServer) GetMemory(ctx context.Context, req *pb.AdminGetMemoryRequest) (*pb.AdminMemoryItem, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	userID := getUserID(ctx)
-	if userID == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	id, err := bytesToUUID(req.GetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	id := security.IdentityFromContext(ctx)
-	if id == nil || !id.Roles[security.RoleAdmin] {
-		return nil, status.Error(codes.PermissionDenied, "admin role required")
+	item, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryItem, error) {
+		item, err := s.Store.AdminGetMemoryByID(txCtx, id)
+		if err != nil || item == nil || !req.GetIncludeUsage() {
+			return item, err
+		}
+		usage, err := s.Store.GetMemoryUsage(txCtx, item.Namespace, item.Key)
+		if err != nil {
+			log.Warn("failed to load memory usage counters", "namespace", item.Namespace, "key", item.Key, "err", err)
+		} else {
+			item.Usage = usage
+		}
+		return item, nil
+	})
+	if err != nil {
+		return nil, episodicInternalError("failed to get admin memory", err)
 	}
+	if item == nil {
+		return nil, status.Error(codes.NotFound, "memory not found")
+	}
+	resp, err := adminMemoryItemToProto(*item)
+	if err != nil {
+		return nil, episodicInternalError("failed to encode memory response", err)
+	}
+	return resp, nil
+}
 
+func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminSearchMemoriesRequest) (*pb.AdminSearchMemoriesResponse, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	prefix := req.GetNamespacePrefix()
+	if len(prefix) > 0 {
+		if err := validateMemoryNamespace(prefix, s.maxDepth()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		return nil, status.Error(codes.InvalidArgument, "limit must be <= 100")
+	}
+	filter := map[string]interface{}{}
+	if req.GetFilter() != nil {
+		filter = req.GetFilter().AsMap()
+	}
+	effectivePrefix := prefix
+	policyFilter := map[string]interface{}{}
+	if asUserID := strings.TrimSpace(req.GetAsUserId()); asUserID != "" {
+		if s.Policy == nil {
+			return nil, status.Error(codes.FailedPrecondition, "memory policy is not configured")
+		}
+		var err error
+		effectivePrefix, policyFilter, err = s.Policy.InjectFilterParts(ctx, prefix, filter, episodic.PolicyContext{
+			UserID:   asUserID,
+			ClientID: getClientID(ctx),
+			JWTClaims: map[string]interface{}{
+				"roles": []string{},
+			},
+		})
+		if err != nil {
+			return nil, episodicInternalError("filter injection error", err)
+		}
+	}
+	normalizedFilter, err := registryepisodic.NormalizeAttributeFilters(filter, policyFilter)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	archived := protoArchiveFilterToEpisodic(req.GetArchived())
+	query := strings.TrimSpace(req.GetQuery())
+	var items []registryepisodic.MemoryItem
+	if query != "" {
+		if s.Embedder == nil {
+			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+		}
+		items, err = withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
+			return semanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, normalizedFilter, query, limit, archived)
+		})
+	} else {
+		items, err = withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
+			return s.Store.AdminSearchMemories(txCtx, registryepisodic.AdminMemorySearchQuery{
+				NamespacePrefix: effectivePrefix,
+				KeyPrefix:       req.GetKeyPrefix(),
+				Filter:          normalizedFilter,
+				Archived:        archived,
+				Limit:           limit,
+				IncludeUsage:    req.GetIncludeUsage(),
+			})
+		})
+	}
+	if err != nil {
+		if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
+			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+		}
+		return nil, episodicInternalError("failed to search admin memories", err)
+	}
+	if req.GetKeyPrefix() != "" && query != "" {
+		items = filterMemoryItemsByKeyPrefix(items, req.GetKeyPrefix())
+	}
+	if req.GetIncludeUsage() {
+		if err := inEpisodicRead(ctx, s.Store, func(txCtx context.Context) error {
+			enrichMemoryItemsWithUsage(txCtx, s.Store, items)
+			return nil
+		}); err != nil {
+			return nil, episodicInternalError("failed to enrich memory usage", err)
+		}
+	}
+	resp := &pb.AdminSearchMemoriesResponse{}
+	for _, item := range items {
+		pItem, err := adminMemoryItemToProto(item)
+		if err != nil {
+			return nil, episodicInternalError("failed to encode memory response", err)
+		}
+		resp.Items = append(resp.Items, pItem)
+	}
+	return resp, nil
+}
+
+func (s *AdminMemoriesServer) ListNamespaces(ctx context.Context, req *pb.AdminListMemoryNamespacesRequest) (*pb.AdminListMemoryNamespacesResponse, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	prefix := req.GetNamespacePrefix()
+	if len(prefix) > 0 {
+		if err := validateMemoryNamespace(prefix, s.maxDepth()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+	maxDepth := int(req.GetMaxDepth())
+	if maxDepth < 0 || (s.maxDepth() > 0 && maxDepth > s.maxDepth()) {
+		return nil, status.Error(codes.InvalidArgument, "max_depth out of range")
+	}
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		return nil, status.Error(codes.InvalidArgument, "limit must be <= 1000")
+	}
+	page, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (registryepisodic.AdminNamespacePage, error) {
+		return s.Store.AdminListNamespaces(txCtx, registryepisodic.AdminNamespaceQuery{
+			NamespacePrefix: prefix,
+			Suffix:          req.GetSuffix(),
+			MaxDepth:        maxDepth,
+			Archived:        protoArchiveFilterToEpisodic(req.GetArchived()),
+			Limit:           limit,
+			AfterCursor:     req.GetAfterCursor(),
+		})
+	})
+	if err != nil {
+		return nil, episodicInternalError("failed to list admin memory namespaces", err)
+	}
+	resp := &pb.AdminListMemoryNamespacesResponse{AfterCursor: stringPtrIfNotEmpty(page.AfterCursor)}
+	for _, ns := range page.Namespaces {
+		resp.Namespaces = append(resp.Namespaces, &pb.MemoryNamespace{Segments: ns})
+	}
+	return resp, nil
+}
+
+func (s *AdminMemoriesServer) DeleteMemory(ctx context.Context, req *pb.AdminDeleteMemoryRequest) (*emptypb.Empty, error) {
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	id, err := bytesToUUID(req.GetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if err := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
+		return s.Store.AdminForceDeleteMemory(txCtx, id)
+	}); err != nil {
+		return nil, episodicInternalError("failed to delete memory", err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *AdminMemoriesServer) GetMemoryUsage(ctx context.Context, req *pb.AdminGetMemoryUsageRequest) (*pb.MemoryUsage, error) {
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
 	namespace := req.GetNamespace()
 	if err := validateMemoryNamespace(namespace, s.maxDepth()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	key := req.GetKey()
-	if key == "" {
+	if req.GetKey() == "" {
 		return nil, status.Error(codes.InvalidArgument, "key is required")
 	}
-
 	usage, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryUsage, error) {
-		return s.Store.GetMemoryUsage(txCtx, namespace, key)
+		return s.Store.GetMemoryUsage(txCtx, namespace, req.GetKey())
 	})
 	if err != nil {
 		return nil, episodicInternalError("failed to read memory usage", err)
@@ -1931,26 +2170,19 @@ func (s *MemoriesServer) GetMemoryUsage(ctx context.Context, req *pb.GetMemoryUs
 	return memoryUsageToProto(*usage), nil
 }
 
-func (s *MemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.ListTopMemoryUsageRequest) (*pb.ListTopMemoryUsageResponse, error) {
+func (s *AdminMemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.AdminListTopMemoryUsageRequest) (*pb.ListTopMemoryUsageResponse, error) {
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	userID := getUserID(ctx)
-	if userID == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
-	}
-	id := security.IdentityFromContext(ctx)
-	if id == nil || !id.Roles[security.RoleAdmin] {
-		return nil, status.Error(codes.PermissionDenied, "admin role required")
-	}
-
 	prefix := req.GetPrefix()
 	if len(prefix) > 0 {
 		if err := validateMemoryNamespace(prefix, s.maxDepth()); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
-
 	sortBy := registryepisodic.MemoryUsageSortFetchCount
 	switch req.GetSort() {
 	case pb.MemoryUsageSort_LAST_FETCHED_AT:
@@ -1960,15 +2192,13 @@ func (s *MemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.ListTop
 	default:
 		return nil, status.Error(codes.InvalidArgument, "invalid sort")
 	}
-
 	limit := int(req.GetLimit())
 	if limit <= 0 {
 		limit = 100
 	}
 	if limit > 1000 {
-		limit = 1000
+		return nil, status.Error(codes.InvalidArgument, "limit must be <= 1000")
 	}
-
 	items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.TopMemoryUsageItem, error) {
 		return s.Store.ListTopMemoryUsage(txCtx, registryepisodic.ListTopMemoryUsageRequest{
 			Prefix: prefix,
@@ -1979,7 +2209,6 @@ func (s *MemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.ListTop
 	if err != nil {
 		return nil, episodicInternalError("failed to list memory usage", err)
 	}
-
 	resp := &pb.ListTopMemoryUsageResponse{}
 	for _, item := range items {
 		resp.Items = append(resp.Items, &pb.TopMemoryUsageItem{
@@ -1989,6 +2218,64 @@ func (s *MemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.ListTop
 		})
 	}
 	return resp, nil
+}
+
+func (s *AdminMemoriesServer) GetMemoryIndexStatus(ctx context.Context, req *pb.AdminGetMemoryIndexStatusRequest) (*pb.MemoryIndexStatusResponse, error) {
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	count, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (int64, error) {
+		return s.Store.AdminCountPendingIndexing(txCtx)
+	})
+	if err != nil {
+		return nil, episodicInternalError("failed to read memory index status", err)
+	}
+	return &pb.MemoryIndexStatusResponse{Pending: count}, nil
+}
+
+func (s *AdminMemoriesServer) requireReadAccess(ctx context.Context, justification string) error {
+	id, err := requireGRPCIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	if !id.Roles[security.RoleAdmin] && !id.Roles[security.RoleAuditor] {
+		return status.Error(codes.PermissionDenied, "admin or auditor role required")
+	}
+	if err := s.requireJustification(justification); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *AdminMemoriesServer) requireAdminAccess(ctx context.Context, justification string) error {
+	id, err := requireGRPCIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	if !id.Roles[security.RoleAdmin] {
+		return status.Error(codes.PermissionDenied, "admin role required")
+	}
+	if err := s.requireJustification(justification); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *AdminMemoriesServer) requireJustification(justification string) error {
+	if s.Config != nil && s.Config.RequireJustification && strings.TrimSpace(justification) == "" {
+		return status.Error(codes.InvalidArgument, "admin justification required")
+	}
+	return nil
+}
+
+func (s *AdminMemoriesServer) maxDepth() int {
+	if s.Config == nil {
+		return 0
+	}
+	return s.Config.EpisodicMaxDepth
 }
 
 func (s *MemoriesServer) maxDepth() int {
@@ -2101,6 +2388,44 @@ func memoryItemToProto(item registryepisodic.MemoryItem) (*pb.MemoryItem, error)
 	return resp, nil
 }
 
+func adminMemoryItemToProto(item registryepisodic.MemoryItem) (*pb.AdminMemoryItem, error) {
+	resp := &pb.AdminMemoryItem{
+		Id:        uuidToBytes(item.ID),
+		Namespace: append([]string(nil), item.Namespace...),
+		Key:       item.Key,
+		CreatedAt: timestamppb.New(item.CreatedAt.UTC()),
+		Archived:  item.ArchivedAt != nil,
+		Revision:  item.Revision,
+	}
+	if item.Value != nil {
+		value, err := structpb.NewStruct(item.Value)
+		if err != nil {
+			return nil, err
+		}
+		resp.Value = value
+	}
+	if item.Attributes != nil {
+		attrs, err := structpb.NewStruct(item.Attributes)
+		if err != nil {
+			return nil, err
+		}
+		resp.Attributes = attrs
+	}
+	if item.Score != nil {
+		resp.Score = item.Score
+	}
+	if item.ExpiresAt != nil {
+		resp.ExpiresAt = timestamppb.New(item.ExpiresAt.UTC())
+	}
+	if item.ArchivedAt != nil {
+		resp.ArchivedAt = timestamppb.New(item.ArchivedAt.UTC())
+	}
+	if item.Usage != nil {
+		resp.Usage = memoryUsageToProto(*item.Usage)
+	}
+	return resp, nil
+}
+
 func memoryUsageToProto(usage registryepisodic.MemoryUsage) *pb.MemoryUsage {
 	return &pb.MemoryUsage{
 		FetchCount:    usage.FetchCount,
@@ -2131,6 +2456,19 @@ func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.Epis
 	}
 }
 
+func filterMemoryItemsByKeyPrefix(items []registryepisodic.MemoryItem, keyPrefix string) []registryepisodic.MemoryItem {
+	if keyPrefix == "" {
+		return items
+	}
+	out := items[:0]
+	for _, item := range items {
+		if strings.HasPrefix(item.Key, keyPrefix) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 func semanticSearchMemories(ctx context.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter registryepisodic.AttributeFilter, query string, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	embeddings, err := embedder.EmbedTexts(ctx, []string{query})
 	if err != nil {
@@ -2140,9 +2478,13 @@ func semanticSearchMemories(ctx context.Context, store registryepisodic.Episodic
 		return nil, nil
 	}
 
-	nsEncoded, err := episodic.EncodeNamespace(namespacePrefix, 0)
-	if err != nil {
-		return nil, err
+	nsEncoded := ""
+	if len(namespacePrefix) > 0 {
+		var err error
+		nsEncoded, err = episodic.EncodeNamespace(namespacePrefix, 0)
+		if err != nil {
+			return nil, err
+		}
 	}
 	vectorResults, err := store.SearchMemoryVectors(ctx, nsEncoded, embeddings[0], filter, limit, archived)
 	if err != nil {

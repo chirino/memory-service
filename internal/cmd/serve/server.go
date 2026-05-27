@@ -327,6 +327,12 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		Config:   cfg,
 		Embedder: embedder,
 	})
+	pb.RegisterAdminMemoriesServiceServer(grpcServer, &grpcserver.AdminMemoriesServer{
+		Store:    episodicStore,
+		Policy:   episodicPolicy,
+		Config:   cfg,
+		Embedder: embedder,
+	})
 	pb.RegisterAttachmentsServiceServer(grpcServer, &grpcserver.AttachmentsServer{
 		Store:       store,
 		AttachStore: attachStore,

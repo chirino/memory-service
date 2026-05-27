@@ -26,7 +26,7 @@ Feature: Episodic memories with SQLite vector backend
       "index": { "text": "beta-token-only" }
     }
     """
-    And I call POST "/admin/v1/memories/index/trigger" with body:
+    And I call POST "/admin/v1/memory-index/trigger" with body:
     """
     {}
     """
@@ -66,7 +66,7 @@ Feature: Episodic memories with SQLite vector backend
       "index": { "text": "shared-vector-token" }
     }
     """
-    And I call POST "/admin/v1/memories/index/trigger" with body:
+    And I call POST "/admin/v1/memory-index/trigger" with body:
     """
     {}
     """

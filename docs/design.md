@@ -266,7 +266,7 @@ The response-resumer locator store is pluggable via `memory-service.response-res
 
 ### Admin API
 
-The admin API (`openapi-admin.yml`) provides system-wide access to conversations and entries. Requires admin or auditor role.
+The admin API (`openapi-admin.yml`) provides system-wide access to conversations, entries, attachments, events, checkpoints, stats, and episodic memories. Most admin endpoints use `/v1/admin/...`; episodic memory admin endpoints use `/admin/v1/...` so they stay separate from the agent-facing `/v1/memories` surface. Read endpoints require admin or auditor role. Mutating and operational endpoints require admin role unless documented otherwise.
 
 Key endpoints:
 
@@ -278,6 +278,10 @@ Key endpoints:
 - `GET /v1/admin/conversations/{id}/forks` - List forks for any conversation.
 - `POST /v1/admin/conversations/search` - System-wide semantic search with userId filter.
 - `POST /v1/admin/evict` - Hard-delete resources past retention period.
+- `GET /admin/v1/memories` - List latest episodic memory rows across users.
+- `GET /admin/v1/memories/{id}` - Get any retained episodic memory row by UUID.
+- `POST /admin/v1/memories/search` - Search episodic memories across users or as a target user.
+- `GET /admin/v1/memory-namespaces` - Browse memory namespaces across users.
 
 ---
 
@@ -343,6 +347,7 @@ The gRPC API (`memory_service.proto`) provides equivalent functionality to the R
 - **EntriesService**: `ListEntries`, `AppendEntry`, `SyncEntries`
 - **SearchService**: `SearchConversations`, `IndexConversations`, `ListUnindexedEntries`
 - **ResponseRecorderService**: `Record`, `Replay`, `Cancel`, `IsEnabled`, `CheckRecordings`
+- **AdminMemoriesService**: `ListMemories`, `GetMemory`, `SearchMemories`, `ListNamespaces`, plus admin memory operations for delete, usage, and index status
 
 UUID fields are represented as 16-byte big-endian binary values in protobuf messages.
 
@@ -354,7 +359,7 @@ UUID fields are represented as 16-byte big-endian binary values in protobuf mess
   - Full HTTP API specification (OpenAPI 3.1) for the main user and agent APIs.
 
 - `openapi-admin.yml`
-  - Admin API specification for system-wide access to conversations and entries.
+  - Admin API specification for system-wide access to conversations, entries, attachments, events, checkpoints, stats, and episodic memories.
 
 - `memory_service.proto`
   - gRPC service definitions with equivalent functionality to the REST APIs.

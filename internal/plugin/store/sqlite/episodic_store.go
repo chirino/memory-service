@@ -114,6 +114,15 @@ type memoryUsageRow struct {
 
 func (memoryUsageRow) TableName() string { return "memory_usage_stats" }
 
+type adminMemoryCursor struct {
+	CreatedAt time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
+}
+
+type adminOffsetCursor struct {
+	Offset int `json:"offset"`
+}
+
 func matchesMemoryArchiveFilter(archivedAt *time.Time, deletedReason *int16, archived registryepisodic.ArchiveFilter) bool {
 	if archivedAt == nil {
 		return archived != registryepisodic.ArchiveFilterOnly
@@ -648,7 +657,12 @@ func (e *sqliteEpisodicStore) SearchMemoryVectors(ctx context.Context, namespace
 
 	var whereFilter string
 	var args []interface{}
-	args = append(args, queryVector, namespacePrefix, episodic.NamespacePrefixPattern(namespacePrefix))
+	args = append(args, queryVector)
+	namespaceWhere := ""
+	if namespacePrefix != "" {
+		namespaceWhere = " AND (mv.namespace = ? OR mv.namespace LIKE ?)"
+		args = append(args, namespacePrefix, episodic.NamespacePrefixPattern(namespacePrefix))
+	}
 	if !filter.Empty() {
 		clause, filterArgs := buildSQLFilter(filter)
 		if clause != "" {
@@ -663,8 +677,7 @@ func (e *sqliteEpisodicStore) SearchMemoryVectors(ctx context.Context, namespace
 		SELECT mv.memory_id, MAX(1.0 - vec_distance_cosine(mv.embedding, ?)) AS score
 		FROM memory_vectors mv
 		JOIN memories m ON m.id = mv.memory_id
-		WHERE (mv.namespace = ? OR mv.namespace LIKE ?)
-		  AND ` + sqliteMemoryArchiveWhere("m", archived) + whereFilter + `
+		WHERE ` + sqliteMemoryArchiveWhere("m", archived) + namespaceWhere + whereFilter + `
 		GROUP BY mv.memory_id
 		ORDER BY score DESC, memory_id ASC
 		LIMIT ?`
@@ -987,6 +1000,206 @@ func (e *sqliteEpisodicStore) AdminCountPendingIndexing(ctx context.Context) (in
 		Where("indexed_at IS NULL").
 		Count(&count).Error
 	return count, err
+}
+
+// AdminListMemories retrieves latest memory rows across users without policy injection.
+func (e *sqliteEpisodicStore) AdminListMemories(ctx context.Context, query registryepisodic.AdminMemoryQuery) (registryepisodic.AdminMemoryPage, error) {
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	q, err := e.adminLatestMemoryQuery(ctx, query.NamespacePrefix)
+	if err != nil {
+		return registryepisodic.AdminMemoryPage{}, err
+	}
+	q = q.Where(sqliteMemoryArchiveWhere("m", query.Archived))
+	if query.KeyPrefix != "" {
+		q = q.Where("m.key LIKE ?", query.KeyPrefix+"%")
+	}
+	if query.CreatedAfter != nil {
+		q = q.Where("m.created_at >= ?", *query.CreatedAfter)
+	}
+	if query.CreatedBefore != nil {
+		q = q.Where("m.created_at <= ?", *query.CreatedBefore)
+	}
+	if query.ExpiresBefore != nil {
+		q = q.Where("m.expires_at IS NOT NULL AND m.expires_at <= ?", *query.ExpiresBefore)
+	}
+	if query.AfterCursor != "" {
+		if cur, ok := decodeAdminMemoryCursor(query.AfterCursor); ok {
+			q = q.Where("(m.created_at < ? OR (m.created_at = ? AND m.id < ?))", cur.CreatedAt, cur.CreatedAt, cur.ID)
+		}
+	}
+	var rows []memoryRow
+	if err := q.Order("m.created_at DESC, m.id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
+		return registryepisodic.AdminMemoryPage{}, fmt.Errorf("admin list memories: %w", err)
+	}
+	return e.adminRowsToPage(rows, limit)
+}
+
+// AdminSearchMemories retrieves latest matching memory rows across users without policy injection.
+func (e *sqliteEpisodicStore) AdminSearchMemories(ctx context.Context, query registryepisodic.AdminMemorySearchQuery) ([]registryepisodic.MemoryItem, error) {
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	q, err := e.adminLatestMemoryQuery(ctx, query.NamespacePrefix)
+	if err != nil {
+		return nil, err
+	}
+	q = q.Where(sqliteMemoryArchiveWhere("m", query.Archived))
+	if query.KeyPrefix != "" {
+		q = q.Where("m.key LIKE ?", query.KeyPrefix+"%")
+	}
+	if !query.Filter.Empty() {
+		clause, args := buildSQLFilter(query.Filter)
+		if clause != "" {
+			q = q.Where(clause, args...)
+		}
+	}
+	var rows []memoryRow
+	if err := q.Order("m.created_at DESC, m.id DESC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("admin search memories: %w", err)
+	}
+	items := make([]registryepisodic.MemoryItem, 0, len(rows))
+	for _, row := range rows {
+		ns, _ := e.decodeNS(row.Namespace)
+		item, err := e.rowToItem(row, ns)
+		if err != nil {
+			log.Warn("Failed to decrypt memory row", "id", row.ID, "err", err)
+			continue
+		}
+		items = append(items, *item)
+	}
+	return items, nil
+}
+
+// AdminListNamespaces retrieves memory namespaces across users without policy injection.
+func (e *sqliteEpisodicStore) AdminListNamespaces(ctx context.Context, query registryepisodic.AdminNamespaceQuery) (registryepisodic.AdminNamespacePage, error) {
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	offset := decodeAdminOffsetCursor(query.AfterCursor)
+	namespaces, err := e.ListNamespaces(ctx, registryepisodic.ListNamespacesRequest{
+		Prefix:   query.NamespacePrefix,
+		Suffix:   query.Suffix,
+		MaxDepth: query.MaxDepth,
+		Archived: query.Archived,
+	})
+	if err != nil {
+		return registryepisodic.AdminNamespacePage{}, err
+	}
+	if offset > len(namespaces) {
+		offset = len(namespaces)
+	}
+	end := offset + limit
+	if end > len(namespaces) {
+		end = len(namespaces)
+	}
+	page := registryepisodic.AdminNamespacePage{Namespaces: namespaces[offset:end]}
+	if end < len(namespaces) {
+		page.AfterCursor = encodeAdminOffsetCursor(end)
+	}
+	return page, nil
+}
+
+func (e *sqliteEpisodicStore) adminLatestMemoryQuery(ctx context.Context, namespacePrefix []string) (*gorm.DB, error) {
+	q := e.dbFor(ctx).Table("memories AS m")
+	if len(namespacePrefix) > 0 {
+		nsEncoded, err := e.encodeNS(namespacePrefix)
+		if err != nil {
+			return nil, err
+		}
+		q = q.Joins(`
+			JOIN (
+				SELECT namespace, key, MAX(created_at) AS max_created_at
+				FROM memories
+				WHERE namespace = ? OR namespace LIKE ?
+				GROUP BY namespace, key
+			) latest
+			ON m.namespace = latest.namespace
+			AND m.key = latest.key
+			AND m.created_at = latest.max_created_at`,
+			nsEncoded, episodic.NamespacePrefixPattern(nsEncoded),
+		)
+	} else {
+		q = q.Joins(`
+			JOIN (
+				SELECT namespace, key, MAX(created_at) AS max_created_at
+				FROM memories
+				GROUP BY namespace, key
+			) latest
+			ON m.namespace = latest.namespace
+			AND m.key = latest.key
+			AND m.created_at = latest.max_created_at`)
+	}
+	return q, nil
+}
+
+func (e *sqliteEpisodicStore) adminRowsToPage(rows []memoryRow, limit int) (registryepisodic.AdminMemoryPage, error) {
+	page := registryepisodic.AdminMemoryPage{}
+	if len(rows) > limit {
+		next := rows[limit-1]
+		page.AfterCursor = encodeAdminMemoryCursor(adminMemoryCursor{CreatedAt: next.CreatedAt, ID: next.ID.String()})
+		rows = rows[:limit]
+	}
+	for _, row := range rows {
+		ns, _ := e.decodeNS(row.Namespace)
+		item, err := e.rowToItem(row, ns)
+		if err != nil {
+			log.Warn("Failed to decrypt memory row", "id", row.ID, "err", err)
+			continue
+		}
+		page.Items = append(page.Items, *item)
+	}
+	return page, nil
+}
+
+func encodeAdminMemoryCursor(cur adminMemoryCursor) string {
+	raw, _ := json.Marshal(cur)
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+func decodeAdminMemoryCursor(cursor string) (adminMemoryCursor, bool) {
+	raw, err := base64.StdEncoding.DecodeString(cursor)
+	if err != nil {
+		return adminMemoryCursor{}, false
+	}
+	var cur adminMemoryCursor
+	if err := json.Unmarshal(raw, &cur); err != nil {
+		return adminMemoryCursor{}, false
+	}
+	return cur, !cur.CreatedAt.IsZero() && cur.ID != ""
+}
+
+func encodeAdminOffsetCursor(offset int) string {
+	raw, _ := json.Marshal(adminOffsetCursor{Offset: offset})
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+func decodeAdminOffsetCursor(cursor string) int {
+	if cursor == "" {
+		return 0
+	}
+	raw, err := base64.StdEncoding.DecodeString(cursor)
+	if err != nil {
+		return 0
+	}
+	var cur adminOffsetCursor
+	if err := json.Unmarshal(raw, &cur); err != nil || cur.Offset < 0 {
+		return 0
+	}
+	return cur.Offset
 }
 
 // rowToItem decrypts a memoryRow into a MemoryItem.

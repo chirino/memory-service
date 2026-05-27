@@ -491,20 +491,50 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.ListMemoryNamespaces(ctx, req.(*pb.ListMemoryNamespacesRequest))
 				})
-		case "GetMemoryIndexStatus":
-			return g.invokeUnary(conn, ctx, "", func() proto.Message { return &emptypb.Empty{} },
+		}
+
+	case "AdminMemoriesService":
+		client := pb.NewAdminMemoriesServiceClient(conn)
+		switch method {
+		case "ListMemories":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminListMemoriesRequest{} },
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
-					return client.GetMemoryIndexStatus(ctx, req.(*emptypb.Empty))
+					return client.ListMemories(ctx, req.(*pb.AdminListMemoriesRequest))
+				})
+		case "GetMemory":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminGetMemoryRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.GetMemory(ctx, req.(*pb.AdminGetMemoryRequest))
+				})
+		case "SearchMemories":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminSearchMemoriesRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.SearchMemories(ctx, req.(*pb.AdminSearchMemoriesRequest))
+				})
+		case "ListNamespaces":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminListMemoryNamespacesRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListNamespaces(ctx, req.(*pb.AdminListMemoryNamespacesRequest))
+				})
+		case "DeleteMemory":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminDeleteMemoryRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.DeleteMemory(ctx, req.(*pb.AdminDeleteMemoryRequest))
 				})
 		case "GetMemoryUsage":
-			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.GetMemoryUsageRequest{} },
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminGetMemoryUsageRequest{} },
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
-					return client.GetMemoryUsage(ctx, req.(*pb.GetMemoryUsageRequest))
+					return client.GetMemoryUsage(ctx, req.(*pb.AdminGetMemoryUsageRequest))
 				})
 		case "ListTopMemoryUsage":
-			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.ListTopMemoryUsageRequest{} },
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminListTopMemoryUsageRequest{} },
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
-					return client.ListTopMemoryUsage(ctx, req.(*pb.ListTopMemoryUsageRequest))
+					return client.ListTopMemoryUsage(ctx, req.(*pb.AdminListTopMemoryUsageRequest))
+				})
+		case "GetMemoryIndexStatus":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminGetMemoryIndexStatusRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.GetMemoryIndexStatus(ctx, req.(*pb.AdminGetMemoryIndexStatusRequest))
 				})
 		}
 

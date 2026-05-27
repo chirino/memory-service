@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/episodic"
+	generatedadmin "github.com/chirino/memory-service/internal/generated/admin"
 	generatedapi "github.com/chirino/memory-service/internal/generated/api"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
@@ -623,11 +624,11 @@ func MountAdminRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, polic
 	}
 	g := r.Group("/admin/v1", auth, requireAdmin)
 
-	g.GET("/memories/policies", func(c *gin.Context) {
+	g.GET("/memory-policies", func(c *gin.Context) {
 		HandleAdminGetMemoryPolicies(c, policy)
 	})
 
-	g.PUT("/memories/policies", func(c *gin.Context) {
+	g.PUT("/memory-policies", func(c *gin.Context) {
 		HandleAdminPutMemoryPolicies(c, policy, cfg)
 	})
 
@@ -635,19 +636,19 @@ func MountAdminRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, polic
 		HandleAdminDeleteMemory(c, store)
 	})
 
-	g.GET("/memories/index/status", func(c *gin.Context) {
+	g.GET("/memory-index/status", func(c *gin.Context) {
 		HandleAdminGetMemoryIndexStatus(c, store)
 	})
 
-	g.POST("/memories/index/trigger", func(c *gin.Context) {
+	g.POST("/memory-index/trigger", func(c *gin.Context) {
 		HandleAdminTriggerMemoryIndex(c, indexer)
 	})
 
-	g.GET("/memories/usage", func(c *gin.Context) {
+	g.GET("/memory-usage", func(c *gin.Context) {
 		HandleAdminGetMemoryUsage(c, store, cfg)
 	})
 
-	g.GET("/memories/usage/top", func(c *gin.Context) {
+	g.GET("/memory-usage/top", func(c *gin.Context) {
 		HandleAdminListTopMemoryUsage(c, store, cfg)
 	})
 }
@@ -655,6 +656,271 @@ func MountAdminRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, polic
 func ensureAdmin(c *gin.Context) bool {
 	security.RequireAdminRole()(c)
 	return !c.IsAborted()
+}
+
+func ensureAdminOrAuditor(c *gin.Context) bool {
+	if security.EffectiveAdminRole(c) == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin or auditor role required"})
+		return false
+	}
+	return true
+}
+
+// HandleAdminListMemories exposes memory listing for admin/auditor exploration.
+func HandleAdminListMemories(c *gin.Context, store registryepisodic.EpisodicStore, cfg *config.Config) {
+	if !ensureAdminOrAuditor(c) {
+		return
+	}
+	archived, err := registryepisodic.ParseArchiveFilter(c.DefaultQuery("archived", string(registryepisodic.ArchiveFilterExclude)))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	prefix := c.QueryArray("namespacePrefix")
+	if len(prefix) > 0 {
+		if err := validateNamespace(prefix, cfg.EpisodicMaxDepth); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	query := registryepisodic.AdminMemoryQuery{
+		NamespacePrefix: prefix,
+		KeyPrefix:       c.Query("keyPrefix"),
+		Archived:        archived,
+		Limit:           queryInt(c, "limit", 50),
+		AfterCursor:     c.Query("afterCursor"),
+		IncludeUsage:    queryBool(c, "includeUsage", false),
+	}
+	if query.CreatedAfter, err = queryTimePtr(c, "createdAfter"); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if query.CreatedBefore, err = queryTimePtr(c, "createdBefore"); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if query.ExpiresBefore, err = queryTimePtr(c, "expiresBefore"); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if query.Limit <= 0 || query.Limit > 200 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 200"})
+		return
+	}
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		page, err := store.AdminListMemories(ctx, query)
+		if err != nil {
+			return err
+		}
+		if query.IncludeUsage {
+			enrichMemoryItemsWithUsage(ctx, store, page.Items)
+		}
+		respItems := toAdminMemoryItems(page.Items)
+		afterCursor := nullableString(page.AfterCursor)
+		c.JSON(http.StatusOK, generatedadmin.AdminListMemoriesResponse{Items: &respItems, AfterCursor: afterCursor})
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
+}
+
+// HandleAdminGetMemory exposes direct memory-by-ID reads for admin/auditor exploration.
+func HandleAdminGetMemory(c *gin.Context, store registryepisodic.EpisodicStore) {
+	if !ensureAdminOrAuditor(c) {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid memory id"})
+		return
+	}
+	includeUsage := queryBool(c, "includeUsage", false)
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		item, err := store.AdminGetMemoryByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if item == nil {
+			c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "memory not found"})
+			return nil
+		}
+		if includeUsage {
+			items := []registryepisodic.MemoryItem{*item}
+			enrichMemoryItemsWithUsage(ctx, store, items)
+			item = &items[0]
+		}
+		c.JSON(http.StatusOK, toAdminMemoryItem(*item))
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
+}
+
+// HandleAdminSearchMemories exposes bounded memory search for admin/auditor exploration.
+func HandleAdminSearchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, embedder registryembed.Embedder) {
+	if !ensureAdminOrAuditor(c) {
+		return
+	}
+	var req generatedadmin.AdminSearchMemoriesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	prefix := []string{}
+	if req.NamespacePrefix != nil {
+		prefix = *req.NamespacePrefix
+	}
+	if len(prefix) > 0 {
+		if err := validateNamespace(prefix, cfg.EpisodicMaxDepth); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	limit := 10
+	if req.Limit != nil {
+		limit = *req.Limit
+	}
+	if limit <= 0 || limit > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 100"})
+		return
+	}
+	archived := registryepisodic.ArchiveFilterExclude
+	if req.Archived != nil {
+		parsed, err := registryepisodic.ParseArchiveFilter(string(*req.Archived))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		archived = parsed
+	}
+	filter := map[string]interface{}{}
+	if req.Filter != nil {
+		filter = *req.Filter
+	}
+	effectivePrefix := prefix
+	policyFilter := map[string]interface{}{}
+	if req.AsUserId != nil && strings.TrimSpace(*req.AsUserId) != "" {
+		if policy == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "memory policy is not configured"})
+			return
+		}
+		var err error
+		effectivePrefix, policyFilter, err = policy.InjectFilterParts(c.Request.Context(), prefix, filter, episodic.PolicyContext{
+			UserID:   strings.TrimSpace(*req.AsUserId),
+			ClientID: security.GetClientID(c),
+			JWTClaims: map[string]interface{}{
+				"roles": []string{},
+			},
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "filter injection error"})
+			return
+		}
+	}
+	normalizedFilter, err := registryepisodic.NormalizeAttributeFilters(filter, policyFilter)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	keyPrefix := ""
+	if req.KeyPrefix != nil {
+		keyPrefix = *req.KeyPrefix
+	}
+	includeUsage := req.IncludeUsage != nil && *req.IncludeUsage
+	query := ""
+	if req.Query != nil {
+		query = strings.TrimSpace(*req.Query)
+	}
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		var items []registryepisodic.MemoryItem
+		var err error
+		if query != "" {
+			if embedder == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
+				return nil
+			}
+			items, err = semanticSearch(c, store, embedder, effectivePrefix, normalizedFilter, query, limit, archived)
+		} else {
+			items, err = store.AdminSearchMemories(ctx, registryepisodic.AdminMemorySearchQuery{
+				NamespacePrefix: effectivePrefix,
+				KeyPrefix:       keyPrefix,
+				Filter:          normalizedFilter,
+				Archived:        archived,
+				Limit:           limit,
+				IncludeUsage:    includeUsage,
+			})
+		}
+		if err != nil {
+			return err
+		}
+		if keyPrefix != "" && query != "" {
+			items = filterMemoryItemsByKeyPrefix(items, keyPrefix)
+		}
+		if includeUsage {
+			enrichMemoryItemsWithUsage(ctx, store, items)
+		}
+		respItems := toAdminMemoryItems(items)
+		c.JSON(http.StatusOK, generatedadmin.AdminSearchMemoriesResponse{Items: &respItems})
+		return nil
+	}); err != nil {
+		if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
+			return
+		}
+		handleError(c, err)
+	}
+}
+
+// HandleAdminListMemoryNamespaces exposes namespace browsing for admin/auditor exploration.
+func HandleAdminListMemoryNamespaces(c *gin.Context, store registryepisodic.EpisodicStore, cfg *config.Config) {
+	if !ensureAdminOrAuditor(c) {
+		return
+	}
+	archived, err := registryepisodic.ParseArchiveFilter(c.DefaultQuery("archived", string(registryepisodic.ArchiveFilterExclude)))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	prefix := c.QueryArray("namespacePrefix")
+	if len(prefix) > 0 {
+		if err := validateNamespace(prefix, cfg.EpisodicMaxDepth); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	limit := queryInt(c, "limit", 200)
+	if limit <= 0 || limit > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 1000"})
+		return
+	}
+	query := registryepisodic.AdminNamespaceQuery{
+		NamespacePrefix: prefix,
+		Suffix:          c.QueryArray("suffix"),
+		MaxDepth:        queryInt(c, "maxDepth", 0),
+		Archived:        archived,
+		Limit:           limit,
+		AfterCursor:     c.Query("afterCursor"),
+	}
+	if query.MaxDepth < 0 || query.MaxDepth > cfg.EpisodicMaxDepth {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "maxDepth out of range"})
+		return
+	}
+	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+		page, err := store.AdminListNamespaces(ctx, query)
+		if err != nil {
+			return err
+		}
+		namespaces := make([]generatedadmin.AdminMemoryNamespace, 0, len(page.Namespaces))
+		for _, ns := range page.Namespaces {
+			segments := append([]string(nil), ns...)
+			namespaces = append(namespaces, generatedadmin.AdminMemoryNamespace{Segments: &segments})
+		}
+		afterCursor := nullableString(page.AfterCursor)
+		c.JSON(http.StatusOK, generatedadmin.AdminListMemoryNamespacesResponse{Namespaces: &namespaces, AfterCursor: afterCursor})
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
 }
 
 // HandleAdminGetMemoryPolicies exposes memory policy retrieval for wrapper-native adapters.
@@ -928,6 +1194,47 @@ func toAPIMemoryItems(items []registryepisodic.MemoryItem) []generatedapi.Memory
 	return out
 }
 
+func toAdminMemoryItem(item registryepisodic.MemoryItem) generatedadmin.AdminMemoryItem {
+	id := openapi_types.UUID(item.ID)
+	namespace := append([]string(nil), item.Namespace...)
+	key := item.Key
+	createdAt := item.CreatedAt.UTC()
+	archived := item.ArchivedAt != nil
+	var expiresAt *time.Time
+	if item.ExpiresAt != nil {
+		t := item.ExpiresAt.UTC()
+		expiresAt = &t
+	}
+	var archivedAt *time.Time
+	if item.ArchivedAt != nil {
+		t := item.ArchivedAt.UTC()
+		archivedAt = &t
+	}
+	revision := item.Revision
+	return generatedadmin.AdminMemoryItem{
+		Id:         &id,
+		Namespace:  &namespace,
+		Key:        &key,
+		Value:      mapRef(item.Value),
+		Attributes: mapRef(item.Attributes),
+		Usage:      toAdminMemoryUsageRef(item.Usage),
+		Score:      item.Score,
+		CreatedAt:  &createdAt,
+		ExpiresAt:  expiresAt,
+		ArchivedAt: archivedAt,
+		Archived:   &archived,
+		Revision:   &revision,
+	}
+}
+
+func toAdminMemoryItems(items []registryepisodic.MemoryItem) []generatedadmin.AdminMemoryItem {
+	out := make([]generatedadmin.AdminMemoryItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, toAdminMemoryItem(item))
+	}
+	return out
+}
+
 func mapRef(in map[string]interface{}) *map[string]interface{} {
 	if in == nil {
 		return nil
@@ -956,6 +1263,55 @@ func toAPIMemoryUsageRef(usage *registryepisodic.MemoryUsage) *generatedapi.Memo
 	return &v
 }
 
+func toAdminMemoryUsage(usage registryepisodic.MemoryUsage) generatedadmin.MemoryUsageResponse {
+	fetchCount := usage.FetchCount
+	lastFetchedAt := usage.LastFetchedAt.UTC()
+	return generatedadmin.MemoryUsageResponse{
+		FetchCount:    &fetchCount,
+		LastFetchedAt: &lastFetchedAt,
+	}
+}
+
+func toAdminMemoryUsageRef(usage *registryepisodic.MemoryUsage) *generatedadmin.MemoryUsageResponse {
+	if usage == nil {
+		return nil
+	}
+	v := toAdminMemoryUsage(*usage)
+	return &v
+}
+
+func nullableString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func queryTimePtr(c *gin.Context, name string) (*time.Time, error) {
+	raw := strings.TrimSpace(c.Query(name))
+	if raw == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be RFC3339", name)
+	}
+	return &t, nil
+}
+
+func filterMemoryItemsByKeyPrefix(items []registryepisodic.MemoryItem, keyPrefix string) []registryepisodic.MemoryItem {
+	if keyPrefix == "" {
+		return items
+	}
+	out := items[:0]
+	for _, item := range items {
+		if strings.HasPrefix(item.Key, keyPrefix) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.EpisodicStore, items []registryepisodic.MemoryItem) {
 	for i := range items {
 		usage, err := store.GetMemoryUsage(ctx, items[i].Namespace, items[i].Key)
@@ -976,9 +1332,13 @@ func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedd
 		return nil, nil
 	}
 
-	nsEncoded, err := episodic.EncodeNamespace(namespacePrefix, 0)
-	if err != nil {
-		return nil, err
+	nsEncoded := ""
+	if len(namespacePrefix) > 0 {
+		var err error
+		nsEncoded, err = episodic.EncodeNamespace(namespacePrefix, 0)
+		if err != nil {
+			return nil, err
+		}
 	}
 	vectorResults, err := store.SearchMemoryVectors(c.Request.Context(), nsEncoded, embeddings[0], filter, limit, archived)
 	if err != nil {

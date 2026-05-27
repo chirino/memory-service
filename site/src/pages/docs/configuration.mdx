@@ -728,18 +728,18 @@ MEMORY_SERVICE_OIDC_ISSUER=http://localhost:8180/realms/memory-service`}
 
 ## Admin Access Configuration
 
-Memory Service provides `/v1/admin/*` APIs for platform administrators and auditors.
+Memory Service provides `/v1/admin/*` APIs for platform administrators and auditors. Episodic memory administration uses `/admin/v1/*` routes and the same role assignment model.
 Access is controlled through role assignment, which can be configured via OIDC token roles,
 explicit user lists, or API key client IDs. All three mechanisms are checked — if any
 grants a role, the caller has that role.
 
 ### Roles
 
-| Role      | Access       | Description                                                                       |
-| --------- | ------------ | --------------------------------------------------------------------------------- |
-| `admin`   | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`.     |
-| `auditor` | Read-only    | View any user's conversations and search system-wide. Cannot modify data.         |
-| `indexer` | Index only   | Index any conversation's transcript for search. Cannot view or modify other data. |
+| Role      | Access       | Description                                                                                       |
+| --------- | ------------ | ------------------------------------------------------------------------------------------------- |
+| `admin`   | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`.                     |
+| `auditor` | Read-only    | View any user's conversations, attachments, and memories; search system-wide. Cannot modify data. |
+| `indexer` | Index only   | Index any conversation's transcript for search. Cannot view or modify other data.                 |
 
 ### Role Assignment
 

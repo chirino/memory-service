@@ -85,6 +85,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 			episodicStore:   episodicStore,
 			episodicPolicy:  episodicPolicy,
 			episodicIndexer: episodicIndexer,
+			embedder:        embedder,
 			eventBus:        eventBus,
 		},
 		ErrorHandler: func(c *gin.Context, err error, statusCode int) {
@@ -144,12 +145,16 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodGet, "/v1/admin/events", apiWrapper.AdminSubscribeEvents)
 	register(http.MethodGet, "/v1/events", apiWrapper.SubscribeEvents)
 
-	register(http.MethodGet, "/admin/v1/memories/index/status", adminWrapper.AdminGetMemoryIndexStatus)
-	register(http.MethodPost, "/admin/v1/memories/index/trigger", adminWrapper.AdminTriggerMemoryIndex)
-	register(http.MethodGet, "/admin/v1/memories/policies", adminWrapper.AdminGetMemoryPolicies)
-	register(http.MethodPut, "/admin/v1/memories/policies", adminWrapper.AdminPutMemoryPolicies)
-	register(http.MethodGet, "/admin/v1/memories/usage", adminWrapper.AdminGetMemoryUsage)
-	register(http.MethodGet, "/admin/v1/memories/usage/top", adminWrapper.AdminListTopMemoryUsage)
+	register(http.MethodGet, "/admin/v1/memories", adminWrapper.AdminListMemories)
+	register(http.MethodPost, "/admin/v1/memories/search", adminWrapper.AdminSearchMemories)
+	register(http.MethodGet, "/admin/v1/memories/:id", adminWrapper.AdminGetMemory)
+	register(http.MethodGet, "/admin/v1/memory-index/status", adminWrapper.AdminGetMemoryIndexStatus)
+	register(http.MethodPost, "/admin/v1/memory-index/trigger", adminWrapper.AdminTriggerMemoryIndex)
+	register(http.MethodGet, "/admin/v1/memory-namespaces", adminWrapper.AdminListMemoryNamespaces)
+	register(http.MethodGet, "/admin/v1/memory-policies", adminWrapper.AdminGetMemoryPolicies)
+	register(http.MethodPut, "/admin/v1/memory-policies", adminWrapper.AdminPutMemoryPolicies)
+	register(http.MethodGet, "/admin/v1/memory-usage", adminWrapper.AdminGetMemoryUsage)
+	register(http.MethodGet, "/admin/v1/memory-usage/top", adminWrapper.AdminListTopMemoryUsage)
 	register(http.MethodDelete, "/admin/v1/memories/:id", adminWrapper.AdminDeleteMemory)
 	register(http.MethodGet, "/v1/admin/attachments", adminWrapper.AdminListAttachments)
 	register(http.MethodDelete, "/v1/admin/attachments/:id", adminWrapper.AdminDeleteAttachment)
@@ -321,6 +326,7 @@ type proxyAdminServer struct {
 	episodicStore   registryepisodic.EpisodicStore
 	episodicPolicy  *episodic.PolicyEngine
 	episodicIndexer *service.EpisodicIndexer
+	embedder        registryembed.Embedder
 	eventBus        registryeventbus.EventBus
 }
 
@@ -337,6 +343,30 @@ func (p *proxyAdminServer) AdminGetMemoryIndexStatus(c *gin.Context) {
 		return
 	}
 	routememories.HandleAdminGetMemoryIndexStatus(c, p.episodicStore)
+}
+func (p *proxyAdminServer) AdminListMemories(c *gin.Context, _ generatedadmin.AdminListMemoriesParams) {
+	if !p.authorize(c) {
+		return
+	}
+	routememories.HandleAdminListMemories(c, p.episodicStore, p.cfg)
+}
+func (p *proxyAdminServer) AdminGetMemory(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetMemoryParams) {
+	if !p.authorize(c) {
+		return
+	}
+	routememories.HandleAdminGetMemory(c, p.episodicStore)
+}
+func (p *proxyAdminServer) AdminSearchMemories(c *gin.Context) {
+	if !p.authorize(c) {
+		return
+	}
+	routememories.HandleAdminSearchMemories(c, p.episodicStore, p.episodicPolicy, p.cfg, p.embedder)
+}
+func (p *proxyAdminServer) AdminListMemoryNamespaces(c *gin.Context, _ generatedadmin.AdminListMemoryNamespacesParams) {
+	if !p.authorize(c) {
+		return
+	}
+	routememories.HandleAdminListMemoryNamespaces(c, p.episodicStore, p.cfg)
 }
 func (p *proxyAdminServer) AdminSubscribeEvents(c *gin.Context, _ generatedadmin.AdminSubscribeEventsParams) {
 	if !p.authorize(c) {

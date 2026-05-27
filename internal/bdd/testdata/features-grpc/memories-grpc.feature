@@ -445,7 +445,7 @@ Feature: Episodic Memory gRPC API
     And the gRPC response field "items" should have size 1
     And the gRPC response field "items[0].usage.fetchCount" should be "1"
     When I am authenticated as admin user "alice"
-    And I send gRPC request "MemoriesService/GetMemoryUsage" with body:
+    And I send gRPC request "AdminMemoriesService/GetMemoryUsage" with body:
     """
     namespace: "user"
     namespace: "alice"
@@ -507,7 +507,7 @@ Feature: Episodic Memory gRPC API
     """
     And the gRPC response should not have an error
     When I am authenticated as admin user "alice"
-    And I send gRPC request "MemoriesService/ListTopMemoryUsage" with body:
+    And I send gRPC request "AdminMemoriesService/ListTopMemoryUsage" with body:
     """
     prefix: "user"
     prefix: "alice"
@@ -575,9 +575,86 @@ Feature: Episodic Memory gRPC API
 
   Scenario: Admin can query memory index status
     Given I am authenticated as admin user "alice"
-    When I send gRPC request "MemoriesService/GetMemoryIndexStatus" with body:
+    When I send gRPC request "AdminMemoriesService/GetMemoryIndexStatus" with body:
     """
-    {}
+    justification: "inspect index status"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "pending" should not be null
+
+  Scenario: Auditor can list and get memories over gRPC
+    Given I am authenticated as user "alice"
+    And I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "admin-grpc"
+    key: "grpc-theme"
+    value {
+      fields {
+        key: "color"
+        value { string_value: "dark" }
+      }
+    }
+    """
+    And the gRPC response should not have an error
+    And set "adminGrpcMemoryId" to the gRPC response field "id"
+    When I am authenticated as auditor user "charlie"
+    And I send gRPC request "AdminMemoriesService/ListMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "alice"
+    namespace_prefix: "admin-grpc"
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 1
+    And the gRPC response field "items[0].key" should be "grpc-theme"
+    When I send gRPC request "AdminMemoriesService/GetMemory" with body:
+    """
+    id: "${adminGrpcMemoryId | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "key" should be "grpc-theme"
+
+  Scenario: Auditor can search as target user over gRPC
+    Given I am authenticated as user "alice"
+    And I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "admin-grpc-as-user"
+    key: "grpc-alice-note"
+    value {
+      fields {
+        key: "owner"
+        value { string_value: "alice" }
+      }
+    }
+    """
+    And the gRPC response should not have an error
+    And I am authenticated as user "bob"
+    And I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "bob"
+    namespace: "admin-grpc-as-user"
+    key: "grpc-bob-note"
+    value {
+      fields {
+        key: "owner"
+        value { string_value: "bob" }
+      }
+    }
+    """
+    And the gRPC response should not have an error
+    When I am authenticated as auditor user "charlie"
+    And I send gRPC request "AdminMemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    as_user_id: "bob"
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items" should have size 1
+    And the gRPC response field "items[0].key" should be "grpc-bob-note"

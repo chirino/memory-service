@@ -530,7 +530,7 @@ Content to add:
 ```markdown
 ## Admin Access Configuration
 
-Memory Service provides `/v1/admin/*` APIs for platform administrators and auditors.
+Memory Service provides `/v1/admin/*` APIs for platform administrators and auditors. Episodic memory administration later added `/admin/v1/*` routes under the same role model; see [104-admin-episodic-memory-exploration.md](104-admin-episodic-memory-exploration.md).
 Access is controlled through role assignment, which can be configured via OIDC token roles,
 explicit user lists, or API key client IDs. All three mechanisms are checked — if any
 grants a role, the caller has that role.
@@ -540,7 +540,7 @@ grants a role, the caller has that role.
 | Role | Access | Description |
 |------|--------|-------------|
 | `admin` | Read + Write | Full administrative access across all users. Implies `auditor`. |
-| `auditor` | Read-only | View any user's conversations and search system-wide. Cannot modify data. |
+| `auditor` | Read-only | View any user's conversations, attachments, and memories; search system-wide. Cannot modify data. |
 
 ### Role Assignment
 
